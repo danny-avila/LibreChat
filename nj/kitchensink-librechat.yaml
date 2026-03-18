@@ -1,0 +1,80 @@
+###############################################################################
+# New Jersey LibreChat Config File
+#
+# Used in conjunction w/ the .env file from BitWarden (because part of
+# LibreChat's config still lives in .env, as well as secret API keys).
+###############################################################################
+
+# Configuration version (required)
+version: 1.3.6
+
+# Cache settings: Set to true to enable caching
+cache: true
+fileStrategy: "s3"
+
+# Custom interface configuration
+interface:
+  customWelcome: 'NJ AI Assistant'
+
+  # Disable temporary chats (we need to retain data for OPRA)
+  temporaryChat: false
+
+  # Since we only have limited endpoints, we disable the more elaborate model selector
+  # (Instead, we define the model selection using `modelSpecs` below)
+  modelSelect: false
+
+  # We're purposefully disabling most LibreChat features (for now)
+  agents: true
+  bookmarks: true
+  endpointsMenu: true
+  fileCitations: true
+  fileSearch: true
+  marketplace:
+    use: true
+  memories: true
+  multiConvo: true
+  parameters: true
+  peoplePicker:
+    users: true
+    groups: true
+    roles: true
+  presets: true
+  prompts: true
+  runCode: true
+  sidePanel: true
+  webSearch: true
+
+endpoints:
+  bedrock:
+    availableRegions:
+      - "us-east-1"
+    titleModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    guardrailConfig:
+      guardrailIdentifier: '${GUARDRAIL_ID}'
+      guardrailVersion: '${GUARDRAIL_VERSION}'
+      trace: "enabled"
+
+  agents:
+    capabilities:
+      - "context"
+      - "ocr"
+
+# We explicitly spec our models (since we only have a few models and this makes the selector simpler)
+modelSpecs:
+  list:
+    - name: "Claude Sonnet 4.5"
+      label: "Claude Sonnet 4.5"
+      default: true
+      preset:
+        endpoint: "bedrock"
+        model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+ocr:
+  strategy: "document_parser"
+
+fileConfig:
+  endpoints:
+    default:
+      fileLimit: 10
+      fileSizeLimit: 50 # mb
+      totalSizeLimit: 60 # mb

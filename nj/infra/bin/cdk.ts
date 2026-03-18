@@ -33,6 +33,7 @@ import { DatabaseStack } from "../lib/db-stack";
 import { EcsStack } from "../lib/ecs-stack";
 import { CognitoStack } from "../lib/cognito-stack";
 import { MonitoringStack } from "../lib/monitoring-stack";
+import { KitchenSinkStack } from "../lib/kitchensink-stack";
 import {branding, assets} from "../lib/branding";
 
 const app = new cdk.App();
@@ -42,19 +43,31 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION,
 };
 
-const isProd = process.env.AWS_ENV?.includes("prod") ? true : false; // looks jank, but cannot be undefined
-const tagEnv = isProd ? "production" : "development";
+type AwsEnv = "prod" | "dev";
+
+const AWS_ENV = (process.env.AWS_ENV ?? "dev") as AwsEnv;
+const isProd = AWS_ENV === "prod";
+
+const domainNames: Record<AwsEnv, string> = {
+  prod: "ai-assistant.nj.gov",
+  dev: "dev.ai-assistant.nj.gov",
+};
+
+const tagEnvNames: Record<AwsEnv, string> = {
+  prod: "production",
+  dev: "development",
+};
 
 const envVars = {
-  domainName : isProd ? "ai-assistant.nj.gov" : "dev.ai-assistant.nj.gov",
-  env: isProd ? "prod" : "dev", 
-  isProd: isProd
+  domainName: domainNames[AWS_ENV],
+  env: AWS_ENV,
+  isProd,
 }
 
 const commonTags = {
   Project: "AIAssistantService",
   ManagedBy: "CDK",
-  Environment: tagEnv,
+  Environment: tagEnvNames[AWS_ENV],
   Agency: "997",
   Org: "0005",
   CloudPortfolioID: "0293"
@@ -99,3 +112,14 @@ const monitoringStack = new MonitoringStack(app, "MonitoringStack", {
 applyTags(ecsStack);
 applyTags(cognitoStack);
 applyTags(monitoringStack);
+
+if (process.env.DEPLOY_KITCHENSINK === "true") {
+  const kitchenSinkStack = new KitchenSinkStack(app, "KitchenSinkStack", {
+    env: env,
+    listenerArn: ecsStack.listener.listenerArn,
+    loadBalancerSecurityGroupId: ecsStack.loadBalancer.connections.securityGroups[0].securityGroupId,
+    certificateArn: `arn:aws:acm:${env.region}:${env.account}:certificate/${process.env.LIBRECHAT_ACM_CERTIFICATE_ID}`,
+  });
+
+  applyTags(kitchenSinkStack);
+}

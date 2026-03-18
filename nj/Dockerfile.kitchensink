@@ -1,0 +1,2 @@
+FROM registry.librechat.ai/danny-avila/librechat-dev:latest
+COPY nj/kitchensink-librechat.yaml /app/nj/kitchensink-librechat.yaml

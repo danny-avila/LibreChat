@@ -10,6 +10,11 @@ on:
         options:
           - dev
           - prod
+      deploy_kitchensink:
+        description: 'Deploy kitchensink stack (dev only)'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   render-env:
@@ -22,6 +27,12 @@ jobs:
       contents: read
 
     steps:
+      - name: Validate inputs
+        if: inputs.deploy_kitchensink && inputs.environment != 'dev'
+        run: |
+          echo "deploy_kitchensink is only supported for the dev environment"
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -38,30 +49,36 @@ jobs:
           set -euo pipefail
 
           export DEBUG=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)
+          export CONFIG_PATH=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "nj/kitchensink-librechat.yaml" || echo "nj/nj-librechat.yaml")
+          export DOMAIN=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "kitchensink.ai-assistant.nj.gov" || echo "${{ secrets.DOMAIN }}")
           export LOG_LEVEL="${{ secrets.LOG_LEVEL }}"
-          export DOMAIN="${{ secrets.DOMAIN }}"
           export AWS_REGION="${{ secrets.AWS_REGION }}"
           export AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}"
           export AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}"
-          export OPENID_CLIENT_ID="${{ secrets.OPENID_CLIENT_ID }}"
-          export OPENID_CLIENT_SECRET="${{ secrets.OPENID_CLIENT_SECRET }}"
-          export OPENID_ISSUER="${{ secrets.OPENID_ISSUER }}"
-          export OPENID_SESSION_SECRET="${{ secrets.OPENID_SESSION_SECRET }}"
+          if [[ "${{ inputs.deploy_kitchensink }}" != "true" ]]; then
+            export OPENID_CLIENT_ID="${{ secrets.OPENID_CLIENT_ID }}"
+            export OPENID_CLIENT_SECRET="${{ secrets.OPENID_CLIENT_SECRET }}"
+            export OPENID_ISSUER="${{ secrets.OPENID_ISSUER }}"
+            export OPENID_SESSION_SECRET="${{ secrets.OPENID_SESSION_SECRET }}"
+          fi
           export JWT_SECRET="${{ secrets.JWT_SECRET }}"
           export JWT_REFRESH_SECRET="${{ secrets.JWT_REFRESH_SECRET }}"
           export ANALYTICS_GTM_ID="${{ secrets.ANALYTICS_GTM_ID }}"
           export GUARDRAIL_ID="${{ secrets.GUARDRAIL_ID }}"
           export GUARDRAIL_VERSION="${{ secrets.GUARDRAIL_VERSION }}"
 
-          envsubst < nj/nj.env.template > "${{ inputs.environment }}.env"
+          ENV_FILE_NAME=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "librechat.env" || echo "${{ inputs.environment }}.env")
 
-          sed 's/=.*$/=***/' "${{ inputs.environment }}.env"
+          envsubst < nj/nj.env.template > "$ENV_FILE_NAME"
+
+          sed 's/=.*$/=***/' "$ENV_FILE_NAME"
 
       - name: Upload to S3
         run: |
+          ENV_FILE_NAME=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "librechat.env" || echo "${{ inputs.environment }}.env")
           aws s3 cp \
-            "${{ inputs.environment }}.env" \
-            "s3://nj-librechat-env-files/${{ inputs.environment }}.env"
+            "$ENV_FILE_NAME" \
+            "s3://nj-librechat-env-files/$ENV_FILE_NAME"
       
       - name: Redeploy service with new env file
         uses: apideck-libraries/ecs-restart-service@v1

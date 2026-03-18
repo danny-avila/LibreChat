@@ -11,6 +11,11 @@ on:
           - prod
         required: true
         default: dev
+      deploy_kitchensink:
+        description: 'Deploy kitchensink stack (dev only)'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   cdk-diff:
@@ -39,6 +44,8 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
           AWS_ENV: ${{ github.event.inputs.environment }}
           ACM_CERTIFICATE_ID: ${{ secrets.ACM_CERTIFICATE_ID }}
+          DEPLOY_KITCHENSINK: ${{ github.event.inputs.deploy_kitchensink }}
+          LIBRECHAT_ACM_CERTIFICATE_ID: ${{ secrets.LIBRECHAT_ACM_CERTIFICATE_ID }}
 
   cdk-deploy:
     runs-on: ubuntu-latest
@@ -62,3 +69,5 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
           AWS_ENV: ${{ github.event.inputs.environment }}
           ACM_CERTIFICATE_ID: ${{ secrets.ACM_CERTIFICATE_ID }}
+          DEPLOY_KITCHENSINK: ${{ github.event.inputs.deploy_kitchensink }}
+          LIBRECHAT_ACM_CERTIFICATE_ID: ${{ secrets.LIBRECHAT_ACM_CERTIFICATE_ID }}
