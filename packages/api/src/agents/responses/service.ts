@@ -6,11 +6,12 @@
  */
 import type { Response as ServerResponse } from 'express';
 import type {
-  ResponseRequest,
   RequestValidationResult,
-  InputItem,
-  InputContent,
+  ResponseRequest,
   ResponseContext,
+  InputContent,
+  ModelContent,
+  InputItem,
   Response,
 } from './types';
 import {
@@ -83,6 +84,13 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
     }
   }
 
+  if (
+    request.previous_response_id !== undefined &&
+    typeof request.previous_response_id !== 'string'
+  ) {
+    return { valid: false, error: 'previous_response_id must be a string' };
+  }
+
   return { valid: true, request: request as unknown as ResponseRequest };
 }
 
@@ -134,7 +142,7 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
       const messageItem = item as {
         type: 'message';
         role: string;
-        content: string | InputContent[];
+        content: string | (InputContent | ModelContent)[];
       };
 
       let content: InternalMessage['content'];
@@ -142,21 +150,31 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
       if (typeof messageItem.content === 'string') {
         content = messageItem.content;
       } else if (Array.isArray(messageItem.content)) {
-        content = messageItem.content.map((part) => {
-          if (part.type === 'input_text') {
-            return { type: 'text', text: part.text };
-          }
-          if (part.type === 'input_image') {
-            return {
-              type: 'image_url',
-              image_url: {
-                url: (part as { image_url?: string }).image_url,
-                detail: (part as { detail?: string }).detail,
-              },
-            };
-          }
-          return { type: part.type };
-        });
+        content = messageItem.content
+          .filter((part): part is InputContent | ModelContent => part != null)
+          .map((part) => {
+            if (part.type === 'input_text' || part.type === 'output_text') {
+              return { type: 'text', text: (part as { text?: string }).text ?? '' };
+            }
+            if (part.type === 'refusal') {
+              return { type: 'text', text: (part as { refusal?: string }).refusal ?? '' };
+            }
+            if (part.type === 'input_image') {
+              return {
+                type: 'image_url',
+                image_url: {
+                  url: (part as { image_url?: string }).image_url,
+                  detail: (part as { detail?: string }).detail,
+                },
+              };
+            }
+            if (part.type === 'input_file') {
+              const filePart = part as { filename?: string };
+              return { type: 'text', text: `[File: ${filePart.filename ?? 'unknown'}]` };
+            }
+            return null;
+          })
+          .filter((part): part is NonNullable<typeof part> => part != null);
       } else {
         content = '';
       }

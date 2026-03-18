@@ -15,7 +15,7 @@ interface MCPSubMenuProps {
 const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
   ({ placeholder, ...props }, ref) => {
     const localize = useLocalize();
-    const { mcpServerManager } = useBadgeRowContext();
+    const { storageContextKey, mcpServerManager } = useBadgeRowContext();
     const {
       isPinned,
       mcpValues,
@@ -35,7 +35,6 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
       placement: 'right',
     });
 
-    // Don't render if no MCP servers are configured
     if (!selectableServers || selectableServers.length === 0) {
       return null;
     }
@@ -106,7 +105,9 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
             </div>
           </Ariakit.Menu>
         </Ariakit.MenuProvider>
-        {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
+        {configDialogProps && (
+          <MCPConfigDialog {...configDialogProps} storageContextKey={storageContextKey} />
+        )}
       </div>
     );
   },

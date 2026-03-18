@@ -11,6 +11,7 @@ import {
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
+import { getTimestampedValue } from './timestamps';
 
 /**
  * Clears model for non-ephemeral agent conversations.
@@ -219,12 +220,51 @@ export function applyModelSpecEphemeralAgent({
   if (!modelSpec || !updateEphemeralAgent) {
     return;
   }
-  updateEphemeralAgent((convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO, {
-    mcp: modelSpec.mcpServers ?? [Constants.mcp_clear as string],
+  const key = (convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO;
+  const agent: t.TEphemeralAgent = {
+    mcp: modelSpec.mcpServers ?? [],
     web_search: modelSpec.webSearch ?? false,
     file_search: modelSpec.fileSearch ?? false,
     execute_code: modelSpec.executeCode ?? false,
-  });
+    artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
+  };
+
+  // For existing conversations, layer per-conversation localStorage overrides
+  // on top of spec defaults so user modifications persist across navigation.
+  // If localStorage is empty (e.g., cleared), spec values stand alone.
+  if (key !== Constants.NEW_CONVO) {
+    const toolStorageMap: Array<[keyof t.TEphemeralAgent, string]> = [
+      ['execute_code', LocalStorageKeys.LAST_CODE_TOGGLE_],
+      ['web_search', LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_],
+      ['file_search', LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_],
+      ['artifacts', LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_],
+    ];
+
+    for (const [toolKey, storagePrefix] of toolStorageMap) {
+      const raw = getTimestampedValue(`${storagePrefix}${key}`);
+      if (raw !== null) {
+        try {
+          agent[toolKey] = JSON.parse(raw) as never;
+        } catch {
+          // ignore parse errors
+        }
+      }
+    }
+
+    const mcpRaw = localStorage.getItem(`${LocalStorageKeys.LAST_MCP_}${key}`);
+    if (mcpRaw !== null) {
+      try {
+        const parsed = JSON.parse(mcpRaw);
+        if (Array.isArray(parsed)) {
+          agent.mcp = parsed;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+  }
+
+  updateEphemeralAgent(key, agent);
 }
 
 /**
@@ -268,6 +308,30 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
     ...modelSpec.preset,
     spec: modelSpec.name,
     iconURL: getModelSpecIconURL(modelSpec),
+  };
+}
+
+/** Fields set by a model spec that should be cleared when switching to a non-spec conversation. */
+export const specDisplayFieldReset = {
+  spec: null as string | null,
+  iconURL: null as string | null,
+  modelLabel: null as string | null,
+  greeting: undefined as string | undefined,
+};
+
+/**
+ * Merges a spec preset base with URL query settings, clearing spec display fields
+ * when the query doesn't explicitly set a spec. Prevents spec contamination on
+ * agent/assistant share links.
+ */
+export function mergeQuerySettingsWithSpec(
+  specPreset: t.TPreset | undefined,
+  querySettings: t.TPreset,
+): t.TPreset {
+  return {
+    ...specPreset,
+    ...querySettings,
+    ...(specPreset != null && querySettings.spec == null ? specDisplayFieldReset : {}),
   };
 }
 

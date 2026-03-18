@@ -1,8 +1,11 @@
 import { logger } from '@librechat/data-schemas';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPConnection } from './connection';
-import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import type * as t from './types';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { hasCustomUserVars } from './utils';
+import { MCPConnection } from './connection';
+
+const CONNECT_CONCURRENCY = 3;
 
 /**
  * Manages MCP connections with lazy loading and reconnection.
@@ -21,6 +24,11 @@ export class ConnectionsRepository {
   constructor(ownerId?: string, oauthOpts?: t.OAuthConnectionOptions) {
     this.ownerId = ownerId;
     this.oauthOpts = oauthOpts;
+  }
+
+  /** Returns the number of active connections in this repository */
+  public getConnectionCount(): number {
+    return this.connections.size;
   }
 
   /** Checks whether this repository can connect to a specific server */
@@ -69,11 +77,14 @@ export class ConnectionsRepository {
         await this.disconnect(serverName);
       }
     }
+    const registry = MCPServersRegistry.getInstance();
     const connection = await MCPConnectionFactory.create(
       {
         serverName,
         serverConfig,
-        useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
+        dbSourced: !!(serverConfig as t.ParsedServerConfig).dbId,
+        useSSRFProtection: registry.shouldEnableSSRFProtection(),
+        allowedDomains: registry.getAllowedDomains(),
       },
       this.oauthOpts,
     );
@@ -84,9 +95,17 @@ export class ConnectionsRepository {
 
   /** Gets or creates connections for multiple servers concurrently */
   async getMany(serverNames: string[]): Promise<Map<string, MCPConnection>> {
-    const connectionPromises = serverNames.map(async (name) => [name, await this.get(name)]);
-    const connections = await Promise.all(connectionPromises);
-    return new Map((connections as [string, MCPConnection][]).filter((v) => !!v[1]));
+    const results: [string, MCPConnection | null][] = [];
+    for (let i = 0; i < serverNames.length; i += CONNECT_CONCURRENCY) {
+      const batch = serverNames.slice(i, i + CONNECT_CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(
+          async (name): Promise<[string, MCPConnection | null]> => [name, await this.get(name)],
+        ),
+      );
+      results.push(...batchResults);
+    }
+    return new Map(results.filter((v): v is [string, MCPConnection] => v[1] != null));
   }
 
   /** Returns all currently loaded connections without creating new ones */
@@ -123,9 +142,19 @@ export class ConnectionsRepository {
     return `[MCP][${serverName}]`;
   }
 
+  /**
+   * App-level (shared) connections cannot serve servers that need per-user context:
+   * env/header placeholders like `{{MY_KEY}}` are only resolved by `processMCPEnv()`
+   * when real `customUserVars` values exist — which requires a user-level connection.
+   */
   private isAllowedToConnectToServer(config: t.ParsedServerConfig) {
-    //the repository is not allowed to be connected in case the Connection repository is shared (ownerId is undefined/null) and the server requires Auth or startup false.
-    if (this.ownerId === undefined && (config.startup === false || config.requiresOAuth)) {
+    if (config.inspectionFailed) {
+      return false;
+    }
+    if (
+      this.ownerId === undefined &&
+      (config.startup === false || config.requiresOAuth || hasCustomUserVars(config))
+    ) {
       return false;
     }
     return true;

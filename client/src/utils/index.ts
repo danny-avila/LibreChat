@@ -3,6 +3,7 @@ import type { UIActionResult } from '@mcp-ui/client';
 import { TAskFunction } from '~/common';
 import logger from './logger';
 
+export * from './errors';
 export * from './map';
 export * from './json';
 export * from './files';
@@ -12,6 +13,7 @@ export * from './agents';
 export * from './drafts';
 export * from './convos';
 export * from './routes';
+export * from './redirect';
 export * from './presets';
 export * from './prompts';
 export * from './textarea';
@@ -22,17 +24,17 @@ export * from './resources';
 export * from './roles';
 export * from './localStorage';
 export * from './promptGroups';
+export * from './previewCache';
 export * from './email';
 export * from './share';
 export * from './timestamps';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
-export { default as scaleImage } from './scaleImage';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as buildDefaultConvo } from './buildDefaultConvo';
 export { default as getDefaultEndpoint } from './getDefaultEndpoint';
-export { default as createChatSearchParams } from './createChatSearchParams';
+export { default as createChatSearchParams, processValidSettings } from './createChatSearchParams';
 export { getThemeFromEnv } from './getThemeFromEnv';
 
 export const languages = [

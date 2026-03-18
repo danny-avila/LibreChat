@@ -1,49 +1,22 @@
 const { logger, webSearchKeys } = require('@librechat/data-schemas');
 const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
 const {
+  getNewS3URL,
+  needsRefresh,
   MCPOAuthHandler,
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
 } = require('@librechat/api');
-const {
-  deleteAllUserSessions,
-  deleteAllSharedLinks,
-  updateUserPlugins,
-  deleteUserById,
-  deleteMessages,
-  deletePresets,
-  deleteUserKey,
-  deleteConvos,
-  deleteFiles,
-  updateUser,
-  findToken,
-  getFiles,
-} = require('~/models');
-const {
-  ConversationTag,
-  AgentApiKey,
-  Transaction,
-  MemoryEntry,
-  Assistant,
-  AclEntry,
-  Balance,
-  Action,
-  Group,
-  Token,
-  User,
-} = require('~/db/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
+const { verifyOTPOrBackupCode } = require('~/server/services/twoFactorService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
-const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getAppConfig } = require('~/server/services/Config');
-const { deleteToolCalls } = require('~/models/ToolCall');
-const { deleteUserPrompts } = require('~/models/Prompt');
-const { deleteUserAgents } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
+const db = require('~/models');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
@@ -64,7 +37,7 @@ const getUserController = async (req, res) => {
     const originalAvatar = userData.avatar;
     try {
       userData.avatar = await getNewS3URL(userData.avatar);
-      await updateUser(userData.id, { avatar: userData.avatar });
+      await db.updateUser(userData.id, { avatar: userData.avatar });
     } catch (error) {
       userData.avatar = originalAvatar;
       logger.error('Error getting new S3 URL for avatar:', error);
@@ -75,7 +48,7 @@ const getUserController = async (req, res) => {
 
 const getTermsStatusController = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await db.getUserById(req.user.id, 'termsAccepted');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -88,7 +61,7 @@ const getTermsStatusController = async (req, res) => {
 
 const acceptTermsController = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(req.user.id, { termsAccepted: true }, { new: true });
+    const user = await db.updateUser(req.user.id, { termsAccepted: true });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -101,7 +74,7 @@ const acceptTermsController = async (req, res) => {
 
 const deleteUserFiles = async (req) => {
   try {
-    const userFiles = await getFiles({ user: req.user.id });
+    const userFiles = await db.getFiles({ user: req.user.id });
     await processDeleteRequest({
       req,
       files: userFiles,
@@ -117,7 +90,7 @@ const updateUserPluginsController = async (req, res) => {
   const { pluginKey, action, auth, isEntityTool } = req.body;
   try {
     if (!isEntityTool) {
-      await updateUserPlugins(user._id, user.plugins, pluginKey, action);
+      await db.updateUserPlugins(user._id, user.plugins, pluginKey, action);
     }
 
     if (auth == null) {
@@ -241,37 +214,49 @@ const deleteUserController = async (req, res) => {
   const { user } = req;
 
   try {
-    await deleteMessages({ user: user.id }); // delete user messages
-    await deleteAllUserSessions({ userId: user.id }); // delete user sessions
-    await Transaction.deleteMany({ user: user.id }); // delete user transactions
-    await deleteUserKey({ userId: user.id, all: true }); // delete user keys
-    await Balance.deleteMany({ user: user._id }); // delete user balances
-    await deletePresets(user.id); // delete user presets
+    const existingUser = await db.getUserById(
+      user.id,
+      '+totpSecret +backupCodes _id twoFactorEnabled',
+    );
+    if (existingUser && existingUser.twoFactorEnabled) {
+      const { token, backupCode } = req.body;
+      const result = await verifyOTPOrBackupCode({ user: existingUser, token, backupCode });
+
+      if (!result.verified) {
+        const msg =
+          result.message ??
+          'TOTP token or backup code is required to delete account with 2FA enabled';
+        return res.status(result.status ?? 400).json({ message: msg });
+      }
+    }
+
+    await db.deleteMessages({ user: user.id });
+    await db.deleteAllUserSessions({ userId: user.id });
+    await db.deleteTransactions({ user: user.id });
+    await db.deleteUserKey({ userId: user.id, all: true });
+    await db.deleteBalances({ user: user._id });
+    await db.deletePresets(user.id);
     try {
-      await deleteConvos(user.id); // delete user convos
+      await db.deleteConvos(user.id);
     } catch (error) {
       logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
     }
-    await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
-    await deleteUserById(user.id); // delete user
-    await deleteAllSharedLinks(user.id); // delete user shared links
-    await deleteUserFiles(req); // delete user files
-    await deleteFiles(null, user.id); // delete database files in case of orphaned files from previous steps
-    await deleteToolCalls(user.id); // delete user tool calls
-    await deleteUserAgents(user.id); // delete user agents
-    await AgentApiKey.deleteMany({ user: user._id }); // delete user agent API keys
-    await Assistant.deleteMany({ user: user.id }); // delete user assistants
-    await ConversationTag.deleteMany({ user: user.id }); // delete user conversation tags
-    await MemoryEntry.deleteMany({ userId: user.id }); // delete user memory entries
-    await deleteUserPrompts(req, user.id); // delete user prompts
-    await Action.deleteMany({ user: user.id }); // delete user actions
-    await Token.deleteMany({ userId: user.id }); // delete user OAuth tokens
-    await Group.updateMany(
-      // remove user from all groups
-      { memberIds: user.id },
-      { $pull: { memberIds: user.id } },
-    );
-    await AclEntry.deleteMany({ principalId: user._id }); // delete user ACL entries
+    await deleteUserPluginAuth(user.id, null, true);
+    await db.deleteUserById(user.id);
+    await db.deleteAllSharedLinks(user.id);
+    await deleteUserFiles(req);
+    await db.deleteFiles(null, user.id);
+    await db.deleteToolCalls(user.id);
+    await db.deleteUserAgents(user.id);
+    await db.deleteAllAgentApiKeys(user._id);
+    await db.deleteAssistants({ user: user.id });
+    await db.deleteConversationTags({ user: user.id });
+    await db.deleteAllUserMemories(user.id);
+    await db.deleteUserPrompts(user.id);
+    await db.deleteActions({ user: user.id });
+    await db.deleteTokens({ userId: user.id });
+    await db.removeUserFromAllGroups(user.id);
+    await db.deleteAclEntries({ principalId: user._id });
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
@@ -331,7 +316,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const clientTokenData = await MCPTokenStorage.getClientInfoAndMetadata({
     userId,
     serverName,
-    findToken,
+    findToken: db.findToken,
   });
   if (clientTokenData == null) {
     return;
@@ -342,7 +327,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const tokens = await MCPTokenStorage.getTokens({
     userId,
     serverName,
-    findToken,
+    findToken: db.findToken,
   });
 
   // 3. revoke OAuth tokens at the provider
@@ -352,6 +337,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     serverConfig.oauth?.revocation_endpoint_auth_methods_supported ??
     clientMetadata.revocation_endpoint_auth_methods_supported;
   const oauthHeaders = serverConfig.oauth_headers ?? {};
+  const allowedDomains = getMCPServersRegistry().getAllowedDomains();
 
   if (tokens?.access_token) {
     try {
@@ -367,6 +353,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
           revocationEndpointAuthMethodsSupported,
         },
         oauthHeaders,
+        allowedDomains,
       );
     } catch (error) {
       logger.error(`Error revoking OAuth access token for ${serverName}:`, error);
@@ -387,6 +374,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
           revocationEndpointAuthMethodsSupported,
         },
         oauthHeaders,
+        allowedDomains,
       );
     } catch (error) {
       logger.error(`Error revoking OAuth refresh token for ${serverName}:`, error);
@@ -398,7 +386,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     userId,
     serverName,
     deleteToken: async (filter) => {
-      await Token.deleteOne(filter);
+      await db.deleteTokens(filter);
     },
   });
 

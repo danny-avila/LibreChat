@@ -112,7 +112,7 @@ describe('useArtifactProps', () => {
       expect(result.current.files['content.md']).toBe('# No content provided');
     });
 
-    it('should provide marked-react dependency', () => {
+    it('should provide react-markdown dependency', () => {
       const artifact = createArtifact({
         type: 'text/markdown',
         content: '# Test',
@@ -120,7 +120,9 @@ describe('useArtifactProps', () => {
 
       const { result } = renderHook(() => useArtifactProps({ artifact }));
 
-      expect(result.current.sharedProps.customSetup?.dependencies).toHaveProperty('marked-react');
+      expect(result.current.sharedProps.customSetup?.dependencies).toHaveProperty('react-markdown');
+      expect(result.current.sharedProps.customSetup?.dependencies).toHaveProperty('remark-gfm');
+      expect(result.current.sharedProps.customSetup?.dependencies).toHaveProperty('remark-breaks');
     });
 
     it('should update files when content changes', () => {

@@ -22,6 +22,7 @@ export type AclEntry = {
   grantedBy?: Types.ObjectId;
   /** When this permission was granted */
   grantedAt?: Date;
+  tenantId?: string;
 };
 
 export type IAclEntry = AclEntry &

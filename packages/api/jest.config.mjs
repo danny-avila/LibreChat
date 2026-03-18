@@ -7,9 +7,21 @@ export default {
     '\\.dev\\.ts$',
     '\\.helper\\.ts$',
     '\\.helper\\.d\\.ts$',
+    '/__tests__/helpers/',
   ],
   coverageReporters: ['text', 'cobertura'],
   testResultsProcessor: 'jest-junit',
+  transform: {
+    '\\.[jt]sx?$': [
+      'babel-jest',
+      {
+        presets: [
+          ['@babel/preset-env', { targets: { node: 'current' } }],
+          '@babel/preset-typescript',
+        ],
+      },
+    ],
+  },
   moduleNameMapper: {
     '^@src/(.*)$': '<rootDir>/src/$1',
     '~/(.*)': '<rootDir>/src/$1',
@@ -22,6 +34,7 @@ export default {
   //     lines: 57,
   //   },
   // },
+  maxWorkers: '50%',
   restoreMocks: true,
   testTimeout: 15000,
 };

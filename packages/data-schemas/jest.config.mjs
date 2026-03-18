@@ -1,6 +1,7 @@
 export default {
   collectCoverageFrom: ['src/**/*.{js,jsx,ts,tsx}', '!<rootDir>/node_modules/'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
+  testPathIgnorePatterns: ['/node_modules/', '/dist/', '/misc/'],
   coverageReporters: ['text', 'cobertura'],
   testResultsProcessor: 'jest-junit',
   moduleNameMapper: {
@@ -15,6 +16,7 @@ export default {
   //     lines: 57,
   //   },
   // },
+  maxWorkers: '50%',
   restoreMocks: true,
   testTimeout: 15000,
 };

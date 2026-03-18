@@ -26,6 +26,12 @@ export interface IUser extends Document {
     used: boolean;
     usedAt?: Date | null;
   }>;
+  pendingTotpSecret?: string;
+  pendingBackupCodes?: Array<{
+    codeHash: string;
+    used: boolean;
+    usedAt?: Date | null;
+  }>;
   refreshToken?: Array<{
     refreshToken: string;
   }>;
@@ -43,6 +49,7 @@ export interface IUser extends Document {
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
+  tenantId?: string;
 }
 
 export interface BalanceConfig {

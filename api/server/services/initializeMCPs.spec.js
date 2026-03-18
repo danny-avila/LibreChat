@@ -3,8 +3,8 @@
  *
  * These tests verify that MCPServersRegistry and MCPManager are ALWAYS initialized,
  * even when no explicitly configured MCP servers exist. This is critical for the
- * "Dynamic MCP Server Management" feature (v0.8.2-rc1) which allows users to
- * add MCP servers via the UI without requiring explicit configuration.
+ * "Dynamic MCP Server Management" feature (introduced in `0.8.2-rc1` release) which
+ * allows users to add MCP servers via the UI without requiring explicit configuration.
  *
  * Bug fixed: Previously, MCPManager was only initialized when mcpServers existed
  * in librechat.yaml, causing "MCPManager has not been initialized" errors when

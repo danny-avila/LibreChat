@@ -2,7 +2,7 @@ name: Frontend Unit Tests
 
 on:
   pull_request:
-    branches: 
+    branches:
       - main
       - dev
       - dev-staging
@@ -11,51 +11,200 @@ on:
       - 'client/**'
       - 'packages/data-provider/**'
 
+env:
+  NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
+
 jobs:
-  tests_frontend_ubuntu:
-    name: Run frontend unit tests on Ubuntu
-    timeout-minutes: 60
+  build:
+    name: Build packages
     runs-on: ubuntu-latest
-    env:
-      NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js 20.x
+
+      - name: Use Node.js 20.19
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+          key: node-modules-frontend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Build Client
-        run: npm run frontend:ci
+      - name: Restore data-provider build cache
+        id: cache-data-provider
+        uses: actions/cache@v4
+        with:
+          path: packages/data-provider/dist
+          key: build-data-provider-${{ runner.os }}-${{ hashFiles('packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-provider/package.json') }}
+
+      - name: Build data-provider
+        if: steps.cache-data-provider.outputs.cache-hit != 'true'
+        run: npm run build:data-provider
+
+      - name: Restore client-package build cache
+        id: cache-client-package
+        uses: actions/cache@v4
+        with:
+          path: packages/client/dist
+          key: build-client-package-${{ runner.os }}-${{ hashFiles('packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/rollup.config.js', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-provider/package.json') }}
+
+      - name: Build client-package
+        if: steps.cache-client-package.outputs.cache-hit != 'true'
+        run: npm run build:client-package
+
+      - name: Upload data-provider build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+          retention-days: 2
+
+      - name: Upload client-package build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-client-package
+          path: packages/client/dist
+          retention-days: 2
+
+  test-ubuntu:
+    name: 'Tests: Ubuntu'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+          key: node-modules-frontend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download client-package build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-client-package
+          path: packages/client/dist
 
       - name: Run unit tests
         run: npm run test:ci --verbose
         working-directory: client
 
-  tests_frontend_windows:
-    name: Run frontend unit tests on Windows
-    timeout-minutes: 60
+  test-windows:
+    name: 'Tests: Windows'
+    needs: build
     runs-on: windows-latest
-    env:
-      NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js 20.x
+
+      - name: Use Node.js 20.19
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+          key: node-modules-frontend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Build Client
-        run: npm run frontend:ci
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download client-package build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-client-package
+          path: packages/client/dist
 
       - name: Run unit tests
         run: npm run test:ci --verbose
         working-directory: client
+
+  build-verify:
+    name: Vite build verification
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+          key: node-modules-frontend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download client-package build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-client-package
+          path: packages/client/dist
+
+      - name: Build client
+        run: cd client && npm run build:ci

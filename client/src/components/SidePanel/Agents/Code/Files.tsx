@@ -1,23 +1,16 @@
-import { useState, useRef } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AttachmentIcon } from '@librechat/client';
-import {
-  EToolResources,
-  EModelEndpoint,
-  mergeFileConfig,
-  AgentCapabilities,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { EToolResources, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
-import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
-import { useGetFileConfig } from '~/data-provider';
-import { useChatContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
 
 const tool_resource = EToolResources.execute_code;
 
-export default function Files({
+function Files({
   agent_id,
   files: _files,
 }: {
@@ -25,17 +18,21 @@ export default function Files({
   files?: [string, ExtendedFile][];
 }) {
   const localize = useLocalize();
-  const { setFilesLoading } = useChatContext();
   const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
-  const { abortUpload, handleFileChange } = useFileHandling({
-    fileSetter: setFiles,
-    additionalMetadata: { agent_id, tool_resource },
-  });
+  const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue || EModelEndpoint.agents;
+  const { abortUpload, handleFileChange } = useFileHandlingNoChatContext(
+    {
+      fileSetter: setFiles,
+      additionalMetadata: { agent_id, tool_resource },
+      endpointOverride,
+      endpointTypeOverride: endpointType,
+    },
+    fileHandlingState,
+  );
 
   useLazyEffect(
     () => {
@@ -48,12 +45,6 @@ export default function Files({
   );
 
   const codeChecked = watch(AgentCapabilities.execute_code);
-
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: EModelEndpoint.agents,
-    endpointType: EModelEndpoint.agents,
-  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   if (isUploadDisabled) {
@@ -80,7 +71,6 @@ export default function Files({
           agent_id={agent_id}
           abortUpload={abortUpload}
           tool_resource={tool_resource}
-          setFilesLoading={setFilesLoading}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
         <div>
@@ -109,3 +99,8 @@ export default function Files({
     </div>
   );
 }
+
+const MemoizedFiles = memo(Files);
+MemoizedFiles.displayName = 'Files';
+
+export default MemoizedFiles;

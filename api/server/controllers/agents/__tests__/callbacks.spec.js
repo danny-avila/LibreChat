@@ -20,7 +20,6 @@ jest.mock('@librechat/agents', () => ({
   getMessageId: jest.fn(),
   ToolEndHandler: jest.fn(),
   handleToolCalls: jest.fn(),
-  ChatModelStreamHandler: jest.fn(),
 }));
 
 jest.mock('~/server/services/Files/Citations', () => ({

@@ -409,6 +409,108 @@ export async function updateInterfacePermissions({
       addPermissionIfNeeded(permType as PermissionTypes, permissions);
     }
 
+    /**
+     * Backfill SHARE / SHARE_PUBLIC for permission types that already exist in the DB but are
+     * missing these fields — caused by the PR #11283 schema change that added SHARE/SHARE_PUBLIC
+     * to PROMPTS and AGENTS (replacing the removed SHARED_GLOBAL field) without a DB migration.
+     *
+     * This is intentionally kept separate from `addPermissionIfNeeded` to avoid overwriting
+     * user-customised share settings when the config uses a boolean (e.g. `agents: true`).
+     * Only fields that are literally absent from the existing DB document are backfilled here;
+     * any field that is already set keeps its current value.
+     */
+    type ShareBackfillEntry = [PermissionTypes, Record<string, boolean | undefined>];
+    const shareBackfill: ShareBackfillEntry[] = [
+      [
+        PermissionTypes.PROMPTS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            getConfigShare(loadedInterface.prompts),
+            defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE],
+            promptsDefaultShare,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            getConfigPublic(loadedInterface.prompts),
+            defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE_PUBLIC],
+            promptsDefaultPublic,
+          ),
+        },
+      ],
+      [
+        PermissionTypes.AGENTS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            getConfigShare(loadedInterface.agents),
+            defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE],
+            agentsDefaultShare,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            getConfigPublic(loadedInterface.agents),
+            defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE_PUBLIC],
+            agentsDefaultPublic,
+          ),
+        },
+      ],
+      [
+        PermissionTypes.MCP_SERVERS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            loadedInterface.mcpServers?.share,
+            defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE],
+            defaults.mcpServers?.share,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            loadedInterface.mcpServers?.public,
+            defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE_PUBLIC],
+            defaults.mcpServers?.public,
+          ),
+        },
+      ],
+      [
+        PermissionTypes.REMOTE_AGENTS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            loadedInterface.remoteAgents?.share,
+            defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE],
+            defaults.remoteAgents?.share,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            loadedInterface.remoteAgents?.public,
+            defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE_PUBLIC],
+            defaults.remoteAgents?.public,
+          ),
+        },
+      ],
+    ];
+
+    for (const [permType, shareDefaults] of shareBackfill) {
+      const existingPerms = existingPermissions?.[permType];
+      // Skip permission types that don't exist yet — addPermissionIfNeeded already handles those
+      if (!existingPerms) {
+        continue;
+      }
+
+      const missingFields: Record<string, boolean | undefined> = {};
+      for (const [field, value] of Object.entries(shareDefaults)) {
+        if (
+          value !== undefined &&
+          existingPerms[field] === undefined &&
+          // Don't clobber a value already queued by addPermissionIfNeeded (e.g. explicit config)
+          permissionsToUpdate[permType as PermissionTypes]?.[field] === undefined
+        ) {
+          missingFields[field] = value;
+        }
+      }
+
+      if (Object.keys(missingFields).length > 0) {
+        logger.debug(
+          `Role '${roleName}': Backfilling missing share fields for '${permType}': ${Object.keys(missingFields).join(', ')}`,
+        );
+        // Merge into any update already queued by addPermissionIfNeeded, or create a new entry
+        permissionsToUpdate[permType] = { ...permissionsToUpdate[permType], ...missingFields };
+      }
+    }
+
     // Update permissions if any need updating
     if (Object.keys(permissionsToUpdate).length > 0) {
       await updateAccessPermissions(roleName, permissionsToUpdate, existingRole);

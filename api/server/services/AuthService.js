@@ -462,6 +462,22 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
      */
     const appAuthToken = tokenset.id_token || tokenset.access_token;
 
+    /**
+     * Always set refresh token cookie so it survives express session expiry.
+     * The session cookie maxAge (SESSION_EXPIRY, default 15 min) is typically shorter
+     * than the OIDC token lifetime (~1 hour). Without this cookie fallback, the refresh
+     * token stored only in the session is lost when the session expires, causing the user
+     * to be signed out on the next token refresh attempt.
+     * The refresh token is small (opaque string) so it doesn't hit the HTTP/2 header
+     * size limits that motivated session storage for the larger access_token/id_token.
+     */
+    res.cookie('refreshToken', refreshToken, {
+      expires: expirationDate,
+      httpOnly: true,
+      secure: shouldUseSecureCookie(),
+      sameSite: 'strict',
+    });
+
     /** Store tokens server-side in session to avoid large cookies */
     if (req.session) {
       req.session.openidTokens = {
@@ -472,12 +488,6 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       };
     } else {
       logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');
-      res.cookie('refreshToken', refreshToken, {
-        expires: expirationDate,
-        httpOnly: true,
-        secure: shouldUseSecureCookie(),
-        sameSite: 'strict',
-      });
       res.cookie('openid_access_token', tokenset.access_token, {
         expires: expirationDate,
         httpOnly: true,

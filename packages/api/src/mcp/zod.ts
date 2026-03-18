@@ -203,9 +203,9 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(schema)) {
-    // Skip $defs/definitions at root level to avoid infinite recursion
-    if ((key === '$defs' || key === 'definitions') && !visited.size) {
-      result[key] = value;
+    // Skip $defs/definitions — they are only used for resolving $ref and
+    // should not appear in the resolved output (e.g. Google/Gemini API rejects them).
+    if (key === '$defs' || key === 'definitions') {
       continue;
     }
 
@@ -249,12 +249,15 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
 }
 
 /**
- * Recursively normalizes a JSON schema by converting `const` values to `enum` arrays.
- * Gemini/Vertex AI does not support the `const` keyword in function declarations,
- * but `const: X` is semantically equivalent to `enum: [X]` per the JSON Schema spec.
+ * Recursively normalizes a JSON schema for LLM API compatibility.
+ *
+ * Transformations applied:
+ * - Converts `const` values to `enum` arrays (Gemini/Vertex AI rejects `const`)
+ * - Strips vendor extension fields (`x-*` prefixed keys, e.g. `x-google-enum-descriptions`)
+ * - Strips leftover `$defs`/`definitions` blocks that may survive ref resolution
  *
  * @param schema - The JSON schema to normalize
- * @returns The normalized schema with `const` converted to `enum`
+ * @returns The normalized schema
  */
 export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T): T {
   if (!schema || typeof schema !== 'object') {
@@ -270,6 +273,18 @@ export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(schema)) {
+    // Strip vendor extension fields (e.g. x-google-enum-descriptions) —
+    // these are valid in JSON Schema but rejected by Google/Gemini API.
+    if (key.startsWith('x-')) {
+      continue;
+    }
+
+    // Strip leftover $defs/definitions (should already be resolved by resolveJsonSchemaRefs,
+    // but strip as a safety net for schemas that bypass ref resolution).
+    if (key === '$defs' || key === 'definitions') {
+      continue;
+    }
+
     if (key === 'const' && !('enum' in schema)) {
       result['enum'] = [value];
       continue;

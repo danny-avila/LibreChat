@@ -19,8 +19,11 @@ describe('RedisEventTransport Integration Tests', () => {
     originalEnv = { ...process.env };
 
     process.env.USE_REDIS = process.env.USE_REDIS ?? 'true';
+    process.env.USE_REDIS_CLUSTER = process.env.USE_REDIS_CLUSTER ?? 'false';
     process.env.REDIS_URI = process.env.REDIS_URI ?? 'redis://127.0.0.1:6379';
     process.env.REDIS_KEY_PREFIX = testPrefix;
+    process.env.REDIS_PING_INTERVAL = '0';
+    process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
 
     jest.resetModules();
 
@@ -885,6 +888,123 @@ describe('RedisEventTransport Integration Tests', () => {
 
       // Subscriber count should be 0
       expect(transport.getSubscriberCount(streamId)).toBe(0);
+
+      transport.destroy();
+      subscriber.disconnect();
+    });
+  });
+
+  describe('Publish Error Propagation', () => {
+    test('should swallow emitChunk publish errors (callers fire-and-forget)', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = {
+        publish: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
+      };
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-chunk-${Date.now()}`;
+
+      // emitChunk swallows errors because callers often fire-and-forget (no await).
+      // Throwing would cause unhandled promise rejections.
+      await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
+
+      transport.destroy();
+    });
+
+    test('should throw when emitDone publish fails', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = {
+        publish: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
+      };
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-done-${Date.now()}`;
+
+      await expect(transport.emitDone(streamId, { finished: true })).rejects.toThrow(
+        'Redis connection lost',
+      );
+
+      transport.destroy();
+    });
+
+    test('should throw when emitError publish fails', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = {
+        publish: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
+      };
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-error-${Date.now()}`;
+
+      await expect(transport.emitError(streamId, 'some error')).rejects.toThrow(
+        'Redis connection lost',
+      );
+
+      transport.destroy();
+    });
+
+    test('should still deliver events successfully when publish succeeds', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+
+      const streamId = `error-prop-success-${Date.now()}`;
+      const receivedChunks: unknown[] = [];
+      let doneEvent: unknown = null;
+
+      transport.subscribe(streamId, {
+        onChunk: (event) => receivedChunks.push(event),
+        onDone: (event) => {
+          doneEvent = event;
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // These should NOT throw
+      await transport.emitChunk(streamId, { text: 'hello' });
+      await transport.emitDone(streamId, { finished: true });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(receivedChunks.length).toBe(1);
+      expect(doneEvent).toEqual({ finished: true });
 
       transport.destroy();
       subscriber.disconnect();

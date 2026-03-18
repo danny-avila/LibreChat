@@ -1,9 +1,9 @@
 const { isEnabled, sanitizeTitle } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { saveConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const initializeClient = require('./initalize');
+const { saveConvo } = require('~/models');
 
 /**
  * Generates a conversation title using OpenAI SDK
@@ -63,25 +63,34 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
     const title = await generateTitle({ openai, text, responseText });
     await titleCache.set(key, title, 120000);
 
+    const reqCtx = {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    };
     await saveConvo(
-      req,
+      reqCtx,
       {
         conversationId,
         title,
       },
-      { context: 'api/server/services/Endpoints/assistants/addTitle.js' },
+      { context: 'api/server/services/Endpoints/assistants/addTitle.js', noUpsert: true },
     );
   } catch (error) {
     logger.error('[addTitle] Error generating title:', error);
     const fallbackTitle = text.length > 40 ? text.substring(0, 37) + '...' : text;
     await titleCache.set(key, fallbackTitle, 120000);
     await saveConvo(
-      req,
+      {
+        userId: req?.user?.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
       {
         conversationId,
         title: fallbackTitle,
       },
-      { context: 'api/server/services/Endpoints/assistants/addTitle.js' },
+      { context: 'api/server/services/Endpoints/assistants/addTitle.js', noUpsert: true },
     );
   }
 };

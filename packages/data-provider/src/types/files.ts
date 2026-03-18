@@ -13,6 +13,7 @@ export enum FileSources {
   azure_mistral_ocr = 'azure_mistral_ocr',
   vertexai_mistral_ocr = 'vertexai_mistral_ocr',
   text = 'text',
+  document_parser = 'document_parser',
 }
 
 export const checkOpenAIStorage = (source: string) =>

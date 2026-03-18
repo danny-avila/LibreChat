@@ -1,13 +1,8 @@
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
+const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
-const {
-  Callback,
-  ToolEndHandler,
-  formatAgentMessages,
-  ChatModelStreamHandler,
-} = require('@librechat/agents');
 const {
   createRun,
   buildToolSet,
@@ -41,9 +36,6 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
 /** @type {import('@librechat/api').AppConfig | null} */
@@ -218,8 +210,12 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
  * @returns {Promise<void>}
  */
 async function saveConversation(req, conversationId, agentId, agent) {
-  await saveConvo(
-    req,
+  await db.saveConvo(
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     {
       conversationId,
       endpoint: EModelEndpoint.agents,
@@ -283,7 +279,7 @@ const createResponse = async (req, res) => {
   const isStreaming = request.stream === true;
 
   // Look up the agent
-  const agent = await getAgent({ id: agentId });
+  const agent = await db.getAgent({ id: agentId });
   if (!agent) {
     return sendResponsesErrorResponse(
       res,
@@ -296,10 +292,6 @@ const createResponse = async (req, res) => {
 
   // Generate IDs
   const responseId = generateResponseId();
-  const conversationId = request.previous_response_id ?? uuidv4();
-  const parentMessageId = null;
-
-  // Create response context
   const context = createResponseContext(request, responseId);
 
   logger.debug(
@@ -318,6 +310,23 @@ const createResponse = async (req, res) => {
   });
 
   try {
+    if (request.previous_response_id != null) {
+      if (typeof request.previous_response_id !== 'string') {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'previous_response_id must be a string',
+          'invalid_request',
+        );
+      }
+      if (!(await getConvo(req.user?.id, request.previous_response_id))) {
+        return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
+      }
+    }
+
+    const conversationId = request.previous_response_id ?? uuidv4();
+    const parentMessageId = null;
+
     // Build allowed providers set
     const allowedProviders = new Set(
       appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
@@ -346,7 +355,7 @@ const createResponse = async (req, res) => {
         isInitialAgent: true,
       },
       {
-        getConvoFiles,
+        getConvoFiles: db.getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
@@ -410,9 +419,6 @@ const createResponse = async (req, res) => {
       // Collect usage for balance tracking
       const collectedUsage = [];
 
-      // Built-in handler for processing raw model stream chunks
-      const chatModelStreamHandler = new ChatModelStreamHandler();
-
       // Artifact promises for processing tool outputs
       /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
       const artifactPromises = [];
@@ -436,6 +442,7 @@ const createResponse = async (req, res) => {
             toolRegistry: primaryConfig.toolRegistry,
             userMCPAuthMap: primaryConfig.userMCPAuthMap,
             tool_resources: primaryConfig.tool_resources,
+            actionsEnabled: primaryConfig.actionsEnabled,
           });
         },
         toolEndCallback,
@@ -443,11 +450,6 @@ const createResponse = async (req, res) => {
 
       // Combine handlers
       const handlers = {
-        on_chat_model_stream: {
-          handle: async (event, data, metadata, graph) => {
-            await chatModelStreamHandler.handle(event, data, metadata, graph);
-          },
-        },
         on_message_delta: responsesHandlers.on_message_delta,
         on_reasoning_delta: responsesHandlers.on_reasoning_delta,
         on_run_step: responsesHandlers.on_run_step,
@@ -499,6 +501,10 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
+          requestBody: {
+            messageId: responseId,
+            conversationId,
+          },
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,
@@ -518,12 +524,18 @@ const createResponse = async (req, res) => {
       const balanceConfig = getBalanceConfig(req.config);
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
-        { spendTokens, spendStructuredTokens },
+        {
+          spendTokens: db.spendTokens,
+          spendStructuredTokens: db.spendStructuredTokens,
+          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+        },
         {
           user: userId,
           conversationId,
           collectedUsage,
           context: 'message',
+          messageId: responseId,
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
@@ -570,8 +582,6 @@ const createResponse = async (req, res) => {
     } else {
       const aggregatorHandlers = createAggregatorEventHandlers(aggregator);
 
-      const chatModelStreamHandler = new ChatModelStreamHandler();
-
       // Collect usage for balance tracking
       const collectedUsage = [];
 
@@ -590,17 +600,13 @@ const createResponse = async (req, res) => {
             toolRegistry: primaryConfig.toolRegistry,
             userMCPAuthMap: primaryConfig.userMCPAuthMap,
             tool_resources: primaryConfig.tool_resources,
+            actionsEnabled: primaryConfig.actionsEnabled,
           });
         },
         toolEndCallback,
       };
 
       const handlers = {
-        on_chat_model_stream: {
-          handle: async (event, data, metadata, graph) => {
-            await chatModelStreamHandler.handle(event, data, metadata, graph);
-          },
-        },
         on_message_delta: aggregatorHandlers.on_message_delta,
         on_reasoning_delta: aggregatorHandlers.on_reasoning_delta,
         on_run_step: aggregatorHandlers.on_run_step,
@@ -650,6 +656,10 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
+          requestBody: {
+            messageId: responseId,
+            conversationId,
+          },
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,
@@ -669,12 +679,18 @@ const createResponse = async (req, res) => {
       const balanceConfig = getBalanceConfig(req.config);
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
-        { spendTokens, spendStructuredTokens },
+        {
+          spendTokens: db.spendTokens,
+          spendStructuredTokens: db.spendStructuredTokens,
+          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+        },
         {
           user: userId,
           conversationId,
           collectedUsage,
           context: 'message',
+          messageId: responseId,
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
@@ -727,7 +743,13 @@ const createResponse = async (req, res) => {
       writeDone(res);
       res.end();
     } else {
-      sendResponsesErrorResponse(res, 500, errorMessage, 'server_error');
+      // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
+      const statusCode =
+        typeof error?.status === 'number' && error.status >= 400 && error.status < 600
+          ? error.status
+          : 500;
+      const errorType = statusCode >= 400 && statusCode < 500 ? 'invalid_request' : 'server_error';
+      sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);
     }
   }
 };
@@ -760,7 +782,7 @@ const listModels = async (req, res) => {
     // Get the accessible agents
     let agents = [];
     if (accessibleAgentIds.length > 0) {
-      agents = await getAgents({ _id: { $in: accessibleAgentIds } });
+      agents = await db.getAgents({ _id: { $in: accessibleAgentIds } });
     }
 
     // Convert to models format
@@ -810,7 +832,7 @@ const getResponse = async (req, res) => {
 
     // The responseId could be either the response ID or the conversation ID
     // Try to find a conversation with this ID
-    const conversation = await getConvo(userId, responseId);
+    const conversation = await db.getConvo(userId, responseId);
 
     if (!conversation) {
       return sendResponsesErrorResponse(

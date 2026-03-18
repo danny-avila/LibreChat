@@ -1,10 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
-const { bulkSaveConvos: _bulkSaveConvos } = require('~/models/Conversation');
 const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
-const { bulkSaveMessages } = require('~/models/Message');
+const { bulkSaveMessages, bulkSaveConvos: _bulkSaveConvos } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
 jest.mock('~/cache/getLogStores');
@@ -14,10 +13,8 @@ getLogStores.mockImplementation(() => ({
 }));
 
 // Mock the database methods
-jest.mock('~/models/Conversation', () => ({
+jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
-}));
-jest.mock('~/models/Message', () => ({
   bulkSaveMessages: jest.fn(),
 }));
 
@@ -1277,12 +1274,9 @@ describe('processAssistantMessage', () => {
       results.push(duration);
     });
 
-    // Check if processing time increases exponentially
-    // In a ReDoS vulnerability, time would roughly double with each size increase
-    for (let i = 1; i < results.length; i++) {
-      const ratio = results[i] / results[i - 1];
-      expect(ratio).toBeLessThan(3); // Allow for CI environment variability while still catching ReDoS
-      console.log(`Size ${sizes[i]} processing time ratio: ${ratio}`);
+    // Each size should complete well under 100ms; a ReDoS would cause exponential blowup
+    for (let i = 0; i < results.length; i++) {
+      expect(results[i]).toBeLessThan(100);
     }
 
     // Also test with the exact payload from the security report

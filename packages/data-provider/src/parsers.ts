@@ -144,25 +144,24 @@ export const parseConvo = ({
   endpointType,
   conversation,
   possibleValues,
+  defaultParamsEndpoint,
 }: {
   endpoint: EndpointSchemaKey;
   endpointType?: EndpointSchemaKey | null;
   conversation: Partial<s.TConversation | s.TPreset> | null;
   possibleValues?: TPossibleValues;
-  // TODO: POC for default schema
-  // defaultSchema?: Partial<EndpointSchema>,
+  defaultParamsEndpoint?: string | null;
 }) => {
   let schema = endpointSchemas[endpoint] as EndpointSchema | undefined;
 
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema && endpointType) {
-    schema = endpointSchemas[endpointType];
+  } else if (!schema) {
+    const overrideSchema = defaultParamsEndpoint
+      ? endpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
+      : undefined;
+    schema = overrideSchema ?? (endpointType ? endpointSchemas[endpointType] : undefined);
   }
-
-  // if (defaultSchema && schemaCreators[endpoint]) {
-  //   schema = schemaCreators[endpoint](defaultSchema);
-  // }
 
   const convo = schema?.parse(conversation) as s.TConversation | undefined;
   const { models } = possibleValues ?? {};
@@ -310,13 +309,13 @@ export const parseCompactConvo = ({
   endpointType,
   conversation,
   possibleValues,
+  defaultParamsEndpoint,
 }: {
   endpoint?: EndpointSchemaKey;
   endpointType?: EndpointSchemaKey | null;
   conversation: Partial<s.TConversation | s.TPreset>;
   possibleValues?: TPossibleValues;
-  // TODO: POC for default schema
-  // defaultSchema?: Partial<EndpointSchema>,
+  defaultParamsEndpoint?: string | null;
 }): Omit<s.TConversation, 'iconURL'> | null => {
   if (!endpoint) {
     throw new Error(`undefined endpoint: ${endpoint}`);
@@ -326,8 +325,11 @@ export const parseCompactConvo = ({
 
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema && endpointType) {
-    schema = compactEndpointSchemas[endpointType];
+  } else if (!schema) {
+    const overrideSchema = defaultParamsEndpoint
+      ? compactEndpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
+      : undefined;
+    schema = overrideSchema ?? (endpointType ? compactEndpointSchemas[endpointType] : undefined);
   }
 
   if (!schema) {
@@ -406,16 +408,16 @@ export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUse
     return result;
   }
 
-  // e.g., "2024-04-29 (1)" (1=Monday)
-  const currentDate = dayjs().format('YYYY-MM-DD');
-  const dayNumber = dayjs().day();
-  const combinedDate = `${currentDate} (${dayNumber})`;
-  result = result.replace(/{{current_date}}/gi, combinedDate);
+  const now = dayjs();
+  const weekdayName = now.format('dddd');
 
-  const currentDatetime = dayjs().format('YYYY-MM-DD HH:mm:ss');
-  result = result.replace(/{{current_datetime}}/gi, `${currentDatetime} (${dayNumber})`);
+  const currentDate = now.format('YYYY-MM-DD');
+  result = result.replace(/{{current_date}}/gi, `${currentDate} (${weekdayName})`);
 
-  const isoDatetime = dayjs().toISOString();
+  const currentDatetime = now.format('YYYY-MM-DD HH:mm:ss Z');
+  result = result.replace(/{{current_datetime}}/gi, `${currentDatetime} (${weekdayName})`);
+
+  const isoDatetime = now.toISOString();
   result = result.replace(/{{iso_datetime}}/gi, isoDatetime);
 
   if (user && user.name) {

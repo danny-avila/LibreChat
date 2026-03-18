@@ -1,31 +1,29 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
   QueryKeys,
+  dataService,
   EModelEndpoint,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TConversation, TPreset, Agent } from 'librechat-data-provider';
+import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
-import { useChatContext } from '~/Providers/ChatContext';
-import { useGetAgentByIdQuery } from '~/data-provider';
+import useNewConvo from '~/hooks/useNewConvo';
 import { logger } from '~/utils';
 
 export default function useSelectAgent() {
   const queryClient = useQueryClient();
-  const getDefaultConversation = useDefaultConvo();
-  const { conversation, newConversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(
-    conversation?.agent_id ?? null,
-  );
-
-  const agentQuery = useGetAgentByIdQuery(selectedAgentId);
+  const getDefaultConversation = useDefaultConvo();
+  const { newConversation } = useNewConvo();
+  const getConversation = useGetConversation(0);
 
   const updateConversation = useCallback(
-    (agent: Partial<Agent>, template: Partial<TPreset | TConversation>) => {
+    async (agent: Partial<Agent>, template: Partial<TPreset | TConversation>) => {
+      const conversation = await getConversation();
       logger.log('conversation', 'Updating conversation with agent', agent);
       if (isAssistantsEndpoint(conversation?.endpoint)) {
         newConversation({
@@ -44,7 +42,7 @@ export default function useSelectAgent() {
         keepLatestMessage: true,
       });
     },
-    [conversation, getDefaultConversation, newConversation],
+    [getConversation, getDefaultConversation, newConversation],
   );
 
   const onSelect = useCallback(
@@ -54,30 +52,22 @@ export default function useSelectAgent() {
         return;
       }
 
-      setSelectedAgentId(agent.id);
-
       const template: Partial<TPreset | TConversation> = {
         endpoint: EModelEndpoint.agents,
         agent_id: agent.id,
         conversationId: Constants.NEW_CONVO as string,
       };
 
-      updateConversation({ id: agent.id }, template);
+      await updateConversation({ id: agent.id }, template);
 
-      // Fetch full agent data in the background
       try {
-        await queryClient.invalidateQueries(
-          {
-            queryKey: [QueryKeys.agent, agent.id],
-            exact: true,
-            refetchType: 'active',
-          },
-          { throwOnError: true },
+        const fullAgent = await queryClient.fetchQuery([QueryKeys.agent, agent.id], () =>
+          dataService.getAgentById({
+            agent_id: agent.id,
+          }),
         );
-
-        const { data: fullAgent } = await agentQuery.refetch();
         if (fullAgent) {
-          updateConversation(fullAgent, { ...template, agent_id: fullAgent.id });
+          await updateConversation(fullAgent, { ...template, agent_id: fullAgent.id });
         }
       } catch (error) {
         if ((error as { silent: boolean } | undefined)?.silent) {
@@ -85,10 +75,10 @@ export default function useSelectAgent() {
           return;
         }
         console.error('Error fetching full agent data:', error);
-        updateConversation({}, { ...template, agent_id: undefined });
+        await updateConversation({}, { ...template, agent_id: undefined });
       }
     },
-    [agentsMap, updateConversation, queryClient, agentQuery],
+    [agentsMap, updateConversation, queryClient],
   );
 
   return { onSelect };
