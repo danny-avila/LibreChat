@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useMessageContext } from '~/Providers';
 import { useRecoilState, useSetRecoilState } from 'recoil';
@@ -355,8 +355,8 @@ const MCP_TOOL_CONFIGS = {
               console.log('🔍 Extracted email content:', emailContent.substring(0, 200));
             }
           }
-        } catch (parseError) {
-          console.error('❌ Failed to parse nested structure:', parseError);
+        } catch (_parseError) {
+          console.error('❌ Failed to parse nested structure:', _parseError);
           // Fallback: try to extract markdown from the raw output
           const markdownMatch = output.match(/```markdown\n([\s\S]+?)\n```/);
           if (markdownMatch) {
@@ -500,13 +500,19 @@ const MCP_TOOL_CONFIGS = {
         const TOOL_FIELD = 'convert_digest_json_to_html';
         const HTML_FIELD = 'html';
         // Top-level or data.*
-        const topLevel = (data?.[TOOL_FIELD] ?? (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as Record<string, unknown> | undefined;
-        let html = (data?.[HTML_FIELD] as string) ?? topLevel?.[HTML_FIELD] as string | undefined;
+        const topLevel = (data?.[TOOL_FIELD] ??
+          (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as
+          | Record<string, unknown>
+          | undefined;
+        const html =
+          (data?.[HTML_FIELD] as string) ?? (topLevel?.[HTML_FIELD] as string | undefined);
         if (typeof html === 'string' && html.length > 0) return html;
         if (!html && typeof data === 'object' && data !== null) {
           for (const value of Object.values(data)) {
             if (value && typeof value === 'object' && TOOL_FIELD in value) {
-              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
+              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as
+                | Record<string, unknown>
+                | undefined;
               const h = inner?.[HTML_FIELD];
               if (typeof h === 'string' && h.length > 0) return h;
             }
@@ -536,15 +542,20 @@ const MCP_TOOL_CONFIGS = {
           data = JSON.parse(output);
         }
         const TOOL_FIELD = 'convert_digest_json_to_html';
-        const topLevel = (data?.[TOOL_FIELD] ?? (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as Record<string, unknown> | undefined;
-        let s3Url = readUrl(topLevel ?? (data as Record<string, unknown>));
+        const topLevel = (data?.[TOOL_FIELD] ??
+          (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as
+          | Record<string, unknown>
+          | undefined;
+        const s3Url = readUrl(topLevel ?? (data as Record<string, unknown>));
         if (s3Url) return s3Url;
         if (typeof data === 'object' && data !== null) {
           for (const value of Object.values(data)) {
             if (value && typeof value === 'object' && TOOL_FIELD in value) {
-              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
-              s3Url = readUrl(inner ?? null);
-              if (s3Url) return s3Url;
+              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as
+                | Record<string, unknown>
+                | undefined;
+              const innerUrl = readUrl(inner ?? null);
+              if (innerUrl) return innerUrl;
             }
           }
         }
@@ -568,13 +579,20 @@ const MCP_TOOL_CONFIGS = {
         }
         const TOOL_FIELD = 'convert_digest_json_to_html';
         const DIGEST_ID_FIELD = 'digest_id';
-        const topLevel = (data?.[TOOL_FIELD] ?? (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as Record<string, unknown> | undefined;
-        let digestId = (data?.[DIGEST_ID_FIELD] as string) ?? topLevel?.[DIGEST_ID_FIELD] as string | undefined;
+        const topLevel = (data?.[TOOL_FIELD] ??
+          (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as
+          | Record<string, unknown>
+          | undefined;
+        const digestId =
+          (data?.[DIGEST_ID_FIELD] as string) ??
+          (topLevel?.[DIGEST_ID_FIELD] as string | undefined);
         if (typeof digestId === 'string' && digestId.length > 0) return digestId;
         if (!digestId && typeof data === 'object' && data !== null) {
           for (const value of Object.values(data)) {
             if (value && typeof value === 'object' && TOOL_FIELD in value) {
-              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
+              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as
+                | Record<string, unknown>
+                | undefined;
               const d = inner?.[DIGEST_ID_FIELD];
               if (typeof d === 'string' && d.length > 0) return d;
             }
@@ -731,7 +749,10 @@ const MCP_TOOL_CONFIGS = {
           !Array.isArray(parsedData.recommendations) ||
           parsedData.recommendations.length === 0
         ) {
-          console.warn('PIR status update form output is not valid form data, skipping:', parsedData);
+          console.warn(
+            'PIR status update form output is not valid form data, skipping:',
+            parsedData,
+          );
           return {};
         }
 
@@ -788,7 +809,10 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     if (requestMatch) return requestMatch[1];
 
     // Also try to extract form_id from JSON output (for PIR form tools)
-    if (function_name === 'render_prod_int_create_reco_form' || function_name === 'render_pir_update_status_form') {
+    if (
+      function_name === 'render_prod_int_create_reco_form' ||
+      function_name === 'render_pir_update_status_form'
+    ) {
       try {
         let parsed = JSON.parse(output);
         if (Array.isArray(parsed) && parsed[0]?.text) {
@@ -824,7 +848,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
 
     // Don't render form if output can't be parsed as JSON (tool call failed with error text)
     try {
-      let parsed = JSON.parse(output);
+      const parsed = JSON.parse(output);
       // Handle TextContent array: [{"type":"text","text":"..."}]
       if (Array.isArray(parsed) && parsed[0]?.text) {
         JSON.parse(parsed[0].text);
@@ -910,7 +934,17 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         hasKeys: options && typeof options === 'object' ? Object.keys(options).length : 0,
       });
     }
-  }, [toolConfig, output, function_name, serverName, formId, setChatBlocked, setSubmittedForms]);
+  }, [
+    toolConfig,
+    output,
+    function_name,
+    serverName,
+    formId,
+    conversationId,
+    requestId,
+    setChatBlocked,
+    setSubmittedForms,
+  ]);
 
   // Cleanup: unblock chat when component unmounts or conversation changes
   useEffect(() => {
@@ -962,11 +996,12 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         const websiteLabel = website ? `${website.name} (${website.url})` : data.website_id;
 
         const crawlConfig = options.crawlConfigs?.find((c: any) => c.id === data.crawl_config_id);
-        const crawlConfigLabel = crawlConfig
-          ? crawlConfig.name
-          : data.crawl_config_id === 'default'
-            ? 'Default Configuration'
-            : data.crawl_config_id;
+        let crawlConfigLabel = data.crawl_config_id;
+        if (crawlConfig) {
+          crawlConfigLabel = crawlConfig.name;
+        } else if (data.crawl_config_id === 'default') {
+          crawlConfigLabel = 'Default Configuration';
+        }
 
         submittedDataWithLabels = {
           ...data,
@@ -999,11 +1034,12 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         const websiteLabel = website ? `${website.name} (${website.url})` : data.website_id;
 
         const crawlConfig = options.crawlConfigs?.find((c: any) => c.id === data.crawl_config_id);
-        const crawlConfigLabel = crawlConfig
-          ? crawlConfig.name
-          : data.crawl_config_id === 'default'
-            ? 'Default Configuration'
-            : data.crawl_config_id;
+        let crawlConfigLabel = data.crawl_config_id;
+        if (crawlConfig) {
+          crawlConfigLabel = crawlConfig.name;
+        } else if (data.crawl_config_id === 'default') {
+          crawlConfigLabel = 'Default Configuration';
+        }
 
         const launchDate = data.launch_date
           ? new Date(data.launch_date).toLocaleDateString()
@@ -1035,7 +1071,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
             } else {
               resultInfo = `\n\n✅ **Status:** Request completed`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             resultInfo = `\n\n✅ **Status:** Request completed`;
           }
         }
@@ -1055,7 +1091,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
             if (configData.id) {
               resultInfo = `\n\n✅ **Status:** Configuration created successfully\n📋 **Config ID:** ${configData.id}`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             resultInfo = `\n\n✅ **Status:** Configuration created`;
           }
         } else if (data.toolResponse?.error) {
@@ -1091,7 +1127,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
               // If result is just an error string
               operationInfo = `\n\n❌ **Operation Status:** Failed\n⚠️ **Error:** ${result}`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             // If parsing fails, treat the result as an error message
             operationInfo = `\n\n❌ **Operation Status:** Failed\n⚠️ **Error:** ${data.toolResponse.result}`;
           }
@@ -1127,7 +1163,9 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
               }
 
               // Extract individual recommendation IDs
-              const recIdMatches = [...resultString.matchAll(/recommendation_id['":\s]+([a-z]+-[a-f0-9-]+)/g)];
+              const recIdMatches = [
+                ...resultString.matchAll(/recommendation_id['":\s]+([a-z]+-[a-f0-9-]+)/g),
+              ];
               if (recIdMatches.length > 0) {
                 const recIds = recIdMatches.map((m) => m[1]);
                 resultInfo += `\n🔖 **Recommendation ID${recIds.length > 1 ? 's' : ''}:** ${recIds.join(', ')}`;
@@ -1146,9 +1184,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
 
         const tierBreakdown = ['critical', 'high', 'medium', 'low']
           .map((t) => {
-            const c = (data.recommendations || []).filter(
-              (r: any) => r.priorityTier === t,
-            ).length;
+            const c = (data.recommendations || []).filter((r: any) => r.priorityTier === t).length;
             return c > 0 ? `${c} ${t}` : '';
           })
           .filter(Boolean)
@@ -1269,7 +1305,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
             } else {
               resultInfo = `\n\n✅ **Status:** Request completed\n📄 **Response:** ${resultString.substring(0, 200)}`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             resultInfo = `\n\n✅ **Status:** Request completed\n📄 **Response:** ${String(data.toolResponse.result).substring(0, 200)}`;
           }
         }
@@ -1323,7 +1359,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
             } else {
               resultInfo = `\n\n✅ **Status:** Request completed`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             resultInfo = `\n\n✅ **Status:** Request completed`;
           }
         }
@@ -1384,6 +1420,8 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     [
       formId,
       function_name,
+      conversationId,
+      requestId,
       toolConfig?.formType,
       setSubmittedForms,
       submitMessage,
@@ -1417,7 +1455,34 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
       ...prev,
       [conversationId || 'no-conv']: false,
     }));
-  }, [formId, function_name, submitMessage, setChatBlocked, setSubmittedForms]);
+  }, [
+    formId,
+    function_name,
+    conversationId,
+    requestId,
+    submitMessage,
+    setChatBlocked,
+    setSubmittedForms,
+  ]);
+
+  // NOTE: All hooks must be called before any conditional returns (Rules of Hooks)
+  const digestIdFromInput = useMemo(() => {
+    if (function_name !== 'convert_digest_json_to_html' || !toolCall?.args) return null;
+    try {
+      const args = typeof toolCall.args === 'string' ? JSON.parse(toolCall.args) : toolCall.args;
+      const digest = args?.digest;
+      return typeof digest?.digest_id === 'string' && digest.digest_id.length > 0
+        ? digest.digest_id
+        : null;
+    } catch {
+      return null;
+    }
+  }, [function_name, toolCall?.args]);
+
+  const [downloadState, setDownloadState] = useState<{ loading: boolean; error: string | null }>({
+    loading: false,
+    error: null,
+  });
 
   // If no tool config, don't render anything
   if (!toolConfig) {
@@ -1430,6 +1495,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
   }
 
   // HTML preview for convert_digest_json_to_html (weekly digest email)
+  // These are plain computations (not hooks), safe after conditional returns
   const htmlPreview =
     'renderHtmlPreview' in toolConfig &&
     toolConfig.renderHtmlPreview &&
@@ -1445,26 +1511,10 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     'extractDigestId' in toolConfig && typeof toolConfig.extractDigestId === 'function'
       ? toolConfig.extractDigestId(output ?? '')
       : null;
-  const digestIdFromInput = useMemo(() => {
-    if (function_name !== 'convert_digest_json_to_html' || !toolCall?.args) return null;
-    try {
-      const args = typeof toolCall.args === 'string' ? JSON.parse(toolCall.args) : toolCall.args;
-      const digest = args?.digest;
-      return typeof digest?.digest_id === 'string' && digest.digest_id.length > 0
-        ? digest.digest_id
-        : null;
-    } catch {
-      return null;
-    }
-  }, [function_name, toolCall?.args]);
   const digestId = digestIdFromInput ?? digestIdFromOutput;
 
-  const [downloadState, setDownloadState] = useState<{ loading: boolean; error: string | null }>({
-    loading: false,
-    error: null,
-  });
-  const handleDownloadHtml = useCallback(() => {
-    const filename = (digestId && digestId.length > 0) ? `${digestId}.html` : 'weekly-digest.html';
+  const handleDownloadHtml = () => {
+    const filename = digestId && digestId.length > 0 ? `${digestId}.html` : 'weekly-digest.html';
     if (htmlPreview) {
       const blob = new Blob([htmlPreview], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -1495,12 +1545,13 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         setDownloadState({ loading: false, error: null });
         window.open(s3Url, '_blank', 'noopener,noreferrer');
       });
-  }, [htmlPreview, s3Url, digestId]);
+  };
 
   if (htmlPreview || s3Url) {
     return (
       <div className="my-3 w-full overflow-hidden rounded-xl border border-border-light bg-surface-secondary">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-light bg-surface-primary px-3 py-2 text-sm font-medium text-text-primary">
+          {/* eslint-disable-next-line i18next/no-literal-string */}
           <span>Weekly digest preview</span>
           {(htmlPreview || s3Url) && (
             <Button
