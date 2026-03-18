@@ -104,11 +104,20 @@ jest.mock('~/server/services/ToolService', () => ({
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
 const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
 
-jest.mock('~/server/controllers/agents/callbacks', () => ({
-  createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-  createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-  markSummarizationUsage: jest.fn(),
-}));
+jest.mock('~/server/controllers/agents/callbacks', () => {
+  const noop = { handle: jest.fn() };
+  return {
+    createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+    createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+    markSummarizationUsage: jest.fn(),
+    agentLogHandlerObj: noop,
+    buildSummarizationHandlers: jest.fn().mockReturnValue({
+      on_summarize_start: noop,
+      on_summarize_delta: noop,
+      on_summarize_complete: noop,
+    }),
+  };
+});
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),

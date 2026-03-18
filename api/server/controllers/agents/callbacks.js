@@ -708,8 +708,10 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
   };
 }
 
+const ALLOWED_LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
+
 function agentLogHandler(_event, data) {
-  const logFn = typeof logger[data.level] === 'function' ? logger[data.level] : logger.info;
+  const logFn = ALLOWED_LOG_LEVELS.has(data.level) ? logger[data.level] : logger.debug;
   logFn(`[agents:${data.scope}] ${data.message}`, {
     ...data.data,
     runId: data.runId,
@@ -724,10 +726,39 @@ function markSummarizationUsage(usage, metadata) {
   }
 }
 
+const agentLogHandlerObj = { handle: agentLogHandler };
+
+/**
+ * Builds the three summarization SSE event handlers.
+ * In streaming mode, each event is forwarded to the client via `res.write`.
+ * In non-streaming mode, the handlers are no-ops.
+ * @param {{ isStreaming: boolean, res: import('express').Response }} opts
+ */
+function buildSummarizationHandlers({ isStreaming, res }) {
+  if (!isStreaming) {
+    const noop = { handle: () => {} };
+    return { on_summarize_start: noop, on_summarize_delta: noop, on_summarize_complete: noop };
+  }
+  const writeEvent = (name) => ({
+    handle: async (_event, data) => {
+      if (!res.writableEnded) {
+        res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+      }
+    },
+  });
+  return {
+    on_summarize_start: writeEvent('on_summarize_start'),
+    on_summarize_delta: writeEvent('on_summarize_delta'),
+    on_summarize_complete: writeEvent('on_summarize_complete'),
+  };
+}
+
 module.exports = {
   agentLogHandler,
+  agentLogHandlerObj,
   getDefaultHandlers,
   createToolEndCallback,
   markSummarizationUsage,
+  buildSummarizationHandlers,
   createResponsesToolEndCallback,
 };

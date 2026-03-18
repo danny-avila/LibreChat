@@ -32,9 +32,10 @@ const {
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
+  buildSummarizationHandlers,
   markSummarizationUsage,
   createToolEndCallback,
-  agentLogHandler,
+  agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
@@ -50,8 +51,6 @@ let appConfig = null;
 function setAppConfig(config) {
   appConfig = config;
 }
-
-const agentLogHandlerObj = { handle: agentLogHandler };
 
 /**
  * Creates a tool loader function for the agent.
@@ -478,29 +477,7 @@ const createResponse = async (req, res) => {
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
         on_agent_log: agentLogHandlerObj,
         ...(summarizationConfig?.enabled !== false
-          ? {
-              on_summarize_start: {
-                handle: async (_event, data) => {
-                  if (actuallyStreaming && !res.writableEnded) {
-                    res.write(`event: on_summarize_start\ndata: ${JSON.stringify(data)}\n\n`);
-                  }
-                },
-              },
-              on_summarize_delta: {
-                handle: async (_event, data) => {
-                  if (actuallyStreaming && !res.writableEnded) {
-                    res.write(`event: on_summarize_delta\ndata: ${JSON.stringify(data)}\n\n`);
-                  }
-                },
-              },
-              on_summarize_complete: {
-                handle: async (_event, data) => {
-                  if (actuallyStreaming && !res.writableEnded) {
-                    res.write(`event: on_summarize_complete\ndata: ${JSON.stringify(data)}\n\n`);
-                  }
-                },
-              },
-            }
+          ? buildSummarizationHandlers({ isStreaming: actuallyStreaming, res })
           : {}),
       };
 
@@ -664,11 +641,7 @@ const createResponse = async (req, res) => {
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
         on_agent_log: agentLogHandlerObj,
         ...(summarizationConfig?.enabled !== false
-          ? {
-              on_summarize_start: { handle: () => {} },
-              on_summarize_delta: { handle: () => {} },
-              on_summarize_complete: { handle: () => {} },
-            }
+          ? buildSummarizationHandlers({ isStreaming: false, res })
           : {}),
       };
 

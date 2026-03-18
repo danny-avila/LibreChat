@@ -21,12 +21,13 @@ const {
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
-const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const {
-  createToolEndCallback,
+  buildSummarizationHandlers,
   markSummarizationUsage,
-  agentLogHandler,
+  createToolEndCallback,
+  agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
+const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const db = require('~/models');
 
@@ -456,34 +457,11 @@ const OpenAIChatCompletionController = async (req, res) => {
       on_chain_stream: createHandler(),
       on_chain_end: createHandler(),
       on_agent_update: createHandler(),
-      on_agent_log: { handle: agentLogHandler },
+      on_agent_log: agentLogHandlerObj,
       on_custom_event: createHandler(),
-      // Event-driven tool execution handler
       on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
       ...(summarizationConfig?.enabled !== false
-        ? {
-            on_summarize_start: {
-              handle: async (_event, data) => {
-                if (isStreaming && !res.writableEnded) {
-                  res.write(`event: on_summarize_start\ndata: ${JSON.stringify(data)}\n\n`);
-                }
-              },
-            },
-            on_summarize_delta: {
-              handle: async (_event, data) => {
-                if (isStreaming && !res.writableEnded) {
-                  res.write(`event: on_summarize_delta\ndata: ${JSON.stringify(data)}\n\n`);
-                }
-              },
-            },
-            on_summarize_complete: {
-              handle: async (_event, data) => {
-                if (isStreaming && !res.writableEnded) {
-                  res.write(`event: on_summarize_complete\ndata: ${JSON.stringify(data)}\n\n`);
-                }
-              },
-            },
-          }
+        ? buildSummarizationHandlers({ isStreaming, res })
         : {}),
     };
 
