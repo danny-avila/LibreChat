@@ -108,6 +108,7 @@ jest.mock('~/models', () => ({
   getMultiplier: mockGetMultiplier,
   getCacheMultiplier: mockGetCacheMultiplier,
   getConvoFiles: jest.fn().mockResolvedValue([]),
+  getConvo: jest.fn().mockResolvedValue(null),
 }));
 
 describe('OpenAIChatCompletionController', () => {
@@ -147,7 +148,7 @@ describe('OpenAIChatCompletionController', () => {
 
   describe('conversation ownership validation', () => {
     it('should skip ownership check when conversation_id is not provided', async () => {
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       await OpenAIChatCompletionController(req, res);
       expect(getConvo).not.toHaveBeenCalled();
     });
@@ -164,7 +165,7 @@ describe('OpenAIChatCompletionController', () => {
 
     it('should return 404 when conversation is not owned by user', async () => {
       const { validateRequest } = require('@librechat/api');
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       validateRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -182,7 +183,7 @@ describe('OpenAIChatCompletionController', () => {
 
     it('should proceed when conversation is owned by user', async () => {
       const { validateRequest } = require('@librechat/api');
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       validateRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -200,7 +201,7 @@ describe('OpenAIChatCompletionController', () => {
 
     it('should return 500 when getConvo throws a DB error', async () => {
       const { validateRequest } = require('@librechat/api');
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       validateRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',

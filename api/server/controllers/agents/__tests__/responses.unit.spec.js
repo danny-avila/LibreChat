@@ -176,7 +176,7 @@ describe('createResponse controller', () => {
 
   describe('conversation ownership validation', () => {
     it('should skip ownership check when previous_response_id is not provided', async () => {
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       await createResponse(req, res);
       expect(getConvo).not.toHaveBeenCalled();
     });
@@ -203,7 +203,7 @@ describe('createResponse controller', () => {
 
     it('should return 404 when conversation is not owned by user', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -226,7 +226,7 @@ describe('createResponse controller', () => {
 
     it('should proceed when conversation is owned by user', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -249,7 +249,7 @@ describe('createResponse controller', () => {
 
     it('should return 500 when getConvo throws a DB error', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
