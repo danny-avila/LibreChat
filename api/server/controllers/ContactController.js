@@ -144,24 +144,61 @@ const importContacts = async (req, res) => {
         .pipe(csvParser())
         .on('data', (row) => {
           try {
-            const name = row.name || row.Name || row.full_name || '';
-            if (!name) { errors++; return; }
+            // Support both generic and Serri CSV formats
+            const firstName = row.first_name || row.First_Name || '';
+            const lastName = row.last_name || row.Last_Name || '';
+            const name =
+              row.name ||
+              row.Name ||
+              row.full_name ||
+              [firstName, lastName].filter(Boolean).join(' ');
+
+            if (!name.trim()) {
+              errors++;
+              return;
+            }
+
+            const company = row.company_name || row.company || row.Company || '';
+            const role = row.designation || row.role || row.Role || row.title || '';
+            const email = row.email || row.Email || '';
+            const notes = row.notes || row.Notes || '';
+
+            // Everything else goes into attributes
+            const CORE_FIELDS = new Set([
+              'name',
+              'first_name',
+              'last_name',
+              'full_name',
+              'company',
+              'company_name',
+              'role',
+              'designation',
+              'email',
+              'notes',
+              'title',
+              // Serri-specific fields to skip as attributes
+              'id',
+              'chat_id',
+              'state_id',
+              'lead_id',
+              'message_id',
+            ]);
 
             const attributes = {};
             for (const [key, val] of Object.entries(row)) {
               const k = key.toLowerCase().trim();
-              if (!CORE_FIELDS.has(k) && val) {
+              if (!CORE_FIELDS.has(k) && val && String(val).trim()) {
                 attributes[key.trim()] = String(val).trim();
               }
             }
 
             batch.push({
               userId,
-              name: String(name).trim(),
-              company: String(row.company || row.Company || '').trim(),
-              role: String(row.role || row.Role || row.title || row.Title || '').trim(),
-              email: String(row.email || row.Email || '').trim(),
-              notes: String(row.notes || row.Notes || '').trim(),
+              name: name.trim(),
+              company: String(company).trim(),
+              role: String(role).trim(),
+              email: String(email).trim(),
+              notes: String(notes).trim(),
               attributes,
             });
           } catch {
