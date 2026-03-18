@@ -61,6 +61,9 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
   ) {
     return excelSheetToText;
   }
+  if (mimetype === 'application/vnd.oasis.opendocument.text') {
+    return odtToText;
+  }
   return undefined;
 }
 
@@ -109,4 +112,14 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
   }
 
   return text;
+}
+
+/** Parses OpenDocument Text (.odt), returns text inside. */
+async function odtToText(file: Express.Multer.File): Promise<string> {
+  const { execSync } = await import('child_process');
+  const xml = execSync(`unzip -p "${file.path}" content.xml`).toString();
+  return xml
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }

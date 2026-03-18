@@ -208,6 +208,7 @@ export const documentParserMimeTypes = [
   /^application\/pdf$/,
   /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
   /^application\/vnd\.oasis\.opendocument\.spreadsheet$/,
+  /^application\/vnd\.oasis\.opendocument\.text$/,
 ];
 
 export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.-]+$/];

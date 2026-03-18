@@ -74,6 +74,24 @@ describe('Document Parser', () => {
     });
   });
 
+  test('parseDocument() parses text from odt', async () => {
+    const file = {
+      originalname: 'sample.odt',
+      path: path.join(__dirname, 'sample.odt'),
+      mimetype: 'application/vnd.oasis.opendocument.text',
+    } as Express.Multer.File;
+
+    const document = await parseDocument({ file });
+
+    expect(document).toEqual({
+      bytes: 26,
+      filename: 'sample.odt',
+      filepath: 'document_parser',
+      images: [],
+      text: 'This is a sample ODT file.',
+    });
+  });
+
   test.each([
     'application/msexcel',
     'application/x-msexcel',

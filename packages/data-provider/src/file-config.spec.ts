@@ -141,12 +141,12 @@ describe('documentParserMimeTypes', () => {
     'application/x-msexcel',
     'application/x-ms-excel',
     'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.text',
   ])('matches natively parseable type: %s', (mimeType) => {
     expect(check(mimeType)).toBe(true);
   });
 
   it.each([
-    'application/vnd.oasis.opendocument.text',
     'application/vnd.oasis.opendocument.presentation',
     'application/vnd.oasis.opendocument.graphics',
     'text/plain',
