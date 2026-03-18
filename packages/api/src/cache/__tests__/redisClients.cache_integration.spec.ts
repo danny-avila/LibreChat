@@ -12,7 +12,7 @@ describe('redisClients Integration Tests', () => {
   const testRedisOperations = async (
     client: RedisClient,
     keyPrefix: string,
-    readyPromise?: Promise<void>,
+    readyPromise?: Promise<void | RedisClientType | RedisClusterType>,
   ): Promise<void> => {
     // Wait for connection and topology discovery to complete
     if (readyPromise) await readyPromise;
