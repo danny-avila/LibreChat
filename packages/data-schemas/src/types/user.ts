@@ -39,6 +39,18 @@ export interface IUser extends Document {
     model?: string;
     endpoint?: string;
   }>;
+  federatedTokens?: {
+    access_token?: string;
+    id_token?: string;
+    refresh_token?: string;
+    expires_at?: number;
+  };
+  openidTokens?: {
+    access_token?: string;
+    id_token?: string;
+    refresh_token?: string;
+    expires_at?: number;
+  };
   createdAt?: Date;
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */

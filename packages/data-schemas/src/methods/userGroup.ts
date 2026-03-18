@@ -257,11 +257,10 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       role?: string | null;
     },
     session?: ClientSession,
-  ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
+  ): Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>> {
     const { userId, role } = params;
-    /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
     const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
-    const principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }> = [
+    const principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }> = [
       { principalType: PrincipalType.USER, principalId: userObjectId },
     ];
 
