@@ -1,5 +1,11 @@
 import { sanitizeTitle, MAX_TITLE_LENGTH, DEFAULT_TITLE_FALLBACK } from './sanitizeTitle';
 
+declare global {
+  interface String {
+    isWellFormed(): boolean;
+  }
+}
+
 describe('sanitizeTitle', () => {
   describe('Happy Path', () => {
     it('should remove a single think block and return the clean title', () => {
