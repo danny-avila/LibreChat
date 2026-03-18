@@ -967,7 +967,7 @@ export const summarizationConfigSchema = z.object({
   enabled: z.boolean().optional(),
   provider: z.string().optional(),
   model: z.string().optional(),
-  parameters: z.record(z.any()).optional(),
+  parameters: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   trigger: summarizationTriggerSchema.optional(),
   prompt: z.string().optional(),
   updatePrompt: z.string().optional(),
