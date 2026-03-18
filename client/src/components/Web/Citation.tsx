@@ -161,6 +161,12 @@ export function Citation(props: CitationComponentProps) {
   const fileName = isFileType ? (fileData.fileName as string) : undefined;
   const filePages = isFileType ? (fileData.pages as number[] | undefined) : undefined;
   const fileRelevance = isFileType ? (fileData.relevance as number | undefined) : undefined;
+  const filePageRelevance = isFileType
+    ? (fileData.pageRelevance as Record<number, number> | undefined)
+    : undefined;
+  const fileMeta = isFileType
+    ? (fileData.metadata as Record<string, unknown> | undefined)
+    : undefined;
 
   const [showPreview, setShowPreview] = useState(false);
 
@@ -208,6 +214,9 @@ export function Citation(props: CitationComponentProps) {
           fileId={fileId}
           relevance={fileRelevance}
           pages={filePages}
+          pageRelevance={filePageRelevance}
+          fileType={fileMeta?.fileType as string | undefined}
+          fileSize={fileMeta?.fileBytes as number | undefined}
         />
       )}
     </>
