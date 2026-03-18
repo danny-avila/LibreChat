@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { FileText } from 'lucide-react';
+import { FileText, FileSpreadsheet, FileCode, FileImage, File } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
 import { TooltipAnchor } from '@librechat/client';
 import type { TAttachment } from 'librechat-data-provider';
@@ -18,6 +18,8 @@ interface FileSource {
   content: string;
   pages: number[];
   pageRelevance: Record<number, number>;
+  fileType?: string;
+  fileBytes?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -41,15 +43,16 @@ function extractFileSources(attachments?: TAttachment[]): FileSource[] {
     for (const source of raw.sources) {
       const key = source.fileId;
       const existing = deduped.get(key);
+      const meta = source.metadata as Record<string, unknown> | undefined;
 
       if (existing) {
-        const mergedPages = [...new Set([...existing.pages, ...(source.pages || [])])].sort(
-          (a, b) => a - b,
-        );
+        const mergedPages = [...new Set([...existing.pages, ...(source.pages || [])])];
         existing.pages = mergedPages;
         existing.relevance = Math.max(existing.relevance, source.relevance || 0);
         existing.pageRelevance = { ...existing.pageRelevance, ...source.pageRelevance };
-        if (!existing.content && source.content) {
+        if (source.content && existing.content) {
+          existing.content += '\n\n' + source.content;
+        } else if (source.content) {
           existing.content = source.content;
         }
       } else {
@@ -60,7 +63,9 @@ function extractFileSources(attachments?: TAttachment[]): FileSource[] {
           content: source.content || '',
           pages: source.pages || [],
           pageRelevance: source.pageRelevance || {},
-          metadata: source.metadata,
+          fileType: (meta?.fileType as string) || undefined,
+          fileBytes: (meta?.fileBytes as number) || undefined,
+          metadata: meta,
         });
       }
     }
@@ -114,22 +119,72 @@ function parseRetrievalOutput(raw: string): ParsedResult[] {
   return results;
 }
 
+function getFileIcon(mimeType?: string): React.ComponentType<{ className?: string }> {
+  if (!mimeType) {
+    return FileText;
+  }
+  if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('csv')) {
+    return FileSpreadsheet;
+  }
+  if (mimeType.includes('image')) {
+    return FileImage;
+  }
+  if (
+    mimeType.includes('javascript') ||
+    mimeType.includes('typescript') ||
+    mimeType.includes('json') ||
+    mimeType.includes('xml') ||
+    mimeType.includes('html')
+  ) {
+    return FileCode;
+  }
+  if (mimeType.includes('pdf') || mimeType.includes('text') || mimeType.includes('word')) {
+    return FileText;
+  }
+  return File;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1048576) {
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${bytes} B`;
+}
+
+function sortPagesByRelevance(pages: number[], pageRelevance: Record<number, number>): number[] {
+  if (!pageRelevance || Object.keys(pageRelevance).length === 0) {
+    return pages;
+  }
+  return [...pages].sort((a, b) => (pageRelevance[b] || 0) - (pageRelevance[a] || 0));
+}
+
 function FileHeader({
   fileName,
   relevance,
   pages,
+  pageRelevance,
+  fileType,
+  fileBytes,
   onOpenPreview,
 }: {
   fileName: string;
   relevance: number;
   pages?: number[];
+  pageRelevance?: Record<number, number>;
+  fileType?: string;
+  fileBytes?: number;
   onOpenPreview?: () => void;
 }) {
   const localize = useLocalize();
+  const IconComponent = getFileIcon(fileType);
+  const sortedPages = pages && pageRelevance ? sortPagesByRelevance(pages, pageRelevance) : pages;
 
   return (
     <div className="flex items-center gap-2 px-3 py-2">
-      <FileText className="size-3.5 shrink-0 text-text-secondary" aria-hidden="true" />
+      <IconComponent className="size-3.5 shrink-0 text-text-secondary" aria-hidden="true" />
       {onOpenPreview ? (
         <button
           type="button"
@@ -156,13 +211,14 @@ function FileHeader({
           </span>
         </TooltipAnchor>
       )}
-      {pages && pages.length > 0 && (
-        <>
-          <span className="flex-1" />
-          <span className="shrink-0 text-[11px] text-text-secondary">
-            {localize('com_file_pages', { pages: pages.join(', ') })}
-          </span>
-        </>
+      <span className="flex-1" />
+      {fileBytes != null && fileBytes > 0 && (
+        <span className="shrink-0 text-[11px] text-text-tertiary">{formatBytes(fileBytes)}</span>
+      )}
+      {sortedPages && sortedPages.length > 0 && (
+        <span className="shrink-0 text-[11px] text-text-secondary">
+          {localize('com_file_pages', { pages: sortedPages.join(', ') })}
+        </span>
       )}
     </div>
   );
@@ -217,7 +273,15 @@ export default function RetrievalCall({
     }
     if (previewType === 'source' && fileSources[previewIndex]) {
       const s = fileSources[previewIndex];
-      return { fileName: s.fileName, fileId: s.fileId, relevance: s.relevance, pages: s.pages };
+      return {
+        fileName: s.fileName,
+        fileId: s.fileId,
+        relevance: s.relevance,
+        pages: s.pages,
+        pageRelevance: s.pageRelevance,
+        fileType: s.fileType,
+        fileSize: s.fileBytes,
+      };
     }
     if (previewType === 'parsed' && parsedResults[previewIndex]) {
       const p = parsedResults[previewIndex];
@@ -266,13 +330,12 @@ export default function RetrievalCall({
             <div className="my-2 flex flex-col gap-2">
               {(fileSources.length > 0 ? fileSources : parsedResults).map((item, i) => {
                 const isSource = 'fileId' in item;
-                const fileName = isSource
-                  ? (item as FileSource).fileName
-                  : (item as ParsedResult).filename;
-                const fileId = isSource ? (item as FileSource).fileId : undefined;
+                const source = isSource ? (item as FileSource) : undefined;
+                const parsed = !isSource ? (item as ParsedResult) : undefined;
+                const fileName = source?.fileName ?? parsed?.filename ?? '';
                 return (
                   <div
-                    key={fileId ?? i}
+                    key={source?.fileId ?? i}
                     className={cn(
                       'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
                     )}
@@ -280,8 +343,11 @@ export default function RetrievalCall({
                     <FileHeader
                       fileName={fileName}
                       relevance={item.relevance}
-                      pages={isSource ? (item as FileSource).pages : undefined}
-                      onOpenPreview={fileId ? () => openPreview(i, 'source') : undefined}
+                      pages={source?.pages}
+                      pageRelevance={source?.pageRelevance}
+                      fileType={source?.fileType}
+                      fileBytes={source?.fileBytes}
+                      onOpenPreview={source?.fileId ? () => openPreview(i, 'source') : undefined}
                     />
                     {item.content && (
                       <div className="border-t border-border-light px-3 py-3">
@@ -303,6 +369,9 @@ export default function RetrievalCall({
         fileId={previewData?.fileId}
         relevance={previewData?.relevance}
         pages={previewData?.pages}
+        pageRelevance={previewData?.pageRelevance}
+        fileType={previewData?.fileType}
+        fileSize={previewData?.fileSize}
       />
     </div>
   );

@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
+import copy from 'copy-to-clipboard';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -13,6 +15,7 @@ interface FilePreviewDialogProps {
   fileId?: string;
   relevance?: number;
   pages?: number[];
+  pageRelevance?: Record<number, number>;
   fileType?: string;
   fileSize?: number;
 }
@@ -22,13 +25,33 @@ function getFileExtension(filename: string): string {
   return dot > 0 ? filename.slice(dot + 1).toLowerCase() : '';
 }
 
-function isPdfFile(filename: string): boolean {
-  return getFileExtension(filename) === 'pdf';
+function canPreviewByMime(mime?: string): 'pdf' | 'text' | false {
+  if (!mime) {
+    return false;
+  }
+  if (mime.includes('pdf')) {
+    return 'pdf';
+  }
+  if (
+    mime.startsWith('text/') ||
+    mime.includes('json') ||
+    mime.includes('xml') ||
+    mime.includes('javascript') ||
+    mime.includes('typescript') ||
+    mime.includes('yaml') ||
+    mime.includes('csv')
+  ) {
+    return 'text';
+  }
+  return false;
 }
 
-function isTextFile(filename: string): boolean {
+function canPreviewByExt(filename: string): 'pdf' | 'text' | false {
   const ext = getFileExtension(filename);
-  return new Set([
+  if (ext === 'pdf') {
+    return 'pdf';
+  }
+  const textExts = new Set([
     'txt',
     'md',
     'csv',
@@ -53,7 +76,56 @@ function isTextFile(filename: string): boolean {
     'sh',
     'sql',
     'log',
-  ]).has(ext);
+  ]);
+  return textExts.has(ext) ? 'text' : false;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1048576) {
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${bytes} B`;
+}
+
+function getDisplayType(fileType?: string, fileName?: string): string {
+  if (fileType) {
+    if (fileType.includes('pdf')) {
+      return 'PDF';
+    }
+    if (fileType.includes('word') || fileType.includes('document')) {
+      return 'Document';
+    }
+    if (fileType.includes('spreadsheet') || fileType.includes('excel')) {
+      return 'Spreadsheet';
+    }
+    if (fileType.includes('presentation') || fileType.includes('powerpoint')) {
+      return 'Presentation';
+    }
+    if (fileType.includes('image')) {
+      return 'Image';
+    }
+    if (fileType.startsWith('text/')) {
+      return fileType.split('/')[1]?.toUpperCase() || 'Text';
+    }
+    if (fileType.includes('json')) {
+      return 'JSON';
+    }
+    if (fileType.includes('xml')) {
+      return 'XML';
+    }
+  }
+  const ext = fileName ? getFileExtension(fileName) : '';
+  return ext ? ext.toUpperCase() : 'File';
+}
+
+function sortPagesByRelevance(pages: number[], pageRelevance: Record<number, number>): number[] {
+  if (!pageRelevance || Object.keys(pageRelevance).length === 0) {
+    return pages;
+  }
+  return [...pages].sort((a, b) => (pageRelevance[b] || 0) - (pageRelevance[a] || 0));
 }
 
 export default function FilePreviewDialog({
@@ -63,6 +135,7 @@ export default function FilePreviewDialog({
   fileId,
   relevance,
   pages,
+  pageRelevance,
   fileType,
   fileSize,
 }: FilePreviewDialogProps) {
@@ -74,11 +147,12 @@ export default function FilePreviewDialog({
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
 
-  const canPreview = fileId != null && (isPdfFile(fileName) || isTextFile(fileName));
+  const previewKind = canPreviewByMime(fileType) || canPreviewByExt(fileName);
 
   const loadPreview = useCallback(async () => {
-    if (!fileId || loading) {
+    if (!fileId || !previewKind || loading) {
       return;
     }
     setLoading(true);
@@ -94,9 +168,9 @@ export default function FilePreviewDialog({
       const resp = await fetch(result.data);
       const blob = await resp.blob();
 
-      if (isTextFile(fileName)) {
+      if (previewKind === 'text') {
         setFileContent(await blob.text());
-      } else if (isPdfFile(fileName)) {
+      } else {
         const typed = new Blob([blob], { type: 'application/pdf' });
         setFileBlobUrl(URL.createObjectURL(typed));
       }
@@ -105,7 +179,7 @@ export default function FilePreviewDialog({
     } finally {
       setLoading(false);
     }
-  }, [fileId, fileName, downloadFile, loading]);
+  }, [fileId, previewKind, downloadFile, loading]);
 
   const handleDownload = useCallback(async () => {
     if (!fileId) {
@@ -129,10 +203,10 @@ export default function FilePreviewDialog({
   }, [downloadFile, fileId, fileName]);
 
   useEffect(() => {
-    if (open && canPreview && !fileContent && !fileBlobUrl) {
+    if (open && previewKind && !fileContent && !fileBlobUrl) {
       loadPreview();
     }
-  }, [open, canPreview, fileContent, fileBlobUrl, loadPreview]);
+  }, [open, previewKind, fileContent, fileBlobUrl, loadPreview]);
 
   useEffect(() => {
     return () => {
@@ -148,31 +222,43 @@ export default function FilePreviewDialog({
       setFileBlobUrl(null);
       setPreviewError(false);
       setLoading(false);
+      setIsCopied(false);
     }
   }, [open]);
 
-  const ext = useMemo(() => getFileExtension(fileName), [fileName]);
-  const displayType = fileType || (ext ? ext.toUpperCase() : localize('com_ui_file'));
+  const handleCopy = useCallback(() => {
+    if (!fileContent) {
+      return;
+    }
+    copy(fileContent, { format: 'text/plain' });
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 3000);
+  }, [fileContent]);
+
+  const displayType = useMemo(() => getDisplayType(fileType, fileName), [fileType, fileName]);
+  const sortedPages = useMemo(
+    () => (pages && pageRelevance ? sortPagesByRelevance(pages, pageRelevance) : pages),
+    [pages, pageRelevance],
+  );
 
   const metaParts: string[] = [displayType];
   if (relevance != null && relevance > 0) {
     metaParts.push(`${localize('com_ui_relevance')}: ${Math.round(relevance * 100)}%`);
   }
-  if (pages && pages.length > 0) {
-    metaParts.push(localize('com_file_pages', { pages: pages.join(', ') }));
-  }
   if (fileSize != null && fileSize > 0) {
-    metaParts.push(
-      fileSize >= 1048576
-        ? `${(fileSize / 1048576).toFixed(1)} MB`
-        : `${(fileSize / 1024).toFixed(1)} KB`,
-    );
+    metaParts.push(formatBytes(fileSize));
+  }
+  if (sortedPages && sortedPages.length > 0) {
+    metaParts.push(localize('com_file_pages', { pages: sortedPages.join(', ') }));
   }
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent className="w-full max-w-4xl p-0" showCloseButton={true}>
-        <div className="px-6 pr-12 pt-6">
+      <OGDialogContent
+        className="flex w-full max-w-4xl flex-col !overflow-hidden p-0"
+        showCloseButton={true}
+      >
+        <div className="shrink-0 px-6 pr-12 pt-6">
           <OGDialogTitle className="truncate text-base">{fileName}</OGDialogTitle>
           <div className="mt-0.5 flex items-center gap-3">
             <OGDialogDescription className="min-w-0 truncate">
@@ -192,7 +278,7 @@ export default function FilePreviewDialog({
           </div>
         </div>
 
-        <div className="px-6 pb-6 pt-4">
+        <div className="relative min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">
           {loading && (
             <div className="flex h-60 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="shimmer text-sm text-text-secondary">
@@ -215,11 +301,24 @@ export default function FilePreviewDialog({
             />
           )}
           {fileContent && (
-            <pre className="rounded-lg bg-surface-secondary p-4 font-mono text-sm leading-6 text-text-primary">
-              {fileContent}
-            </pre>
+            <>
+              <div className="pointer-events-none sticky top-0 z-10 flex justify-end pr-1">
+                <CopyButton
+                  isCopied={isCopied}
+                  onClick={handleCopy}
+                  iconOnly
+                  label={localize('com_ui_copy')}
+                  className="pointer-events-auto rounded-lg bg-surface-secondary"
+                />
+              </div>
+              <div className="-mt-8 rounded-lg bg-surface-secondary p-4">
+                <pre className="whitespace-pre-wrap break-words pr-8 font-mono text-sm leading-6 text-text-primary">
+                  {fileContent}
+                </pre>
+              </div>
+            </>
           )}
-          {!canPreview && !loading && (
+          {!previewKind && !loading && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
