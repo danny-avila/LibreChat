@@ -56,6 +56,7 @@ const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
+const { getContactContext } = require('~/server/services/ContactService');  
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -321,7 +322,22 @@ class AgentClient extends BaseClient {
       sharedRunContextParts.push(memoryContext);
     }
 
+    /** Contact context - inject relevant contacts based on user's message */
+    try {
+      const userMessage = this.options.req?.body?.text ?? '';
+      const userId = this.options.req?.user?.id;
+      if (userId && userMessage) {
+        const contactContext = await getContactContext(userId, userMessage);
+        if (contactContext) {
+          sharedRunContextParts.push(contactContext);
+        }
+      }
+    } catch (err) {
+      logger.error('[AgentClient] Contact context injection error:', err);
+    }
+
     const sharedRunContext = sharedRunContextParts.join('\n\n');
+
 
     /** @type {Record<string, number> | undefined} */
     let tokenCountMap;

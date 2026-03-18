@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
-import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote } from 'lucide-react';
+import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote, Users } from 'lucide-react';
 import {
   Permissions,
   EModelEndpoint,
@@ -18,6 +18,7 @@ import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
+import { ContactsPanel } from '~/components/SidePanel/Contacts';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { useHasAccess, useMCPServerManager } from '~/hooks';
 
@@ -125,6 +126,13 @@ export default function useSideNavLinks({
         Component: MemoryPanel,
       });
     }
+    links.push({
+      title: 'Contacts',
+      label: '',
+      icon: Users,
+      id: 'contacts',
+      Component: ContactsPanel,
+    });
 
     if (
       interfaceConfig.parameters === true &&
