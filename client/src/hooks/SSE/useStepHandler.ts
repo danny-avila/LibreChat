@@ -64,6 +64,8 @@ export default function useStepHandler({
   const stepMap = useRef(new Map<string, Agents.RunStep>());
   /** Buffer for deltas that arrive before their corresponding run step */
   const pendingDeltaBuffer = useRef(new Map<string, TStepEvent[]>());
+  /** Coalesces rapid-fire summarize delta renders into a single rAF frame */
+  const summarizeDeltaRaf = useRef<number | null>(null);
 
   /**
    * Calculate content index for a run step.
@@ -644,8 +646,16 @@ export default function useStepHandler({
             getStepMetadata(runStep),
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || [];
-          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+          if (summarizeDeltaRaf.current == null) {
+            summarizeDeltaRaf.current = requestAnimationFrame(() => {
+              summarizeDeltaRaf.current = null;
+              const latest = messageMap.current.get(responseMessageId);
+              if (latest) {
+                const msgs = getMessages() || [];
+                setMessages([...msgs.slice(0, -1), latest]);
+              }
+            });
+          }
         }
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_COMPLETE) {
         const completeData = stepEvent.data;
@@ -664,12 +674,12 @@ export default function useStepHandler({
         const targetIndex = currentMessages.findIndex((m) => m.messageId === completeMessageId);
 
         if (completeData.error) {
-          announcePolite({ message: 'summarize_failed', isStatus: true });
           const filtered = targetMessage.content.filter(
             (part) =>
               part?.type !== ContentTypes.SUMMARY || !(part as SummaryContentPart).summarizing,
           );
           if (filtered.length !== targetMessage.content.length) {
+            announcePolite({ message: 'summarize_failed', isStatus: true });
             const cleaned = { ...targetMessage, content: filtered };
             messageMap.current.set(completeMessageId, cleaned);
             if (targetIndex >= 0) {
@@ -699,6 +709,9 @@ export default function useStepHandler({
             setMessages(updated);
           }
         }
+      } else {
+        const _exhaustive: never = stepEvent;
+        console.warn('Unhandled step event', (_exhaustive as TStepEvent).event);
       }
 
       return () => {

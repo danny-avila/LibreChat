@@ -1055,7 +1055,7 @@ describe('useStepHandler', () => {
       });
     });
 
-    it('ON_SUMMARIZE_DELTA accumulates content on known run step', () => {
+    it('ON_SUMMARIZE_DELTA accumulates content on known run step', async () => {
       mockLastAnnouncementTimeRef.current = Date.now();
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
@@ -1096,6 +1096,10 @@ describe('useStepHandler', () => {
           },
           submission,
         );
+      });
+
+      await act(async () => {
+        await new Promise((r) => requestAnimationFrame(r));
       });
 
       expect(mockSetMessages).toHaveBeenCalled();
