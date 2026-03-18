@@ -1,6 +1,8 @@
 import { formatToolContent } from '../parsers';
 import type * as t from '../types';
 
+type TextContent = Extract<t.FormattedContent, { type: 'text' }>;
+
 describe('formatToolContent', () => {
   describe('unrecognized providers', () => {
     it('should return string for unrecognized provider', () => {
@@ -177,7 +179,7 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'openai');
       expect(Array.isArray(content)).toBe(true);
-      const textContent = Array.isArray(content) ? content[0] : { text: '' };
+      const textContent = (Array.isArray(content) ? content[0] : { text: '' }) as TextContent;
       expect(textContent).toMatchObject({ type: 'text' });
       expect(textContent.text).toContain('UI Resource ID:');
       expect(textContent.text).toContain('UI Resource Marker: \\ui{');
@@ -268,7 +270,7 @@ describe('formatToolContent', () => {
 
       const [content, artifacts] = formatToolContent(result, 'openai');
       expect(Array.isArray(content)).toBe(true);
-      const textEntry = Array.isArray(content) ? content[0] : { text: '' };
+      const textEntry = (Array.isArray(content) ? content[0] : { text: '' }) as TextContent;
       expect(textEntry).toMatchObject({ type: 'text' });
       expect(textEntry.text).toContain('Some text');
       expect(textEntry.text).toContain('UI Resource Marker: \\ui{');
@@ -305,10 +307,11 @@ describe('formatToolContent', () => {
       expect(Array.isArray(content)).toBe(true);
       if (Array.isArray(content)) {
         expect(content[0]).toMatchObject({ type: 'text', text: 'Content with multimedia' });
-        expect(content[1].type).toBe('text');
-        expect(content[1].text).toContain('UI Resource Marker: \\ui{');
-        expect(content[1].text).toContain('Resource URI: ui://graph');
-        expect(content[1].text).toContain('Resource MIME Type: application/json');
+        const entry = content[1] as TextContent;
+        expect(entry.type).toBe('text');
+        expect(entry.text).toContain('UI Resource Marker: \\ui{');
+        expect(entry.text).toContain('Resource URI: ui://graph');
+        expect(entry.text).toContain('Resource MIME Type: application/json');
       }
       expect(artifacts).toEqual({
         content: [
@@ -382,16 +385,18 @@ describe('formatToolContent', () => {
       expect(Array.isArray(content)).toBe(true);
       if (Array.isArray(content)) {
         expect(content[0]).toEqual({ type: 'text', text: 'Introduction' });
-        expect(content[1].type).toBe('text');
-        expect(content[1].text).toContain('Middle section');
-        expect(content[1].text).toContain('UI Resource ID:');
-        expect(content[1].text).toContain('UI Resource Marker: \\ui{');
-        expect(content[1].text).toContain('Resource URI: ui://chart');
-        expect(content[1].text).toContain('Resource MIME Type: application/json');
-        expect(content[1].text).toContain('Resource URI: https://api.example.com/data');
-        expect(content[2].type).toBe('text');
-        expect(content[2].text).toContain('Conclusion');
-        expect(content[2].text).toContain('UI Resource Markers Available:');
+        const middle = content[1] as TextContent;
+        expect(middle.type).toBe('text');
+        expect(middle.text).toContain('Middle section');
+        expect(middle.text).toContain('UI Resource ID:');
+        expect(middle.text).toContain('UI Resource Marker: \\ui{');
+        expect(middle.text).toContain('Resource URI: ui://chart');
+        expect(middle.text).toContain('Resource MIME Type: application/json');
+        expect(middle.text).toContain('Resource URI: https://api.example.com/data');
+        const conclusion = content[2] as TextContent;
+        expect(conclusion.type).toBe('text');
+        expect(conclusion.text).toContain('Conclusion');
+        expect(conclusion.text).toContain('UI Resource Markers Available:');
       }
       expect(artifacts).toMatchObject({
         content: [
