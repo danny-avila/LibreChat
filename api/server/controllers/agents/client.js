@@ -24,6 +24,7 @@ const {
   createMemoryProcessor,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
+  CLAUDE_TOKEN_CORRECTION,
   filterMalformedContentParts,
   estimateMediaTokensForMessage,
   hydrateMissingIndexTokenCounts,
@@ -1232,9 +1233,6 @@ class AgentClient extends BaseClient {
     return Tokenizer.getTokenCount(text, encoding);
   }
 
-  /** @type {number} Anthropic message framing correction factor. */
-  static CLAUDE_TOKEN_CORRECTION = 1.1;
-
   /**
    * @param {object} message
    * @returns {number}
@@ -1246,7 +1244,7 @@ class AgentClient extends BaseClient {
       this.getTokenCount(text),
     );
     if (isClaude) {
-      return Math.ceil(count * AgentClient.CLAUDE_TOKEN_CORRECTION);
+      return Math.ceil(count * CLAUDE_TOKEN_CORRECTION);
     }
     return count;
   }

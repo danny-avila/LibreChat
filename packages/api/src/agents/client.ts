@@ -38,7 +38,7 @@ export function payloadParser({ req, endpoint }: { req: ServerRequest; endpoint:
  * claude tokenizer due to internal message framing and content encoding.
  * Verified empirically across content types via the count_tokens endpoint.
  */
-const CLAUDE_TOKEN_CORRECTION = 1.1;
+export const CLAUDE_TOKEN_CORRECTION = 1.1;
 const IMAGE_TOKEN_SAFETY_MARGIN = 1.05;
 const BASE64_BYTES_PER_PDF_PAGE = 75_000;
 const PDF_TOKENS_PER_PAGE_CLAUDE = 2000;
