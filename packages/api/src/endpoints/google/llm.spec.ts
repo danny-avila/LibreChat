@@ -682,6 +682,57 @@ describe('getGoogleConfig', () => {
       expect(result.tools).toContainEqual({ urlContext: {} });
       expect(result.tools).toHaveLength(2);
     });
+
+    it('should enable url_context via defaultParams', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+        },
+        defaultParams: {
+          url_context: true,
+        },
+      });
+
+      expect(result.tools).toContainEqual({ urlContext: {} });
+    });
+
+    it('should enable url_context via addParams when initially disabled', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          url_context: false,
+        },
+        addParams: {
+          url_context: true,
+        },
+      });
+
+      expect(result.tools).toContainEqual({ urlContext: {} });
+    });
+
+    it('should disable url_context via dropParams', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          url_context: true,
+        },
+        dropParams: ['url_context'],
+      });
+
+      expect(result.tools).not.toContainEqual({ urlContext: {} });
+    });
   });
 
   describe('Default and Add Parameters', () => {
