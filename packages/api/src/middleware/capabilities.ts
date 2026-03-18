@@ -8,6 +8,7 @@ import {
 } from '@librechat/data-schemas';
 import type { PrincipalType } from 'librechat-data-provider';
 import type { SystemCapability, ConfigSection } from '@librechat/data-schemas';
+import type { ClientSession } from 'mongoose';
 import type { NextFunction, Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types/http';
@@ -18,7 +19,10 @@ interface ResolvedPrincipal {
 }
 
 interface CapabilityDeps {
-  getUserPrincipals: (params: { userId: string; role: string }) => Promise<ResolvedPrincipal[]>;
+  getUserPrincipals: (
+    params: { userId: string | Types.ObjectId; role?: string | null },
+    session?: ClientSession,
+  ) => Promise<ResolvedPrincipal[]>;
   hasCapabilityForPrincipals: (params: {
     principals: ResolvedPrincipal[];
     capability: SystemCapability;
