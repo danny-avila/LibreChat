@@ -4,6 +4,15 @@ import type { TokenMethods, IToken } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthMetadata } from './types';
 import { isSystemUserId } from '~/mcp/enum';
 
+export class ReauthenticationRequiredError extends Error {
+  constructor(serverName: string, reason: 'expired' | 'missing') {
+    super(
+      `Re-authentication required for "${serverName}": access token ${reason} and no refresh token available`,
+    );
+    this.name = 'ReauthenticationRequiredError';
+  }
+}
+
 interface StoreTokensParams {
   userId: string;
   serverName: string;
@@ -27,7 +36,14 @@ interface GetTokensParams {
   findToken: TokenMethods['findToken'];
   refreshTokens?: (
     refreshToken: string,
-    metadata: { userId: string; serverName: string; identifier: string },
+    metadata: {
+      userId: string;
+      serverName: string;
+      identifier: string;
+      clientInfo?: OAuthClientInformation;
+      storedTokenEndpoint?: string;
+      storedAuthMethods?: string[];
+    },
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
   updateToken?: TokenMethods['updateToken'];
@@ -69,46 +85,40 @@ export class MCPTokenStorage {
         `${logPrefix} Token expires_in: ${'expires_in' in tokens ? tokens.expires_in : 'N/A'}, expires_at: ${'expires_at' in tokens ? tokens.expires_at : 'N/A'}`,
       );
 
-      // Handle both expires_in and expires_at formats
+      const defaultTTL = 365 * 24 * 60 * 60;
+
       let accessTokenExpiry: Date;
+      let expiresInSeconds: number;
       if ('expires_at' in tokens && tokens.expires_at) {
         /** MCPOAuthTokens format - already has calculated expiry */
         logger.debug(`${logPrefix} Using expires_at: ${tokens.expires_at}`);
         accessTokenExpiry = new Date(tokens.expires_at);
+        expiresInSeconds = Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000);
       } else if (tokens.expires_in) {
-        /** Standard OAuthTokens format - calculate expiry */
+        /** Standard OAuthTokens format - use expires_in directly to avoid lossy Date round-trip */
         logger.debug(`${logPrefix} Using expires_in: ${tokens.expires_in}`);
+        expiresInSeconds = tokens.expires_in;
         accessTokenExpiry = new Date(Date.now() + tokens.expires_in * 1000);
       } else {
-        /** No expiry provided - default to 1 year */
         logger.debug(`${logPrefix} No expiry provided, using default`);
-        accessTokenExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        expiresInSeconds = defaultTTL;
+        accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
       }
 
       logger.debug(`${logPrefix} Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
-      logger.debug(
-        `${logPrefix} Date object: ${JSON.stringify({
-          time: accessTokenExpiry.getTime(),
-          valid: !isNaN(accessTokenExpiry.getTime()),
-          iso: accessTokenExpiry.toISOString(),
-        })}`,
-      );
 
-      // Ensure the date is valid before passing to createToken
       if (isNaN(accessTokenExpiry.getTime())) {
         logger.error(`${logPrefix} Invalid expiry date calculated, using default`);
-        accessTokenExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
+        expiresInSeconds = defaultTTL;
       }
-
-      // Calculate expiresIn (seconds from now)
-      const expiresIn = Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000);
 
       const accessTokenData = {
         userId,
         type: 'mcp_oauth',
         identifier,
         token: encryptedAccessToken,
-        expiresIn: expiresIn > 0 ? expiresIn : 365 * 24 * 60 * 60, // Default to 1 year if negative
+        expiresIn: expiresInSeconds > 0 ? expiresInSeconds : defaultTTL,
       };
 
       // Check if token already exists and update if it does
@@ -273,10 +283,11 @@ export class MCPTokenStorage {
         });
 
         if (!refreshTokenData) {
+          const reason = isMissing ? 'missing' : 'expired';
           logger.info(
-            `${logPrefix} Access token ${isMissing ? 'missing' : 'expired'} and no refresh token available`,
+            `${logPrefix} Access token ${reason} and no refresh token available — re-authentication required`,
           );
-          return null;
+          throw new ReauthenticationRequiredError(serverName, reason);
         }
 
         if (!refreshTokens) {
@@ -297,9 +308,10 @@ export class MCPTokenStorage {
           logger.info(`${logPrefix} Attempting to refresh token`);
           const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
 
-          /** Client information if available */
           let clientInfo;
           let clientInfoData;
+          let storedTokenEndpoint: string | undefined;
+          let storedAuthMethods: string[] | undefined;
           try {
             clientInfoData = await findToken({
               userId,
@@ -313,6 +325,19 @@ export class MCPTokenStorage {
                 client_id: clientInfo.client_id,
                 has_client_secret: !!clientInfo.client_secret,
               });
+
+              if (clientInfoData.metadata) {
+                const raw =
+                  clientInfoData.metadata instanceof Map
+                    ? Object.fromEntries(clientInfoData.metadata)
+                    : (clientInfoData.metadata as Record<string, unknown>);
+                if (typeof raw.token_endpoint === 'string') {
+                  storedTokenEndpoint = raw.token_endpoint;
+                }
+                if (Array.isArray(raw.token_endpoint_auth_methods_supported)) {
+                  storedAuthMethods = raw.token_endpoint_auth_methods_supported as string[];
+                }
+              }
             }
           } catch {
             logger.debug(`${logPrefix} No client info found`);
@@ -323,6 +348,8 @@ export class MCPTokenStorage {
             serverName,
             identifier,
             clientInfo,
+            storedTokenEndpoint,
+            storedAuthMethods,
           };
 
           const newTokens = await refreshTokens(decryptedRefreshToken, metadata);
@@ -395,6 +422,9 @@ export class MCPTokenStorage {
       logger.debug(`${logPrefix} Loaded existing OAuth tokens from storage`);
       return tokens;
     } catch (error) {
+      if (error instanceof ReauthenticationRequiredError) {
+        throw error;
+      }
       logger.error(`${logPrefix} Failed to retrieve tokens`, error);
       return null;
     }

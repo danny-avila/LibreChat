@@ -1,6 +1,9 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { EModelEndpoint, TConversation } from 'librechat-data-provider';
-import { useChatContext } from '~/Providers/ChatContext';
+import type { ConvoGenerator } from '~/common';
+import { useGetConversation, useNewConvo } from '~/hooks';
+import store from '~/store';
 
 interface ModelSelectorChatContextValue {
   endpoint?: EModelEndpoint | null;
@@ -8,8 +11,8 @@ interface ModelSelectorChatContextValue {
   spec?: string | null;
   agent_id?: string | null;
   assistant_id?: string | null;
-  conversation: TConversation | null;
-  newConversation: ReturnType<typeof useChatContext>['newConversation'];
+  getConversation: () => TConversation | null;
+  newConversation: ConvoGenerator;
 }
 
 const ModelSelectorChatContext = createContext<ModelSelectorChatContextValue | undefined>(
@@ -17,20 +20,34 @@ const ModelSelectorChatContext = createContext<ModelSelectorChatContextValue | u
 );
 
 export function ModelSelectorChatProvider({ children }: { children: React.ReactNode }) {
-  const { conversation, newConversation } = useChatContext();
+  const getConversation = useGetConversation(0);
+  const { newConversation: nextNewConversation } = useNewConvo();
+
+  const spec = useRecoilValue(store.conversationSpecByIndex(0));
+  const model = useRecoilValue(store.conversationModelByIndex(0));
+  const agent_id = useRecoilValue(store.conversationAgentIdByIndex(0));
+  const endpoint = useRecoilValue(store.conversationEndpointByIndex(0));
+  const assistant_id = useRecoilValue(store.conversationAssistantIdByIndex(0));
+
+  const newConversationRef = useRef(nextNewConversation);
+  newConversationRef.current = nextNewConversation;
+  const newConversation = useCallback<ConvoGenerator>(
+    (params) => newConversationRef.current(params),
+    [],
+  );
 
   /** Context value only created when relevant conversation properties change */
   const contextValue = useMemo<ModelSelectorChatContextValue>(
     () => ({
-      endpoint: conversation?.endpoint,
-      model: conversation?.model,
-      spec: conversation?.spec,
-      agent_id: conversation?.agent_id,
-      assistant_id: conversation?.assistant_id,
-      conversation,
+      model,
+      spec,
+      agent_id,
+      endpoint,
+      assistant_id,
+      getConversation,
       newConversation,
     }),
-    [conversation, newConversation],
+    [endpoint, model, spec, agent_id, assistant_id, getConversation, newConversation],
   );
 
   return (

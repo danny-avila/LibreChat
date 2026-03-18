@@ -35,7 +35,6 @@ const graphPropsToClean = [
   'tools',
   'signal',
   'config',
-  'agentContexts',
   'messages',
   'contentData',
   'stepKeyIds',
@@ -277,7 +276,16 @@ function disposeClient(client) {
 
     if (client.run) {
       if (client.run.Graph) {
-        client.run.Graph.resetValues();
+        if (typeof client.run.Graph.clearHeavyState === 'function') {
+          client.run.Graph.clearHeavyState();
+        } else {
+          client.run.Graph.resetValues();
+        }
+
+        if (client.run.Graph.agentContexts) {
+          client.run.Graph.agentContexts.clear();
+          client.run.Graph.agentContexts = null;
+        }
 
         graphPropsToClean.forEach((prop) => {
           if (client.run.Graph[prop] !== undefined) {

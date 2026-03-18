@@ -289,6 +289,14 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
     }
   }
 
+  if (request.conversation_id !== undefined && typeof request.conversation_id !== 'string') {
+    return { valid: false, error: 'conversation_id must be a string' };
+  }
+
+  if (request.parent_message_id !== undefined && typeof request.parent_message_id !== 'string') {
+    return { valid: false, error: 'parent_message_id must be a string' };
+  }
+
   return { valid: true, request: request as unknown as ChatCompletionRequest };
 }
 

@@ -1016,6 +1016,105 @@ describe('Meilisearch Mongoose plugin', () => {
     });
   });
 
+  describe('processSyncBatch does not modify updatedAt timestamps', () => {
+    test('syncWithMeili preserves original updatedAt on conversations', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      const pastDate = new Date('2024-01-15T12:00:00Z');
+
+      // Insert documents with specific updatedAt timestamps using raw collection
+      await conversationModel.collection.insertMany([
+        {
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'Old Conversation 1',
+          endpoint: EModelEndpoint.openAI,
+          _meiliIndex: false,
+          expiredAt: null,
+          createdAt: pastDate,
+          updatedAt: pastDate,
+        },
+        {
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'Old Conversation 2',
+          endpoint: EModelEndpoint.openAI,
+          _meiliIndex: false,
+          expiredAt: null,
+          createdAt: pastDate,
+          updatedAt: pastDate,
+        },
+      ]);
+
+      // Verify timestamps before sync
+      const beforeSync = await conversationModel.find({}).lean();
+      for (const doc of beforeSync) {
+        expect(new Date(doc.updatedAt as Date).getTime()).toBe(pastDate.getTime());
+      }
+
+      // Run sync which calls processSyncBatch internally
+      await conversationModel.syncWithMeili();
+
+      // Verify _meiliIndex was updated
+      const indexedCount = await conversationModel.countDocuments({ _meiliIndex: true });
+      expect(indexedCount).toBe(2);
+
+      // Verify updatedAt was NOT modified
+      const afterSync = await conversationModel.find({}).lean();
+      for (const doc of afterSync) {
+        expect(new Date(doc.updatedAt as Date).getTime()).toBe(pastDate.getTime());
+      }
+    });
+
+    test('syncWithMeili preserves original updatedAt on messages', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      const pastDate = new Date('2023-06-01T08:30:00Z');
+
+      await messageModel.collection.insertMany([
+        {
+          messageId: new mongoose.Types.ObjectId().toString(),
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: true,
+          _meiliIndex: false,
+          expiredAt: null,
+          createdAt: pastDate,
+          updatedAt: pastDate,
+        },
+        {
+          messageId: new mongoose.Types.ObjectId().toString(),
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: false,
+          _meiliIndex: false,
+          expiredAt: null,
+          createdAt: pastDate,
+          updatedAt: pastDate,
+        },
+      ]);
+
+      const beforeSync = await messageModel.find({}).lean();
+      for (const doc of beforeSync) {
+        expect(new Date(doc.updatedAt as Date).getTime()).toBe(pastDate.getTime());
+      }
+
+      await messageModel.syncWithMeili();
+
+      const indexedCount = await messageModel.countDocuments({ _meiliIndex: true });
+      expect(indexedCount).toBe(2);
+
+      const afterSync = await messageModel.find({}).lean();
+      for (const doc of afterSync) {
+        expect(new Date(doc.updatedAt as Date).getTime()).toBe(pastDate.getTime());
+      }
+    });
+  });
+
   describe('Missing _meiliIndex property handling in sync process', () => {
     test('syncWithMeili includes documents with missing _meiliIndex', async () => {
       const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;

@@ -1,5 +1,5 @@
 import { Providers } from '@librechat/agents';
-import { AuthKeys } from 'librechat-data-provider';
+import { AuthKeys, ThinkingLevel } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { getGoogleConfig, getSafetySettings, knownGoogleParams } from './llm';
 
@@ -364,6 +364,191 @@ describe('getGoogleConfig', () => {
       expect(result.provider).toBe(Providers.VERTEXAI);
       expect(result.llmConfig).toHaveProperty('thinkingBudget', 3000);
       expect(result.llmConfig).toHaveProperty('includeThoughts', true);
+    });
+  });
+
+  describe('Gemini 3 Thinking Level', () => {
+    it('should use thinkingLevel for Gemini 3 models with Google provider', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-pro-preview',
+          thinking: true,
+          thinkingLevel: ThinkingLevel.high,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('thinkingConfig');
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: ThinkingLevel.high,
+      });
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).not.toHaveProperty(
+        'thinkingBudget',
+      );
+    });
+
+    it('should use thinkingLevel for Gemini 3.1 models', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-pro-preview',
+          thinking: true,
+          thinkingLevel: ThinkingLevel.medium,
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: ThinkingLevel.medium,
+      });
+    });
+
+    it('should omit thinkingLevel when unset (empty string) for Gemini 3', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-flash-preview',
+          thinking: true,
+          thinkingLevel: ThinkingLevel.unset,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('thinkingConfig');
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+      });
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).not.toHaveProperty(
+        'thinkingLevel',
+      );
+    });
+
+    it('should not set thinkingConfig when thinking is false for Gemini 3', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-pro-preview',
+          thinking: false,
+          thinkingLevel: ThinkingLevel.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('thinkingConfig');
+    });
+
+    it('should use thinkingLevel for Gemini 3 with Vertex AI provider', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-pro-preview',
+          thinking: true,
+          thinkingLevel: ThinkingLevel.low,
+        },
+      });
+
+      expect(result.provider).toBe(Providers.VERTEXAI);
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: ThinkingLevel.low,
+      });
+      expect(result.llmConfig).toHaveProperty('includeThoughts', true);
+    });
+
+    it('should send thinkingConfig by default for Gemini 3 (no thinking options set)', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-pro-preview',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('thinkingConfig');
+      const config = (result.llmConfig as Record<string, unknown>).thinkingConfig;
+      expect(config).toMatchObject({ includeThoughts: true });
+      expect(config).not.toHaveProperty('thinkingLevel');
+    });
+
+    it('should ignore thinkingBudget for Gemini 3+ models', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-pro-preview',
+          thinking: true,
+          thinkingBudget: 5000,
+        },
+      });
+
+      const config = (result.llmConfig as Record<string, unknown>).thinkingConfig;
+      expect(config).not.toHaveProperty('thinkingBudget');
+      expect(config).toMatchObject({ includeThoughts: true });
+    });
+
+    it('should NOT classify gemini-2.9-flash as Gemini 3+', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.9-flash',
+          thinking: true,
+          thinkingBudget: 5000,
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        thinkingBudget: 5000,
+        includeThoughts: true,
+      });
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).not.toHaveProperty(
+        'thinkingLevel',
+      );
+    });
+
+    it('should use thinkingBudget (not thinkingLevel) for Gemini 2.5 models', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          thinking: true,
+          thinkingBudget: 5000,
+          thinkingLevel: ThinkingLevel.high,
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        thinkingBudget: 5000,
+        includeThoughts: true,
+      });
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).not.toHaveProperty(
+        'thinkingLevel',
+      );
     });
   });
 

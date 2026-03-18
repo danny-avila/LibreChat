@@ -1,6 +1,7 @@
+import type { BedrockDocumentFormat } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { ServerRequest } from './http';
 import type { Readable } from 'stream';
+import type { ServerRequest } from './http';
 export interface STTService {
   getInstance(): Promise<STTService>;
   getProviderSchema(req: ServerRequest): Promise<[string, object]>;
@@ -95,11 +96,24 @@ export interface OpenAIInputFileBlock {
   file_data: string;
 }
 
+/** Bedrock Converse API document block (passthrough via @langchain/aws) */
+export interface BedrockDocumentBlock {
+  type: 'document';
+  document: {
+    name: string;
+    format: BedrockDocumentFormat;
+    source: {
+      bytes: Buffer;
+    };
+  };
+}
+
 export type DocumentBlock =
   | AnthropicDocumentBlock
   | GoogleDocumentBlock
   | OpenAIFileBlock
-  | OpenAIInputFileBlock;
+  | OpenAIInputFileBlock
+  | BedrockDocumentBlock;
 
 export interface DocumentResult {
   documents: DocumentBlock[];

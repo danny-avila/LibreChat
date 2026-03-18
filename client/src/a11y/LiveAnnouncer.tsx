@@ -56,10 +56,13 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
 
   const announceAssertive = announcePolite;
 
-  const contextValue = {
-    announcePolite,
-    announceAssertive,
-  };
+  const contextValue = useMemo(
+    () => ({
+      announcePolite,
+      announceAssertive,
+    }),
+    [announcePolite, announceAssertive],
+  );
 
   useEffect(() => {
     return () => {

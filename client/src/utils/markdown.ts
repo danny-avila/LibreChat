@@ -1,23 +1,70 @@
 import dedent from 'dedent';
 
-const markdownRenderer = dedent(`import React, { useEffect, useState } from 'react';
-import Markdown from 'marked-react';
+const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+/**
+ * Allowlist-based URL validator for markdown artifact rendering.
+ * Mirrored verbatim in the markdownRenderer template string below —
+ * any logic change MUST be applied to both copies.
+ */
+export const isSafeUrl = (url: string): boolean => {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('.')) {
+    return true;
+  }
+  try {
+    return SAFE_PROTOCOLS.has(new URL(trimmed).protocol);
+  } catch {
+    return false;
+  }
+};
+
+const markdownRenderer = dedent(`import React from 'react';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+import ReactMarkdown from 'react-markdown';
 
 interface MarkdownRendererProps {
   content: string;
 }
+
+/** Mirror of the exported isSafeUrl in markdown.ts — keep in sync. */
+const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+const isSafeUrl = (url: string): boolean => {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('.')) return true;
+  try {
+    return SAFE_PROTOCOLS.has(new URL(trimmed).protocol);
+  } catch {
+    return false;
+  }
+};
+
+const remarkPlugins = [remarkGfm, remarkBreaks];
+const urlTransform = (url: string) => (isSafeUrl(url) ? url : null);
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   return (
     <div
       className="markdown-body"
       style={{
-        padding: '2rem',        
+        padding: '2rem',
         margin: '1rem',
         minHeight: '100vh'
       }}
     >
-      <Markdown gfm={true} breaks={true}>{content}</Markdown>
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        skipHtml={true}
+        urlTransform={urlTransform}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 };

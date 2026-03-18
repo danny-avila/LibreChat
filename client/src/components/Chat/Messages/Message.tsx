@@ -4,25 +4,23 @@ import type { TMessageProps } from '~/common';
 import MessageRender from './ui/MessageRender';
 import MultiMessage from './MultiMessage';
 
-const MessageContainer = React.memo(
-  ({
-    handleScroll,
-    children,
-  }: {
-    handleScroll: (event?: unknown) => void;
-    children: React.ReactNode;
-  }) => {
-    return (
-      <div
-        className="text-token-text-primary w-full border-0 bg-transparent dark:border-0 dark:bg-transparent"
-        onWheel={handleScroll}
-        onTouchMove={handleScroll}
-      >
-        {children}
-      </div>
-    );
-  },
-);
+const MessageContainer = React.memo(function MessageContainer({
+  handleScroll,
+  children,
+}: {
+  handleScroll: (event?: unknown) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="text-token-text-primary w-full border-0 bg-transparent dark:border-0 dark:bg-transparent"
+      onWheel={handleScroll}
+      onTouchMove={handleScroll}
+    >
+      {children}
+    </div>
+  );
+});
 
 export default function Message(props: TMessageProps) {
   const { conversation, handleScroll } = useMessageProcess({

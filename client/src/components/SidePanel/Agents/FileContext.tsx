@@ -1,12 +1,7 @@
-import { useState, useRef } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
-import {
-  EModelEndpoint,
-  EToolResources,
-  mergeFileConfig,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
 import {
   HoverCard,
   DropdownPopup,
@@ -18,14 +13,15 @@ import {
   HoverCardTrigger,
 } from '@librechat/client';
 import type { ExtendedFile } from '~/common';
-import { useFileHandling, useLocalize, useLazyEffect, useSharePointFileHandling } from '~/hooks';
-import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
+import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useGetStartupConfig } from '~/data-provider';
 import { ESide, isEphemeralAgent } from '~/common';
-import { useChatContext } from '~/Providers';
 
-export default function FileContext({
+function FileContext({
   agent_id,
   files: _files,
 }: {
@@ -33,26 +29,35 @@ export default function FileContext({
   files?: [string, ExtendedFile][];
 }) {
   const localize = useLocalize();
-  const { setFilesLoading } = useChatContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
+  const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue || EModelEndpoint.agents;
 
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
-
-  const { handleFileChange } = useFileHandling({
-    additionalMetadata: { agent_id, tool_resource: EToolResources.context },
-    fileSetter: setFiles,
-  });
-  const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-    fileSetter: setFiles,
-  });
+  const { handleFileChange } = useFileHandlingNoChatContext(
+    {
+      additionalMetadata: { agent_id, tool_resource: EToolResources.context },
+      endpointOverride,
+      endpointTypeOverride: endpointType,
+      fileSetter: setFiles,
+    },
+    fileHandlingState,
+  );
+  const { handleSharePointFiles, isProcessing, downloadProgress } =
+    useSharePointFileHandlingNoChatContext(
+      {
+        additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
+        endpointOverride,
+        endpointTypeOverride: endpointType,
+        fileSetter: setFiles,
+      },
+      fileHandlingState,
+    );
   useLazyEffect(
     () => {
       if (_files) {
@@ -62,12 +67,6 @@ export default function FileContext({
     [_files],
     750,
   );
-
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: EModelEndpoint.agents,
-    endpointType: EModelEndpoint.agents,
-  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
     try {
@@ -136,7 +135,6 @@ export default function FileContext({
         <FileRow
           files={files}
           setFiles={setFiles}
-          setFilesLoading={setFilesLoading}
           agent_id={agent_id}
           tool_resource={EToolResources.context}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
@@ -197,3 +195,8 @@ export default function FileContext({
     </div>
   );
 }
+
+const MemoizedFileContext = memo(FileContext);
+MemoizedFileContext.displayName = 'FileContext';
+
+export default MemoizedFileContext;

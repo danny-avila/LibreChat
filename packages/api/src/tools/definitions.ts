@@ -12,6 +12,7 @@ import type { ToolDefinition } from './classification';
 import { resolveJsonSchemaRefs, normalizeJsonSchema } from '~/mcp/zod';
 import { buildToolClassification } from './classification';
 import { getToolDefinition } from './registry/definitions';
+import { toolkitExpansion } from './toolkits/mapping';
 
 export interface MCPServerTool {
   function?: {
@@ -116,6 +117,20 @@ export async function loadToolDefinitions(
         description: registryDef.description,
         parameters: registryDef.schema as JsonSchemaType | undefined,
       });
+
+      const extraTools = toolkitExpansion[toolName as keyof typeof toolkitExpansion];
+      if (extraTools) {
+        for (const extra of extraTools) {
+          const extraDef = getToolDefinition(extra);
+          if (extraDef) {
+            builtInToolDefs.push({
+              name: extra,
+              description: extraDef.description,
+              parameters: extraDef.schema as JsonSchemaType | undefined,
+            });
+          }
+        }
+      }
       continue;
     }
 

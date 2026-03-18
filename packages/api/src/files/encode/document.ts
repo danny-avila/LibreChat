@@ -1,5 +1,10 @@
 import { Providers } from '@librechat/agents';
-import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'librechat-data-provider';
+import {
+  isOpenAILikeProvider,
+  isBedrockDocumentType,
+  bedrockDocumentFormats,
+  isDocumentSupportedProvider,
+} from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type {
   AnthropicDocumentBlock,
@@ -7,8 +12,8 @@ import type {
   DocumentResult,
   ServerRequest,
 } from '~/types';
+import { validatePdf, validateBedrockDocument } from '~/files/validation';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
-import { validatePdf } from '~/files/validation';
 
 /**
  * Processes and encodes document files for various providers
@@ -35,9 +40,15 @@ export async function encodeAndFormatDocuments(
   const encodingMethods: Record<string, StrategyFunctions> = {};
   const result: DocumentResult = { documents: [], files: [] };
 
-  const documentFiles = files.filter(
-    (file) => file.type === 'application/pdf' || file.type?.startsWith('application/'),
-  );
+  const isBedrock = provider === Providers.BEDROCK;
+  const isDocSupported = isDocumentSupportedProvider(provider);
+
+  const documentFiles = files.filter((file) => {
+    if (isBedrock && isBedrockDocumentType(file.type)) {
+      return true;
+    }
+    return file.type === 'application/pdf' || file.type?.startsWith('application/');
+  });
 
   if (!documentFiles.length) {
     return result;
@@ -45,7 +56,10 @@ export async function encodeAndFormatDocuments(
 
   const results = await Promise.allSettled(
     documentFiles.map((file) => {
-      if (file.type !== 'application/pdf' || !isDocumentSupportedProvider(provider)) {
+      const isProcessable = isBedrock
+        ? isBedrockDocumentType(file.type)
+        : file.type === 'application/pdf' && isDocSupported;
+      if (!isProcessable) {
         return Promise.resolve(null);
       }
       return getFileStream(req, file, encodingMethods, getStrategyFunctions);
@@ -68,14 +82,40 @@ export async function encodeAndFormatDocuments(
       continue;
     }
 
-    if (file.type === 'application/pdf' && isDocumentSupportedProvider(provider)) {
-      const pdfBuffer = Buffer.from(content, 'base64');
+    const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, { provider, endpoint });
+    const mimeType = file.type ?? '';
 
-      /** Extract configured file size limit from fileConfig for this endpoint */
-      const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, {
-        provider,
-        endpoint,
+    if (isBedrock && isBedrockDocumentType(mimeType)) {
+      const fileBuffer = Buffer.from(content, 'base64');
+      const format = bedrockDocumentFormats[mimeType];
+
+      const validation = await validateBedrockDocument(
+        fileBuffer.length,
+        mimeType,
+        fileBuffer,
+        configuredFileSizeLimit,
+      );
+
+      if (!validation.isValid) {
+        throw new Error(`Document validation failed: ${validation.error}`);
+      }
+
+      const sanitizedName = (file.filename || 'document')
+        .replace(/[^a-zA-Z0-9\s\-()[\]]/g, '_')
+        .slice(0, 200);
+      result.documents.push({
+        type: 'document',
+        document: {
+          name: sanitizedName,
+          format,
+          source: {
+            bytes: fileBuffer,
+          },
+        },
       });
+      result.files.push(metadata);
+    } else if (file.type === 'application/pdf' && isDocSupported) {
+      const pdfBuffer = Buffer.from(content, 'base64');
 
       const validation = await validatePdf(
         pdfBuffer,

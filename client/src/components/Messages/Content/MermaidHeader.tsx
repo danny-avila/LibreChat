@@ -1,7 +1,7 @@
 import React, { memo, useState, useCallback, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { Expand, ChevronUp, ChevronDown } from 'lucide-react';
-import { Button, Clipboard, CheckMark } from '@librechat/client';
+import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import cn from '~/utils/cn';
 
@@ -15,8 +15,8 @@ interface MermaidHeaderProps {
   onToggleCode: () => void;
 }
 
-const buttonClasses =
-  'h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0';
+const iconBtnClass =
+  'flex items-center justify-center rounded p-1.5 text-text-secondary hover:bg-surface-hover focus-visible:outline focus-visible:outline-white';
 
 const MermaidHeader: React.FC<MermaidHeaderProps> = memo(
   ({
@@ -49,46 +49,58 @@ const MermaidHeader: React.FC<MermaidHeaderProps> = memo(
     return (
       <div
         className={cn(
-          'flex items-center justify-between rounded-tl-md rounded-tr-md bg-gray-700/80 px-4 py-2 font-sans text-xs text-gray-200 backdrop-blur-sm transition-opacity duration-200',
+          'flex items-center justify-end gap-1 px-2 py-1 transition-opacity duration-200',
           className,
         )}
       >
-        <span>{localize('com_ui_mermaid')}</span>
-        <div className="ml-auto flex gap-2">
-          {showExpandButton && onExpand && (
-            <Button
-              ref={expandButtonRef}
-              variant="ghost"
-              size="sm"
-              className={buttonClasses}
-              onClick={onExpand}
-              title={localize('com_ui_expand')}
+        {showExpandButton && onExpand && (
+          <TooltipAnchor
+            description={localize('com_ui_expand')}
+            render={
+              <button
+                ref={expandButtonRef}
+                type="button"
+                aria-label={localize('com_ui_expand')}
+                className={iconBtnClass}
+                onClick={onExpand}
+              >
+                <Expand className="h-4 w-4" />
+              </button>
+            }
+          />
+        )}
+        <TooltipAnchor
+          description={showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
+          render={
+            <button
+              ref={showCodeButtonRef}
+              type="button"
+              aria-label={showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
+              className={iconBtnClass}
+              onClick={handleToggleCode}
             >
-              <Expand className="h-4 w-4" />
-              {localize('com_ui_expand')}
-            </Button>
-          )}
-          <Button
-            ref={showCodeButtonRef}
-            variant="ghost"
-            size="sm"
-            className={cn(buttonClasses, 'min-w-[6rem]')}
-            onClick={handleToggleCode}
-          >
-            {showCode ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            {showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
-          </Button>
-          <Button
-            ref={copyButtonRef}
-            variant="ghost"
-            size="sm"
-            className={buttonClasses}
-            onClick={handleCopy}
-          >
-            {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
-            {localize('com_ui_copy_code')}
-          </Button>
-        </div>
+              {showCode ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+          }
+        />
+        <TooltipAnchor
+          description={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+          render={
+            <button
+              ref={copyButtonRef}
+              type="button"
+              aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+              className={iconBtnClass}
+              onClick={handleCopy}
+            >
+              {isCopied ? (
+                <CheckMark className="h-[18px] w-[18px]" />
+              ) : (
+                <Clipboard className="h-4 w-4" />
+              )}
+            </button>
+          }
+        />
       </div>
     );
   },

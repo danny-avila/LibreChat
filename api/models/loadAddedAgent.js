@@ -48,14 +48,14 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
     return null;
   }
 
-  // If there's an agent_id, load the existing agent
   if (conversation.agent_id && !isEphemeralAgentId(conversation.agent_id)) {
-    if (!getAgent) {
-      throw new Error('getAgent not initialized - call setGetAgent first');
+    let agent = req.resolvedAddedAgent;
+    if (!agent) {
+      if (!getAgent) {
+        throw new Error('getAgent not initialized - call setGetAgent first');
+      }
+      agent = await getAgent({ id: conversation.agent_id });
     }
-    const agent = await getAgent({
-      id: conversation.agent_id,
-    });
 
     if (!agent) {
       logger.warn(`[loadAddedAgent] Agent ${conversation.agent_id} not found`);

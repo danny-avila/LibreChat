@@ -13,6 +13,7 @@ import {
   EModelEndpoint,
   mergeFileConfig,
   AgentCapabilities,
+  resolveEndpointType,
   isAssistantsEndpoint,
   getEndpointFileConfig,
   defaultAgentCapabilities,
@@ -69,7 +70,19 @@ export default function useDragHelpers() {
     (item: { files: File[] }) => {
       /** Early block: leverage endpoint file config to prevent drag/drop on disabled endpoints */
       const currentEndpoint = conversationRef.current?.endpoint ?? 'default';
-      const currentEndpointType = conversationRef.current?.endpointType ?? undefined;
+      const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
+
+      /** Get agent data from cache; if absent, provider-specific file config restrictions are bypassed client-side */
+      const agentId = conversationRef.current?.agent_id;
+      const agent = agentId
+        ? queryClient.getQueryData<t.Agent>([QueryKeys.agent, agentId])
+        : undefined;
+
+      const currentEndpointType = resolveEndpointType(
+        endpointsConfig,
+        currentEndpoint,
+        agent?.provider,
+      );
       const cfg = queryClient.getQueryData<t.FileConfig>([QueryKeys.fileConfig]);
       if (cfg) {
         const mergedCfg = mergeFileConfig(cfg);
@@ -92,27 +105,21 @@ export default function useDragHelpers() {
         return;
       }
 
-      const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
       const agentsConfig = endpointsConfig?.[EModelEndpoint.agents];
       const capabilities = agentsConfig?.capabilities ?? defaultAgentCapabilities;
       const fileSearchEnabled = capabilities.includes(AgentCapabilities.file_search) === true;
       const codeEnabled = capabilities.includes(AgentCapabilities.execute_code) === true;
       const contextEnabled = capabilities.includes(AgentCapabilities.context) === true;
 
-      /** Get agent permissions at drop time */
-      const agentId = conversationRef.current?.agent_id;
       let fileSearchAllowedByAgent = true;
       let codeAllowedByAgent = true;
 
       if (agentId && !isEphemeralAgent(agentId)) {
-        /** Agent data from cache */
-        const agent = queryClient.getQueryData<t.Agent>([QueryKeys.agent, agentId]);
         if (agent) {
           const agentTools = agent.tools as string[] | undefined;
           fileSearchAllowedByAgent = agentTools?.includes(Tools.file_search) ?? false;
           codeAllowedByAgent = agentTools?.includes(Tools.execute_code) ?? false;
         } else {
-          /** If agent exists but not found, disallow */
           fileSearchAllowedByAgent = false;
           codeAllowedByAgent = false;
         }

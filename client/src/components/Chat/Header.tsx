@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { useMediaQuery } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -16,7 +16,7 @@ import { cn } from '~/utils';
 
 const defaultInterface = getConfigDefaults().interface;
 
-export default function Header() {
+function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
 
@@ -32,6 +32,11 @@ export default function Header() {
 
   const hasAccessToMultiConvo = useHasAccess({
     permissionType: PermissionTypes.MULTI_CONVO,
+    permission: Permissions.USE,
+  });
+
+  const hasAccessToTemporaryChat = useHasAccess({
+    permissionType: PermissionTypes.TEMPORARY_CHAT,
     permission: Permissions.USE,
   });
 
@@ -73,7 +78,7 @@ export default function Header() {
                   <ExportAndShareMenu
                     isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
                   />
-                  <TemporaryChat />
+                  {hasAccessToTemporaryChat === true && <TemporaryChat />}
                 </>
               )}
             </div>
@@ -85,7 +90,7 @@ export default function Header() {
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />
-            <TemporaryChat />
+            {hasAccessToTemporaryChat === true && <TemporaryChat />}
           </div>
         )}
       </div>
@@ -94,3 +99,8 @@ export default function Header() {
     </div>
   );
 }
+
+const MemoizedHeader = memo(Header);
+MemoizedHeader.displayName = 'Header';
+
+export default MemoizedHeader;

@@ -36,7 +36,7 @@ const DragDropOverlay = memo(({ isActive }: DragDropOverlayProps) => {
         }}
       >
         {/** Content area with subtle background */}
-        <div className="bg-surface-primary/95 flex flex-col items-center rounded-lg p-8 shadow-xl">
+        <div className="flex flex-col items-center rounded-lg bg-surface-primary p-8 shadow-xl">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 132 108"

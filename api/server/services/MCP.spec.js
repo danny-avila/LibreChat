@@ -45,6 +45,7 @@ const {
   getMCPSetupData,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
+  createUnavailableToolStub,
 } = require('./MCP');
 
 jest.mock('./Config', () => ({
@@ -1095,6 +1096,188 @@ describe('User parameter passing tests', () => {
       // Verify getAppConfig was called with correct roles
       expect(mockGetAppConfig).toHaveBeenNthCalledWith(1, { role: 'admin' });
       expect(mockGetAppConfig).toHaveBeenNthCalledWith(2, { role: 'user' });
+    });
+  });
+
+  describe('createUnavailableToolStub', () => {
+    it('should return a tool whose _call returns a valid CONTENT_AND_ARTIFACT two-tuple', async () => {
+      const stub = createUnavailableToolStub('myTool', 'myServer');
+      // invoke() goes through langchain's base tool, which checks responseFormat.
+      // CONTENT_AND_ARTIFACT requires [content, artifact] — a bare string would throw:
+      //   "Tool response format is "content_and_artifact" but the output was not a two-tuple"
+      const result = await stub.invoke({});
+      // If we reach here without throwing, the two-tuple format is correct.
+      // invoke() returns the content portion of [content, artifact] as a string.
+      expect(result).toContain('temporarily unavailable');
+    });
+  });
+
+  describe('negative tool cache and throttle interaction', () => {
+    it('should cache tool as missing even when throttled (cross-user dedup)', async () => {
+      const mockUser = { id: 'throttle-test-user' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // First call: reconnect succeeds but tool not found
+      mockReinitMCPServer.mockResolvedValueOnce({
+        availableTools: {},
+      });
+
+      await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `missing-tool${D}cache-dedup-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+      });
+
+      // Second call within 10s for DIFFERENT tool on same server:
+      // reconnect is throttled (returns null), tool is still cached as missing.
+      // This is intentional: the cache acts as cross-user dedup since the
+      // throttle is per-user-per-server and can't prevent N different users
+      // from each triggering their own reconnect.
+      const result2 = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `other-tool${D}cache-dedup-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+      });
+
+      expect(result2).toBeDefined();
+      expect(result2.name).toContain('other-tool');
+      expect(mockReinitMCPServer).toHaveBeenCalledTimes(1);
+    });
+
+    it('should prevent user B from triggering reconnect when user A already cached the tool', async () => {
+      const userA = { id: 'cache-user-A' };
+      const userB = { id: 'cache-user-B' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // User A: real reconnect, tool not found → cached
+      mockReinitMCPServer.mockResolvedValueOnce({
+        availableTools: {},
+      });
+
+      await createMCPTool({
+        res: mockRes,
+        user: userA,
+        toolKey: `shared-tool${D}cross-user-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+      });
+
+      expect(mockReinitMCPServer).toHaveBeenCalledTimes(1);
+
+      // User B requests the SAME tool within 10s.
+      // The negative cache is keyed by toolKey (no user prefix), so user B
+      // gets a cache hit and no reconnect fires. This is the cross-user
+      // storm protection: without this, user B's unthrottled first request
+      // would trigger a second reconnect to the same server.
+      const result = await createMCPTool({
+        res: mockRes,
+        user: userB,
+        toolKey: `shared-tool${D}cross-user-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.name).toContain('shared-tool');
+      // reinitMCPServer still called only once — user B hit the cache
+      expect(mockReinitMCPServer).toHaveBeenCalledTimes(1);
+    });
+
+    it('should prevent user B from triggering reconnect for throttle-cached tools', async () => {
+      const userA = { id: 'storm-user-A' };
+      const userB = { id: 'storm-user-B' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // User A: real reconnect for tool-1, tool not found → cached
+      mockReinitMCPServer.mockResolvedValueOnce({
+        availableTools: {},
+      });
+
+      await createMCPTool({
+        res: mockRes,
+        user: userA,
+        toolKey: `tool-1${D}storm-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+      });
+
+      // User A: tool-2 on same server within 10s → throttled → cached from throttle
+      await createMCPTool({
+        res: mockRes,
+        user: userA,
+        toolKey: `tool-2${D}storm-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+      });
+
+      expect(mockReinitMCPServer).toHaveBeenCalledTimes(1);
+
+      // User B requests tool-2 — gets cache hit from the throttle-cached entry.
+      // Without this caching, user B would trigger a real reconnect since
+      // user B has their own throttle key and hasn't reconnected yet.
+      const result = await createMCPTool({
+        res: mockRes,
+        user: userB,
+        toolKey: `tool-2${D}storm-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.name).toContain('tool-2');
+      // Still only 1 real reconnect — user B was protected by the cache
+      expect(mockReinitMCPServer).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('createMCPTools throttle handling', () => {
+    it('should return empty array with debug log when reconnect is throttled', async () => {
+      const mockUser = { id: 'throttle-tools-user' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      // First call: real reconnect
+      mockReinitMCPServer.mockResolvedValueOnce({
+        tools: [{ name: 'tool1' }],
+        availableTools: {
+          [`tool1${D}throttle-tools-server`]: {
+            function: { description: 'Tool 1', parameters: {} },
+          },
+        },
+      });
+
+      await createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'throttle-tools-server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+      });
+
+      // Second call within 10s — throttled
+      const result = await createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'throttle-tools-server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+      });
+
+      expect(result).toEqual([]);
+      // reinitMCPServer called only once — second was throttled
+      expect(mockReinitMCPServer).toHaveBeenCalledTimes(1);
+      // Should log at debug level (not warn) for throttled case
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Reconnect throttled'));
     });
   });
 

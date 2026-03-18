@@ -1,6 +1,11 @@
 import { Providers } from '@librechat/agents';
 import { mbToBytes, isOpenAILikeProvider } from 'librechat-data-provider';
 
+export interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+}
+
 export interface PDFValidationResult {
   isValid: boolean;
   error?: string;
@@ -29,6 +34,10 @@ export async function validatePdf(
 ): Promise<PDFValidationResult> {
   if (provider === Providers.ANTHROPIC) {
     return validateAnthropicPdf(pdfBuffer, fileSize, configuredFileSizeLimit);
+  }
+
+  if (provider === Providers.BEDROCK) {
+    return validateBedrockDocument(fileSize, 'application/pdf', pdfBuffer, configuredFileSizeLimit);
   }
 
   if (isOpenAILikeProvider(provider)) {
@@ -109,6 +118,64 @@ async function validateAnthropicPdf(
     return {
       isValid: false,
       error: 'Failed to validate PDF file',
+    };
+  }
+}
+
+/**
+ * Validates a document against Bedrock's 4.5MB hard limit. PDF-specific header
+ * checks run only when the MIME type is `application/pdf`.
+ * @param fileSize - The file size in bytes
+ * @param mimeType - The MIME type of the document
+ * @param fileBuffer - The file buffer (used for PDF header validation)
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
+ * @returns Promise that resolves to validation result
+ */
+export async function validateBedrockDocument(
+  fileSize: number,
+  mimeType: string,
+  fileBuffer?: Buffer,
+  configuredFileSizeLimit?: number,
+): Promise<ValidationResult> {
+  try {
+    /** Bedrock enforces a hard 4.5MB per-document limit at the API level; config can only lower it */
+    const providerLimit = mbToBytes(4.5);
+    const effectiveLimit =
+      configuredFileSizeLimit != null
+        ? Math.min(configuredFileSizeLimit, providerLimit)
+        : providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = (effectiveLimit / (1024 * 1024)).toFixed(1);
+      return {
+        isValid: false,
+        error: `File size (${(fileSize / (1024 * 1024)).toFixed(1)}MB) exceeds the ${limitMB}MB limit for Bedrock`,
+      };
+    }
+
+    if (mimeType === 'application/pdf' && fileBuffer) {
+      if (fileBuffer.length < 5) {
+        return {
+          isValid: false,
+          error: 'Invalid PDF file: too small or corrupted',
+        };
+      }
+
+      const pdfHeader = fileBuffer.subarray(0, 5).toString();
+      if (!pdfHeader.startsWith('%PDF-')) {
+        return {
+          isValid: false,
+          error: 'Invalid PDF file: missing PDF header',
+        };
+      }
+    }
+
+    return { isValid: true };
+  } catch (error) {
+    console.error('Bedrock document validation error:', error);
+    return {
+      isValid: false,
+      error: 'Failed to validate document file',
     };
   }
 }

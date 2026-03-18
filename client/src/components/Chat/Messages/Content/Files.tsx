@@ -1,6 +1,7 @@
 import { useMemo, memo } from 'react';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
+import { getCachedPreview } from '~/utils';
 import Image from './Image';
 
 const Files = ({ message }: { message?: TMessage }) => {
@@ -17,21 +18,18 @@ const Files = ({ message }: { message?: TMessage }) => {
       {otherFiles.length > 0 &&
         otherFiles.map((file) => <FileContainer key={file.file_id} file={file as TFile} />)}
       {imageFiles.length > 0 &&
-        imageFiles.map((file) => (
-          <Image
-            key={file.file_id}
-            imagePath={file.preview ?? file.filepath ?? ''}
-            height={file.height ?? 1920}
-            width={file.width ?? 1080}
-            altText={file.filename ?? 'Uploaded Image'}
-            placeholderDimensions={{
-              height: `${file.height ?? 1920}px`,
-              width: `${file.height ?? 1080}px`,
-            }}
-            // n={imageFiles.length}
-            // i={i}
-          />
-        ))}
+        imageFiles.map((file) => {
+          const cached = file.file_id ? getCachedPreview(file.file_id) : undefined;
+          return (
+            <Image
+              key={file.file_id}
+              width={file.width}
+              height={file.height}
+              altText={file.filename ?? 'Uploaded Image'}
+              imagePath={cached ?? file.preview ?? file.filepath ?? ''}
+            />
+          );
+        })}
     </>
   );
 };

@@ -2,21 +2,35 @@
  * Tests for AgentClient.recordCollectedUsage
  *
  * This is a critical function that handles token spending for agent LLM calls.
- * It must correctly handle:
- * - Sequential execution (single agent with tool calls)
- * - Parallel execution (multiple agents with independent inputs)
- * - Cache token handling (OpenAI and Anthropic formats)
+ * The client now delegates to the TS recordCollectedUsage from @librechat/api,
+ * passing pricing and bulkWriteOps deps.
  */
 
 const { EModelEndpoint } = require('librechat-data-provider');
 
-// Mock dependencies before requiring the module
 const mockSpendTokens = jest.fn().mockResolvedValue();
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue();
+const mockGetMultiplier = jest.fn().mockReturnValue(1);
+const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
+const mockUpdateBalance = jest.fn().mockResolvedValue({});
+const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
+const mockRecordCollectedUsage = jest
+  .fn()
+  .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 
 jest.mock('~/models/spendTokens', () => ({
   spendTokens: (...args) => mockSpendTokens(...args),
   spendStructuredTokens: (...args) => mockSpendStructuredTokens(...args),
+}));
+
+jest.mock('~/models/tx', () => ({
+  getMultiplier: mockGetMultiplier,
+  getCacheMultiplier: mockGetCacheMultiplier,
+}));
+
+jest.mock('~/models', () => ({
+  updateBalance: mockUpdateBalance,
+  bulkInsertTransactions: mockBulkInsertTransactions,
 }));
 
 jest.mock('~/config', () => ({
@@ -38,6 +52,14 @@ jest.mock('@librechat/agents', () => ({
     collected: [],
   }),
 }));
+
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  return {
+    ...actual,
+    recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
+  };
+});
 
 const AgentClient = require('./client');
 
@@ -74,31 +96,66 @@ describe('AgentClient - recordCollectedUsage', () => {
   });
 
   describe('basic functionality', () => {
-    it('should return early if collectedUsage is empty', async () => {
+    it('should delegate to recordCollectedUsage with full deps', async () => {
+      const collectedUsage = [{ input_tokens: 100, output_tokens: 50, model: 'gpt-4' }];
+
+      await client.recordCollectedUsage({
+        collectedUsage,
+        balance: { enabled: true },
+        transactions: { enabled: true },
+      });
+
+      expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
+      const [deps, params] = mockRecordCollectedUsage.mock.calls[0];
+
+      expect(deps).toHaveProperty('spendTokens');
+      expect(deps).toHaveProperty('spendStructuredTokens');
+      expect(deps).toHaveProperty('pricing');
+      expect(deps.pricing).toHaveProperty('getMultiplier');
+      expect(deps.pricing).toHaveProperty('getCacheMultiplier');
+      expect(deps).toHaveProperty('bulkWriteOps');
+      expect(deps.bulkWriteOps).toHaveProperty('insertMany');
+      expect(deps.bulkWriteOps).toHaveProperty('updateBalance');
+
+      expect(params).toEqual(
+        expect.objectContaining({
+          user: 'user-123',
+          conversationId: 'convo-123',
+          collectedUsage,
+          context: 'message',
+          balance: { enabled: true },
+          transactions: { enabled: true },
+        }),
+      );
+    });
+
+    it('should not set this.usage if collectedUsage is empty (returns undefined)', async () => {
+      mockRecordCollectedUsage.mockResolvedValue(undefined);
+
       await client.recordCollectedUsage({
         collectedUsage: [],
         balance: { enabled: true },
         transactions: { enabled: true },
       });
 
-      expect(mockSpendTokens).not.toHaveBeenCalled();
-      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
       expect(client.usage).toBeUndefined();
     });
 
-    it('should return early if collectedUsage is null', async () => {
+    it('should not set this.usage if collectedUsage is null (returns undefined)', async () => {
+      mockRecordCollectedUsage.mockResolvedValue(undefined);
+
       await client.recordCollectedUsage({
         collectedUsage: null,
         balance: { enabled: true },
         transactions: { enabled: true },
       });
 
-      expect(mockSpendTokens).not.toHaveBeenCalled();
       expect(client.usage).toBeUndefined();
     });
 
-    it('should handle single usage entry correctly', async () => {
-      const collectedUsage = [{ input_tokens: 100, output_tokens: 50, model: 'gpt-4' }];
+    it('should set this.usage from recordCollectedUsage result', async () => {
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 200, output_tokens: 75 });
+      const collectedUsage = [{ input_tokens: 200, output_tokens: 75, model: 'gpt-4' }];
 
       await client.recordCollectedUsage({
         collectedUsage,
@@ -106,181 +163,85 @@ describe('AgentClient - recordCollectedUsage', () => {
         transactions: { enabled: true },
       });
 
-      expect(mockSpendTokens).toHaveBeenCalledTimes(1);
-      expect(mockSpendTokens).toHaveBeenCalledWith(
-        expect.objectContaining({
-          conversationId: 'convo-123',
-          user: 'user-123',
-          model: 'gpt-4',
-        }),
-        { promptTokens: 100, completionTokens: 50 },
-      );
-      expect(client.usage.input_tokens).toBe(100);
-      expect(client.usage.output_tokens).toBe(50);
-    });
-
-    it('should skip null entries in collectedUsage', async () => {
-      const collectedUsage = [
-        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
-        null,
-        { input_tokens: 200, output_tokens: 60, model: 'gpt-4' },
-      ];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+      expect(client.usage).toEqual({ input_tokens: 200, output_tokens: 75 });
     });
   });
 
   describe('sequential execution (single agent with tool calls)', () => {
-    it('should calculate tokens correctly for sequential tool calls', async () => {
-      // Sequential flow: output of call N becomes part of input for call N+1
-      // Call 1: input=100, output=50
-      // Call 2: input=150 (100+50), output=30
-      // Call 3: input=180 (150+30), output=20
+    it('should pass all usage entries to recordCollectedUsage', async () => {
       const collectedUsage = [
         { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
         { input_tokens: 150, output_tokens: 30, model: 'gpt-4' },
         { input_tokens: 180, output_tokens: 20, model: 'gpt-4' },
       ];
 
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 100, output_tokens: 100 });
+
       await client.recordCollectedUsage({
         collectedUsage,
         balance: { enabled: true },
         transactions: { enabled: true },
       });
 
-      expect(mockSpendTokens).toHaveBeenCalledTimes(3);
-      // Total output should be sum of all output_tokens: 50 + 30 + 20 = 100
+      expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
+      const [, params] = mockRecordCollectedUsage.mock.calls[0];
+      expect(params.collectedUsage).toHaveLength(3);
       expect(client.usage.output_tokens).toBe(100);
-      expect(client.usage.input_tokens).toBe(100); // First entry's input
+      expect(client.usage.input_tokens).toBe(100);
     });
   });
 
   describe('parallel execution (multiple agents)', () => {
-    it('should handle parallel agents with independent input tokens', async () => {
-      // Parallel agents have INDEPENDENT input tokens (not cumulative)
-      // Agent A: input=100, output=50
-      // Agent B: input=80, output=40 (different context, not 100+50)
+    it('should pass parallel agent usage to recordCollectedUsage', async () => {
       const collectedUsage = [
         { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
         { input_tokens: 80, output_tokens: 40, model: 'gpt-4' },
       ];
 
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 100, output_tokens: 90 });
+
       await client.recordCollectedUsage({
         collectedUsage,
         balance: { enabled: true },
         transactions: { enabled: true },
       });
 
-      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
-      // Expected total output: 50 + 40 = 90
-      // output_tokens must be positive and should reflect total output
+      expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
+      expect(client.usage.output_tokens).toBe(90);
       expect(client.usage.output_tokens).toBeGreaterThan(0);
     });
 
-    it('should NOT produce negative output_tokens for parallel execution', async () => {
-      // Critical bug scenario: parallel agents where second agent has LOWER input tokens
+    /** Bug regression: parallel agents where second agent has LOWER input tokens produced negative output via incremental calculation. */
+    it('should NOT produce negative output_tokens', async () => {
       const collectedUsage = [
         { input_tokens: 200, output_tokens: 100, model: 'gpt-4' },
         { input_tokens: 50, output_tokens: 30, model: 'gpt-4' },
       ];
 
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 200, output_tokens: 130 });
+
       await client.recordCollectedUsage({
         collectedUsage,
         balance: { enabled: true },
         transactions: { enabled: true },
       });
 
-      // output_tokens MUST be positive for proper token tracking
       expect(client.usage.output_tokens).toBeGreaterThan(0);
-      // Correct value should be 100 + 30 = 130
-    });
-
-    it('should calculate correct total output for parallel agents', async () => {
-      // Three parallel agents with independent contexts
-      const collectedUsage = [
-        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
-        { input_tokens: 120, output_tokens: 60, model: 'gpt-4-turbo' },
-        { input_tokens: 80, output_tokens: 40, model: 'claude-3' },
-      ];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      expect(mockSpendTokens).toHaveBeenCalledTimes(3);
-      // Total output should be 50 + 60 + 40 = 150
-      expect(client.usage.output_tokens).toBe(150);
-    });
-
-    it('should handle worst-case parallel scenario without negative tokens', async () => {
-      // Extreme case: first agent has very high input, subsequent have low
-      const collectedUsage = [
-        { input_tokens: 1000, output_tokens: 500, model: 'gpt-4' },
-        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
-        { input_tokens: 50, output_tokens: 25, model: 'gpt-4' },
-      ];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      // Must be positive, should be 500 + 50 + 25 = 575
-      expect(client.usage.output_tokens).toBeGreaterThan(0);
-      expect(client.usage.output_tokens).toBe(575);
+      expect(client.usage.output_tokens).toBe(130);
     });
   });
 
   describe('real-world scenarios', () => {
-    it('should correctly sum output tokens for sequential tool calls with growing context', async () => {
-      // Real production data: Claude Opus with multiple tool calls
-      // Context grows as tool results are added, but output_tokens should only count model generations
+    it('should correctly handle sequential tool calls with growing context', async () => {
       const collectedUsage = [
-        {
-          input_tokens: 31596,
-          output_tokens: 151,
-          total_tokens: 31747,
-          input_token_details: { cache_read: 0, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 35368,
-          output_tokens: 150,
-          total_tokens: 35518,
-          input_token_details: { cache_read: 0, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 58362,
-          output_tokens: 295,
-          total_tokens: 58657,
-          input_token_details: { cache_read: 0, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 112604,
-          output_tokens: 193,
-          total_tokens: 112797,
-          input_token_details: { cache_read: 0, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 257440,
-          output_tokens: 2217,
-          total_tokens: 259657,
-          input_token_details: { cache_read: 0, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
+        { input_tokens: 31596, output_tokens: 151, model: 'claude-opus-4-5-20251101' },
+        { input_tokens: 35368, output_tokens: 150, model: 'claude-opus-4-5-20251101' },
+        { input_tokens: 58362, output_tokens: 295, model: 'claude-opus-4-5-20251101' },
+        { input_tokens: 112604, output_tokens: 193, model: 'claude-opus-4-5-20251101' },
+        { input_tokens: 257440, output_tokens: 2217, model: 'claude-opus-4-5-20251101' },
       ];
+
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 31596, output_tokens: 3006 });
 
       await client.recordCollectedUsage({
         collectedUsage,
@@ -288,155 +249,21 @@ describe('AgentClient - recordCollectedUsage', () => {
         transactions: { enabled: true },
       });
 
-      // input_tokens should be first entry's input (initial context)
       expect(client.usage.input_tokens).toBe(31596);
-
-      // output_tokens should be sum of all model outputs: 151 + 150 + 295 + 193 + 2217 = 3006
-      // NOT the inflated value from incremental calculation (338,559)
       expect(client.usage.output_tokens).toBe(3006);
-
-      // Verify spendTokens was called for each entry with correct values
-      expect(mockSpendTokens).toHaveBeenCalledTimes(5);
-      expect(mockSpendTokens).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
-        { promptTokens: 31596, completionTokens: 151 },
-      );
-      expect(mockSpendTokens).toHaveBeenNthCalledWith(
-        5,
-        expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
-        { promptTokens: 257440, completionTokens: 2217 },
-      );
     });
 
-    it('should handle single followup message correctly', async () => {
-      // Real production data: followup to the above conversation
-      const collectedUsage = [
-        {
-          input_tokens: 263406,
-          output_tokens: 257,
-          total_tokens: 263663,
-          input_token_details: { cache_read: 0, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-      ];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      expect(client.usage.input_tokens).toBe(263406);
-      expect(client.usage.output_tokens).toBe(257);
-
-      expect(mockSpendTokens).toHaveBeenCalledTimes(1);
-      expect(mockSpendTokens).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
-        { promptTokens: 263406, completionTokens: 257 },
-      );
-    });
-
-    it('should ensure output_tokens > 0 check passes for BaseClient.sendMessage', async () => {
-      // This verifies the fix for the duplicate token spending bug
-      // BaseClient.sendMessage checks: if (usage != null && Number(usage[this.outputTokensKey]) > 0)
-      const collectedUsage = [
-        {
-          input_tokens: 31596,
-          output_tokens: 151,
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 35368,
-          output_tokens: 150,
-          model: 'claude-opus-4-5-20251101',
-        },
-      ];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      const usage = client.getStreamUsage();
-
-      // The check that was failing before the fix
-      expect(usage).not.toBeNull();
-      expect(Number(usage.output_tokens)).toBeGreaterThan(0);
-
-      // Verify correct value
-      expect(usage.output_tokens).toBe(301); // 151 + 150
-    });
-
-    it('should correctly handle cache tokens with multiple tool calls', async () => {
-      // Real production data: Claude Opus with cache tokens (prompt caching)
-      // First entry has cache_creation, subsequent entries have cache_read
+    it('should correctly handle cache tokens', async () => {
       const collectedUsage = [
         {
           input_tokens: 788,
           output_tokens: 163,
-          total_tokens: 951,
           input_token_details: { cache_read: 0, cache_creation: 30808 },
           model: 'claude-opus-4-5-20251101',
         },
-        {
-          input_tokens: 3802,
-          output_tokens: 149,
-          total_tokens: 3951,
-          input_token_details: { cache_read: 30808, cache_creation: 768 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 26808,
-          output_tokens: 225,
-          total_tokens: 27033,
-          input_token_details: { cache_read: 31576, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 80912,
-          output_tokens: 204,
-          total_tokens: 81116,
-          input_token_details: { cache_read: 31576, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 136454,
-          output_tokens: 206,
-          total_tokens: 136660,
-          input_token_details: { cache_read: 31576, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 146316,
-          output_tokens: 224,
-          total_tokens: 146540,
-          input_token_details: { cache_read: 31576, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 150402,
-          output_tokens: 1248,
-          total_tokens: 151650,
-          input_token_details: { cache_read: 31576, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 156268,
-          output_tokens: 139,
-          total_tokens: 156407,
-          input_token_details: { cache_read: 31576, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
-        {
-          input_tokens: 167126,
-          output_tokens: 2961,
-          total_tokens: 170087,
-          input_token_details: { cache_read: 31576, cache_creation: 0 },
-          model: 'claude-opus-4-5-20251101',
-        },
       ];
+
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 31596, output_tokens: 163 });
 
       await client.recordCollectedUsage({
         collectedUsage,
@@ -444,183 +271,14 @@ describe('AgentClient - recordCollectedUsage', () => {
         transactions: { enabled: true },
       });
 
-      // input_tokens = first entry's input + cache_creation + cache_read
-      // = 788 + 30808 + 0 = 31596
       expect(client.usage.input_tokens).toBe(31596);
-
-      // output_tokens = sum of all output_tokens
-      // = 163 + 149 + 225 + 204 + 206 + 224 + 1248 + 139 + 2961 = 5519
-      expect(client.usage.output_tokens).toBe(5519);
-
-      // First 2 entries have cache tokens, should use spendStructuredTokens
-      // Remaining 7 entries have cache_read but no cache_creation, still structured
-      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(9);
-      expect(mockSpendTokens).toHaveBeenCalledTimes(0);
-
-      // Verify first entry uses structured tokens with cache_creation
-      expect(mockSpendStructuredTokens).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
-        {
-          promptTokens: { input: 788, write: 30808, read: 0 },
-          completionTokens: 163,
-        },
-      );
-
-      // Verify second entry uses structured tokens with both cache_creation and cache_read
-      expect(mockSpendStructuredTokens).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({ model: 'claude-opus-4-5-20251101' }),
-        {
-          promptTokens: { input: 3802, write: 768, read: 30808 },
-          completionTokens: 149,
-        },
-      );
-    });
-  });
-
-  describe('cache token handling', () => {
-    it('should handle OpenAI format cache tokens (input_token_details)', async () => {
-      const collectedUsage = [
-        {
-          input_tokens: 100,
-          output_tokens: 50,
-          model: 'gpt-4',
-          input_token_details: {
-            cache_creation: 20,
-            cache_read: 10,
-          },
-        },
-      ];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
-      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'gpt-4' }),
-        {
-          promptTokens: {
-            input: 100,
-            write: 20,
-            read: 10,
-          },
-          completionTokens: 50,
-        },
-      );
-    });
-
-    it('should handle Anthropic format cache tokens (cache_*_input_tokens)', async () => {
-      const collectedUsage = [
-        {
-          input_tokens: 100,
-          output_tokens: 50,
-          model: 'claude-3',
-          cache_creation_input_tokens: 25,
-          cache_read_input_tokens: 15,
-        },
-      ];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
-      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'claude-3' }),
-        {
-          promptTokens: {
-            input: 100,
-            write: 25,
-            read: 15,
-          },
-          completionTokens: 50,
-        },
-      );
-    });
-
-    it('should use spendTokens for entries without cache tokens', async () => {
-      const collectedUsage = [{ input_tokens: 100, output_tokens: 50, model: 'gpt-4' }];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      expect(mockSpendTokens).toHaveBeenCalledTimes(1);
-      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
-    });
-
-    it('should handle mixed cache and non-cache entries', async () => {
-      const collectedUsage = [
-        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
-        {
-          input_tokens: 150,
-          output_tokens: 30,
-          model: 'gpt-4',
-          input_token_details: { cache_creation: 10, cache_read: 5 },
-        },
-        { input_tokens: 200, output_tokens: 20, model: 'gpt-4' },
-      ];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
-      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
-    });
-
-    it('should include cache tokens in total input calculation', async () => {
-      const collectedUsage = [
-        {
-          input_tokens: 100,
-          output_tokens: 50,
-          model: 'gpt-4',
-          input_token_details: {
-            cache_creation: 20,
-            cache_read: 10,
-          },
-        },
-      ];
-
-      await client.recordCollectedUsage({
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      // Total input should include cache tokens: 100 + 20 + 10 = 130
-      expect(client.usage.input_tokens).toBe(130);
+      expect(client.usage.output_tokens).toBe(163);
     });
   });
 
   describe('model fallback', () => {
-    it('should use usage.model when available', async () => {
-      const collectedUsage = [{ input_tokens: 100, output_tokens: 50, model: 'gpt-4-turbo' }];
-
-      await client.recordCollectedUsage({
-        model: 'fallback-model',
-        collectedUsage,
-        balance: { enabled: true },
-        transactions: { enabled: true },
-      });
-
-      expect(mockSpendTokens).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'gpt-4-turbo' }),
-        expect.any(Object),
-      );
-    });
-
-    it('should fallback to param model when usage.model is missing', async () => {
+    it('should use param model when available', async () => {
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
       const collectedUsage = [{ input_tokens: 100, output_tokens: 50 }];
 
       await client.recordCollectedUsage({
@@ -630,14 +288,13 @@ describe('AgentClient - recordCollectedUsage', () => {
         transactions: { enabled: true },
       });
 
-      expect(mockSpendTokens).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'param-model' }),
-        expect.any(Object),
-      );
+      const [, params] = mockRecordCollectedUsage.mock.calls[0];
+      expect(params.model).toBe('param-model');
     });
 
     it('should fallback to client.model when param model is missing', async () => {
       client.model = 'client-model';
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
       const collectedUsage = [{ input_tokens: 100, output_tokens: 50 }];
 
       await client.recordCollectedUsage({
@@ -646,13 +303,12 @@ describe('AgentClient - recordCollectedUsage', () => {
         transactions: { enabled: true },
       });
 
-      expect(mockSpendTokens).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'client-model' }),
-        expect.any(Object),
-      );
+      const [, params] = mockRecordCollectedUsage.mock.calls[0];
+      expect(params.model).toBe('client-model');
     });
 
     it('should fallback to agent model_parameters.model as last resort', async () => {
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
       const collectedUsage = [{ input_tokens: 100, output_tokens: 50 }];
 
       await client.recordCollectedUsage({
@@ -661,15 +317,14 @@ describe('AgentClient - recordCollectedUsage', () => {
         transactions: { enabled: true },
       });
 
-      expect(mockSpendTokens).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'gpt-4' }),
-        expect.any(Object),
-      );
+      const [, params] = mockRecordCollectedUsage.mock.calls[0];
+      expect(params.model).toBe('gpt-4');
     });
   });
 
   describe('getStreamUsage integration', () => {
     it('should return the usage object set by recordCollectedUsage', async () => {
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
       const collectedUsage = [{ input_tokens: 100, output_tokens: 50, model: 'gpt-4' }];
 
       await client.recordCollectedUsage({
@@ -679,10 +334,7 @@ describe('AgentClient - recordCollectedUsage', () => {
       });
 
       const usage = client.getStreamUsage();
-      expect(usage).toEqual({
-        input_tokens: 100,
-        output_tokens: 50,
-      });
+      expect(usage).toEqual({ input_tokens: 100, output_tokens: 50 });
     });
 
     it('should return undefined before recordCollectedUsage is called', () => {
@@ -690,9 +342,9 @@ describe('AgentClient - recordCollectedUsage', () => {
       expect(usage).toBeUndefined();
     });
 
+    /** Verifies usage passes the check in BaseClient.sendMessage: if (usage != null && Number(usage[this.outputTokensKey]) > 0) */
     it('should have output_tokens > 0 for BaseClient.sendMessage check', async () => {
-      // This test verifies the usage will pass the check in BaseClient.sendMessage:
-      // if (usage != null && Number(usage[this.outputTokensKey]) > 0)
+      mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 200, output_tokens: 130 });
       const collectedUsage = [
         { input_tokens: 200, output_tokens: 100, model: 'gpt-4' },
         { input_tokens: 50, output_tokens: 30, model: 'gpt-4' },

@@ -9,10 +9,9 @@
  *   Skips npm ci entirely when the lockfile hasn't changed.
  *
  * Package builds (Turborepo):
- *   Turbo hashes each package's source/config inputs, caches build
- *   outputs (dist/), and restores from cache when inputs match.
- *   Turbo v2 uses a global cache (~/.cache/turbo) that survives
- *   npm ci and is shared across worktrees.
+ *   Turbo hashes each package's source/config inputs (including the
+ *   lockfile), caches build outputs (dist/), and restores from cache
+ *   when inputs match. This script delegates entirely to turbo for builds.
  *
  * Usage:
  *   npm run smart-reinstall                  # Smart cached mode
@@ -27,10 +26,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// Adds console.green, console.purple, etc.
 require('./helpers');
-
-// ─── Configuration ───────────────────────────────────────────────────────────
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DEPS_HASH_MARKER = path.join(ROOT_DIR, 'node_modules', '.librechat-deps-hash');
@@ -42,7 +38,6 @@ const flags = {
   verbose: process.argv.includes('--verbose'),
 };
 
-// Workspace directories whose node_modules should be cleaned during reinstall
 const NODE_MODULES_DIRS = [
   ROOT_DIR,
   path.join(ROOT_DIR, 'packages', 'data-provider'),
@@ -53,8 +48,6 @@ const NODE_MODULES_DIRS = [
   path.join(ROOT_DIR, 'api'),
 ];
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function hashFile(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex').slice(0, 16);
 }
@@ -62,8 +55,6 @@ function hashFile(filePath) {
 function exec(cmd, opts = {}) {
   execSync(cmd, { cwd: ROOT_DIR, stdio: 'inherit', ...opts });
 }
-
-// ─── Dependency Installation ─────────────────────────────────────────────────
 
 function checkDeps() {
   const lockfile = path.join(ROOT_DIR, 'package-lock.json');
@@ -97,19 +88,15 @@ function installDeps(hash) {
   fs.writeFileSync(DEPS_HASH_MARKER, hash, 'utf-8');
 }
 
-// ─── Turbo Build ─────────────────────────────────────────────────────────────
-
 function runTurboBuild() {
   const args = ['npx', 'turbo', 'run', 'build'];
 
   if (flags.skipClient) {
     args.push('--filter=!@librechat/frontend');
   }
-
   if (flags.force) {
     args.push('--force');
   }
-
   if (flags.verbose) {
     args.push('--verbosity=2');
   }
@@ -119,36 +106,26 @@ function runTurboBuild() {
   exec(cmd);
 }
 
-/**
- * Fallback for when turbo is not installed (e.g., first run before npm ci).
- * Runs the same sequential build as the original `npm run frontend`.
- */
-function runFallbackBuild() {
-  console.orange('      turbo not found — using sequential fallback build\n');
-
-  const scripts = [
-    'build:data-provider',
-    'build:data-schemas',
-    'build:api',
-    'build:client-package',
-  ];
-
-  if (!flags.skipClient) {
-    scripts.push('build:client');
+function cleanTurboCache() {
+  console.purple('Clearing Turborepo cache...');
+  try {
+    exec('npx turbo daemon stop', { stdio: 'pipe' });
+  } catch {
+    // daemon may not be running
   }
 
-  for (const script of scripts) {
-    console.purple(`  Running ${script}...`);
-    exec(`npm run ${script}`);
+  const localTurboCache = path.join(ROOT_DIR, '.turbo');
+  if (fs.existsSync(localTurboCache)) {
+    fs.rmSync(localTurboCache, { recursive: true });
+  }
+
+  try {
+    exec('npx turbo clean', { stdio: 'pipe' });
+    console.green('Turbo cache cleared.');
+  } catch {
+    console.gray('Could not clear global turbo cache (may not exist yet).');
   }
 }
-
-function hasTurbo() {
-  const binDir = path.join(ROOT_DIR, 'node_modules', '.bin');
-  return ['turbo', 'turbo.cmd', 'turbo.ps1'].some((name) => fs.existsSync(path.join(binDir, name)));
-}
-
-// ─── Main ────────────────────────────────────────────────────────────────────
 
 (async () => {
   const startTime = Date.now();
@@ -156,39 +133,14 @@ function hasTurbo() {
   console.green('\n Smart Reinstall — LibreChat');
   console.green('─'.repeat(45));
 
-  // ── Handle --clean-cache ───────────────────────────────────────────────
   if (flags.cleanCache) {
-    console.purple('Clearing Turborepo cache...');
-    if (hasTurbo()) {
-      try {
-        exec('npx turbo daemon stop', { stdio: 'pipe' });
-      } catch {
-        // ignore — daemon may not be running
-      }
-    }
-    // Clear local .turbo cache dir
-    const localTurboCache = path.join(ROOT_DIR, '.turbo');
-    if (fs.existsSync(localTurboCache)) {
-      fs.rmSync(localTurboCache, { recursive: true });
-    }
-    // Clear global turbo cache
-    if (hasTurbo()) {
-      try {
-        exec('npx turbo clean', { stdio: 'pipe' });
-        console.green('Turbo cache cleared.');
-      } catch {
-        console.gray('Could not clear global turbo cache (may not exist yet).');
-      }
-    } else {
-      console.gray('turbo not installed — nothing to clear.');
-    }
-
+    cleanTurboCache();
     if (!flags.force) {
       return;
     }
   }
 
-  // ── Step 1: Dependencies ───────────────────────────────────────────────
+  // Step 1: Dependencies
   console.purple('\n[1/2] Checking dependencies...');
 
   if (flags.force) {
@@ -208,16 +160,10 @@ function hasTurbo() {
     }
   }
 
-  // ── Step 2: Build packages ─────────────────────────────────────────────
+  // Step 2: Build via Turborepo
   console.purple('\n[2/2] Building packages...');
+  runTurboBuild();
 
-  if (hasTurbo()) {
-    runTurboBuild();
-  } else {
-    runFallbackBuild();
-  }
-
-  // ── Done ───────────────────────────────────────────────────────────────
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log('');
   console.green('─'.repeat(45));

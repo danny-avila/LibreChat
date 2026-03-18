@@ -38,6 +38,7 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
@@ -291,10 +292,6 @@ const createResponse = async (req, res) => {
 
   // Generate IDs
   const responseId = generateResponseId();
-  const conversationId = request.previous_response_id ?? uuidv4();
-  const parentMessageId = null;
-
-  // Create response context
   const context = createResponseContext(request, responseId);
 
   logger.debug(
@@ -313,6 +310,23 @@ const createResponse = async (req, res) => {
   });
 
   try {
+    if (request.previous_response_id != null) {
+      if (typeof request.previous_response_id !== 'string') {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'previous_response_id must be a string',
+          'invalid_request',
+        );
+      }
+      if (!(await getConvo(req.user?.id, request.previous_response_id))) {
+        return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
+      }
+    }
+
+    const conversationId = request.previous_response_id ?? uuidv4();
+    const parentMessageId = null;
+
     // Build allowed providers set
     const allowedProviders = new Set(
       appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
@@ -428,6 +442,7 @@ const createResponse = async (req, res) => {
             toolRegistry: primaryConfig.toolRegistry,
             userMCPAuthMap: primaryConfig.userMCPAuthMap,
             tool_resources: primaryConfig.tool_resources,
+            actionsEnabled: primaryConfig.actionsEnabled,
           });
         },
         toolEndCallback,
@@ -486,6 +501,10 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
+          requestBody: {
+            messageId: responseId,
+            conversationId,
+          },
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,
@@ -505,12 +524,18 @@ const createResponse = async (req, res) => {
       const balanceConfig = getBalanceConfig(req.config);
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
-        { spendTokens, spendStructuredTokens },
+        {
+          spendTokens,
+          spendStructuredTokens,
+          pricing: { getMultiplier, getCacheMultiplier },
+          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+        },
         {
           user: userId,
           conversationId,
           collectedUsage,
           context: 'message',
+          messageId: responseId,
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
@@ -575,6 +600,7 @@ const createResponse = async (req, res) => {
             toolRegistry: primaryConfig.toolRegistry,
             userMCPAuthMap: primaryConfig.userMCPAuthMap,
             tool_resources: primaryConfig.tool_resources,
+            actionsEnabled: primaryConfig.actionsEnabled,
           });
         },
         toolEndCallback,
@@ -630,6 +656,10 @@ const createResponse = async (req, res) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
+          requestBody: {
+            messageId: responseId,
+            conversationId,
+          },
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,
@@ -649,12 +679,18 @@ const createResponse = async (req, res) => {
       const balanceConfig = getBalanceConfig(req.config);
       const transactionsConfig = getTransactionsConfig(req.config);
       recordCollectedUsage(
-        { spendTokens, spendStructuredTokens },
+        {
+          spendTokens,
+          spendStructuredTokens,
+          pricing: { getMultiplier, getCacheMultiplier },
+          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+        },
         {
           user: userId,
           conversationId,
           collectedUsage,
           context: 'message',
+          messageId: responseId,
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,

@@ -1,4 +1,72 @@
-import { getMarkdownFiles } from '../markdown';
+import { isSafeUrl, getMarkdownFiles } from '../markdown';
+
+describe('isSafeUrl', () => {
+  it('allows https URLs', () => {
+    expect(isSafeUrl('https://example.com')).toBe(true);
+  });
+
+  it('allows http URLs', () => {
+    expect(isSafeUrl('http://example.com/path')).toBe(true);
+  });
+
+  it('allows mailto links', () => {
+    expect(isSafeUrl('mailto:user@example.com')).toBe(true);
+  });
+
+  it('allows tel links', () => {
+    expect(isSafeUrl('tel:+1234567890')).toBe(true);
+  });
+
+  it('allows relative paths', () => {
+    expect(isSafeUrl('/path/to/page')).toBe(true);
+    expect(isSafeUrl('./relative')).toBe(true);
+    expect(isSafeUrl('../parent')).toBe(true);
+  });
+
+  it('allows anchor links', () => {
+    expect(isSafeUrl('#section')).toBe(true);
+  });
+
+  it('blocks javascript: protocol', () => {
+    expect(isSafeUrl('javascript:alert(1)')).toBe(false);
+  });
+
+  it('blocks javascript: with leading whitespace', () => {
+    expect(isSafeUrl('  javascript:alert(1)')).toBe(false);
+  });
+
+  it('blocks javascript: with mixed case', () => {
+    expect(isSafeUrl('JavaScript:alert(1)')).toBe(false);
+  });
+
+  it('blocks data: protocol', () => {
+    expect(isSafeUrl('data:text/html,<b>x</b>')).toBe(false);
+  });
+
+  it('blocks blob: protocol', () => {
+    expect(isSafeUrl('blob:http://example.com/uuid')).toBe(false);
+  });
+
+  it('blocks vbscript: protocol', () => {
+    expect(isSafeUrl('vbscript:MsgBox("xss")')).toBe(false);
+  });
+
+  it('blocks file: protocol', () => {
+    expect(isSafeUrl('file:///etc/passwd')).toBe(false);
+  });
+
+  it('blocks empty strings', () => {
+    expect(isSafeUrl('')).toBe(false);
+  });
+
+  it('blocks whitespace-only strings', () => {
+    expect(isSafeUrl('   ')).toBe(false);
+  });
+
+  it('blocks unknown/custom protocols', () => {
+    expect(isSafeUrl('custom:payload')).toBe(false);
+  });
+});
 
 describe('markdown artifacts', () => {
   describe('getMarkdownFiles', () => {
@@ -41,7 +109,7 @@ describe('markdown artifacts', () => {
       const markdown = '# Test';
       const files = getMarkdownFiles(markdown);
 
-      expect(files['/components/ui/MarkdownRenderer.tsx']).toContain('import Markdown from');
+      expect(files['/components/ui/MarkdownRenderer.tsx']).toContain('import ReactMarkdown from');
       expect(files['/components/ui/MarkdownRenderer.tsx']).toContain('MarkdownRendererProps');
       expect(files['/components/ui/MarkdownRenderer.tsx']).toContain(
         'export default MarkdownRenderer',
@@ -162,13 +230,29 @@ describe('markdown artifacts', () => {
   });
 
   describe('markdown component structure', () => {
-    it('should generate a MarkdownRenderer component that uses marked-react', () => {
+    it('should generate a MarkdownRenderer component with safe markdown rendering', () => {
       const files = getMarkdownFiles('# Test');
       const rendererCode = files['/components/ui/MarkdownRenderer.tsx'];
 
-      // Verify the component imports and uses Markdown from marked-react
-      expect(rendererCode).toContain("import Markdown from 'marked-react'");
-      expect(rendererCode).toContain('<Markdown gfm={true} breaks={true}>{content}</Markdown>');
+      expect(rendererCode).toContain("import ReactMarkdown from 'react-markdown'");
+      expect(rendererCode).toContain("import remarkBreaks from 'remark-breaks'");
+      expect(rendererCode).toContain('skipHtml={true}');
+      expect(rendererCode).toContain('SAFE_PROTOCOLS');
+      expect(rendererCode).toContain('isSafeUrl');
+      expect(rendererCode).toContain('urlTransform={urlTransform}');
+      expect(rendererCode).toContain('remarkPlugins={remarkPlugins}');
+      expect(rendererCode).toContain('isSafeUrl(url) ? url : null');
+    });
+
+    it('should embed isSafeUrl logic matching the exported version', () => {
+      const files = getMarkdownFiles('# Test');
+      const rendererCode = files['/components/ui/MarkdownRenderer.tsx'];
+
+      expect(rendererCode).toContain("new Set(['http:', 'https:', 'mailto:', 'tel:'])");
+      expect(rendererCode).toContain('new URL(trimmed).protocol');
+      expect(rendererCode).toContain("trimmed.startsWith('/')");
+      expect(rendererCode).toContain("trimmed.startsWith('#')");
+      expect(rendererCode).toContain("trimmed.startsWith('.')");
     });
 
     it('should pass markdown content to the Markdown component', () => {

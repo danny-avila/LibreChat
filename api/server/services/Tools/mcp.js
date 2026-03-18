@@ -1,8 +1,8 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
+const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { updateMCPServerTools } = require('~/server/services/Config');
-const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -41,6 +41,33 @@ async function reinitMCPServer({
   let oauthUrl = null;
 
   try {
+    const registry = getMCPServersRegistry();
+    const serverConfig = await registry.getServerConfig(serverName, user?.id);
+    if (serverConfig?.inspectionFailed) {
+      logger.info(
+        `[MCP Reinitialize] Server ${serverName} had failed inspection, attempting reinspection`,
+      );
+      try {
+        const storageLocation = serverConfig.dbId ? 'DB' : 'CACHE';
+        await registry.reinspectServer(serverName, storageLocation, user?.id);
+        logger.info(`[MCP Reinitialize] Reinspection succeeded for server: ${serverName}`);
+      } catch (reinspectError) {
+        logger.error(
+          `[MCP Reinitialize] Reinspection failed for server ${serverName}:`,
+          reinspectError,
+        );
+        return {
+          availableTools: null,
+          success: false,
+          message: `MCP server '${serverName}' is still unreachable`,
+          oauthRequired: false,
+          serverName,
+          oauthUrl: null,
+          tools: null,
+        };
+      }
+    }
+
     const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
     const mcpManager = getMCPManager();

@@ -56,6 +56,7 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useShowMarketplace: () => false,
   useNewConvo: () => ({ newConversation: jest.fn() }),
+  useGetConversation: () => () => null,
 }));
 
 jest.mock('~/Providers', () => ({

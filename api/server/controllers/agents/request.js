@@ -3,9 +3,9 @@ const { Constants, ViolationTypes } = require('librechat-data-provider');
 const {
   sendEvent,
   getViolationInfo,
+  buildMessageFiles,
   GenerationJobManager,
   decrementPendingRequest,
-  sanitizeFileForTransmit,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
 } = require('@librechat/api');
@@ -252,13 +252,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         conversation.title =
           conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
-        if (req.body.files && client.options?.attachments) {
-          userMessage.files = [];
-          const messageFiles = new Set(req.body.files.map((file) => file.file_id));
-          for (const attachment of client.options.attachments) {
-            if (messageFiles.has(attachment.file_id)) {
-              userMessage.files.push(sanitizeFileForTransmit(attachment));
-            }
+        if (req.body.files && Array.isArray(client.options.attachments)) {
+          const files = buildMessageFiles(req.body.files, client.options.attachments);
+          if (files.length > 0) {
+            userMessage.files = files;
           }
           delete userMessage.image_urls;
         }
@@ -639,14 +636,10 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
-    // Process files if needed (sanitize to remove large text fields before transmission)
-    if (req.body.files && client.options?.attachments) {
-      userMessage.files = [];
-      const messageFiles = new Set(req.body.files.map((file) => file.file_id));
-      for (const attachment of client.options.attachments) {
-        if (messageFiles.has(attachment.file_id)) {
-          userMessage.files.push(sanitizeFileForTransmit(attachment));
-        }
+    if (req.body.files && Array.isArray(client.options.attachments)) {
+      const files = buildMessageFiles(req.body.files, client.options.attachments);
+      if (files.length > 0) {
+        userMessage.files = files;
       }
       delete userMessage.image_urls;
     }

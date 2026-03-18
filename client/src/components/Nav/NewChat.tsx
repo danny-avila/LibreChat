@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
@@ -24,7 +24,6 @@ export default function NewChat({
   const queryClient = useQueryClient();
   /** Note: this component needs an explicit index passed if using more than one */
   const { newConversation: newConvo } = useNewConvo(index);
-  const navigate = useNavigate();
   const localize = useLocalize();
   const { conversation } = store.useCreateConversationAtom(index);
 
@@ -36,21 +35,22 @@ export default function NewChat({
     }, 250);
   }, [toggleNav]);
 
-  const clickHandler: React.MouseEventHandler<HTMLButtonElement> = useCallback(
+  const clickHandler: React.MouseEventHandler<HTMLAnchorElement> = useCallback(
     (e) => {
-      if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
-        window.open('/c/new', '_blank');
+      // Let browser handle modified/non-left clicks (new tab, context menu, etc.)
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
         return;
       }
+
+      e.preventDefault();
       clearMessagesCache(queryClient, conversation?.conversationId);
       queryClient.invalidateQueries([QueryKeys.messages]);
       newConvo();
-      navigate('/c/new', { state: { focusChat: true } });
       if (isSmallScreen) {
         toggleNav();
       }
     },
-    [queryClient, conversation, newConvo, navigate, toggleNav, isSmallScreen],
+    [queryClient, conversation, newConvo, toggleNav, isSmallScreen],
   );
 
   return (
@@ -84,14 +84,16 @@ export default function NewChat({
             description={localize('com_ui_new_chat')}
             render={
               <Button
+                asChild
                 size="icon"
                 variant="outline"
                 data-testid="nav-new-chat-button"
                 aria-label={localize('com_ui_new_chat')}
                 className="rounded-full border-none bg-transparent duration-0 hover:bg-surface-active-alt focus-visible:ring-inset focus-visible:ring-black focus-visible:ring-offset-0 dark:focus-visible:ring-white md:rounded-xl"
-                onClick={clickHandler}
               >
-                <NewChatIcon className="icon-lg text-text-primary" />
+                <Link to="/c/new" state={{ focusChat: true }} onClick={clickHandler}>
+                  <NewChatIcon className="icon-lg text-text-primary" />
+                </Link>
               </Button>
             }
           />

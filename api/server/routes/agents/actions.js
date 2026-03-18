@@ -12,7 +12,11 @@ const {
   validateActionDomain,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
-const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
+const {
+  legacyDomainEncode,
+  encryptMetadata,
+  domainParser,
+} = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getAgent, updateAgent, getListAgentsByAccess } = require('~/models/Agent');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
@@ -119,12 +123,13 @@ router.post(
         return res.status(400).json({ message: 'Domain not allowed' });
       }
 
-      let { domain } = metadata;
-      domain = await domainParser(domain, true);
+      const encodedDomain = await domainParser(metadata.domain, true);
 
-      if (!domain) {
+      if (!encodedDomain) {
         return res.status(400).json({ message: 'No domain provided' });
       }
+
+      const legacyDomain = legacyDomainEncode(metadata.domain);
 
       const action_id = _action_id ?? nanoid();
       const initialPromises = [];
@@ -143,6 +148,9 @@ router.post(
 
       if (actions_result && actions_result.length) {
         const action = actions_result[0];
+        if (action.agent_id !== agent_id) {
+          return res.status(403).json({ message: 'Action does not belong to this agent' });
+        }
         metadata = { ...action.metadata, ...metadata };
       }
 
@@ -157,14 +165,23 @@ router.post(
         actions.push(action);
       }
 
-      actions.push(`${domain}${actionDelimiter}${action_id}`);
+      actions.push(`${encodedDomain}${actionDelimiter}${action_id}`);
 
       /** @type {string[]}} */
       const { tools: _tools = [] } = agent;
 
+      const shouldRemoveAgentTool = (tool) => {
+        if (!tool) {
+          return false;
+        }
+        return (
+          tool.includes(encodedDomain) || tool.includes(legacyDomain) || tool.includes(action_id)
+        );
+      };
+
       const tools = _tools
-        .filter((tool) => !(tool && (tool.includes(domain) || tool.includes(action_id))))
-        .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${domain}`));
+        .filter((tool) => !shouldRemoveAgentTool(tool))
+        .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${encodedDomain}`));
 
       // Force version update since actions are changing
       const updatedAgent = await updateAgent(
@@ -184,7 +201,7 @@ router.post(
       }
 
       /** @type {[Action]} */
-      const updatedAction = await updateAction({ action_id }, actionUpdateData);
+      const updatedAction = await updateAction({ action_id, agent_id }, actionUpdateData);
 
       const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
       for (let field of sensitiveFields) {
@@ -228,22 +245,22 @@ router.delete(
 
       const { tools = [], actions = [] } = agent;
 
-      let domain = '';
+      let storedDomain = '';
       const updatedActions = actions.filter((action) => {
         if (action.includes(action_id)) {
-          [domain] = action.split(actionDelimiter);
+          [storedDomain] = action.split(actionDelimiter);
           return false;
         }
         return true;
       });
 
-      domain = await domainParser(domain, true);
-
-      if (!domain) {
+      if (!storedDomain) {
         return res.status(400).json({ message: 'No domain provided' });
       }
 
-      const updatedTools = tools.filter((tool) => !(tool && tool.includes(domain)));
+      const updatedTools = tools.filter(
+        (tool) => !(tool && (tool.includes(storedDomain) || tool.includes(action_id))),
+      );
 
       // Force version update since actions are being removed
       await updateAgent(
@@ -251,7 +268,13 @@ router.delete(
         { tools: updatedTools, actions: updatedActions },
         { updatingUserId: req.user.id, forceVersion: true },
       );
-      await deleteAction({ action_id });
+      const deleted = await deleteAction({ action_id, agent_id });
+      if (!deleted) {
+        logger.warn('[Agent Action Delete] No matching action document found', {
+          action_id,
+          agent_id,
+        });
+      }
       res.status(200).json({ message: 'Action deleted successfully' });
     } catch (error) {
       const message = 'Trouble deleting the Agent Action';

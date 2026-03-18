@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema } = require('@librechat/data-schemas');
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, PermissionBits } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 // Only mock the dependencies that are not database-related
@@ -46,9 +46,9 @@ jest.mock('~/models/File', () => ({
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
   findPubliclyAccessibleResources: jest.fn().mockResolvedValue([]),
+  getResourcePermissionsMap: jest.fn().mockResolvedValue(new Map()),
   grantPermission: jest.fn(),
   hasPublicPermission: jest.fn().mockResolvedValue(false),
-  checkPermission: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('~/models', () => ({
@@ -59,6 +59,7 @@ jest.mock('~/models', () => ({
 const mockCache = {
   get: jest.fn(),
   set: jest.fn(),
+  delete: jest.fn(),
 };
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => mockCache),
@@ -73,6 +74,7 @@ const {
 const {
   findAccessibleResources,
   findPubliclyAccessibleResources,
+  getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
 
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
@@ -1309,7 +1311,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     });
 
     test('should skip avatar refresh if cache hit', async () => {
-      mockCache.get.mockResolvedValue(true);
+      mockCache.get.mockResolvedValue({ urlCache: {} });
       findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
       findPubliclyAccessibleResources.mockResolvedValue([]);
 
@@ -1348,8 +1350,12 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify S3 URL was refreshed
       expect(refreshS3Url).toHaveBeenCalled();
 
-      // Verify cache was set
-      expect(mockCache.set).toHaveBeenCalled();
+      // Verify cache was set with urlCache map, not a plain boolean
+      expect(mockCache.set).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ urlCache: expect.any(Object) }),
+        expect.any(Number),
+      );
 
       // Verify response was returned
       expect(mockRes.json).toHaveBeenCalled();
@@ -1562,6 +1568,192 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       // Verify that the handler completed successfully
       expect(mockRes.json).toHaveBeenCalled();
+    });
+
+    test('should treat legacy boolean cache entry as a miss and run refresh', async () => {
+      // Simulate a cache entry written by the pre-fix code
+      mockCache.get.mockResolvedValue(true);
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+      refreshS3Url.mockResolvedValue('new-s3-path.jpg');
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      // Boolean true fails the shape guard, so refresh must run
+      expect(refreshS3Url).toHaveBeenCalled();
+      // Cache is overwritten with the proper format
+      expect(mockCache.set).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ urlCache: expect.any(Object) }),
+        expect.any(Number),
+      );
+    });
+
+    test('should apply cached urlCache filepath to paginated response on cache hit', async () => {
+      const agentId = agentWithS3Avatar.id;
+      const cachedUrl = 'cached-presigned-url.jpg';
+
+      mockCache.get.mockResolvedValue({ urlCache: { [agentId]: cachedUrl } });
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(refreshS3Url).not.toHaveBeenCalled();
+
+      const responseData = mockRes.json.mock.calls[0][0];
+      const agent = responseData.data.find((a) => a.id === agentId);
+      // Cached URL is served, not the stale DB value 'old-s3-path.jpg'
+      expect(agent.avatar.filepath).toBe(cachedUrl);
+    });
+
+    test('should preserve DB filepath for agents absent from urlCache on cache hit', async () => {
+      mockCache.get.mockResolvedValue({ urlCache: {} });
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(refreshS3Url).not.toHaveBeenCalled();
+
+      const responseData = mockRes.json.mock.calls[0][0];
+      const agent = responseData.data.find((a) => a.id === agentWithS3Avatar.id);
+      expect(agent.avatar.filepath).toBe('old-s3-path.jpg');
+    });
+  });
+
+  describe('Edge ACL validation', () => {
+    let targetAgent;
+
+    beforeEach(async () => {
+      targetAgent = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: new mongoose.Types.ObjectId().toString(),
+        name: 'Target Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+      });
+    });
+
+    test('createAgentHandler should return 403 when user lacks VIEW on an edge-referenced agent', async () => {
+      const permMap = new Map();
+      getResourcePermissionsMap.mockResolvedValueOnce(permMap);
+
+      mockReq.body = {
+        name: 'Attacker Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        edges: [{ from: 'self_placeholder', to: targetAgent.id, edgeType: 'handoff' }],
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.agent_ids).toContain(targetAgent.id);
+    });
+
+    test('createAgentHandler should succeed when user has VIEW on all edge-referenced agents', async () => {
+      const permMap = new Map([[targetAgent._id.toString(), 1]]);
+      getResourcePermissionsMap.mockResolvedValueOnce(permMap);
+
+      mockReq.body = {
+        name: 'Legit Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        edges: [{ from: 'self_placeholder', to: targetAgent.id, edgeType: 'handoff' }],
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+    });
+
+    test('createAgentHandler should allow edges referencing non-existent agents (self-reference at create time)', async () => {
+      mockReq.body = {
+        name: 'Self-Ref Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        edges: [{ from: 'agent_does_not_exist_yet', to: 'agent_also_new', edgeType: 'handoff' }],
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+    });
+
+    test('updateAgentHandler should return 403 when user lacks VIEW on an edge-referenced agent', async () => {
+      const ownedAgent = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: mockReq.user.id,
+        name: 'Owned Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+      });
+
+      const permMap = new Map([[ownedAgent._id.toString(), PermissionBits.VIEW]]);
+      getResourcePermissionsMap.mockResolvedValueOnce(permMap);
+
+      mockReq.params = { id: ownedAgent.id };
+      mockReq.body = {
+        edges: [{ from: ownedAgent.id, to: targetAgent.id, edgeType: 'handoff' }],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.agent_ids).toContain(targetAgent.id);
+      expect(response.agent_ids).not.toContain(ownedAgent.id);
+    });
+
+    test('updateAgentHandler should succeed when edges field is absent from payload', async () => {
+      const ownedAgent = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: mockReq.user.id,
+        name: 'Owned Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+      });
+
+      mockReq.params = { id: ownedAgent.id };
+      mockReq.body = { name: 'Renamed Agent' };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(403);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.name).toBe('Renamed Agent');
     });
   });
 });
