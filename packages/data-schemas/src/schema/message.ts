@@ -118,6 +118,8 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: {
         calibrationRatio: { type: Number },
         encoding: { type: String },
+        instructionOverhead: { type: Number },
+        toolCount: { type: Number },
       },
       _id: false,
       default: undefined,

@@ -634,6 +634,8 @@ export const tMessageSchema = z.object({
     .object({
       calibrationRatio: z.number().optional(),
       encoding: z.string().optional(),
+      instructionOverhead: z.number().optional(),
+      toolCount: z.number().optional(),
     })
     .optional(),
 });

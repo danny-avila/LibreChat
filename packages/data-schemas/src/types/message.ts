@@ -42,6 +42,8 @@ export interface IMessage extends Document {
   contextMeta?: {
     calibrationRatio?: number;
     encoding?: string;
+    instructionOverhead?: number;
+    toolCount?: number;
   };
   attachments?: unknown[];
   expiredAt?: Date | null;

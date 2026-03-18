@@ -210,6 +210,7 @@ export async function createRun({
   summarizationConfig,
   initialSummary,
   calibrationRatio,
+  seededInstructionOverhead,
   streaming = true,
   streamUsage = true,
 }: {
@@ -227,6 +228,8 @@ export async function createRun({
   initialSummary?: { text: string; tokenCount: number };
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
+  /** Provider-observed instruction overhead from previous run, seeds the pruner budget */
+  seededInstructionOverhead?: number;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -420,5 +423,6 @@ export async function createRun({
     customHandlers,
     indexTokenCountMap,
     calibrationRatio,
+    seededInstructionOverhead,
   });
 }
