@@ -2,20 +2,23 @@ const logger = require('~/config/winston');
 const Candidate = require('~/models/Candidate');
 const whatsapp = require('./WhatsAppIntegration');
 
+// Fields collected via WhatsApp, mapped directly to Candidate model fields
 const ONBOARDING_FIELDS = [
-  'fullLegalName',
-  'dateOfBirth',
+  'name',
+  'personalEmail',
+  'phone',
   'address',
-  'emergencyContact',
-  'roleStartDate',
+  'role',
+  'monthlySalary',
 ];
 
 const FIELD_PROMPTS = {
-  fullLegalName: 'Please provide your full legal name as it appears on your ID.',
-  dateOfBirth: 'What is your date of birth? (DD/MM/YYYY)',
+  name: 'Please provide your full legal name as it appears on your ID.',
+  personalEmail: 'What is your personal email address?',
+  phone: 'What is your phone number? (include country code, e.g. +2348012345678)',
   address: 'What is your current residential address?',
-  emergencyContact: 'Please provide an emergency contact name and phone number.',
-  roleStartDate: 'What is your expected start date for the role? (DD/MM/YYYY)',
+  role: 'What is the role or position you are being onboarded for?',
+  monthlySalary: 'What is your agreed monthly salary? (e.g. 500000 NGN)',
 };
 
 class OnboardingAgent {
@@ -65,8 +68,9 @@ class OnboardingAgent {
    * @param {string} value - Collected value
    */
   async processResponse(candidateId, field, value) {
+    // Write directly to the candidate field (not nested in onboardingData)
     await Candidate.findByIdAndUpdate(candidateId, {
-      [`onboardingData.${field}`]: value,
+      [field]: value,
       $inc: { onboardingStep: 1 },
     });
 
@@ -84,6 +88,17 @@ class OnboardingAgent {
    */
   async completeOnboarding(candidateId) {
     await Candidate.findByIdAndUpdate(candidateId, { status: 'active' });
+    const candidate = await Candidate.findById(candidateId);
+    if (candidate) {
+      try {
+        await whatsapp.sendMessage(
+          candidate.whatsapp,
+          `Thank you ${candidate.name}! Your onboarding information has been received. Our team will be in touch with next steps. Welcome aboard! 🎉`,
+        );
+      } catch (err) {
+        logger.error(`[OnboardingAgent] Failed to send completion message to ${candidateId}:`, err.message);
+      }
+    }
     logger.info(`[OnboardingAgent] Onboarding complete for candidate ${candidateId}`);
   }
 }
