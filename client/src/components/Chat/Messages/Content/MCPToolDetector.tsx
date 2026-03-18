@@ -355,8 +355,8 @@ const MCP_TOOL_CONFIGS = {
               console.log('🔍 Extracted email content:', emailContent.substring(0, 200));
             }
           }
-        } catch (parseError) {
-          console.error('❌ Failed to parse nested structure:', parseError);
+        } catch (_parseError) {
+          console.error('❌ Failed to parse nested structure:', _parseError);
           // Fallback: try to extract markdown from the raw output
           const markdownMatch = output.match(/```markdown\n([\s\S]+?)\n```/);
           if (markdownMatch) {
@@ -500,13 +500,18 @@ const MCP_TOOL_CONFIGS = {
         const TOOL_FIELD = 'convert_digest_json_to_html';
         const HTML_FIELD = 'html';
         // Top-level or data.*
-        const topLevel = (data?.[TOOL_FIELD] ?? (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as Record<string, unknown> | undefined;
-        let html = (data?.[HTML_FIELD] as string) ?? topLevel?.[HTML_FIELD] as string | undefined;
+        const topLevel = (data?.[TOOL_FIELD] ??
+          (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as
+          | Record<string, unknown>
+          | undefined;
+        const html = (data?.[HTML_FIELD] as string) ?? (topLevel?.[HTML_FIELD] as string | undefined);
         if (typeof html === 'string' && html.length > 0) return html;
         if (!html && typeof data === 'object' && data !== null) {
           for (const value of Object.values(data)) {
             if (value && typeof value === 'object' && TOOL_FIELD in value) {
-              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
+              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as
+                | Record<string, unknown>
+                | undefined;
               const h = inner?.[HTML_FIELD];
               if (typeof h === 'string' && h.length > 0) return h;
             }
@@ -536,15 +541,20 @@ const MCP_TOOL_CONFIGS = {
           data = JSON.parse(output);
         }
         const TOOL_FIELD = 'convert_digest_json_to_html';
-        const topLevel = (data?.[TOOL_FIELD] ?? (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as Record<string, unknown> | undefined;
-        let s3Url = readUrl(topLevel ?? (data as Record<string, unknown>));
+        const topLevel = (data?.[TOOL_FIELD] ??
+          (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as
+          | Record<string, unknown>
+          | undefined;
+        const s3Url = readUrl(topLevel ?? (data as Record<string, unknown>));
         if (s3Url) return s3Url;
         if (typeof data === 'object' && data !== null) {
           for (const value of Object.values(data)) {
             if (value && typeof value === 'object' && TOOL_FIELD in value) {
-              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
-              s3Url = readUrl(inner ?? null);
-              if (s3Url) return s3Url;
+              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as
+                | Record<string, unknown>
+                | undefined;
+              const innerUrl = readUrl(inner ?? null);
+              if (innerUrl) return innerUrl;
             }
           }
         }
@@ -568,13 +578,20 @@ const MCP_TOOL_CONFIGS = {
         }
         const TOOL_FIELD = 'convert_digest_json_to_html';
         const DIGEST_ID_FIELD = 'digest_id';
-        const topLevel = (data?.[TOOL_FIELD] ?? (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as Record<string, unknown> | undefined;
-        let digestId = (data?.[DIGEST_ID_FIELD] as string) ?? topLevel?.[DIGEST_ID_FIELD] as string | undefined;
+        const topLevel = (data?.[TOOL_FIELD] ??
+          (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as
+          | Record<string, unknown>
+          | undefined;
+        const digestId =
+          (data?.[DIGEST_ID_FIELD] as string) ??
+          (topLevel?.[DIGEST_ID_FIELD] as string | undefined);
         if (typeof digestId === 'string' && digestId.length > 0) return digestId;
         if (!digestId && typeof data === 'object' && data !== null) {
           for (const value of Object.values(data)) {
             if (value && typeof value === 'object' && TOOL_FIELD in value) {
-              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as Record<string, unknown> | undefined;
+              const inner = (value as Record<string, unknown>)[TOOL_FIELD] as
+                | Record<string, unknown>
+                | undefined;
               const d = inner?.[DIGEST_ID_FIELD];
               if (typeof d === 'string' && d.length > 0) return d;
             }
@@ -910,7 +927,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         hasKeys: options && typeof options === 'object' ? Object.keys(options).length : 0,
       });
     }
-  }, [toolConfig, output, function_name, serverName, formId, setChatBlocked, setSubmittedForms]);
+  }, [toolConfig, output, function_name, serverName, formId, conversationId, requestId, setChatBlocked, setSubmittedForms]);
 
   // Cleanup: unblock chat when component unmounts or conversation changes
   useEffect(() => {
@@ -962,11 +979,12 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         const websiteLabel = website ? `${website.name} (${website.url})` : data.website_id;
 
         const crawlConfig = options.crawlConfigs?.find((c: any) => c.id === data.crawl_config_id);
-        const crawlConfigLabel = crawlConfig
-          ? crawlConfig.name
-          : data.crawl_config_id === 'default'
-            ? 'Default Configuration'
-            : data.crawl_config_id;
+        let crawlConfigLabel = data.crawl_config_id;
+        if (crawlConfig) {
+          crawlConfigLabel = crawlConfig.name;
+        } else if (data.crawl_config_id === 'default') {
+          crawlConfigLabel = 'Default Configuration';
+        }
 
         submittedDataWithLabels = {
           ...data,
@@ -999,11 +1017,12 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         const websiteLabel = website ? `${website.name} (${website.url})` : data.website_id;
 
         const crawlConfig = options.crawlConfigs?.find((c: any) => c.id === data.crawl_config_id);
-        const crawlConfigLabel = crawlConfig
-          ? crawlConfig.name
-          : data.crawl_config_id === 'default'
-            ? 'Default Configuration'
-            : data.crawl_config_id;
+        let crawlConfigLabel = data.crawl_config_id;
+        if (crawlConfig) {
+          crawlConfigLabel = crawlConfig.name;
+        } else if (data.crawl_config_id === 'default') {
+          crawlConfigLabel = 'Default Configuration';
+        }
 
         const launchDate = data.launch_date
           ? new Date(data.launch_date).toLocaleDateString()
@@ -1035,7 +1054,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
             } else {
               resultInfo = `\n\n✅ **Status:** Request completed`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             resultInfo = `\n\n✅ **Status:** Request completed`;
           }
         }
@@ -1055,7 +1074,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
             if (configData.id) {
               resultInfo = `\n\n✅ **Status:** Configuration created successfully\n📋 **Config ID:** ${configData.id}`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             resultInfo = `\n\n✅ **Status:** Configuration created`;
           }
         } else if (data.toolResponse?.error) {
@@ -1091,7 +1110,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
               // If result is just an error string
               operationInfo = `\n\n❌ **Operation Status:** Failed\n⚠️ **Error:** ${result}`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             // If parsing fails, treat the result as an error message
             operationInfo = `\n\n❌ **Operation Status:** Failed\n⚠️ **Error:** ${data.toolResponse.result}`;
           }
@@ -1269,7 +1288,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
             } else {
               resultInfo = `\n\n✅ **Status:** Request completed\n📄 **Response:** ${resultString.substring(0, 200)}`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             resultInfo = `\n\n✅ **Status:** Request completed\n📄 **Response:** ${String(data.toolResponse.result).substring(0, 200)}`;
           }
         }
@@ -1323,7 +1342,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
             } else {
               resultInfo = `\n\n✅ **Status:** Request completed`;
             }
-          } catch (parseError) {
+          } catch (_parseError) {
             resultInfo = `\n\n✅ **Status:** Request completed`;
           }
         }
@@ -1384,6 +1403,8 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     [
       formId,
       function_name,
+      conversationId,
+      requestId,
       toolConfig?.formType,
       setSubmittedForms,
       submitMessage,
@@ -1417,7 +1438,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
       ...prev,
       [conversationId || 'no-conv']: false,
     }));
-  }, [formId, function_name, submitMessage, setChatBlocked, setSubmittedForms]);
+  }, [formId, function_name, conversationId, requestId, submitMessage, setChatBlocked, setSubmittedForms]);
 
   // NOTE: All hooks must be called before any conditional returns (Rules of Hooks)
   const digestIdFromInput = useMemo(() => {
