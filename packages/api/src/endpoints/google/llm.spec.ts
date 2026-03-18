@@ -642,7 +642,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-2.0-flash',
+          model: 'gemini-2.5-flash',
           url_context: true,
         },
       });
@@ -657,7 +657,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-2.0-flash',
+          model: 'gemini-2.5-flash',
           url_context: false,
         },
       });
@@ -672,7 +672,7 @@ describe('getGoogleConfig', () => {
 
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-2.0-flash',
+          model: 'gemini-2.5-flash',
           web_search: true,
           url_context: true,
         },
