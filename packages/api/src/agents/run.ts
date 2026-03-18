@@ -247,15 +247,15 @@ export async function createRun({
 
   const agentInputs: AgentInputs[] = [];
   const buildAgentContext = (agent: RunAgent) => {
-    const selfProvider =
+    const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
-      ] as unknown as string) ?? agent.provider;
+      ] as unknown as Providers) ?? agent.provider;
     const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
 
     const baseSummarizationConfig: SummarizationConfig = {
       enabled: true,
-      provider: selfProvider,
+      provider: provider as string,
       model: selfModel,
     };
     const overrideConfig = agent.summarization ?? summarizationConfig;
@@ -272,11 +272,6 @@ export async function createRun({
     const hasSummarizationModel =
       typeof resolvedSummarizationModel === 'string' &&
       resolvedSummarizationModel.trim().length > 0;
-
-    const provider =
-      (providerEndpointMap[
-        agent.provider as keyof typeof providerEndpointMap
-      ] as unknown as Providers) ?? agent.provider;
 
     const llmConfig: t.RunLLMConfig = Object.assign(
       {
