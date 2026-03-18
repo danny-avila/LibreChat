@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { StepTypes, StepEvents, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
+  SummaryContentPart,
   EventSubmission,
   TEndpointOption,
   TConversation,
@@ -1337,7 +1338,7 @@ describe('useStepHandler', () => {
       expect(mockAnnouncePolite).not.toHaveBeenCalled();
     });
 
-    it('ON_SUMMARIZE_COMPLETE with undefined summary does not finalize', () => {
+    it('ON_SUMMARIZE_COMPLETE with undefined summary finalizes existing part with summarizing=false', () => {
       mockLastAnnouncementTimeRef.current = Date.now();
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
@@ -1404,7 +1405,12 @@ describe('useStepHandler', () => {
         message: 'summarize_completed',
         isStatus: true,
       });
-      expect(mockSetMessages).not.toHaveBeenCalled();
+      expect(mockSetMessages).toHaveBeenCalledTimes(1);
+      const updatedMessages = mockSetMessages.mock.calls[0][0] as TMessage[];
+      const summaryPart = updatedMessages[0]?.content?.find(
+        (p: TMessageContentParts) => p?.type === ContentTypes.SUMMARY,
+      ) as SummaryContentPart | undefined;
+      expect(summaryPart?.summarizing).toBe(false);
     });
   });
 
