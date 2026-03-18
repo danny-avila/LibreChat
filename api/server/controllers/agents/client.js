@@ -822,19 +822,9 @@ class AgentClient extends BaseClient {
         const calibrationRatio =
           encodingMatch && prevMeta?.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
 
-        const primaryAgent = agents[0];
-        const currentToolCount =
-          (primaryAgent?.tools?.length ?? 0) + (primaryAgent?.toolDefinitions?.length ?? 0);
-        const seededInstructionOverhead =
-          encodingMatch &&
-          prevMeta?.instructionOverhead > 0 &&
-          prevMeta?.toolCount === currentToolCount
-            ? prevMeta.instructionOverhead
-            : undefined;
-
         if (prevMeta) {
           logger.debug(
-            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, overhead=${prevMeta.instructionOverhead ?? 'none'}, toolCount=${prevMeta.toolCount ?? 'none'}→${currentToolCount}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}/${seededInstructionOverhead ?? 'none'}`,
+            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}`,
           );
         }
 
@@ -844,7 +834,6 @@ class AgentClient extends BaseClient {
           indexTokenCountMap,
           initialSummary,
           calibrationRatio,
-          seededInstructionOverhead,
           runId: this.responseMessageId,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
@@ -916,14 +905,10 @@ class AgentClient extends BaseClient {
       /** Capture calibration state from the run for persistence on the response message.
        *  Runs in finally so values are captured even on abort. */
       const ratio = this.run?.getCalibrationRatio() ?? 0;
-      const overhead = this.run?.getResolvedInstructionOverhead();
-      const toolCount = this.run?.getToolCount() ?? 0;
       if (ratio > 0 && ratio !== 1) {
         this.contextMeta = {
           calibrationRatio: Math.round(ratio * 1000) / 1000,
           encoding: this.getEncoding(),
-          instructionOverhead: overhead != null ? Math.round(overhead) : undefined,
-          toolCount: toolCount > 0 ? toolCount : undefined,
         };
       } else {
         this.contextMeta = undefined;
