@@ -3,7 +3,7 @@ import { useAtom } from 'jotai';
 import isEqual from 'lodash/isEqual';
 import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
-import { ephemeralAgentByConvoId, mcpValuesAtomFamily, mcpPinnedAtom } from '~/store';
+import { ephemeralAgentByConvoId, mcpPinnedAtom, mcpValuesAtomFamily } from '~/store';
 import { setTimestamp } from '~/utils/timestamps';
 import { MCPServerDefinition } from './useMCPServerManager';
 
@@ -22,6 +22,14 @@ export function useMCPSelect({
   const [isPinned, setIsPinned] = useAtom(mcpPinnedAtom);
   const [mcpValues, setMCPValuesRaw] = useAtom(mcpValuesAtomFamily(key));
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+
+  // Select all servers by default when servers are available and nothing is selected
+  useEffect(() => {
+    if (servers?.length > 0 && mcpValues.length === 0) {
+      const allServerNames = servers.map((s) => s.serverName);
+      setMCPValuesRaw(allServerNames);
+    }
+  }, [servers, mcpValues.length, setMCPValuesRaw]);
 
   // Sync Jotai state with ephemeral agent state
   useEffect(() => {
@@ -51,16 +59,10 @@ export function useMCPSelect({
     }
   }, [mcpValues, key]);
 
-  /** Stable memoized setter */
-  const setMCPValues = useCallback(
-    (value: string[]) => {
-      if (!Array.isArray(value)) {
-        return;
-      }
-      setMCPValuesRaw(value);
-    },
-    [setMCPValuesRaw],
-  );
+  /** Deliberately swallows clicks so servers can NEVER be unselected */
+  const setMCPValues = useCallback(() => {
+    // Locked on purpose
+  }, []);
 
   return {
     isPinned,
