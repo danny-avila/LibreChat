@@ -116,8 +116,14 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
 
 /** Parses OpenDocument Text (.odt), returns text inside. */
 async function odtToText(file: Express.Multer.File): Promise<string> {
-  const { execSync } = await import('child_process');
-  const xml = execSync(`unzip -p "${file.path}" content.xml`).toString();
+  const JSZip = (await import('jszip')).default;
+  const data = await fs.promises.readFile(file.path);
+  const zip = await JSZip.loadAsync(data);
+  const contentFile = zip.file('content.xml');
+  if (!contentFile) {
+    throw new Error('ODT file is missing content.xml');
+  }
+  const xml = await contentFile.async('string');
   return xml
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
