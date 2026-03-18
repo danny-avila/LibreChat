@@ -1103,8 +1103,10 @@ class BaseClient {
     }
     let lastSummary = null;
     for (const part of message.content) {
-      // Accepts both new format (content: []) and legacy DB format (text: string)
-      if (part?.type === ContentTypes.SUMMARY && (part.content || part.text)) {
+      if (
+        part?.type === ContentTypes.SUMMARY &&
+        BaseClient.getSummaryText(part).trim().length > 0
+      ) {
         lastSummary = part;
       }
     }
