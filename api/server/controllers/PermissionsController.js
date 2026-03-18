@@ -24,7 +24,7 @@ const {
   entraIdPrincipalFeatureEnabled,
   searchEntraIdPrincipals,
 } = require('~/server/services/GraphApiService');
-const { AclEntry, AccessRole } = require('~/db/models');
+const { Agent, AclEntry, AccessRole, User } = require('~/db/models');
 
 /**
  * Generic controller for resource permission endpoints
@@ -41,6 +41,24 @@ const validateResourceType = (resourceType) => {
   if (!validTypes.includes(resourceType)) {
     throw new Error(`Invalid resourceType: ${resourceType}. Valid types: ${validTypes.join(', ')}`);
   }
+};
+
+/** Removes an agent from the favorites of specified users (fire-and-forget). */
+const removeRevokedAgentFromFavorites = (resourceId, userIds) => {
+  Agent.findOne({ _id: resourceId }, { id: 1 })
+    .lean()
+    .then((agent) => {
+      if (!agent) {
+        return;
+      }
+      return User.updateMany(
+        { _id: { $in: userIds }, 'favorites.agentId': agent.id },
+        { $pull: { favorites: { agentId: agent.id } } },
+      );
+    })
+    .catch((err) => {
+      logger.error('[removeRevokedAgentFromFavorites] Error cleaning up favorites', err);
+    });
 };
 
 /**
@@ -154,6 +172,16 @@ const updateResourcePermissions = async (req, res) => {
       revokedPrincipals,
       grantedBy: userId,
     });
+
+    const isAgentResource =
+      resourceType === ResourceType.AGENT || resourceType === ResourceType.REMOTE_AGENT;
+    const revokedUserIds = revokedPrincipals
+      .filter((p) => p.type === PrincipalType.USER && p.id)
+      .map((p) => p.id);
+
+    if (isAgentResource && revokedUserIds.length > 0) {
+      removeRevokedAgentFromFavorites(resourceId, revokedUserIds);
+    }
 
     /** @type {TUpdateResourcePermissionsResponse} */
     const response = {

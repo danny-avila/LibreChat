@@ -198,7 +198,8 @@ export default function FavoritesList({
         } catch (error) {
           if (error && typeof error === 'object' && 'response' in error) {
             const axiosError = error as { response?: { status?: number } };
-            if (axiosError.response?.status === 404) {
+            const status = axiosError.response?.status;
+            if (status === 404 || status === 403) {
               return { found: false };
             }
           }
@@ -209,6 +210,27 @@ export default function FavoritesList({
       enabled: missingAgentIds.length > 0,
     })),
   });
+
+  const staleAgentIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (let i = 0; i < missingAgentIds.length; i++) {
+      const query = missingAgentQueries[i];
+      if (query.data && !query.data.found) {
+        ids.add(missingAgentIds[i]);
+      }
+    }
+    return ids;
+  }, [missingAgentIds, missingAgentQueries]);
+
+  useEffect(() => {
+    if (staleAgentIds.size === 0) {
+      return;
+    }
+    const cleaned = safeFavorites.filter((f) => !f.agentId || !staleAgentIds.has(f.agentId));
+    if (cleaned.length < safeFavorites.length) {
+      reorderFavorites(cleaned, true);
+    }
+  }, [staleAgentIds, safeFavorites, reorderFavorites]);
 
   const combinedAgentsMap = useMemo(() => {
     if (agentsMap === undefined) {
