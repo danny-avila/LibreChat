@@ -504,7 +504,8 @@ const MCP_TOOL_CONFIGS = {
           (data?.data as Record<string, unknown>)?.[TOOL_FIELD]) as
           | Record<string, unknown>
           | undefined;
-        const html = (data?.[HTML_FIELD] as string) ?? (topLevel?.[HTML_FIELD] as string | undefined);
+        const html =
+          (data?.[HTML_FIELD] as string) ?? (topLevel?.[HTML_FIELD] as string | undefined);
         if (typeof html === 'string' && html.length > 0) return html;
         if (!html && typeof data === 'object' && data !== null) {
           for (const value of Object.values(data)) {
@@ -748,7 +749,10 @@ const MCP_TOOL_CONFIGS = {
           !Array.isArray(parsedData.recommendations) ||
           parsedData.recommendations.length === 0
         ) {
-          console.warn('PIR status update form output is not valid form data, skipping:', parsedData);
+          console.warn(
+            'PIR status update form output is not valid form data, skipping:',
+            parsedData,
+          );
           return {};
         }
 
@@ -805,7 +809,10 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     if (requestMatch) return requestMatch[1];
 
     // Also try to extract form_id from JSON output (for PIR form tools)
-    if (function_name === 'render_prod_int_create_reco_form' || function_name === 'render_pir_update_status_form') {
+    if (
+      function_name === 'render_prod_int_create_reco_form' ||
+      function_name === 'render_pir_update_status_form'
+    ) {
       try {
         let parsed = JSON.parse(output);
         if (Array.isArray(parsed) && parsed[0]?.text) {
@@ -841,7 +848,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
 
     // Don't render form if output can't be parsed as JSON (tool call failed with error text)
     try {
-      let parsed = JSON.parse(output);
+      const parsed = JSON.parse(output);
       // Handle TextContent array: [{"type":"text","text":"..."}]
       if (Array.isArray(parsed) && parsed[0]?.text) {
         JSON.parse(parsed[0].text);
@@ -927,7 +934,17 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
         hasKeys: options && typeof options === 'object' ? Object.keys(options).length : 0,
       });
     }
-  }, [toolConfig, output, function_name, serverName, formId, conversationId, requestId, setChatBlocked, setSubmittedForms]);
+  }, [
+    toolConfig,
+    output,
+    function_name,
+    serverName,
+    formId,
+    conversationId,
+    requestId,
+    setChatBlocked,
+    setSubmittedForms,
+  ]);
 
   // Cleanup: unblock chat when component unmounts or conversation changes
   useEffect(() => {
@@ -1146,7 +1163,9 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
               }
 
               // Extract individual recommendation IDs
-              const recIdMatches = [...resultString.matchAll(/recommendation_id['":\s]+([a-z]+-[a-f0-9-]+)/g)];
+              const recIdMatches = [
+                ...resultString.matchAll(/recommendation_id['":\s]+([a-z]+-[a-f0-9-]+)/g),
+              ];
               if (recIdMatches.length > 0) {
                 const recIds = recIdMatches.map((m) => m[1]);
                 resultInfo += `\n🔖 **Recommendation ID${recIds.length > 1 ? 's' : ''}:** ${recIds.join(', ')}`;
@@ -1165,9 +1184,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
 
         const tierBreakdown = ['critical', 'high', 'medium', 'low']
           .map((t) => {
-            const c = (data.recommendations || []).filter(
-              (r: any) => r.priorityTier === t,
-            ).length;
+            const c = (data.recommendations || []).filter((r: any) => r.priorityTier === t).length;
             return c > 0 ? `${c} ${t}` : '';
           })
           .filter(Boolean)
@@ -1438,7 +1455,15 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
       ...prev,
       [conversationId || 'no-conv']: false,
     }));
-  }, [formId, function_name, conversationId, requestId, submitMessage, setChatBlocked, setSubmittedForms]);
+  }, [
+    formId,
+    function_name,
+    conversationId,
+    requestId,
+    submitMessage,
+    setChatBlocked,
+    setSubmittedForms,
+  ]);
 
   // NOTE: All hooks must be called before any conditional returns (Rules of Hooks)
   const digestIdFromInput = useMemo(() => {
@@ -1489,7 +1514,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
   const digestId = digestIdFromInput ?? digestIdFromOutput;
 
   const handleDownloadHtml = () => {
-    const filename = (digestId && digestId.length > 0) ? `${digestId}.html` : 'weekly-digest.html';
+    const filename = digestId && digestId.length > 0 ? `${digestId}.html` : 'weekly-digest.html';
     if (htmlPreview) {
       const blob = new Blob([htmlPreview], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -1526,6 +1551,7 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
     return (
       <div className="my-3 w-full overflow-hidden rounded-xl border border-border-light bg-surface-secondary">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-light bg-surface-primary px-3 py-2 text-sm font-medium text-text-primary">
+          {/* eslint-disable-next-line i18next/no-literal-string */}
           <span>Weekly digest preview</span>
           {(htmlPreview || s3Url) && (
             <Button
