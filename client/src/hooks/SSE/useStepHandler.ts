@@ -693,10 +693,10 @@ export default function useStepHandler({
           let didFinalize = false;
           const updatedContent = targetMessage.content.map((part) => {
             if (part?.type === ContentTypes.SUMMARY && (part as SummaryContentPart).summarizing) {
-              if (!completeData.summary) {
-                return part;
-              }
               didFinalize = true;
+              if (!completeData.summary) {
+                return { ...part, summarizing: false } as SummaryContentPart;
+              }
               return { ...completeData.summary, summarizing: false } as SummaryContentPart;
             }
             return part;
@@ -715,6 +715,10 @@ export default function useStepHandler({
       }
 
       return () => {
+        if (summarizeDeltaRaf.current != null) {
+          cancelAnimationFrame(summarizeDeltaRaf.current);
+          summarizeDeltaRaf.current = null;
+        }
         toolCallIdMap.current.clear();
         messageMap.current.clear();
         stepMap.current.clear();

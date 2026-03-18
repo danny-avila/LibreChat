@@ -632,10 +632,22 @@ export const tMessageSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
   contextMeta: z
     .object({
-      calibrationRatio: z.number().optional(),
-      encoding: z.string().optional(),
-      instructionOverhead: z.number().optional(),
-      toolCount: z.number().optional(),
+      calibrationRatio: z
+        .number()
+        .optional()
+        .describe('EMA ratio of provider-reported vs local token estimates; seeds the pruner on subsequent runs'),
+      encoding: z
+        .string()
+        .optional()
+        .describe('Tokenizer encoding used when this ratio was computed (e.g. "claude", "o200k_base")'),
+      instructionOverhead: z
+        .number()
+        .optional()
+        .describe('Provider-observed instruction token overhead (system + tools + summary) from the best-variance turn'),
+      toolCount: z
+        .number()
+        .optional()
+        .describe('Total tool count when instructionOverhead was observed; used to invalidate stale seeds'),
     })
     .optional(),
 });

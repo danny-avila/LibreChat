@@ -154,6 +154,17 @@ export function estimateMediaTokensForMessage(
               Math.ceil(block.source.data.length / BASE64_BYTES_PER_PDF_PAGE),
             );
             tokens += pages * pdfPerPage;
+          } else if (mime.startsWith('image/')) {
+            const dims = extractImageDimensions(block.source.data);
+            tokens +=
+              dims != null
+                ? Math.ceil(
+                    (isClaude
+                      ? estimateAnthropicImageTokens(dims.width, dims.height)
+                      : estimateOpenAIImageTokens(dims.width, dims.height)) *
+                      IMAGE_TOKEN_SAFETY_MARGIN,
+                  )
+                : 1024;
           }
           continue;
         }

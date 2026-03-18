@@ -99,175 +99,102 @@ export async function recordCollectedUsage(
   const { pricing, bulkWriteOps } = deps;
   const useBulk = pricing && bulkWriteOps;
 
-  const allDocs: PreparedEntry[] = [];
+  const processUsageGroup = (
+    usages: UsageMetadata[],
+    usageContext: string,
+  ): PreparedEntry[] => {
+    const docs: PreparedEntry[] = [];
+    for (const usage of usages) {
+      if (!usage) {
+        continue;
+      }
 
-  for (const usage of messageUsages) {
-    if (!usage) {
-      continue;
-    }
+      const cache_creation =
+        Number(usage.input_token_details?.cache_creation) ||
+        Number(usage.cache_creation_input_tokens) ||
+        0;
+      const cache_read =
+        Number(usage.input_token_details?.cache_read) ||
+        Number(usage.cache_read_input_tokens) ||
+        0;
 
-    const cache_creation =
-      Number(usage.input_token_details?.cache_creation) ||
-      Number(usage.cache_creation_input_tokens) ||
-      0;
-    const cache_read =
-      Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
+      total_output_tokens += Number(usage.output_tokens) || 0;
 
-    total_output_tokens += Number(usage.output_tokens) || 0;
+      const txMetadata: TxMetadata = {
+        user,
+        balance,
+        messageId,
+        transactions,
+        conversationId,
+        endpointTokenConfig,
+        context: usageContext,
+        model: usage.model ?? model,
+      };
 
-    const txMetadata: TxMetadata = {
-      user,
-      context,
-      balance,
-      messageId,
-      transactions,
-      conversationId,
-      endpointTokenConfig,
-      model: usage.model ?? model,
-    };
-
-    if (useBulk) {
-      const entries =
-        cache_creation > 0 || cache_read > 0
-          ? prepareStructuredTokenSpend(
-              txMetadata,
-              {
-                promptTokens: {
-                  input: usage.input_tokens,
-                  write: cache_creation,
-                  read: cache_read,
+      if (useBulk) {
+        const entries =
+          cache_creation > 0 || cache_read > 0
+            ? prepareStructuredTokenSpend(
+                txMetadata,
+                {
+                  promptTokens: {
+                    input: usage.input_tokens,
+                    write: cache_creation,
+                    read: cache_read,
+                  },
+                  completionTokens: usage.output_tokens,
                 },
-                completionTokens: usage.output_tokens,
-              },
-              pricing,
-            )
-          : prepareTokenSpend(
-              txMetadata,
-              {
-                promptTokens: usage.input_tokens,
-                completionTokens: usage.output_tokens,
-              },
-              pricing,
-            );
-      allDocs.push(...entries);
-      continue;
-    }
+                pricing,
+              )
+            : prepareTokenSpend(
+                txMetadata,
+                {
+                  promptTokens: usage.input_tokens,
+                  completionTokens: usage.output_tokens,
+                },
+                pricing,
+              );
+        docs.push(...entries);
+        continue;
+      }
 
-    if (cache_creation > 0 || cache_read > 0) {
+      if (cache_creation > 0 || cache_read > 0) {
+        deps
+          .spendStructuredTokens(txMetadata, {
+            promptTokens: {
+              input: usage.input_tokens,
+              write: cache_creation,
+              read: cache_read,
+            },
+            completionTokens: usage.output_tokens,
+          })
+          .catch((err) => {
+            logger.error(
+              `[packages/api #recordCollectedUsage] Error spending structured ${usageContext} tokens`,
+              err,
+            );
+          });
+        continue;
+      }
+
       deps
-        .spendStructuredTokens(txMetadata, {
-          promptTokens: {
-            input: usage.input_tokens,
-            write: cache_creation,
-            read: cache_read,
-          },
+        .spendTokens(txMetadata, {
+          promptTokens: usage.input_tokens,
           completionTokens: usage.output_tokens,
         })
         .catch((err) => {
           logger.error(
-            '[packages/api #recordCollectedUsage] Error spending structured tokens',
+            `[packages/api #recordCollectedUsage] Error spending ${usageContext} tokens`,
             err,
           );
         });
-      continue;
     }
+    return docs;
+  };
 
-    deps
-      .spendTokens(txMetadata, {
-        promptTokens: usage.input_tokens,
-        completionTokens: usage.output_tokens,
-      })
-      .catch((err) => {
-        logger.error('[packages/api #recordCollectedUsage] Error spending tokens', err);
-      });
-  }
-
-  const summarizationDocs: PreparedEntry[] = [];
-
-  for (const usage of summarizationUsages) {
-    if (!usage) {
-      continue;
-    }
-
-    const cache_creation =
-      Number(usage.input_token_details?.cache_creation) ||
-      Number(usage.cache_creation_input_tokens) ||
-      0;
-    const cache_read =
-      Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
-
-    total_output_tokens += Number(usage.output_tokens) || 0;
-
-    const txMetadata: TxMetadata = {
-      context: 'summarization',
-      balance,
-      transactions,
-      conversationId,
-      user,
-      endpointTokenConfig,
-      model: usage.model ?? model,
-    };
-
-    if (useBulk) {
-      const entries =
-        cache_creation > 0 || cache_read > 0
-          ? prepareStructuredTokenSpend(
-              txMetadata,
-              {
-                promptTokens: {
-                  input: usage.input_tokens,
-                  write: cache_creation,
-                  read: cache_read,
-                },
-                completionTokens: usage.output_tokens,
-              },
-              pricing,
-            )
-          : prepareTokenSpend(
-              txMetadata,
-              {
-                promptTokens: usage.input_tokens,
-                completionTokens: usage.output_tokens,
-              },
-              pricing,
-            );
-      summarizationDocs.push(...entries);
-      continue;
-    }
-
-    if (cache_creation > 0 || cache_read > 0) {
-      deps
-        .spendStructuredTokens(txMetadata, {
-          promptTokens: {
-            input: usage.input_tokens,
-            write: cache_creation,
-            read: cache_read,
-          },
-          completionTokens: usage.output_tokens,
-        })
-        .catch((err) => {
-          logger.error(
-            '[packages/api #recordCollectedUsage] Error spending structured summarization tokens',
-            err,
-          );
-        });
-      continue;
-    }
-
-    deps
-      .spendTokens(txMetadata, {
-        promptTokens: usage.input_tokens,
-        completionTokens: usage.output_tokens,
-      })
-      .catch((err) => {
-        logger.error(
-          '[packages/api #recordCollectedUsage] Error spending summarization tokens',
-          err,
-        );
-      });
-  }
-
-  const combinedDocs = [...allDocs, ...summarizationDocs];
+  const messageDocs = processUsageGroup(messageUsages, context);
+  const summarizationDocs = processUsageGroup(summarizationUsages, 'summarization');
+  const combinedDocs = [...messageDocs, ...summarizationDocs];
   if (useBulk && combinedDocs.length > 0) {
     try {
       await bulkWriteTransactions({ user, docs: combinedDocs }, bulkWriteOps);

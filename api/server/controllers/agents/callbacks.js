@@ -711,9 +711,13 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
 const ALLOWED_LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
 
 function agentLogHandler(_event, data) {
+  if (!data) {
+    return;
+  }
   const logFn = ALLOWED_LOG_LEVELS.has(data.level) ? logger[data.level] : logger.debug;
-  logFn(`[agents:${data.scope}] ${data.message}`, {
-    ...data.data,
+  const meta = typeof data.data === 'object' && data.data != null ? data.data : {};
+  logFn(`[agents:${data.scope ?? 'unknown'}] ${data.message ?? ''}`, {
+    ...meta,
     runId: data.runId,
     agentId: data.agentId,
   });

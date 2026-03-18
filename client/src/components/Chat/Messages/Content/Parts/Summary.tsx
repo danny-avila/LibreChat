@@ -294,7 +294,7 @@ const Summary = memo(({ content, model, provider, tokenCount, summarizing }: Sum
         </div>
         <div
           id={contentId}
-          role="group"
+          role="region"
           aria-label={label}
           aria-hidden={!isExpanded || undefined}
           className={cn('grid transition-all duration-300 ease-out', isExpanded && 'mb-4')}
