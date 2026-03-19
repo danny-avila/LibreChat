@@ -1,6 +1,12 @@
 import dedent from 'dedent';
 import { EModelEndpoint, ArtifactModes } from 'librechat-data-provider';
 import { generateShadcnPrompt } from './generate';
+import {
+  generatePptxDesignPrompt,
+  pptxTypeDefinition,
+  pptxExampleAnthropic,
+  pptxExampleOpenAI,
+} from './pptx';
 import { components } from './components';
 
 const artifactsPrompt = dedent`The assistant can create and reference artifacts during conversations.
@@ -413,13 +419,23 @@ export function generateArtifactsPrompt(params: {
     return null;
   }
 
-  let prompt = artifactsPrompt;
-  if (endpoint !== EModelEndpoint.anthropic) {
-    prompt = artifactsOpenAIPrompt;
-  }
+  const isAnthropic = endpoint === EModelEndpoint.anthropic;
+  let prompt = isAnthropic ? artifactsPrompt : artifactsOpenAIPrompt;
+
+  // Inject PPTX type definition + example into every prompt variant
+  // (so LLMs always know the application/vnd.pptx type exists)
+  prompt = prompt.replace(
+    '- Mermaid Diagrams: "application/vnd.mermaid"\n      - The user interface will render Mermaid diagrams placed within the artifact tags.',
+    '- Mermaid Diagrams: "application/vnd.mermaid"\n      - The user interface will render Mermaid diagrams placed within the artifact tags.' + pptxTypeDefinition,
+  );
+  prompt += isAnthropic ? pptxExampleAnthropic : pptxExampleOpenAI;
 
   if (artifacts === ArtifactModes.SHADCNUI) {
-    prompt += generateShadcnPrompt({ components, useXML: endpoint === EModelEndpoint.anthropic });
+    prompt += generateShadcnPrompt({ components, useXML: isAnthropic });
+  }
+
+  if (artifacts === ArtifactModes.PPTX || (artifacts as string) === 'pptx') {
+    prompt += generatePptxDesignPrompt({ useXML: isAnthropic });
   }
 
   return prompt;
