@@ -358,8 +358,12 @@ export default function useResumableSSE(
           sse.close();
           removeActiveJob(currentStreamId);
           clearDraft(currentSubmission.conversation?.conversationId);
-          errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
-          setIsSubmitting(false);
+          errorHandler({
+            data: {
+              text: JSON.stringify({ type: ErrorTypes.STREAM_EXPIRED }),
+            } as unknown as Parameters<typeof errorHandler>[0]['data'],
+            submission: currentSubmission as EventSubmission,
+          });
           setShowStopButton(false);
           setStreamId(null);
           reconnectAttemptRef.current = 0;

@@ -1,6 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants, LocalStorageKeys } from 'librechat-data-provider';
-import type { TSubmission, EventSubmission } from 'librechat-data-provider';
+import { Constants, ErrorTypes, LocalStorageKeys } from 'librechat-data-provider';
+import type { TSubmission } from 'librechat-data-provider';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
 
@@ -94,7 +94,7 @@ jest.mock('librechat-data-provider', () => {
       payload: { model: 'gpt-4o' },
       server: '/api/agents/chat',
     })),
-    removeNullishValues: jest.fn((v) => v),
+    removeNullishValues: jest.fn((v: unknown) => v),
     apiBaseUrl: jest.fn(() => ''),
     request: {
       post: jest.fn().mockResolvedValue({ streamId: 'stream-123' }),
@@ -108,8 +108,18 @@ import useResumableSSE from '~/hooks/SSE/useResumableSSE';
 
 const CONV_ID = 'conv-abc-123';
 
-const buildSubmission = (conversationId = CONV_ID): TSubmission =>
-  ({
+type PartialSubmission = {
+  conversation: { conversationId?: string };
+  userMessage: Record<string, unknown>;
+  messages: never[];
+  isTemporary: boolean;
+  initialResponse: Record<string, unknown>;
+  endpointOption: { endpoint: string };
+};
+
+const buildSubmission = (overrides: Partial<PartialSubmission> = {}): TSubmission => {
+  const conversationId = overrides.conversation?.conversationId ?? CONV_ID;
+  return {
     conversation: { conversationId },
     userMessage: {
       messageId: 'msg-1',
@@ -129,7 +139,9 @@ const buildSubmission = (conversationId = CONV_ID): TSubmission =>
       sender: 'Assistant',
     },
     endpointOption: { endpoint: 'agents' },
-  }) as unknown as TSubmission;
+    ...overrides,
+  } as unknown as TSubmission;
+};
 
 const buildChatHelpers = () => ({
   setMessages: jest.fn(),
@@ -139,6 +151,12 @@ const buildChatHelpers = () => ({
   newConversation: jest.fn(),
   resetLatestMessage: jest.fn(),
 });
+
+const getLastSSE = (): MockSSEInstance => {
+  const sse = mockSSEInstances[mockSSEInstances.length - 1];
+  expect(sse).toBeDefined();
+  return sse;
+};
 
 describe('useResumableSSE - 404 error path', () => {
   beforeEach(() => {
@@ -152,7 +170,7 @@ describe('useResumableSSE - 404 error path', () => {
   };
 
   const render404Scenario = async (conversationId = CONV_ID) => {
-    const submission = buildSubmission(conversationId);
+    const submission = buildSubmission({ conversation: { conversationId } });
     const chatHelpers = buildChatHelpers();
 
     const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
@@ -161,9 +179,9 @@ describe('useResumableSSE - 404 error path', () => {
       await Promise.resolve();
     });
 
-    const sse = mockSSEInstances[mockSSEInstances.length - 1];
+    const sse = getLastSSE();
 
-    act(() => {
+    await act(async () => {
       sse._emit('error', { responseCode: 404 });
     });
 
@@ -175,70 +193,81 @@ describe('useResumableSSE - 404 error path', () => {
     expect(localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${CONV_ID}`)).not.toBeNull();
     expect(localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${CONV_ID}`)).not.toBeNull();
 
-    await render404Scenario(CONV_ID);
+    const { unmount } = await render404Scenario(CONV_ID);
 
     expect(localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${CONV_ID}`)).toBeNull();
     expect(localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${CONV_ID}`)).toBeNull();
+    unmount();
   });
 
-  it('calls errorHandler on 404 so an error is displayed to the user', async () => {
-    await render404Scenario(CONV_ID);
+  it('calls errorHandler with STREAM_EXPIRED error type on 404', async () => {
+    const { unmount } = await render404Scenario(CONV_ID);
 
     expect(mockErrorHandler).toHaveBeenCalledTimes(1);
-    expect(mockErrorHandler).toHaveBeenCalledWith(
+    const call = mockErrorHandler.mock.calls[0][0];
+    expect(call.data).toBeDefined();
+    const parsed = JSON.parse(call.data.text);
+    expect(parsed.type).toBe(ErrorTypes.STREAM_EXPIRED);
+    expect(call.submission).toEqual(
       expect.objectContaining({
-        data: undefined,
-        submission: expect.objectContaining({
-          conversation: expect.objectContaining({ conversationId: CONV_ID }),
-        }) as EventSubmission,
+        conversation: expect.objectContaining({ conversationId: CONV_ID }),
       }),
     );
+    unmount();
   });
 
-  it('clears the new-convo draft when conversationId is absent', async () => {
+  it('clears both TEXT and FILES drafts for new-convo when conversationId is absent', async () => {
     localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`, 'unsent message');
+    localStorage.setItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`, '[]');
 
-    const submission = buildSubmission(undefined as unknown as string);
-    (submission as TSubmission & { conversation: { conversationId?: string } }).conversation = {};
+    const submission = buildSubmission({ conversation: {} });
     const chatHelpers = buildChatHelpers();
 
-    renderHook(() => useResumableSSE(submission, chatHelpers));
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
 
     await act(async () => {
       await Promise.resolve();
     });
 
-    const sse = mockSSEInstances[mockSSEInstances.length - 1];
-    act(() => {
+    const sse = getLastSSE();
+    await act(async () => {
       sse._emit('error', { responseCode: 404 });
     });
 
     expect(localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`)).toBeNull();
+    expect(
+      localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`),
+    ).toBeNull();
+    unmount();
   });
 
-  it('closes the SSE connection and resets submitting state on 404', async () => {
-    const { sse } = await render404Scenario();
+  it('closes the SSE connection on 404', async () => {
+    const { sse, unmount } = await render404Scenario();
 
     expect(sse.close).toHaveBeenCalled();
-    expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
+    unmount();
   });
 
-  it('does not call errorHandler on network errors that trigger reconnection', async () => {
-    const submission = buildSubmission();
-    const chatHelpers = buildChatHelpers();
+  it.each([undefined, 500, 503])(
+    'does not call errorHandler for responseCode %s (reconnect path)',
+    async (responseCode) => {
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
 
-    renderHook(() => useResumableSSE(submission, chatHelpers));
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
 
-    await act(async () => {
-      await Promise.resolve();
-    });
+      await act(async () => {
+        await Promise.resolve();
+      });
 
-    const sse = mockSSEInstances[mockSSEInstances.length - 1];
+      const sse = getLastSSE();
 
-    act(() => {
-      sse._emit('error', { responseCode: undefined });
-    });
+      await act(async () => {
+        sse._emit('error', { responseCode });
+      });
 
-    expect(mockErrorHandler).not.toHaveBeenCalled();
-  });
+      expect(mockErrorHandler).not.toHaveBeenCalled();
+      unmount();
+    },
+  );
 });
