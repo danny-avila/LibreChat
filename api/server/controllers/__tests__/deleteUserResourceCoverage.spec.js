@@ -3,11 +3,12 @@ const path = require('path');
 const { ResourceType } = require('librechat-data-provider');
 
 /**
- * Maps each ResourceType to the pattern that must appear in deleteUserController's
- * source code to prove it is handled during user deletion.
+ * Maps each ResourceType to the cleanup function name that must appear in
+ * deleteUserController's source to prove it is handled during user deletion.
  *
  * When a new ResourceType is added, this test will fail until a corresponding
- * cleanup entry is added here AND the actual cleanup logic is implemented.
+ * entry is added here (or to NO_USER_CLEANUP_NEEDED) AND the actual cleanup
+ * logic is implemented.
  */
 const HANDLED_RESOURCE_TYPES = {
   [ResourceType.AGENT]: 'deleteUserAgents',
@@ -16,16 +17,28 @@ const HANDLED_RESOURCE_TYPES = {
   [ResourceType.MCPSERVER]: 'deleteUserMcpServers',
 };
 
-describe('deleteUserController - resource type coverage guard', () => {
-  const controllerSource = fs.readFileSync(
-    path.resolve(__dirname, '../UserController.js'),
-    'utf-8',
-  );
+/**
+ * ResourceTypes that are ACL-tracked but have no per-user deletion semantics
+ * (e.g., system resources, public-only). Must be explicitly listed here with
+ * a justification to prevent silent omissions.
+ */
+const NO_USER_CLEANUP_NEEDED = new Set([
+  // Example: ResourceType.SYSTEM_TEMPLATE — public/system; not user-owned
+]);
 
-  test('every ResourceType must have a documented cleanup handler', () => {
+describe('deleteUserController - resource type coverage guard', () => {
+  let controllerSource;
+
+  beforeAll(() => {
+    controllerSource = fs.readFileSync(path.resolve(__dirname, '../UserController.js'), 'utf-8');
+  });
+
+  test('every ResourceType must have a documented cleanup handler or explicit exclusion', () => {
     const allTypes = Object.values(ResourceType);
     const handledTypes = Object.keys(HANDLED_RESOURCE_TYPES);
-    const unhandledTypes = allTypes.filter((t) => !handledTypes.includes(t));
+    const unhandledTypes = allTypes.filter(
+      (t) => !handledTypes.includes(t) && !NO_USER_CLEANUP_NEEDED.has(t),
+    );
 
     expect(unhandledTypes).toEqual([]);
   });
