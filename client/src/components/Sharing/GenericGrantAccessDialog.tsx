@@ -77,6 +77,7 @@ export default function GenericGrantAccessDialog({
   const [defaultPermissionId, setDefaultPermissionId] = useState<AccessRoleIds | undefined>(
     config?.defaultViewerRoleId,
   );
+  const [includeEndpointsForRole, setIncludeEndpointsForRole] = useState<boolean>(false);
 
   // Sync all shares with current shares when modal opens, marking existing vs new
   useEffect(() => {
@@ -84,6 +85,8 @@ export default function GenericGrantAccessDialog({
       const shares = permissionsData.principals || [];
       setAllShares(shares.map((share) => ({ ...share, isExisting: true })));
       setHasChanges(false);
+      // Initialize includeEndpointsForRole from permissions data (simple boolean)
+      setIncludeEndpointsForRole(permissionsData.includeEndpointsForRole ?? false);
     }
   }, [permissionsData, isModalOpen]);
 
@@ -152,6 +155,12 @@ export default function GenericGrantAccessDialog({
     setHasChanges(true);
   };
 
+  // Handler for include endpoints change
+  const handleIncludeEndpointsChange = (role: AccessRoleIds, include: boolean) => {
+    setIncludeEndpointsForRole(include);
+    setHasChanges(true);
+  };
+
   // Save all changes (unified save handler)
   const handleSave = async () => {
     if (!allShares.length && !isPublic && !hasChanges) {
@@ -188,6 +197,7 @@ export default function GenericGrantAccessDialog({
           removed,
           public: isPublic,
           publicAccessRoleId: isPublic ? publicRole : undefined,
+          includeEndpointsForRole,
         },
       });
 
@@ -353,6 +363,8 @@ export default function GenericGrantAccessDialog({
                 publicRole={publicRole}
                 onPublicToggle={handlePublicToggle}
                 onPublicRoleChange={handlePublicRoleChange}
+                onIncludeEndpointsChange={handleIncludeEndpointsChange}
+                includeEndpointsForRole={includeEndpointsForRole}
                 resourceType={resourceType}
               />
             </>

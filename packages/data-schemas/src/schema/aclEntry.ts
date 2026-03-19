@@ -55,6 +55,10 @@ const aclEntrySchema = new Schema<IAclEntry>(
       type: Date,
       default: Date.now,
     },
+    includeEndpointsForRole: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true },
 );

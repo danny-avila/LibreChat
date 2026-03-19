@@ -22,6 +22,8 @@ export type AclEntry = {
   grantedBy?: Types.ObjectId;
   /** When this permission was granted */
   grantedAt?: Date;
+  /** Whether to include endpoints/system prompts for this role */
+  includeEndpointsForRole?: boolean;
 };
 
 export type IAclEntry = AclEntry &

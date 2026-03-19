@@ -665,7 +665,9 @@ const bulkUpdateResourcePermissions = async ({
         const query = {
           principalType: principal.type,
           resourceType,
-          resourceId,
+          resourceId: mongoose.Types.ObjectId.isValid(resourceId) 
+            ? new mongoose.Types.ObjectId(resourceId) 
+            : resourceId,
         };
 
         if (principal.type !== PrincipalType.PUBLIC) {
@@ -673,6 +675,9 @@ const bulkUpdateResourcePermissions = async ({
             principal.type === PrincipalType.ROLE
               ? principal.id
               : new mongoose.Types.ObjectId(principal.id);
+        } else {
+          // For PUBLIC principals, we need to match on roleId to distinguish between different roles
+          query.roleId = role._id instanceof mongoose.Types.ObjectId ? role._id : new mongoose.Types.ObjectId(role._id);
         }
 
         const principalModelMap = {
@@ -680,13 +685,15 @@ const bulkUpdateResourcePermissions = async ({
           [PrincipalType.GROUP]: PrincipalModel.GROUP,
           [PrincipalType.ROLE]: PrincipalModel.ROLE,
         };
-
+        const includeEndpointsValue = principal.includeEndpointsForRole === true;
+        
         const update = {
           $set: {
             permBits: role.permBits,
             roleId: role._id,
             grantedBy,
             grantedAt: new Date(),
+            includeEndpointsForRole: includeEndpointsValue,
           },
           $setOnInsert: {
             principalType: principal.type,
@@ -731,8 +738,16 @@ const bulkUpdateResourcePermissions = async ({
       }
     }
 
-    if (bulkWrites.length > 0) {
-      await AclEntry.bulkWrite(bulkWrites, sessionOptions);
+    if (bulkWrites.length > 0) { 
+      const result = await AclEntry.collection.bulkWrite(bulkWrites, sessionOptions);
+      
+      // Query the database directly to verify the field was saved
+      const publicDoc = await AclEntry.collection.findOne({
+        principalType: 'public',
+        resourceId: mongoose.Types.ObjectId.isValid(resourceId) 
+          ? new mongoose.Types.ObjectId(resourceId)
+          : resourceId,
+      });
     }
 
     const deleteQueries = [];
@@ -749,6 +764,12 @@ const bulkUpdateResourcePermissions = async ({
             principal.type === PrincipalType.ROLE
               ? principal.id
               : new mongoose.Types.ObjectId(principal.id);
+        } else {
+          // For PUBLIC principals, we need to match on roleId to distinguish between different roles
+          const role = rolesMap.get(principal.accessRoleId);
+          if (role) {
+            query.roleId = role._id;
+          }
         }
 
         deleteQueries.push(query);
