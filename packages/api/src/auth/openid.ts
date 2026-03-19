@@ -47,7 +47,7 @@ export async function findOpenIDUser({
       return { user: null, error: ErrorTypes.AUTH_FAILED, migration: false };
     }
 
-    if (user?.openidId && openidId && user.openidId !== openidId) {
+    if (user?.openidId && user.openidId !== openidId) {
       logger.warn(
         `[${strategyName}] Rejected email fallback for ${user.email}: stored openidId does not match token sub`,
       );
