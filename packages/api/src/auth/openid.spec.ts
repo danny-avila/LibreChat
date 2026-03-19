@@ -317,6 +317,7 @@ describe('findOpenIDUser', () => {
         openidId: 'existing_openid',
         email: 'user@example.com',
         username: 'testuser',
+        // No provider field — tests a different branch than openid-provider mismatch
       } as IUser;
 
       mockFindUser
@@ -455,6 +456,32 @@ describe('findOpenIDUser', () => {
           findUser: mockFindUser,
         }),
       ).rejects.toThrow('Database error');
+    });
+
+    it('should reject email fallback when openidId is empty and user has a stored openidId', async () => {
+      const mockUser: IUser = {
+        _id: 'user123',
+        provider: 'openid',
+        openidId: 'existing-real-id',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: '',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(mockFindUser).toHaveBeenCalledTimes(1);
+      expect(mockFindUser).toHaveBeenCalledWith({ email: 'user@example.com' });
+      expect(result).toEqual({
+        user: null,
+        error: ErrorTypes.AUTH_FAILED,
+        migration: false,
+      });
     });
   });
 });
