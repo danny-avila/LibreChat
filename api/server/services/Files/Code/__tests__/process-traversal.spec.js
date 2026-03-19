@@ -10,10 +10,16 @@ jest.mock('@librechat/agents', () => ({
 
 const mockSanitizeFilename = jest.fn();
 
+const mockAxios = jest.fn().mockResolvedValue({
+  data: Buffer.from('file-content'),
+});
+mockAxios.post = jest.fn();
+
 jest.mock('@librechat/api', () => ({
   logAxiosError: jest.fn(),
   getBasePath: jest.fn(() => ''),
   sanitizeFilename: mockSanitizeFilename,
+  createAxiosInstance: jest.fn(() => mockAxios),
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -52,12 +58,6 @@ jest.mock('~/server/services/Files/images/convert', () => ({
 jest.mock('~/server/utils', () => ({
   determineFileType: jest.fn().mockResolvedValue({ mime: 'text/csv' }),
 }));
-
-jest.mock('axios', () =>
-  jest.fn().mockResolvedValue({
-    data: Buffer.from('file-content'),
-  }),
-);
 
 const { createFile } = require('~/models');
 const { processCodeOutput } = require('../process');

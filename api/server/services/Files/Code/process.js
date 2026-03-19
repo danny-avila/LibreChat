@@ -2,7 +2,12 @@ const path = require('path');
 const { v4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
-const { logAxiosError, getBasePath, sanitizeFilename, createAxiosInstance } = require('@librechat/api');
+const {
+  logAxiosError,
+  getBasePath,
+  sanitizeFilename,
+  createAxiosInstance,
+} = require('@librechat/api');
 const {
   Tools,
   megabyte,
@@ -16,11 +21,11 @@ const {
   mergeFileConfig,
   getEndpointFileConfig,
 } = require('librechat-data-provider');
-const { codeServerHttpAgent, codeServerHttpsAgent } = require('./agents');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
+const { codeServerHttpAgent, codeServerHttpsAgent } = require('./agents');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();
@@ -454,5 +459,6 @@ const primeFiles = async (options, apiKey) => {
 
 module.exports = {
   primeFiles,
+  getSessionInfo,
   processCodeOutput,
 };
