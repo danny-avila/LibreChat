@@ -44,6 +44,7 @@ class StableDiffusionAPI extends Tool {
     /** @type {boolean} */
     this.isAgent = fields.isAgent;
     if (this.isAgent) {
+      /** Ensures LangChain maps [content, artifact] tuple to ToolMessage fields instead of serializing it into content. */
       this.responseFormat = 'content_and_artifact';
     }
     if (fields.uploadImageBuffer) {
@@ -118,7 +119,7 @@ class StableDiffusionAPI extends Tool {
       generationResponse = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     } catch (error) {
       logger.error('[StableDiffusion] Error while generating image:', error);
-      return 'Error making API request.';
+      return this.returnValue('Error making API request.');
     }
     const image = generationResponse.data.images[0];
 

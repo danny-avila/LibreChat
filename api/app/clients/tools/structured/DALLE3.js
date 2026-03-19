@@ -52,6 +52,7 @@ class DALLE3 extends Tool {
     /** @type {boolean} */
     this.isAgent = fields.isAgent;
     if (this.isAgent) {
+      /** Ensures LangChain maps [content, artifact] tuple to ToolMessage fields instead of serializing it into content. */
       this.responseFormat = 'content_and_artifact';
     }
     if (fields.processFileURL) {
