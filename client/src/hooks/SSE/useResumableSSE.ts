@@ -11,7 +11,6 @@ import {
   apiBaseUrl,
   createPayload,
   ViolationTypes,
-  LocalStorageKeys,
   removeNullishValues,
 } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
@@ -20,17 +19,8 @@ import { useGetStartupConfig, useGetUserBalance, queueTitleGeneration } from '~/
 import type { ActiveJobsResponse } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
+import { clearAllDrafts } from '~/utils';
 import store from '~/store';
-
-const clearDraft = (conversationId?: string | null) => {
-  if (conversationId) {
-    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
-    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
-  } else {
-    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`);
-    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`);
-  }
-};
 
 type ChatHelpers = Pick<
   EventHandlerParams,
@@ -176,7 +166,7 @@ export default function useResumableSSE(
               conversationId: data.conversation?.conversationId,
               hasResponseMessage: !!data.responseMessage,
             });
-            clearDraft(currentSubmission.conversation?.conversationId);
+            clearAllDrafts(currentSubmission.conversation?.conversationId);
             try {
               finalHandler(data, currentSubmission as EventSubmission);
             } catch (error) {
@@ -357,7 +347,13 @@ export default function useResumableSSE(
           console.log('[ResumableSSE] Stream not found (404) - job completed or expired');
           sse.close();
           removeActiveJob(currentStreamId);
-          setIsSubmitting(false);
+          clearAllDrafts(currentSubmission.conversation?.conversationId);
+          errorHandler({
+            data: {
+              text: JSON.stringify({ type: ErrorTypes.STREAM_EXPIRED }),
+            } as unknown as Parameters<typeof errorHandler>[0]['data'],
+            submission: currentSubmission as EventSubmission,
+          });
           setShowStopButton(false);
           setStreamId(null);
           reconnectAttemptRef.current = 0;

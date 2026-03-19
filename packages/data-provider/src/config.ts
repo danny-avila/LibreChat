@@ -1616,6 +1616,10 @@ export enum ErrorTypes {
    * Model refused to respond (content policy violation)
    */
   REFUSAL = 'refusal',
+  /**
+   * SSE stream 404 — job completed, expired, or was deleted before the subscriber connected
+   */
+  STREAM_EXPIRED = 'stream_expired',
 }
 
 /**
