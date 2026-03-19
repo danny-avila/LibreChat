@@ -1,9 +1,20 @@
+const http = require('http');
+const https = require('https');
 const path = require('path');
 const { v4 } = require('uuid');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
 const { logAxiosError, getBasePath, sanitizeFilename } = require('@librechat/api');
+
+/**
+ * Dedicated agents for code-server requests, preventing socket pool contamination.
+ * follow-redirects (used by axios) leaks `socket.destroy` as a timeout listener;
+ * on Node 19+ (keepAlive: true by default), tainted sockets re-enter the global pool
+ * and kill unrelated requests (e.g., node-fetch in CodeExecutor) after the idle timeout.
+ */
+const codeServerHttpAgent = new http.Agent({ keepAlive: false });
+const codeServerHttpsAgent = new https.Agent({ keepAlive: false });
 const {
   Tools,
   megabyte,
@@ -102,6 +113,8 @@ const processCodeOutput = async ({
         'User-Agent': 'LibreChat/1.0',
         'X-API-Key': apiKey,
       },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
       timeout: 15000,
     });
 
@@ -300,6 +313,8 @@ async function getSessionInfo(fileIdentifier, apiKey) {
         'User-Agent': 'LibreChat/1.0',
         'X-API-Key': apiKey,
       },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
       timeout: 5000,
     });
 

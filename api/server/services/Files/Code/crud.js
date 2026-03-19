@@ -1,8 +1,19 @@
+const http = require('http');
+const https = require('https');
 const FormData = require('form-data');
 const { getCodeBaseURL } = require('@librechat/agents');
 const { createAxiosInstance, logAxiosError } = require('@librechat/api');
 
 const axios = createAxiosInstance();
+
+/**
+ * Dedicated agents for code-server requests, preventing socket pool contamination.
+ * follow-redirects (used by axios) leaks `socket.destroy` as a timeout listener;
+ * on Node 19+ (keepAlive: true by default), tainted sockets re-enter the global pool
+ * and kill unrelated requests (e.g., node-fetch in CodeExecutor) after the idle timeout.
+ */
+const codeServerHttpAgent = new http.Agent({ keepAlive: false });
+const codeServerHttpsAgent = new https.Agent({ keepAlive: false });
 
 const MAX_FILE_SIZE = 150 * 1024 * 1024;
 
@@ -25,6 +36,8 @@ async function getCodeOutputDownloadStream(fileIdentifier, apiKey) {
         'User-Agent': 'LibreChat/1.0',
         'X-API-Key': apiKey,
       },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
       timeout: 15000,
     };
 
@@ -69,6 +82,8 @@ async function uploadCodeEnvFile({ req, stream, filename, apiKey, entity_id = ''
         'User-Id': req.user.id,
         'X-API-Key': apiKey,
       },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
       maxContentLength: MAX_FILE_SIZE,
       maxBodyLength: MAX_FILE_SIZE,
     };
