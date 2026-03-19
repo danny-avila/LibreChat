@@ -393,7 +393,9 @@ export async function updateInterfacePermissions({
         !existingPermissions?.[PermissionTypes.REMOTE_AGENTS]
           ? {
               [Permissions.CREATE]: getPermissionValue(
-                loadedInterface.remoteAgents?.create,
+                typeof interfaceConfig?.remoteAgents === 'object'
+                  ? interfaceConfig.remoteAgents.create
+                  : undefined,
                 defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.CREATE],
                 defaults.remoteAgents?.create,
               ),
