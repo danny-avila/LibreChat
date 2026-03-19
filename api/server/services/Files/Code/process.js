@@ -3,10 +3,12 @@ const { v4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
 const {
-  logAxiosError,
   getBasePath,
+  logAxiosError,
   sanitizeFilename,
   createAxiosInstance,
+  codeServerHttpAgent,
+  codeServerHttpsAgent,
 } = require('@librechat/api');
 const {
   Tools,
@@ -25,7 +27,6 @@ const { filterFilesByAgentAccess } = require('~/server/services/Files/permission
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
-const { codeServerHttpAgent, codeServerHttpsAgent } = require('./agents');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();

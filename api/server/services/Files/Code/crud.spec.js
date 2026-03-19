@@ -9,12 +9,18 @@ jest.mock('@librechat/agents', () => ({
   getCodeBaseURL: jest.fn(() => 'https://code-api.example.com'),
 }));
 
-jest.mock('@librechat/api', () => ({
-  logAxiosError: jest.fn(({ message }) => message),
-  createAxiosInstance: jest.fn(() => mockAxios),
-}));
+jest.mock('@librechat/api', () => {
+  const http = require('http');
+  const https = require('https');
+  return {
+    logAxiosError: jest.fn(({ message }) => message),
+    createAxiosInstance: jest.fn(() => mockAxios),
+    codeServerHttpAgent: new http.Agent({ keepAlive: false }),
+    codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
+  };
+});
 
-const { codeServerHttpAgent, codeServerHttpsAgent } = require('./agents');
+const { codeServerHttpAgent, codeServerHttpsAgent } = require('@librechat/api');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./crud');
 
 describe('Code CRUD', () => {

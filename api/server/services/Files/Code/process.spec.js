@@ -41,12 +41,18 @@ const mockAxios = jest.fn();
 mockAxios.post = jest.fn();
 mockAxios.isAxiosError = jest.fn(() => false);
 
-jest.mock('@librechat/api', () => ({
-  logAxiosError: jest.fn(),
-  getBasePath: jest.fn(() => ''),
-  sanitizeFilename: jest.fn((name) => name),
-  createAxiosInstance: jest.fn(() => mockAxios),
-}));
+jest.mock('@librechat/api', () => {
+  const http = require('http');
+  const https = require('https');
+  return {
+    logAxiosError: jest.fn(),
+    getBasePath: jest.fn(() => ''),
+    sanitizeFilename: jest.fn((name) => name),
+    createAxiosInstance: jest.fn(() => mockAxios),
+    codeServerHttpAgent: new http.Agent({ keepAlive: false }),
+    codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
+  };
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -96,7 +102,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
-const { codeServerHttpAgent, codeServerHttpsAgent } = require('./agents');
+const { codeServerHttpAgent, codeServerHttpsAgent } = require('@librechat/api');
 
 const { processCodeOutput, getSessionInfo } = require('./process');
 

@@ -15,12 +15,18 @@ const mockAxios = jest.fn().mockResolvedValue({
 });
 mockAxios.post = jest.fn();
 
-jest.mock('@librechat/api', () => ({
-  logAxiosError: jest.fn(),
-  getBasePath: jest.fn(() => ''),
-  sanitizeFilename: mockSanitizeFilename,
-  createAxiosInstance: jest.fn(() => mockAxios),
-}));
+jest.mock('@librechat/api', () => {
+  const http = require('http');
+  const https = require('https');
+  return {
+    logAxiosError: jest.fn(),
+    getBasePath: jest.fn(() => ''),
+    sanitizeFilename: mockSanitizeFilename,
+    createAxiosInstance: jest.fn(() => mockAxios),
+    codeServerHttpAgent: new http.Agent({ keepAlive: false }),
+    codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
+  };
+});
 
 jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
