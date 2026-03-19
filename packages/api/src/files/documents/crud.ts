@@ -124,8 +124,18 @@ async function odtToText(file: Express.Multer.File): Promise<string> {
     throw new Error('ODT file is missing content.xml');
   }
   const xml = await contentFile.async('string');
-  return xml
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
+  const bodyMatch = xml.match(/<office:body[^>]*>([\s\S]*?)<\/office:body>/);
+  if (!bodyMatch) {
+    return '';
+  }
+  return bodyMatch[1]
+    .replace(/<\/text:p>/g, '\n')
+    .replace(/<\/text:h>/g, '\n')
+    .replace(/<text:line-break\/>/g, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

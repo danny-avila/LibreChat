@@ -84,12 +84,22 @@ describe('Document Parser', () => {
     const document = await parseDocument({ file });
 
     expect(document).toEqual({
-      bytes: 26,
+      bytes: 50,
       filename: 'sample.odt',
       filepath: 'document_parser',
       images: [],
-      text: 'This is a sample ODT file.',
+      text: 'This is a sample ODT file.\n\nIt has two paragraphs.',
     });
+  });
+
+  test('parseDocument() throws for empty odt', async () => {
+    const file = {
+      originalname: 'empty.odt',
+      path: path.join(__dirname, 'empty.odt'),
+      mimetype: 'application/vnd.oasis.opendocument.text',
+    } as Express.Multer.File;
+
+    await expect(parseDocument({ file })).rejects.toThrow('No text found in document');
   });
 
   test.each([
