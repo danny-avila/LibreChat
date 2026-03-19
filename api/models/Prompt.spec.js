@@ -633,10 +633,7 @@ describe('Prompt ACL Permissions', () => {
         groupId: sharedGroup._id,
         type: 'text',
       });
-      await PromptGroup.updateOne(
-        { _id: sharedGroup._id },
-        { productionId: sharedPrompt._id },
-      );
+      await PromptGroup.updateOne({ _id: sharedGroup._id }, { productionId: sharedPrompt._id });
 
       await permissionService.grantPermission({
         principalType: PrincipalType.USER,
