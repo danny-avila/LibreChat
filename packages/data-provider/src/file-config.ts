@@ -243,6 +243,7 @@ export const codeTypeMapping: { [key: string]: string } = {
   py: 'text/x-python', // .py - Python source
   rb: 'text/x-ruby', // .rb - Ruby source
   tex: 'text/x-tex', // .tex - LaTeX source
+  java: 'text/x-java', // .java - Java source
   js: 'text/javascript', // .js - JavaScript source
   sh: 'application/x-sh', // .sh - Shell script
   ts: 'application/typescript', // .ts - TypeScript source

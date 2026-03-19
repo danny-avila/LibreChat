@@ -31,6 +31,7 @@ describe('inferMimeType', () => {
     expect(inferMimeType('test.py', '')).toBe('text/x-python');
     expect(inferMimeType('code.js', '')).toBe('text/javascript');
     expect(inferMimeType('photo.heic', '')).toBe('image/heic');
+    expect(inferMimeType('Main.java', '')).toBe('text/x-java');
   });
 
   it('should return empty string for unknown extension with no browser type', () => {
