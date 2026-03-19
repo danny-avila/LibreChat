@@ -42,14 +42,14 @@ const SearchContent = ({
 
             const toolCallId =
               (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-            const attachments = attachmentMap[toolCallId];
+            const partAttachments = attachmentMap[toolCallId];
             return (
               <Part
                 key={`display-${messageId}-${idx}`}
                 showCursor={false}
                 isSubmitting={false}
                 isCreatedByUser={message.isCreatedByUser}
-                attachments={attachments}
+                attachments={partAttachments}
                 part={part}
               />
             );

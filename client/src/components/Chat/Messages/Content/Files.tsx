@@ -10,7 +10,7 @@ const Files = ({ message }: { message?: TMessage }) => {
   }, [message?.files]);
 
   const otherFiles = useMemo(() => {
-    return message?.files?.filter((file) => !(file.type?.startsWith('image/') === true)) || [];
+    return message?.files?.filter((file) => !file.type?.startsWith('image/')) || [];
   }, [message?.files]);
 
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
@@ -41,7 +41,7 @@ const Files = ({ message }: { message?: TMessage }) => {
             altText={file.filename ?? 'Uploaded Image'}
             placeholderDimensions={{
               height: `${file.height ?? 1920}px`,
-              width: `${file.height ?? 1080}px`,
+              width: `${file.width ?? 1080}px`,
             }}
           />
         ))}

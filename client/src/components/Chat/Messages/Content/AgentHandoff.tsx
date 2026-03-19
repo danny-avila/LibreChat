@@ -10,7 +10,6 @@ import { cn } from '~/utils';
 interface AgentHandoffProps {
   name: string;
   args: string | Record<string, unknown>;
-  output?: string | null;
 }
 
 const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) => {

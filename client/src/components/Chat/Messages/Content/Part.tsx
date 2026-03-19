@@ -189,7 +189,6 @@ const Part = memo(function Part({
         <AgentHandoff
           args={toolCall.args ?? ''}
           name={toolCall.name || ''}
-          output={toolCall.output ?? ''}
         />
       );
     } else if (isToolCall) {
@@ -202,7 +201,6 @@ const Part = memo(function Part({
           isSubmitting={isSubmitting}
           attachments={attachments}
           auth={toolCall.auth}
-          expires_at={toolCall.expires_at}
           isLast={isLast}
         />
       );
@@ -252,6 +250,9 @@ const Part = memo(function Part({
         }
         return null;
       }
+
+
+
 
 
 

@@ -14,7 +14,6 @@ const Wrapper = ({ popover, children }: { popover: boolean; children: React.Reac
           <div
             className="progress-text-content absolute left-0 top-0 overflow-visible whitespace-nowrap"
             style={{ opacity: 1, transform: 'none' }}
-            data-projection-id="78"
           >
             {children}
           </div>
@@ -28,7 +27,6 @@ const Wrapper = ({ popover, children }: { popover: boolean; children: React.Reac
       <div
         className="progress-text-content absolute left-0 top-0 overflow-visible whitespace-nowrap"
         style={{ opacity: 1, transform: 'none' }}
-        data-projection-id="78"
       >
         {children}
       </div>

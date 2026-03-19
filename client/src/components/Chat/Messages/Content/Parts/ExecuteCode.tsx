@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
 import { lowlight } from 'lowlight';
@@ -104,7 +104,6 @@ export default function ExecuteCode({
 }) {
   const localize = useLocalize();
   const hasOutput = output.length > 0;
-  const outputRef = useRef<string>(output);
   const autoExpand = useRecoilValue(store.autoExpandTools);
 
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
@@ -122,12 +121,6 @@ export default function ExecuteCode({
   const highlighted = useMemo(() => (code ? highlightCode(code, lang) : null), [code, lang]);
 
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
-
-  useEffect(() => {
-    if (output !== outputRef.current) {
-      outputRef.current = output;
-    }
-  }, [output]);
 
   const toggleCode = useCallback(() => setShowCode((prev) => !prev), [setShowCode]);
 

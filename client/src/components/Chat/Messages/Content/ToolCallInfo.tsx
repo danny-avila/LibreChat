@@ -159,9 +159,7 @@ export default function ToolCallInfo({
           {uiResources.length === 1 && (
             <UIResourceRenderer
               resource={uiResources[0]}
-              onUIAction={async (result) => {
-                console.log('Action:', result);
-              }}
+              onUIAction={async (_result) => {}}
               htmlProps={{
                 autoResizeIframe: { width: true, height: true },
               }}

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState, useCallback, useRef, useId } from 'react';
-import { useAtom } from 'jotai';
+import { useAtomValue } from 'jotai';
 import type { MouseEvent, FocusEvent } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar } from './Thinking';
@@ -38,7 +38,7 @@ type ReasoningProps = {
 const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const contentId = useId();
   const localize = useLocalize();
-  const [showThinking] = useAtom(showThinkingAtom);
+  const showThinking = useAtomValue(showThinkingAtom);
   const [isExpanded, setIsExpanded] = useState(showThinking);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
