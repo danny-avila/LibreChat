@@ -3,7 +3,7 @@
 # Base node image
 FROM node:20-alpine AS node
 
-# Install jemalloc
+RUN apk upgrade --no-cache
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip uv
 
