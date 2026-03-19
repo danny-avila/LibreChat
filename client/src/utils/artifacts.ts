@@ -9,7 +9,7 @@ const artifactFilename = {
   'application/vnd.react': 'App.tsx',
   'text/html': 'index.html',
   'application/vnd.code-html': 'index.html',
-  // mermaid and markdown types are handled separately in useArtifactProps.ts
+  // mermaid, markdown, and pptx types are handled separately in useArtifactProps.ts
   default: 'index.html',
   // 'css': 'css',
   // 'javascript': 'js',
@@ -21,6 +21,7 @@ const artifactFilename = {
 const artifactTemplate: Record<
   | keyof typeof artifactFilename
   | 'application/vnd.mermaid'
+  | 'application/vnd.pptx'
   | 'text/markdown'
   | 'text/md'
   | 'text/plain',
@@ -29,6 +30,7 @@ const artifactTemplate: Record<
   'text/html': 'static',
   'application/vnd.react': 'react-ts',
   'application/vnd.mermaid': 'react-ts',
+  'application/vnd.pptx': 'react-ts',
   'application/vnd.code-html': 'static',
   'text/markdown': 'react-ts',
   'text/md': 'react-ts',
@@ -109,15 +111,21 @@ const markdownDependencies = {
   'marked-react': '^2.0.0',
 };
 
+const pptxDependencies = {
+  pptxgenjs: '^3.12.0',
+};
+
 const dependenciesMap: Record<
   | keyof typeof artifactFilename
   | 'application/vnd.mermaid'
+  | 'application/vnd.pptx'
   | 'text/markdown'
   | 'text/md'
   | 'text/plain',
   Record<string, string>
 > = {
   'application/vnd.mermaid': mermaidDependencies,
+  'application/vnd.pptx': pptxDependencies,
   'application/vnd.react': standardDependencies,
   'text/html': standardDependencies,
   'application/vnd.code-html': standardDependencies,
