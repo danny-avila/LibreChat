@@ -32,9 +32,13 @@ export default function Artifacts() {
   };
 
   const handlePptxDesignChange = (value: boolean) => {
-    setValue(AgentCapabilities.artifacts, value ? (ArtifactModes.PPTX ?? 'pptx') : ArtifactModes.DEFAULT, {
-      shouldDirty: true,
-    });
+    setValue(
+      AgentCapabilities.artifacts,
+      value ? (ArtifactModes.PPTX ?? 'pptx') : ArtifactModes.DEFAULT,
+      {
+        shouldDirty: true,
+      },
+    );
   };
 
   const handleCustomModeChange = (value: boolean) => {

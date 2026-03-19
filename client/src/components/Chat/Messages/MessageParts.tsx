@@ -99,11 +99,11 @@ export default function Message(props: TMessageProps) {
   return (
     <>
       <div
-        className="w-full bg-transparent border-0 dark:border-0 dark:bg-transparent"
+        className="w-full border-0 bg-transparent dark:border-0 dark:bg-transparent"
         onWheel={handleScroll}
         onTouchMove={handleScroll}
       >
-        <div className="justify-center p-4 py-2 m-auto md:gap-6">
+        <div className="m-auto justify-center p-4 py-2 md:gap-6">
           <div
             id={messageId ?? ''}
             aria-label={getMessageAriaLabel(message, localize)}
@@ -129,7 +129,7 @@ export default function Message(props: TMessageProps) {
                 </h2>
               )}
               <div className="flex flex-col gap-1">
-                <div className="flex flex-col flex-grow max-w-full gap-0">
+                <div className="flex max-w-full flex-grow flex-col gap-0">
                   <ContentParts
                     edit={edit}
                     isLast={isLast}

@@ -25,17 +25,22 @@ interface FormData {
 }
 
 // Store submitted forms by their unique identifier (message content hash)
-export const submittedFormsState = atomWithLocalStorage<Record<string, {
-  isSubmitted: boolean;
-  isCancelled?: boolean;
-  toolName?: string;
-  serverName?: string;
-  requestId?: string;
-  options?: any[];
-  output?: string;
-  formType?: string;
-  submittedData?: FormData;
-}>>('submittedFormsState', {});
+export const submittedFormsState = atomWithLocalStorage<
+  Record<
+    string,
+    {
+      isSubmitted: boolean;
+      isCancelled?: boolean;
+      toolName?: string;
+      serverName?: string;
+      requestId?: string;
+      options?: any[];
+      output?: string;
+      formType?: string;
+      submittedData?: FormData;
+    }
+  >
+>('submittedFormsState', {});
 
 export const crawlFormState = atom<CrawlFormState>({
   key: 'crawlFormState',
@@ -46,4 +51,7 @@ export const crawlFormState = atom<CrawlFormState>({
 });
 
 // Store chat blocking state by conversation ID
-export const isChatBlockedState = atomWithLocalStorage<Record<string, boolean>>('isChatBlockedState', {});
+export const isChatBlockedState = atomWithLocalStorage<Record<string, boolean>>(
+  'isChatBlockedState',
+  {},
+);

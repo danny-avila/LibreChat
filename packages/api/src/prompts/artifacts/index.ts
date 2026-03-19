@@ -426,7 +426,8 @@ export function generateArtifactsPrompt(params: {
   // (so LLMs always know the application/vnd.pptx type exists)
   prompt = prompt.replace(
     '- Mermaid Diagrams: "application/vnd.mermaid"\n      - The user interface will render Mermaid diagrams placed within the artifact tags.',
-    '- Mermaid Diagrams: "application/vnd.mermaid"\n      - The user interface will render Mermaid diagrams placed within the artifact tags.' + pptxTypeDefinition,
+    '- Mermaid Diagrams: "application/vnd.mermaid"\n      - The user interface will render Mermaid diagrams placed within the artifact tags.' +
+      pptxTypeDefinition,
   );
   prompt += isAnthropic ? pptxExampleAnthropic : pptxExampleOpenAI;
 

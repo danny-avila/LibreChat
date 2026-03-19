@@ -140,7 +140,9 @@ const AddCrawlConfigForm: React.FC<AddCrawlConfigFormProps> = ({
             } catch (parseError) {
               console.error('❌ Error parsing result:', parseError);
               console.error('Raw result:', result.result);
-              throw new Error(`Failed to parse server response: ${result.result.substring(0, 100)}`);
+              throw new Error(
+                `Failed to parse server response: ${result.result.substring(0, 100)}`,
+              );
             }
           } else {
             configData = result.result;
@@ -157,7 +159,9 @@ const AddCrawlConfigForm: React.FC<AddCrawlConfigFormProps> = ({
 
         if (!uploadUrl) {
           console.error('❌ No upload URL in response. Config data:', configData);
-          throw new Error('No upload URL received from server. The config may have been created but file upload cannot proceed.');
+          throw new Error(
+            'No upload URL received from server. The config may have been created but file upload cannot proceed.',
+          );
         }
 
         console.log('[Upload] Config created:', {
@@ -181,10 +185,16 @@ const AddCrawlConfigForm: React.FC<AddCrawlConfigFormProps> = ({
           },
         });
 
-        console.log('[Upload] S3 response status:', uploadResponse.status, uploadResponse.statusText);
+        console.log(
+          '[Upload] S3 response status:',
+          uploadResponse.status,
+          uploadResponse.statusText,
+        );
 
         if (!uploadResponse.ok) {
-          const errorText = await uploadResponse.text().catch(() => 'Unable to read error response');
+          const errorText = await uploadResponse
+            .text()
+            .catch(() => 'Unable to read error response');
           console.error('[Upload] S3 upload failed:', {
             status: uploadResponse.status,
             statusText: uploadResponse.statusText,
@@ -321,7 +331,8 @@ const AddCrawlConfigForm: React.FC<AddCrawlConfigFormProps> = ({
           <h3 className="text-lg font-semibold text-white">Upload Crawl Configuration</h3>
         </div>
         <p className="text-sm text-gray-300">
-          Upload a ScreamingFrog SEO Spider configuration file. Chat is disabled until you submit or cancel this form.
+          Upload a ScreamingFrog SEO Spider configuration file. Chat is disabled until you submit or
+          cancel this form.
         </p>
       </div>
 
@@ -394,9 +405,7 @@ const AddCrawlConfigForm: React.FC<AddCrawlConfigFormProps> = ({
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-gray-400" />
                 <span className="text-sm text-white">{file.name}</span>
-                <span className="text-xs text-gray-400">
-                  ({(file.size / 1024).toFixed(1)} KB)
-                </span>
+                <span className="text-xs text-gray-400">({(file.size / 1024).toFixed(1)} KB)</span>
               </div>
               <Button
                 type="button"

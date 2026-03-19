@@ -1,10 +1,5 @@
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
-import {
-  resolveHeaders,
-  resolveNestedObject,
-  processMCPEnv,
-  encodeHeaderValue,
-} from './env';
+import { resolveHeaders, resolveNestedObject, processMCPEnv, encodeHeaderValue } from './env';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import { Types } from 'mongoose';

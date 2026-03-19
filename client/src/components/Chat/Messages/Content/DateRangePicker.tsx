@@ -181,8 +181,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const isFuture = date > today;
-      const isStart =
-        internalStartDate && date.toDateString() === internalStartDate.toDateString();
+      const isStart = internalStartDate && date.toDateString() === internalStartDate.toDateString();
       const isEnd = internalEndDate && date.toDateString() === internalEndDate.toDateString();
       const isInRange = isDateInRange(date);
       const isInHover = isDateInHoverRange(date);
@@ -195,14 +194,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
           onClick={() => handleDateClick(day, monthDate)}
           onMouseEnter={() => !isFuture && setHoverDate(date)}
           disabled={isFuture}
-          className={`h-9 w-9 rounded-lg flex items-center justify-center text-sm transition-colors
-            ${isFuture ? 'text-gray-400 cursor-not-allowed dark:text-gray-600' : ''}
-            ${isStart || isEnd ? 'bg-blue-600 text-white font-semibold' : ''}
-            ${isInRange && !isStart && !isEnd ? 'bg-blue-100 text-blue-900 dark:bg-blue-900/30 dark:text-blue-200' : ''}
-            ${isInHover && !isStart && !isInRange ? 'bg-blue-50 dark:bg-blue-900/20' : ''}
-            ${!isStart && !isEnd && !isInRange && !isInHover && !isFuture ? 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200' : ''}
-            ${isToday && !isStart && !isEnd ? 'border-2 border-blue-600' : ''}
-          `}
+          className={`flex h-9 w-9 items-center justify-center rounded-lg text-sm transition-colors ${isFuture ? 'cursor-not-allowed text-gray-400 dark:text-gray-600' : ''} ${isStart || isEnd ? 'bg-blue-600 font-semibold text-white' : ''} ${isInRange && !isStart && !isEnd ? 'bg-blue-100 text-blue-900 dark:bg-blue-900/30 dark:text-blue-200' : ''} ${isInHover && !isStart && !isInRange ? 'bg-blue-50 dark:bg-blue-900/20' : ''} ${!isStart && !isEnd && !isInRange && !isInHover && !isFuture ? 'text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700' : ''} ${isToday && !isStart && !isEnd ? 'border-2 border-blue-600' : ''} `}
         >
           {day}
         </button>,
@@ -214,14 +206,14 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
 
   const renderMonth = (monthDate: Date, side: 'left' | 'right') => (
     <div className="flex-1">
-      <div className="flex items-center justify-center gap-2 mb-3">
+      <div className="mb-3 flex items-center justify-center gap-2">
         <button
           type="button"
           onClick={() => {
             setShowMonthPicker(side);
             setShowYearPicker(null);
           }}
-          className="font-semibold hover:bg-gray-100 dark:hover:bg-gray-700 px-3 py-1 rounded-lg transition-colors text-gray-800 dark:text-gray-200"
+          className="rounded-lg px-3 py-1 font-semibold text-gray-800 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
         >
           {months[monthDate.getMonth()]}
         </button>
@@ -231,7 +223,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
             setShowYearPicker(side);
             setShowMonthPicker(null);
           }}
-          className="font-semibold hover:bg-gray-100 dark:hover:bg-gray-700 px-3 py-1 rounded-lg transition-colors text-gray-800 dark:text-gray-200"
+          className="rounded-lg px-3 py-1 font-semibold text-gray-800 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
         >
           {monthDate.getFullYear()}
         </button>
@@ -244,9 +236,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
               key={month}
               type="button"
               onClick={() => handleMonthSelect(index, side)}
-              className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors
-                ${monthDate.getMonth() === index ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'}
-              `}
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${monthDate.getMonth() === index ? 'bg-blue-600 text-white' : 'text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'} `}
             >
               {month.slice(0, 3)}
             </button>
@@ -260,9 +250,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
                 key={year}
                 type="button"
                 onClick={() => handleYearSelect(year, side)}
-                className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors
-                  ${monthDate.getFullYear() === year ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'}
-                `}
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${monthDate.getFullYear() === year ? 'bg-blue-600 text-white' : 'text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'} `}
               >
                 {year}
               </button>
@@ -271,11 +259,11 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-7 gap-1 mb-2">
+          <div className="mb-2 grid grid-cols-7 gap-1">
             {daysOfWeek.map((day) => (
               <div
                 key={day}
-                className="h-9 flex items-center justify-center text-xs font-semibold text-gray-600 dark:text-gray-400"
+                className="flex h-9 items-center justify-center text-xs font-semibold text-gray-600 dark:text-gray-400"
               >
                 {day}
               </div>
@@ -297,12 +285,10 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
 
       <div
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`border-2 border-gray-600 rounded-lg px-4 py-3 flex items-center justify-between transition-colors bg-gray-700
-          ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-blue-500'}
-        `}
+        className={`flex items-center justify-between rounded-lg border-2 border-gray-600 bg-gray-700 px-4 py-3 transition-colors ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-blue-500'} `}
       >
         <div className="flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-gray-400" />
+          <Calendar className="h-5 w-5 text-gray-400" />
           <span className="text-gray-200">
             {internalStartDate && internalEndDate
               ? `${formatDate(internalStartDate)} - ${formatDate(internalEndDate)}`
@@ -318,30 +304,30 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
               e.stopPropagation();
               clearDates();
             }}
-            className="hover:bg-gray-600 rounded p-1"
+            className="rounded p-1 hover:bg-gray-600"
           >
-            <X className="w-4 h-4 text-gray-400" />
+            <X className="h-4 w-4 text-gray-400" />
           </button>
         )}
       </div>
 
       {isOpen && !disabled && (
-        <div className="absolute top-full mt-2 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-lg shadow-xl p-5 z-50 w-max">
-          <div className="flex items-center justify-between mb-4">
+        <div className="absolute top-full z-50 mt-2 w-max rounded-lg border-2 border-gray-200 bg-white p-5 shadow-xl dark:border-gray-600 dark:bg-gray-800">
+          <div className="mb-4 flex items-center justify-between">
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
             >
-              <ChevronLeft className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+              <ChevronLeft className="h-5 w-5 text-gray-800 dark:text-gray-200" />
             </button>
             <div className="flex-1" />
             <button
               type="button"
               onClick={handleNextMonth}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
             >
-              <ChevronRight className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+              <ChevronRight className="h-5 w-5 text-gray-800 dark:text-gray-200" />
             </button>
           </div>
 
@@ -351,11 +337,11 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
             {renderMonth(rightMonth, 'right')}
           </div>
 
-          <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-between items-center">
+          <div className="mt-5 flex items-center justify-between border-t border-gray-200 pt-4 dark:border-gray-600">
             <button
               type="button"
               onClick={clearDates}
-              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+              className="text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             >
               Clear
             </button>
@@ -363,7 +349,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
               type="button"
               onClick={applyDates}
               disabled={!internalStartDate || !internalEndDate}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Apply
             </button>
@@ -373,7 +359,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
 
       {/* Validation message */}
       {startDate && endDate && startDate > endDate && (
-        <p className="text-xs text-red-400 mt-2">End date must be on or after start date</p>
+        <p className="mt-2 text-xs text-red-400">End date must be on or after start date</p>
       )}
     </div>
   );

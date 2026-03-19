@@ -101,7 +101,7 @@ export default function Search() {
       <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
         {(messages && messages.length === 0) || messages == null ? (
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="p-6 text-lg text-gray-500 bg-white rounded-lg dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
+            <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
               {localize('com_ui_nothing_found')}
             </div>
           </div>

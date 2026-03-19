@@ -58,7 +58,15 @@ const colorPalettes = {
   `,
 };
 
-const sections = [layoutAndSpacing, typography, design, charts, avoid, commonMistakes, colorPalettes];
+const sections = [
+  layoutAndSpacing,
+  typography,
+  design,
+  charts,
+  avoid,
+  commonMistakes,
+  colorPalettes,
+];
 
 /**
  * Generate design guidance prompt for PPTX artifact generation.

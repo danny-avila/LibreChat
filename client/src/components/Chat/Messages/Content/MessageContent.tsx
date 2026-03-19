@@ -185,4 +185,4 @@ const MessageContent = ({
   );
 };
 
-export default memo(MessageContent);    
+export default memo(MessageContent);
