@@ -160,10 +160,10 @@ const ContentParts = memo(function ContentParts({
           }
           const isTextPart =
             part?.type === ContentTypes.TEXT ||
-            typeof (part as unknown as Agents.MessageContentText)?.text !== 'string';
+            typeof (part as unknown as Agents.MessageContentText)?.text === 'string';
           const isThinkPart =
             part?.type === ContentTypes.THINK ||
-            typeof (part as unknown as Agents.ReasoningDeltaUpdate)?.think !== 'string';
+            typeof (part as unknown as Agents.ReasoningDeltaUpdate)?.think === 'string';
           if (!isTextPart && !isThinkPart) {
             return null;
           }

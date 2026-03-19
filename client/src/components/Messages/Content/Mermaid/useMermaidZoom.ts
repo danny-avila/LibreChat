@@ -34,16 +34,16 @@ export default function useMermaidZoom({ containerRef, wheelDep }: UseMermaidZoo
     setZoom((prev) => Math.min(Math.max(prev + delta, MIN_ZOOM), MAX_ZOOM));
   }, []);
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (e.button === 0 && target.tagName !== 'BUTTON' && !target.closest('button')) {
-        setIsPanning(true);
-        panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-      }
-    },
-    [pan],
-  );
+  const panRef = useRef(pan);
+  panRef.current = pan;
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (e.button === 0 && target.tagName !== 'BUTTON' && !target.closest('button')) {
+      setIsPanning(true);
+      panStartRef.current = { x: e.clientX - panRef.current.x, y: e.clientY - panRef.current.y };
+    }
+  }, []);
 
   useEffect(() => {
     if (!isPanning) {

@@ -30,6 +30,7 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
     const [isCopied, setIsCopied] = useState(false);
     const showCodeButtonRef = useRef<HTMLButtonElement>(null);
     const copyButtonRef = useRef<HTMLButtonElement>(null);
+    const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
     const {
       zoom,
@@ -58,7 +59,8 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
       copy(codeContent.trim(), { format: 'text/plain' });
       setIsCopied(true);
       requestAnimationFrame(() => copyButtonRef.current?.focus());
-      setTimeout(() => {
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
         setIsCopied(false);
         requestAnimationFrame(() => copyButtonRef.current?.focus());
       }, 3000);

@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useRef } from 'react';
+import React, { memo, useState, useCallback, useRef, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { Clipboard, CheckMark } from '@librechat/client';
@@ -24,12 +24,18 @@ const ZoomControls: React.FC<ZoomControlsProps> = memo(
     const localize = useLocalize();
     const [isCopied, setIsCopied] = useState(false);
     const copyRef = useRef<HTMLButtonElement>(null);
+    const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+    useEffect(() => {
+      return () => clearTimeout(copyTimerRef.current);
+    }, []);
 
     const handleCopy = useCallback(() => {
       copy(codeContent.trim(), { format: 'text/plain' });
       setIsCopied(true);
       requestAnimationFrame(() => copyRef.current?.focus());
-      setTimeout(() => {
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
         setIsCopied(false);
         requestAnimationFrame(() => copyRef.current?.focus());
       }, 3000);

@@ -47,7 +47,7 @@ async function processFileCitations({ user, appConfig, toolArtifact, toolCallId,
         logger.error(
           `[processFileCitations] Permission check failed for FILE_CITATIONS: ${error.message}`,
         );
-        logger.debug(`[processFileCitations] Proceeding with citations due to permission error`);
+        return null;
       }
     }
 

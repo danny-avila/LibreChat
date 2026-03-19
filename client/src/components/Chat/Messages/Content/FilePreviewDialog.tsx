@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
 import copy from 'copy-to-clipboard';
@@ -148,13 +148,15 @@ export default function FilePreviewDialog({
   const [loading, setLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const loadingRef = useRef(false);
 
   const previewKind = canPreviewByMime(fileType) || canPreviewByExt(fileName);
 
   const loadPreview = useCallback(async () => {
-    if (!fileId || !previewKind || loading) {
+    if (!fileId || !previewKind || loadingRef.current) {
       return;
     }
+    loadingRef.current = true;
     setLoading(true);
     setPreviewError(false);
 
@@ -177,9 +179,10 @@ export default function FilePreviewDialog({
     } catch {
       setPreviewError(true);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
-  }, [fileId, previewKind, downloadFile, loading]);
+  }, [fileId, previewKind, downloadFile]);
 
   const handleDownload = useCallback(async () => {
     if (!fileId) {
@@ -196,7 +199,7 @@ export default function FilePreviewDialog({
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(result.data);
+      setTimeout(() => URL.revokeObjectURL(result.data), 1000);
     } catch {
       // silent
     }

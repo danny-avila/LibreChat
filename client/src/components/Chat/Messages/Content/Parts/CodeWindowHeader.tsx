@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import LangIcon from '~/components/Messages/Content/LangIcon';
@@ -12,11 +12,17 @@ interface CodeWindowHeaderProps {
 export default function CodeWindowHeader({ language, code }: CodeWindowHeaderProps) {
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => clearTimeout(timerRef.current);
+  }, []);
 
   const handleCopy = useCallback(() => {
     setIsCopied(true);
     copy(code.trim(), { format: 'text/plain' });
-    setTimeout(() => setIsCopied(false), 3000);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setIsCopied(false), 3000);
   }, [code]);
 
   return (

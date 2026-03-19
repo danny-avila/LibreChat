@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useRef } from 'react';
+import React, { memo, useState, useCallback, useRef, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import { TooltipAnchor } from '@librechat/client';
 
@@ -36,11 +36,17 @@ const MermaidHeader: React.FC<MermaidHeaderProps> = memo(
     const [isCopied, setIsCopied] = useState(false);
     const copyButtonRef = useRef<HTMLButtonElement>(null);
     const showCodeButtonRef = useRef<HTMLButtonElement>(null);
+    const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+    useEffect(() => {
+      return () => clearTimeout(copyTimerRef.current);
+    }, []);
 
     const handleCopy = useCallback(() => {
       copy(codeContent.trim(), { format: 'text/plain' });
       setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 3000);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setIsCopied(false), 3000);
     }, [codeContent]);
 
     const handleToggleCode = useCallback(() => {
