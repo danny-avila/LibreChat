@@ -620,6 +620,9 @@ const deleteAgent = async (searchParameter) => {
  * Deletes agents solely owned by the user and cleans up their ACLs/project references.
  * Agents with other owners are left intact; the caller is responsible for
  * removing the user's own ACL principal entries separately.
+ *
+ * Also handles legacy (pre-ACL) agents that only have the author field set,
+ * ensuring they are not orphaned if no permission migration has been run.
  * @param {string} userId - The ID of the user whose agents should be deleted.
  * @returns {Promise<void>}
  */
@@ -631,17 +634,32 @@ const deleteUserAgents = async (userId) => {
       [ResourceType.AGENT, ResourceType.REMOTE_AGENT],
     );
 
-    if (soleOwnedObjectIds.length === 0) {
+    const authoredAgents = await Agent.find({ author: userObjectId }).select('id _id').lean();
+
+    const migratedEntries = authoredAgents.length > 0
+      ? await AclEntry.find({
+        resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
+        resourceId: { $in: authoredAgents.map((a) => a._id) },
+      })
+        .select('resourceId')
+        .lean()
+      : [];
+    const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
+    const legacyAgents = authoredAgents.filter((a) => !migratedIds.has(a._id.toString()));
+
+    /** resourceId is the MongoDB _id; agent.id is the string identifier for project/edge queries */
+    const soleOwnedAgents = soleOwnedObjectIds.length > 0
+      ? await Agent.find({ _id: { $in: soleOwnedObjectIds } }).select('id _id').lean()
+      : [];
+
+    const allAgents = [...soleOwnedAgents, ...legacyAgents];
+
+    if (allAgents.length === 0) {
       return;
     }
 
-    /** resourceId is the MongoDB _id; agent.id is the string identifier for project/edge queries */
-    const soleOwnedAgents = await Agent.find({ _id: { $in: soleOwnedObjectIds } })
-      .select('id _id')
-      .lean();
-
-    const agentIds = soleOwnedAgents.map((agent) => agent.id);
-    const agentObjectIds = soleOwnedAgents.map((agent) => agent._id);
+    const agentIds = allAgents.map((agent) => agent.id);
+    const agentObjectIds = allAgents.map((agent) => agent._id);
 
     await Promise.all(agentIds.map((id) => removeAgentFromAllProjects(id)));
 

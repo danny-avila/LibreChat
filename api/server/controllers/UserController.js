@@ -126,6 +126,9 @@ const deleteUserFiles = async (req) => {
  * Disconnects live sessions for deleted servers before removing DB records.
  * Servers with other owners are left intact; the caller is responsible for
  * removing the user's own ACL principal entries separately.
+ *
+ * Also handles legacy (pre-ACL) MCP servers that only have the author field set,
+ * ensuring they are not orphaned if no permission migration has been run.
  * @param {string} userId - The ID of the user.
  */
 const deleteUserMcpServers = async (userId) => {
@@ -138,18 +141,37 @@ const deleteUserMcpServers = async (userId) => {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const soleOwnedIds = await getSoleOwnedResourceIds(userObjectId, ResourceType.MCPSERVER);
 
-    if (soleOwnedIds.length === 0) {
+    const authoredServers = await MCPServer.find({ author: userObjectId })
+      .select('_id serverName')
+      .lean();
+
+    const migratedEntries = authoredServers.length > 0
+      ? await AclEntry.find({
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: { $in: authoredServers.map((s) => s._id) },
+      })
+        .select('resourceId')
+        .lean()
+      : [];
+    const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
+    const legacyServers = authoredServers.filter((s) => !migratedIds.has(s._id.toString()));
+    const legacyServerIds = legacyServers.map((s) => s._id);
+
+    const allServerIdsToDelete = [...soleOwnedIds, ...legacyServerIds];
+
+    if (allServerIdsToDelete.length === 0) {
       return;
     }
 
-    const serversToDelete = await MCPServer.find({ _id: { $in: soleOwnedIds } })
-      .select('serverName')
-      .lean();
+    const aclOwnedServers = soleOwnedIds.length > 0
+      ? await MCPServer.find({ _id: { $in: soleOwnedIds } }).select('serverName').lean()
+      : [];
+    const allServersToDelete = [...aclOwnedServers, ...legacyServers];
 
     const mcpManager = getMCPManager();
     if (mcpManager) {
       await Promise.all(
-        serversToDelete.map(async (s) => {
+        allServersToDelete.map(async (s) => {
           await mcpManager.disconnectUserConnection(userId, s.serverName);
           await invalidateCachedTools({ userId, serverName: s.serverName });
         }),
@@ -158,10 +180,10 @@ const deleteUserMcpServers = async (userId) => {
 
     await AclEntry.deleteMany({
       resourceType: ResourceType.MCPSERVER,
-      resourceId: { $in: soleOwnedIds },
+      resourceId: { $in: allServerIdsToDelete },
     });
 
-    await MCPServer.deleteMany({ _id: { $in: soleOwnedIds } });
+    await MCPServer.deleteMany({ _id: { $in: allServerIdsToDelete } });
   } catch (error) {
     logger.error('[deleteUserMcpServers] General error:', error);
   }

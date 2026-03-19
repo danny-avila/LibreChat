@@ -761,5 +761,31 @@ describe('Prompt ACL Permissions', () => {
 
       expect(afterCount).toBe(beforeCount);
     });
+
+    test('should delete legacy prompt groups that have author but no ACL entries', async () => {
+      const legacyUser = await User.create({
+        name: 'Legacy User',
+        email: 'legacy-prompt@example.com',
+        role: SystemRoles.USER,
+      });
+
+      const legacyGroup = await PromptGroup.create({
+        name: 'Legacy Group (no ACL)',
+        author: legacyUser._id,
+        authorName: legacyUser.name,
+        productionId: new ObjectId(),
+      });
+      const legacyPrompt = await Prompt.create({
+        prompt: 'Legacy prompt text',
+        author: legacyUser._id,
+        groupId: legacyGroup._id,
+        type: 'text',
+      });
+
+      await promptFns.deleteUserPrompts(legacyUser._id.toString());
+
+      expect(await PromptGroup.findById(legacyGroup._id)).toBeNull();
+      expect(await Prompt.findById(legacyPrompt._id)).toBeNull();
+    });
   });
 });

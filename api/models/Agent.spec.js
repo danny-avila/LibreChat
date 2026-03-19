@@ -1178,6 +1178,23 @@ describe('models/Agent', () => {
       expect(deletingUserMultiAcl).toHaveLength(1);
     });
 
+    test('should delete legacy agents that have author but no ACL entries', async () => {
+      const legacyUserId = new mongoose.Types.ObjectId();
+      const legacyAgentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: legacyAgentId,
+        name: 'Legacy Agent (no ACL)',
+        provider: 'test',
+        model: 'test-model',
+        author: legacyUserId,
+      });
+
+      await deleteUserAgents(legacyUserId.toString());
+
+      expect(await getAgent({ id: legacyAgentId })).toBeNull();
+    });
+
     test('should update agent projects', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();

@@ -595,6 +595,9 @@ module.exports = {
    * Delete prompt groups solely owned by the user and clean up their prompts/ACLs.
    * Groups with other owners are left intact; the caller is responsible for
    * removing the user's own ACL principal entries separately.
+   *
+   * Also handles legacy (pre-ACL) prompt groups that only have the author field set,
+   * ensuring they are not orphaned if the permission migration has not been run.
    * @param {string} userId - The ID of the user whose prompts and prompt groups are to be deleted.
    */
   deleteUserPrompts: async (userId) => {
@@ -602,19 +605,35 @@ module.exports = {
       const userObjectId = new ObjectId(userId);
       const soleOwnedIds = await getSoleOwnedResourceIds(userObjectId, ResourceType.PROMPTGROUP);
 
-      if (soleOwnedIds.length === 0) {
+      const authoredGroups = await PromptGroup.find({ author: userObjectId }).select('_id').lean();
+      const authoredGroupIds = authoredGroups.map((g) => g._id);
+
+      const migratedEntries = authoredGroupIds.length > 0
+        ? await AclEntry.find({
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: { $in: authoredGroupIds },
+        })
+          .select('resourceId')
+          .lean()
+        : [];
+      const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
+      const legacyGroupIds = authoredGroupIds.filter((id) => !migratedIds.has(id.toString()));
+
+      const allGroupIdsToDelete = [...soleOwnedIds, ...legacyGroupIds];
+
+      if (allGroupIdsToDelete.length === 0) {
         return;
       }
 
-      await Promise.all(soleOwnedIds.map((id) => removeGroupFromAllProjects(id)));
+      await Promise.all(allGroupIdsToDelete.map((id) => removeGroupFromAllProjects(id)));
 
       await AclEntry.deleteMany({
         resourceType: ResourceType.PROMPTGROUP,
-        resourceId: { $in: soleOwnedIds },
+        resourceId: { $in: allGroupIdsToDelete },
       });
 
-      await PromptGroup.deleteMany({ _id: { $in: soleOwnedIds } });
-      await Prompt.deleteMany({ groupId: { $in: soleOwnedIds } });
+      await PromptGroup.deleteMany({ _id: { $in: allGroupIdsToDelete } });
+      await Prompt.deleteMany({ groupId: { $in: allGroupIdsToDelete } });
     } catch (error) {
       logger.error('[deleteUserPrompts] General error:', error);
     }

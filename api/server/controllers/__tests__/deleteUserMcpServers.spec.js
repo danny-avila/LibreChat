@@ -258,4 +258,56 @@ describe('deleteUserMcpServers', () => {
 
     expect(await MCPServer.findById(server._id)).toBeNull();
   });
+
+  test('should delete legacy MCP servers that have author but no ACL entries', async () => {
+    const legacyUserId = new mongoose.Types.ObjectId();
+
+    const legacyServer = await MCPServer.create({
+      serverName: 'legacy-server',
+      config: { title: 'Legacy Server' },
+      author: legacyUserId,
+    });
+
+    mockGetMCPManager.mockReturnValue({
+      disconnectUserConnection: jest.fn().mockResolvedValue(undefined),
+    });
+
+    await deleteUserMcpServers(legacyUserId.toString());
+
+    expect(await MCPServer.findById(legacyServer._id)).toBeNull();
+  });
+
+  test('should delete both ACL-owned and legacy servers in one call', async () => {
+    const userId = new mongoose.Types.ObjectId();
+
+    const aclServer = await MCPServer.create({
+      serverName: 'acl-server',
+      config: { title: 'ACL Server' },
+      author: userId,
+    });
+
+    await permissionService.grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: userId,
+      resourceType: ResourceType.MCPSERVER,
+      resourceId: aclServer._id,
+      accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
+      grantedBy: userId,
+    });
+
+    const legacyServer = await MCPServer.create({
+      serverName: 'legacy-mixed-server',
+      config: { title: 'Legacy Mixed' },
+      author: userId,
+    });
+
+    mockGetMCPManager.mockReturnValue({
+      disconnectUserConnection: jest.fn().mockResolvedValue(undefined),
+    });
+
+    await deleteUserMcpServers(userId.toString());
+
+    expect(await MCPServer.findById(aclServer._id)).toBeNull();
+    expect(await MCPServer.findById(legacyServer._id)).toBeNull();
+  });
 });
