@@ -107,18 +107,18 @@ describe('findOpenIDUser', () => {
   });
 
   describe('Email-based searches', () => {
-    it('should find user by email when primary conditions fail', async () => {
+    it('should find user by email when primary conditions fail and openidId matches', async () => {
       const mockUser: IUser = {
         _id: 'user123',
         provider: 'openid',
-        openidId: 'openid_456',
+        openidId: 'openid_123',
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
 
       mockFindUser
-        .mockResolvedValueOnce(null) // Primary condition fails
-        .mockResolvedValueOnce(mockUser); // Email search succeeds
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockUser);
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
@@ -202,7 +202,7 @@ describe('findOpenIDUser', () => {
       });
     });
 
-    it('should allow login when user has openid provider', async () => {
+    it('should reject email fallback when existing openidId does not match token sub', async () => {
       const mockUser: IUser = {
         _id: 'user123',
         provider: 'openid',
@@ -212,8 +212,34 @@ describe('findOpenIDUser', () => {
       } as IUser;
 
       mockFindUser
-        .mockResolvedValueOnce(null) // Primary condition fails
-        .mockResolvedValueOnce(mockUser); // Email search finds user with openid provider
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(result).toEqual({
+        user: null,
+        error: ErrorTypes.AUTH_FAILED,
+        migration: false,
+      });
+    });
+
+    it('should allow email fallback when existing openidId matches token sub', async () => {
+      const mockUser: IUser = {
+        _id: 'user123',
+        provider: 'openid',
+        openidId: 'openid_123',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockUser);
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
@@ -259,7 +285,7 @@ describe('findOpenIDUser', () => {
       });
     });
 
-    it('should not migrate user who already has openidId', async () => {
+    it('should reject when user already has a different openidId', async () => {
       const mockUser: IUser = {
         _id: 'user123',
         provider: 'openid',
@@ -269,8 +295,8 @@ describe('findOpenIDUser', () => {
       } as IUser;
 
       mockFindUser
-        .mockResolvedValueOnce(null) // Primary condition fails
-        .mockResolvedValueOnce(mockUser); // Email search finds user with existing openidId
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockUser);
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
@@ -279,24 +305,23 @@ describe('findOpenIDUser', () => {
       });
 
       expect(result).toEqual({
-        user: mockUser,
-        error: null,
+        user: null,
+        error: ErrorTypes.AUTH_FAILED,
         migration: false,
       });
     });
 
-    it('should handle user with no provider but existing openidId', async () => {
+    it('should reject when user has no provider but a different openidId', async () => {
       const mockUser: IUser = {
         _id: 'user123',
         openidId: 'existing_openid',
         email: 'user@example.com',
         username: 'testuser',
-        // No provider field
       } as IUser;
 
       mockFindUser
-        .mockResolvedValueOnce(null) // Primary condition fails
-        .mockResolvedValueOnce(mockUser); // Email search finds user
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockUser);
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
@@ -305,8 +330,8 @@ describe('findOpenIDUser', () => {
       });
 
       expect(result).toEqual({
-        user: mockUser,
-        error: null,
+        user: null,
+        error: ErrorTypes.AUTH_FAILED,
         migration: false,
       });
     });
@@ -398,14 +423,14 @@ describe('findOpenIDUser', () => {
       const mockUser: IUser = {
         _id: 'user123',
         provider: 'openid',
-        openidId: 'openid_456',
+        openidId: 'openid_123',
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
 
       mockFindUser
-        .mockResolvedValueOnce(null) // Primary condition fails
-        .mockResolvedValueOnce(mockUser); // Email search succeeds
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockUser);
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
@@ -413,7 +438,6 @@ describe('findOpenIDUser', () => {
         email: 'User@Example.COM',
       });
 
-      /** Email is passed as-is; findUser implementation handles normalization */
       expect(mockFindUser).toHaveBeenNthCalledWith(2, { email: 'User@Example.COM' });
       expect(result).toEqual({
         user: mockUser,
