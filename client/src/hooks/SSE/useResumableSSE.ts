@@ -357,6 +357,8 @@ export default function useResumableSSE(
           console.log('[ResumableSSE] Stream not found (404) - job completed or expired');
           sse.close();
           removeActiveJob(currentStreamId);
+          clearDraft(currentSubmission.conversation?.conversationId);
+          errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
           setIsSubmitting(false);
           setShowStopButton(false);
           setStreamId(null);
