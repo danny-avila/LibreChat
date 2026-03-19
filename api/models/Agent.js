@@ -17,7 +17,10 @@ const {
   removeAgentIdsFromProject,
   addAgentIdsToProject,
 } = require('./Project');
-const { removeAllPermissions, getSoleOwnedResourceIds } = require('~/server/services/PermissionService');
+const {
+  removeAllPermissions,
+  getSoleOwnedResourceIds,
+} = require('~/server/services/PermissionService');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { Agent, AclEntry, User } = require('~/db/models');
 const { getActions } = require('./Action');
@@ -629,28 +632,32 @@ const deleteAgent = async (searchParameter) => {
 const deleteUserAgents = async (userId) => {
   try {
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    const soleOwnedObjectIds = await getSoleOwnedResourceIds(
-      userObjectId,
-      [ResourceType.AGENT, ResourceType.REMOTE_AGENT],
-    );
+    const soleOwnedObjectIds = await getSoleOwnedResourceIds(userObjectId, [
+      ResourceType.AGENT,
+      ResourceType.REMOTE_AGENT,
+    ]);
 
     const authoredAgents = await Agent.find({ author: userObjectId }).select('id _id').lean();
 
-    const migratedEntries = authoredAgents.length > 0
-      ? await AclEntry.find({
-        resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
-        resourceId: { $in: authoredAgents.map((a) => a._id) },
-      })
-        .select('resourceId')
-        .lean()
-      : [];
+    const migratedEntries =
+      authoredAgents.length > 0
+        ? await AclEntry.find({
+            resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
+            resourceId: { $in: authoredAgents.map((a) => a._id) },
+          })
+            .select('resourceId')
+            .lean()
+        : [];
     const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
     const legacyAgents = authoredAgents.filter((a) => !migratedIds.has(a._id.toString()));
 
     /** resourceId is the MongoDB _id; agent.id is the string identifier for project/edge queries */
-    const soleOwnedAgents = soleOwnedObjectIds.length > 0
-      ? await Agent.find({ _id: { $in: soleOwnedObjectIds } }).select('id _id').lean()
-      : [];
+    const soleOwnedAgents =
+      soleOwnedObjectIds.length > 0
+        ? await Agent.find({ _id: { $in: soleOwnedObjectIds } })
+            .select('id _id')
+            .lean()
+        : [];
 
     const allAgents = [...soleOwnedAgents, ...legacyAgents];
 

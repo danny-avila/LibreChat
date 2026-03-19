@@ -19,7 +19,12 @@ jest.mock('~/server/services/Config', () => ({
 const mongoose = require('mongoose');
 const { mcpServerSchema } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { ResourceType, AccessRoleIds, PrincipalType, PermissionBits } = require('librechat-data-provider');
+const {
+  ResourceType,
+  AccessRoleIds,
+  PrincipalType,
+  PermissionBits,
+} = require('librechat-data-provider');
 const permissionService = require('~/server/services/PermissionService');
 const { deleteUserMcpServers } = require('~/server/controllers/UserController');
 const { AclEntry, AccessRole } = require('~/db/models');
@@ -39,7 +44,8 @@ describe('deleteUserMcpServers', () => {
       accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
       name: 'MCP Server Owner',
       resourceType: ResourceType.MCPSERVER,
-      permBits: PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+      permBits:
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
     });
 
     await AccessRole.create({

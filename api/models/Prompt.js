@@ -13,7 +13,10 @@ const {
   addGroupIdsToProject,
   getProjectByName,
 } = require('./Project');
-const { removeAllPermissions, getSoleOwnedResourceIds } = require('~/server/services/PermissionService');
+const {
+  removeAllPermissions,
+  getSoleOwnedResourceIds,
+} = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
 /**
@@ -608,14 +611,15 @@ module.exports = {
       const authoredGroups = await PromptGroup.find({ author: userObjectId }).select('_id').lean();
       const authoredGroupIds = authoredGroups.map((g) => g._id);
 
-      const migratedEntries = authoredGroupIds.length > 0
-        ? await AclEntry.find({
-          resourceType: ResourceType.PROMPTGROUP,
-          resourceId: { $in: authoredGroupIds },
-        })
-          .select('resourceId')
-          .lean()
-        : [];
+      const migratedEntries =
+        authoredGroupIds.length > 0
+          ? await AclEntry.find({
+              resourceType: ResourceType.PROMPTGROUP,
+              resourceId: { $in: authoredGroupIds },
+            })
+              .select('resourceId')
+              .lean()
+          : [];
       const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
       const legacyGroupIds = authoredGroupIds.filter((id) => !migratedIds.has(id.toString()));
 
