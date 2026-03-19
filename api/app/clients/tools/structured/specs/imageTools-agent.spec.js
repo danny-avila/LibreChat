@@ -1,16 +1,16 @@
 /**
- * Regression tests for image tool agent mode - verifies that invoke() returns
- * a proper ToolMessage with base64 in artifact.content, not serialized into content.
+ * Regression tests for image tool agent mode — verifies that invoke() returns
+ * a ToolMessage with base64 in artifact.content rather than serialized into content.
  *
- * Root cause of original bug: DALLE3/FluxAPI/StableDiffusion extend LangChain's Tool
- * but did not set responseFormat = 'content_and_artifact'. LangChain's invoke() would
- * then JSON.stringify the entire [content, artifact] tuple into ToolMessage.content,
- * dumping the base64 string directly into token counting and causing context exhaustion.
+ * Root cause: DALLE3/FluxAPI/StableDiffusion extend LangChain's Tool but did not
+ * set responseFormat = 'content_and_artifact'. LangChain's invoke() would then
+ * JSON.stringify the entire [content, artifact] tuple into ToolMessage.content,
+ * dumping base64 into token counting and causing context exhaustion.
  */
 
-const OpenAI = require('openai');
 const axios = require('axios');
-const nodeFetch = require('node-fetch');
+const fetch = require('node-fetch');
+const OpenAI = require('openai');
 const undici = require('undici');
 const { ToolMessage } = require('@langchain/core/messages');
 const { ContentTypes } = require('librechat-data-provider');
@@ -18,8 +18,8 @@ const DALLE3 = require('../DALLE3');
 const FluxAPI = require('../FluxAPI');
 const StableDiffusionAPI = require('../StableDiffusion');
 
-jest.mock('openai');
 jest.mock('axios');
+jest.mock('openai');
 jest.mock('node-fetch');
 jest.mock('undici', () => ({
   ProxyAgent: jest.fn(),
@@ -50,21 +50,40 @@ const makeToolCall = (name, args) => ({
 });
 
 describe('image tools - agent mode ToolMessage format', () => {
+  const ENV_KEYS = ['DALLE_API_KEY', 'FLUX_API_KEY', 'SD_WEBUI_URL', 'PROXY'];
+  let savedEnv = {};
+
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.DALLE_API_KEY = 'test-key';
-    process.env.FLUX_API_KEY = 'test-key';
+    for (const key of ENV_KEYS) {
+      savedEnv[key] = process.env[key];
+    }
+    process.env.DALLE_API_KEY = 'test-dalle-key';
+    process.env.FLUX_API_KEY = 'test-flux-key';
     process.env.SD_WEBUI_URL = 'http://localhost:7860';
+    delete process.env.PROXY;
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      if (savedEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = savedEnv[key];
+      }
+    }
+    savedEnv = {};
   });
 
   describe('DALLE3', () => {
-    let generate;
-
     beforeEach(() => {
-      generate = jest.fn().mockResolvedValue({
-        data: [{ url: 'https://example.com/image.png' }],
-      });
-      OpenAI.mockImplementation(() => ({ images: { generate } }));
+      OpenAI.mockImplementation(() => ({
+        images: {
+          generate: jest.fn().mockResolvedValue({
+            data: [{ url: 'https://example.com/image.png' }],
+          }),
+        },
+      }));
       undici.fetch.mockResolvedValue({
         arrayBuffer: () => Promise.resolve(Buffer.from(FAKE_BASE64, 'base64')),
       });
@@ -82,20 +101,13 @@ describe('image tools - agent mode ToolMessage format', () => {
 
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
       const dalle = new DALLE3({ isAgent: true });
-      const toolCall = makeToolCall('dalle', {
-        prompt: 'a box',
-        quality: 'standard',
-        size: '1024x1024',
-        style: 'vivid',
-      });
-
-      const result = await dalle.invoke(toolCall);
+      const result = await dalle.invoke(
+        makeToolCall('dalle', { prompt: 'a box', quality: 'standard', size: '1024x1024', style: 'vivid' }),
+      );
 
       expect(result).toBeInstanceOf(ToolMessage);
 
-      const contentStr =
-        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
-      expect(contentStr).not.toContain('base64');
+      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).not.toContain(FAKE_BASE64);
 
       expect(result.artifact).toBeDefined();
@@ -103,6 +115,22 @@ describe('image tools - agent mode ToolMessage format', () => {
       expect(Array.isArray(artifactContent)).toBe(true);
       expect(artifactContent[0].type).toBe(ContentTypes.IMAGE_URL);
       expect(artifactContent[0].image_url.url).toContain('base64');
+    });
+
+    it('invoke() returns ToolMessage with error string in content when API fails', async () => {
+      OpenAI.mockImplementation(() => ({
+        images: { generate: jest.fn().mockRejectedValue(new Error('API error')) },
+      }));
+
+      const dalle = new DALLE3({ isAgent: true });
+      const result = await dalle.invoke(
+        makeToolCall('dalle', { prompt: 'a box', quality: 'standard', size: '1024x1024', style: 'vivid' }),
+      );
+
+      expect(result).toBeInstanceOf(ToolMessage);
+      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      expect(contentStr).toContain('Something went wrong');
+      expect(result.artifact).toBeDefined();
     });
   });
 
@@ -113,7 +141,7 @@ describe('image tools - agent mode ToolMessage format', () => {
       axios.get.mockResolvedValue({
         data: { status: 'Ready', result: { sample: 'https://example.com/image.png' } },
       });
-      nodeFetch.mockResolvedValue({
+      fetch.mockResolvedValue({
         arrayBuffer: () => Promise.resolve(Buffer.from(FAKE_BASE64, 'base64')),
       });
     });
@@ -134,17 +162,12 @@ describe('image tools - agent mode ToolMessage format', () => {
 
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
       const flux = new FluxAPI({ isAgent: true });
-      const toolCall = makeToolCall('flux', { prompt: 'a box', endpoint: '/v1/flux-dev' });
-
-      const invokePromise = flux.invoke(toolCall);
+      const invokePromise = flux.invoke(makeToolCall('flux', { prompt: 'a box', endpoint: '/v1/flux-dev' }));
       await jest.runAllTimersAsync();
       const result = await invokePromise;
 
       expect(result).toBeInstanceOf(ToolMessage);
-
-      const contentStr =
-        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
-      expect(contentStr).not.toContain('base64');
+      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).not.toContain(FAKE_BASE64);
 
       expect(result.artifact).toBeDefined();
@@ -152,6 +175,44 @@ describe('image tools - agent mode ToolMessage format', () => {
       expect(Array.isArray(artifactContent)).toBe(true);
       expect(artifactContent[0].type).toBe(ContentTypes.IMAGE_URL);
       expect(artifactContent[0].image_url.url).toContain('base64');
+    });
+
+    it('invoke() returns ToolMessage with base64 in artifact for generate_finetuned action', async () => {
+      const flux = new FluxAPI({ isAgent: true });
+      const invokePromise = flux.invoke(
+        makeToolCall('flux', {
+          action: 'generate_finetuned',
+          prompt: 'a box',
+          finetune_id: 'ft-abc123',
+          endpoint: '/v1/flux-pro-finetuned',
+        }),
+      );
+      await jest.runAllTimersAsync();
+      const result = await invokePromise;
+
+      expect(result).toBeInstanceOf(ToolMessage);
+      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      expect(contentStr).not.toContain(FAKE_BASE64);
+
+      expect(result.artifact).toBeDefined();
+      const artifactContent = result.artifact?.content;
+      expect(Array.isArray(artifactContent)).toBe(true);
+      expect(artifactContent[0].type).toBe(ContentTypes.IMAGE_URL);
+      expect(artifactContent[0].image_url.url).toContain('base64');
+    });
+
+    it('invoke() returns ToolMessage with error string in content when task submission fails', async () => {
+      axios.post.mockRejectedValue(new Error('Network error'));
+
+      const flux = new FluxAPI({ isAgent: true });
+      const invokePromise = flux.invoke(makeToolCall('flux', { prompt: 'a box', endpoint: '/v1/flux-dev' }));
+      await jest.runAllTimersAsync();
+      const result = await invokePromise;
+
+      expect(result).toBeInstanceOf(ToolMessage);
+      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      expect(contentStr).toContain('Something went wrong');
+      expect(result.artifact).toBeDefined();
     });
   });
 
@@ -171,28 +232,18 @@ describe('image tools - agent mode ToolMessage format', () => {
     });
 
     it('does not set responseFormat when isAgent is false', () => {
-      const sd = new StableDiffusionAPI({
-        isAgent: false,
-        override: true,
-        uploadImageBuffer: jest.fn(),
-      });
+      const sd = new StableDiffusionAPI({ isAgent: false, override: true, uploadImageBuffer: jest.fn() });
       expect(sd.responseFormat).not.toBe('content_and_artifact');
     });
 
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
       const sd = new StableDiffusionAPI({ isAgent: true, override: true, userId: 'user-1' });
-      const toolCall = makeToolCall('stable-diffusion', {
-        prompt: 'a box',
-        negative_prompt: '',
-      });
-
-      const result = await sd.invoke(toolCall);
+      const result = await sd.invoke(
+        makeToolCall('stable-diffusion', { prompt: 'a box', negative_prompt: '' }),
+      );
 
       expect(result).toBeInstanceOf(ToolMessage);
-
-      const contentStr =
-        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
-      expect(contentStr).not.toContain('base64');
+      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).not.toContain(FAKE_BASE64);
 
       expect(result.artifact).toBeDefined();
@@ -200,6 +251,19 @@ describe('image tools - agent mode ToolMessage format', () => {
       expect(Array.isArray(artifactContent)).toBe(true);
       expect(artifactContent[0].type).toBe(ContentTypes.IMAGE_URL);
       expect(artifactContent[0].image_url.url).toContain('base64');
+    });
+
+    it('invoke() returns ToolMessage with error string in content when API fails', async () => {
+      axios.post.mockRejectedValue(new Error('Connection refused'));
+
+      const sd = new StableDiffusionAPI({ isAgent: true, override: true, userId: 'user-1' });
+      const result = await sd.invoke(
+        makeToolCall('stable-diffusion', { prompt: 'a box', negative_prompt: '' }),
+      );
+
+      expect(result).toBeInstanceOf(ToolMessage);
+      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      expect(contentStr).toContain('Error making API request');
     });
   });
 });
