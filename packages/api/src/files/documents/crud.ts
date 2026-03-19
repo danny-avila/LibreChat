@@ -7,6 +7,7 @@ import type { MistralOCRUploadResult } from '~/types';
 type FileParseFn = (file: Express.Multer.File) => Promise<string>;
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
+const ODT_MAX_DECOMPRESSED_SIZE = 50 * megabyte;
 
 /**
  * Parses an uploaded document and extracts its text content and metadata.
@@ -125,6 +126,18 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
 async function odtToText(file: Express.Multer.File): Promise<string> {
   const data = await fs.promises.readFile(file.path);
   const zip = await JSZip.loadAsync(data);
+
+  let totalUncompressed = 0;
+  zip.forEach((_, entry) => {
+    const raw = entry as JSZip.JSZipObject & { _data?: { uncompressedSize?: number } };
+    totalUncompressed += raw._data?.uncompressedSize ?? 0;
+  });
+  if (totalUncompressed > ODT_MAX_DECOMPRESSED_SIZE) {
+    throw new Error(
+      `ODT file decompressed content (${Math.ceil(totalUncompressed / megabyte)}MB) exceeds the ${ODT_MAX_DECOMPRESSED_SIZE / megabyte}MB limit`,
+    );
+  }
+
   const contentFile = zip.file('content.xml');
   if (!contentFile) {
     throw new Error('ODT file is missing content.xml');

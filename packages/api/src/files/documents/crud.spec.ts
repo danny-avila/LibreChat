@@ -1,4 +1,5 @@
 import path from 'path';
+import * as fs from 'fs';
 import { parseDocument } from './crud';
 
 describe('Document Parser', () => {
@@ -100,6 +101,27 @@ describe('Document Parser', () => {
     } as Express.Multer.File;
 
     await expect(parseDocument({ file })).rejects.toThrow('No text found in document');
+  });
+
+  test('parseDocument() throws for odt whose decompressed content exceeds the size limit', async () => {
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+    zip.file('mimetype', 'application/vnd.oasis.opendocument.text', { compression: 'STORE' });
+    zip.file('content.xml', 'x'.repeat(51 * 1024 * 1024), { compression: 'DEFLATE' });
+    const buf = await zip.generateAsync({ type: 'nodebuffer' });
+
+    const tmpPath = path.join(__dirname, 'bomb.odt');
+    await fs.promises.writeFile(tmpPath, buf);
+    try {
+      const file = {
+        originalname: 'bomb.odt',
+        path: tmpPath,
+        mimetype: 'application/vnd.oasis.opendocument.text',
+      } as Express.Multer.File;
+      await expect(parseDocument({ file })).rejects.toThrow(/exceeds the 50MB limit/);
+    } finally {
+      await fs.promises.unlink(tmpPath);
+    }
   });
 
   test('parseDocument() decodes XML entities and preserves tabs and spacing from odt', async () => {
