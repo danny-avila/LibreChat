@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import JSZip from 'jszip';
 import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
@@ -114,9 +115,14 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
   return text;
 }
 
-/** Parses OpenDocument Text (.odt), returns text inside. */
+/**
+ * Parses OpenDocument Text (.odt) by extracting the body text from content.xml.
+ * Uses regex-based XML extraction scoped to <office:body>: paragraph/heading
+ * boundaries become newlines, tab and spacing elements are preserved, and the
+ * five standard XML entities are decoded. Complex elements such as frames,
+ * text boxes, and annotations are stripped without replacement.
+ */
 async function odtToText(file: Express.Multer.File): Promise<string> {
-  const JSZip = (await import('jszip')).default;
   const data = await fs.promises.readFile(file.path);
   const zip = await JSZip.loadAsync(data);
   const contentFile = zip.file('content.xml');
@@ -132,7 +138,14 @@ async function odtToText(file: Express.Multer.File): Promise<string> {
     .replace(/<\/text:p>/g, '\n')
     .replace(/<\/text:h>/g, '\n')
     .replace(/<text:line-break\/>/g, '\n')
+    .replace(/<text:tab\/>/g, '\t')
+    .replace(/<text:s[^>]*\/>/g, ' ')
     .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
     .replace(/[ \t]+/g, ' ')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/[ \t]+\n/g, '\n')

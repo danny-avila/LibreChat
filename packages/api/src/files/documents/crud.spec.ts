@@ -92,7 +92,7 @@ describe('Document Parser', () => {
     });
   });
 
-  test('parseDocument() throws for empty odt', async () => {
+  test('parseDocument() throws for odt with no extractable text', async () => {
     const file = {
       originalname: 'empty.odt',
       path: path.join(__dirname, 'empty.odt'),
@@ -102,8 +102,25 @@ describe('Document Parser', () => {
     await expect(parseDocument({ file })).rejects.toThrow('No text found in document');
   });
 
-  test.each([
-    'application/msexcel',
+  test('parseDocument() decodes XML entities and preserves tabs and spacing from odt', async () => {
+    const file = {
+      originalname: 'sample-entities.odt',
+      path: path.join(__dirname, 'sample-entities.odt'),
+      mimetype: 'application/vnd.oasis.opendocument.text',
+    } as Express.Multer.File;
+
+    const document = await parseDocument({ file });
+
+    expect(document).toEqual({
+      bytes: 19,
+      filename: 'sample-entities.odt',
+      filepath: 'document_parser',
+      images: [],
+      text: 'AT&T and A>B\n\nx y z',
+    });
+  });
+
+  test.each([    'application/msexcel',
     'application/x-msexcel',
     'application/x-ms-excel',
     'application/x-excel',

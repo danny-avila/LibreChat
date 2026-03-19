@@ -59,7 +59,6 @@
     "@types/express-session": "^1.18.2",
     "@types/jest": "^29.5.2",
     "@types/jsonwebtoken": "^9.0.0",
-    "@types/jszip": "^3.4.0",
     "@types/multer": "^1.4.13",
     "@types/node": "^20.3.0",
     "@types/node-fetch": "^2.6.13",
