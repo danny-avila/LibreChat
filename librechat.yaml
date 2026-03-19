@@ -13,6 +13,9 @@ mcpSettings:
     - 'host.docker.internal'
     - 'localhost'
     - 'inboundfound.app.n8n.cloud'
+    - 'sitegen-mcp'
+    - 'if-bridge'
+    - 'plane-mcp'
 
 # File strategy s3/firebase
 # fileStrategy: "s3"
@@ -153,6 +156,15 @@ actions:
     - 'black.inboundfound.com'
 
 mcpServers:
+  sitegen:
+    type: streamable-http
+    url: http://sitegen-mcp:9107/mcp
+    title: "Site Generator"
+    description: "Create, update, review, and deploy AI-generated websites"
+    timeout: 180000 
+    customJWTAuth: 'ubAuthToken'
+    headers:
+      Authorization: '{{Authorization}}'
   wordpress:
     type: sse
     url: 'http://host.docker.internal:8001/sse'
@@ -242,6 +254,12 @@ mcpServers:
     name: 'Content Audit Engine'
     description: 'Specialized content strategy and SEO audit engine'
     timeout: 480000
+  if-bridge:
+    type: streamable-http
+    url: 'http://if-bridge:8002/mcp/mcp'
+    name: 'IF Project Management'
+    description: 'Create tasks, manage Rocks, approve agent work, query project status via Plane + Neo4j'
+    timeout: 120000
     serverInstructions: |
       # IMPORTANT SYSTEM RULE
       All tools on this server have a strict, low-level requirement: they only accept a single parameter named 'input' which MUST be a STRINGIFIED JSON object. You must construct the JSON object first, then convert it to a string before calling the tool.
@@ -256,6 +274,12 @@ mcpServers:
       **Use this tool for a comprehensive, data-driven SEO audit of any public webpage.**
       It synthesizes Google Search Console (GSC) data, competitive analysis, and on-page metrics to produce a full transformation plan. This is your default choice for general SEO analysis.
 
+  plane-mcp:
+    type: sse
+    url: 'http://plane-mcp:3000/sse'
+    name: 'Plane Direct'
+    description: 'Direct Plane CRUD operations — work items, cycles, modules, labels, states, bulk operations'
+    timeout: 120000
   #serverInstructions: |
   #  To use the 'create_gmail_draft' tool, you MUST provide a single JSON string for the 'input' parameter.
   #  Example of the exact string to send: "{\"to\":\"test@example.com\",\"subject\":\"My Subject\",\"compose\":\"My email body.\"}"
