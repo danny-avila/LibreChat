@@ -63,10 +63,10 @@ const createTTSLimiters = () => {
     windowMs: ttsUserWindowMs,
     max: ttsUserMax,
     handler: createTTSHandler(false),
-    store: limiterCache('tts_user_limiter'),
     keyGenerator: function (req) {
-      return req.user?.id; // Use the user ID or NULL if not available
+      return req.user?.id;
     },
+    store: limiterCache('tts_user_limiter'),
   };
 
   const ttsIpLimiter = rateLimit(ipLimiterOptions);
