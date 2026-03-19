@@ -1,5 +1,6 @@
 import path from 'path';
 import * as fs from 'fs';
+import JSZip from 'jszip';
 import { parseDocument } from './crud';
 
 describe('Document Parser', () => {
@@ -104,7 +105,6 @@ describe('Document Parser', () => {
   });
 
   test('parseDocument() throws for odt whose decompressed content exceeds the size limit', async () => {
-    const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
     zip.file('mimetype', 'application/vnd.oasis.opendocument.text', { compression: 'STORE' });
     zip.file('content.xml', 'x'.repeat(51 * 1024 * 1024), { compression: 'DEFLATE' });
@@ -124,7 +124,7 @@ describe('Document Parser', () => {
     }
   });
 
-  test('parseDocument() decodes XML entities and preserves tabs and spacing from odt', async () => {
+  test('parseDocument() decodes XML entities and normalizes tab and spacing elements to spaces from odt', async () => {
     const file = {
       originalname: 'sample-entities.odt',
       path: path.join(__dirname, 'sample-entities.odt'),
@@ -142,7 +142,8 @@ describe('Document Parser', () => {
     });
   });
 
-  test.each([    'application/msexcel',
+  test.each([
+    'application/msexcel',
     'application/x-msexcel',
     'application/x-ms-excel',
     'application/x-excel',

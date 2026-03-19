@@ -130,6 +130,9 @@ async function odtToText(file: Express.Multer.File): Promise<string> {
   let totalUncompressed = 0;
   zip.forEach((_, entry) => {
     const raw = entry as JSZip.JSZipObject & { _data?: { uncompressedSize?: number } };
+    // _data.uncompressedSize is populated from the ZIP central directory at parse time
+    // by jszip (private internal, jszip@3.x). If the field is absent the guard fails
+    // open (adds 0); this is an accepted limitation of the approach.
     totalUncompressed += raw._data?.uncompressedSize ?? 0;
   });
   if (totalUncompressed > ODT_MAX_DECOMPRESSED_SIZE) {
