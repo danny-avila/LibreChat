@@ -66,10 +66,38 @@ interface PIRStatusUpdateFormProps {
 const TODAY = new Date().toISOString().split('T')[0];
 
 const STATUS_OPTIONS = [
-  { value: 'pending', label: 'Pending', icon: Clock, color: 'text-gray-400', bg: 'bg-gray-500/20', border: 'border-gray-500' },
-  { value: 'in_progress', label: 'In Progress', icon: Loader2, color: 'text-blue-400', bg: 'bg-blue-500/20', border: 'border-blue-500' },
-  { value: 'completed', label: 'Completed', icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500' },
-  { value: 'skipped', label: 'Skipped', icon: AlertTriangle, color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500' },
+  {
+    value: 'pending',
+    label: 'Pending',
+    icon: Clock,
+    color: 'text-gray-400',
+    bg: 'bg-gray-500/20',
+    border: 'border-gray-500',
+  },
+  {
+    value: 'in_progress',
+    label: 'In Progress',
+    icon: Loader2,
+    color: 'text-blue-400',
+    bg: 'bg-blue-500/20',
+    border: 'border-blue-500',
+  },
+  {
+    value: 'completed',
+    label: 'Completed',
+    icon: CheckCircle,
+    color: 'text-green-400',
+    bg: 'bg-green-500/20',
+    border: 'border-green-500',
+  },
+  {
+    value: 'skipped',
+    label: 'Skipped',
+    icon: AlertTriangle,
+    color: 'text-yellow-400',
+    bg: 'bg-yellow-500/20',
+    border: 'border-yellow-500',
+  },
 ] as const;
 
 const TIER_STYLES: Record<string, { bg: string; text: string; border: string }> = {
@@ -143,7 +171,8 @@ const PIRStatusUpdateForm: React.FC<PIRStatusUpdateFormProps> = ({
   );
 
   const getEffectiveDate = useCallback(
-    (rec: PIRStatusRecommendation) => dateChanges[rec.recommendationId] || rec.completedAt?.split('T')[0] || TODAY,
+    (rec: PIRStatusRecommendation) =>
+      dateChanges[rec.recommendationId] || rec.completedAt?.split('T')[0] || TODAY,
     [dateChanges],
   );
 
@@ -155,9 +184,10 @@ const PIRStatusUpdateForm: React.FC<PIRStatusUpdateFormProps> = ({
       const updates: StatusUpdate[] = [...changedIds].map((recommendationId) => {
         const rec = recommendations.find((r) => r.recommendationId === recommendationId);
         const status = statusChanges[recommendationId] || rec?.status || 'pending';
-        const completedAt = status === 'completed'
-          ? (dateChanges[recommendationId] || rec?.completedAt?.split('T')[0] || TODAY)
-          : null;
+        const completedAt =
+          status === 'completed'
+            ? dateChanges[recommendationId] || rec?.completedAt?.split('T')[0] || TODAY
+            : null;
         return { recommendationId, status, completedAt };
       });
 
@@ -198,7 +228,17 @@ const PIRStatusUpdateForm: React.FC<PIRStatusUpdateFormProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  }, [changedCount, changedIds, statusChanges, dateChanges, report, recommendations, serverName, token, onSubmit]);
+  }, [
+    changedCount,
+    changedIds,
+    statusChanges,
+    dateChanges,
+    report,
+    recommendations,
+    serverName,
+    token,
+    onSubmit,
+  ]);
 
   const handleCancel = useCallback(() => {
     onCancel?.();
@@ -207,8 +247,7 @@ const PIRStatusUpdateForm: React.FC<PIRStatusUpdateFormProps> = ({
   const getStatusConfig = (status: string) =>
     STATUS_OPTIONS.find((s) => s.value === status) || STATUS_OPTIONS[0];
 
-  const getTierStyle = (tier: string) =>
-    TIER_STYLES[tier] || TIER_STYLES.medium;
+  const getTierStyle = (tier: string) => TIER_STYLES[tier] || TIER_STYLES.medium;
 
   // ── Cancelled State ─────────────────────────────────────────────────
   if (isCancelled) {
@@ -257,7 +296,9 @@ const PIRStatusUpdateForm: React.FC<PIRStatusUpdateFormProps> = ({
                   key={update.recommendationId}
                   className="flex items-center justify-between rounded-md border border-green-500/30 bg-gray-700 px-3 py-2"
                 >
-                  <span className="text-sm text-white">{rec?.recId || update.recommendationId}</span>
+                  <span className="text-sm text-white">
+                    {rec?.recId || update.recommendationId}
+                  </span>
                   <div className="flex items-center gap-3">
                     {update.completedAt && (
                       <span className="flex items-center gap-1 text-xs text-gray-400">
@@ -291,12 +332,11 @@ const PIRStatusUpdateForm: React.FC<PIRStatusUpdateFormProps> = ({
         <div className="space-y-1">
           <p className="text-sm text-gray-300">
             <span className="font-medium text-white">{report.productName}</span>
-            {report.pageUrl && (
-              <span className="ml-2 text-gray-500">({report.pageUrl})</span>
-            )}
+            {report.pageUrl && <span className="ml-2 text-gray-500">({report.pageUrl})</span>}
           </p>
           <p className="text-xs text-gray-500">
-            {recommendations.length} recommendation{recommendations.length !== 1 ? 's' : ''} &middot; Report {report.reportId}
+            {recommendations.length} recommendation{recommendations.length !== 1 ? 's' : ''}{' '}
+            &middot; Report {report.reportId}
           </p>
         </div>
       </div>
@@ -315,9 +355,7 @@ const PIRStatusUpdateForm: React.FC<PIRStatusUpdateFormProps> = ({
             <div
               key={rec.recommendationId}
               className={`rounded-lg border p-3 transition-colors ${
-                isChanged
-                  ? 'border-blue-500/60 bg-blue-900/10'
-                  : 'border-gray-700 bg-gray-750'
+                isChanged ? 'border-blue-500/60 bg-blue-900/10' : 'bg-gray-750 border-gray-700'
               }`}
             >
               {/* Top row: recId, priority badge, date picker, status dropdown */}
@@ -361,9 +399,7 @@ const PIRStatusUpdateForm: React.FC<PIRStatusUpdateFormProps> = ({
               <p className="mt-1.5 text-sm text-gray-400">
                 <span className="font-medium text-gray-300">{rec.problemName}</span>
               </p>
-              <p className="mt-0.5 line-clamp-2 text-sm text-gray-500">
-                {rec.actionSummary}
-              </p>
+              <p className="mt-0.5 line-clamp-2 text-sm text-gray-500">{rec.actionSummary}</p>
 
               {/* Meta row */}
               <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">

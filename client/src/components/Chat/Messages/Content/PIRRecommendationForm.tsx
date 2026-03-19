@@ -472,9 +472,7 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
             <div className="text-sm text-blue-400">{reportMeta.pageUrl}</div>
           </div>
           <div>
-            <Label className="mb-1 block text-sm font-medium text-gray-300">
-              Recommendations
-            </Label>
+            <Label className="mb-1 block text-sm font-medium text-gray-300">Recommendations</Label>
             <div className="flex flex-wrap gap-2 text-sm">
               {tierCounts.critical > 0 && (
                 <span className="rounded-full bg-red-700/20 px-2 py-0.5 text-red-300">
@@ -510,9 +508,7 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
       <div className="my-4 rounded-xl border border-gray-600 bg-gray-800 p-8 shadow-lg">
         <div className="text-center">
           <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-orange-500" />
-          <h3 className="mb-2 text-lg font-semibold text-white">
-            Creating Recommendations...
-          </h3>
+          <h3 className="mb-2 text-lg font-semibold text-white">Creating Recommendations...</h3>
           <p className="text-sm text-gray-400">
             Submitting {selectedRecIds.size} recommendations for {reportMeta.productName}
           </p>
@@ -529,9 +525,7 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
       <div>
         <div className="mb-2 flex items-center gap-2">
           <div className="h-3 w-3 animate-pulse rounded-full bg-blue-500"></div>
-          <h3 className="text-lg font-semibold text-white">
-            Product Intelligence Recommendations
-          </h3>
+          <h3 className="text-lg font-semibold text-white">Product Intelligence Recommendations</h3>
         </div>
         <p className="text-sm text-gray-300">
           Review, edit, and select recommendations before submitting. Chat is disabled until you
@@ -546,7 +540,7 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
           <span className="font-medium text-white">{reportMeta.productName}</span>
           <span className="text-xs text-gray-400">({reportMeta.mode})</span>
         </div>
-        <div className="mb-2 text-xs text-blue-400 break-all">{reportMeta.pageUrl}</div>
+        <div className="mb-2 break-all text-xs text-blue-400">{reportMeta.pageUrl}</div>
         <div className="flex flex-wrap gap-3 text-xs">
           <span className="rounded bg-gray-700 px-2 py-0.5 text-gray-300">
             <AlertTriangle className="mr-1 inline h-3 w-3" />
@@ -570,8 +564,14 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
             <span className="rounded bg-purple-500/20 px-2 py-0.5 text-purple-400">
               Visibility: {(reportMeta.xofuVisibility ?? 0).toFixed(1)}
               {reportMeta.xofuVisibilityDelta != null && (
-                <span className={(reportMeta.xofuVisibilityDelta ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}>
-                  {' '}({(reportMeta.xofuVisibilityDelta ?? 0) >= 0 ? '+' : ''}{(reportMeta.xofuVisibilityDelta ?? 0).toFixed(1)})
+                <span
+                  className={
+                    (reportMeta.xofuVisibilityDelta ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                  }
+                >
+                  {' '}
+                  ({(reportMeta.xofuVisibilityDelta ?? 0) >= 0 ? '+' : ''}
+                  {(reportMeta.xofuVisibilityDelta ?? 0).toFixed(1)})
                 </span>
               )}
             </span>
@@ -580,8 +580,12 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
             <span className="rounded bg-purple-500/20 px-2 py-0.5 text-purple-400">
               Citations: {reportMeta.xofuCitationCount}
               {reportMeta.xofuCitationDelta != null && (
-                <span className={reportMeta.xofuCitationDelta >= 0 ? 'text-green-400' : 'text-red-400'}>
-                  {' '}({reportMeta.xofuCitationDelta >= 0 ? '+' : ''}{reportMeta.xofuCitationDelta})
+                <span
+                  className={reportMeta.xofuCitationDelta >= 0 ? 'text-green-400' : 'text-red-400'}
+                >
+                  {' '}
+                  ({reportMeta.xofuCitationDelta >= 0 ? '+' : ''}
+                  {reportMeta.xofuCitationDelta})
                 </span>
               )}
             </span>
@@ -672,7 +676,7 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
 
                 {/* Content */}
                 <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex items-center gap-2 flex-wrap">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
                     {/* Priority badge */}
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium text-white ${
@@ -682,7 +686,7 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                       {rec.priorityTier} ({(rec.priorityScore ?? 0).toFixed(1)})
                     </span>
                     {/* recId */}
-                    <span className="text-xs font-mono text-gray-500">{rec.recId}</span>
+                    <span className="font-mono text-xs text-gray-500">{rec.recId}</span>
                     {/* Output type */}
                     <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-400">
                       {rec.outputType}
@@ -759,10 +763,7 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                       </>
                     )}
                     {effective.recommendationType.map((t) => (
-                      <span
-                        key={t}
-                        className="rounded bg-blue-500/10 px-2 py-0.5 text-blue-300"
-                      >
+                      <span key={t} className="rounded bg-blue-500/10 px-2 py-0.5 text-blue-300">
                         {t}
                       </span>
                     ))}
@@ -892,8 +893,13 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {/* Specific Changes */}
                   {effective.specificChanges && effective.specificChanges.length > 0 && (
                     <div>
-                      <TooltipAnchor description="Detailed before/after changes — what currently exists vs. what the recommendation proposes." side="top">
-                        <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">Specific Changes</span>
+                      <TooltipAnchor
+                        description="Detailed before/after changes — what currently exists vs. what the recommendation proposes."
+                        side="top"
+                      >
+                        <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
+                          Specific Changes
+                        </span>
                       </TooltipAnchor>
                       <div className="mt-1 space-y-2">
                         {effective.specificChanges.map((change, idx) => (
@@ -924,8 +930,11 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {effective.onsiteSpecificChanges &&
                     effective.onsiteSpecificChanges.length > 0 && (
                       <div>
-                        <TooltipAnchor description="Same as Specific Changes but focused on edits to the primary owned website (vs. satellite or third-party content)." side="top">
-                          <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">
+                        <TooltipAnchor
+                          description="Same as Specific Changes but focused on edits to the primary owned website (vs. satellite or third-party content)."
+                          side="top"
+                        >
+                          <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
                             Onsite Specific Changes
                           </span>
                         </TooltipAnchor>
@@ -957,8 +966,11 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {/* xOFU Context */}
                   {effective.xofuContext && (
                     <div>
-                      <TooltipAnchor description="How AI platforms (Google AI Overview, GPT-4o, Perplexity) are currently describing and positioning this product — situation type, verbatim AI response evidence, and hedging qualifiers to address." side="top">
-                        <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">
+                      <TooltipAnchor
+                        description="How AI platforms (Google AI Overview, GPT-4o, Perplexity) are currently describing and positioning this product — situation type, verbatim AI response evidence, and hedging qualifiers to address."
+                        side="top"
+                      >
+                        <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
                           <Zap className="mr-1 inline h-3 w-3" />
                           XOFU Context
                         </span>
@@ -1023,8 +1035,13 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {/* Competitive Angle */}
                   {effective.competitiveAngle && (
                     <div>
-                      <TooltipAnchor description="Whether this recommendation addresses a specific competitor weakness, and which competitor is referenced." side="top">
-                        <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">Competitive Angle</span>
+                      <TooltipAnchor
+                        description="Whether this recommendation addresses a specific competitor weakness, and which competitor is referenced."
+                        side="top"
+                      >
+                        <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
+                          Competitive Angle
+                        </span>
                       </TooltipAnchor>
                       <div className="mt-1 text-xs text-gray-300">
                         {effective.competitiveAngle.addressesCompetitorWeakness && (
@@ -1042,8 +1059,11 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {/* Messaging Guidance */}
                   {effective.messagingGuidance && (
                     <div>
-                      <TooltipAnchor description="Recommended key terms, positioning statement, and specific content additions for brief-type recommendations." side="top">
-                        <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">
+                      <TooltipAnchor
+                        description="Recommended key terms, positioning statement, and specific content additions for brief-type recommendations."
+                        side="top"
+                      >
+                        <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
                           <MessageSquare className="mr-1 inline h-3 w-3" />
                           Messaging Guidance
                         </span>
@@ -1080,8 +1100,11 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {/* Satellite Blueprint */}
                   {effective.satellitePageBlueprint && (
                     <div>
-                      <TooltipAnchor description="Plan for a new satellite page: suggested URL, page type, word count target, H1, key sections, and brands to compare." side="top">
-                        <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">
+                      <TooltipAnchor
+                        description="Plan for a new satellite page: suggested URL, page type, word count target, H1, key sections, and brands to compare."
+                        side="top"
+                      >
+                        <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
                           <Globe className="mr-1 inline h-3 w-3" />
                           Satellite Page Blueprint
                         </span>
@@ -1141,8 +1164,13 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {/* Success Metrics */}
                   {effective.successMetrics && effective.successMetrics.length > 0 && (
                     <div>
-                      <TooltipAnchor description="How to measure whether this recommendation worked — each metric paired with a specific measurement method." side="top">
-                        <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">Success Metrics</span>
+                      <TooltipAnchor
+                        description="How to measure whether this recommendation worked — each metric paired with a specific measurement method."
+                        side="top"
+                      >
+                        <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
+                          Success Metrics
+                        </span>
                       </TooltipAnchor>
                       <div className="mt-1 space-y-1">
                         {effective.successMetrics.map((sm, idx) => (
@@ -1158,8 +1186,13 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {/* Dependencies */}
                   {effective.dependencies && effective.dependencies.length > 0 && (
                     <div>
-                      <TooltipAnchor description="Other recommendations (by TASK/BRIEF ID) that must be completed before this one can be implemented." side="top">
-                        <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">Dependencies</span>
+                      <TooltipAnchor
+                        description="Other recommendations (by TASK/BRIEF ID) that must be completed before this one can be implemented."
+                        side="top"
+                      >
+                        <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
+                          Dependencies
+                        </span>
                       </TooltipAnchor>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {effective.dependencies.map((d, i) => (
@@ -1177,10 +1210,15 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {/* Target Prompts */}
                   {effective.targetPrompts && effective.targetPrompts.length > 0 && (
                     <div>
-                      <TooltipAnchor description="The specific AI prompts/queries this recommendation is designed to influence (e.g., prompts tracked in XOFU)." side="top">
-                        <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">Target Prompts</span>
+                      <TooltipAnchor
+                        description="The specific AI prompts/queries this recommendation is designed to influence (e.g., prompts tracked in XOFU)."
+                        side="top"
+                      >
+                        <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
+                          Target Prompts
+                        </span>
                       </TooltipAnchor>
-                      <ul className="mt-1 ml-3 list-disc text-xs text-gray-300">
+                      <ul className="ml-3 mt-1 list-disc text-xs text-gray-300">
                         {effective.targetPrompts.map((p, i) => (
                           <li key={i}>{p}</li>
                         ))}
@@ -1191,12 +1229,17 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
                   {/* Evidence URLs */}
                   {effective.evidenceUrls && effective.evidenceUrls.length > 0 && (
                     <div>
-                      <TooltipAnchor description="Source URLs from the product intelligence database that support this recommendation." side="top">
-                        <span className="text-xs font-medium text-gray-400 cursor-help border-b border-dotted border-gray-600">Evidence URLs</span>
+                      <TooltipAnchor
+                        description="Source URLs from the product intelligence database that support this recommendation."
+                        side="top"
+                      >
+                        <span className="cursor-help border-b border-dotted border-gray-600 text-xs font-medium text-gray-400">
+                          Evidence URLs
+                        </span>
                       </TooltipAnchor>
-                      <ul className="mt-1 ml-3 list-disc text-xs">
+                      <ul className="ml-3 mt-1 list-disc text-xs">
                         {effective.evidenceUrls.map((url, i) => (
-                          <li key={i} className="text-blue-400 break-all">
+                          <li key={i} className="break-all text-blue-400">
                             {url}
                           </li>
                         ))}
@@ -1217,8 +1260,11 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
             onClick={() => setRoadmapExpanded(!roadmapExpanded)}
             className="flex w-full items-center justify-between px-3 py-2 text-left"
           >
-            <TooltipAnchor description="Phased execution plan: immediate actions (this week), short-term tasks (this month), and quarterly goals." side="top">
-              <span className="flex items-center gap-2 text-sm font-medium text-white cursor-help">
+            <TooltipAnchor
+              description="Phased execution plan: immediate actions (this week), short-term tasks (this month), and quarterly goals."
+              side="top"
+            >
+              <span className="flex cursor-help items-center gap-2 text-sm font-medium text-white">
                 <Map className="h-4 w-4 text-blue-400" />
                 Implementation Roadmap
               </span>
@@ -1277,8 +1323,11 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
             onClick={() => setCitationsExpanded(!citationsExpanded)}
             className="flex w-full items-center justify-between px-3 py-2 text-left"
           >
-            <TooltipAnchor description="AI prompts/questions where the product should be cited — maps each question to its current AI source and the recommended answer location." side="top">
-              <span className="flex items-center gap-2 text-sm font-medium text-white cursor-help">
+            <TooltipAnchor
+              description="AI prompts/questions where the product should be cited — maps each question to its current AI source and the recommended answer location."
+              side="top"
+            >
+              <span className="flex cursor-help items-center gap-2 text-sm font-medium text-white">
                 <Eye className="h-4 w-4 text-purple-400" />
                 Citation Optimization Targets ({citationOptimizationTargets.length})
               </span>

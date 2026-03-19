@@ -210,9 +210,7 @@ const CrawlForm: React.FC<CrawlFormProps> = ({
   // If form is submitted, show the form with disabled fields and green outline
   if (isSubmitted && submittedData) {
     const website = websiteOptions.find((w) => w.id === submittedData.website_id);
-    const websiteLabel = website
-      ? `${website.name}`
-      : submittedData.website_id;
+    const websiteLabel = website ? `${website.name}` : submittedData.website_id;
 
     const crawlConfig = crawlConfigOptions.find((c) => c.id === submittedData.crawl_config_id);
     const crawlConfigLabel = crawlConfig
@@ -226,9 +224,7 @@ const CrawlForm: React.FC<CrawlFormProps> = ({
         <div className="mb-4">
           <div className="mb-2 flex items-center gap-2">
             <CheckCircle className="h-5 w-5 text-green-500" />
-            <h3 className="text-lg font-semibold text-green-400">
-              Crawl Configuration Submitted
-            </h3>
+            <h3 className="text-lg font-semibold text-green-400">Crawl Configuration Submitted</h3>
           </div>
           <p className="text-sm text-green-300">
             The crawl configuration has been submitted successfully.
@@ -245,9 +241,7 @@ const CrawlForm: React.FC<CrawlFormProps> = ({
           </div>
 
           <div>
-            <Label className="mb-2 block text-sm font-medium text-white">
-              Crawl Configuration
-            </Label>
+            <Label className="mb-2 block text-sm font-medium text-white">Crawl Configuration</Label>
             <div className="flex items-center gap-2 rounded-md border border-green-500 bg-gray-700 px-3 py-2 text-white opacity-75">
               <Database className="h-4 w-4" />
               <span>{crawlConfigLabel}</span>

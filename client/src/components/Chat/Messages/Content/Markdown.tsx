@@ -36,12 +36,12 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
       return '';
     }
     const processedContent = LaTeXParsing ? preprocessLaTeX(content) : content;
-    
+
     // Debug: Log if content contains our crawl form pattern
     if (processedContent.includes(':!:!:!:!SHOW_CRAWL_FORM')) {
       console.log('📋 Markdown content contains SHOW_CRAWL_FORM:', processedContent);
     }
-    
+
     return processedContent;
   }, [content, LaTeXParsing, isInitializing]);
 

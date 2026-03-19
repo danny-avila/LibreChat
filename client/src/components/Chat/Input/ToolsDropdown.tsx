@@ -121,6 +121,15 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     }
   }, [artifacts]);
 
+  const handlePptxToggle = useCallback(() => {
+    const currentState = artifacts.toggleState;
+    if (currentState === ArtifactModes.PPTX || currentState === 'pptx') {
+      artifacts.debouncedChange({ value: ArtifactModes.DEFAULT });
+    } else {
+      artifacts.debouncedChange({ value: ArtifactModes.PPTX ?? 'pptx' });
+    }
+  }, [artifacts]);
+
   const handleCustomToggle = useCallback(() => {
     const currentState = artifacts.toggleState;
     if (currentState === ArtifactModes.CUSTOM) {
@@ -285,6 +294,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           artifactsMode={artifacts.toggleState as string}
           handleArtifactsToggle={handleArtifactsToggle}
           handleShadcnToggle={handleShadcnToggle}
+          handlePptxToggle={handlePptxToggle}
           handleCustomToggle={handleCustomToggle}
         />
       ),

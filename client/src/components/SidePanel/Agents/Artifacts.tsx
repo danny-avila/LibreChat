@@ -31,6 +31,16 @@ export default function Artifacts() {
     });
   };
 
+  const handlePptxDesignChange = (value: boolean) => {
+    setValue(
+      AgentCapabilities.artifacts,
+      value ? (ArtifactModes.PPTX ?? 'pptx') : ArtifactModes.DEFAULT,
+      {
+        shouldDirty: true,
+      },
+    );
+  };
+
   const handleCustomModeChange = (value: boolean) => {
     setValue(AgentCapabilities.artifacts, value ? ArtifactModes.CUSTOM : ArtifactModes.DEFAULT, {
       shouldDirty: true,
@@ -40,6 +50,7 @@ export default function Artifacts() {
   const isEnabled = artifactsMode !== undefined && artifactsMode !== '';
   const isCustomEnabled = artifactsMode === ArtifactModes.CUSTOM;
   const isShadcnEnabled = artifactsMode === ArtifactModes.SHADCNUI;
+  const isPptxEnabled = artifactsMode === ArtifactModes.PPTX || artifactsMode === 'pptx';
 
   return (
     <div className="w-full">
@@ -64,6 +75,14 @@ export default function Artifacts() {
           checked={isShadcnEnabled}
           onCheckedChange={handleShadcnuiChange}
           hoverCardText={localize('com_nav_info_include_shadcnui')}
+          disabled={!isEnabled || isCustomEnabled}
+        />
+        <SwitchItem
+          id="includePptxDesign"
+          label={localize('com_ui_include_pptx_design' as any)}
+          checked={isPptxEnabled}
+          onCheckedChange={handlePptxDesignChange}
+          hoverCardText={localize('com_nav_info_include_pptx_design' as any)}
           disabled={!isEnabled || isCustomEnabled}
         />
         <SwitchItem

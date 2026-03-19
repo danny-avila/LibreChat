@@ -31,13 +31,16 @@ const XofuLoginForm: React.FC<XofuLoginFormProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleInputChange = useCallback((field: keyof XofuLoginFormData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
-    if (error) {
-      setError(null);
-    }
-  }, [error]);
+  const handleInputChange = useCallback(
+    (field: keyof XofuLoginFormData, value: string) => {
+      setFormData((prev) => ({ ...prev, [field]: value }));
+      // Clear error when user starts typing
+      if (error) {
+        setError(null);
+      }
+    },
+    [error],
+  );
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -58,7 +61,7 @@ const XofuLoginForm: React.FC<XofuLoginFormProps> = ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             email: formData.email,
@@ -89,7 +92,8 @@ const XofuLoginForm: React.FC<XofuLoginFormProps> = ({
         });
       } catch (error) {
         console.error('❌ xofu login error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'An error occurred during login';
+        const errorMessage =
+          error instanceof Error ? error.message : 'An error occurred during login';
         setError(errorMessage);
 
         // Call onSubmit with error for state management
@@ -139,13 +143,9 @@ const XofuLoginForm: React.FC<XofuLoginFormProps> = ({
         <div className="mb-4">
           <div className="mb-2 flex items-center gap-2">
             <CheckCircle className="h-5 w-5 text-green-500" />
-            <h3 className="text-lg font-semibold text-green-400">
-              xofu Login Successful
-            </h3>
+            <h3 className="text-lg font-semibold text-green-400">xofu Login Successful</h3>
           </div>
-          <p className="text-sm text-green-300">
-            You have successfully logged in to xofu.
-          </p>
+          <p className="text-sm text-green-300">You have successfully logged in to xofu.</p>
         </div>
 
         <div className="space-y-4">
@@ -179,9 +179,7 @@ const XofuLoginForm: React.FC<XofuLoginFormProps> = ({
           <div className="h-3 w-3 animate-pulse rounded-full bg-blue-500"></div>
           <h3 className="text-lg font-semibold text-white">Login to xofu</h3>
         </div>
-        <p className="text-sm text-gray-300">
-          Enter your xofu credentials to authenticate.
-        </p>
+        <p className="text-sm text-gray-300">Enter your xofu credentials to authenticate.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -222,9 +220,7 @@ const XofuLoginForm: React.FC<XofuLoginFormProps> = ({
         {/* Error Message */}
         {error && (
           <div className="rounded-md border border-red-500/30 bg-red-900/20 p-3">
-            <p className="text-sm text-red-200">
-              ❌ {error}
-            </p>
+            <p className="text-sm text-red-200">❌ {error}</p>
           </div>
         )}
 

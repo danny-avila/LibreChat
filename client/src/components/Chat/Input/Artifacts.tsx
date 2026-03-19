@@ -29,6 +29,7 @@ function Artifacts() {
 
   const isEnabled = currentState.enabled;
   const isShadcnEnabled = currentState.mode === ArtifactModes.SHADCNUI;
+  const isPptxEnabled = currentState.mode === ArtifactModes.PPTX || currentState.mode === 'pptx';
   const isCustomEnabled = currentState.mode === ArtifactModes.CUSTOM;
 
   const handleToggle = useCallback(() => {
@@ -61,6 +62,14 @@ function Artifacts() {
       debouncedChange({ value: ArtifactModes.SHADCNUI });
     }
   }, [isShadcnEnabled, debouncedChange]);
+
+  const handlePptxToggle = useCallback(() => {
+    if (isPptxEnabled) {
+      debouncedChange({ value: ArtifactModes.DEFAULT });
+    } else {
+      debouncedChange({ value: ArtifactModes.PPTX ?? 'pptx' });
+    }
+  }, [isPptxEnabled, debouncedChange]);
 
   const handleCustomToggle = useCallback(() => {
     if (isCustomEnabled) {
@@ -136,6 +145,27 @@ function Artifacts() {
                 <span className="text-sm">{localize('com_ui_include_shadcnui' as any)}</span>
                 <div className="ml-auto flex items-center">
                   <Ariakit.MenuItemCheck checked={isShadcnEnabled} />
+                </div>
+              </Ariakit.MenuItem>
+
+              {/* Include PPTX design guidance Option */}
+              <Ariakit.MenuItem
+                hideOnClick={false}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handlePptxToggle();
+                }}
+                className={cn(
+                  'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
+                  'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                  'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
+                  isPptxEnabled && 'bg-surface-active',
+                )}
+              >
+                <span className="text-sm">{localize('com_ui_include_pptx_design' as any)}</span>
+                <div className="ml-auto flex items-center">
+                  <Ariakit.MenuItemCheck checked={isPptxEnabled} />
                 </div>
               </Ariakit.MenuItem>
 

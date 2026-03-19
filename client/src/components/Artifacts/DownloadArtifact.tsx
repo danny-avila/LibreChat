@@ -3,6 +3,7 @@ import { Download, CircleCheckBig } from 'lucide-react';
 import type { Artifact } from '~/common';
 import { Button } from '@librechat/client';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
+import { downloadPptx } from '~/utils/pptxExport';
 import { useCodeState } from '~/Providers/EditorContext';
 import { useLocalize } from '~/hooks';
 
@@ -12,12 +13,20 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   const [isDownloaded, setIsDownloaded] = useState(false);
   const { fileKey: fileName } = useArtifactProps({ artifact });
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     try {
       const content = currentCode ?? artifact.content ?? '';
       if (!content) {
         return;
       }
+
+      if (artifact.type === 'application/vnd.pptx') {
+        await downloadPptx(content);
+        setIsDownloaded(true);
+        setTimeout(() => setIsDownloaded(false), 3000);
+        return;
+      }
+
       const blob = new Blob([content], { type: 'text/plain' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');

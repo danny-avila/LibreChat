@@ -1,6 +1,7 @@
 export enum ArtifactModes {
   DEFAULT = 'default',
   SHADCNUI = 'shadcnui',
+  PPTX = 'pptx',
   CUSTOM = 'custom',
 }
 
