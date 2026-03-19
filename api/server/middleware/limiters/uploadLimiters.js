@@ -1,6 +1,7 @@
 const rateLimit = require('express-rate-limit');
 const { limiterCache } = require('@librechat/api');
 const { ViolationTypes } = require('librechat-data-provider');
+const { removePorts } = require('~/server/utils');
 const logViolation = require('~/cache/logViolation');
 
 const getEnvironmentVariables = () => {
@@ -60,6 +61,7 @@ const createFileLimiters = () => {
     windowMs: fileUploadIpWindowMs,
     max: fileUploadIpMax,
     handler: createFileUploadHandler(),
+    keyGenerator: removePorts,
     store: limiterCache('file_upload_ip_limiter'),
   };
 
