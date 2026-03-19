@@ -5,8 +5,6 @@ const {
   Constants,
   SystemRoles,
   ResourceType,
-  PrincipalType,
-  PermissionBits,
   SystemCategories,
 } = require('librechat-data-provider');
 const {
@@ -15,7 +13,7 @@ const {
   addGroupIdsToProject,
   getProjectByName,
 } = require('./Project');
-const { removeAllPermissions } = require('~/server/services/PermissionService');
+const { removeAllPermissions, getSoleOwnedResourceIds } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
 /**
@@ -597,54 +595,18 @@ module.exports = {
    * Delete prompt groups solely owned by the user and clean up their prompts/ACLs.
    * Groups with other owners are left intact; the caller is responsible for
    * removing the user's own ACL principal entries separately.
-   * @param {ServerRequest} _req - The server request object (unused).
    * @param {string} userId - The ID of the user whose prompts and prompt groups are to be deleted.
    */
-  deleteUserPrompts: async (_req, userId) => {
+  deleteUserPrompts: async (userId) => {
     try {
       const userObjectId = new ObjectId(userId);
-      const ownerBit = PermissionBits.DELETE;
-
-      const ownedEntries = await AclEntry.find({
-        principalType: PrincipalType.USER,
-        principalId: userObjectId,
-        resourceType: ResourceType.PROMPTGROUP,
-        permBits: { $bitsAllSet: ownerBit },
-      })
-        .select('resourceId')
-        .lean();
-
-      if (ownedEntries.length === 0) {
-        return;
-      }
-
-      const ownedGroupIds = ownedEntries.map((e) => e.resourceId);
-
-      const otherOwners = await AclEntry.aggregate([
-        {
-          $match: {
-            resourceType: ResourceType.PROMPTGROUP,
-            resourceId: { $in: ownedGroupIds },
-            permBits: { $bitsAllSet: ownerBit },
-            $or: [
-              { principalId: { $ne: userObjectId } },
-              { principalType: { $ne: PrincipalType.USER } },
-            ],
-          },
-        },
-        { $group: { _id: '$resourceId' } },
-      ]);
-
-      const multiOwnerIds = new Set(otherOwners.map((doc) => doc._id.toString()));
-      const soleOwnedIds = ownedGroupIds.filter((id) => !multiOwnerIds.has(id.toString()));
+      const soleOwnedIds = await getSoleOwnedResourceIds(userObjectId, ResourceType.PROMPTGROUP);
 
       if (soleOwnedIds.length === 0) {
         return;
       }
 
-      for (const groupId of soleOwnedIds) {
-        await removeGroupFromAllProjects(groupId);
-      }
+      await Promise.all(soleOwnedIds.map((id) => removeGroupFromAllProjects(id)));
 
       await AclEntry.deleteMany({
         resourceType: ResourceType.PROMPTGROUP,

@@ -6,8 +6,6 @@ const {
   Tools,
   SystemRoles,
   ResourceType,
-  PrincipalType,
-  PermissionBits,
   actionDelimiter,
   isAgentsEndpoint,
   isEphemeralAgentId,
@@ -19,7 +17,7 @@ const {
   removeAgentIdsFromProject,
   addAgentIdsToProject,
 } = require('./Project');
-const { removeAllPermissions } = require('~/server/services/PermissionService');
+const { removeAllPermissions, getSoleOwnedResourceIds } = require('~/server/services/PermissionService');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { Agent, AclEntry, User } = require('~/db/models');
 const { getActions } = require('./Action');
@@ -623,50 +621,21 @@ const deleteAgent = async (searchParameter) => {
  * Agents with other owners are left intact; the caller is responsible for
  * removing the user's own ACL principal entries separately.
  * @param {string} userId - The ID of the user whose agents should be deleted.
- * @returns {Promise<void>} A promise that resolves when all solely-owned user agents have been deleted.
+ * @returns {Promise<void>}
  */
 const deleteUserAgents = async (userId) => {
   try {
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    const ownerBit = PermissionBits.DELETE;
-
-    const ownedEntries = await AclEntry.find({
-      principalType: PrincipalType.USER,
-      principalId: userObjectId,
-      resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
-      permBits: { $bitsAllSet: ownerBit },
-    })
-      .select('resourceId resourceType')
-      .lean();
-
-    if (ownedEntries.length === 0) {
-      return;
-    }
-
-    const ownedResourceIds = ownedEntries.map((e) => e.resourceId);
-
-    const otherOwners = await AclEntry.aggregate([
-      {
-        $match: {
-          resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
-          resourceId: { $in: ownedResourceIds },
-          permBits: { $bitsAllSet: ownerBit },
-          $or: [
-            { principalId: { $ne: userObjectId } },
-            { principalType: { $ne: PrincipalType.USER } },
-          ],
-        },
-      },
-      { $group: { _id: '$resourceId' } },
-    ]);
-
-    const multiOwnerIds = new Set(otherOwners.map((doc) => doc._id.toString()));
-    const soleOwnedObjectIds = ownedResourceIds.filter((id) => !multiOwnerIds.has(id.toString()));
+    const soleOwnedObjectIds = await getSoleOwnedResourceIds(
+      userObjectId,
+      [ResourceType.AGENT, ResourceType.REMOTE_AGENT],
+    );
 
     if (soleOwnedObjectIds.length === 0) {
       return;
     }
 
+    /** resourceId is the MongoDB _id; agent.id is the string identifier for project/edge queries */
     const soleOwnedAgents = await Agent.find({ _id: { $in: soleOwnedObjectIds } })
       .select('id _id')
       .lean();
@@ -674,9 +643,7 @@ const deleteUserAgents = async (userId) => {
     const agentIds = soleOwnedAgents.map((agent) => agent.id);
     const agentObjectIds = soleOwnedAgents.map((agent) => agent._id);
 
-    for (const agentId of agentIds) {
-      await removeAgentFromAllProjects(agentId);
-    }
+    await Promise.all(agentIds.map((id) => removeAgentFromAllProjects(id)));
 
     await AclEntry.deleteMany({
       resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
