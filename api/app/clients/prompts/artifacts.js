@@ -531,6 +531,9 @@ const generateArtifactsPrompt = ({ endpoint, artifacts }) => {
     prompt += generateShadcnPrompt({ components, useXML: endpoint === EModelEndpoint.anthropic });
   }
 
+  // PPTX mode: recognized but no additional design prompt in legacy JS path
+  // (design guidance is appended in the packages/api TypeScript version)
+
   return prompt;
 };
 
