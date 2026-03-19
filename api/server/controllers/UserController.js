@@ -1,11 +1,20 @@
+const mongoose = require('mongoose');
 const { logger, webSearchKeys } = require('@librechat/data-schemas');
-const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
 const {
   MCPOAuthHandler,
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
 } = require('@librechat/api');
+const {
+  Tools,
+  CacheKeys,
+  Constants,
+  FileSources,
+  ResourceType,
+  PrincipalType,
+  PermissionBits,
+} = require('librechat-data-provider');
 const {
   deleteAllUserSessions,
   deleteAllSharedLinks,
@@ -110,6 +119,70 @@ const deleteUserFiles = async (req) => {
     });
   } catch (error) {
     logger.error('[deleteUserFiles]', error);
+  }
+};
+
+/**
+ * Deletes MCP servers solely owned by the user and cleans up their ACLs.
+ * Servers with other owners are left intact; the caller is responsible for
+ * removing the user's own ACL principal entries separately.
+ * @param {string} userId - The ID of the user.
+ */
+const deleteUserMcpServers = async (userId) => {
+  try {
+    const MCPServer = mongoose.models.MCPServer;
+    if (!MCPServer) {
+      return;
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const ownerBit = PermissionBits.DELETE;
+
+    const ownedEntries = await AclEntry.find({
+      principalType: PrincipalType.USER,
+      principalId: userObjectId,
+      resourceType: ResourceType.MCPSERVER,
+      permBits: { $bitsAllSet: ownerBit },
+    })
+      .select('resourceId')
+      .lean();
+
+    if (ownedEntries.length === 0) {
+      return;
+    }
+
+    const ownedServerIds = ownedEntries.map((e) => e.resourceId);
+
+    const otherOwners = await AclEntry.aggregate([
+      {
+        $match: {
+          resourceType: ResourceType.MCPSERVER,
+          resourceId: { $in: ownedServerIds },
+          permBits: { $bitsAllSet: ownerBit },
+          $or: [
+            { principalId: { $ne: userObjectId } },
+            { principalType: { $ne: PrincipalType.USER } },
+          ],
+        },
+      },
+      { $group: { _id: '$resourceId' } },
+    ]);
+
+    const multiOwnerIds = new Set(otherOwners.map((doc) => doc._id.toString()));
+    const soleOwnedIds = ownedServerIds.filter((id) => !multiOwnerIds.has(id.toString()));
+
+    if (soleOwnedIds.length === 0) {
+      return;
+    }
+
+    await AclEntry.deleteMany({
+      resourceType: ResourceType.MCPSERVER,
+      resourceId: { $in: soleOwnedIds },
+    });
+
+    await MCPServer.deleteMany({ _id: { $in: soleOwnedIds } });
+  } catch (error) {
+    logger.error('[deleteUserMcpServers] General error:', error);
   }
 };
 
@@ -282,6 +355,7 @@ const deleteUserController = async (req, res) => {
     await ConversationTag.deleteMany({ user: user.id }); // delete user conversation tags
     await MemoryEntry.deleteMany({ userId: user.id }); // delete user memory entries
     await deleteUserPrompts(req, user.id); // delete user prompts
+    await deleteUserMcpServers(user.id); // delete user MCP servers
     await Action.deleteMany({ user: user.id }); // delete user actions
     await Token.deleteMany({ userId: user.id }); // delete user OAuth tokens
     await Group.updateMany(
