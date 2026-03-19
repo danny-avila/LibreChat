@@ -43,8 +43,13 @@ const validateResourceType = (resourceType) => {
   }
 };
 
-/** Removes an agent from the favorites of specified users (fire-and-forget). */
-const removeRevokedAgentFromFavorites = (resourceId, userIds) => {
+/**
+ * Removes an agent from the favorites of specified users (fire-and-forget).
+ * Both AGENT and REMOTE_AGENT resource types share the Agent collection.
+ * @param {string} resourceId - The agent's MongoDB ObjectId hex string
+ * @param {string[]} userIds - User ObjectId strings whose favorites should be cleaned
+ */
+const removeRevokedAgentFromFavorites = (resourceId, userIds) =>
   Agent.findOne({ _id: resourceId }, { id: 1 })
     .lean()
     .then((agent) => {
@@ -59,7 +64,6 @@ const removeRevokedAgentFromFavorites = (resourceId, userIds) => {
     .catch((err) => {
       logger.error('[removeRevokedAgentFromFavorites] Error cleaning up favorites', err);
     });
-};
 
 /**
  * Bulk update permissions for a resource (grant, update, remove)
@@ -175,7 +179,7 @@ const updateResourcePermissions = async (req, res) => {
 
     const isAgentResource =
       resourceType === ResourceType.AGENT || resourceType === ResourceType.REMOTE_AGENT;
-    const revokedUserIds = revokedPrincipals
+    const revokedUserIds = results.revoked
       .filter((p) => p.type === PrincipalType.USER && p.id)
       .map((p) => p.id);
 

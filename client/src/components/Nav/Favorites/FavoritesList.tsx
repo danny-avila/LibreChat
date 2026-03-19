@@ -207,30 +207,33 @@ export default function FavoritesList({
         }
       },
       staleTime: 1000 * 60 * 5,
-      enabled: missingAgentIds.length > 0,
     })),
   });
 
-  const staleAgentIds = useMemo(() => {
-    const ids = new Set<string>();
+  const staleAgentIdsKey = useMemo(() => {
+    const ids: string[] = [];
     for (let i = 0; i < missingAgentIds.length; i++) {
       const query = missingAgentQueries[i];
       if (query.data && !query.data.found) {
-        ids.add(missingAgentIds[i]);
+        ids.push(missingAgentIds[i]);
       }
     }
-    return ids;
+    return ids.sort().join(',');
   }, [missingAgentIds, missingAgentQueries]);
 
+  const cleanupAttemptedRef = useRef('');
+
   useEffect(() => {
-    if (staleAgentIds.size === 0) {
+    if (!staleAgentIdsKey || cleanupAttemptedRef.current === staleAgentIdsKey) {
       return;
     }
-    const cleaned = safeFavorites.filter((f) => !f.agentId || !staleAgentIds.has(f.agentId));
+    const staleSet = new Set(staleAgentIdsKey.split(','));
+    const cleaned = safeFavorites.filter((f) => !f.agentId || !staleSet.has(f.agentId));
     if (cleaned.length < safeFavorites.length) {
+      cleanupAttemptedRef.current = staleAgentIdsKey;
       reorderFavorites(cleaned, true);
     }
-  }, [staleAgentIds, safeFavorites, reorderFavorites]);
+  }, [staleAgentIdsKey, safeFavorites, reorderFavorites]);
 
   const combinedAgentsMap = useMemo(() => {
     if (agentsMap === undefined) {
