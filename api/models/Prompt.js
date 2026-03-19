@@ -13,7 +13,10 @@ const {
   addGroupIdsToProject,
   getProjectByName,
 } = require('./Project');
-const { removeAllPermissions } = require('~/server/services/PermissionService');
+const {
+  getSoleOwnedResourceIds,
+  removeAllPermissions,
+} = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
 /**
@@ -592,31 +595,49 @@ module.exports = {
     }
   },
   /**
-   * Delete all prompts and prompt groups created by a specific user.
-   * @param {ServerRequest} req - The server request object.
+   * Delete prompt groups solely owned by the user and clean up their prompts/ACLs.
+   * Groups with other owners are left intact; the caller is responsible for
+   * removing the user's own ACL principal entries separately.
+   *
+   * Also handles legacy (pre-ACL) prompt groups that only have the author field set,
+   * ensuring they are not orphaned if the permission migration has not been run.
    * @param {string} userId - The ID of the user whose prompts and prompt groups are to be deleted.
    */
-  deleteUserPrompts: async (req, userId) => {
+  deleteUserPrompts: async (userId) => {
     try {
-      const promptGroups = await getAllPromptGroups(req, { author: new ObjectId(userId) });
+      const userObjectId = new ObjectId(userId);
+      const soleOwnedIds = await getSoleOwnedResourceIds(userObjectId, ResourceType.PROMPTGROUP);
 
-      if (promptGroups.length === 0) {
+      const authoredGroups = await PromptGroup.find({ author: userObjectId }).select('_id').lean();
+      const authoredGroupIds = authoredGroups.map((g) => g._id);
+
+      const migratedEntries =
+        authoredGroupIds.length > 0
+          ? await AclEntry.find({
+              resourceType: ResourceType.PROMPTGROUP,
+              resourceId: { $in: authoredGroupIds },
+            })
+              .select('resourceId')
+              .lean()
+          : [];
+      const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
+      const legacyGroupIds = authoredGroupIds.filter((id) => !migratedIds.has(id.toString()));
+
+      const allGroupIdsToDelete = [...soleOwnedIds, ...legacyGroupIds];
+
+      if (allGroupIdsToDelete.length === 0) {
         return;
       }
 
-      const groupIds = promptGroups.map((group) => group._id);
-
-      for (const groupId of groupIds) {
-        await removeGroupFromAllProjects(groupId);
-      }
+      await Promise.all(allGroupIdsToDelete.map((id) => removeGroupFromAllProjects(id)));
 
       await AclEntry.deleteMany({
         resourceType: ResourceType.PROMPTGROUP,
-        resourceId: { $in: groupIds },
+        resourceId: { $in: allGroupIdsToDelete },
       });
 
-      await PromptGroup.deleteMany({ author: new ObjectId(userId) });
-      await Prompt.deleteMany({ author: new ObjectId(userId) });
+      await PromptGroup.deleteMany({ _id: { $in: allGroupIdsToDelete } });
+      await Prompt.deleteMany({ groupId: { $in: allGroupIdsToDelete } });
     } catch (error) {
       logger.error('[deleteUserPrompts] General error:', error);
     }

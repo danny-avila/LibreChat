@@ -17,7 +17,10 @@ const {
   removeAgentIdsFromProject,
   addAgentIdsToProject,
 } = require('./Project');
-const { removeAllPermissions } = require('~/server/services/PermissionService');
+const {
+  getSoleOwnedResourceIds,
+  removeAllPermissions,
+} = require('~/server/services/PermissionService');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { Agent, AclEntry, User } = require('~/db/models');
 const { getActions } = require('./Action');
@@ -617,29 +620,69 @@ const deleteAgent = async (searchParameter) => {
 };
 
 /**
- * Deletes all agents created by a specific user.
+ * Deletes agents solely owned by the user and cleans up their ACLs/project references.
+ * Agents with other owners are left intact; the caller is responsible for
+ * removing the user's own ACL principal entries separately.
+ *
+ * Also handles legacy (pre-ACL) agents that only have the author field set,
+ * ensuring they are not orphaned if no permission migration has been run.
  * @param {string} userId - The ID of the user whose agents should be deleted.
- * @returns {Promise<void>} A promise that resolves when all user agents have been deleted.
+ * @returns {Promise<void>}
  */
 const deleteUserAgents = async (userId) => {
   try {
-    const userAgents = await getAgents({ author: userId });
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const soleOwnedObjectIds = await getSoleOwnedResourceIds(userObjectId, [
+      ResourceType.AGENT,
+      ResourceType.REMOTE_AGENT,
+    ]);
 
-    if (userAgents.length === 0) {
+    const authoredAgents = await Agent.find({ author: userObjectId }).select('id _id').lean();
+
+    const migratedEntries =
+      authoredAgents.length > 0
+        ? await AclEntry.find({
+            resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
+            resourceId: { $in: authoredAgents.map((a) => a._id) },
+          })
+            .select('resourceId')
+            .lean()
+        : [];
+    const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
+    const legacyAgents = authoredAgents.filter((a) => !migratedIds.has(a._id.toString()));
+
+    /** resourceId is the MongoDB _id; agent.id is the string identifier for project/edge queries */
+    const soleOwnedAgents =
+      soleOwnedObjectIds.length > 0
+        ? await Agent.find({ _id: { $in: soleOwnedObjectIds } })
+            .select('id _id')
+            .lean()
+        : [];
+
+    const allAgents = [...soleOwnedAgents, ...legacyAgents];
+
+    if (allAgents.length === 0) {
       return;
     }
 
-    const agentIds = userAgents.map((agent) => agent.id);
-    const agentObjectIds = userAgents.map((agent) => agent._id);
+    const agentIds = allAgents.map((agent) => agent.id);
+    const agentObjectIds = allAgents.map((agent) => agent._id);
 
-    for (const agentId of agentIds) {
-      await removeAgentFromAllProjects(agentId);
-    }
+    await Promise.all(agentIds.map((id) => removeAgentFromAllProjects(id)));
 
     await AclEntry.deleteMany({
       resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
       resourceId: { $in: agentObjectIds },
     });
+
+    try {
+      await Agent.updateMany(
+        { 'edges.to': { $in: agentIds } },
+        { $pull: { edges: { to: { $in: agentIds } } } },
+      );
+    } catch (error) {
+      logger.error('[deleteUserAgents] Error removing agents from handoff edges', error);
+    }
 
     try {
       await User.updateMany(
@@ -650,7 +693,7 @@ const deleteUserAgents = async (userId) => {
       logger.error('[deleteUserAgents] Error removing agents from user favorites', error);
     }
 
-    await Agent.deleteMany({ author: userId });
+    await Agent.deleteMany({ _id: { $in: agentObjectIds } });
   } catch (error) {
     logger.error('[deleteUserAgents] General error:', error);
   }

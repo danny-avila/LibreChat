@@ -15,7 +15,12 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
+const {
+  ResourceType,
+  AccessRoleIds,
+  PrincipalType,
+  PermissionBits,
+} = require('librechat-data-provider');
 const {
   getAgent,
   loadAgent,
@@ -442,6 +447,7 @@ describe('models/Agent', () => {
 
     beforeEach(async () => {
       await Agent.deleteMany({});
+      await AclEntry.deleteMany({});
     });
 
     test('should create and get an agent', async () => {
@@ -838,8 +844,7 @@ describe('models/Agent', () => {
       const agent2Id = `agent_${uuidv4()}`;
       const otherAuthorAgentId = `agent_${uuidv4()}`;
 
-      // Create agents by the author to be deleted
-      await createAgent({
+      const agent1 = await createAgent({
         id: agent1Id,
         name: 'Author Agent 1',
         provider: 'test',
@@ -847,7 +852,7 @@ describe('models/Agent', () => {
         author: authorId,
       });
 
-      await createAgent({
+      const agent2 = await createAgent({
         id: agent2Id,
         name: 'Author Agent 2',
         provider: 'test',
@@ -855,7 +860,6 @@ describe('models/Agent', () => {
         author: authorId,
       });
 
-      // Create agent by different author (should not be deleted)
       await createAgent({
         id: otherAuthorAgentId,
         name: 'Other Author Agent',
@@ -864,7 +868,23 @@ describe('models/Agent', () => {
         author: otherAuthorId,
       });
 
-      // Create user with all agents in favorites
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent1._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: authorId,
+      });
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent2._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: authorId,
+      });
+
       await User.create({
         _id: userId,
         name: 'Test User',
@@ -878,21 +898,16 @@ describe('models/Agent', () => {
         ],
       });
 
-      // Verify user has all favorites
       const userBefore = await User.findById(userId);
       expect(userBefore.favorites).toHaveLength(4);
 
-      // Delete all agents by the author
       await deleteUserAgents(authorId.toString());
 
-      // Verify author's agents are deleted from database
       expect(await getAgent({ id: agent1Id })).toBeNull();
       expect(await getAgent({ id: agent2Id })).toBeNull();
 
-      // Verify other author's agent still exists
       expect(await getAgent({ id: otherAuthorAgentId })).not.toBeNull();
 
-      // Verify user favorites: author's agents removed, others remain
       const userAfter = await User.findById(userId);
       expect(userAfter.favorites).toHaveLength(2);
       expect(userAfter.favorites.some((f) => f.agentId === agent1Id)).toBe(false);
@@ -911,8 +926,7 @@ describe('models/Agent', () => {
       const agent2Id = `agent_${uuidv4()}`;
       const unrelatedAgentId = `agent_${uuidv4()}`;
 
-      // Create agents by the author
-      await createAgent({
+      const agent1 = await createAgent({
         id: agent1Id,
         name: 'Author Agent 1',
         provider: 'test',
@@ -920,7 +934,7 @@ describe('models/Agent', () => {
         author: authorId,
       });
 
-      await createAgent({
+      const agent2 = await createAgent({
         id: agent2Id,
         name: 'Author Agent 2',
         provider: 'test',
@@ -928,7 +942,23 @@ describe('models/Agent', () => {
         author: authorId,
       });
 
-      // Create users with various favorites configurations
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent1._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: authorId,
+      });
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent2._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: authorId,
+      });
+
       await User.create({
         _id: user1Id,
         name: 'User 1',
@@ -953,10 +983,8 @@ describe('models/Agent', () => {
         favorites: [{ agentId: unrelatedAgentId }, { model: 'gpt-4', endpoint: 'openAI' }],
       });
 
-      // Delete all agents by the author
       await deleteUserAgents(authorId.toString());
 
-      // Verify all users' favorites are correctly updated
       const user1After = await User.findById(user1Id);
       expect(user1After.favorites).toHaveLength(0);
 
@@ -965,7 +993,6 @@ describe('models/Agent', () => {
       expect(user2After.favorites.some((f) => f.agentId === agent1Id)).toBe(false);
       expect(user2After.favorites.some((f) => f.model === 'claude-3')).toBe(true);
 
-      // User 3 should be completely unaffected
       const user3After = await User.findById(user3Id);
       expect(user3After.favorites).toHaveLength(2);
       expect(user3After.favorites.some((f) => f.agentId === unrelatedAgentId)).toBe(true);
@@ -979,8 +1006,7 @@ describe('models/Agent', () => {
 
       const existingAgentId = `agent_${uuidv4()}`;
 
-      // Create agent by different author
-      await createAgent({
+      const existingAgent = await createAgent({
         id: existingAgentId,
         name: 'Existing Agent',
         provider: 'test',
@@ -988,7 +1014,15 @@ describe('models/Agent', () => {
         author: otherAuthorId,
       });
 
-      // Create user with favorites
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherAuthorId,
+        resourceType: ResourceType.AGENT,
+        resourceId: existingAgent._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: otherAuthorId,
+      });
+
       await User.create({
         _id: userId,
         name: 'Test User',
@@ -997,13 +1031,10 @@ describe('models/Agent', () => {
         favorites: [{ agentId: existingAgentId }, { model: 'gpt-4', endpoint: 'openAI' }],
       });
 
-      // Delete agents for user with no agents (should be a no-op)
       await deleteUserAgents(authorWithNoAgentsId.toString());
 
-      // Verify existing agent still exists
       expect(await getAgent({ id: existingAgentId })).not.toBeNull();
 
-      // Verify user favorites are unchanged
       const userAfter = await User.findById(userId);
       expect(userAfter.favorites).toHaveLength(2);
       expect(userAfter.favorites.some((f) => f.agentId === existingAgentId)).toBe(true);
@@ -1017,8 +1048,7 @@ describe('models/Agent', () => {
       const agent1Id = `agent_${uuidv4()}`;
       const agent2Id = `agent_${uuidv4()}`;
 
-      // Create agents by the author
-      await createAgent({
+      const agent1 = await createAgent({
         id: agent1Id,
         name: 'Agent 1',
         provider: 'test',
@@ -1026,7 +1056,7 @@ describe('models/Agent', () => {
         author: authorId,
       });
 
-      await createAgent({
+      const agent2 = await createAgent({
         id: agent2Id,
         name: 'Agent 2',
         provider: 'test',
@@ -1034,7 +1064,23 @@ describe('models/Agent', () => {
         author: authorId,
       });
 
-      // Create user with favorites that don't include these agents
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent1._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: authorId,
+      });
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: authorId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent2._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: authorId,
+      });
+
       await User.create({
         _id: userId,
         name: 'Test User',
@@ -1043,21 +1089,110 @@ describe('models/Agent', () => {
         favorites: [{ model: 'gpt-4', endpoint: 'openAI' }],
       });
 
-      // Verify agents exist
       expect(await getAgent({ id: agent1Id })).not.toBeNull();
       expect(await getAgent({ id: agent2Id })).not.toBeNull();
 
-      // Delete all agents by the author
       await deleteUserAgents(authorId.toString());
 
-      // Verify agents are deleted
       expect(await getAgent({ id: agent1Id })).toBeNull();
       expect(await getAgent({ id: agent2Id })).toBeNull();
 
-      // Verify user favorites are unchanged
       const userAfter = await User.findById(userId);
       expect(userAfter.favorites).toHaveLength(1);
       expect(userAfter.favorites.some((f) => f.model === 'gpt-4')).toBe(true);
+    });
+
+    test('should preserve multi-owned agents when deleteUserAgents is called', async () => {
+      const deletingUserId = new mongoose.Types.ObjectId();
+      const otherOwnerId = new mongoose.Types.ObjectId();
+
+      const soleOwnedId = `agent_${uuidv4()}`;
+      const multiOwnedId = `agent_${uuidv4()}`;
+
+      const soleAgent = await createAgent({
+        id: soleOwnedId,
+        name: 'Sole Owned Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: deletingUserId,
+      });
+
+      const multiAgent = await createAgent({
+        id: multiOwnedId,
+        name: 'Multi Owned Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: deletingUserId,
+      });
+
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: deletingUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: soleAgent._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: deletingUserId,
+      });
+
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: deletingUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: multiAgent._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: deletingUserId,
+      });
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherOwnerId,
+        resourceType: ResourceType.AGENT,
+        resourceId: multiAgent._id,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: otherOwnerId,
+      });
+
+      await deleteUserAgents(deletingUserId.toString());
+
+      expect(await getAgent({ id: soleOwnedId })).toBeNull();
+      expect(await getAgent({ id: multiOwnedId })).not.toBeNull();
+
+      const soleAcl = await AclEntry.find({
+        resourceType: ResourceType.AGENT,
+        resourceId: soleAgent._id,
+      });
+      expect(soleAcl).toHaveLength(0);
+
+      const multiAcl = await AclEntry.find({
+        resourceType: ResourceType.AGENT,
+        resourceId: multiAgent._id,
+        principalId: otherOwnerId,
+      });
+      expect(multiAcl).toHaveLength(1);
+      expect(multiAcl[0].permBits & PermissionBits.DELETE).toBeTruthy();
+
+      const deletingUserMultiAcl = await AclEntry.find({
+        resourceType: ResourceType.AGENT,
+        resourceId: multiAgent._id,
+        principalId: deletingUserId,
+      });
+      expect(deletingUserMultiAcl).toHaveLength(1);
+    });
+
+    test('should delete legacy agents that have author but no ACL entries', async () => {
+      const legacyUserId = new mongoose.Types.ObjectId();
+      const legacyAgentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: legacyAgentId,
+        name: 'Legacy Agent (no ACL)',
+        provider: 'test',
+        model: 'test-model',
+        author: legacyUserId,
+      });
+
+      await deleteUserAgents(legacyUserId.toString());
+
+      expect(await getAgent({ id: legacyAgentId })).toBeNull();
     });
 
     test('should update agent projects', async () => {

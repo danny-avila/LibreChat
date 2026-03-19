@@ -1,7 +1,12 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
+const {
+  ResourceType,
+  PrincipalType,
+  PrincipalModel,
+  PermissionBits,
+} = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
   getUserOwnedEntraGroups,
@@ -800,6 +805,49 @@ const bulkUpdateResourcePermissions = async ({
 };
 
 /**
+ * Returns resource IDs where the given user is the sole owner
+ * (no other principal holds the DELETE bit on the same resource).
+ * @param {mongoose.Types.ObjectId} userObjectId
+ * @param {string|string[]} resourceTypes - One or more ResourceType values.
+ * @returns {Promise<mongoose.Types.ObjectId[]>}
+ */
+const getSoleOwnedResourceIds = async (userObjectId, resourceTypes) => {
+  const types = Array.isArray(resourceTypes) ? resourceTypes : [resourceTypes];
+  const ownedEntries = await AclEntry.find({
+    principalType: PrincipalType.USER,
+    principalId: userObjectId,
+    resourceType: { $in: types },
+    permBits: { $bitsAllSet: PermissionBits.DELETE },
+  })
+    .select('resourceId')
+    .lean();
+
+  if (ownedEntries.length === 0) {
+    return [];
+  }
+
+  const ownedIds = ownedEntries.map((e) => e.resourceId);
+
+  const otherOwners = await AclEntry.aggregate([
+    {
+      $match: {
+        resourceType: { $in: types },
+        resourceId: { $in: ownedIds },
+        permBits: { $bitsAllSet: PermissionBits.DELETE },
+        $or: [
+          { principalId: { $ne: userObjectId } },
+          { principalType: { $ne: PrincipalType.USER } },
+        ],
+      },
+    },
+    { $group: { _id: '$resourceId' } },
+  ]);
+
+  const multiOwnerIds = new Set(otherOwners.map((doc) => doc._id.toString()));
+  return ownedIds.filter((id) => !multiOwnerIds.has(id.toString()));
+};
+
+/**
  * Remove all permissions for a resource (cleanup when resource is deleted)
  * @param {Object} params - Parameters for removing all permissions
  * @param {string} params.resourceType - Type of resource (e.g., 'agent', 'prompt')
@@ -839,5 +887,6 @@ module.exports = {
   ensurePrincipalExists,
   ensureGroupPrincipalExists,
   syncUserEntraGroupMemberships,
+  getSoleOwnedResourceIds,
   removeAllPermissions,
 };

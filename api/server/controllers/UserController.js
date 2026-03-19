@@ -1,11 +1,18 @@
+const mongoose = require('mongoose');
 const { logger, webSearchKeys } = require('@librechat/data-schemas');
-const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
 const {
   MCPOAuthHandler,
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
 } = require('@librechat/api');
+const {
+  Tools,
+  CacheKeys,
+  Constants,
+  FileSources,
+  ResourceType,
+} = require('librechat-data-provider');
 const {
   deleteAllUserSessions,
   deleteAllSharedLinks,
@@ -45,6 +52,7 @@ const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { deleteUserPrompts } = require('~/models/Prompt');
 const { deleteUserAgents } = require('~/models/Agent');
+const { getSoleOwnedResourceIds } = require('~/server/services/PermissionService');
 const { getLogStores } = require('~/cache');
 
 const getUserController = async (req, res) => {
@@ -110,6 +118,78 @@ const deleteUserFiles = async (req) => {
     });
   } catch (error) {
     logger.error('[deleteUserFiles]', error);
+  }
+};
+
+/**
+ * Deletes MCP servers solely owned by the user and cleans up their ACLs.
+ * Disconnects live sessions for deleted servers before removing DB records.
+ * Servers with other owners are left intact; the caller is responsible for
+ * removing the user's own ACL principal entries separately.
+ *
+ * Also handles legacy (pre-ACL) MCP servers that only have the author field set,
+ * ensuring they are not orphaned if no permission migration has been run.
+ * @param {string} userId - The ID of the user.
+ */
+const deleteUserMcpServers = async (userId) => {
+  try {
+    const MCPServer = mongoose.models.MCPServer;
+    if (!MCPServer) {
+      return;
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const soleOwnedIds = await getSoleOwnedResourceIds(userObjectId, ResourceType.MCPSERVER);
+
+    const authoredServers = await MCPServer.find({ author: userObjectId })
+      .select('_id serverName')
+      .lean();
+
+    const migratedEntries =
+      authoredServers.length > 0
+        ? await AclEntry.find({
+            resourceType: ResourceType.MCPSERVER,
+            resourceId: { $in: authoredServers.map((s) => s._id) },
+          })
+            .select('resourceId')
+            .lean()
+        : [];
+    const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
+    const legacyServers = authoredServers.filter((s) => !migratedIds.has(s._id.toString()));
+    const legacyServerIds = legacyServers.map((s) => s._id);
+
+    const allServerIdsToDelete = [...soleOwnedIds, ...legacyServerIds];
+
+    if (allServerIdsToDelete.length === 0) {
+      return;
+    }
+
+    const aclOwnedServers =
+      soleOwnedIds.length > 0
+        ? await MCPServer.find({ _id: { $in: soleOwnedIds } })
+            .select('serverName')
+            .lean()
+        : [];
+    const allServersToDelete = [...aclOwnedServers, ...legacyServers];
+
+    const mcpManager = getMCPManager();
+    if (mcpManager) {
+      await Promise.all(
+        allServersToDelete.map(async (s) => {
+          await mcpManager.disconnectUserConnection(userId, s.serverName);
+          await invalidateCachedTools({ userId, serverName: s.serverName });
+        }),
+      );
+    }
+
+    await AclEntry.deleteMany({
+      resourceType: ResourceType.MCPSERVER,
+      resourceId: { $in: allServerIdsToDelete },
+    });
+
+    await MCPServer.deleteMany({ _id: { $in: allServerIdsToDelete } });
+  } catch (error) {
+    logger.error('[deleteUserMcpServers] General error:', error);
   }
 };
 
@@ -281,7 +361,8 @@ const deleteUserController = async (req, res) => {
     await Assistant.deleteMany({ user: user.id }); // delete user assistants
     await ConversationTag.deleteMany({ user: user.id }); // delete user conversation tags
     await MemoryEntry.deleteMany({ userId: user.id }); // delete user memory entries
-    await deleteUserPrompts(req, user.id); // delete user prompts
+    await deleteUserPrompts(user.id); // delete user prompts
+    await deleteUserMcpServers(user.id); // delete user MCP servers
     await Action.deleteMany({ user: user.id }); // delete user actions
     await Token.deleteMany({ userId: user.id }); // delete user OAuth tokens
     await Group.updateMany(
@@ -439,4 +520,5 @@ module.exports = {
   verifyEmailController,
   updateUserPluginsController,
   resendVerificationController,
+  deleteUserMcpServers,
 };
