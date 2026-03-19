@@ -43,6 +43,9 @@ class StableDiffusionAPI extends Tool {
     this.returnMetadata = fields.returnMetadata ?? false;
     /** @type {boolean} */
     this.isAgent = fields.isAgent;
+    if (this.isAgent) {
+      this.responseFormat = 'content_and_artifact';
+    }
     if (fields.uploadImageBuffer) {
       /** @type {uploadImageBuffer} Necessary for output to contain all image metadata. */
       this.uploadImageBuffer = fields.uploadImageBuffer.bind(this);

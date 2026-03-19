@@ -113,6 +113,9 @@ class FluxAPI extends Tool {
 
     /** @type {boolean} **/
     this.isAgent = fields.isAgent;
+    if (this.isAgent) {
+      this.responseFormat = 'content_and_artifact';
+    }
     this.returnMetadata = fields.returnMetadata ?? false;
 
     if (fields.processFileURL) {

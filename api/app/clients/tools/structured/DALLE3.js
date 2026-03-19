@@ -51,6 +51,9 @@ class DALLE3 extends Tool {
     this.fileStrategy = fields.fileStrategy;
     /** @type {boolean} */
     this.isAgent = fields.isAgent;
+    if (this.isAgent) {
+      this.responseFormat = 'content_and_artifact';
+    }
     if (fields.processFileURL) {
       /** @type {processFileURL} Necessary for output to contain all image metadata. */
       this.processFileURL = fields.processFileURL.bind(this);
