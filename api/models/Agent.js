@@ -18,8 +18,8 @@ const {
   addAgentIdsToProject,
 } = require('./Project');
 const {
-  removeAllPermissions,
   getSoleOwnedResourceIds,
+  removeAllPermissions,
 } = require('~/server/services/PermissionService');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { Agent, AclEntry, User } = require('~/db/models');

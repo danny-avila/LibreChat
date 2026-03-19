@@ -14,8 +14,8 @@ const {
   getProjectByName,
 } = require('./Project');
 const {
-  removeAllPermissions,
   getSoleOwnedResourceIds,
+  removeAllPermissions,
 } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
