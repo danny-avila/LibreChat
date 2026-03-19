@@ -356,6 +356,33 @@ describe('setupOpenId', () => {
     expect(updateUser).not.toHaveBeenCalled();
   });
 
+  it('should block login when email fallback finds user with mismatched openidId', async () => {
+    const existingUser = {
+      _id: 'existingUserId',
+      provider: 'openid',
+      openidId: 'different-sub-claim',
+      email: tokenset.claims().email,
+      username: 'existinguser',
+      name: 'Existing User',
+    };
+    findUser.mockImplementation(async (query) => {
+      if (query.$or) {
+        return null;
+      }
+      if (query.email === tokenset.claims().email) {
+        return existingUser;
+      }
+      return null;
+    });
+
+    const result = await validate(tokenset);
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(ErrorTypes.AUTH_FAILED);
+    expect(createUser).not.toHaveBeenCalled();
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
   it('should enforce the required role and reject login if missing', async () => {
     // Arrange – simulate a token without the required role.
     jwtDecode.mockReturnValue({
