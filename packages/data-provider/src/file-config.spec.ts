@@ -31,6 +31,7 @@ describe('inferMimeType', () => {
     expect(inferMimeType('test.py', '')).toBe('text/x-python');
     expect(inferMimeType('code.js', '')).toBe('text/javascript');
     expect(inferMimeType('photo.heic', '')).toBe('image/heic');
+    expect(inferMimeType('Main.java', '')).toBe('text/x-java');
   });
 
   it('should return empty string for unknown extension with no browser type', () => {
@@ -141,12 +142,12 @@ describe('documentParserMimeTypes', () => {
     'application/x-msexcel',
     'application/x-ms-excel',
     'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.text',
   ])('matches natively parseable type: %s', (mimeType) => {
     expect(check(mimeType)).toBe(true);
   });
 
   it.each([
-    'application/vnd.oasis.opendocument.text',
     'application/vnd.oasis.opendocument.presentation',
     'application/vnd.oasis.opendocument.graphics',
     'text/plain',

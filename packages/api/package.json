@@ -119,5 +119,8 @@
     "rate-limit-redis": "^4.2.0",
     "undici": "^7.24.1",
     "zod": "^3.22.4"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
   }
 }

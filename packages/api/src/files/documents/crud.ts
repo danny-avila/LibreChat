@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import JSZip from 'jszip';
 import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
@@ -6,6 +7,7 @@ import type { MistralOCRUploadResult } from '~/types';
 type FileParseFn = (file: Express.Multer.File) => Promise<string>;
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
+const ODT_MAX_DECOMPRESSED_SIZE = 50 * megabyte;
 
 /**
  * Parses an uploaded document and extracts its text content and metadata.
@@ -61,6 +63,9 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
   ) {
     return excelSheetToText;
   }
+  if (mimetype === 'application/vnd.oasis.opendocument.text') {
+    return odtToText;
+  }
   return undefined;
 }
 
@@ -109,4 +114,57 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
   }
 
   return text;
+}
+
+/**
+ * Parses OpenDocument Text (.odt) by extracting the body text from content.xml.
+ * Uses regex-based XML extraction scoped to <office:body>: paragraph/heading
+ * boundaries become newlines, tab and spacing elements are preserved, and the
+ * five standard XML entities are decoded. Complex elements such as frames,
+ * text boxes, and annotations are stripped without replacement.
+ */
+async function odtToText(file: Express.Multer.File): Promise<string> {
+  const data = await fs.promises.readFile(file.path);
+  const zip = await JSZip.loadAsync(data);
+
+  let totalUncompressed = 0;
+  zip.forEach((_, entry) => {
+    const raw = entry as JSZip.JSZipObject & { _data?: { uncompressedSize?: number } };
+    // _data.uncompressedSize is populated from the ZIP central directory at parse time
+    // by jszip (private internal, jszip@3.x). If the field is absent the guard fails
+    // open (adds 0); this is an accepted limitation of the approach.
+    totalUncompressed += raw._data?.uncompressedSize ?? 0;
+  });
+  if (totalUncompressed > ODT_MAX_DECOMPRESSED_SIZE) {
+    throw new Error(
+      `ODT file decompressed content (${Math.ceil(totalUncompressed / megabyte)}MB) exceeds the ${ODT_MAX_DECOMPRESSED_SIZE / megabyte}MB limit`,
+    );
+  }
+
+  const contentFile = zip.file('content.xml');
+  if (!contentFile) {
+    throw new Error('ODT file is missing content.xml');
+  }
+  const xml = await contentFile.async('string');
+  const bodyMatch = xml.match(/<office:body[^>]*>([\s\S]*?)<\/office:body>/);
+  if (!bodyMatch) {
+    return '';
+  }
+  return bodyMatch[1]
+    .replace(/<\/text:p>/g, '\n')
+    .replace(/<\/text:h>/g, '\n')
+    .replace(/<text:line-break\/>/g, '\n')
+    .replace(/<text:tab\/>/g, '\t')
+    .replace(/<text:s[^>]*\/>/g, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
