@@ -22,6 +22,13 @@ export type ArtifactFiles =
       'index.tsx': string;
       '/components/ui/MermaidDiagram.tsx': string;
     }
+  | {
+      'App.tsx': string;
+      'index.tsx': string;
+      '/components/ui/PptxPreview.tsx': string;
+      'presentation.js': string;
+      'pptx.css': string;
+    }
   | Partial<{
       [x: string]: string | undefined;
     }>;
