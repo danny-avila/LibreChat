@@ -6,6 +6,8 @@ const {
   Tools,
   SystemRoles,
   ResourceType,
+  PrincipalType,
+  PermissionBits,
   actionDelimiter,
   isAgentsEndpoint,
   isEphemeralAgentId,
@@ -617,20 +619,60 @@ const deleteAgent = async (searchParameter) => {
 };
 
 /**
- * Deletes all agents created by a specific user.
+ * Deletes agents solely owned by the user and cleans up their ACLs/project references.
+ * Agents with other owners are left intact; the caller is responsible for
+ * removing the user's own ACL principal entries separately.
  * @param {string} userId - The ID of the user whose agents should be deleted.
- * @returns {Promise<void>} A promise that resolves when all user agents have been deleted.
+ * @returns {Promise<void>} A promise that resolves when all solely-owned user agents have been deleted.
  */
 const deleteUserAgents = async (userId) => {
   try {
-    const userAgents = await getAgents({ author: userId });
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const ownerBit = PermissionBits.DELETE;
 
-    if (userAgents.length === 0) {
+    const ownedEntries = await AclEntry.find({
+      principalType: PrincipalType.USER,
+      principalId: userObjectId,
+      resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
+      permBits: { $bitsAllSet: ownerBit },
+    })
+      .select('resourceId resourceType')
+      .lean();
+
+    if (ownedEntries.length === 0) {
       return;
     }
 
-    const agentIds = userAgents.map((agent) => agent.id);
-    const agentObjectIds = userAgents.map((agent) => agent._id);
+    const ownedResourceIds = ownedEntries.map((e) => e.resourceId);
+
+    const otherOwners = await AclEntry.aggregate([
+      {
+        $match: {
+          resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
+          resourceId: { $in: ownedResourceIds },
+          permBits: { $bitsAllSet: ownerBit },
+          $or: [
+            { principalId: { $ne: userObjectId } },
+            { principalType: { $ne: PrincipalType.USER } },
+          ],
+        },
+      },
+      { $group: { _id: '$resourceId' } },
+    ]);
+
+    const multiOwnerIds = new Set(otherOwners.map((doc) => doc._id.toString()));
+    const soleOwnedObjectIds = ownedResourceIds.filter((id) => !multiOwnerIds.has(id.toString()));
+
+    if (soleOwnedObjectIds.length === 0) {
+      return;
+    }
+
+    const soleOwnedAgents = await Agent.find({ _id: { $in: soleOwnedObjectIds } })
+      .select('id _id')
+      .lean();
+
+    const agentIds = soleOwnedAgents.map((agent) => agent.id);
+    const agentObjectIds = soleOwnedAgents.map((agent) => agent._id);
 
     for (const agentId of agentIds) {
       await removeAgentFromAllProjects(agentId);
@@ -642,6 +684,15 @@ const deleteUserAgents = async (userId) => {
     });
 
     try {
+      await Agent.updateMany(
+        { 'edges.to': { $in: agentIds } },
+        { $pull: { edges: { to: { $in: agentIds } } } },
+      );
+    } catch (error) {
+      logger.error('[deleteUserAgents] Error removing agents from handoff edges', error);
+    }
+
+    try {
       await User.updateMany(
         { 'favorites.agentId': { $in: agentIds } },
         { $pull: { favorites: { agentId: { $in: agentIds } } } },
@@ -650,7 +701,7 @@ const deleteUserAgents = async (userId) => {
       logger.error('[deleteUserAgents] Error removing agents from user favorites', error);
     }
 
-    await Agent.deleteMany({ author: userId });
+    await Agent.deleteMany({ _id: { $in: agentObjectIds } });
   } catch (error) {
     logger.error('[deleteUserAgents] General error:', error);
   }
