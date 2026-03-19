@@ -1,7 +1,6 @@
 const rateLimit = require('express-rate-limit');
-const { limiterCache } = require('@librechat/api');
 const { ViolationTypes } = require('librechat-data-provider');
-const { removePorts } = require('~/server/utils');
+const { limiterCache, removePorts } = require('@librechat/api');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation } = require('~/cache');
 
@@ -60,7 +59,7 @@ const userLimiterOptions = {
   max: userMax,
   handler: createHandler(false),
   keyGenerator: function (req) {
-    return req.user?.id; // Use the user ID or NULL if not available
+    return req.user?.id;
   },
   store: limiterCache('message_user_limiter'),
 };

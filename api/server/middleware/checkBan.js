@@ -1,11 +1,10 @@
 const { Keyv } = require('keyv');
 const uap = require('ua-parser-js');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, keyvMongo } = require('@librechat/api');
 const { ViolationTypes } = require('librechat-data-provider');
-const { removePorts } = require('~/server/utils');
-const denyRequest = require('./denyRequest');
+const { isEnabled, keyvMongo, removePorts } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
+const denyRequest = require('./denyRequest');
 const { findUser } = require('~/models');
 
 const banCache = new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
