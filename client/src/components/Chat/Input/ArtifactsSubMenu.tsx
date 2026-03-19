@@ -12,6 +12,7 @@ interface ArtifactsSubMenuProps {
   artifactsMode: string;
   handleArtifactsToggle: () => void;
   handleShadcnToggle: () => void;
+  handlePptxToggle: () => void;
   handleCustomToggle: () => void;
 }
 
@@ -23,6 +24,7 @@ const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>
       artifactsMode,
       handleArtifactsToggle,
       handleShadcnToggle,
+      handlePptxToggle,
       handleCustomToggle,
       ...props
     },
@@ -38,6 +40,7 @@ const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>
 
     const isEnabled = artifactsMode !== '' && artifactsMode !== undefined;
     const isShadcnEnabled = artifactsMode === ArtifactModes.SHADCNUI;
+    const isPptxEnabled = artifactsMode === ArtifactModes.PPTX || artifactsMode === 'pptx';
     const isCustomEnabled = artifactsMode === ArtifactModes.CUSTOM;
 
     return (
@@ -117,6 +120,27 @@ const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>
                   <span className="text-sm">{localize('com_ui_include_shadcnui' as any)}</span>
                   <div className="ml-auto flex items-center">
                     <Ariakit.MenuItemCheck checked={isShadcnEnabled} />
+                  </div>
+                </Ariakit.MenuItem>
+
+                {/* Include PPTX design guidance Option */}
+                <Ariakit.MenuItem
+                  hideOnClick={false}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handlePptxToggle();
+                  }}
+                  className={cn(
+                    'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
+                    'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                    'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
+                    isPptxEnabled && 'bg-surface-active',
+                  )}
+                >
+                  <span className="text-sm">{localize('com_ui_include_pptx_design' as any)}</span>
+                  <div className="ml-auto flex items-center">
+                    <Ariakit.MenuItemCheck checked={isPptxEnabled} />
                   </div>
                 </Ariakit.MenuItem>
 
