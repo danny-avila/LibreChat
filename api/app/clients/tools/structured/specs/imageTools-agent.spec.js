@@ -102,12 +102,18 @@ describe('image tools - agent mode ToolMessage format', () => {
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
       const dalle = new DALLE3({ isAgent: true });
       const result = await dalle.invoke(
-        makeToolCall('dalle', { prompt: 'a box', quality: 'standard', size: '1024x1024', style: 'vivid' }),
+        makeToolCall('dalle', {
+          prompt: 'a box',
+          quality: 'standard',
+          size: '1024x1024',
+          style: 'vivid',
+        }),
       );
 
       expect(result).toBeInstanceOf(ToolMessage);
 
-      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      const contentStr =
+        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).not.toContain(FAKE_BASE64);
 
       expect(result.artifact).toBeDefined();
@@ -124,11 +130,17 @@ describe('image tools - agent mode ToolMessage format', () => {
 
       const dalle = new DALLE3({ isAgent: true });
       const result = await dalle.invoke(
-        makeToolCall('dalle', { prompt: 'a box', quality: 'standard', size: '1024x1024', style: 'vivid' }),
+        makeToolCall('dalle', {
+          prompt: 'a box',
+          quality: 'standard',
+          size: '1024x1024',
+          style: 'vivid',
+        }),
       );
 
       expect(result).toBeInstanceOf(ToolMessage);
-      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      const contentStr =
+        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).toContain('Something went wrong');
       expect(result.artifact).toBeDefined();
     });
@@ -162,12 +174,15 @@ describe('image tools - agent mode ToolMessage format', () => {
 
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
       const flux = new FluxAPI({ isAgent: true });
-      const invokePromise = flux.invoke(makeToolCall('flux', { prompt: 'a box', endpoint: '/v1/flux-dev' }));
+      const invokePromise = flux.invoke(
+        makeToolCall('flux', { prompt: 'a box', endpoint: '/v1/flux-dev' }),
+      );
       await jest.runAllTimersAsync();
       const result = await invokePromise;
 
       expect(result).toBeInstanceOf(ToolMessage);
-      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      const contentStr =
+        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).not.toContain(FAKE_BASE64);
 
       expect(result.artifact).toBeDefined();
@@ -191,7 +206,8 @@ describe('image tools - agent mode ToolMessage format', () => {
       const result = await invokePromise;
 
       expect(result).toBeInstanceOf(ToolMessage);
-      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      const contentStr =
+        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).not.toContain(FAKE_BASE64);
 
       expect(result.artifact).toBeDefined();
@@ -205,12 +221,15 @@ describe('image tools - agent mode ToolMessage format', () => {
       axios.post.mockRejectedValue(new Error('Network error'));
 
       const flux = new FluxAPI({ isAgent: true });
-      const invokePromise = flux.invoke(makeToolCall('flux', { prompt: 'a box', endpoint: '/v1/flux-dev' }));
+      const invokePromise = flux.invoke(
+        makeToolCall('flux', { prompt: 'a box', endpoint: '/v1/flux-dev' }),
+      );
       await jest.runAllTimersAsync();
       const result = await invokePromise;
 
       expect(result).toBeInstanceOf(ToolMessage);
-      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      const contentStr =
+        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).toContain('Something went wrong');
       expect(result.artifact).toBeDefined();
     });
@@ -232,7 +251,11 @@ describe('image tools - agent mode ToolMessage format', () => {
     });
 
     it('does not set responseFormat when isAgent is false', () => {
-      const sd = new StableDiffusionAPI({ isAgent: false, override: true, uploadImageBuffer: jest.fn() });
+      const sd = new StableDiffusionAPI({
+        isAgent: false,
+        override: true,
+        uploadImageBuffer: jest.fn(),
+      });
       expect(sd.responseFormat).not.toBe('content_and_artifact');
     });
 
@@ -243,7 +266,8 @@ describe('image tools - agent mode ToolMessage format', () => {
       );
 
       expect(result).toBeInstanceOf(ToolMessage);
-      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      const contentStr =
+        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).not.toContain(FAKE_BASE64);
 
       expect(result.artifact).toBeDefined();
@@ -262,7 +286,8 @@ describe('image tools - agent mode ToolMessage format', () => {
       );
 
       expect(result).toBeInstanceOf(ToolMessage);
-      const contentStr = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
+      const contentStr =
+        typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).toContain('Error making API request');
     });
   });
