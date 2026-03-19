@@ -2195,7 +2195,7 @@ describe('updateInterfacePermissions - permissions', () => {
     });
   });
 
-  it('should not grant USER share for agents when only use is configured (regression: #12306 fresh install)', async () => {
+  it('should populate all default agent permissions on fresh install with object use config (regression: #12306)', async () => {
     const config = {
       interface: {
         agents: { use: true },
@@ -2267,9 +2267,6 @@ describe('updateInterfacePermissions - permissions', () => {
     expect(userCall[1][PermissionTypes.AGENTS]).toEqual({
       [Permissions.USE]: true,
     });
-    expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.CREATE);
-    expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.SHARE);
-    expect(userCall[1][PermissionTypes.AGENTS]).not.toHaveProperty(Permissions.SHARE_PUBLIC);
   });
 
   it('should preserve all admin-panel changes when agents is not in yaml config (regression: #12306 restart)', async () => {
@@ -2383,5 +2380,116 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.SHARE]: true,
       [Permissions.SHARE_PUBLIC]: true,
     });
+  });
+
+  it('should preserve existing MCP_SERVERS permissions on restart when mcpServers not in yaml config (regression: #12306 restart)', async () => {
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const config = {};
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1][PermissionTypes.MCP_SERVERS]).toEqual({
+      [Permissions.CREATE]: false,
+    });
+  });
+
+  it('should migrate existing MCP_SERVERS.CREATE=true to false for USER when no explicit config (regression: #12306 migration)', async () => {
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const config = {};
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+
+    expect(userCall[1][PermissionTypes.MCP_SERVERS]).toEqual({
+      [Permissions.CREATE]: false,
+    });
+    expect(userCall[1]).not.toHaveProperty(PermissionTypes.AGENTS);
+
+    expect(adminCall[1]).not.toHaveProperty(PermissionTypes.MCP_SERVERS);
+    expect(adminCall[1]).not.toHaveProperty(PermissionTypes.AGENTS);
+  });
+
+  it('should NOT migrate MCP_SERVERS.CREATE when yaml explicitly sets create: true (regression: #12306 migration)', async () => {
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const config = {
+      interface: {
+        mcpServers: { use: true, create: true },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1][PermissionTypes.MCP_SERVERS][Permissions.CREATE]).toBe(true);
   });
 });

@@ -1,16 +1,17 @@
 import { Permissions, PermissionTypes, permissionsSchema } from './permissions';
 import { SystemRoles, roleDefaults } from './roles';
 
-const RESOURCE_MANAGEMENT_FIELDS: string[] = [
+const RESOURCE_MANAGEMENT_FIELDS: Permissions[] = [
   Permissions.CREATE,
   Permissions.SHARE,
   Permissions.SHARE_PUBLIC,
 ];
 
 /**
- * Permission types that manage shared resources (agents, prompts, etc.)
- * where CREATE/SHARE should be restricted for USER by default.
- * MEMORIES is excluded because its CREATE/READ/UPDATE apply to the user's own data.
+ * Permission types where CREATE/SHARE/SHARE_PUBLIC must default to false for USER.
+ * MEMORIES is excluded: its CREATE/READ/UPDATE apply to the user's own private data.
+ * AGENTS/PROMPTS are excluded: CREATE=true is intentional (users own their agents/prompts).
+ * Add new types here if they gate shared/multi-user resources.
  */
 const RESOURCE_PERMISSION_TYPES: PermissionTypes[] = [
   PermissionTypes.MCP_SERVERS,
@@ -50,8 +51,7 @@ describe('roleDefaults', () => {
     });
 
     it('should never grant CREATE, SHARE, or SHARE_PUBLIC by default for resource-management types', () => {
-      for (let i = 0; i < RESOURCE_PERMISSION_TYPES.length; i++) {
-        const permType = RESOURCE_PERMISSION_TYPES[i];
+      for (const permType of RESOURCE_PERMISSION_TYPES) {
         const permissions = userPerms[permType] as Record<string, boolean>;
         for (const field of RESOURCE_MANAGEMENT_FIELDS) {
           if (permissions[field] === undefined) {
@@ -74,18 +74,17 @@ describe('roleDefaults', () => {
 
     it('should cover every permission type that has CREATE, SHARE, or SHARE_PUBLIC fields', () => {
       const schemaShape = permissionsSchema.shape;
-      const resourceMgmtFieldSet = RESOURCE_MANAGEMENT_FIELDS;
-      const resourcePermTypeSet = RESOURCE_PERMISSION_TYPES as string[];
+      const restrictedSet = new Set<string>(RESOURCE_PERMISSION_TYPES);
 
       for (const [permType, subSchema] of Object.entries(schemaShape)) {
         const fieldNames = Object.keys(subSchema.shape);
-        const hasResourceFields = fieldNames.some((f) => resourceMgmtFieldSet.includes(f));
+        const hasResourceFields = fieldNames.some((f) => RESOURCE_MANAGEMENT_FIELDS.includes(f as Permissions));
         if (!hasResourceFields) {
           continue;
         }
 
         const isTracked =
-          resourcePermTypeSet.includes(permType) ||
+          restrictedSet.has(permType) ||
           permType === PermissionTypes.MEMORIES ||
           permType === PermissionTypes.PROMPTS ||
           permType === PermissionTypes.AGENTS;
