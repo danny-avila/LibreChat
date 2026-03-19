@@ -198,7 +198,8 @@ export default function FavoritesList({
         } catch (error) {
           if (error && typeof error === 'object' && 'response' in error) {
             const axiosError = error as { response?: { status?: number } };
-            if (axiosError.response?.status === 404) {
+            const status = axiosError.response?.status;
+            if (status === 404 || status === 403) {
               return { found: false };
             }
           }
@@ -206,9 +207,33 @@ export default function FavoritesList({
         }
       },
       staleTime: 1000 * 60 * 5,
-      enabled: missingAgentIds.length > 0,
     })),
   });
+
+  const staleAgentIdsKey = useMemo(() => {
+    const ids: string[] = [];
+    for (let i = 0; i < missingAgentIds.length; i++) {
+      const query = missingAgentQueries[i];
+      if (query.data && !query.data.found) {
+        ids.push(missingAgentIds[i]);
+      }
+    }
+    return ids.sort().join(',');
+  }, [missingAgentIds, missingAgentQueries]);
+
+  const cleanupAttemptedRef = useRef('');
+
+  useEffect(() => {
+    if (!staleAgentIdsKey || cleanupAttemptedRef.current === staleAgentIdsKey) {
+      return;
+    }
+    const staleSet = new Set(staleAgentIdsKey.split(','));
+    const cleaned = safeFavorites.filter((f) => !f.agentId || !staleSet.has(f.agentId));
+    if (cleaned.length < safeFavorites.length) {
+      cleanupAttemptedRef.current = staleAgentIdsKey;
+      reorderFavorites(cleaned, true);
+    }
+  }, [staleAgentIdsKey, safeFavorites, reorderFavorites]);
 
   const combinedAgentsMap = useMemo(() => {
     if (agentsMap === undefined) {
