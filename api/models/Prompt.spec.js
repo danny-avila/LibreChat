@@ -561,4 +561,208 @@ describe('Prompt ACL Permissions', () => {
       expect(prompt._id.toString()).toBe(legacyPrompt._id.toString());
     });
   });
+
+  describe('deleteUserPrompts', () => {
+    let deletingUser;
+    let otherUser;
+    let soleOwnedGroup;
+    let multiOwnedGroup;
+    let sharedGroup;
+    let soleOwnedPrompt;
+    let multiOwnedPrompt;
+    let sharedPrompt;
+
+    beforeAll(async () => {
+      deletingUser = await User.create({
+        name: 'Deleting User',
+        email: 'deleting@example.com',
+        role: SystemRoles.USER,
+      });
+      otherUser = await User.create({
+        name: 'Other User',
+        email: 'other@example.com',
+        role: SystemRoles.USER,
+      });
+
+      const soleProductionId = new ObjectId();
+      soleOwnedGroup = await PromptGroup.create({
+        name: 'Sole Owned Group',
+        author: deletingUser._id,
+        authorName: deletingUser.name,
+        productionId: soleProductionId,
+      });
+      soleOwnedPrompt = await Prompt.create({
+        prompt: 'Sole owned prompt',
+        author: deletingUser._id,
+        groupId: soleOwnedGroup._id,
+        type: 'text',
+      });
+      await PromptGroup.updateOne(
+        { _id: soleOwnedGroup._id },
+        { productionId: soleOwnedPrompt._id },
+      );
+
+      const multiProductionId = new ObjectId();
+      multiOwnedGroup = await PromptGroup.create({
+        name: 'Multi Owned Group',
+        author: deletingUser._id,
+        authorName: deletingUser.name,
+        productionId: multiProductionId,
+      });
+      multiOwnedPrompt = await Prompt.create({
+        prompt: 'Multi owned prompt',
+        author: deletingUser._id,
+        groupId: multiOwnedGroup._id,
+        type: 'text',
+      });
+      await PromptGroup.updateOne(
+        { _id: multiOwnedGroup._id },
+        { productionId: multiOwnedPrompt._id },
+      );
+
+      const sharedProductionId = new ObjectId();
+      sharedGroup = await PromptGroup.create({
+        name: 'Shared Group (other user owns)',
+        author: otherUser._id,
+        authorName: otherUser.name,
+        productionId: sharedProductionId,
+      });
+      sharedPrompt = await Prompt.create({
+        prompt: 'Shared prompt',
+        author: otherUser._id,
+        groupId: sharedGroup._id,
+        type: 'text',
+      });
+      await PromptGroup.updateOne(
+        { _id: sharedGroup._id },
+        { productionId: sharedPrompt._id },
+      );
+
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: deletingUser._id,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: soleOwnedGroup._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+        grantedBy: deletingUser._id,
+      });
+
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: deletingUser._id,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: multiOwnedGroup._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+        grantedBy: deletingUser._id,
+      });
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUser._id,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: multiOwnedGroup._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+        grantedBy: otherUser._id,
+      });
+
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUser._id,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: sharedGroup._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+        grantedBy: otherUser._id,
+      });
+      await permissionService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: deletingUser._id,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: sharedGroup._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+        grantedBy: otherUser._id,
+      });
+
+      const globalProject = await Project.findOne({ name: 'Global' });
+      await Project.updateOne(
+        { _id: globalProject._id },
+        {
+          $addToSet: {
+            promptGroupIds: {
+              $each: [soleOwnedGroup._id, multiOwnedGroup._id, sharedGroup._id],
+            },
+          },
+        },
+      );
+    });
+
+    it('should delete solely-owned prompt groups and their prompts', async () => {
+      await promptFns.deleteUserPrompts({}, deletingUser._id.toString());
+
+      expect(await PromptGroup.findById(soleOwnedGroup._id)).toBeNull();
+      expect(await Prompt.findById(soleOwnedPrompt._id)).toBeNull();
+    });
+
+    it('should remove solely-owned groups from projects', async () => {
+      const globalProject = await Project.findOne({ name: 'Global' });
+      const projectGroupIds = globalProject.promptGroupIds.map((id) => id.toString());
+      expect(projectGroupIds).not.toContain(soleOwnedGroup._id.toString());
+    });
+
+    it('should remove all ACL entries for solely-owned groups', async () => {
+      const aclEntries = await AclEntry.find({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: soleOwnedGroup._id,
+      });
+      expect(aclEntries).toHaveLength(0);
+    });
+
+    it('should preserve multi-owned prompt groups', async () => {
+      expect(await PromptGroup.findById(multiOwnedGroup._id)).not.toBeNull();
+      expect(await Prompt.findById(multiOwnedPrompt._id)).not.toBeNull();
+    });
+
+    it('should preserve ACL entries of other owners on multi-owned groups', async () => {
+      const otherOwnerAcl = await AclEntry.findOne({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: multiOwnedGroup._id,
+        principalId: otherUser._id,
+      });
+      expect(otherOwnerAcl).not.toBeNull();
+      expect(otherOwnerAcl.permBits & PermissionBits.DELETE).toBeTruthy();
+    });
+
+    it('should preserve groups owned by other users', async () => {
+      expect(await PromptGroup.findById(sharedGroup._id)).not.toBeNull();
+      expect(await Prompt.findById(sharedPrompt._id)).not.toBeNull();
+    });
+
+    it('should preserve project membership of non-deleted groups', async () => {
+      const globalProject = await Project.findOne({ name: 'Global' });
+      const projectGroupIds = globalProject.promptGroupIds.map((id) => id.toString());
+      expect(projectGroupIds).toContain(multiOwnedGroup._id.toString());
+      expect(projectGroupIds).toContain(sharedGroup._id.toString());
+    });
+
+    it('should preserve ACL entries for shared group owned by other user', async () => {
+      const ownerAcl = await AclEntry.findOne({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: sharedGroup._id,
+        principalId: otherUser._id,
+      });
+      expect(ownerAcl).not.toBeNull();
+    });
+
+    it('should be a no-op when user has no owned prompt groups', async () => {
+      const unrelatedUser = await User.create({
+        name: 'Unrelated User',
+        email: 'unrelated@example.com',
+        role: SystemRoles.USER,
+      });
+
+      const beforeCount = await PromptGroup.countDocuments();
+      await promptFns.deleteUserPrompts({}, unrelatedUser._id.toString());
+      const afterCount = await PromptGroup.countDocuments();
+
+      expect(afterCount).toBe(beforeCount);
+    });
+  });
 });

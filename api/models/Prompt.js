@@ -5,6 +5,8 @@ const {
   Constants,
   SystemRoles,
   ResourceType,
+  PrincipalType,
+  PermissionBits,
   SystemCategories,
 } = require('librechat-data-provider');
 const {
@@ -592,31 +594,65 @@ module.exports = {
     }
   },
   /**
-   * Delete all prompts and prompt groups created by a specific user.
-   * @param {ServerRequest} req - The server request object.
+   * Delete prompt groups solely owned by the user and clean up their prompts/ACLs.
+   * Groups with other owners are left intact; the caller is responsible for
+   * removing the user's own ACL principal entries separately.
+   * @param {ServerRequest} _req - The server request object (unused).
    * @param {string} userId - The ID of the user whose prompts and prompt groups are to be deleted.
    */
-  deleteUserPrompts: async (req, userId) => {
+  deleteUserPrompts: async (_req, userId) => {
     try {
-      const promptGroups = await getAllPromptGroups(req, { author: new ObjectId(userId) });
+      const userObjectId = new ObjectId(userId);
+      const ownerBit = PermissionBits.DELETE;
 
-      if (promptGroups.length === 0) {
+      const ownedEntries = await AclEntry.find({
+        principalType: PrincipalType.USER,
+        principalId: userObjectId,
+        resourceType: ResourceType.PROMPTGROUP,
+        permBits: { $bitsAllSet: ownerBit },
+      })
+        .select('resourceId')
+        .lean();
+
+      if (ownedEntries.length === 0) {
         return;
       }
 
-      const groupIds = promptGroups.map((group) => group._id);
+      const ownedGroupIds = ownedEntries.map((e) => e.resourceId);
 
-      for (const groupId of groupIds) {
+      const otherOwners = await AclEntry.aggregate([
+        {
+          $match: {
+            resourceType: ResourceType.PROMPTGROUP,
+            resourceId: { $in: ownedGroupIds },
+            permBits: { $bitsAllSet: ownerBit },
+            $or: [
+              { principalId: { $ne: userObjectId } },
+              { principalType: { $ne: PrincipalType.USER } },
+            ],
+          },
+        },
+        { $group: { _id: '$resourceId' } },
+      ]);
+
+      const multiOwnerIds = new Set(otherOwners.map((doc) => doc._id.toString()));
+      const soleOwnedIds = ownedGroupIds.filter((id) => !multiOwnerIds.has(id.toString()));
+
+      if (soleOwnedIds.length === 0) {
+        return;
+      }
+
+      for (const groupId of soleOwnedIds) {
         await removeGroupFromAllProjects(groupId);
       }
 
       await AclEntry.deleteMany({
         resourceType: ResourceType.PROMPTGROUP,
-        resourceId: { $in: groupIds },
+        resourceId: { $in: soleOwnedIds },
       });
 
-      await PromptGroup.deleteMany({ author: new ObjectId(userId) });
-      await Prompt.deleteMany({ author: new ObjectId(userId) });
+      await PromptGroup.deleteMany({ _id: { $in: soleOwnedIds } });
+      await Prompt.deleteMany({ groupId: { $in: soleOwnedIds } });
     } catch (error) {
       logger.error('[deleteUserPrompts] General error:', error);
     }
