@@ -1169,6 +1169,13 @@ describe('models/Agent', () => {
       });
       expect(multiAcl).toHaveLength(1);
       expect(multiAcl[0].permBits & PermissionBits.DELETE).toBeTruthy();
+
+      const deletingUserMultiAcl = await AclEntry.find({
+        resourceType: ResourceType.AGENT,
+        resourceId: multiAgent._id,
+        principalId: deletingUserId,
+      });
+      expect(deletingUserMultiAcl).toHaveLength(1);
     });
 
     test('should update agent projects', async () => {

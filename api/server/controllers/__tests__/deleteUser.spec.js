@@ -104,6 +104,10 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
 }));
 
+jest.mock('~/server/services/PermissionService', () => ({
+  getSoleOwnedResourceIds: jest.fn().mockResolvedValue([]),
+}));
+
 jest.mock('~/models/ToolCall', () => ({
   deleteToolCalls: (...args) => mockDeleteToolCalls(...args),
 }));

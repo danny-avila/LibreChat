@@ -689,22 +689,22 @@ describe('Prompt ACL Permissions', () => {
           },
         },
       );
+
+      await promptFns.deleteUserPrompts(deletingUser._id.toString());
     });
 
-    it('should delete solely-owned prompt groups and their prompts', async () => {
-      await promptFns.deleteUserPrompts({}, deletingUser._id.toString());
-
+    test('should delete solely-owned prompt groups and their prompts', async () => {
       expect(await PromptGroup.findById(soleOwnedGroup._id)).toBeNull();
       expect(await Prompt.findById(soleOwnedPrompt._id)).toBeNull();
     });
 
-    it('should remove solely-owned groups from projects', async () => {
+    test('should remove solely-owned groups from projects', async () => {
       const globalProject = await Project.findOne({ name: 'Global' });
       const projectGroupIds = globalProject.promptGroupIds.map((id) => id.toString());
       expect(projectGroupIds).not.toContain(soleOwnedGroup._id.toString());
     });
 
-    it('should remove all ACL entries for solely-owned groups', async () => {
+    test('should remove all ACL entries for solely-owned groups', async () => {
       const aclEntries = await AclEntry.find({
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: soleOwnedGroup._id,
@@ -712,12 +712,12 @@ describe('Prompt ACL Permissions', () => {
       expect(aclEntries).toHaveLength(0);
     });
 
-    it('should preserve multi-owned prompt groups', async () => {
+    test('should preserve multi-owned prompt groups', async () => {
       expect(await PromptGroup.findById(multiOwnedGroup._id)).not.toBeNull();
       expect(await Prompt.findById(multiOwnedPrompt._id)).not.toBeNull();
     });
 
-    it('should preserve ACL entries of other owners on multi-owned groups', async () => {
+    test('should preserve ACL entries of other owners on multi-owned groups', async () => {
       const otherOwnerAcl = await AclEntry.findOne({
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: multiOwnedGroup._id,
@@ -727,19 +727,19 @@ describe('Prompt ACL Permissions', () => {
       expect(otherOwnerAcl.permBits & PermissionBits.DELETE).toBeTruthy();
     });
 
-    it('should preserve groups owned by other users', async () => {
+    test('should preserve groups owned by other users', async () => {
       expect(await PromptGroup.findById(sharedGroup._id)).not.toBeNull();
       expect(await Prompt.findById(sharedPrompt._id)).not.toBeNull();
     });
 
-    it('should preserve project membership of non-deleted groups', async () => {
+    test('should preserve project membership of non-deleted groups', async () => {
       const globalProject = await Project.findOne({ name: 'Global' });
       const projectGroupIds = globalProject.promptGroupIds.map((id) => id.toString());
       expect(projectGroupIds).toContain(multiOwnedGroup._id.toString());
       expect(projectGroupIds).toContain(sharedGroup._id.toString());
     });
 
-    it('should preserve ACL entries for shared group owned by other user', async () => {
+    test('should preserve ACL entries for shared group owned by other user', async () => {
       const ownerAcl = await AclEntry.findOne({
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: sharedGroup._id,
@@ -748,7 +748,7 @@ describe('Prompt ACL Permissions', () => {
       expect(ownerAcl).not.toBeNull();
     });
 
-    it('should be a no-op when user has no owned prompt groups', async () => {
+    test('should be a no-op when user has no owned prompt groups', async () => {
       const unrelatedUser = await User.create({
         name: 'Unrelated User',
         email: 'unrelated@example.com',
@@ -756,7 +756,7 @@ describe('Prompt ACL Permissions', () => {
       });
 
       const beforeCount = await PromptGroup.countDocuments();
-      await promptFns.deleteUserPrompts({}, unrelatedUser._id.toString());
+      await promptFns.deleteUserPrompts(unrelatedUser._id.toString());
       const afterCount = await PromptGroup.countDocuments();
 
       expect(afterCount).toBe(beforeCount);
