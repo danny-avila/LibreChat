@@ -646,12 +646,16 @@ class OpenAIClient extends BaseClient {
     const originalUseResponsesApi =
       this.options?.modelOptions?.useResponsesApi ?? this.modelOptions?.useResponsesApi;
     const originalDropParams = this.options?.dropParams;
-    this.options.dropParams = [
-      ...(originalDropParams || []),
+    const titleDropParams = [
       'model_parameters',
       'promptPrefix',
+      'instructions',
       'useResponsesApi',
+      'tools',
+      'tool_choice',
+      'tool_resources',
     ];
+    this.options.dropParams = [...new Set([...(originalDropParams || []), ...titleDropParams])];
 
     if (this.options.attachments) {
       delete this.options.attachments;
@@ -707,7 +711,9 @@ class OpenAIClient extends BaseClient {
 
       const groupName = modelGroupMap[modelOptions.model].group;
       this.options.addParams = azureConfig.groupMap[groupName].addParams;
-      this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
+      this.options.dropParams = [
+        ...new Set([...(azureConfig.groupMap[groupName].dropParams || []), ...titleDropParams]),
+      ];
       this.options.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
       this.azure = !serverless && azureOptions;
       if (serverless === true) {
