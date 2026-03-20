@@ -153,6 +153,9 @@ async function odtToText(file: Express.Multer.File): Promise<string> {
  * decompressed bytes and aborting mid-inflate if the cap is exceeded.
  * Unlike JSZip metadata checks, this cannot be bypassed by falsifying
  * the ZIP central directory's uncompressedSize fields.
+ *
+ * The zipfile is closed on all exit paths (success, size cap, missing entry,
+ * error) to prevent file descriptor leaks.
  */
 function extractOdtContentXml(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -163,6 +166,20 @@ function extractOdtContentXml(filePath: string): Promise<string> {
       if (!zipfile) {
         return reject(new Error('Failed to open ODT file'));
       }
+
+      let settled = false;
+      const finish = (error: Error | null, result?: string) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        zipfile.close();
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result as string);
+        }
+      };
 
       let found = false;
       zipfile.readEntry();
@@ -175,10 +192,10 @@ function extractOdtContentXml(filePath: string): Promise<string> {
         found = true;
         zipfile.openReadStream(entry, (streamErr, readStream) => {
           if (streamErr) {
-            return reject(streamErr);
+            return finish(streamErr);
           }
           if (!readStream) {
-            return reject(new Error('Failed to open content.xml stream'));
+            return finish(new Error('Failed to open content.xml stream'));
           }
 
           let totalBytes = 0;
@@ -197,25 +214,18 @@ function extractOdtContentXml(filePath: string): Promise<string> {
             chunks.push(chunk);
           });
 
-          readStream.on('end', () => {
-            zipfile.close();
-            resolve(Buffer.concat(chunks).toString('utf8'));
-          });
-
-          readStream.on('error', (readErr: Error) => {
-            zipfile.close();
-            reject(readErr);
-          });
+          readStream.on('end', () => finish(null, Buffer.concat(chunks).toString('utf8')));
+          readStream.on('error', (readErr: Error) => finish(readErr));
         });
       });
 
       zipfile.on('end', () => {
         if (!found) {
-          reject(new Error('ODT file is missing content.xml'));
+          finish(new Error('ODT file is missing content.xml'));
         }
       });
 
-      zipfile.on('error', reject);
+      zipfile.on('error', (zipErr: Error) => finish(zipErr));
     });
   });
 }

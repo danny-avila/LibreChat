@@ -66,6 +66,7 @@
     "@types/winston": "^2.4.4",
     "@types/yauzl": "^2.10.3",
     "jest": "^30.2.0",
+    "jszip": "^3.10.1",
     "jest-junit": "^16.0.0",
     "librechat-data-provider": "*",
     "mammoth": "^1.11.0",
