@@ -1,4 +1,4 @@
-import { sanitizeFilename } from './files';
+import { sanitizeFilename, resolveUploadErrorMessage } from './files';
 
 jest.mock('node:crypto', () => {
   const actualModule = jest.requireActual('node:crypto');
@@ -49,6 +49,59 @@ describe('sanitizeFilename', () => {
 
   test('handles input with only special characters', () => {
     expect(sanitizeFilename('@#$%^&*')).toBe('_______');
+  });
+});
+
+describe('resolveUploadErrorMessage', () => {
+  test('returns default message for null error', () => {
+    expect(resolveUploadErrorMessage(null)).toBe('Error processing file');
+  });
+
+  test('returns default message for undefined error', () => {
+    expect(resolveUploadErrorMessage(undefined)).toBe('Error processing file');
+  });
+
+  test('returns default message when error has no message property', () => {
+    expect(resolveUploadErrorMessage({})).toBe('Error processing file');
+  });
+
+  test('returns default message for unrecognized error', () => {
+    expect(resolveUploadErrorMessage({ message: 'ENOENT: no such file or directory' })).toBe(
+      'Error processing file',
+    );
+  });
+
+  test('prepends default message for file_ids errors', () => {
+    expect(resolveUploadErrorMessage({ message: 'max file_ids reached' })).toBe(
+      'Error processing file: max file_ids reached',
+    );
+  });
+
+  test('surfaces "Invalid file format" errors', () => {
+    expect(resolveUploadErrorMessage({ message: 'Invalid file format: .xyz' })).toBe(
+      'Invalid file format: .xyz',
+    );
+  });
+
+  test('surfaces "exceeds token limit" errors', () => {
+    expect(resolveUploadErrorMessage({ message: 'Content exceeds token limit' })).toBe(
+      'Content exceeds token limit',
+    );
+  });
+
+  test('surfaces "Unable to extract text from" errors', () => {
+    const msg = 'Unable to extract text from "doc.pdf". The document may be image-based.';
+    expect(resolveUploadErrorMessage({ message: msg })).toBe(msg);
+  });
+
+  test('accepts a custom default message', () => {
+    expect(resolveUploadErrorMessage(null, 'Custom default')).toBe('Custom default');
+  });
+
+  test('uses custom default in file_ids prepend', () => {
+    expect(resolveUploadErrorMessage({ message: 'file_ids limit' }, 'Upload failed')).toBe(
+      'Upload failed: file_ids limit',
+    );
   });
 });
 
