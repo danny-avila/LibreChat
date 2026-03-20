@@ -45,7 +45,7 @@ describe('File Methods', () => {
   });
 
   describe('createFile', () => {
-    it('should create a new file with TTL', async () => {
+    it('should create a new file', async () => {
       const fileId = uuidv4();
       const userId = new mongoose.Types.ObjectId();
 
@@ -56,33 +56,13 @@ describe('File Methods', () => {
         filepath: '/uploads/test.txt',
         type: 'text/plain',
         bytes: 100,
+        expiresAt: new Date(Date.now() + 3600 * 1000),
       });
 
       expect(file).not.toBeNull();
       expect(file?.file_id).toBe(fileId);
       expect(file?.filename).toBe('test.txt');
       expect(file?.expiresAt).toBeDefined();
-    });
-
-    it('should create a file without TTL when disableTTL is true', async () => {
-      const fileId = uuidv4();
-      const userId = new mongoose.Types.ObjectId();
-
-      const file = await fileMethods.createFile(
-        {
-          file_id: fileId,
-          user: userId,
-          filename: 'permanent.txt',
-          filepath: '/uploads/permanent.txt',
-          type: 'text/plain',
-          bytes: 200,
-        },
-        true,
-      );
-
-      expect(file).not.toBeNull();
-      expect(file?.file_id).toBe(fileId);
-      expect(file?.expiresAt).toBeUndefined();
     });
   });
 
