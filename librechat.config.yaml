@@ -152,6 +152,11 @@ mcpServers:
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
+  golden-n:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.43:9023/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+
    
   # golden:
   #   type: streamable-http # type can optionally be omitted
@@ -376,6 +381,10 @@ modelSpecs:
     - name: "ajrasakha-qwen-ffv"
       label: "AjraSakha-Qwen-FFV"
       default: false
+      mcpServers:
+         - golden-n
+         - market
+         - weather
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
       preset:
