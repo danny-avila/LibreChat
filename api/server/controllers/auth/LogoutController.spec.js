@@ -297,32 +297,22 @@ describe('LogoutController', () => {
     });
 
     it('respects custom OPENID_MAX_LOGOUT_URL_LENGTH', async () => {
-      const originalMaxLogoutUrlLength = process.env.OPENID_MAX_LOGOUT_URL_LENGTH;
       process.env.OPENID_MAX_LOGOUT_URL_LENGTH = '500';
+      const mediumIdToken = 'a'.repeat(600);
+      const req = buildReq({
+        user: { _id: 'user1', openidId: 'oid1', provider: 'openid', email: 'user@example.com' },
+        session: {
+          openidTokens: { refreshToken: 'srt', idToken: mediumIdToken },
+          destroy: jest.fn(),
+        },
+      });
+      const res = buildRes();
 
-      try {
-        const mediumIdToken = 'a'.repeat(600);
-        const req = buildReq({
-          user: { _id: 'user1', openidId: 'oid1', provider: 'openid', email: 'user@example.com' },
-          session: {
-            openidTokens: { refreshToken: 'srt', idToken: mediumIdToken },
-            destroy: jest.fn(),
-          },
-        });
-        const res = buildRes();
+      await logoutController(req, res);
 
-        await logoutController(req, res);
-
-        const body = res.send.mock.calls[0][0];
-        expect(body.redirect).not.toContain('id_token_hint=');
-        expect(body.redirect).toContain('logout_hint=user%40example.com');
-      } finally {
-        if (originalMaxLogoutUrlLength === undefined) {
-          delete process.env.OPENID_MAX_LOGOUT_URL_LENGTH;
-        } else {
-          process.env.OPENID_MAX_LOGOUT_URL_LENGTH = originalMaxLogoutUrlLength;
-        }
-      }
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).not.toContain('id_token_hint=');
+      expect(body.redirect).toContain('logout_hint=user%40example.com');
     });
 
     it('uses username as logout_hint when email is not available', async () => {
@@ -412,6 +402,166 @@ describe('LogoutController', () => {
       expect(body.redirect).not.toContain('id_token_hint=');
       expect(body.redirect).not.toContain('logout_hint=');
       expect(body.redirect).toContain('client_id=my-client-id');
+    });
+
+    it('warns about missing OPENID_CLIENT_ID when URL is too long', async () => {
+      delete process.env.OPENID_CLIENT_ID;
+      const longIdToken = 'a'.repeat(3000);
+      const req = buildReq({
+        user: { _id: 'user1', openidId: 'oid1', provider: 'openid', email: 'user@example.com' },
+        session: {
+          openidTokens: { refreshToken: 'srt', idToken: longIdToken },
+          destroy: jest.fn(),
+        },
+      });
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).not.toContain('id_token_hint=');
+      expect(body.redirect).toContain('logout_hint=');
+      expect(body.redirect).not.toContain('client_id=');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('OPENID_CLIENT_ID is not set'),
+      );
+    });
+
+    it('falls back to logout_hint for cookie-sourced long token', async () => {
+      const longCookieToken = 'a'.repeat(3000);
+      cookies.parse.mockReturnValue({
+        refreshToken: 'cookie-rt',
+        openid_id_token: longCookieToken,
+      });
+      const req = buildReq({
+        user: { _id: 'user1', openidId: 'oid1', provider: 'openid', email: 'user@example.com' },
+        session: { destroy: jest.fn() },
+      });
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).not.toContain('id_token_hint=');
+      expect(body.redirect).toContain('logout_hint=user%40example.com');
+      expect(body.redirect).toContain('client_id=my-client-id');
+    });
+
+    it('keeps id_token_hint when projected URL length equals the max', async () => {
+      const baseUrl = new URL('https://idp.example.com/logout');
+      baseUrl.searchParams.set('post_logout_redirect_uri', 'https://app.example.com/login');
+      const baseLength = baseUrl.toString().length;
+      const tokenLength = 2000 - baseLength - '&id_token_hint='.length;
+      const exactToken = 'a'.repeat(tokenLength);
+
+      const req = buildReq({
+        session: {
+          openidTokens: { refreshToken: 'srt', idToken: exactToken },
+          destroy: jest.fn(),
+        },
+      });
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).toContain('id_token_hint=');
+      expect(body.redirect).not.toContain('logout_hint=');
+    });
+
+    it('falls back to logout_hint when projected URL is one char over the max', async () => {
+      const baseUrl = new URL('https://idp.example.com/logout');
+      baseUrl.searchParams.set('post_logout_redirect_uri', 'https://app.example.com/login');
+      const baseLength = baseUrl.toString().length;
+      const tokenLength = 2000 - baseLength - '&id_token_hint='.length + 1;
+      const overToken = 'a'.repeat(tokenLength);
+
+      const req = buildReq({
+        user: { _id: 'user1', openidId: 'oid1', provider: 'openid', email: 'user@example.com' },
+        session: {
+          openidTokens: { refreshToken: 'srt', idToken: overToken },
+          destroy: jest.fn(),
+        },
+      });
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).not.toContain('id_token_hint=');
+      expect(body.redirect).toContain('logout_hint=');
+    });
+  });
+
+  describe('invalid OPENID_MAX_LOGOUT_URL_LENGTH values', () => {
+    it('silently uses default when value is empty', async () => {
+      process.env.OPENID_MAX_LOGOUT_URL_LENGTH = '';
+      const req = buildReq();
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      expect(mockLogger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('Invalid OPENID_MAX_LOGOUT_URL_LENGTH'),
+      );
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).toContain('id_token_hint=small-id-token');
+    });
+
+    it('warns and uses default for partial numeric string', async () => {
+      process.env.OPENID_MAX_LOGOUT_URL_LENGTH = '500abc';
+      const req = buildReq();
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid OPENID_MAX_LOGOUT_URL_LENGTH'),
+      );
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).toContain('id_token_hint=small-id-token');
+    });
+
+    it('warns and uses default for zero value', async () => {
+      process.env.OPENID_MAX_LOGOUT_URL_LENGTH = '0';
+      const req = buildReq();
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid OPENID_MAX_LOGOUT_URL_LENGTH'),
+      );
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).toContain('id_token_hint=small-id-token');
+    });
+
+    it('warns and uses default for negative value', async () => {
+      process.env.OPENID_MAX_LOGOUT_URL_LENGTH = '-1';
+      const req = buildReq();
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid OPENID_MAX_LOGOUT_URL_LENGTH'),
+      );
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).toContain('id_token_hint=small-id-token');
+    });
+
+    it('warns and uses default for non-numeric string', async () => {
+      process.env.OPENID_MAX_LOGOUT_URL_LENGTH = 'abc';
+      const req = buildReq();
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid OPENID_MAX_LOGOUT_URL_LENGTH'),
+      );
+      const body = res.send.mock.calls[0][0];
+      expect(body.redirect).toContain('id_token_hint=small-id-token');
     });
   });
 });

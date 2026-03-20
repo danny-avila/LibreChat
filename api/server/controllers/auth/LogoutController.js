@@ -4,6 +4,23 @@ const { logger } = require('@librechat/data-schemas');
 const { logoutUser } = require('~/server/services/AuthService');
 const { getOpenIdConfig } = require('~/strategies');
 
+/** Parses and validates OPENID_MAX_LOGOUT_URL_LENGTH, returning defaultValue on invalid input */
+function parseMaxLogoutUrlLength(defaultValue = 2000) {
+  const raw = process.env.OPENID_MAX_LOGOUT_URL_LENGTH;
+  const trimmed = raw == null ? '' : raw.trim();
+  if (trimmed === '') {
+    return defaultValue;
+  }
+  const parsed = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    logger.warn(
+      `[logoutController] Invalid OPENID_MAX_LOGOUT_URL_LENGTH value "${raw}", using default ${defaultValue}`,
+    );
+    return defaultValue;
+  }
+  return parsed;
+}
+
 const logoutController = async (req, res) => {
   const parsedCookies = req.headers.cookie ? cookies.parse(req.headers.cookie) : {};
   const isOpenIdUser = req.user?.openidId != null && req.user?.provider === 'openid';
@@ -53,50 +70,47 @@ const logoutController = async (req, res) => {
            * 2. logout_hint + client_id (when URL would exceed safe length)
            * 3. client_id only (when no token available)
            *
-           * Prevents OpenID errors when tokens contain many groups/claims.
+           * JWT tokens from spec-compliant OIDC providers use base64url
+           * encoding (RFC 7515), whose characters are all URL-safe, so
+           * token length equals URL-encoded length for projection.
+           * Non-compliant issuers using standard base64 (+/=) will cause
+           * underestimation; increase OPENID_MAX_LOGOUT_URL_LENGTH if the
+           * fallback does not trigger as expected.
            */
-          const rawMaxLogoutUrlLength = process.env.OPENID_MAX_LOGOUT_URL_LENGTH;
-          let maxLogoutUrlLength = 2000;
-          if (rawMaxLogoutUrlLength != null) {
-            const parsedMax = Number.parseInt(rawMaxLogoutUrlLength, 10);
-            if (Number.isFinite(parsedMax) && parsedMax > 0) {
-              maxLogoutUrlLength = parsedMax;
-            } else {
-              logger.warn(
-                `[logoutController] Invalid OPENID_MAX_LOGOUT_URL_LENGTH value "${rawMaxLogoutUrlLength}", using default ${maxLogoutUrlLength}`,
-              );
-            }
-          }
-          let useIdTokenHint = false;
-          let urlTooLong = false;
-
+          const maxLogoutUrlLength = parseMaxLogoutUrlLength();
+          let strategy = 'no_token';
           if (idToken) {
-            endSessionUrl.searchParams.set('id_token_hint', idToken);
-            const urlWithToken = endSessionUrl.toString();
-
-            if (urlWithToken.length > maxLogoutUrlLength) {
-              urlTooLong = true;
+            const baseLength = endSessionUrl.toString().length;
+            const projectedLength = baseLength + '&id_token_hint='.length + idToken.length;
+            if (projectedLength > maxLogoutUrlLength) {
+              strategy = 'too_long';
               logger.debug(
-                `[logoutController] Logout URL too long (${urlWithToken.length} chars), ` +
+                `[logoutController] Logout URL too long (${projectedLength} chars, max ${maxLogoutUrlLength}), ` +
                   'switching to logout_hint strategy',
               );
-              endSessionUrl.searchParams.delete('id_token_hint');
             } else {
-              useIdTokenHint = true;
+              strategy = 'use_token';
             }
           }
 
-          if (!useIdTokenHint) {
-            if (urlTooLong) {
+          if (strategy === 'use_token') {
+            endSessionUrl.searchParams.set('id_token_hint', idToken);
+          } else {
+            if (strategy === 'too_long') {
               const logoutHint = req.user?.email || req.user?.username || req.user?.openidId;
               if (logoutHint) {
                 endSessionUrl.searchParams.set('logout_hint', logoutHint);
-                logger.debug('[logoutController] Using logout_hint for user identification');
               }
             }
 
             if (process.env.OPENID_CLIENT_ID) {
               endSessionUrl.searchParams.set('client_id', process.env.OPENID_CLIENT_ID);
+            } else if (strategy === 'too_long') {
+              logger.warn(
+                '[logoutController] Logout URL exceeds max length and OPENID_CLIENT_ID is not set. ' +
+                  'The OIDC end-session request may be rejected. ' +
+                  'Consider setting OPENID_CLIENT_ID or increasing OPENID_MAX_LOGOUT_URL_LENGTH.',
+              );
             } else {
               logger.warn(
                 '[logoutController] Neither id_token_hint nor OPENID_CLIENT_ID is available. ' +
