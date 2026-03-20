@@ -126,11 +126,17 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
       },
     };
 
-    if (process.env.EMAIL_USERNAME && process.env.EMAIL_PASSWORD) {
+    const hasUsername = !!process.env.EMAIL_USERNAME;
+    const hasPassword = !!process.env.EMAIL_PASSWORD;
+    if (hasUsername && hasPassword) {
       transporterOptions.auth = {
         user: process.env.EMAIL_USERNAME,
         pass: process.env.EMAIL_PASSWORD,
       };
+    } else if (hasUsername !== hasPassword) {
+      logger.warn(
+        '[sendEmail] EMAIL_USERNAME and EMAIL_PASSWORD must both be set for authenticated SMTP, or both omitted for unauthenticated SMTP. Proceeding without authentication.',
+      );
     }
 
     if (process.env.EMAIL_ENCRYPTION_HOSTNAME) {
