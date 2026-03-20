@@ -104,13 +104,13 @@ const checkBan = async (req, res, next = () => {}) => {
       userBan = await banLogs.get(userId);
     }
 
-    const isBanned = !!(ipBan || userBan);
+    const banData = ipBan || userBan;
 
-    if (!isBanned) {
+    if (!banData) {
       return next();
     }
 
-    const timeLeft = Number(isBanned.expiresAt) - Date.now();
+    const timeLeft = Number(banData.expiresAt) - Date.now();
 
     if (timeLeft <= 0 && ipKey) {
       await banLogs.delete(ipKey);
@@ -122,11 +122,11 @@ const checkBan = async (req, res, next = () => {}) => {
     }
 
     if (ipKey) {
-      banCache.set(ipKey, isBanned, timeLeft);
+      banCache.set(ipKey, banData, timeLeft);
     }
 
     if (userKey) {
-      banCache.set(userKey, isBanned, timeLeft);
+      banCache.set(userKey, banData, timeLeft);
     }
 
     req.banned = true;
