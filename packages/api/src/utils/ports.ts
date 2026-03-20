@@ -6,7 +6,7 @@ import type { Request } from 'express';
  * heuristic that scans for the literal substring "req.ip" (ERR_ERL_KEY_GEN_IPV6).
  */
 export function removePorts(req: Request): string | undefined {
-  const ip: string | undefined = req?.['ip'];
+  const ip = req?.['ip'];
   if (!ip) {
     return ip;
   }
