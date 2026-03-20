@@ -2,6 +2,7 @@
   "chat_direction_left_to_right": "Left to Right",
   "chat_direction_right_to_left": "Right to Left",
   "com_a11y_ai_composing": "The AI is still composing.",
+  "com_a11y_chats_date_section": "Chats from {{date}}",
   "com_a11y_end": "The AI has finished their reply.",
   "com_a11y_selected": "selected",
   "com_a11y_start": "The AI has started their reply.",

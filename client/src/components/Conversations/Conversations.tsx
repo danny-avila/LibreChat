@@ -99,6 +99,9 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
   const localize = useLocalize();
   return (
     <h2
+      aria-label={localize('com_a11y_chats_date_section', {
+        date: localize(groupName as TranslationKeys) || groupName,
+      })}
       className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
       style={{ fontSize: '0.7rem' }}
     >
@@ -394,4 +397,5 @@ const Conversations: FC<ConversationsProps> = ({
   );
 };
 
+export { DateLabel };
 export default memo(Conversations);
