@@ -6,9 +6,9 @@ import {
   Constants,
   QueryKeys,
   MCPOptions,
+  Permissions,
   ResourceType,
   PermissionTypes,
-  Permissions,
 } from 'librechat-data-provider';
 import {
   useCancelMCPOAuthMutation,
@@ -42,6 +42,7 @@ export function useMCPServerManager({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
+  /** Retained for `interface.mcpServers.placeholder` used by `placeholderText` below */
   const { data: startupConfig } = useGetStartupConfig();
   const canUseMcp = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
@@ -51,7 +52,9 @@ export function useMCPServerManager({
   const { data: loadedServers, isLoading } = useMCPServersQuery({ enabled: canUseMcp });
 
   // Fetch effective permissions for all MCP servers
-  const { data: permissionsMap } = useGetAllEffectivePermissionsQuery(ResourceType.MCPSERVER);
+  const { data: permissionsMap } = useGetAllEffectivePermissionsQuery(ResourceType.MCPSERVER, {
+    enabled: canUseMcp,
+  });
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
