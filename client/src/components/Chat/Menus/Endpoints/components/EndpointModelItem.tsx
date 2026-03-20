@@ -51,7 +51,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
         ) : null}
         <span className="truncate text-left">{modelName}</span>
         {isGlobal && (
-          <EarthIcon className="ml-auto size-4 flex-shrink-0 self-center text-green-400" />
+          <EarthIcon className="ml-auto size-4 flex-shrink-0 self-center text-brand-blue-400" />
         )}
       </div>
       {isSelected && (

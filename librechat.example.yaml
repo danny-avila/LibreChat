@@ -34,12 +34,12 @@ interface:
   fileSearch: true
   # Privacy policy settings
   privacyPolicy:
-    externalUrl: 'https://librechat.ai/privacy-policy'
+    externalUrl: 'https://codecan.ai/privacy.html'
     openNewTab: true
 
   # Terms of service
   termsOfService:
-    externalUrl: 'https://librechat.ai/tos'
+    externalUrl: 'https://codecan.ai/terms.html'
     openNewTab: true
     modalAcceptance: true
     modalTitle: 'Terms of Service for LibreChat'

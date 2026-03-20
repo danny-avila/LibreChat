@@ -195,7 +195,7 @@ function MCPPanelContent() {
                       <span
                         className={`rounded-xl px-2 py-0.5 text-xs ${
                           isConnected
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                            ? 'bg-brand-blue-100 text-brand-blue-700 dark:bg-brand-blue-900 dark:text-brand-blue-300'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
                         }`}
                       >

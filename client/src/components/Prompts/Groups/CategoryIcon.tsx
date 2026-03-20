@@ -47,7 +47,7 @@ const categoryColorMap: Record<string, string> = {
   teach_or_explain: 'text-blue-300',
   // NEW: Agent categories
   general: 'text-blue-500',
-  hr: 'text-green-500',
+  hr: 'text-brand-blue-500',
   rd: 'text-purple-500',
   it: 'text-red-500',
   sales: 'text-orange-500',

@@ -185,7 +185,7 @@ function AuthenticatedStatusIcon({
       className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
       aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
     >
-      <SettingsIcon className={`h-4 w-4 ${isAuthenticated ? 'text-green-500' : 'text-gray-400'}`} />
+      <SettingsIcon className={`h-4 w-4 ${isAuthenticated ? 'text-brand-blue-500' : 'text-gray-400'}`} />
     </button>
   );
 }

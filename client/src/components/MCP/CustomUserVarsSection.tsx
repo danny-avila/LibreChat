@@ -44,7 +44,7 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
         />
         {hasValue ? (
           <div className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
-            <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+            <div className="h-1.5 w-1.5 rounded-full bg-brand-blue-500" />
             <span>{localize('com_ui_set')}</span>
           </div>
         ) : (

@@ -212,7 +212,7 @@ export default function MemoryViewer() {
     if (percentage > 75) {
       return 'stroke-yellow-500';
     }
-    return 'stroke-green-500';
+    return 'stroke-brand-blue-500';
   };
 
   if (isLoading) {

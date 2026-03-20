@@ -6,7 +6,6 @@ import AuthLayout from '~/components/Auth/AuthLayout';
 import { TranslationKeys, useGTM, useLocalize } from '~/hooks';
 
 const headerMap: Record<string, TranslationKeys> = {
-  '/login': 'com_auth_welcome_back',
   '/register': 'com_auth_create_account',
   '/forgot-password': 'com_auth_reset_password',
   '/reset-password': 'com_auth_reset_password',
@@ -27,6 +26,13 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   const localize = useLocalize();
   const navigate = useNavigate();
   const location = useLocation();
+  const appTitle = startupConfig?.appTitle || 'CodeCan AI';
+  const header =
+    headerText != null
+      ? localize(headerText)
+      : location.pathname === '/login'
+        ? `Sign in to ${appTitle}`
+        : localize(headerMap[location.pathname]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -38,7 +44,7 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   }, [isAuthenticated, navigate, data]);
 
   useEffect(() => {
-    document.title = startupConfig?.appTitle || 'LibreChat';
+    document.title = startupConfig?.appTitle || 'CodeCan AI';
   }, [startupConfig?.appTitle]);
 
   useGTM(startupConfig?.analyticsGtmId);
@@ -60,7 +66,7 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
 
   return (
     <AuthLayout
-      header={headerText ? localize(headerText) : localize(headerMap[location.pathname])}
+      header={header}
       isFetching={isFetching}
       startupConfig={startupConfig}
       startupConfigError={startupConfigError}
