@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
-import { TranslationKeys, useLocalize } from '~/hooks';
+import { TranslationKeys, useGTM, useLocalize } from '~/hooks';
 
 const headerMap: Record<string, TranslationKeys> = {
   '/login': 'com_auth_welcome_back',
@@ -40,6 +40,8 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   useEffect(() => {
     document.title = startupConfig?.appTitle || 'LibreChat';
   }, [startupConfig?.appTitle]);
+
+  useGTM(startupConfig?.analyticsGtmId);
 
   useEffect(() => {
     setError(null);

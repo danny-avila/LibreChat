@@ -2,16 +2,20 @@ import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuthContext, usePreviousLocation } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
+import { useAuthContext, useGTM, usePreviousLocation } from '~/hooks';
 import { DashboardContext } from '~/Providers';
 import store from '~/store';
 
 export default function DashboardRoute() {
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthContext();
+  const { data: startupConfig } = useGetStartupConfig();
   const prevLocationRef = usePreviousLocation();
   const clearConvoState = store.useClearConvoState();
   const [prevLocationPath, setPrevLocationPath] = useState('');
+
+  useGTM(startupConfig?.analyticsGtmId);
 
   useEffect(() => {
     setPrevLocationPath(prevLocationRef.current?.pathname || '');

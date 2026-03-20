@@ -7,6 +7,7 @@ import {
   useAuthContext,
   useAgentsMap,
   useFileMap,
+  useGTM,
 } from '~/hooks';
 import { useMediaQuery } from '@librechat/client';
 import {
@@ -46,6 +47,7 @@ export default function Root() {
     enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
   });
 
+  useGTM(config?.analyticsGtmId);
   useSearchEnabled(isAuthenticated);
 
   useEffect(() => {
