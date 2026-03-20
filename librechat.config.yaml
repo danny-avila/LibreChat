@@ -116,19 +116,56 @@ registration:
   #   initTimeout: 120000
 
 mcpServers:
+  reviewer:
+    type: streamable-http
+    url: http://100.100.108.43:9007/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+   #  chatMenu: false
+
   golden:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9023/mcp
+    url: http://100.100.108.43:9006/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-
+    initTimeout: 120000
+   #  chatMenu: false
+  pop:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.43:9002/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+   #  chatMenu: false
   market:
     type: streamable-http # type can optionally be omitted
     url: http://100.100.108.43:9022/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+   #  chatMenu: false
   weather:
     type: streamable-http # type can optionally be omitted
     url: http://100.100.108.43:9004/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+   #  chatMenu: false
+  faq-videos:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.43:9005/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+   #  chatMenu: false
+   
+  # golden:
+  #   type: streamable-http # type can optionally be omitted
+  #   url: http://100.100.108.43:9023/mcp
+  #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+
+  # market:
+  #   type: streamable-http # type can optionally be omitted
+  #   url: http://100.100.108.43:9022/mcp
+  #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+  # weather:
+  #   type: streamable-http # type can optionally be omitted
+  #   url: http://100.100.108.43:9004/mcp
+  #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
 
     
 speech:
