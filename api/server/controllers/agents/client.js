@@ -4,10 +4,11 @@ const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const {
   createRun,
   Tokenizer,
+  isEnabled,
   checkAccess,
   buildToolSet,
-  sanitizeTitle,
   logToolError,
+  sanitizeTitle,
   payloadParser,
   resolveHeaders,
   createSafeUser,
@@ -244,6 +245,8 @@ class AgentClient extends BaseClient {
 
     /** @type {Record<number, number>} */
     const canonicalTokenCountMap = {};
+    /** @type {Record<string, number>} */
+    const tokenCountMap = {};
     let promptTokenTotal = 0;
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
@@ -264,11 +267,19 @@ class AgentClient extends BaseClient {
         }
       }
 
-      const needsTokenCount = !orderedMessages[i].tokenCount || message.fileContext;
+      const dbTokenCount = orderedMessages[i].tokenCount;
+      const needsTokenCount = !dbTokenCount || message.fileContext;
 
-      /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
         orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
+      }
+
+      if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
+        const id = (message.messageId ?? '').slice(-8);
+        const recalced = needsTokenCount ? orderedMessages[i].tokenCount : null;
+        logger.debug(
+          `[AgentClient] buildMessages[${i}] id=…${id} db=${dbTokenCount} needsRecount=${needsTokenCount} recalced=${recalced}`,
+        );
       }
 
       /* If message has files, calculate image token cost */
@@ -282,11 +293,6 @@ class AgentClient extends BaseClient {
           if (file.metadata?.fileIdentifier) {
             continue;
           }
-          // orderedMessages[i].tokenCount += this.calculateImageTokenCost({
-          //   width: file.width,
-          //   height: file.height,
-          //   detail: this.options.imageDetail ?? ImageDetail.auto,
-          // });
         }
       }
 
@@ -295,8 +301,26 @@ class AgentClient extends BaseClient {
       canonicalTokenCountMap[i] = normalizedTokenCount;
       promptTokenTotal += normalizedTokenCount;
 
+      if (message.messageId) {
+        tokenCountMap[message.messageId] = normalizedTokenCount;
+      }
+
       return formattedMessage;
     });
+
+    if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
+      for (let i = 0; i < orderedMessages.length; i++) {
+        const msg = orderedMessages[i];
+        const role = msg.isCreatedByUser ? 'user' : 'assistant';
+        const hasSummary =
+          Array.isArray(msg.content) && msg.content.some((p) => p && p.type === 'summary');
+        const suffix = hasSummary ? '[S]' : '';
+        const id = (msg.messageId ?? msg.id ?? '').slice(-8);
+        logger.debug(
+          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} tokens=${canonicalTokenCountMap[i]}`,
+        );
+      }
+    }
 
     payload = formattedMessages;
     messages = orderedMessages;
@@ -344,6 +368,7 @@ class AgentClient extends BaseClient {
 
     const result = {
       prompt: payload,
+      tokenCountMap,
       promptTokens,
       messages,
     };
@@ -678,35 +703,6 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * Calculates the correct token count for the current user message based on the token count map and API usage.
-   * Edge case: If the calculation results in a negative value, it returns the original estimate.
-   * If revisiting a conversation with a chat history entirely composed of token estimates,
-   * the cumulative token count going forward should become more accurate as the conversation progresses.
-   * @param {Object} params - The parameters for the calculation.
-   * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
-   * @param {string} params.currentMessageId - The ID of the current message to calculate.
-   * @param {OpenAIUsageMetadata} params.usage - The usage object returned by the API.
-   * @returns {number} The correct token count for the current user message.
-   */
-  calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
-    const originalEstimate = tokenCountMap[currentMessageId] || 0;
-
-    if (!usage || typeof usage[this.inputTokensKey] !== 'number') {
-      return originalEstimate;
-    }
-
-    tokenCountMap[currentMessageId] = 0;
-    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => {
-      const numCount = Number(count);
-      return sum + (isNaN(numCount) ? 0 : numCount);
-    }, 0);
-    const totalInputTokens = usage[this.inputTokensKey] ?? 0;
-
-    const currentMessageTokens = totalInputTokens - totalTokensFromMap;
-    return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
-  }
-
-  /**
    * @param {object} params
    * @param {string | ChatCompletionMessageParam[]} params.payload
    * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
@@ -756,7 +752,24 @@ class AgentClient extends BaseClient {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
+        boundaryTokenAdjustment,
       } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet);
+      if (boundaryTokenAdjustment) {
+        logger.debug(
+          `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
+        );
+      }
+      if (indexTokenCountMap && isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
+        const entries = Object.entries(indexTokenCountMap);
+        const perMsg = entries.map(([idx, count]) => {
+          const msg = initialMessages[Number(idx)];
+          const type = msg ? msg._getType() : '?';
+          return `${idx}:${type}=${count}`;
+        });
+        logger.debug(
+          `[AgentClient] Token map after format: [${perMsg.join(', ')}] (payload=${payload.length}, formatted=${initialMessages.length})`,
+        );
+      }
       indexTokenCountMap = hydrateMissingIndexTokenCounts({
         messages: initialMessages,
         indexTokenCountMap,

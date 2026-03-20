@@ -331,71 +331,6 @@ class BaseClient {
     return payload;
   }
 
-  async handleTokenCountMap(tokenCountMap) {
-    if (this.clientName === EModelEndpoint.agents) {
-      return;
-    }
-    if (this.currentMessages.length === 0) {
-      return;
-    }
-
-    for (let i = 0; i < this.currentMessages.length; i++) {
-      // Skip the last message, which is the user message.
-      if (i === this.currentMessages.length - 1) {
-        break;
-      }
-
-      const message = this.currentMessages[i];
-      const { messageId } = message;
-      const update = {};
-
-      if (messageId === tokenCountMap.summaryMessage?.messageId) {
-        logger.debug(`[BaseClient] Adding summary props to ${messageId}.`);
-
-        update.summary = tokenCountMap.summaryMessage.content;
-        update.summaryTokenCount = tokenCountMap.summaryMessage.tokenCount;
-
-        const summaryContentBlock = {
-          type: ContentTypes.SUMMARY,
-          content: [{ type: ContentTypes.TEXT, text: tokenCountMap.summaryMessage.content }],
-          tokenCount: tokenCountMap.summaryMessage.tokenCount,
-          createdAt: new Date().toISOString(),
-        };
-        let existingContent = [];
-        if (Array.isArray(message.content)) {
-          existingContent = [...message.content];
-        } else if (message.content) {
-          existingContent = [{ type: ContentTypes.TEXT, text: message.content }];
-        }
-        let existingSummaryIndex = -1;
-        for (let index = existingContent.length - 1; index >= 0; index--) {
-          if (existingContent[index]?.type === ContentTypes.SUMMARY) {
-            existingSummaryIndex = index;
-            break;
-          }
-        }
-        if (existingSummaryIndex >= 0) {
-          existingContent[existingSummaryIndex] = summaryContentBlock;
-        } else {
-          existingContent.push(summaryContentBlock);
-        }
-        update.content = existingContent;
-      }
-
-      if (message.tokenCount && !update.summaryTokenCount) {
-        logger.debug(`[BaseClient] Skipping ${messageId}: already had a token count.`);
-        continue;
-      }
-
-      const tokenCount = tokenCountMap[messageId];
-      if (tokenCount) {
-        message.tokenCount = tokenCount;
-        update.tokenCount = tokenCount;
-        await this.updateMessageInDatabase({ messageId, ...update });
-      }
-    }
-  }
-
   concatenateMessages(messages) {
     return messages.reduce((acc, message) => {
       const nameOrRole = message.name ?? message.role;
@@ -534,17 +469,13 @@ class BaseClient {
       opts,
     );
 
-    if (tokenCountMap) {
-      if (tokenCountMap[userMessage.messageId]) {
-        userMessage.tokenCount = tokenCountMap[userMessage.messageId];
-        logger.debug('[BaseClient] userMessage', {
-          messageId: userMessage.messageId,
-          tokenCount: userMessage.tokenCount,
-          conversationId: userMessage.conversationId,
-        });
-      }
-
-      this.handleTokenCountMap(tokenCountMap);
+    if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
+      userMessage.tokenCount = tokenCountMap[userMessage.messageId];
+      logger.debug('[BaseClient] userMessage', {
+        messageId: userMessage.messageId,
+        tokenCount: userMessage.tokenCount,
+        conversationId: userMessage.conversationId,
+      });
     }
 
     if (!isEdited && !this.skipSaveUserMessage) {
@@ -660,13 +591,6 @@ class BaseClient {
       if (usage != null && Number(usage[this.outputTokensKey]) > 0) {
         responseMessage.tokenCount = usage[this.outputTokensKey];
         completionTokens = responseMessage.tokenCount;
-        await this.updateUserMessageTokenCount({
-          usage,
-          tokenCountMap,
-          userMessage,
-          userMessagePromise,
-          opts,
-        });
       } else {
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
         completionTokens = responseMessage.tokenCount;
@@ -693,6 +617,27 @@ class BaseClient {
       await userMessagePromise;
     }
 
+    if (
+      this.contextMeta?.calibrationRatio > 0 &&
+      this.contextMeta.calibrationRatio !== 1 &&
+      userMessage.tokenCount > 0
+    ) {
+      const calibrated = Math.round(userMessage.tokenCount * this.contextMeta.calibrationRatio);
+      if (calibrated !== userMessage.tokenCount) {
+        logger.debug('[BaseClient] Calibrated user message tokenCount', {
+          messageId: userMessage.messageId,
+          raw: userMessage.tokenCount,
+          calibrated,
+          ratio: this.contextMeta.calibrationRatio,
+        });
+        userMessage.tokenCount = calibrated;
+        await this.updateMessageInDatabase({
+          messageId: userMessage.messageId,
+          tokenCount: calibrated,
+        });
+      }
+    }
+
     if (this.artifactPromises) {
       responseMessage.attachments = (await Promise.all(this.artifactPromises)).filter((a) => a);
     }
@@ -717,75 +662,6 @@ class BaseClient {
     this.savedMessageIds.add(responseMessage.messageId);
     delete responseMessage.tokenCount;
     return responseMessage;
-  }
-
-  /**
-   * Stream usage should only be used for user message token count re-calculation if:
-   * - The stream usage is available, with input tokens greater than 0,
-   * - the client provides a function to calculate the current token count,
-   * - files are being resent with every message (default behavior; or if `false`, with no attachments),
-   * - the `promptPrefix` (custom instructions) is not set.
-   *
-   * In these cases, the legacy token estimations would be more accurate.
-   *
-   * TODO: included system messages in the `orderedMessages` accounting, potentially as a
-   * separate message in the UI. ChatGPT does this through "hidden" system messages.
-   * @param {object} params
-   * @param {StreamUsage} params.usage
-   * @param {Record<string, number>} params.tokenCountMap
-   * @param {TMessage} params.userMessage
-   * @param {Promise<TMessage>} params.userMessagePromise
-   * @param {object} params.opts
-   */
-  async updateUserMessageTokenCount({
-    usage,
-    tokenCountMap,
-    userMessage,
-    userMessagePromise,
-    opts,
-  }) {
-    /** @type {boolean} */
-    const shouldUpdateCount =
-      this.calculateCurrentTokenCount != null &&
-      Number(usage[this.inputTokensKey]) > 0 &&
-      (this.options.resendFiles ||
-        (!this.options.resendFiles && !this.options.attachments?.length)) &&
-      !this.options.promptPrefix;
-
-    if (!shouldUpdateCount) {
-      return;
-    }
-
-    const userMessageTokenCount = this.calculateCurrentTokenCount({
-      currentMessageId: userMessage.messageId,
-      tokenCountMap,
-      usage,
-    });
-
-    if (userMessageTokenCount === userMessage.tokenCount) {
-      return;
-    }
-
-    userMessage.tokenCount = userMessageTokenCount;
-    /*
-      Note: `AgentController` saves the user message if not saved here
-      (noted by `savedMessageIds`), so we update the count of its `userMessage` reference
-    */
-    if (typeof opts?.getReqData === 'function') {
-      opts.getReqData({
-        userMessage,
-      });
-    }
-    /*
-      Note: we update the user message to be sure it gets the calculated token count;
-      though `AgentController` saves the user message if not saved here
-      (noted by `savedMessageIds`), EditController does not
-    */
-    await userMessagePromise;
-    await this.updateMessageInDatabase({
-      messageId: userMessage.messageId,
-      tokenCount: userMessageTokenCount,
-    });
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
