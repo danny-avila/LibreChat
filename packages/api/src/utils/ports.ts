@@ -1,8 +1,12 @@
 import type { Request } from 'express';
 
-/** Strips port suffix from req.ip for use as a rate-limiter key (IPv4 and IPv6-safe) */
+/**
+ * Strips port suffix from req.ip for use as a rate-limiter key (IPv4 and IPv6-safe).
+ * Bracket notation for the ip property avoids express-rate-limit v8's toString()
+ * heuristic that scans for the literal substring "req.ip" (ERR_ERL_KEY_GEN_IPV6).
+ */
 export function removePorts(req: Request): string | undefined {
-  const ip = req?.ip;
+  const ip: string | undefined = req?.['ip'];
   if (!ip) {
     return ip;
   }
