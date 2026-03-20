@@ -13,7 +13,6 @@ const {
 } = require('@librechat/api');
 const {
   Constants,
-  ErrorTypes,
   FileSources,
   ContentTypes,
   excludedKeys,
@@ -25,7 +24,6 @@ const {
   isBedrockDocumentType,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { truncateToolCallOutputs } = require('./prompts');
 const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
@@ -466,154 +464,6 @@ class BaseClient {
       remainingContextTokens,
       messagesToRefine: prunedMemory,
     };
-  }
-
-  async handleContextStrategy({
-    instructions,
-    orderedMessages,
-    formattedMessages,
-    buildTokenMap = true,
-  }) {
-    let _instructions;
-    let tokenCount;
-
-    if (instructions) {
-      ({ tokenCount, ..._instructions } = instructions);
-    }
-
-    _instructions && logger.debug('[BaseClient] instructions tokenCount: ' + tokenCount);
-    if (tokenCount && tokenCount > this.maxContextTokens) {
-      const info = `${tokenCount} / ${this.maxContextTokens}`;
-      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
-      logger.warn(`Instructions token count exceeds max token count (${info}).`);
-      throw new Error(errorMessage);
-    }
-
-    if (this.clientName === EModelEndpoint.agents) {
-      const { dbMessages, editedIndices } = truncateToolCallOutputs(
-        orderedMessages,
-        this.maxContextTokens,
-        this.getTokenCountForMessage.bind(this),
-      );
-
-      if (editedIndices.length > 0) {
-        logger.debug('[BaseClient] Truncated tool call outputs:', editedIndices);
-        for (const index of editedIndices) {
-          formattedMessages[index].content = dbMessages[index].content;
-        }
-        orderedMessages = dbMessages;
-      }
-    }
-
-    let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
-
-    let { context, remainingContextTokens, messagesToRefine } =
-      await this.getMessagesWithinTokenLimit({
-        messages: orderedWithInstructions,
-        instructions,
-      });
-
-    logger.debug('[BaseClient] Context Count (1/2)', {
-      remainingContextTokens,
-      maxContextTokens: this.maxContextTokens,
-    });
-
-    let summaryMessage;
-    let summaryTokenCount;
-    let { shouldSummarize } = this;
-
-    // Calculate the difference in length to determine how many messages were discarded if any
-    let payload;
-    let { length } = formattedMessages;
-    length += instructions != null ? 1 : 0;
-    const diff = length - context.length;
-    const firstMessage = orderedWithInstructions[0];
-    const usePrevSummary =
-      shouldSummarize &&
-      diff === 1 &&
-      firstMessage?.summary &&
-      this.previous_summary.messageId === firstMessage.messageId;
-
-    if (diff > 0) {
-      payload = formattedMessages.slice(diff);
-      logger.debug(
-        `[BaseClient] Difference between original payload (${length}) and context (${context.length}): ${diff}`,
-      );
-    }
-
-    payload = this.addInstructions(payload ?? formattedMessages, _instructions);
-
-    const latestMessage = orderedWithInstructions[orderedWithInstructions.length - 1];
-    if (payload.length === 0 && !shouldSummarize && latestMessage) {
-      const info = `${latestMessage.tokenCount} / ${this.maxContextTokens}`;
-      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
-      logger.warn(`Prompt token count exceeds max token count (${info}).`);
-      throw new Error(errorMessage);
-    } else if (
-      _instructions &&
-      payload.length === 1 &&
-      payload[0].content === _instructions.content
-    ) {
-      const info = `${tokenCount + 3} / ${this.maxContextTokens}`;
-      const errorMessage = `{ "type": "${ErrorTypes.INPUT_LENGTH}", "info": "${info}" }`;
-      logger.warn(
-        `Including instructions, the prompt token count exceeds remaining max token count (${info}).`,
-      );
-      throw new Error(errorMessage);
-    }
-
-    if (usePrevSummary) {
-      summaryMessage = { role: 'system', content: firstMessage.summary };
-      summaryTokenCount = firstMessage.summaryTokenCount;
-      payload.unshift(summaryMessage);
-      remainingContextTokens -= summaryTokenCount;
-    } else if (shouldSummarize && messagesToRefine.length > 0) {
-      ({ summaryMessage, summaryTokenCount } = await this.summarizeMessages({
-        messagesToRefine,
-        remainingContextTokens,
-      }));
-      summaryMessage && payload.unshift(summaryMessage);
-      remainingContextTokens -= summaryTokenCount;
-    }
-
-    // Make sure to only continue summarization logic if the summary message was generated
-    shouldSummarize = summaryMessage != null && shouldSummarize === true;
-
-    logger.debug('[BaseClient] Context Count (2/2)', {
-      remainingContextTokens,
-      maxContextTokens: this.maxContextTokens,
-    });
-
-    /** @type {Record<string, number> | undefined} */
-    let tokenCountMap;
-    if (buildTokenMap) {
-      const currentPayload = shouldSummarize ? orderedWithInstructions : context;
-      tokenCountMap = currentPayload.reduce((map, message, index) => {
-        const { messageId } = message;
-        if (!messageId) {
-          return map;
-        }
-
-        if (shouldSummarize && index === messagesToRefine.length - 1 && !usePrevSummary) {
-          map.summaryMessage = { ...summaryMessage, messageId, tokenCount: summaryTokenCount };
-        }
-
-        map[messageId] = currentPayload[index].tokenCount;
-        return map;
-      }, {});
-    }
-
-    const promptTokens = this.maxContextTokens - remainingContextTokens;
-
-    logger.debug('[BaseClient] tokenCountMap:', tokenCountMap);
-    logger.debug('[BaseClient]', {
-      promptTokens,
-      remainingContextTokens,
-      payloadSize: payload.length,
-      maxContextTokens: this.maxContextTokens,
-    });
-
-    return { payload, tokenCountMap, promptTokens, messages: orderedWithInstructions };
   }
 
   async sendMessage(message, opts = {}) {
