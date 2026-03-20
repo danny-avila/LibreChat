@@ -32,9 +32,9 @@ const artifactTemplate: Record<
   'application/vnd.ant.react': 'react-ts',
   'application/vnd.mermaid': 'react-ts',
   'application/vnd.code-html': 'static',
-  'text/markdown': 'react-ts',
-  'text/md': 'react-ts',
-  'text/plain': 'react-ts',
+  'text/markdown': 'static',
+  'text/md': 'static',
+  'text/plain': 'static',
   default: 'static',
   // 'css': 'css',
   // 'javascript': 'js',
@@ -107,12 +107,6 @@ const mermaidDependencies = {
   '@radix-ui/react-slot': '^1.1.0',
 };
 
-const markdownDependencies = {
-  'remark-gfm': '^4.0.0',
-  'remark-breaks': '^4.0.0',
-  'react-markdown': '^9.0.1',
-};
-
 const dependenciesMap: Record<
   | keyof typeof artifactFilename
   | 'application/vnd.mermaid'
@@ -126,9 +120,9 @@ const dependenciesMap: Record<
   'application/vnd.ant.react': standardDependencies,
   'text/html': standardDependencies,
   'application/vnd.code-html': standardDependencies,
-  'text/markdown': markdownDependencies,
-  'text/md': markdownDependencies,
-  'text/plain': markdownDependencies,
+  'text/markdown': {},
+  'text/md': {},
+  'text/plain': {},
   default: standardDependencies,
 };
 
