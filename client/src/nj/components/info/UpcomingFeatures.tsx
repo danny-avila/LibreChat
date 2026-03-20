@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string */
 /* ^ We're not worried about i18n for this app ^ */
 
-import FaqSection, { FAQ } from '~/nj/components/info/FaqSection';
+import FaqSection, { FAQ, FAQSectionProps } from '~/nj/components/info/FaqSection';
 
 const upcomingFeaturesFAQs: FAQ[] = [
   {
@@ -31,6 +31,17 @@ const upcomingFeaturesFAQs: FAQ[] = [
   },
 ];
 
-export default function UpcomingFeatures() {
-  return <FaqSection title={'Upcoming features'} faqs={upcomingFeaturesFAQs} />;
+export default function UpcomingFeatures({
+  openFaq,
+  setOpenFaq,
+}: Pick<FAQSectionProps, 'openFaq' | 'setOpenFaq'>) {
+  return (
+    <FaqSection
+      title={'Upcoming features'}
+      faqs={upcomingFeaturesFAQs}
+      isLastSection={true}
+      openFaq={openFaq}
+      setOpenFaq={setOpenFaq}
+    />
+  );
 }

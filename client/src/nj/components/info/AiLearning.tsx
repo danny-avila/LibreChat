@@ -6,7 +6,7 @@ import InfoLink from '~/nj/components/info/InfoLink';
 
 export default function AiLearning() {
   return (
-    <div>
+    <div className="mb-8 mt-8">
       <InfoSectionHeader text="AI Learning Resources" />
       <div className="mb-6 space-y-3">
         <strong>NJ State-Developed Learning Resources</strong>

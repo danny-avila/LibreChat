@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string */
 /* ^ We're not worried about i18n for this app ^ */
 
-import FaqSection from './FaqSection';
+import FaqSection, { FAQSectionProps } from '~/nj/components/info/FaqSection';
 
 const usingAIFAQs = [
   {
@@ -158,6 +158,16 @@ const usingAIFAQs = [
   },
 ];
 
-export default function UsingAIAsst() {
-  return <FaqSection title="Using the NJ AI Assistant" faqs={usingAIFAQs} />;
+export default function UsingAIAsst({
+  openFaq,
+  setOpenFaq,
+}: Pick<FAQSectionProps, 'openFaq' | 'setOpenFaq'>) {
+  return (
+    <FaqSection
+      title="Using the NJ AI Assistant"
+      faqs={usingAIFAQs}
+      openFaq={openFaq}
+      setOpenFaq={setOpenFaq}
+    />
+  );
 }

@@ -8,7 +8,7 @@ import { Link } from 'react-router-dom';
 
 export default function RelatedLinks() {
   return (
-    <div>
+    <div className="mb-8 mt-8">
       <InfoSectionHeader text="Related links" />
       <div className="mb-6 space-y-3">
         <div>

@@ -1,13 +1,11 @@
 /* eslint-disable i18next/no-literal-string */
 /* ^ We're not worried about i18n for this app ^ */
 
-import InfoSectionHeader from '~/nj/components/info/InfoSectionHeader';
-
 export default function ResponsibleInfoAlert() {
   return (
     <div
       // prettier-ignore
-      className="border-info bg-info-lighter mb-10 w-full border px-4 py-2 text-primary"
+      className="border-info bg-info-lighter mb-10 w-full border text-primary p-5 rounded"
       role="alert"
     >
       <div className="flex">
@@ -21,7 +19,7 @@ export default function ResponsibleInfoAlert() {
           </svg>
         </div>
         <div className="flex-1">
-          <InfoSectionHeader text="Using the AI Assistant Responsibly" />
+          <h2 className="mb-4 text-2xl">Using the AI Assistant Responsibly</h2>
         </div>
       </div>
       <p className="mb-6">

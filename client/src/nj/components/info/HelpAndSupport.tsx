@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string */
 /* ^ We're not worried about i18n for this app ^ */
 
-import FaqSection, { FAQ } from '~/nj/components/info/FaqSection';
+import FaqSection, { FAQ, FAQSectionProps } from '~/nj/components/info/FaqSection';
 
 const helpSupportFAQs: FAQ[] = [
   {
@@ -29,6 +29,16 @@ const helpSupportFAQs: FAQ[] = [
   },
 ];
 
-export default function HelpAndSupport() {
-  return <FaqSection title={'Help & Support'} faqs={helpSupportFAQs} />;
+export default function HelpAndSupport({
+  openFaq,
+  setOpenFaq,
+}: Pick<FAQSectionProps, 'openFaq' | 'setOpenFaq'>) {
+  return (
+    <FaqSection
+      title={'Help & Support'}
+      faqs={helpSupportFAQs}
+      openFaq={openFaq}
+      setOpenFaq={setOpenFaq}
+    />
+  );
 }

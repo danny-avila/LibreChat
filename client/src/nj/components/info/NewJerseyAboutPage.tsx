@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string */
 /* ^ We're not worried about i18n for this app ^ */
 
-import InfoDivider from '~/nj/components/info/InfoDivider';
+import { HorizontalRule } from '~/nj/components/info/HorizontalRule';
 import InfoTitle from '~/nj/components/info/InfoTitle';
 import InfoSectionHeader from '~/nj/components/info/InfoSectionHeader';
 import InfoLink from '~/nj/components/info/InfoLink';
@@ -19,8 +19,7 @@ export default function NewJerseyAboutPage() {
     <div>
       <InfoTitle text="About the AI Assistant" />
 
-      <InfoDivider />
-
+      <HorizontalRule spacing="mb-6" />
       <p className="mb-6">
         The NJ AI Assistant (originally launched July 2024) is built by the Platform Team at the{' '}
         <a
@@ -143,8 +142,7 @@ export default function NewJerseyAboutPage() {
         “jailbreaks” and other attempts to circumvent the model’s safeguards.
       </p>
 
-      <InfoDivider />
-
+      <HorizontalRule spacing="mb-6" />
       <InfoSectionHeader text="Principles for Building the NJ AI Assistant" />
       <p className="mb-6">
         The team will continue to enhance the NJ AI Assistant by developing new features,
@@ -179,8 +177,7 @@ export default function NewJerseyAboutPage() {
         </li>
       </ul>
 
-      <InfoDivider />
-
+      <HorizontalRule spacing="mb-6" />
       <InfoSectionHeader text="History of the NJ AI Assistant" />
       <p className="mb-6">
         The NJ AI Assistant was initially built to quickly get a genAI tool to employees using a
@@ -215,8 +212,7 @@ export default function NewJerseyAboutPage() {
         on the NJIA website.
       </p>
 
-      <InfoDivider />
-
+      <HorizontalRule spacing="mb-6" />
       <InfoSectionHeader text="NJ Innovation Authority" />
       <p className="mb-6">
         The NJ State Office of Innovation was established in 2018 with the focus to deliver
@@ -243,8 +239,7 @@ export default function NewJerseyAboutPage() {
         , and innovation skills.
       </p>
 
-      <InfoDivider />
-
+      <HorizontalRule spacing="mb-6" />
       <InfoSectionHeader text="Related links" />
       <div className="mb-6 space-y-3">
         <div>
