@@ -94,7 +94,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
             <div className={containerClassName}>
               <img
-                src="/assets/logo.svg"
+                src="/assets/logo.svg?v=20260320"
                 alt={startupConfig?.appTitle || 'CodeCan AI'}
                 className="h-2/3 w-2/3 object-contain"
                 width="41"
