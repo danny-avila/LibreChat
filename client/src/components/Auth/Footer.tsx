@@ -3,6 +3,8 @@ import { TStartupConfig } from 'librechat-data-provider';
 
 function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | undefined }) {
   const localize = useLocalize();
+  const disclaimer =
+    'CodeCan AI is for general building code information only, not professional advice. Always verify requirements with qualified professionals or the authority having jurisdiction.';
   if (!startupConfig) {
     return null;
   }
@@ -31,13 +33,35 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
     </a>
   );
 
+  const codeCanRender = (
+    <a
+      className="text-sm text-brand-blue-500"
+      href="https://codecan.ai"
+      target="_blank"
+      rel="noreferrer"
+    >
+      CodeCan AI
+    </a>
+  );
+
+  const footerElements = [privacyPolicyRender, termsOfServiceRender, codeCanRender].filter(Boolean);
+
   return (
-    <div className="align-end m-4 flex justify-center gap-2" role="contentinfo">
-      {privacyPolicyRender}
-      {privacyPolicyRender && termsOfServiceRender && (
-        <div className="border-r-[1px] border-gray-300 dark:border-gray-600" />
-      )}
-      {termsOfServiceRender}
+    <div className="align-end m-4 flex flex-col items-center gap-2" role="contentinfo">
+      <div className="flex justify-center gap-2">
+        {footerElements.map((contentRender, index) => {
+          const isLastElement = index === footerElements.length - 1;
+          return (
+            <div key={`footer-element-${index}`} className="flex items-center gap-2">
+              {contentRender}
+              {!isLastElement && (
+                <div className="h-4 border-r-[1px] border-gray-300 dark:border-gray-600" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="max-w-4xl text-center text-xs text-gray-500 dark:text-gray-400">{disclaimer}</p>
     </div>
   );
 }

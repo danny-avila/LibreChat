@@ -8,6 +8,8 @@ import { ASSISTANT_DISPLAY_NAME } from '~/constants/branding';
 export default function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
   const localize = useLocalize();
+  const disclaimer =
+    'CodeCan AI is for general building code information only, not professional advice. Always verify requirements with qualified professionals or the authority having jurisdiction.';
 
   const privacyPolicy = config?.interface?.privacyPolicy;
   const termsOfService = config?.interface?.termsOfService;
@@ -31,6 +33,17 @@ export default function Footer({ className }: { className?: string }) {
       rel="noreferrer"
     >
       {localize('com_ui_terms_of_service')}
+    </a>
+  );
+
+  const codeCanRender = (
+    <a
+      className="text-text-secondary underline"
+      href="https://codecan.ai"
+      target="_blank"
+      rel="noreferrer"
+    >
+      CodeCan AI
     </a>
   );
 
@@ -62,33 +75,39 @@ export default function Footer({ className }: { className?: string }) {
     </React.Fragment>
   ));
 
-  const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
-    Boolean,
-  );
+  const footerElements = [
+    ...mainContentRender,
+    privacyPolicyRender,
+    termsOfServiceRender,
+    codeCanRender,
+  ].filter(Boolean);
 
   return (
     <div className="relative w-full">
       <div
         className={
           className ??
-          'absolute bottom-0 left-0 right-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-primary sm:flex md:px-[60px]'
+          'absolute bottom-0 left-0 right-0 hidden flex-col items-center justify-center gap-1 px-2 py-2 text-center text-xs text-text-primary sm:flex md:px-[60px]'
         }
         role="contentinfo"
       >
-        {footerElements.map((contentRender, index) => {
-          const isLastElement = index === footerElements.length - 1;
-          return (
-            <React.Fragment key={`footer-element-${index}`}>
-              {contentRender}
-              {!isLastElement && (
-                <div
-                  key={`separator-${index}`}
-                  className="h-2 border-r-[1px] border-border-medium"
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
+        <div className="flex items-center justify-center gap-2">
+          {footerElements.map((contentRender, index) => {
+            const isLastElement = index === footerElements.length - 1;
+            return (
+              <React.Fragment key={`footer-element-${index}`}>
+                {contentRender}
+                {!isLastElement && (
+                  <div
+                    key={`separator-${index}`}
+                    className="h-2 border-r-[1px] border-border-medium"
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+        <p className="max-w-4xl text-[11px] leading-4 text-text-secondary">{disclaimer}</p>
       </div>
     </div>
   );
