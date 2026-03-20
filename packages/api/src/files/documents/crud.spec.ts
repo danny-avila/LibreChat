@@ -104,7 +104,7 @@ describe('Document Parser', () => {
     await expect(parseDocument({ file })).rejects.toThrow('No text found in document');
   });
 
-  test('parseDocument() throws for odt whose decompressed content exceeds the size limit', async () => {
+  test('parseDocument() aborts decompression when content.xml exceeds the size limit', async () => {
     const zip = new JSZip();
     zip.file('mimetype', 'application/vnd.oasis.opendocument.text', { compression: 'STORE' });
     zip.file('content.xml', 'x'.repeat(51 * 1024 * 1024), { compression: 'DEFLATE' });
@@ -118,7 +118,7 @@ describe('Document Parser', () => {
         path: tmpPath,
         mimetype: 'application/vnd.oasis.opendocument.text',
       } as Express.Multer.File;
-      await expect(parseDocument({ file })).rejects.toThrow(/exceeds the 50MB limit/);
+      await expect(parseDocument({ file })).rejects.toThrow(/exceeds the 50MB decompressed limit/);
     } finally {
       await fs.promises.unlink(tmpPath);
     }

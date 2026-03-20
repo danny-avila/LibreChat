@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import JSZip from 'jszip';
+import yauzl from 'yauzl';
 import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
@@ -124,28 +124,7 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
  * text boxes, and annotations are stripped without replacement.
  */
 async function odtToText(file: Express.Multer.File): Promise<string> {
-  const data = await fs.promises.readFile(file.path);
-  const zip = await JSZip.loadAsync(data);
-
-  let totalUncompressed = 0;
-  zip.forEach((_, entry) => {
-    const raw = entry as JSZip.JSZipObject & { _data?: { uncompressedSize?: number } };
-    // _data.uncompressedSize is populated from the ZIP central directory at parse time
-    // by jszip (private internal, jszip@3.x). If the field is absent the guard fails
-    // open (adds 0); this is an accepted limitation of the approach.
-    totalUncompressed += raw._data?.uncompressedSize ?? 0;
-  });
-  if (totalUncompressed > ODT_MAX_DECOMPRESSED_SIZE) {
-    throw new Error(
-      `ODT file decompressed content (${Math.ceil(totalUncompressed / megabyte)}MB) exceeds the ${ODT_MAX_DECOMPRESSED_SIZE / megabyte}MB limit`,
-    );
-  }
-
-  const contentFile = zip.file('content.xml');
-  if (!contentFile) {
-    throw new Error('ODT file is missing content.xml');
-  }
-  const xml = await contentFile.async('string');
+  const xml = await extractOdtContentXml(file.path);
   const bodyMatch = xml.match(/<office:body[^>]*>([\s\S]*?)<\/office:body>/);
   if (!bodyMatch) {
     return '';
@@ -167,4 +146,86 @@ async function odtToText(file: Express.Multer.File): Promise<string> {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * Streams content.xml out of an ODT ZIP archive using yauzl, counting real
+ * decompressed bytes and aborting mid-inflate if the cap is exceeded.
+ * Unlike JSZip metadata checks, this cannot be bypassed by falsifying
+ * the ZIP central directory's uncompressedSize fields.
+ *
+ * The zipfile is closed on all exit paths (success, size cap, missing entry,
+ * error) to prevent file descriptor leaks.
+ */
+function extractOdtContentXml(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    yauzl.open(filePath, { lazyEntries: true }, (err, zipfile) => {
+      if (err) {
+        return reject(err);
+      }
+      if (!zipfile) {
+        return reject(new Error('Failed to open ODT file'));
+      }
+
+      let settled = false;
+      const finish = (error: Error | null, result?: string) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        zipfile.close();
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result as string);
+        }
+      };
+
+      let found = false;
+      zipfile.readEntry();
+
+      zipfile.on('entry', (entry: yauzl.Entry) => {
+        if (entry.fileName !== 'content.xml') {
+          zipfile.readEntry();
+          return;
+        }
+        found = true;
+        zipfile.openReadStream(entry, (streamErr, readStream) => {
+          if (streamErr) {
+            return finish(streamErr);
+          }
+          if (!readStream) {
+            return finish(new Error('Failed to open content.xml stream'));
+          }
+
+          let totalBytes = 0;
+          const chunks: Buffer[] = [];
+
+          readStream.on('data', (chunk: Buffer) => {
+            totalBytes += chunk.byteLength;
+            if (totalBytes > ODT_MAX_DECOMPRESSED_SIZE) {
+              readStream.destroy(
+                new Error(
+                  `ODT content.xml exceeds the ${ODT_MAX_DECOMPRESSED_SIZE / megabyte}MB decompressed limit`,
+                ),
+              );
+              return;
+            }
+            chunks.push(chunk);
+          });
+
+          readStream.on('end', () => finish(null, Buffer.concat(chunks).toString('utf8')));
+          readStream.on('error', (readErr: Error) => finish(readErr));
+        });
+      });
+
+      zipfile.on('end', () => {
+        if (!found) {
+          finish(new Error('ODT file is missing content.xml'));
+        }
+      });
+
+      zipfile.on('error', (zipErr: Error) => finish(zipErr));
+    });
+  });
 }

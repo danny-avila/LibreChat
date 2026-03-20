@@ -64,7 +64,9 @@
     "@types/node-fetch": "^2.6.13",
     "@types/react": "^18.2.18",
     "@types/winston": "^2.4.4",
+    "@types/yauzl": "^2.10.3",
     "jest": "^30.2.0",
+    "jszip": "^3.10.1",
     "jest-junit": "^16.0.0",
     "librechat-data-provider": "*",
     "mammoth": "^1.11.0",
@@ -75,7 +77,8 @@
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.0.4",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "yauzl": "^3.2.1"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
@@ -118,9 +121,7 @@
     "pdfjs-dist": "^5.4.624",
     "rate-limit-redis": "^4.2.0",
     "undici": "^7.24.1",
+    "yauzl": "^3.2.1",
     "zod": "^3.22.4"
-  },
-  "dependencies": {
-    "jszip": "^3.10.1"
   }
 }
