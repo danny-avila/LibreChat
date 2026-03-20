@@ -3,6 +3,39 @@ import crypto from 'node:crypto';
 import { createReadStream } from 'fs';
 import { readFile, stat } from 'fs/promises';
 
+const USER_FACING_UPLOAD_ERRORS = [
+  'Invalid file format',
+  'exceeds token limit',
+  'Unable to extract text from',
+] as const;
+
+/**
+ * Resolves a user-facing error message from a file upload error.
+ * Returns the error's own message if it matches a known user-facing pattern,
+ * otherwise returns the default message.
+ */
+export function resolveUploadErrorMessage(
+  error: { message?: string } | null | undefined,
+  defaultMessage = 'Error processing file',
+): string {
+  const errorMessage = error?.message;
+  if (!errorMessage) {
+    return defaultMessage;
+  }
+
+  if (errorMessage.includes('file_ids')) {
+    return `${defaultMessage}: ${errorMessage}`;
+  }
+
+  for (const fragment of USER_FACING_UPLOAD_ERRORS) {
+    if (errorMessage.includes(fragment)) {
+      return errorMessage;
+    }
+  }
+
+  return defaultMessage;
+}
+
 /**
  * Sanitize a filename by removing any directory components, replacing non-alphanumeric characters
  * @param inputName

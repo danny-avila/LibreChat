@@ -2,7 +2,7 @@ const fs = require('fs').promises;
 const express = require('express');
 const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-const { verifyAgentUploadPermission } = require('@librechat/api');
+const { verifyAgentUploadPermission, resolveUploadErrorMessage } = require('@librechat/api');
 const {
   Time,
   isUUID,
@@ -394,20 +394,8 @@ router.post('/', async (req, res) => {
 
     return await processAgentFileUpload({ req, res, metadata });
   } catch (error) {
-    let message = 'Error processing file';
+    const message = resolveUploadErrorMessage(error);
     logger.error('[/files] Error processing file:', error);
-
-    if (error.message?.includes('file_ids')) {
-      message += ': ' + error.message;
-    }
-
-    if (
-      error.message?.includes('Invalid file format') ||
-      error.message?.includes('No OCR result') ||
-      error.message?.includes('exceeds token limit')
-    ) {
-      message = error.message;
-    }
 
     try {
       await fs.unlink(req.file.path);
