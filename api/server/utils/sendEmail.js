@@ -124,11 +124,14 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
         // Whether to accept unsigned certificates
         rejectUnauthorized: !isEnabled(process.env.EMAIL_ALLOW_SELFSIGNED),
       },
-      auth: {
+    };
+
+    if (process.env.EMAIL_USERNAME && process.env.EMAIL_PASSWORD) {
+      transporterOptions.auth = {
         user: process.env.EMAIL_USERNAME,
         pass: process.env.EMAIL_PASSWORD,
-      },
-    };
+      };
+    }
 
     if (process.env.EMAIL_ENCRYPTION_HOSTNAME) {
       // Check the certificate against this name explicitly
