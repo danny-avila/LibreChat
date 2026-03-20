@@ -65,7 +65,7 @@ export default function ApiKeyDialog({
                 {languageIcons.map((icon) => (
                   <div key={icon} className="h-6 w-6">
                     <img
-                      src={`/assets/${icon}`}
+                      src={`assets/${icon}`}
                       alt=""
                       className="h-full w-full object-contain opacity-[0.85] dark:invert"
                     />
@@ -104,6 +104,7 @@ export default function ApiKeyDialog({
             <Button
               onClick={onRevoke}
               className="bg-destructive text-white transition-all duration-200 hover:bg-destructive/80"
+              aria-label={localize('com_ui_revoke')}
             >
               {localize('com_ui_revoke')}
             </Button>

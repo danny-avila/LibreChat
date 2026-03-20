@@ -1,21 +1,22 @@
 const fs = require('fs');
-const path = require('path');
 const fetch = require('node-fetch');
+const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { initializeS3, deleteRagFile, isEnabled } = require('@librechat/api');
 const {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
 } = require('@aws-sdk/client-s3');
-const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { initializeS3 } = require('./initialize');
-const { logger } = require('~/config');
 
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
+const endpoint = process.env.AWS_ENDPOINT_URL;
+const forcePathStyle = isEnabled(process.env.AWS_FORCE_PATH_STYLE);
 
-let s3UrlExpirySeconds = 7 * 24 * 60 * 60;
+let s3UrlExpirySeconds = 2 * 60; // 2 minutes
 let s3RefreshExpiryMs = null;
 
 if (process.env.S3_URL_EXPIRY_SECONDS !== undefined) {
@@ -25,7 +26,7 @@ if (process.env.S3_URL_EXPIRY_SECONDS !== undefined) {
     s3UrlExpirySeconds = Math.min(parsed, 7 * 24 * 60 * 60);
   } else {
     logger.warn(
-      `[S3] Invalid S3_URL_EXPIRY_SECONDS value: "${process.env.S3_URL_EXPIRY_SECONDS}". Using 7-day expiry.`,
+      `[S3] Invalid S3_URL_EXPIRY_SECONDS value: "${process.env.S3_URL_EXPIRY_SECONDS}". Using 2-minute expiry.`,
     );
   }
 }
@@ -80,11 +81,28 @@ async function saveBufferToS3({ userId, buffer, fileName, basePath = defaultBase
  * @param {string} params.userId - The user's unique identifier.
  * @param {string} params.fileName - The file name in S3.
  * @param {string} [params.basePath='images'] - The base path in the bucket.
+ * @param {string} [params.customFilename] - Custom filename for Content-Disposition header (overrides extracted filename).
+ * @param {string} [params.contentType] - Custom content type for the response.
  * @returns {Promise<string>} A URL to access the S3 object
  */
-async function getS3URL({ userId, fileName, basePath = defaultBasePath }) {
+async function getS3URL({
+  userId,
+  fileName,
+  basePath = defaultBasePath,
+  customFilename = null,
+  contentType = null,
+}) {
   const key = getS3Key(basePath, userId, fileName);
   const params = { Bucket: bucketName, Key: key };
+
+  // Add response headers if specified
+  if (customFilename) {
+    params.ResponseContentDisposition = `attachment; filename="${customFilename}"`;
+  }
+
+  if (contentType) {
+    params.ResponseContentType = contentType;
+  }
 
   try {
     const s3 = initializeS3();
@@ -126,6 +144,8 @@ async function saveURLToS3({ userId, URL, fileName, basePath = defaultBasePath }
  * @returns {Promise<void>}
  */
 async function deleteFileFromS3(req, file) {
+  await deleteRagFile({ userId: req.user.id, file });
+
   const key = extractKeyFromS3Url(file.filepath);
   const params = { Bucket: bucketName, Key: key };
   if (!key.includes(req.user.id)) {
@@ -188,7 +208,7 @@ async function uploadFileToS3({ req, file, file_id, basePath = defaultBasePath }
   try {
     const inputFilePath = file.path;
     const userId = req.user.id;
-    const fileName = `${file_id}__${path.basename(inputFilePath)}`;
+    const fileName = `${file_id}__${file.originalname}`;
     const key = getS3Key(basePath, userId, fileName);
 
     const stats = await fs.promises.stat(inputFilePath);
@@ -234,15 +254,83 @@ function extractKeyFromS3Url(fileUrlOrKey) {
 
   try {
     const url = new URL(fileUrlOrKey);
-    return url.pathname.substring(1);
+    const hostname = url.hostname;
+    const pathname = url.pathname.substring(1); // Remove leading slash
+
+    // Explicit path-style with custom endpoint: use endpoint pathname for precise key extraction.
+    // Handles endpoints with a base path (e.g. https://example.com/storage/).
+    if (endpoint && forcePathStyle) {
+      const endpointUrl = new URL(endpoint);
+      const startPos =
+        endpointUrl.pathname.length +
+        (endpointUrl.pathname.endsWith('/') ? 0 : 1) +
+        bucketName.length +
+        1;
+      const key = url.pathname.substring(startPos);
+      if (!key) {
+        logger.warn(
+          `[extractKeyFromS3Url] Extracted key is empty for endpoint path-style URL: ${fileUrlOrKey}`,
+        );
+      } else {
+        logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`);
+      }
+      return key;
+    }
+
+    if (
+      hostname === 's3.amazonaws.com' ||
+      hostname.match(/^s3[-.][a-z0-9-]+\.amazonaws\.com$/) ||
+      (bucketName && pathname.startsWith(`${bucketName}/`))
+    ) {
+      // Path-style: https://s3.amazonaws.com/bucket-name/key or custom endpoint (MinIO, R2, etc.)
+      // Strip the bucket name (first path segment)
+      const firstSlashIndex = pathname.indexOf('/');
+      if (firstSlashIndex > 0) {
+        const key = pathname.substring(firstSlashIndex + 1);
+
+        if (key === '') {
+          logger.warn(
+            `[extractKeyFromS3Url] Extracted key is empty after removing bucket name from URL: ${fileUrlOrKey}`,
+          );
+        } else {
+          logger.debug(
+            `[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`,
+          );
+        }
+
+        return key;
+      } else {
+        logger.warn(
+          `[extractKeyFromS3Url] Unable to extract key from path-style URL: ${fileUrlOrKey}`,
+        );
+        return '';
+      }
+    }
+
+    // Virtual-hosted-style or other: https://bucket-name.s3.amazonaws.com/key
+    // Just return the pathname without leading slash
+    logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${pathname}`);
+    return pathname;
   } catch (error) {
+    if (fileUrlOrKey.startsWith('http://') || fileUrlOrKey.startsWith('https://')) {
+      logger.error(
+        `[extractKeyFromS3Url] Error parsing URL: ${fileUrlOrKey}, Error: ${error.message}`,
+      );
+    } else {
+      logger.debug(`[extractKeyFromS3Url] Non-URL input, using fallback: ${fileUrlOrKey}`);
+    }
+
     const parts = fileUrlOrKey.split('/');
 
     if (parts.length >= 3 && !fileUrlOrKey.startsWith('http') && !fileUrlOrKey.startsWith('/')) {
       return fileUrlOrKey;
     }
 
-    return fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
+    const key = fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
+    logger.debug(
+      `[extractKeyFromS3Url] FALLBACK. fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`,
+    );
+    return key;
   }
 }
 
@@ -464,4 +552,5 @@ module.exports = {
   refreshS3Url,
   needsRefresh,
   getNewS3URL,
+  extractKeyFromS3Url,
 };

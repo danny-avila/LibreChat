@@ -1,15 +1,14 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { ArrowUpLeft } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
 import {
-  Button,
-  Input,
   Table,
+  Button,
+  TableRow,
+  TableHead,
   TableBody,
   TableCell,
-  TableHead,
+  FilterInput,
   TableHeader,
-  TableRow,
   useToastContext,
 } from '@librechat/client';
 import {
@@ -25,17 +24,18 @@ import {
   type ColumnFiltersState,
 } from '@tanstack/react-table';
 import {
-  fileConfig as defaultFileConfig,
-  checkOpenAIStorage,
-  mergeFileConfig,
   megabyte,
+  mergeFileConfig,
+  checkOpenAIStorage,
   isAssistantsEndpoint,
-  type TFile,
+  getEndpointFileConfig,
+  fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
+import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
-import store from '~/store';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -48,7 +48,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [{ pageIndex, pageSize }, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
-  const setShowFiles = useSetRecoilState(store.showFiles);
+  const [showFilesModal, setShowFilesModal] = useState(false);
+  const manageFilesRef = useRef<HTMLButtonElement>(null);
 
   const pagination = useMemo(
     () => ({
@@ -85,8 +86,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
-  const { setFiles, conversation } = useChatContext();
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { files, setFiles, conversation } = useChatContext();
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
   const { addFile } = useUpdateFiles(setFiles);
@@ -103,6 +104,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       const fileData = fileMap[file.file_id];
       const endpoint = conversation.endpoint;
+      const endpointType = conversation.endpointType;
 
       if (!fileData.source) {
         return;
@@ -126,25 +128,60 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         });
       }
 
-      const { fileSizeLimit, supportedMimeTypes } =
-        fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
+      const endpointFileConfig = getEndpointFileConfig({
+        fileConfig,
+        endpoint,
+        endpointType,
+      });
 
-      if (fileData.bytes > fileSizeLimit) {
+      if (endpointFileConfig.disabled === true) {
+        showToast({
+          message: localize('com_ui_attach_error_disabled'),
+          status: 'error',
+        });
+        return;
+      }
+
+      if (endpointFileConfig.fileLimit && files.size >= endpointFileConfig.fileLimit) {
+        showToast({
+          message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} files (${endpoint})`,
+          status: 'error',
+        });
+        return;
+      }
+
+      if (fileData.bytes >= (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
         showToast({
           message: `${localize('com_ui_attach_error_size')} ${
-            fileSizeLimit / megabyte
+            (endpointFileConfig.fileSizeLimit ?? 0) / megabyte
           } MB (${endpoint})`,
           status: 'error',
         });
         return;
       }
 
-      if (!defaultFileConfig.checkType(file.type, supportedMimeTypes)) {
+      if (!defaultFileConfig.checkType(file.type, endpointFileConfig.supportedMimeTypes ?? [])) {
         showToast({
           message: `${localize('com_ui_attach_error_type')} ${file.type} (${endpoint})`,
           status: 'error',
         });
         return;
+      }
+
+      if (endpointFileConfig.totalSizeLimit) {
+        const existing = files.get(fileData.file_id);
+        let currentTotalSize = 0;
+        for (const f of files.values()) {
+          currentTotalSize += f.size;
+        }
+        currentTotalSize -= existing?.size ?? 0;
+        if (currentTotalSize + fileData.bytes > endpointFileConfig.totalSizeLimit) {
+          showToast({
+            message: `${localize('com_ui_attach_error_total_size')} ${endpointFileConfig.totalSizeLimit / megabyte} MB (${endpoint})`,
+            status: 'error',
+          });
+          return;
+        }
       }
 
       addFile({
@@ -162,21 +199,19 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         metadata: fileData.metadata,
       });
     },
-    [addFile, fileMap, conversation, localize, showToast, fileConfig.endpoints],
+    [addFile, files, fileMap, conversation, localize, showToast, fileConfig],
   );
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
 
   return (
     <div role="region" aria-label={localize('com_files_table')} className="mt-2 space-y-2">
-      <div className="flex items-center gap-4">
-        <Input
-          placeholder={localize('com_files_filter')}
-          value={filenameFilter ?? ''}
-          onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          aria-label={localize('com_files_filter')}
-        />
-      </div>
+      <FilterInput
+        inputId="filename-filter"
+        label={localize('com_files_filter')}
+        value={filenameFilter ?? ''}
+        onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
+      />
 
       <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
         <div className="overflow-x-auto">
@@ -220,6 +255,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
                           }}
+                          className={
+                            isFilenameCell
+                              ? 'focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-primary'
+                              : ''
+                          }
                           data-skip-refocus="true"
                           key={cell.id}
                           role={isFilenameCell ? 'button' : undefined}
@@ -275,9 +315,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       <div className="flex items-center justify-between">
         <Button
+          ref={manageFilesRef}
           variant="outline"
           size="sm"
-          onClick={() => setShowFiles(true)}
+          onClick={() => setShowFilesModal(true)}
           aria-label={localize('com_sidepanel_manage_files')}
         >
           <ArrowUpLeft className="h-4 w-4" aria-hidden="true" />
@@ -308,6 +349,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           </Button>
         </div>
       </div>
+      <MyFilesModal
+        open={showFilesModal}
+        onOpenChange={setShowFilesModal}
+        triggerRef={manageFilesRef}
+      />
     </div>
   );
 }

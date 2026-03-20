@@ -1,5 +1,5 @@
 import { RefObject } from 'react';
-import { FileSources, EModelEndpoint } from 'librechat-data-provider';
+import { FileSources, EModelEndpoint, isEphemeralAgentId } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { SetterOrUpdater, RecoilState } from 'recoil';
@@ -7,6 +7,16 @@ import type { ColumnDef } from '@tanstack/react-table';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
+import { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
+
+export function isEphemeralAgent(agentId: string | null | undefined): boolean {
+  return isEphemeralAgentId(agentId);
+}
+
+export interface ConfigFieldDetail {
+  title: string;
+  description: string;
+}
 
 export type CodeBarProps = {
   lang: string;
@@ -143,7 +153,6 @@ export enum Panel {
   actions = 'actions',
   model = 'model',
   version = 'version',
-  mcp = 'mcp',
 }
 
 export type FileSetter =
@@ -165,15 +174,6 @@ export type ActionAuthForm = {
   client_url: string;
   scope: string;
   token_exchange_method: t.TokenExchangeMethodEnum;
-};
-
-export type MCPForm = ActionAuthForm & {
-  name?: string;
-  description?: string;
-  url?: string;
-  tools?: string[];
-  icon?: string;
-  trust?: boolean;
 };
 
 export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {
@@ -211,6 +211,15 @@ export type AgentPanelProps = {
   agentsConfig?: t.TAgentsEndpoint | null;
 };
 
+export interface MCPServerInfo {
+  serverName: string;
+  tools: t.AgentToolType[];
+  isConfigured: boolean;
+  isConnected: boolean;
+  consumeOnly?: boolean;
+  metadata: t.TPlugin;
+}
+
 export type AgentPanelContextType = {
   action?: t.Action;
   actions?: t.Action[];
@@ -219,12 +228,18 @@ export type AgentPanelContextType = {
   mcps?: t.MCP[];
   setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setMcps: React.Dispatch<React.SetStateAction<t.MCP[] | undefined>>;
-  groupedTools: Record<string, t.AgentToolType & { tools?: t.AgentToolType[] }>;
-  tools: t.AgentToolType[];
   activePanel?: string;
+  regularTools?: t.TPlugin[];
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   agent_id?: string;
+  startupConfig?: t.TStartupConfig | null;
+  agentsConfig?: t.TAgentsEndpoint | null;
+  endpointsConfig?: t.TEndpointsConfig | null;
+  /** Pre-computed MCP server information indexed by server key */
+  mcpServersMap: Map<string, MCPServerInfo>;
+  availableMCPServers: MCPServerDefinition[];
+  availableMCPServersMap: t.MCPServersListResponse | undefined;
 };
 
 export type AgentModelPanelProps = {
@@ -302,10 +317,6 @@ export type TSetOptionsPayload = {
   setExample: TSetExample;
   addExample: () => void;
   removeExample: () => void;
-  setAgentOption: TSetOption;
-  // getConversation: () => t.TConversation | t.TPreset | null;
-  checkPluginSelection: (value: string) => boolean;
-  setTools: (newValue: string, remove?: boolean) => void;
   setOptions?: TSetOptions;
 };
 
@@ -335,6 +346,7 @@ export type TAskProps = {
 
 export type TOptions = {
   editedMessageId?: string | null;
+  editedContent?: t.TEditedContent;
   editedText?: string | null;
   isRegenerate?: boolean;
   isContinued?: boolean;
@@ -344,6 +356,8 @@ export type TOptions = {
   isResubmission?: boolean;
   /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
   overrideFiles?: t.TMessage['files'];
+  /** Added conversation for multi-convo feature - sent to server as part of submission payload */
+  addedConvo?: t.TConversation;
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
@@ -425,7 +439,7 @@ export type TDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-export type TPluginStoreDialogProps = {
+export type ToolDialogProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
 };
@@ -580,7 +594,6 @@ export type NewConversationParams = {
 export type ConvoGenerator = (params: NewConversationParams) => void | t.TConversation;
 
 export type TBaseResData = {
-  plugin?: t.TResPlugin;
   final?: boolean;
   initial?: boolean;
   previousMessages?: t.TMessage[];

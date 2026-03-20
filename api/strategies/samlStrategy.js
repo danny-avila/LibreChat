@@ -2,11 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const passport = require('passport');
+const { ErrorTypes } = require('librechat-data-provider');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
+const { getBalanceConfig, isEmailDomainAllowed } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
-const { getBalanceConfig } = require('~/server/services/Config');
+const { getAppConfig } = require('~/server/services/Config');
 const paths = require('~/config/paths');
 
 let crypto;
@@ -190,17 +192,35 @@ async function setupSaml() {
           logger.info(`[samlStrategy] SAML authentication received for NameID: ${profile.nameID}`);
           logger.debug('[samlStrategy] SAML profile:', profile);
 
+          const userEmail = getEmail(profile) || '';
+          const appConfig = await getAppConfig();
+
+          if (!isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)) {
+            logger.error(
+              `[SAML Strategy] Authentication blocked - email domain not allowed [Email: ${userEmail}]`,
+            );
+            return done(null, false, { message: 'Email domain not allowed' });
+          }
+
           let user = await findUser({ samlId: profile.nameID });
           logger.info(
             `[samlStrategy] User ${user ? 'found' : 'not found'} with SAML ID: ${profile.nameID}`,
           );
 
           if (!user) {
-            const email = getEmail(profile) || '';
-            user = await findUser({ email });
+            user = await findUser({ email: userEmail });
             logger.info(
-              `[samlStrategy] User ${user ? 'found' : 'not found'} with email: ${profile.email}`,
+              `[samlStrategy] User ${user ? 'found' : 'not found'} with email: ${userEmail}`,
             );
+          }
+
+          if (user && user.provider !== 'saml') {
+            logger.info(
+              `[samlStrategy] User ${user.email} already exists with provider ${user.provider}`,
+            );
+            return done(null, false, {
+              message: ErrorTypes.AUTH_FAILED,
+            });
           }
 
           const fullName = getFullName(profile);
@@ -214,11 +234,11 @@ async function setupSaml() {
               provider: 'saml',
               samlId: profile.nameID,
               username,
-              email: getEmail(profile) || '',
+              email: userEmail,
               emailVerified: true,
               name: fullName,
             };
-            const balanceConfig = await getBalanceConfig();
+            const balanceConfig = getBalanceConfig(appConfig);
             user = await createUser(user, balanceConfig, true, true);
           } else {
             user.provider = 'saml';
@@ -238,7 +258,9 @@ async function setupSaml() {
                 fileName = profile.nameID + '.png';
               }
 
-              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
+              const { saveBuffer } = getStrategyFunctions(
+                appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
+              );
               const imagePath = await saveBuffer({
                 fileName,
                 userId: user._id.toString(),

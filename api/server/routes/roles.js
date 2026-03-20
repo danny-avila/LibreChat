@@ -1,17 +1,106 @@
 const express = require('express');
 const {
+  SystemRoles,
+  roleDefaults,
+  PermissionTypes,
+  agentPermissionsSchema,
   promptPermissionsSchema,
   memoryPermissionsSchema,
-  agentPermissionsSchema,
-  PermissionTypes,
-  roleDefaults,
-  SystemRoles,
+  mcpServersPermissionsSchema,
+  marketplacePermissionsSchema,
+  peoplePickerPermissionsSchema,
+  remoteAgentsPermissionsSchema,
 } = require('librechat-data-provider');
 const { checkAdmin, requireJwtAuth } = require('~/server/middleware');
 const { updateRoleByName, getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+/**
+ * Permission configuration mapping
+ * Maps route paths to their corresponding schemas and permission types
+ */
+const permissionConfigs = {
+  prompts: {
+    schema: promptPermissionsSchema,
+    permissionType: PermissionTypes.PROMPTS,
+    errorMessage: 'Invalid prompt permissions.',
+  },
+  agents: {
+    schema: agentPermissionsSchema,
+    permissionType: PermissionTypes.AGENTS,
+    errorMessage: 'Invalid agent permissions.',
+  },
+  memories: {
+    schema: memoryPermissionsSchema,
+    permissionType: PermissionTypes.MEMORIES,
+    errorMessage: 'Invalid memory permissions.',
+  },
+  'people-picker': {
+    schema: peoplePickerPermissionsSchema,
+    permissionType: PermissionTypes.PEOPLE_PICKER,
+    errorMessage: 'Invalid people picker permissions.',
+  },
+  'mcp-servers': {
+    schema: mcpServersPermissionsSchema,
+    permissionType: PermissionTypes.MCP_SERVERS,
+    errorMessage: 'Invalid MCP servers permissions.',
+  },
+  marketplace: {
+    schema: marketplacePermissionsSchema,
+    permissionType: PermissionTypes.MARKETPLACE,
+    errorMessage: 'Invalid marketplace permissions.',
+  },
+  'remote-agents': {
+    schema: remoteAgentsPermissionsSchema,
+    permissionType: PermissionTypes.REMOTE_AGENTS,
+    errorMessage: 'Invalid remote agents permissions.',
+  },
+};
+
+/**
+ * Generic handler for updating permissions
+ * @param {string} permissionKey - The key from permissionConfigs
+ * @returns {Function} Express route handler
+ */
+const createPermissionUpdateHandler = (permissionKey) => {
+  const config = permissionConfigs[permissionKey];
+
+  return async (req, res) => {
+    const { roleName: _r } = req.params;
+    // TODO: TEMP, use a better parsing for roleName
+    const roleName = _r.toUpperCase();
+    const updates = req.body;
+
+    try {
+      const parsedUpdates = config.schema.partial().parse(updates);
+
+      const role = await getRoleByName(roleName);
+      if (!role) {
+        return res.status(404).send({ message: 'Role not found' });
+      }
+
+      const currentPermissions =
+        role.permissions?.[config.permissionType] || role[config.permissionType] || {};
+
+      const mergedUpdates = {
+        permissions: {
+          ...role.permissions,
+          [config.permissionType]: {
+            ...currentPermissions,
+            ...parsedUpdates,
+          },
+        },
+      };
+
+      const updatedRole = await updateRoleByName(roleName, mergedUpdates);
+      res.status(200).send(updatedRole);
+    } catch (error) {
+      return res.status(400).send({ message: config.errorMessage, error: error.errors });
+    }
+  };
+};
 
 /**
  * GET /api/roles/:roleName
@@ -45,117 +134,42 @@ router.get('/:roleName', async (req, res) => {
  * PUT /api/roles/:roleName/prompts
  * Update prompt permissions for a specific role
  */
-router.put('/:roleName/prompts', checkAdmin, async (req, res) => {
-  const { roleName: _r } = req.params;
-  // TODO: TEMP, use a better parsing for roleName
-  const roleName = _r.toUpperCase();
-  /** @type {TRole['permissions']['PROMPTS']} */
-  const updates = req.body;
-
-  try {
-    const parsedUpdates = promptPermissionsSchema.partial().parse(updates);
-
-    const role = await getRoleByName(roleName);
-    if (!role) {
-      return res.status(404).send({ message: 'Role not found' });
-    }
-
-    const currentPermissions =
-      role.permissions?.[PermissionTypes.PROMPTS] || role[PermissionTypes.PROMPTS] || {};
-
-    const mergedUpdates = {
-      permissions: {
-        ...role.permissions,
-        [PermissionTypes.PROMPTS]: {
-          ...currentPermissions,
-          ...parsedUpdates,
-        },
-      },
-    };
-
-    const updatedRole = await updateRoleByName(roleName, mergedUpdates);
-    res.status(200).send(updatedRole);
-  } catch (error) {
-    return res.status(400).send({ message: 'Invalid prompt permissions.', error: error.errors });
-  }
-});
+router.put('/:roleName/prompts', checkAdmin, createPermissionUpdateHandler('prompts'));
 
 /**
  * PUT /api/roles/:roleName/agents
  * Update agent permissions for a specific role
  */
-router.put('/:roleName/agents', checkAdmin, async (req, res) => {
-  const { roleName: _r } = req.params;
-  // TODO: TEMP, use a better parsing for roleName
-  const roleName = _r.toUpperCase();
-  /** @type {TRole['permissions']['AGENTS']} */
-  const updates = req.body;
-
-  try {
-    const parsedUpdates = agentPermissionsSchema.partial().parse(updates);
-
-    const role = await getRoleByName(roleName);
-    if (!role) {
-      return res.status(404).send({ message: 'Role not found' });
-    }
-
-    const currentPermissions =
-      role.permissions?.[PermissionTypes.AGENTS] || role[PermissionTypes.AGENTS] || {};
-
-    const mergedUpdates = {
-      permissions: {
-        ...role.permissions,
-        [PermissionTypes.AGENTS]: {
-          ...currentPermissions,
-          ...parsedUpdates,
-        },
-      },
-    };
-
-    const updatedRole = await updateRoleByName(roleName, mergedUpdates);
-    res.status(200).send(updatedRole);
-  } catch (error) {
-    return res.status(400).send({ message: 'Invalid agent permissions.', error: error.errors });
-  }
-});
+router.put('/:roleName/agents', checkAdmin, createPermissionUpdateHandler('agents'));
 
 /**
  * PUT /api/roles/:roleName/memories
  * Update memory permissions for a specific role
  */
-router.put('/:roleName/memories', checkAdmin, async (req, res) => {
-  const { roleName: _r } = req.params;
-  // TODO: TEMP, use a better parsing for roleName
-  const roleName = _r.toUpperCase();
-  /** @type {TRole['permissions']['MEMORIES']} */
-  const updates = req.body;
+router.put('/:roleName/memories', checkAdmin, createPermissionUpdateHandler('memories'));
 
-  try {
-    const parsedUpdates = memoryPermissionsSchema.partial().parse(updates);
+/**
+ * PUT /api/roles/:roleName/people-picker
+ * Update people picker permissions for a specific role
+ */
+router.put('/:roleName/people-picker', checkAdmin, createPermissionUpdateHandler('people-picker'));
 
-    const role = await getRoleByName(roleName);
-    if (!role) {
-      return res.status(404).send({ message: 'Role not found' });
-    }
+/**
+ * PUT /api/roles/:roleName/mcp-servers
+ * Update MCP servers permissions for a specific role
+ */
+router.put('/:roleName/mcp-servers', checkAdmin, createPermissionUpdateHandler('mcp-servers'));
 
-    const currentPermissions =
-      role.permissions?.[PermissionTypes.MEMORIES] || role[PermissionTypes.MEMORIES] || {};
+/**
+ * PUT /api/roles/:roleName/marketplace
+ * Update marketplace permissions for a specific role
+ */
+router.put('/:roleName/marketplace', checkAdmin, createPermissionUpdateHandler('marketplace'));
 
-    const mergedUpdates = {
-      permissions: {
-        ...role.permissions,
-        [PermissionTypes.MEMORIES]: {
-          ...currentPermissions,
-          ...parsedUpdates,
-        },
-      },
-    };
-
-    const updatedRole = await updateRoleByName(roleName, mergedUpdates);
-    res.status(200).send(updatedRole);
-  } catch (error) {
-    return res.status(400).send({ message: 'Invalid memory permissions.', error: error.errors });
-  }
-});
+/**
+ * PUT /api/roles/:roleName/remote-agents
+ * Update remote agents (API) permissions for a specific role
+ */
+router.put('/:roleName/remote-agents', checkAdmin, createPermissionUpdateHandler('remote-agents'));
 
 module.exports = router;

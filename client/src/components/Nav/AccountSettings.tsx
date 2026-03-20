@@ -1,15 +1,12 @@
-import { useState, memo } from 'react';
-import { useRecoilState } from 'recoil';
-import * as Select from '@ariakit/react/select';
+import { useState, memo, useRef } from 'react';
+import * as Menu from '@ariakit/react/menu';
 import { FileText, LogOut } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator, UserIcon } from '@librechat/client';
+import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
+import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
-import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
-import useAvatar from '~/hooks/Messages/useAvatar';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
-import store from '~/store';
 
 function AccountSettings() {
   const localize = useLocalize();
@@ -19,40 +16,20 @@ function AccountSettings() {
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
   const [showSettings, setShowSettings] = useState(false);
-  const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
-
-  const avatarSrc = useAvatar(user);
-  const avatarSeed = user?.avatar || user?.name || user?.username || '';
+  const [showFiles, setShowFiles] = useState(false);
+  const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <Select.SelectProvider>
-      <Select.Select
+    <Menu.MenuProvider>
+      <Menu.MenuButton
+        ref={accountSettingsButtonRef}
         aria-label={localize('com_nav_account_settings')}
         data-testid="nav-user"
-        className="mt-text-sm flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out hover:bg-surface-hover"
+        className="mt-text-sm flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt"
       >
         <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
           <div className="relative flex">
-            {avatarSeed.length === 0 ? (
-              <div
-                style={{
-                  backgroundColor: 'rgb(121, 137, 255)',
-                  width: '32px',
-                  height: '32px',
-                  boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
-                }}
-                className="relative flex items-center justify-center rounded-full p-1 text-text-primary"
-                aria-hidden="true"
-              >
-                <UserIcon />
-              </div>
-            ) : (
-              <img
-                className="rounded-full"
-                src={(user?.avatar ?? '') || avatarSrc}
-                alt={`${user?.name || user?.username || user?.email || ''}'s avatar`}
-              />
-            )}
+            <Avatar user={user} size={32} />
           </div>
         </div>
         <div
@@ -61,13 +38,12 @@ function AccountSettings() {
         >
           {user?.name ?? user?.username ?? localize('com_nav_user')}
         </div>
-      </Select.Select>
-      <Select.SelectPopover
-        className="popover-ui w-[235px]"
+      </Menu.MenuButton>
+      <Menu.Menu
+        className="account-settings-popover popover-ui z-[125] w-[305px] rounded-lg md:w-[244px]"
         style={{
           transformOrigin: 'bottom',
-          marginRight: '0px',
-          translate: '0px',
+          translate: '0 -4px',
         }}
       >
         <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
@@ -83,46 +59,38 @@ function AccountSettings() {
             <DropdownMenuSeparator />
           </>
         )}
-        <Select.SelectItem
-          value=""
-          onClick={() => setShowFiles(true)}
-          className="select-item text-sm"
-        >
+        <Menu.MenuItem onClick={() => setShowFiles(true)} className="select-item text-sm">
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
-        </Select.SelectItem>
+        </Menu.MenuItem>
         {startupConfig?.helpAndFaqURL !== '/' && (
-          <Select.SelectItem
-            value=""
+          <Menu.MenuItem
             onClick={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
             className="select-item text-sm"
           >
             <LinkIcon aria-hidden="true" />
             {localize('com_nav_help_faq')}
-          </Select.SelectItem>
+          </Menu.MenuItem>
         )}
-        <Select.SelectItem
-          value=""
-          onClick={() => setShowSettings(true)}
-          className="select-item text-sm"
-        >
+        <Menu.MenuItem onClick={() => setShowSettings(true)} className="select-item text-sm">
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
-        </Select.SelectItem>
+        </Menu.MenuItem>
         <DropdownMenuSeparator />
-        <Select.SelectItem
-          aria-selected={true}
-          onClick={() => logout()}
-          value="logout"
-          className="select-item text-sm"
-        >
-          <LogOut className="icon-md" />
+        <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
+          <LogOut className="icon-md" aria-hidden="true" />
           {localize('com_nav_log_out')}
-        </Select.SelectItem>
-      </Select.SelectPopover>
-      {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
+        </Menu.MenuItem>
+      </Menu.Menu>
+      {showFiles && (
+        <MyFilesModal
+          open={showFiles}
+          onOpenChange={setShowFiles}
+          triggerRef={accountSettingsButtonRef}
+        />
+      )}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
-    </Select.SelectProvider>
+    </Menu.MenuProvider>
   );
 }
 

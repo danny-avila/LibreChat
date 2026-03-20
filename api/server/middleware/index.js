@@ -1,18 +1,16 @@
 const validatePasswordReset = require('./validatePasswordReset');
 const validateRegistration = require('./validateRegistration');
-const validateImageRequest = require('./validateImageRequest');
 const buildEndpointOption = require('./buildEndpointOption');
 const validateMessageReq = require('./validateMessageReq');
 const checkDomainAllowed = require('./checkDomainAllowed');
-const concurrentLimiter = require('./concurrentLimiter');
-const validateEndpoint = require('./validateEndpoint');
 const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
-const setBalanceConfig = require('./setBalanceConfig');
+const accessResources = require('./accessResources');
 const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
 const requireJwtAuth = require('./requireJwtAuth');
+const configMiddleware = require('./config/app');
 const validateModel = require('./validateModel');
 const moderateText = require('./moderateText');
 const logHeaders = require('./logHeaders');
@@ -29,6 +27,7 @@ module.exports = {
   ...validate,
   ...limiters,
   ...roles,
+  ...accessResources,
   noIndex,
   checkBan,
   uaParser,
@@ -41,13 +40,10 @@ module.exports = {
   requireLdapAuth,
   requireLocalAuth,
   canDeleteAccount,
-  validateEndpoint,
-  setBalanceConfig,
-  concurrentLimiter,
+  configMiddleware,
   checkDomainAllowed,
   validateMessageReq,
   buildEndpointOption,
   validateRegistration,
-  validateImageRequest,
   validatePasswordReset,
 };

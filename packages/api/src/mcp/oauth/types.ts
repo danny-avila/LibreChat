@@ -18,6 +18,12 @@ export interface OAuthMetadata {
   token_endpoint_auth_methods_supported?: string[];
   /** Code challenge methods supported */
   code_challenge_methods_supported?: string[];
+  /** Dynamic client registration endpoint (RFC 7591) */
+  registration_endpoint?: string;
+  /** Revocation endpoint */
+  revocation_endpoint?: string;
+  /** Revocation endpoint auth methods supported */
+  revocation_endpoint_auth_methods_supported?: string[];
 }
 
 export interface OAuthProtectedResourceMetadata {
@@ -82,6 +88,7 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   clientInfo?: OAuthClientInformation;
   metadata?: OAuthMetadata;
   resourceMetadata?: OAuthProtectedResourceMetadata;
+  authorizationUrl?: string;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {

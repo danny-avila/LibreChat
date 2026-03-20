@@ -1,29 +1,40 @@
 import React from 'react';
+import type { UIActionResult } from '@mcp-ui/client';
+import { TAskFunction } from '~/common';
+import logger from './logger';
 
+export * from './errors';
 export * from './map';
 export * from './json';
 export * from './files';
 export * from './latex';
 export * from './forms';
+export * from './agents';
 export * from './drafts';
 export * from './convos';
+export * from './routes';
+export * from './redirect';
 export * from './presets';
 export * from './prompts';
 export * from './textarea';
 export * from './messages';
 export * from './languages';
 export * from './endpoints';
+export * from './resources';
+export * from './roles';
 export * from './localStorage';
 export * from './promptGroups';
+export * from './previewCache';
+export * from './email';
+export * from './share';
+export * from './timestamps';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
-export { default as buildTree } from './buildTree';
-export { default as scaleImage } from './scaleImage';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as buildDefaultConvo } from './buildDefaultConvo';
 export { default as getDefaultEndpoint } from './getDefaultEndpoint';
-export { default as createChatSearchParams } from './createChatSearchParams';
+export { default as createChatSearchParams, processValidSettings } from './createChatSearchParams';
 export { getThemeFromEnv } from './getThemeFromEnv';
 
 export const languages = [
@@ -118,4 +129,55 @@ export const normalizeLayout = (layout: number[]) => {
   normalizedLayout[normalizedLayout.length - 1] = Number((100 - adjustedSum).toFixed(2));
 
   return normalizedLayout;
+};
+
+export const handleUIAction = async (result: UIActionResult, ask: TAskFunction) => {
+  const supportedTypes = ['intent', 'tool', 'prompt'];
+
+  const { type, payload } = result;
+
+  if (!supportedTypes.includes(type)) {
+    return;
+  }
+
+  let messageText = '';
+
+  if (type === 'intent') {
+    const { intent, params } = payload;
+    messageText = `The user clicked a button in an embedded UI Resource, and we got a message of type \`intent\`.
+The intent is \`${intent}\` and the params are:
+
+\`\`\`json
+${JSON.stringify(params, null, 2)}
+\`\`\`
+
+Execute the intent that is mentioned in the message using the tools available to you.
+    `;
+  } else if (type === 'tool') {
+    const { toolName, params } = payload;
+    messageText = `The user clicked a button in an embedded UI Resource, and we got a message of type \`tool\`.
+The tool name is \`${toolName}\` and the params are:
+
+\`\`\`json
+${JSON.stringify(params, null, 2)}
+\`\`\`
+
+Execute the tool that is mentioned in the message using the tools available to you.
+    `;
+  } else if (type === 'prompt') {
+    const { prompt } = payload;
+    messageText = `The user clicked a button in an embedded UI Resource, and we got a message of type \`prompt\`.
+The prompt is:
+
+\`\`\`
+${prompt}
+\`\`\`
+
+Execute the intention of the prompt that is mentioned in the message using the tools available to you.
+    `;
+  }
+
+  logger.debug('MCP-UI', 'About to submit message:', messageText);
+  ask({ text: messageText });
+  logger.debug('MCP-UI', 'Message submitted successfully');
 };

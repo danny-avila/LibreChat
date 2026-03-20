@@ -1,13 +1,25 @@
-import { useMemo } from 'react';
+import { useContext, useMemo } from 'react';
+import { ThemeContext, isDark } from '@librechat/client';
 import { removeNullishValues } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import { getKey, getProps, getTemplate, getArtifactFilename } from '~/utils/artifacts';
+import { getMarkdownFiles } from '~/utils/markdown';
 import { getMermaidFiles } from '~/utils/mermaid';
 
 export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
+  const { theme } = useContext(ThemeContext);
+  const isDarkMode = isDark(theme);
+
   const [fileKey, files] = useMemo(() => {
-    if (getKey(artifact.type ?? '', artifact.language).includes('mermaid')) {
-      return ['App.tsx', getMermaidFiles(artifact.content ?? '')];
+    const key = getKey(artifact.type ?? '', artifact.language);
+    const type = artifact.type ?? '';
+
+    if (key.includes('mermaid')) {
+      return ['diagram.mmd', getMermaidFiles(artifact.content ?? '', isDarkMode)];
+    }
+
+    if (type === 'text/markdown' || type === 'text/md' || type === 'text/plain') {
+      return ['content.md', getMarkdownFiles(artifact.content ?? '')];
     }
 
     const fileKey = getArtifactFilename(artifact.type ?? '', artifact.language);
@@ -15,7 +27,7 @@ export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
       [fileKey]: artifact.content,
     });
     return [fileKey, files];
-  }, [artifact.type, artifact.content, artifact.language]);
+  }, [artifact.type, artifact.content, artifact.language, isDarkMode]);
 
   const template = useMemo(
     () => getTemplate(artifact.type ?? '', artifact.language),

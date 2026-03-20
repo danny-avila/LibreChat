@@ -31,6 +31,7 @@ export default function Code({ version }: { version: number | string }) {
                 onCheckedChange={field.onChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
+                aria-labelledby={Capabilities.code_interpreter}
               />
             )}
           />
@@ -44,6 +45,7 @@ export default function Code({ version }: { version: number | string }) {
             }
           >
             <label
+              id={Capabilities.code_interpreter}
               className="form-check-label text-token-text-primary w-full cursor-pointer"
               htmlFor={Capabilities.code_interpreter}
             >

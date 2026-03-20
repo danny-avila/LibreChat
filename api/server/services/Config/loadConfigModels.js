@@ -1,43 +1,43 @@
-const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
-const { isUserProvided, normalizeEndpointName } = require('~/server/utils');
-const { fetchModels } = require('~/server/services/ModelService');
-const { getCustomConfig } = require('./getCustomConfig');
+const { isUserProvided, fetchModels } = require('@librechat/api');
+const {
+  EModelEndpoint,
+  extractEnvVariable,
+  normalizeEndpointName,
+} = require('librechat-data-provider');
+const { getAppConfig } = require('./app');
 
 /**
  * Load config endpoints from the cached configuration object
  * @function loadConfigModels
- * @param {Express.Request} req - The Express request object.
+ * @param {ServerRequest} req - The Express request object.
  */
 async function loadConfigModels(req) {
-  const customConfig = await getCustomConfig();
-
-  if (!customConfig) {
+  const appConfig = await getAppConfig({ role: req.user?.role });
+  if (!appConfig) {
     return {};
   }
-
-  const { endpoints = {} } = customConfig ?? {};
   const modelsConfig = {};
-  const azureEndpoint = endpoints[EModelEndpoint.azureOpenAI];
-  const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+  const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
   const { modelNames } = azureConfig ?? {};
 
-  if (modelNames && azureEndpoint) {
+  if (modelNames && azureConfig) {
     modelsConfig[EModelEndpoint.azureOpenAI] = modelNames;
   }
 
-  if (modelNames && azureEndpoint && azureEndpoint.plugins) {
-    modelsConfig[EModelEndpoint.gptPlugins] = modelNames;
-  }
-
-  if (azureEndpoint?.assistants && azureConfig.assistantModels) {
+  if (azureConfig?.assistants && azureConfig.assistantModels) {
     modelsConfig[EModelEndpoint.azureAssistants] = azureConfig.assistantModels;
   }
 
-  if (!Array.isArray(endpoints[EModelEndpoint.custom])) {
+  const bedrockConfig = appConfig.endpoints?.[EModelEndpoint.bedrock];
+  if (bedrockConfig?.models && Array.isArray(bedrockConfig.models)) {
+    modelsConfig[EModelEndpoint.bedrock] = bedrockConfig.models;
+  }
+
+  if (!Array.isArray(appConfig.endpoints?.[EModelEndpoint.custom])) {
     return modelsConfig;
   }
 
-  const customEndpoints = endpoints[EModelEndpoint.custom].filter(
+  const customEndpoints = appConfig.endpoints[EModelEndpoint.custom].filter(
     (endpoint) =>
       endpoint.baseURL &&
       endpoint.apiKey &&
@@ -61,7 +61,7 @@ async function loadConfigModels(req) {
 
   for (let i = 0; i < customEndpoints.length; i++) {
     const endpoint = customEndpoints[i];
-    const { models, name: configName, baseURL, apiKey } = endpoint;
+    const { models, name: configName, baseURL, apiKey, headers: endpointHeaders } = endpoint;
     const name = normalizeEndpointName(configName);
     endpointsMap[name] = endpoint;
 
@@ -76,10 +76,13 @@ async function loadConfigModels(req) {
       fetchPromisesMap[uniqueKey] =
         fetchPromisesMap[uniqueKey] ||
         fetchModels({
-          user: req.user.id,
-          baseURL: BASE_URL,
-          apiKey: API_KEY,
           name,
+          apiKey: API_KEY,
+          baseURL: BASE_URL,
+          user: req.user.id,
+          userObject: req.user,
+          headers: endpointHeaders,
+          direct: endpoint.directEndpoint,
           userIdQuery: models.userIdQuery,
         });
       uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];
@@ -88,7 +91,9 @@ async function loadConfigModels(req) {
     }
 
     if (Array.isArray(models.default)) {
-      modelsConfig[name] = models.default;
+      modelsConfig[name] = models.default.map((model) =>
+        typeof model === 'string' ? model : model.name,
+      );
     }
   }
 

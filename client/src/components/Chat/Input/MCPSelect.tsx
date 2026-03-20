@@ -1,78 +1,54 @@
-import React, { memo, useCallback } from 'react';
-import { MultiSelect, MCPIcon } from '@librechat/client';
-import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
-import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
+import React, { memo, useMemo } from 'react';
+import * as Ariakit from '@ariakit/react';
+import { ChevronDown } from 'lucide-react';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { TooltipAnchor } from '@librechat/client';
+import MCPServerMenuItem from '~/components/MCP/MCPServerMenuItem';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
+import StackedMCPIcons from '~/components/MCP/StackedMCPIcons';
+import { useBadgeRowContext } from '~/Providers';
+import { useHasAccess } from '~/hooks';
+import { cn } from '~/utils';
 
-function MCPSelect() {
+function MCPSelectContent() {
+  const { conversationId, storageContextKey, mcpServerManager } = useBadgeRowContext();
   const {
-    configuredServers,
-    mcpValues,
-    isPinned,
-    placeholderText,
-    batchToggleServers,
-    getServerStatusIconProps,
-    getConfigDialogProps,
-    isInitializing,
     localize,
-  } = useMCPServerManager();
+    isPinned,
+    mcpValues,
+    placeholderText,
+    selectableServers,
+    connectionStatus,
+    isInitializing,
+    getConfigDialogProps,
+    toggleServerSelection,
+    getServerStatusIconProps,
+  } = mcpServerManager;
 
-  const renderSelectedValues = useCallback(
-    (values: string[], placeholder?: string) => {
-      if (values.length === 0) {
-        return placeholder || localize('com_ui_select') + '...';
-      }
-      if (values.length === 1) {
-        return values[0];
-      }
-      return localize('com_ui_x_selected', { 0: values.length });
-    },
-    [localize],
-  );
+  const menuStore = Ariakit.useMenuStore({ focusLoop: true });
+  const isOpen = menuStore.useState('open');
 
-  const renderItemContent = useCallback(
-    (serverName: string, defaultContent: React.ReactNode) => {
-      const statusIconProps = getServerStatusIconProps(serverName);
-      const isServerInitializing = isInitializing(serverName);
+  const selectedCount = mcpValues?.length ?? 0;
 
-      /**
-       Common wrapper for the main content (check mark + text).
-       Ensures Check & Text are adjacent and the group takes available space.
-        */
-      const mainContentWrapper = (
-        <button
-          type="button"
-          className={`flex flex-grow items-center rounded bg-transparent p-0 text-left transition-colors focus:outline-none ${
-            isServerInitializing ? 'opacity-50' : ''
-          }`}
-          tabIndex={0}
-          disabled={isServerInitializing}
-        >
-          {defaultContent}
-        </button>
-      );
+  const selectedServers = useMemo(() => {
+    if (!mcpValues || mcpValues.length === 0) {
+      return [];
+    }
+    return selectableServers.filter((s) => mcpValues.includes(s.serverName));
+  }, [selectableServers, mcpValues]);
 
-      const statusIcon = statusIconProps && <MCPServerStatusIcon {...statusIconProps} />;
+  const displayText = useMemo(() => {
+    if (selectedCount === 0) {
+      return null;
+    }
+    if (selectedCount === 1) {
+      const server = selectableServers.find((s) => s.serverName === mcpValues?.[0]);
+      return server?.config?.title || mcpValues?.[0];
+    }
+    return localize('com_ui_x_selected', { 0: selectedCount });
+  }, [selectedCount, selectableServers, mcpValues, localize]);
 
-      if (statusIcon) {
-        return (
-          <div className="flex w-full items-center justify-between">
-            {mainContentWrapper}
-            <div className="ml-2 flex items-center">{statusIcon}</div>
-          </div>
-        );
-      }
-
-      return mainContentWrapper;
-    },
-    [getServerStatusIconProps, isInitializing],
-  );
-
-  if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
-    return null;
-  }
-
-  if (!configuredServers || configuredServers.length === 0) {
+  if (!isPinned && mcpValues?.length === 0) {
     return null;
   }
 
@@ -80,22 +56,88 @@ function MCPSelect() {
 
   return (
     <>
-      <MultiSelect
-        items={configuredServers}
-        selectedValues={mcpValues ?? []}
-        setSelectedValues={batchToggleServers}
-        renderSelectedValues={renderSelectedValues}
-        renderItemContent={renderItemContent}
-        placeholder={placeholderText}
-        popoverClassName="min-w-fit"
-        className="badge-icon min-w-fit"
-        selectIcon={<MCPIcon className="icon-md text-text-primary" />}
-        selectItemsClassName="border border-blue-600/50 bg-blue-500/10 hover:bg-blue-700/10"
-        selectClassName="group relative inline-flex items-center justify-center md:justify-start gap-1.5 rounded-full border border-border-medium text-sm font-medium transition-all md:w-full size-9 p-2 md:p-3 bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner"
-      />
-      {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
+      <Ariakit.MenuProvider store={menuStore}>
+        <TooltipAnchor
+          description={placeholderText}
+          disabled={isOpen}
+          render={
+            <Ariakit.MenuButton
+              className={cn(
+                'group relative inline-flex items-center justify-center gap-1.5',
+                'border border-border-medium text-sm font-medium transition-all',
+                'h-9 min-w-9 rounded-full bg-transparent px-2.5 shadow-sm',
+                'hover:bg-surface-hover hover:shadow-md active:shadow-inner',
+                'md:w-fit md:justify-start md:px-3',
+                isOpen && 'bg-surface-hover',
+              )}
+            />
+          }
+        >
+          <StackedMCPIcons selectedServers={selectedServers} maxIcons={3} iconSize="sm" />
+          <span className="hidden truncate text-text-primary md:block">
+            {displayText || placeholderText}
+          </span>
+          <ChevronDown
+            className={cn(
+              'hidden h-3 w-3 text-text-secondary transition-transform md:block',
+              isOpen && 'rotate-180',
+            )}
+          />
+        </TooltipAnchor>
+
+        <Ariakit.Menu
+          portal={true}
+          gutter={8}
+          modal={true}
+          unmountOnHide={true}
+          aria-label={localize('com_ui_mcp_servers')}
+          className={cn(
+            'z-50 flex min-w-[260px] max-w-[320px] flex-col rounded-xl',
+            'border border-border-light bg-presentation p-1.5 shadow-lg',
+            'origin-top opacity-0 transition-[opacity,transform] duration-200 ease-out',
+            'data-[enter]:scale-100 data-[enter]:opacity-100',
+            'scale-95 data-[leave]:scale-95 data-[leave]:opacity-0',
+          )}
+        >
+          <div className="flex max-h-[320px] flex-col gap-1 overflow-y-auto">
+            {selectableServers.map((server) => (
+              <MCPServerMenuItem
+                key={server.serverName}
+                server={server}
+                isSelected={mcpValues?.includes(server.serverName) ?? false}
+                connectionStatus={connectionStatus}
+                isInitializing={isInitializing}
+                statusIconProps={getServerStatusIconProps(server.serverName)}
+                onToggle={toggleServerSelection}
+              />
+            ))}
+          </div>
+        </Ariakit.Menu>
+      </Ariakit.MenuProvider>
+      {configDialogProps && (
+        <MCPConfigDialog
+          {...configDialogProps}
+          conversationId={conversationId}
+          storageContextKey={storageContextKey}
+        />
+      )}
     </>
   );
+}
+
+function MCPSelect() {
+  const { mcpServerManager } = useBadgeRowContext();
+  const { selectableServers } = mcpServerManager;
+  const canUseMcp = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
+
+  if (!canUseMcp || !selectableServers || selectableServers.length === 0) {
+    return null;
+  }
+
+  return <MCPSelectContent />;
 }
 
 export default memo(MCPSelect);

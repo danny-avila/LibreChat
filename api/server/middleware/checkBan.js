@@ -2,10 +2,9 @@ const { Keyv } = require('keyv');
 const uap = require('ua-parser-js');
 const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
-const { isEnabled, removePorts } = require('~/server/utils');
-const keyvMongo = require('~/cache/keyvMongo');
-const denyRequest = require('./denyRequest');
+const { isEnabled, keyvMongo, removePorts } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
+const denyRequest = require('./denyRequest');
 const { findUser } = require('~/models');
 
 const banCache = new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
@@ -19,14 +18,14 @@ const message = 'Your account has been temporarily banned due to violations of o
  * @param {Object} req - Express Request object.
  * @param {Object} res - Express Response object.
  *
- * @returns {Promise<Object>} - Returns a Promise which when resolved sends a response status of 403 with a specific message if request is not of api/ask or api/edit types. If it is, calls `denyRequest()` function.
+ * @returns {Promise<Object>} - Returns a Promise which when resolved sends a response status of 403 with a specific message if request is not of api/agents/chat. If it is, calls `denyRequest()` function.
  */
 const banResponse = async (req, res) => {
   const ua = uap(req.headers['user-agent']);
-  const { baseUrl } = req;
+  const { baseUrl, originalUrl } = req;
   if (!ua.browser.name) {
     return res.status(403).json({ message });
-  } else if (baseUrl === '/api/ask' || baseUrl === '/api/edit') {
+  } else if (baseUrl === '/api/agents' && originalUrl.startsWith('/api/agents/chat')) {
     return await denyRequest(req, res, { type: ViolationTypes.BAN });
   }
 

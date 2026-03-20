@@ -1,24 +1,23 @@
+import { QueryKeys } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, Constants } from 'librechat-data-provider';
 import { TooltipAnchor, Button, NewChatIcon } from '@librechat/client';
-import type { TMessage } from 'librechat-data-provider';
-import { useChatContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
+import { useNewConvo, useLocalize } from '~/hooks';
+import { clearMessagesCache } from '~/utils';
+import store from '~/store';
 
 export default function HeaderNewChat() {
   const localize = useLocalize();
   const queryClient = useQueryClient();
-  const { conversation, newConversation } = useChatContext();
+  const { newConversation } = useNewConvo();
+  const conversation = useRecoilValue(store.conversationByIndex(0));
 
   const clickHandler: React.MouseEventHandler<HTMLButtonElement> = (e) => {
     if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
       window.open('/c/new', '_blank');
       return;
     }
-    queryClient.setQueryData<TMessage[]>(
-      [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-      [],
-    );
+    clearMessagesCache(queryClient, conversation?.conversationId);
     queryClient.invalidateQueries([QueryKeys.messages]);
     newConversation();
   };
@@ -32,7 +31,7 @@ export default function HeaderNewChat() {
           variant="outline"
           data-testid="wide-header-new-chat-button"
           aria-label={localize('com_ui_new_chat')}
-          className="rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-hover max-md:hidden"
+          className="rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt max-md:hidden"
           onClick={clickHandler}
         >
           <NewChatIcon />

@@ -6,11 +6,11 @@ import { cn } from '~/utils';
 import './Tooltip.css';
 
 interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
-  description: string;
-  side?: 'top' | 'bottom' | 'left' | 'right';
-  className?: string;
   role?: string;
+  className?: string;
+  description: string;
   enableHTML?: boolean;
+  side?: 'top' | 'bottom' | 'left' | 'right';
 }
 
 export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
@@ -21,7 +21,6 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
   const mounted = Ariakit.useStoreState(tooltip, (state) => state.mounted);
   const placement = Ariakit.useStoreState(tooltip, (state) => state.placement);
 
-  const id = useId();
   const sanitizer = useMemo(() => {
     const instance = DOMPurify();
     instance.addHook('afterSanitizeAttributes', (node) => {
@@ -79,7 +78,6 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
         {...props}
         ref={ref}
         role={role}
-        aria-describedby={id}
         onKeyDown={handleKeyDown}
         className={cn('cursor-pointer', className)}
       />
@@ -89,7 +87,6 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
             gutter={4}
             alwaysVisible
             className="tooltip"
-            id={id}
             render={
               <motion.div
                 initial={{ opacity: 0, x, y }}

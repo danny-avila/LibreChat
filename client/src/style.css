@@ -60,6 +60,7 @@
   --font-size-base: 1rem;
   --font-size-lg: 1.125rem;
   --font-size-xl: 1.25rem;
+  --markdown-font-size: 1rem;
 }
 html {
   --brand-purple: #ab68ff;
@@ -69,6 +70,7 @@ html {
   --text-secondary-alt: var(--gray-500);
   --text-tertiary: var(--gray-500);
   --text-warning: var(--amber-500);
+  --text-destructive: var(--red-600);
   --ring-primary: var(--gray-500);
   --header-primary: var(--white);
   --header-hover: var(--gray-50);
@@ -95,6 +97,7 @@ html {
   --border-medium: var(--gray-300);
   --border-heavy: var(--gray-400);
   --border-xheavy: var(--gray-500);
+  --border-destructive: var(--red-600);
   /* These are test styles */
 
   --background: 0 0% 100%;
@@ -130,6 +133,7 @@ html {
   --text-secondary-alt: var(--gray-400);
   --text-tertiary: var(--gray-500);
   --text-warning: var(--amber-500);
+  --text-destructive: var(--red-600);
   --header-primary: var(--gray-700);
   --header-hover: var(--gray-600);
   --header-button-hover: var(--gray-700);
@@ -155,6 +159,7 @@ html {
   --border-medium: var(--gray-600);
   --border-heavy: var(--gray-500);
   --border-xheavy: var(--gray-400);
+  --border-destructive: var(--red-500);
   /* These are test styles */
 
   --background: 0 0% 7%;
@@ -1242,8 +1247,12 @@ pre {
     Ubuntu Mono,
     monospace !important;
 }
-code[class='language-plaintext'] {
-  white-space: pre-line;
+code.language-text,
+code.language-txt,
+code.language-plaintext,
+code.language-markdown,
+code.language-md {
+  white-space: pre-wrap !important;
 }
 code.hljs,
 code[class*='language-'],
@@ -1480,6 +1489,26 @@ button {
 
 .dark .scrollbar-transparent::-webkit-scrollbar-thumb {
   background-color: transparent;
+}
+
+/* Show scrollbar only on hover */
+.scrollbar-hover {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scrollbar-hover:hover {
+  scrollbar-color: var(--border-medium) transparent;
+}
+
+.scrollbar-hover::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 0.3s ease 0.5s;
+}
+
+.scrollbar-hover:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border-medium);
+  transition-delay: 0s;
 }
 
 body,
@@ -2536,7 +2565,7 @@ html {
 }
 
 .tooltip {
-  z-index: 50;
+  z-index: 150;
   cursor: pointer;
   border-radius: 0.275rem;
   background-color: var(--surface-primary);
@@ -2576,7 +2605,7 @@ html {
   flex-direction: column;
   overflow: auto;
   overscroll-behavior: contain;
-  border-radius: 1rem;
+  border-radius: 0.7rem;
   border-width: 1px;
   border-style: solid;
   border-color: var(--border-light);
@@ -2643,12 +2672,17 @@ html {
   color: var(--text-primary);
 }
 
+.account-settings-popover .select-item[data-active-item] {
+  box-shadow: 0 0 0 2px hsl(var(--ring));
+}
+
 .popover-ui[data-enter] {
   opacity: 1;
   scale: 1;
   translate: 0;
 }
 
+.animate-popover-top,
 .animate-popover {
   transform-origin: top;
   opacity: 0;
@@ -2657,12 +2691,13 @@ html {
     transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
   transform: scale(0.95) translateY(-0.5rem);
 }
-
+.animate-popover-top[data-enter],
 .animate-popover[data-enter] {
   opacity: 1;
   transform: scale(1) translateY(0);
 }
 
+/* Left (existing) */
 .animate-popover-left {
   transform-origin: left;
   opacity: 0;
@@ -2671,10 +2706,90 @@ html {
     transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
   transform: scale(0.95) translateX(-0.5rem);
 }
-
 .animate-popover-left[data-enter] {
   opacity: 1;
   transform: scale(1) translateX(0);
+}
+
+/* Right */
+.animate-popover-right {
+  transform-origin: right;
+  opacity: 0;
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.95) translateX(0.5rem);
+}
+.animate-popover-right[data-enter] {
+  opacity: 1;
+  transform: scale(1) translateX(0);
+}
+
+/* Bottom */
+.animate-popover-bottom {
+  transform-origin: bottom;
+  opacity: 0;
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.95) translateY(0.5rem);
+}
+.animate-popover-bottom[data-enter] {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+/* Corners */
+.animate-popover-top-left {
+  transform-origin: top left;
+  opacity: 0;
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.95) translate(-0.5rem, -0.5rem);
+}
+.animate-popover-top-left[data-enter] {
+  opacity: 1;
+  transform: scale(1) translate(0, 0);
+}
+
+.animate-popover-top-right {
+  transform-origin: top right;
+  opacity: 0;
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.95) translate(0.5rem, -0.5rem);
+}
+.animate-popover-top-right[data-enter] {
+  opacity: 1;
+  transform: scale(1) translate(0, 0);
+}
+
+.animate-popover-bottom-left {
+  transform-origin: bottom left;
+  opacity: 0;
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.95) translate(-0.5rem, 0.5rem);
+}
+.animate-popover-bottom-left[data-enter] {
+  opacity: 1;
+  transform: scale(1) translate(0, 0);
+}
+
+.animate-popover-bottom-right {
+  transform-origin: bottom right;
+  opacity: 0;
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.95) translate(0.5rem, 0.5rem);
+}
+.animate-popover-bottom-right[data-enter] {
+  opacity: 1;
+  transform: scale(1) translate(0, 0);
 }
 
 /** Note: ensure KaTeX can spread across visible space */
@@ -2710,6 +2825,7 @@ html {
 .animate-pulse-slow {
   animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -2723,10 +2839,6 @@ html {
 
 .animate-fadeIn {
   animation: fadeIn 0.5s ease-out forwards;
-}
-
-.scale-98 {
-  transform: scale(0.98);
 }
 
 /* Chat Badges Animation */
@@ -2798,4 +2910,19 @@ html {
 
 .custom-style-2 {
   padding: 12px;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+.sharepoint-picker-bg {
+  background-color: #f5f5f5;
 }

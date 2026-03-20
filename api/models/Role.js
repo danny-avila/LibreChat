@@ -2,7 +2,6 @@ const {
   CacheKeys,
   SystemRoles,
   roleDefaults,
-  PermissionTypes,
   permissionsSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
@@ -17,7 +16,7 @@ const { Role } = require('~/db/models');
  *
  * @param {string} roleName - The name of the role to find or create.
  * @param {string|string[]} [fieldsToSelect] - The fields to include or exclude in the returned document.
- * @returns {Promise<Object>} A plain object representing the role document.
+ * @returns {Promise<IRole>} Role document.
  */
 const getRoleByName = async function (roleName, fieldsToSelect = null) {
   const cache = getLogStores(CacheKeys.ROLES);
@@ -73,8 +72,9 @@ const updateRoleByName = async function (roleName, updates) {
  * Updates access permissions for a specific role and multiple permission types.
  * @param {string} roleName - The role to update.
  * @param {Object.<PermissionTypes, Object.<Permissions, boolean>>} permissionsUpdate - Permissions to update and their values.
+ * @param {IRole} [roleData] - Optional role data to use instead of fetching from the database.
  */
-async function updateAccessPermissions(roleName, permissionsUpdate) {
+async function updateAccessPermissions(roleName, permissionsUpdate, roleData) {
   // Filter and clean the permission updates based on our schema definition.
   const updates = {};
   for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
@@ -87,7 +87,7 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
   }
 
   try {
-    const role = await getRoleByName(roleName);
+    const role = roleData ?? (await getRoleByName(roleName));
     if (!role) {
       return;
     }
@@ -114,7 +114,28 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
       }
     }
 
-    // Process the current updates
+    // Migrate legacy SHARED_GLOBAL → SHARE for PROMPTS and AGENTS.
+    // SHARED_GLOBAL was removed in favour of SHARE in PR #11283. If the DB still has
+    // SHARED_GLOBAL but not SHARE, inherit the value so sharing intent is preserved.
+    const legacySharedGlobalTypes = ['PROMPTS', 'AGENTS'];
+    for (const legacyPermType of legacySharedGlobalTypes) {
+      const existingTypePerms = currentPermissions[legacyPermType];
+      if (
+        existingTypePerms &&
+        'SHARED_GLOBAL' in existingTypePerms &&
+        !('SHARE' in existingTypePerms) &&
+        updates[legacyPermType] &&
+        // Don't override an explicit SHARE value the caller already provided
+        !('SHARE' in updates[legacyPermType])
+      ) {
+        const inheritedValue = existingTypePerms['SHARED_GLOBAL'];
+        updates[legacyPermType]['SHARE'] = inheritedValue;
+        logger.info(
+          `Migrating '${roleName}' role ${legacyPermType}.SHARED_GLOBAL=${inheritedValue} → SHARE`,
+        );
+      }
+    }
+
     for (const [permissionType, permissions] of Object.entries(updates)) {
       const currentTypePermissions = currentPermissions[permissionType] || {};
       updatedPermissions[permissionType] = { ...currentTypePermissions };
@@ -127,6 +148,32 @@ async function updateAccessPermissions(roleName, permissionsUpdate) {
             `Updating '${roleName}' role permission '${permissionType}' '${permission}' from ${currentTypePermissions[permission]} to: ${value}`,
           );
         }
+      }
+    }
+
+    // Clean up orphaned SHARED_GLOBAL fields left in DB after the schema rename.
+    // Since we $set the full permissions object, deleting from updatedPermissions
+    // is sufficient to remove the field from MongoDB.
+    for (const legacyPermType of legacySharedGlobalTypes) {
+      const existingTypePerms = currentPermissions[legacyPermType];
+      if (existingTypePerms && 'SHARED_GLOBAL' in existingTypePerms) {
+        if (!updates[legacyPermType]) {
+          // permType wasn't in the update payload so the migration block above didn't run.
+          // Create a writable copy and handle the SHARED_GLOBAL → SHARE inheritance here
+          // to avoid removing SHARED_GLOBAL without writing SHARE (data loss).
+          updatedPermissions[legacyPermType] = { ...existingTypePerms };
+          if (!('SHARE' in existingTypePerms)) {
+            updatedPermissions[legacyPermType]['SHARE'] = existingTypePerms['SHARED_GLOBAL'];
+            logger.info(
+              `Migrating '${roleName}' role ${legacyPermType}.SHARED_GLOBAL=${existingTypePerms['SHARED_GLOBAL']} → SHARE`,
+            );
+          }
+        }
+        delete updatedPermissions[legacyPermType]['SHARED_GLOBAL'];
+        hasChanges = true;
+        logger.info(
+          `Removed legacy SHARED_GLOBAL field from '${roleName}' role ${legacyPermType} permissions`,
+        );
       }
     }
 

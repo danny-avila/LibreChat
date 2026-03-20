@@ -5,7 +5,7 @@
  *  - Also value will be updated everywhere, when value updated (via `storage` event)
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 export default function useLocalStorage<T>(
   key: string,
@@ -47,23 +47,26 @@ export default function useLocalStorage<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, globalSetState]);
 
-  const setValueWrap = (value: T) => {
-    try {
-      setValue(value);
-      const storeLocal = () => {
-        localStorage.setItem(key, JSON.stringify(value));
-        window?.dispatchEvent(new StorageEvent('storage', { key }));
-      };
-      if (!storageCondition) {
-        storeLocal();
-      } else if (storageCondition(value, localStorage.getItem(key))) {
-        storeLocal();
+  const setValueWrap = useCallback(
+    (value: T) => {
+      try {
+        setValue(value);
+        const storeLocal = () => {
+          localStorage.setItem(key, JSON.stringify(value));
+          window?.dispatchEvent(new StorageEvent('storage', { key }));
+        };
+        if (!storageCondition) {
+          storeLocal();
+        } else if (storageCondition(value, localStorage.getItem(key))) {
+          storeLocal();
+        }
+        globalSetState?.(value);
+      } catch (e) {
+        console.error(e);
       }
-      globalSetState?.(value);
-    } catch (e) {
-      console.error(e);
-    }
-  };
+    },
+    [key, globalSetState, storageCondition],
+  );
 
   return [value, setValueWrap];
 }

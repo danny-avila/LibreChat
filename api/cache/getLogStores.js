@@ -1,9 +1,13 @@
-const { cacheConfig } = require('./cacheConfig');
 const { Keyv } = require('keyv');
-const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
-const { logFile } = require('./keyvFiles');
-const keyvMongo = require('./keyvMongo');
-const { standardCache, sessionCache, violationCache } = require('./cacheFactory');
+const { Time, CacheKeys, ViolationTypes } = require('librechat-data-provider');
+const {
+  logFile,
+  keyvMongo,
+  cacheConfig,
+  sessionCache,
+  standardCache,
+  violationCache,
+} = require('@librechat/api');
 
 const namespaces = {
   [ViolationTypes.GENERAL]: new Keyv({ store: logFile, namespace: 'violations' }),
@@ -31,9 +35,9 @@ const namespaces = {
   [CacheKeys.SAML_SESSION]: sessionCache(CacheKeys.SAML_SESSION),
 
   [CacheKeys.ROLES]: standardCache(CacheKeys.ROLES),
-  [CacheKeys.MCP_TOOLS]: standardCache(CacheKeys.MCP_TOOLS),
+  [CacheKeys.APP_CONFIG]: standardCache(CacheKeys.APP_CONFIG),
   [CacheKeys.CONFIG_STORE]: standardCache(CacheKeys.CONFIG_STORE),
-  [CacheKeys.STATIC_CONFIG]: standardCache(CacheKeys.STATIC_CONFIG),
+  [CacheKeys.TOOL_CACHE]: standardCache(CacheKeys.TOOL_CACHE),
   [CacheKeys.PENDING_REQ]: standardCache(CacheKeys.PENDING_REQ),
   [CacheKeys.ENCODED_DOMAINS]: new Keyv({ store: keyvMongo, namespace: CacheKeys.ENCODED_DOMAINS }),
   [CacheKeys.ABORT_KEYS]: standardCache(CacheKeys.ABORT_KEYS, Time.TEN_MINUTES),
@@ -43,10 +47,14 @@ const namespaces = {
   [CacheKeys.MODEL_QUERIES]: standardCache(CacheKeys.MODEL_QUERIES),
   [CacheKeys.AUDIO_RUNS]: standardCache(CacheKeys.AUDIO_RUNS, Time.TEN_MINUTES),
   [CacheKeys.MESSAGES]: standardCache(CacheKeys.MESSAGES, Time.ONE_MINUTE),
-  [CacheKeys.FLOWS]: standardCache(CacheKeys.FLOWS, Time.ONE_MINUTE * 3),
+  [CacheKeys.FLOWS]: standardCache(CacheKeys.FLOWS, Time.ONE_MINUTE * 10),
   [CacheKeys.OPENID_EXCHANGED_TOKENS]: standardCache(
     CacheKeys.OPENID_EXCHANGED_TOKENS,
     Time.TEN_MINUTES,
+  ),
+  [CacheKeys.ADMIN_OAUTH_EXCHANGE]: standardCache(
+    CacheKeys.ADMIN_OAUTH_EXCHANGE,
+    Time.THIRTY_SECONDS,
   ),
 };
 

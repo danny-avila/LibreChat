@@ -1,5 +1,4 @@
 import type { Logger as WinstonLogger } from 'winston';
-import type { RunnableConfig } from '@langchain/core/runnables';
 
 export type SearchRefType = 'search' | 'image' | 'news' | 'video' | 'ref';
 
@@ -34,7 +33,7 @@ export type ValidSource = ProcessedOrganic | ProcessedTopStory;
 
 export type ResultReference = {
   link: string;
-  type: 'link' | 'image' | 'video';
+  type: 'link' | 'image' | 'video' | 'file';
   title?: string;
   attribution?: string;
 };
@@ -174,15 +173,6 @@ export interface CohereRerankerResponse {
 export type SafeSearchLevel = 0 | 1 | 2;
 
 export type Logger = WinstonLogger;
-export interface SearchToolConfig extends SearchConfig, ProcessSourcesConfig, FirecrawlConfig {
-  logger?: Logger;
-  safeSearch?: SafeSearchLevel;
-  jinaApiKey?: string;
-  cohereApiKey?: string;
-  rerankerType?: RerankerType;
-  onSearchResults?: (results: SearchResult, runnableConfig?: RunnableConfig) => void;
-  onGetHighlights?: (link: string) => void;
-}
 export interface MediaReference {
   originalUrl: string;
   title?: string;
@@ -288,18 +278,6 @@ export interface FirecrawlScraperConfig {
   timeout?: number;
   logger?: Logger;
 }
-
-export type GetSourcesParams = {
-  query: string;
-  date?: DATE_RANGE;
-  country?: string;
-  numResults?: number;
-  safeSearch?: SearchToolConfig['safeSearch'];
-  images?: boolean;
-  videos?: boolean;
-  news?: boolean;
-  type?: 'search' | 'images' | 'videos' | 'news';
-};
 
 /** Serper API */
 export interface VideoResult {
@@ -608,12 +586,3 @@ export interface SearXNGResult {
   publishedDate?: string;
   img_src?: string;
 }
-
-export type ProcessSourcesFields = {
-  result: SearchResult;
-  numElements: number;
-  query: string;
-  news: boolean;
-  proMode: boolean;
-  onGetHighlights: SearchToolConfig['onGetHighlights'];
-};

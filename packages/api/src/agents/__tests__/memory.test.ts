@@ -22,8 +22,9 @@ jest.mock('winston', () => ({
 }));
 
 // Mock the Tokenizer
-jest.mock('~/utils', () => ({
-  Tokenizer: {
+jest.mock('~/utils/tokenizer', () => ({
+  __esModule: true,
+  default: {
     getTokenCount: jest.fn((text: string) => text.length), // Simple mock: 1 char = 1 token
   },
 }));
@@ -393,6 +394,74 @@ describe('processMemory - GPT-5+ handling', () => {
           llmConfig: expect.objectContaining({
             model: 'gpt-4.1-mini',
             temperature: 0.4, // Default temperature should remain
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('should use max_output_tokens when useResponsesApi is true', async () => {
+    await processMemory({
+      res: mockRes as Response,
+      userId: 'test-user',
+      setMemory: mockSetMemory,
+      deleteMemory: mockDeleteMemory,
+      messages: [],
+      memory: 'Test memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      instructions: 'Test instructions',
+      llmConfig: {
+        provider: Providers.OPENAI,
+        model: 'gpt-5',
+        maxTokens: 1000,
+        useResponsesApi: true,
+      },
+    });
+
+    const { Run } = jest.requireMock('@librechat/agents');
+    expect(Run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        graphConfig: expect.objectContaining({
+          llmConfig: expect.objectContaining({
+            model: 'gpt-5',
+            modelKwargs: {
+              max_output_tokens: 1000,
+            },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('should use max_completion_tokens when useResponsesApi is false or undefined', async () => {
+    await processMemory({
+      res: mockRes as Response,
+      userId: 'test-user',
+      setMemory: mockSetMemory,
+      deleteMemory: mockDeleteMemory,
+      messages: [],
+      memory: 'Test memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      instructions: 'Test instructions',
+      llmConfig: {
+        provider: Providers.OPENAI,
+        model: 'gpt-5',
+        maxTokens: 1000,
+        useResponsesApi: false,
+      },
+    });
+
+    const { Run } = jest.requireMock('@librechat/agents');
+    expect(Run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        graphConfig: expect.objectContaining({
+          llmConfig: expect.objectContaining({
+            model: 'gpt-5',
+            modelKwargs: {
+              max_completion_tokens: 1000,
+            },
           }),
         }),
       }),

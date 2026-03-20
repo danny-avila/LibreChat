@@ -6,10 +6,12 @@ import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
+import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+import * as permissions from './accessPermissions';
 
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
@@ -19,8 +21,22 @@ export function revokeAllUserKeys(): Promise<unknown> {
   return request.delete(endpoints.revokeAllUserKeys());
 }
 
-export function deleteUser(): Promise<s.TPreset> {
-  return request.delete(endpoints.deleteUser());
+export function deleteUser(payload?: t.TDeleteUserRequest): Promise<unknown> {
+  return request.deleteWithOptions(endpoints.deleteUser(), { data: payload });
+}
+
+export type FavoriteItem = {
+  agentId?: string;
+  model?: string;
+  endpoint?: string;
+};
+
+export function getFavorites(): Promise<FavoriteItem[]> {
+  return request.get(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`);
+}
+
+export function updateFavorites(favorites: FavoriteItem[]): Promise<FavoriteItem[]> {
+  return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, { favorites });
 }
 
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
@@ -41,8 +57,11 @@ export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetR
   return request.get(endpoints.getSharedLink(conversationId));
 }
 
-export function createSharedLink(conversationId: string): Promise<t.TSharedLinkResponse> {
-  return request.post(endpoints.createSharedLink(conversationId));
+export function createSharedLink(
+  conversationId: string,
+  targetMessageId?: string,
+): Promise<t.TSharedLinkResponse> {
+  return request.post(endpoints.createSharedLink(conversationId), { targetMessageId });
 }
 
 export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
@@ -60,6 +79,20 @@ export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
   }
 
   return request.put(endpoints.keys(), payload);
+}
+
+export function getAgentApiKeys(): Promise<t.TAgentApiKeyListResponse> {
+  return request.get(endpoints.apiKeys());
+}
+
+export function createAgentApiKey(
+  payload: t.TAgentApiKeyCreateRequest,
+): Promise<t.TAgentApiKeyCreateResponse> {
+  return request.post(endpoints.apiKeys(), payload);
+}
+
+export function deleteAgentApiKey(id: string): Promise<void> {
+  return request.delete(endpoints.apiKeyById(id));
 }
 
 export function getPresets(): Promise<s.TPreset[]> {
@@ -145,6 +178,14 @@ export const reinitializeMCPServer = (serverName: string) => {
   return request.post(endpoints.mcpReinitialize(serverName));
 };
 
+export const bindMCPOAuth = (serverName: string): Promise<{ success: boolean }> => {
+  return request.post(endpoints.mcpOAuthBind(serverName));
+};
+
+export const bindActionOAuth = (actionId: string): Promise<{ success: boolean }> => {
+  return request.post(endpoints.actionOAuthBind(actionId));
+};
+
 export const getMCPConnectionStatus = (): Promise<q.MCPConnectionStatusResponse> => {
   return request.get(endpoints.mcpConnectionStatus());
 };
@@ -179,10 +220,6 @@ export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
 
 export const getModels = async (): Promise<t.TModelsConfig> => {
   return request.get(endpoints.models());
-};
-
-export const getEndpointsConfigOverride = (): Promise<unknown | boolean> => {
-  return request.get(endpoints.endpointsConfigOverride());
 };
 
 /* Assistants */
@@ -300,6 +337,12 @@ export const getAvailableTools = (
   return request.get(path);
 };
 
+/* MCP Tools - Decoupled from regular tools */
+
+export const getMCPTools = (): Promise<q.MCPServersResponse> => {
+  return request.get(endpoints.mcp.tools);
+};
+
 export const getVerifyAgentToolAuth = (
   params: q.VerifyToolAuthParams,
 ): Promise<q.VerifyToolAuthResponse> => {
@@ -413,6 +456,14 @@ export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agen
   );
 };
 
+export const getExpandedAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agent> => {
+  return request.get(
+    endpoints.agents({
+      path: `${agent_id}/expanded`,
+    }),
+  );
+};
+
 export const updateAgent = ({
   agent_id,
   data,
@@ -462,6 +513,34 @@ export const revertAgentVersion = ({
   version_index: number;
 }): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
 
+/* Marketplace */
+
+/**
+ * Get agent categories with counts for marketplace tabs
+ */
+export const getAgentCategories = (): Promise<t.TMarketplaceCategory[]> => {
+  return request.get(endpoints.agents({ path: 'categories' }));
+};
+
+/**
+ * Unified marketplace agents endpoint with query string controls
+ */
+export const getMarketplaceAgents = (params: {
+  requiredPermission: number;
+  category?: string;
+  search?: string;
+  limit?: number;
+  cursor?: string;
+  promoted?: 0 | 1;
+}): Promise<a.AgentListResponse> => {
+  return request.get(
+    endpoints.agents({
+      // path: 'marketplace',
+      options: params,
+    }),
+  );
+};
+
 /* Tools */
 
 export const getAvailableAgentTools = (): Promise<s.TPlugin[]> => {
@@ -495,6 +574,51 @@ export const deleteAgentAction = async ({
       path: `actions/${agent_id}/${action_id}`,
     }),
   );
+
+/**
+ * MCP Servers
+ */
+
+/**
+ *
+ * Ensure and List loaded mcp server configs from the cache Enriched with effective permissions.
+ */
+export const getMCPServers = async (): Promise<mcp.MCPServersListResponse> => {
+  return request.get(endpoints.mcp.servers);
+};
+
+/**
+ * Get a single MCP server by ID
+ */
+export const getMCPServer = async (serverName: string): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.get(endpoints.mcpServer(serverName));
+};
+
+/**
+ * Create a new MCP server
+ */
+export const createMCPServer = async (
+  data: mcp.MCPServerCreateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.post(endpoints.mcp.servers, data);
+};
+
+/**
+ * Update an existing MCP server
+ */
+export const updateMCPServer = async (
+  serverName: string,
+  data: mcp.MCPServerUpdateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.patch(endpoints.mcpServer(serverName), data);
+};
+
+/**
+ * Delete an MCP server
+ */
+export const deleteMCPServer = async (serverName: string): Promise<{ success: boolean }> => {
+  return request.delete(endpoints.mcpServer(serverName));
+};
 
 /**
  * Imports a conversations file.
@@ -618,11 +742,11 @@ export function updateConversation(
 export function archiveConversation(
   payload: t.TArchiveConversationRequest,
 ): Promise<t.TArchiveConversationResponse> {
-  return request.post(endpoints.updateConversation(), { arg: payload });
+  return request.post(endpoints.archiveConversation(), { arg: payload });
 }
 
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
-  return request.post(endpoints.genTitle(), payload);
+  return request.get(endpoints.genTitle(payload.conversationId));
 }
 
 export const listMessages = (params?: q.MessagesListParams): Promise<q.MessagesListResponse> => {
@@ -651,7 +775,13 @@ export const editArtifact = async ({
   messageId,
   ...params
 }: m.TEditArtifactRequest): Promise<m.TEditArtifactResponse> => {
-  return request.post(`/api/messages/artifact/${messageId}`, params);
+  return request.post(endpoints.messagesArtifacts(messageId), params);
+};
+
+export const branchMessage = async (
+  payload: m.TBranchMessageRequest,
+): Promise<m.TBranchMessageResponse> => {
+  return request.post(endpoints.messagesBranch(), payload);
 };
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
@@ -688,6 +818,13 @@ export function getPromptGroup(id: string): Promise<t.TPromptGroup> {
 
 export function createPrompt(payload: t.TCreatePrompt): Promise<t.TCreatePromptResponse> {
   return request.post(endpoints.postPrompt(), payload);
+}
+
+export function addPromptToGroup(
+  groupId: string,
+  payload: t.TCreatePrompt,
+): Promise<t.TCreatePromptResponse> {
+  return request.post(endpoints.addPromptToGroup(groupId), payload);
 }
 
 export function updatePromptGroup(
@@ -747,6 +884,36 @@ export function updateMemoryPermissions(
   return request.put(endpoints.updateMemoryPermissions(variables.roleName), variables.updates);
 }
 
+export function updatePeoplePickerPermissions(
+  variables: m.UpdatePeoplePickerPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(
+    endpoints.updatePeoplePickerPermissions(variables.roleName),
+    variables.updates,
+  );
+}
+
+export function updateMCPServersPermissions(
+  variables: m.UpdateMCPServersPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMCPServersPermissions(variables.roleName), variables.updates);
+}
+
+export function updateRemoteAgentsPermissions(
+  variables: m.UpdateRemoteAgentsPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(
+    endpoints.updateRemoteAgentsPermissions(variables.roleName),
+    variables.updates,
+  );
+}
+
+export function updateMarketplacePermissions(
+  variables: m.UpdateMarketplacePermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMarketplacePermissions(variables.roleName), variables.updates);
+}
+
 /* Tags */
 export function getConversationTags(): Promise<t.TConversationTagsResponse> {
   return request.get(endpoints.conversationTags());
@@ -803,8 +970,8 @@ export function updateFeedback(
 }
 
 // 2FA
-export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
-  return request.get(endpoints.enableTwoFactor());
+export function enableTwoFactor(payload?: t.TEnable2FARequest): Promise<t.TEnable2FAResponse> {
+  return request.post(endpoints.enableTwoFactor(), payload);
 }
 
 export function verifyTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
@@ -815,12 +982,14 @@ export function confirmTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerif
   return request.post(endpoints.confirmTwoFactor(), payload);
 }
 
-export function disableTwoFactor(): Promise<t.TDisable2FAResponse> {
-  return request.post(endpoints.disableTwoFactor());
+export function disableTwoFactor(payload?: t.TDisable2FARequest): Promise<t.TDisable2FAResponse> {
+  return request.post(endpoints.disableTwoFactor(), payload);
 }
 
-export function regenerateBackupCodes(): Promise<t.TRegenerateBackupCodesResponse> {
-  return request.post(endpoints.regenerateBackupCodes());
+export function regenerateBackupCodes(
+  payload?: t.TRegenerateBackupCodesRequest,
+): Promise<t.TRegenerateBackupCodesResponse> {
+  return request.post(endpoints.regenerateBackupCodes(), payload);
 }
 
 export function verifyTwoFactorTemp(
@@ -857,4 +1026,62 @@ export const createMemory = (data: {
   value: string;
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
+};
+
+export function searchPrincipals(
+  params: q.PrincipalSearchParams,
+): Promise<q.PrincipalSearchResponse> {
+  return request.get(endpoints.searchPrincipals(params));
+}
+
+export function getAccessRoles(
+  resourceType: permissions.ResourceType,
+): Promise<q.AccessRolesResponse> {
+  return request.get(endpoints.getAccessRoles(resourceType));
+}
+
+export function getResourcePermissions(
+  resourceType: permissions.ResourceType,
+  resourceId: string,
+): Promise<permissions.TGetResourcePermissionsResponse> {
+  return request.get(endpoints.getResourcePermissions(resourceType, resourceId));
+}
+
+export function updateResourcePermissions(
+  resourceType: permissions.ResourceType,
+  resourceId: string,
+  data: permissions.TUpdateResourcePermissionsRequest,
+): Promise<permissions.TUpdateResourcePermissionsResponse> {
+  return request.put(endpoints.updateResourcePermissions(resourceType, resourceId), data);
+}
+
+export function getEffectivePermissions(
+  resourceType: permissions.ResourceType,
+  resourceId: string,
+): Promise<permissions.TEffectivePermissionsResponse> {
+  return request.get(endpoints.getEffectivePermissions(resourceType, resourceId));
+}
+
+export function getAllEffectivePermissions(
+  resourceType: permissions.ResourceType,
+): Promise<permissions.TAllEffectivePermissionsResponse> {
+  return request.get(endpoints.getAllEffectivePermissions(resourceType));
+}
+
+// SharePoint Graph API Token
+export function getGraphApiToken(params: q.GraphTokenParams): Promise<q.GraphTokenResponse> {
+  return request.get(endpoints.graphToken(params.scopes));
+}
+
+export function getDomainServerBaseUrl(): string {
+  return `${endpoints.apiBaseUrl()}/api`;
+}
+
+/* Active Jobs */
+export interface ActiveJobsResponse {
+  activeJobIds: string[];
+}
+
+export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
+  return request.get(endpoints.activeJobs());
 };

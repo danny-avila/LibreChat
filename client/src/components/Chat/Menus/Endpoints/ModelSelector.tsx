@@ -1,7 +1,15 @@
 import React, { useMemo } from 'react';
+import { TooltipAnchor } from '@librechat/client';
+import { getConfigDefaults } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
+import {
+  renderModelSpecs,
+  renderEndpoints,
+  renderSearchResults,
+  renderCustomGroups,
+} from './components';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
-import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
+import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
@@ -12,6 +20,7 @@ function ModelSelectorContent() {
 
   const {
     // LibreChat
+    agentsMap,
     modelSpecs,
     mappedEndpoints,
     endpointsConfig,
@@ -19,7 +28,6 @@ function ModelSelectorContent() {
     searchValue,
     searchResults,
     selectedValues,
-
     // Functions
     setSearchValue,
     setSelectedValues,
@@ -43,25 +51,32 @@ function ModelSelectorContent() {
     () =>
       getDisplayValue({
         localize,
+        agentsMap,
         modelSpecs,
         selectedValues,
         mappedEndpoints,
       }),
-    [localize, modelSpecs, selectedValues, mappedEndpoints],
+    [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints],
   );
 
   const trigger = (
-    <button
-      className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
+    <TooltipAnchor
       aria-label={localize('com_ui_select_model')}
-    >
-      {selectedIcon && React.isValidElement(selectedIcon) && (
-        <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
-          {selectedIcon}
-        </div>
-      )}
-      <span className="flex-grow truncate text-left">{selectedDisplayValue}</span>
-    </button>
+      description={localize('com_ui_select_model')}
+      render={
+        <button
+          className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
+          aria-label={localize('com_ui_select_model')}
+        >
+          {selectedIcon && React.isValidElement(selectedIcon) && (
+            <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
+              {selectedIcon}
+            </div>
+          )}
+          <span className="flex-grow truncate text-left">{selectedDisplayValue}</span>
+        </button>
+      }
+    />
   );
 
   return (
@@ -76,15 +91,23 @@ function ModelSelectorContent() {
           });
         }}
         onSearch={(value) => setSearchValue(value)}
-        combobox={<input placeholder={localize('com_endpoint_search_models')} />}
+        combobox={<input id="model-search" placeholder=" " />}
+        comboboxLabel={localize('com_endpoint_search_models')}
         trigger={trigger}
       >
         {searchResults ? (
           renderSearchResults(searchResults, localize, searchValue)
         ) : (
           <>
-            {renderModelSpecs(modelSpecs, selectedValues.modelSpec || '')}
+            {/* Render ungrouped modelSpecs (no group field) */}
+            {renderModelSpecs(
+              modelSpecs?.filter((spec) => !spec.group) || [],
+              selectedValues.modelSpec || '',
+            )}
+            {/* Render endpoints (will include grouped specs matching endpoint names) */}
             {renderEndpoints(mappedEndpoints ?? [])}
+            {/* Render custom groups (specs with group field not matching any endpoint) */}
+            {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
           </>
         )}
       </Menu>
@@ -99,9 +122,19 @@ function ModelSelectorContent() {
 }
 
 export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
+  const interfaceConfig = startupConfig?.interface ?? getConfigDefaults().interface;
+  const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
+
+  // Hide the selector when modelSelect is false and there are no model specs to show
+  if (interfaceConfig.modelSelect === false && modelSpecs.length === 0) {
+    return null;
+  }
+
   return (
-    <ModelSelectorProvider startupConfig={startupConfig}>
-      <ModelSelectorContent />
-    </ModelSelectorProvider>
+    <ModelSelectorChatProvider>
+      <ModelSelectorProvider startupConfig={startupConfig}>
+        <ModelSelectorContent />
+      </ModelSelectorProvider>
+    </ModelSelectorChatProvider>
   );
 }

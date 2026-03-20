@@ -1,8 +1,18 @@
 /* eslint-disable no-useless-escape */
 const axios = require('axios');
-const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
+
+const wolframJsonSchema = {
+  type: 'object',
+  properties: {
+    input: {
+      type: 'string',
+      description: 'Natural language query to WolframAlpha following the guidelines',
+    },
+  },
+  required: ['input'],
+};
 
 class WolframAlphaAPI extends Tool {
   constructor(fields) {
@@ -41,9 +51,11 @@ class WolframAlphaAPI extends Tool {
     // -- Do not explain each step unless user input is needed. Proceed directly to making a better API call based on the available assumptions.`;
     this.description = `WolframAlpha offers computation, math, curated knowledge, and real-time data. It handles natural language queries and performs complex calculations.
     Follow the guidelines to get the best results.`;
-    this.schema = z.object({
-      input: z.string().describe('Natural language query to WolframAlpha following the guidelines'),
-    });
+    this.schema = wolframJsonSchema;
+  }
+
+  static get jsonSchema() {
+    return wolframJsonSchema;
   }
 
   async fetchRawText(url) {

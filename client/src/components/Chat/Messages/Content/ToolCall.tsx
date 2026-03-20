@@ -1,7 +1,12 @@
-import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
-import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
+import {
+  Constants,
+  dataService,
+  actionDelimiter,
+  actionDomainSeparator,
+} from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress } from '~/hooks';
 import { AttachmentGroup } from './Parts';
@@ -11,6 +16,7 @@ import { logger, cn } from '~/utils';
 
 export default function ToolCall({
   initialProgress = 0.1,
+  isLast = false,
   isSubmitting,
   name,
   args: _args = '',
@@ -19,6 +25,7 @@ export default function ToolCall({
   auth,
 }: {
   initialProgress: number;
+  isLast?: boolean;
   isSubmitting: boolean;
   name: string;
   args: string | Record<string, unknown>;
@@ -34,9 +41,9 @@ export default function ToolCall({
   const [isAnimating, setIsAnimating] = useState(false);
   const prevShowInfoRef = useRef<boolean>(showInfo);
 
-  const { function_name, domain, isMCPToolCall } = useMemo(() => {
+  const { function_name, domain, isMCPToolCall, mcpServerName } = useMemo(() => {
     if (typeof name !== 'string') {
-      return { function_name: '', domain: null, isMCPToolCall: false };
+      return { function_name: '', domain: null, isMCPToolCall: false, mcpServerName: '' };
     }
     if (name.includes(Constants.mcp_delimiter)) {
       const [func, server] = name.split(Constants.mcp_delimiter);
@@ -44,6 +51,7 @@ export default function ToolCall({
         function_name: func || '',
         domain: server && (server.replaceAll(actionDomainSeparator, '.') || null),
         isMCPToolCall: true,
+        mcpServerName: server || '',
       };
     }
     const [func, _domain] = name.includes(actionDelimiter)
@@ -53,8 +61,39 @@ export default function ToolCall({
       function_name: func || '',
       domain: _domain && (_domain.replaceAll(actionDomainSeparator, '.') || null),
       isMCPToolCall: false,
+      mcpServerName: '',
     };
   }, [name]);
+
+  const actionId = useMemo(() => {
+    if (isMCPToolCall || !auth) {
+      return '';
+    }
+    try {
+      const url = new URL(auth);
+      const redirectUri = url.searchParams.get('redirect_uri') || '';
+      const match = redirectUri.match(/\/api\/actions\/([^/]+)\/oauth\/callback/);
+      return match?.[1] || '';
+    } catch {
+      return '';
+    }
+  }, [auth, isMCPToolCall]);
+
+  const handleOAuthClick = useCallback(async () => {
+    if (!auth) {
+      return;
+    }
+    try {
+      if (isMCPToolCall && mcpServerName) {
+        await dataService.bindMCPOAuth(mcpServerName);
+      } else if (actionId) {
+        await dataService.bindActionOAuth(actionId);
+      }
+    } catch (e) {
+      logger.error('Failed to bind OAuth CSRF cookie', e);
+    }
+    window.open(auth, '_blank', 'noopener,noreferrer');
+  }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
   const error =
     typeof output === 'string' && output.toLowerCase().includes('error processing tool');
@@ -88,6 +127,10 @@ export default function ToolCall({
       const url = new URL(authURL);
       return url.hostname;
     } catch (e) {
+      logger.error(
+        'client/src/components/Chat/Messages/Content/ToolCall.tsx - Failed to parse auth URL',
+        e,
+      );
       return '';
     }
   }, [auth]);
@@ -151,6 +194,10 @@ export default function ToolCall({
     };
   }, [showInfo, isAnimating]);
 
+  if (!isLast && (!function_name || function_name.length === 0) && !output) {
+    return null;
+  }
+
   return (
     <>
       <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
@@ -207,6 +254,7 @@ export default function ToolCall({
                 domain={authDomain || (domain ?? '')}
                 function_name={function_name}
                 pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
+                attachments={attachments}
               />
             )}
           </div>
@@ -219,13 +267,13 @@ export default function ToolCall({
               className="font-mediu inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm"
               variant="default"
               rel="noopener noreferrer"
-              onClick={() => window.open(auth, '_blank', 'noopener,noreferrer')}
+              onClick={handleOAuthClick}
             >
               {localize('com_ui_sign_in_to_domain', { 0: authDomain })}
             </Button>
           </div>
           <p className="flex items-center text-xs text-text-warning">
-            <TriangleAlert className="mr-1.5 inline-block h-4 w-4" />
+            <TriangleAlert className="mr-1.5 inline-block h-4 w-4" aria-hidden="true" />
             {localize('com_assistants_allow_sites_you_trust')}
           </p>
         </div>

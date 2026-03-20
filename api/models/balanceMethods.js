@@ -118,7 +118,7 @@ const addIntervalToDate = (date, value, unit) => {
  * @async
  * @function
  * @param {Object} params - The function parameters.
- * @param {Express.Request} params.req - The Express request object.
+ * @param {ServerRequest} params.req - The Express request object.
  * @param {Express.Response} params.res - The Express response object.
  * @param {Object} params.txData - The transaction data.
  * @param {string} params.txData.user - The user ID or identifier.

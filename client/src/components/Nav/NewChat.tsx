@@ -1,10 +1,11 @@
 import React, { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import type { TMessage } from 'librechat-data-provider';
-import { QueryKeys, Constants } from 'librechat-data-provider';
-import { NewChatIcon, MobileSidebar, Sidebar, TooltipAnchor, Button } from '@librechat/client';
+import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
+import { CLOSE_SIDEBAR_ID, OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import { useLocalize, useNewConvo } from '~/hooks';
+import { clearMessagesCache } from '~/utils';
 import store from '~/store';
 
 export default function NewChat({
@@ -23,63 +24,76 @@ export default function NewChat({
   const queryClient = useQueryClient();
   /** Note: this component needs an explicit index passed if using more than one */
   const { newConversation: newConvo } = useNewConvo(index);
-  const navigate = useNavigate();
   const localize = useLocalize();
   const { conversation } = store.useCreateConversationAtom(index);
 
-  const clickHandler: React.MouseEventHandler<HTMLButtonElement> = useCallback(
+  const handleToggleNav = useCallback(() => {
+    toggleNav();
+    // Delay focus until after the sidebar animation completes (200ms)
+    setTimeout(() => {
+      document.getElementById(OPEN_SIDEBAR_ID)?.focus();
+    }, 250);
+  }, [toggleNav]);
+
+  const clickHandler: React.MouseEventHandler<HTMLAnchorElement> = useCallback(
     (e) => {
-      if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
-        window.open('/c/new', '_blank');
+      // Let browser handle modified/non-left clicks (new tab, context menu, etc.)
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
         return;
       }
-      queryClient.setQueryData<TMessage[]>(
-        [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-        [],
-      );
+
+      e.preventDefault();
+      clearMessagesCache(queryClient, conversation?.conversationId);
       queryClient.invalidateQueries([QueryKeys.messages]);
       newConvo();
-      navigate('/c/new', { state: { focusChat: true } });
       if (isSmallScreen) {
         toggleNav();
       }
     },
-    [queryClient, conversation, newConvo, navigate, toggleNav, isSmallScreen],
+    [queryClient, conversation, newConvo, toggleNav, isSmallScreen],
   );
 
   return (
     <>
-      <div className="flex items-center justify-between py-[2px] md:py-2">
+      <div className="flex items-center justify-between px-0.5 py-[2px] md:py-2">
         <TooltipAnchor
           description={localize('com_nav_close_sidebar')}
           render={
             <Button
+              id={CLOSE_SIDEBAR_ID}
               size="icon"
               variant="outline"
               data-testid="close-sidebar-button"
               aria-label={localize('com_nav_close_sidebar')}
-              className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
-              onClick={toggleNav}
+              aria-expanded={true}
+              className="rounded-full border-none bg-transparent duration-0 hover:bg-surface-active-alt focus-visible:ring-inset focus-visible:ring-black focus-visible:ring-offset-0 dark:focus-visible:ring-white md:rounded-xl"
+              onClick={handleToggleNav}
             >
-              <Sidebar className="max-md:hidden" />
-              <MobileSidebar className="m-1 inline-flex size-10 items-center justify-center md:hidden" />
+              <Sidebar aria-hidden="true" className="max-md:hidden" />
+              <MobileSidebar
+                aria-hidden="true"
+                className="icon-lg m-1 inline-flex items-center justify-center md:hidden"
+              />
             </Button>
           }
         />
-        <div className="flex">
+        <div className="flex gap-0.5">
           {headerButtons}
+
           <TooltipAnchor
             description={localize('com_ui_new_chat')}
             render={
               <Button
+                asChild
                 size="icon"
                 variant="outline"
                 data-testid="nav-new-chat-button"
                 aria-label={localize('com_ui_new_chat')}
-                className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
-                onClick={clickHandler}
+                className="rounded-full border-none bg-transparent duration-0 hover:bg-surface-active-alt focus-visible:ring-inset focus-visible:ring-black focus-visible:ring-offset-0 dark:focus-visible:ring-white md:rounded-xl"
               >
-                <NewChatIcon className="icon-md md:h-6 md:w-6" />
+                <Link to="/c/new" state={{ focusChat: true }} onClick={clickHandler}>
+                  <NewChatIcon className="icon-lg text-text-primary" />
+                </Link>
               </Button>
             }
           />

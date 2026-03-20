@@ -8,9 +8,13 @@ import { cn } from '~/utils';
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
     filename: attachment.filename ?? '',
+    file_id: file.file_id,
+    user: file.user,
+    source: file.source,
   });
   const extension = attachment.filename?.split('.').pop();
 
@@ -70,10 +74,10 @@ const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
       }}
     >
       <Image
-        altText={attachment.filename}
+        altText={attachment.filename || 'attachment image'}
         imagePath={filepath ?? ''}
-        height={height ?? 0}
-        width={width ?? 0}
+        width={width}
+        height={height}
         className="mb-4"
       />
     </div>
@@ -89,8 +93,9 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
   }
 
   const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
-  const isImage =
-    imageExtRegex.test(attachment.filename) && width != null && height != null && filepath != null;
+  const isImage = attachment.filename
+    ? imageExtRegex.test(attachment.filename) && width != null && height != null && filepath != null
+    : false;
 
   if (isImage) {
     return <ImageAttachment attachment={attachment} />;
@@ -110,11 +115,12 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
 
   attachments.forEach((attachment) => {
     const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
-    const isImage =
-      imageExtRegex.test(attachment.filename) &&
-      width != null &&
-      height != null &&
-      filepath != null;
+    const isImage = attachment.filename
+      ? imageExtRegex.test(attachment.filename) &&
+        width != null &&
+        height != null &&
+        filepath != null
+      : false;
 
     if (isImage) {
       imageAttachments.push(attachment);

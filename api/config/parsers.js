@@ -5,6 +5,7 @@ const traverse = require('traverse');
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
 const CONSOLE_JSON_STRING_LENGTH = parseInt(process.env.CONSOLE_JSON_STRING_LENGTH) || 255;
+const DEBUG_MESSAGE_LENGTH = parseInt(process.env.DEBUG_MESSAGE_LENGTH) || 150;
 
 const sensitiveKeys = [
   /^(sk-)[^\s]+/, // OpenAI API key pattern
@@ -118,7 +119,7 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
     return `${timestamp} ${level}: ${JSON.stringify(message)}`;
   }
 
-  let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), 150)}`;
+  let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), DEBUG_MESSAGE_LENGTH)}`;
   try {
     if (level !== 'debug') {
       return msg;

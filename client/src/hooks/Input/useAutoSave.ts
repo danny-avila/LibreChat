@@ -105,11 +105,33 @@ export const useAutoSave = ({
       return;
     }
 
-    const handleInput = debounce((value: string) => setDraft({ id: conversationId, value }), 750);
+    /** Use shorter debounce for saving text (25ms) to capture rapid typing */
+    const handleInputFast = debounce(
+      (value: string) => setDraft({ id: conversationId, value }),
+      25,
+    );
+
+    /** Use longer debounce for clearing empty values (850ms) to prevent accidental draft loss */
+    const handleInputSlow = debounce(
+      (value: string) => setDraft({ id: conversationId, value }),
+      850,
+    );
 
     const eventListener = (e: Event) => {
       const target = e.target as HTMLTextAreaElement;
-      handleInput(target.value);
+      const value = target.value;
+
+      /** Cancel any pending operations to avoid conflicts */
+      handleInputFast.cancel();
+      handleInputSlow.cancel();
+
+      /** If empty, use long delay to prevent accidental clearing
+       * Otherwise use short delay to capture rapid typing */
+      if (value === '') {
+        handleInputSlow(value);
+      } else {
+        handleInputFast(value);
+      }
     };
 
     const textArea = textAreaRef?.current;
@@ -121,7 +143,8 @@ export const useAutoSave = ({
       if (textArea) {
         textArea.removeEventListener('input', eventListener);
       }
-      handleInput.cancel();
+      handleInputFast.cancel();
+      handleInputSlow.cancel();
     };
   }, [conversationId, saveDrafts, textAreaRef]);
 

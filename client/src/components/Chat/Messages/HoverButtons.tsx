@@ -18,10 +18,10 @@ type THoverButtons = {
   message: TMessage;
   regenerate: () => void;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  latestMessage: TMessage | null;
+  latestMessageId?: string;
   isLast: boolean;
   index: number;
-  handleFeedback: ({ feedback }: { feedback: TFeedback | undefined }) => void;
+  handleFeedback?: ({ feedback }: { feedback: TFeedback | undefined }) => void;
 };
 
 type HoverButtonProps = {
@@ -45,6 +45,9 @@ const extractMessageContent = (message: TMessage): string => {
   if (Array.isArray(message.content)) {
     return message.content
       .map((part) => {
+        if (part == null) {
+          return '';
+        }
         if (typeof part === 'string') {
           return part;
         }
@@ -79,7 +82,7 @@ const HoverButton = memo(
     className = '',
   }: HoverButtonProps) => {
     const buttonStyle = cn(
-      'hover-button rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
+      'hover-button rounded-lg p-1.5 text-text-secondary-alt',
       'hover:text-text-primary hover:bg-surface-hover',
       'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
       !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
@@ -116,7 +119,7 @@ const HoverButtons = ({
   message,
   regenerate,
   handleContinue,
-  latestMessage,
+  latestMessageId,
   isLast,
   handleFeedback,
 }: THoverButtons) => {
@@ -140,7 +143,7 @@ const HoverButtons = ({
     searchResult: message.searchResult,
     finish_reason: message.finish_reason,
     isCreatedByUser: message.isCreatedByUser,
-    latestMessageId: latestMessage?.messageId,
+    latestMessageId: latestMessageId,
   });
 
   const {
@@ -210,7 +213,10 @@ const HoverButtons = ({
         }
         icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
         isLast={isLast}
-        className={`ml-0 flex items-center gap-1.5 text-xs ${isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : ''}`}
+        className={cn(
+          'ml-0 flex items-center gap-1.5 text-xs',
+          isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
+        )}
       />
 
       {/* Edit Button */}
@@ -233,12 +239,12 @@ const HoverButtons = ({
         messageId={message.messageId}
         conversationId={conversation.conversationId}
         forkingSupported={forkingSupported}
-        latestMessageId={latestMessage?.messageId}
+        latestMessageId={latestMessageId}
         isLast={isLast}
       />
 
       {/* Feedback Buttons */}
-      {!isCreatedByUser && (
+      {!isCreatedByUser && handleFeedback != null && (
         <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
       )}
 

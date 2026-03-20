@@ -2,16 +2,18 @@
 const express = require('express');
 const passport = require('passport');
 const { randomState } = require('openid-client');
-const {
-  checkBan,
-  logHeaders,
-  loginLimiter,
-  setBalanceConfig,
-  checkDomainAllowed,
-} = require('~/server/middleware');
-const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
+const { ErrorTypes } = require('librechat-data-provider');
+const { createSetBalanceConfig } = require('@librechat/api');
+const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middleware');
+const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
+const { getAppConfig } = require('~/server/services/Config');
+const { Balance } = require('~/db/models');
+
+const setBalanceConfig = createSetBalanceConfig({
+  getAppConfig,
+  Balance,
+});
 
 const router = express.Router();
 
@@ -23,36 +25,16 @@ const domains = {
 router.use(logHeaders);
 router.use(loginLimiter);
 
-const oauthHandler = async (req, res) => {
-  try {
-    await checkDomainAllowed(req, res);
-    await checkBan(req, res);
-    if (req.banned) {
-      return;
-    }
-    if (
-      req.user &&
-      req.user.provider == 'openid' &&
-      isEnabled(process.env.OPENID_REUSE_TOKENS) === true
-    ) {
-      setOpenIDAuthTokens(req.user.tokenset, res);
-    } else {
-      await setAuthTokens(req.user._id, res);
-    }
-    res.redirect(domains.client);
-  } catch (err) {
-    logger.error('Error in setting authentication tokens:', err);
-  }
-};
+const oauthHandler = createOAuthHandler();
 
 router.get('/error', (req, res) => {
-  // A single error message is pushed by passport when authentication fails.
+  /** A single error message is pushed by passport when authentication fails. */
+  const errorMessage = req.session?.messages?.pop() || 'Unknown OAuth error';
   logger.error('Error in OAuth authentication:', {
-    message: req.session?.messages?.pop() || 'Unknown error',
+    message: errorMessage,
   });
 
-  // Redirect to login page with auth_failed parameter to prevent infinite redirect loops
-  res.redirect(`${domains.client}/login?redirect=false`);
+  res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
 });
 
 /**
@@ -75,6 +57,7 @@ router.get(
     scope: ['openid', 'profile', 'email'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -100,6 +83,7 @@ router.get(
     profileFields: ['id', 'email', 'name'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -121,6 +105,7 @@ router.get(
     session: false,
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -144,6 +129,7 @@ router.get(
     scope: ['user:email', 'read:user'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -167,6 +153,7 @@ router.get(
     scope: ['identify', 'email'],
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 
@@ -188,6 +175,7 @@ router.post(
     session: false,
   }),
   setBalanceConfig,
+  checkDomainAllowed,
   oauthHandler,
 );
 

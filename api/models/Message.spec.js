@@ -13,8 +13,7 @@ const {
   deleteMessagesSince,
 } = require('./Message');
 
-jest.mock('~/server/services/Config/getCustomConfig');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
+jest.mock('~/server/services/Config/app');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IMessage>}
@@ -44,6 +43,11 @@ describe('Message Operations', () => {
 
     mockReq = {
       user: { id: 'user123' },
+      config: {
+        interfaceConfig: {
+          temporaryChatRetention: 24, // Default 24 hours
+        },
+      },
     };
 
     mockMessageData = {
@@ -326,12 +330,8 @@ describe('Message Operations', () => {
     });
 
     it('should save a message with expiredAt when isTemporary is true', async () => {
-      // Mock custom config with 24 hour retention
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 24,
-        },
-      });
+      // Mock app config with 24 hour retention
+      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
 
@@ -375,12 +375,8 @@ describe('Message Operations', () => {
     });
 
     it('should use custom retention period from config', async () => {
-      // Mock custom config with 48 hour retention
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 48,
-        },
-      });
+      // Mock app config with 48 hour retention
+      mockReq.config.interfaceConfig.temporaryChatRetention = 48;
 
       mockReq.body = { isTemporary: true };
 
@@ -402,12 +398,8 @@ describe('Message Operations', () => {
     });
 
     it('should handle minimum retention period (1 hour)', async () => {
-      // Mock custom config with less than minimum retention
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 0.5, // Half hour - should be clamped to 1 hour
-        },
-      });
+      // Mock app config with less than minimum retention
+      mockReq.config.interfaceConfig.temporaryChatRetention = 0.5; // Half hour - should be clamped to 1 hour
 
       mockReq.body = { isTemporary: true };
 
@@ -429,12 +421,8 @@ describe('Message Operations', () => {
     });
 
     it('should handle maximum retention period (8760 hours)', async () => {
-      // Mock custom config with more than maximum retention
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 10000, // Should be clamped to 8760 hours
-        },
-      });
+      // Mock app config with more than maximum retention
+      mockReq.config.interfaceConfig.temporaryChatRetention = 10000; // Should be clamped to 8760 hours
 
       mockReq.body = { isTemporary: true };
 
@@ -455,22 +443,36 @@ describe('Message Operations', () => {
       );
     });
 
-    it('should handle getCustomConfig errors gracefully', async () => {
-      // Mock getCustomConfig to throw an error
-      getCustomConfig.mockRejectedValue(new Error('Config service unavailable'));
+    it('should handle missing config gracefully', async () => {
+      // Simulate missing config - should use default retention period
+      delete mockReq.config;
 
       mockReq.body = { isTemporary: true };
 
+      const beforeSave = new Date();
       const result = await saveMessage(mockReq, mockMessageData);
+      const afterSave = new Date();
 
-      // Should still save the message but with expiredAt as null
+      // Should still save the message with default retention period (30 days)
       expect(result.messageId).toBe('msg123');
-      expect(result.expiredAt).toBeNull();
+      expect(result.expiredAt).toBeDefined();
+      expect(result.expiredAt).toBeInstanceOf(Date);
+
+      // Verify expiredAt is approximately 30 days in the future (720 hours)
+      const expectedExpirationTime = new Date(beforeSave.getTime() + 720 * 60 * 60 * 1000);
+      const actualExpirationTime = new Date(result.expiredAt);
+
+      expect(actualExpirationTime.getTime()).toBeGreaterThanOrEqual(
+        expectedExpirationTime.getTime() - 1000,
+      );
+      expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
+        new Date(afterSave.getTime() + 720 * 60 * 60 * 1000 + 1000).getTime(),
+      );
     });
 
     it('should use default retention when config is not provided', async () => {
-      // Mock getCustomConfig to return empty config
-      getCustomConfig.mockResolvedValue({});
+      // Mock getAppConfig to return empty config
+      mockReq.config = {}; // Empty config
 
       mockReq.body = { isTemporary: true };
 
@@ -493,11 +495,7 @@ describe('Message Operations', () => {
 
     it('should not update expiredAt on message update', async () => {
       // First save a temporary message
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 24,
-        },
-      });
+      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
       const savedMessage = await saveMessage(mockReq, mockMessageData);
@@ -520,11 +518,7 @@ describe('Message Operations', () => {
 
     it('should preserve expiredAt when saving existing temporary message', async () => {
       // First save a temporary message
-      getCustomConfig.mockResolvedValue({
-        interface: {
-          temporaryChatRetention: 24,
-        },
-      });
+      mockReq.config.interfaceConfig.temporaryChatRetention = 24;
 
       mockReq.body = { isTemporary: true };
       const firstSave = await saveMessage(mockReq, mockMessageData);
@@ -577,6 +571,328 @@ describe('Message Operations', () => {
 
       expect(bulk1.expiredAt).toBeDefined();
       expect(bulk2.expiredAt).toBeNull();
+    });
+  });
+
+  describe('Message cursor pagination', () => {
+    /**
+     * Helper to create messages with specific timestamps
+     * Uses collection.insertOne to bypass Mongoose timestamps
+     */
+    const createMessageWithTimestamp = async (index, conversationId, createdAt) => {
+      const messageId = uuidv4();
+      await Message.collection.insertOne({
+        messageId,
+        conversationId,
+        user: 'user123',
+        text: `Message ${index}`,
+        isCreatedByUser: index % 2 === 0,
+        createdAt,
+        updatedAt: createdAt,
+      });
+      return Message.findOne({ messageId }).lean();
+    };
+
+    /**
+     * Simulates the pagination logic from api/server/routes/messages.js
+     * This tests the exact query pattern used in the route
+     */
+    const getMessagesByCursor = async ({
+      conversationId,
+      user,
+      pageSize = 25,
+      cursor = null,
+      sortBy = 'createdAt',
+      sortDirection = 'desc',
+    }) => {
+      const sortOrder = sortDirection === 'asc' ? 1 : -1;
+      const sortField = ['createdAt', 'updatedAt'].includes(sortBy) ? sortBy : 'createdAt';
+      const cursorOperator = sortDirection === 'asc' ? '$gt' : '$lt';
+
+      const filter = { conversationId, user };
+      if (cursor) {
+        filter[sortField] = { [cursorOperator]: new Date(cursor) };
+      }
+
+      const messages = await Message.find(filter)
+        .sort({ [sortField]: sortOrder })
+        .limit(pageSize + 1)
+        .lean();
+
+      let nextCursor = null;
+      if (messages.length > pageSize) {
+        messages.pop(); // Remove extra item used to detect next page
+        // Create cursor from the last RETURNED item (not the popped one)
+        nextCursor = messages[messages.length - 1][sortField];
+      }
+
+      return { messages, nextCursor };
+    };
+
+    it('should return messages for a conversation with pagination', async () => {
+      const conversationId = uuidv4();
+      const baseTime = new Date('2026-01-01T00:00:00.000Z');
+
+      // Create 30 messages to test pagination
+      for (let i = 0; i < 30; i++) {
+        const createdAt = new Date(baseTime.getTime() - i * 60000); // Each 1 minute apart
+        await createMessageWithTimestamp(i, conversationId, createdAt);
+      }
+
+      // Fetch first page (pageSize 25)
+      const page1 = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+        pageSize: 25,
+      });
+
+      expect(page1.messages).toHaveLength(25);
+      expect(page1.nextCursor).toBeTruthy();
+
+      // Fetch second page using cursor
+      const page2 = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+        pageSize: 25,
+        cursor: page1.nextCursor,
+      });
+
+      // Should get remaining 5 messages
+      expect(page2.messages).toHaveLength(5);
+      expect(page2.nextCursor).toBeNull();
+
+      // Verify no duplicates and no gaps
+      const allMessageIds = [
+        ...page1.messages.map((m) => m.messageId),
+        ...page2.messages.map((m) => m.messageId),
+      ];
+      const uniqueIds = new Set(allMessageIds);
+
+      expect(uniqueIds.size).toBe(30); // All 30 messages accounted for
+      expect(allMessageIds.length).toBe(30); // No duplicates
+    });
+
+    it('should not skip message at page boundary (item 26 bug fix)', async () => {
+      const conversationId = uuidv4();
+      const baseTime = new Date('2026-01-01T12:00:00.000Z');
+
+      // Create exactly 26 messages
+      const messages = [];
+      for (let i = 0; i < 26; i++) {
+        const createdAt = new Date(baseTime.getTime() - i * 60000);
+        const msg = await createMessageWithTimestamp(i, conversationId, createdAt);
+        messages.push(msg);
+      }
+
+      // The 26th message (index 25) should be on page 2
+      const item26 = messages[25];
+
+      // Fetch first page with pageSize 25
+      const page1 = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+        pageSize: 25,
+      });
+
+      expect(page1.messages).toHaveLength(25);
+      expect(page1.nextCursor).toBeTruthy();
+
+      // Item 26 should NOT be in page 1
+      const page1Ids = page1.messages.map((m) => m.messageId);
+      expect(page1Ids).not.toContain(item26.messageId);
+
+      // Fetch second page
+      const page2 = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+        pageSize: 25,
+        cursor: page1.nextCursor,
+      });
+
+      // Item 26 MUST be in page 2 (this was the bug - it was being skipped)
+      expect(page2.messages).toHaveLength(1);
+      expect(page2.messages[0].messageId).toBe(item26.messageId);
+    });
+
+    it('should sort by createdAt DESC by default', async () => {
+      const conversationId = uuidv4();
+
+      // Create messages with specific timestamps
+      const msg1 = await createMessageWithTimestamp(
+        1,
+        conversationId,
+        new Date('2026-01-01T00:00:00.000Z'),
+      );
+      const msg2 = await createMessageWithTimestamp(
+        2,
+        conversationId,
+        new Date('2026-01-02T00:00:00.000Z'),
+      );
+      const msg3 = await createMessageWithTimestamp(
+        3,
+        conversationId,
+        new Date('2026-01-03T00:00:00.000Z'),
+      );
+
+      const result = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+      });
+
+      // Should be sorted by createdAt DESC (newest first) by default
+      expect(result.messages).toHaveLength(3);
+      expect(result.messages[0].messageId).toBe(msg3.messageId);
+      expect(result.messages[1].messageId).toBe(msg2.messageId);
+      expect(result.messages[2].messageId).toBe(msg1.messageId);
+    });
+
+    it('should support ascending sort direction', async () => {
+      const conversationId = uuidv4();
+
+      const msg1 = await createMessageWithTimestamp(
+        1,
+        conversationId,
+        new Date('2026-01-01T00:00:00.000Z'),
+      );
+      const msg2 = await createMessageWithTimestamp(
+        2,
+        conversationId,
+        new Date('2026-01-02T00:00:00.000Z'),
+      );
+
+      const result = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+        sortDirection: 'asc',
+      });
+
+      // Should be sorted by createdAt ASC (oldest first)
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[0].messageId).toBe(msg1.messageId);
+      expect(result.messages[1].messageId).toBe(msg2.messageId);
+    });
+
+    it('should handle empty conversation', async () => {
+      const conversationId = uuidv4();
+
+      const result = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+      });
+
+      expect(result.messages).toHaveLength(0);
+      expect(result.nextCursor).toBeNull();
+    });
+
+    it('should only return messages for the specified user', async () => {
+      const conversationId = uuidv4();
+      const createdAt = new Date();
+
+      // Create a message for user123
+      await Message.collection.insertOne({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'User message',
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      // Create a message for a different user
+      await Message.collection.insertOne({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'otherUser',
+        text: 'Other user message',
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      const result = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+      });
+
+      // Should only return user123's message
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].user).toBe('user123');
+    });
+
+    it('should handle exactly pageSize number of messages (no next page)', async () => {
+      const conversationId = uuidv4();
+      const baseTime = new Date('2026-01-01T00:00:00.000Z');
+
+      // Create exactly 25 messages (equal to default pageSize)
+      for (let i = 0; i < 25; i++) {
+        const createdAt = new Date(baseTime.getTime() - i * 60000);
+        await createMessageWithTimestamp(i, conversationId, createdAt);
+      }
+
+      const result = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+        pageSize: 25,
+      });
+
+      expect(result.messages).toHaveLength(25);
+      expect(result.nextCursor).toBeNull(); // No next page
+    });
+
+    it('should handle pageSize of 1', async () => {
+      const conversationId = uuidv4();
+      const baseTime = new Date('2026-01-01T00:00:00.000Z');
+
+      // Create 3 messages
+      for (let i = 0; i < 3; i++) {
+        const createdAt = new Date(baseTime.getTime() - i * 60000);
+        await createMessageWithTimestamp(i, conversationId, createdAt);
+      }
+
+      // Fetch with pageSize 1
+      let cursor = null;
+      const allMessages = [];
+
+      for (let page = 0; page < 5; page++) {
+        const result = await getMessagesByCursor({
+          conversationId,
+          user: 'user123',
+          pageSize: 1,
+          cursor,
+        });
+
+        allMessages.push(...result.messages);
+        cursor = result.nextCursor;
+
+        if (!cursor) {
+          break;
+        }
+      }
+
+      // Should get all 3 messages without duplicates
+      expect(allMessages).toHaveLength(3);
+      const uniqueIds = new Set(allMessages.map((m) => m.messageId));
+      expect(uniqueIds.size).toBe(3);
+    });
+
+    it('should handle messages with same createdAt timestamp', async () => {
+      const conversationId = uuidv4();
+      const sameTime = new Date('2026-01-01T12:00:00.000Z');
+
+      // Create multiple messages with the exact same timestamp
+      const messages = [];
+      for (let i = 0; i < 5; i++) {
+        const msg = await createMessageWithTimestamp(i, conversationId, sameTime);
+        messages.push(msg);
+      }
+
+      const result = await getMessagesByCursor({
+        conversationId,
+        user: 'user123',
+        pageSize: 10,
+      });
+
+      // All messages should be returned
+      expect(result.messages).toHaveLength(5);
     });
   });
 });

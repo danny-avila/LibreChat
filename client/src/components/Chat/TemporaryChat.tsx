@@ -1,9 +1,8 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { useRecoilValue } from 'recoil';
 import { TooltipAnchor } from '@librechat/client';
 import { MessageCircleDashed } from 'lucide-react';
 import { useRecoilState, useRecoilCallback } from 'recoil';
-import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -11,15 +10,8 @@ import store from '~/store';
 export function TemporaryChat() {
   const localize = useLocalize();
   const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
-  const { conversation, isSubmitting } = useChatContext();
-
-  const temporaryBadge = {
-    id: 'temporary',
-    icon: MessageCircleDashed,
-    label: 'com_ui_temporary' as const,
-    atom: store.isTemporary,
-    isAvailable: true,
-  };
+  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
 
   const handleBadgeToggle = useRecoilCallback(
     () => () => {
@@ -38,24 +30,20 @@ export function TemporaryChat() {
   return (
     <div className="relative flex flex-wrap items-center gap-2">
       <TooltipAnchor
-        description={localize(temporaryBadge.label)}
+        description={localize('com_ui_temporary')}
         render={
           <button
             onClick={handleBadgeToggle}
-            aria-label={localize(temporaryBadge.label)}
+            aria-label={localize('com_ui_temporary')}
+            aria-pressed={isTemporary}
             className={cn(
-              'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-primary transition-all ease-in-out hover:bg-surface-tertiary',
+              'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-primary transition-all ease-in-out',
               isTemporary
-                ? 'bg-surface-active shadow-md'
-                : 'bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md',
-              'active:shadow-inner',
+                ? 'bg-surface-active'
+                : 'bg-presentation shadow-sm hover:bg-surface-active-alt',
             )}
           >
-            {temporaryBadge.icon && (
-              <temporaryBadge.icon
-                className={cn('relative h-5 w-5 md:h-4 md:w-4', !temporaryBadge.label && 'mx-auto')}
-              />
-            )}
+            <MessageCircleDashed className="icon-lg" aria-hidden="true" />
           </button>
         }
       />

@@ -1,10 +1,11 @@
-import throttle from 'lodash/throttle';
 import { useEffect, useRef, useCallback, useMemo } from 'react';
+import throttle from 'lodash/throttle';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import { useChatContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
+import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
+import { getTextKey, TEXT_KEY_DIVIDER, logger } from '~/utils';
 import useCopyToClipboard from './useCopyToClipboard';
-import { getTextKey, logger } from '~/utils';
+import { useGetAddedConvo } from '~/hooks/Chat';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef<string | number>('');
@@ -16,13 +17,15 @@ export default function useMessageHelpers(props: TMessageProps) {
     regenerate,
     isSubmitting,
     conversation,
-    latestMessage,
     setAbortScroll,
     handleContinue,
+    latestMessageId,
     setLatestMessage,
-  } = useChatContext();
-  const assistantMap = useAssistantsMapContext();
+  } = useMessagesViewContext();
   const agentsMap = useAgentsMapContext();
+  const assistantMap = useAssistantsMapContext();
+
+  const getAddedConvo = useGetAddedConvo();
 
   const { text, content, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;
@@ -49,15 +52,27 @@ export default function useMessageHelpers(props: TMessageProps) {
       messageId: message.messageId,
       convoId,
     };
+
+    /* Extracted convoId from previous textKey (format: messageId|||length|||lastChars|||convoId) */
+    let previousConvoId: string | null = null;
+    if (
+      latestText.current &&
+      typeof latestText.current === 'string' &&
+      latestText.current.length > 0
+    ) {
+      const parts = latestText.current.split(TEXT_KEY_DIVIDER);
+      previousConvoId = parts[parts.length - 1] || null;
+    }
+
     if (
       textKey !== latestText.current ||
-      (latestText.current && convoId !== latestText.current.split(Constants.COMMON_DIVIDER)[2])
+      (convoId != null && previousConvoId != null && convoId !== previousConvoId)
     ) {
-      logger.log('[useMessageHelpers] Setting latest message: ', logInfo);
+      logger.log('latest_message', '[useMessageHelpers] Setting latest message: ', logInfo);
       latestText.current = textKey;
       setLatestMessage({ ...message });
     } else {
-      logger.log('No change in latest message', logInfo);
+      logger.log('latest_message', 'No change in latest message', logInfo);
     }
   }, [isLast, message, setLatestMessage, conversation?.conversationId]);
 
@@ -110,7 +125,7 @@ export default function useMessageHelpers(props: TMessageProps) {
       return;
     }
 
-    regenerate(message);
+    regenerate(message, { addedConvo: getAddedConvo() });
   };
 
   const copyToClipboard = useCopyToClipboard({ text, content });
@@ -126,8 +141,8 @@ export default function useMessageHelpers(props: TMessageProps) {
     conversation,
     isSubmitting,
     handleScroll,
-    latestMessage,
     handleContinue,
+    latestMessageId,
     copyToClipboard,
     regenerateMessage,
   };

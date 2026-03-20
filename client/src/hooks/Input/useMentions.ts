@@ -3,6 +3,7 @@ import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Permissions,
   alternateName,
+  PermissionBits,
   EModelEndpoint,
   PermissionTypes,
   isAgentsEndpoint,
@@ -18,6 +19,7 @@ import {
   useGetStartupConfig,
 } from '~/data-provider';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
+import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import { mapEndpoints, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
@@ -61,6 +63,7 @@ export default function useMentions({
     permission: Permissions.USE,
   });
 
+  const agentsMap = useAgentsMapContext();
   const { data: presets } = useGetPresetsQuery();
   const { data: modelsConfig } = useGetModelsQuery();
   const { data: startupConfig } = useGetStartupConfig();
@@ -79,28 +82,31 @@ export default function useMentions({
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig?.interface],
   );
-  const { data: agentsList = null } = useListAgentsQuery(undefined, {
-    enabled: hasAgentAccess && interfaceConfig.modelSelect === true,
-    select: (res) => {
-      const { data } = res;
-      return data.map(({ id, name, avatar }) => ({
-        value: id,
-        label: name ?? '',
-        type: EModelEndpoint.agents,
-        icon: EndpointIcon({
-          conversation: {
-            agent_id: id,
-            endpoint: EModelEndpoint.agents,
-            iconURL: avatar?.filepath,
-          },
-          containerClassName: 'shadow-stroke overflow-hidden rounded-full',
-          endpointsConfig: endpointsConfig,
-          context: 'menu-item',
-          size: 20,
-        }),
-      }));
+  const { data: agentsList = null } = useListAgentsQuery(
+    { requiredPermission: PermissionBits.VIEW },
+    {
+      enabled: hasAgentAccess && interfaceConfig.modelSelect === true,
+      select: (res) => {
+        const { data } = res;
+        return data.map(({ id, name, avatar }) => ({
+          value: id,
+          label: name ?? '',
+          type: EModelEndpoint.agents,
+          icon: EndpointIcon({
+            conversation: {
+              agent_id: id,
+              endpoint: EModelEndpoint.agents,
+              iconURL: avatar?.filepath,
+            },
+            containerClassName: 'shadow-stroke overflow-hidden rounded-full',
+            endpointsConfig: endpointsConfig,
+            context: 'menu-item',
+            size: 20,
+          }),
+        }));
+      },
     },
-  });
+  );
   const assistantListMap = useMemo(
     () => ({
       [EModelEndpoint.assistants]: listMap[EModelEndpoint.assistants]
@@ -125,7 +131,24 @@ export default function useMentions({
     [listMap, assistantMap, endpointsConfig],
   );
 
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
+  const modelSpecs = useMemo(() => {
+    const specs = startupConfig?.modelSpecs?.list ?? [];
+    if (!agentsMap) {
+      return specs;
+    }
+
+    /**
+     * Filter modelSpecs to only include agents the user has access to.
+     * Use agentsMap which already contains permission-filtered agents (consistent with other components).
+     */
+    return specs.filter((spec) => {
+      if (spec.preset?.endpoint === EModelEndpoint.agents && spec.preset?.agent_id) {
+        return spec.preset.agent_id in agentsMap;
+      }
+      /** Keep non-agent modelSpecs */
+      return true;
+    });
+  }, [startupConfig, agentsMap]);
 
   const options: MentionOption[] = useMemo(() => {
     let validEndpoints = endpoints;

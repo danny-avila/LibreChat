@@ -1,18 +1,43 @@
 import mongoose, { FilterQuery } from 'mongoose';
-import type { IUser, BalanceConfig, UserCreateData, UserUpdateResult } from '~/types';
+import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
 import { signPayload } from '~/crypto';
+
+/** Default JWT session expiry: 15 minutes in milliseconds */
+export const DEFAULT_SESSION_EXPIRY = 1000 * 60 * 15;
 
 /** Factory function that takes mongoose instance and returns the methods */
 export function createUserMethods(mongoose: typeof import('mongoose')) {
   /**
+   * Normalizes email fields in search criteria to lowercase and trimmed.
+   * Handles both direct email fields and $or arrays containing email conditions.
+   */
+  function normalizeEmailInCriteria<T extends FilterQuery<IUser>>(criteria: T): T {
+    const normalized = { ...criteria };
+    if (typeof normalized.email === 'string') {
+      normalized.email = normalized.email.trim().toLowerCase();
+    }
+    if (Array.isArray(normalized.$or)) {
+      normalized.$or = normalized.$or.map((condition) => {
+        if (typeof condition.email === 'string') {
+          return { ...condition, email: condition.email.trim().toLowerCase() };
+        }
+        return condition;
+      });
+    }
+    return normalized;
+  }
+
+  /**
    * Search for a single user based on partial data and return matching user document as plain object.
+   * Email fields in searchCriteria are automatically normalized to lowercase for case-insensitive matching.
    */
   async function findUser(
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
   ): Promise<IUser | null> {
     const User = mongoose.models.User;
-    const query = User.findOne(searchCriteria);
+    const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
+    const query = User.findOne(normalizedCriteria);
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
@@ -31,7 +56,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
    * Creates a new user, optionally with a TTL of 1 week.
    */
   async function createUser(
-    data: UserCreateData,
+    data: CreateUserRequest,
     balanceConfig?: BalanceConfig,
     disableTTL: boolean = true,
     returnUser: boolean = false,
@@ -123,7 +148,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
   /**
    * Delete a user by their unique ID.
    */
-  async function deleteUserById(userId: string): Promise<UserUpdateResult> {
+  async function deleteUserById(userId: string): Promise<UserDeleteResult> {
     try {
       const User = mongoose.models.User;
       const result = await User.deleteOne({ _id: userId });
@@ -139,24 +164,15 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Generates a JWT token for a given user.
+   * @param user - The user object
+   * @param expiresIn - Optional expiry time in milliseconds. Default: 15 minutes
    */
-  async function generateToken(user: IUser): Promise<string> {
+  async function generateToken(user: IUser, expiresIn?: number): Promise<string> {
     if (!user) {
       throw new Error('No user provided');
     }
 
-    let expires = 1000 * 60 * 15;
-
-    if (process.env.SESSION_EXPIRY !== undefined && process.env.SESSION_EXPIRY !== '') {
-      try {
-        const evaluated = eval(process.env.SESSION_EXPIRY);
-        if (evaluated) {
-          expires = evaluated;
-        }
-      } catch (error) {
-        console.warn('Invalid SESSION_EXPIRY expression, using default:', error);
-      }
-    }
+    const expires = expiresIn ?? DEFAULT_SESSION_EXPIRY;
 
     return await signPayload({
       payload: {
@@ -199,15 +215,122 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     }).lean()) as IUser | null;
   }
 
-  // Return all methods
+  /**
+   * Search for users by pattern matching on name, email, or username (case-insensitive)
+   * @param searchPattern - The pattern to search for
+   * @param limit - Maximum number of results to return
+   * @param fieldsToSelect - The fields to include or exclude in the returned documents
+   * @returns Array of matching user documents
+   */
+  const searchUsers = async function ({
+    searchPattern,
+    limit = 20,
+    fieldsToSelect = null,
+  }: {
+    searchPattern: string;
+    limit?: number;
+    fieldsToSelect?: string | string[] | null;
+  }) {
+    if (!searchPattern || searchPattern.trim().length === 0) {
+      return [];
+    }
+
+    const regex = new RegExp(searchPattern.trim(), 'i');
+    const User = mongoose.models.User;
+
+    const query = User.find({
+      $or: [{ email: regex }, { name: regex }, { username: regex }],
+    }).limit(limit * 2); // Get more results to allow for relevance sorting
+
+    if (fieldsToSelect) {
+      query.select(fieldsToSelect);
+    }
+
+    const users = await query.lean();
+
+    // Score results by relevance
+    const exactRegex = new RegExp(`^${searchPattern.trim()}$`, 'i');
+    const startsWithPattern = searchPattern.trim().toLowerCase();
+
+    const scoredUsers = users.map((user) => {
+      const searchableFields = [user.name, user.email, user.username].filter(Boolean);
+      let maxScore = 0;
+
+      for (const field of searchableFields) {
+        const fieldLower = field.toLowerCase();
+        let score = 0;
+
+        // Exact match gets highest score
+        if (exactRegex.test(field)) {
+          score = 100;
+        }
+        // Starts with query gets high score
+        else if (fieldLower.startsWith(startsWithPattern)) {
+          score = 80;
+        }
+        // Contains query gets medium score
+        else if (fieldLower.includes(startsWithPattern)) {
+          score = 50;
+        }
+        // Default score for regex match
+        else {
+          score = 10;
+        }
+
+        maxScore = Math.max(maxScore, score);
+      }
+
+      return { ...user, _searchScore: maxScore };
+    });
+
+    /** Top results sorted by relevance */
+    return scoredUsers
+      .sort((a, b) => b._searchScore - a._searchScore)
+      .slice(0, limit)
+      .map((user) => {
+        // Remove the search score from final results
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { _searchScore, ...userWithoutScore } = user;
+        return userWithoutScore;
+      });
+  };
+
+  /**
+   * Updates the plugins for a user based on the action specified (install/uninstall).
+   * @param userId - The user ID whose plugins are to be updated
+   * @param plugins - The current plugins array
+   * @param pluginKey - The key of the plugin to install or uninstall
+   * @param action - The action to perform, 'install' or 'uninstall'
+   * @returns The result of the update operation or null if action is invalid
+   */
+  async function updateUserPlugins(
+    userId: string,
+    plugins: string[] | undefined,
+    pluginKey: string,
+    action: 'install' | 'uninstall',
+  ): Promise<IUser | null> {
+    const userPlugins = plugins ?? [];
+    if (action === 'install') {
+      return updateUser(userId, { plugins: [...userPlugins, pluginKey] });
+    }
+    if (action === 'uninstall') {
+      return updateUser(userId, {
+        plugins: userPlugins.filter((plugin) => plugin !== pluginKey),
+      });
+    }
+    return null;
+  }
+
   return {
     findUser,
     countUsers,
     createUser,
     updateUser,
+    searchUsers,
     getUserById,
-    deleteUserById,
     generateToken,
+    deleteUserById,
+    updateUserPlugins,
     toggleUserMemories,
   };
 }

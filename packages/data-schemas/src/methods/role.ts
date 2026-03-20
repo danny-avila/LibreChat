@@ -15,14 +15,12 @@ export function createRoleMethods(mongoose: typeof import('mongoose')) {
       const defaultPerms = roleDefaults[roleName].permissions;
 
       if (!role) {
-        // Create new role if it doesn't exist.
         role = new Role(roleDefaults[roleName]);
       } else {
-        // Ensure role.permissions is defined.
+        const permissions = role.toObject()?.permissions ?? {};
         role.permissions = role.permissions || {};
-        // For each permission type in defaults, add it if missing.
         for (const permType of Object.keys(defaultPerms)) {
-          if (role.permissions[permType] == null) {
+          if (permissions[permType] == null || Object.keys(permissions[permType]).length === 0) {
             role.permissions[permType] = defaultPerms[permType as keyof typeof defaultPerms];
           }
         }

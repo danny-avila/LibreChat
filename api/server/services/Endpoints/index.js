@@ -1,26 +1,26 @@
 const { Providers } = require('@librechat/agents');
 const { EModelEndpoint } = require('librechat-data-provider');
+const { getCustomEndpointConfig } = require('@librechat/api');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize');
 const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const initCustom = require('~/server/services/Endpoints/custom/initialize');
 const initGoogle = require('~/server/services/Endpoints/google/initialize');
-const { getCustomEndpointConfig } = require('~/server/services/Config');
 
 /** Check if the provider is a known custom provider
  * @param {string | undefined} [provider] - The provider string
  * @returns {boolean} - True if the provider is a known custom provider, false otherwise
  */
 function isKnownCustomProvider(provider) {
-  return [Providers.XAI, Providers.OLLAMA, Providers.DEEPSEEK, Providers.OPENROUTER].includes(
+  return [Providers.XAI, Providers.DEEPSEEK, Providers.OPENROUTER, Providers.MOONSHOT].includes(
     provider?.toLowerCase() || '',
   );
 }
 
 const providerConfigMap = {
   [Providers.XAI]: initCustom,
-  [Providers.OLLAMA]: initCustom,
   [Providers.DEEPSEEK]: initCustom,
+  [Providers.MOONSHOT]: initCustom,
   [Providers.OPENROUTER]: initCustom,
   [EModelEndpoint.openAI]: initOpenAI,
   [EModelEndpoint.google]: initGoogle,
@@ -31,14 +31,16 @@ const providerConfigMap = {
 
 /**
  * Get the provider configuration and override endpoint based on the provider string
- * @param {string} provider - The provider string
- * @returns {Promise<{
- * getOptions: Function,
+ * @param {Object} params
+ * @param {string} params.provider - The provider string
+ * @param {AppConfig} params.appConfig - The application configuration
+ * @returns {{
+ * getOptions: (typeof providerConfigMap)[keyof typeof providerConfigMap],
  * overrideProvider: string,
  * customEndpointConfig?: TEndpoint
- * }>}
+ * }}
  */
-async function getProviderConfig(provider) {
+function getProviderConfig({ provider, appConfig }) {
   let getOptions = providerConfigMap[provider];
   let overrideProvider = provider;
   /** @type {TEndpoint | undefined} */
@@ -48,7 +50,7 @@ async function getProviderConfig(provider) {
     overrideProvider = provider.toLowerCase();
     getOptions = providerConfigMap[overrideProvider];
   } else if (!getOptions) {
-    customEndpointConfig = await getCustomEndpointConfig(provider);
+    customEndpointConfig = getCustomEndpointConfig({ endpoint: provider, appConfig });
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);
     }
@@ -57,7 +59,7 @@ async function getProviderConfig(provider) {
   }
 
   if (isKnownCustomProvider(overrideProvider) && !customEndpointConfig) {
-    customEndpointConfig = await getCustomEndpointConfig(provider);
+    customEndpointConfig = getCustomEndpointConfig({ endpoint: provider, appConfig });
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);
     }

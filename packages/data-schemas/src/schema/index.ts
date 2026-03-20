@@ -1,5 +1,7 @@
 export { default as actionSchema } from './action';
 export { default as agentSchema } from './agent';
+export { default as agentApiKeySchema } from './agentApiKey';
+export { default as agentCategorySchema } from './agentCategory';
 export { default as assistantSchema } from './assistant';
 export { default as balanceSchema } from './balance';
 export { default as bannerSchema } from './banner';
@@ -22,3 +24,4 @@ export { default as toolCallSchema } from './toolCall';
 export { default as transactionSchema } from './transaction';
 export { default as userSchema } from './user';
 export { default as memorySchema } from './memory';
+export { default as groupSchema } from './group';

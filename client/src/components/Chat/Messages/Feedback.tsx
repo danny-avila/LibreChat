@@ -65,7 +65,7 @@ function FeedbackOptionButton({
       aria-label={label}
       aria-pressed={active}
     >
-      <Icon size="19" bold={active} />
+      <Icon size="19" bold={active} aria-hidden="true" />
       <span>{label}</span>
     </button>
   );
@@ -216,7 +216,7 @@ function FeedbackButtons({
 
 function buttonClasses(isActive: boolean, isLast: boolean) {
   return cn(
-    'hover-button rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
+    'hover-button rounded-lg p-1.5 text-text-secondary-alt',
     'hover:text-text-primary hover:bg-surface-hover',
     'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
     !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',

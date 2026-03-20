@@ -1,14 +1,91 @@
-const { z } = require('zod');
 const axios = require('axios');
 const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
-const { logger } = require('~/config');
+
+const fluxApiJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['generate', 'list_finetunes', 'generate_finetuned'],
+      description:
+        'Action to perform: "generate" for image generation, "generate_finetuned" for finetuned model generation, "list_finetunes" to get available custom models',
+    },
+    prompt: {
+      type: 'string',
+      description:
+        'Text prompt for image generation. Required when action is "generate". Not used for list_finetunes.',
+    },
+    width: {
+      type: 'number',
+      description:
+        'Width of the generated image in pixels. Must be a multiple of 32. Default is 1024.',
+    },
+    height: {
+      type: 'number',
+      description:
+        'Height of the generated image in pixels. Must be a multiple of 32. Default is 768.',
+    },
+    prompt_upsampling: {
+      type: 'boolean',
+      description: 'Whether to perform upsampling on the prompt.',
+    },
+    steps: {
+      type: 'integer',
+      description: 'Number of steps to run the model for, a number from 1 to 50. Default is 40.',
+    },
+    seed: {
+      type: 'number',
+      description: 'Optional seed for reproducibility.',
+    },
+    safety_tolerance: {
+      type: 'number',
+      description:
+        'Tolerance level for input and output moderation. Between 0 and 6, 0 being most strict, 6 being least strict.',
+    },
+    endpoint: {
+      type: 'string',
+      enum: [
+        '/v1/flux-pro-1.1',
+        '/v1/flux-pro',
+        '/v1/flux-dev',
+        '/v1/flux-pro-1.1-ultra',
+        '/v1/flux-pro-finetuned',
+        '/v1/flux-pro-1.1-ultra-finetuned',
+      ],
+      description: 'Endpoint to use for image generation.',
+    },
+    raw: {
+      type: 'boolean',
+      description:
+        'Generate less processed, more natural-looking images. Only works for /v1/flux-pro-1.1-ultra.',
+    },
+    finetune_id: {
+      type: 'string',
+      description: 'ID of the finetuned model to use',
+    },
+    finetune_strength: {
+      type: 'number',
+      description: 'Strength of the finetuning effect (typically between 0.1 and 1.2)',
+    },
+    guidance: {
+      type: 'number',
+      description: 'Guidance scale for finetuned models',
+    },
+    aspect_ratio: {
+      type: 'string',
+      description: 'Aspect ratio for ultra models (e.g., "16:9")',
+    },
+  },
+  required: [],
+};
 
 const displayMessage =
-  'Flux displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.';
+  "Flux displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
 
 /**
  * FluxAPI - A tool for generating high-quality images from text prompts using the Flux API.
@@ -36,6 +113,10 @@ class FluxAPI extends Tool {
 
     /** @type {boolean} **/
     this.isAgent = fields.isAgent;
+    if (this.isAgent) {
+      /** Ensures LangChain maps [content, artifact] tuple to ToolMessage fields instead of serializing it into content. */
+      this.responseFormat = 'content_and_artifact';
+    }
     this.returnMetadata = fields.returnMetadata ?? false;
 
     if (fields.processFileURL) {
@@ -57,82 +138,11 @@ class FluxAPI extends Tool {
     // Add base URL from environment variable with fallback
     this.baseUrl = process.env.FLUX_API_BASE_URL || 'https://api.us1.bfl.ai';
 
-    // Define the schema for structured input
-    this.schema = z.object({
-      action: z
-        .enum(['generate', 'list_finetunes', 'generate_finetuned'])
-        .default('generate')
-        .describe(
-          'Action to perform: "generate" for image generation, "generate_finetuned" for finetuned model generation, "list_finetunes" to get available custom models',
-        ),
-      prompt: z
-        .string()
-        .optional()
-        .describe(
-          'Text prompt for image generation. Required when action is "generate". Not used for list_finetunes.',
-        ),
-      width: z
-        .number()
-        .optional()
-        .describe(
-          'Width of the generated image in pixels. Must be a multiple of 32. Default is 1024.',
-        ),
-      height: z
-        .number()
-        .optional()
-        .describe(
-          'Height of the generated image in pixels. Must be a multiple of 32. Default is 768.',
-        ),
-      prompt_upsampling: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe('Whether to perform upsampling on the prompt.'),
-      steps: z
-        .number()
-        .int()
-        .optional()
-        .describe('Number of steps to run the model for, a number from 1 to 50. Default is 40.'),
-      seed: z.number().optional().describe('Optional seed for reproducibility.'),
-      safety_tolerance: z
-        .number()
-        .optional()
-        .default(6)
-        .describe(
-          'Tolerance level for input and output moderation. Between 0 and 6, 0 being most strict, 6 being least strict.',
-        ),
-      endpoint: z
-        .enum([
-          '/v1/flux-pro-1.1',
-          '/v1/flux-pro',
-          '/v1/flux-dev',
-          '/v1/flux-pro-1.1-ultra',
-          '/v1/flux-pro-finetuned',
-          '/v1/flux-pro-1.1-ultra-finetuned',
-        ])
-        .optional()
-        .default('/v1/flux-pro-1.1')
-        .describe('Endpoint to use for image generation.'),
-      raw: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe(
-          'Generate less processed, more natural-looking images. Only works for /v1/flux-pro-1.1-ultra.',
-        ),
-      finetune_id: z.string().optional().describe('ID of the finetuned model to use'),
-      finetune_strength: z
-        .number()
-        .optional()
-        .default(1.1)
-        .describe('Strength of the finetuning effect (typically between 0.1 and 1.2)'),
-      guidance: z.number().optional().default(2.5).describe('Guidance scale for finetuned models'),
-      aspect_ratio: z
-        .string()
-        .optional()
-        .default('16:9')
-        .describe('Aspect ratio for ultra models (e.g., "16:9")'),
-    });
+    this.schema = fluxApiJsonSchema;
+  }
+
+  static get jsonSchema() {
+    return fluxApiJsonSchema;
   }
 
   getAxiosConfig() {
@@ -518,9 +528,39 @@ class FluxAPI extends Tool {
       return this.returnValue('No image data received from Flux API.');
     }
 
-    // Try saving the image locally
     const imageUrl = resultData.sample;
     const imageName = `img-${uuidv4()}.png`;
+
+    if (this.isAgent) {
+      try {
+        const fetchOptions = {};
+        if (process.env.PROXY) {
+          fetchOptions.agent = new HttpsProxyAgent(process.env.PROXY);
+        }
+        const imageResponse = await fetch(imageUrl, fetchOptions);
+        const arrayBuffer = await imageResponse.arrayBuffer();
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        const content = [
+          {
+            type: ContentTypes.IMAGE_URL,
+            image_url: {
+              url: `data:image/png;base64,${base64}`,
+            },
+          },
+        ];
+
+        const response = [
+          {
+            type: ContentTypes.TEXT,
+            text: displayMessage,
+          },
+        ];
+        return [response, { content }];
+      } catch (error) {
+        logger.error('[FluxAPI] Error processing finetuned image for agent:', error);
+        return this.returnValue(`Failed to process the finetuned image. ${error.message}`);
+      }
+    }
 
     try {
       logger.debug('[FluxAPI] Saving finetuned image:', imageUrl);
@@ -535,12 +575,6 @@ class FluxAPI extends Tool {
 
       logger.debug('[FluxAPI] Finetuned image saved to path:', result.filepath);
 
-      // Calculate cost based on endpoint
-      const endpointKey = endpoint.includes('ultra')
-        ? 'FLUX_PRO_1_1_ULTRA_FINETUNED'
-        : 'FLUX_PRO_FINETUNED';
-      const cost = FluxAPI.PRICING[endpointKey] || 0;
-      // Return the result based on returnMetadata flag
       this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
       return this.returnValue(this.result);
     } catch (error) {

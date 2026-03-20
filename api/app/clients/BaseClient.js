@@ -1,21 +1,40 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const { logger } = require('@librechat/data-schemas');
 const {
-  supportsBalanceCheck,
-  isAgentsEndpoint,
-  isParamEndpoint,
-  EModelEndpoint,
+  countTokens,
+  getBalanceConfig,
+  buildMessageFiles,
+  extractFileContext,
+  encodeAndFormatAudios,
+  encodeAndFormatVideos,
+  encodeAndFormatDocuments,
+} = require('@librechat/api');
+const {
+  Constants,
+  ErrorTypes,
+  FileSources,
   ContentTypes,
   excludedKeys,
-  ErrorTypes,
-  Constants,
+  EModelEndpoint,
+  isParamEndpoint,
+  isAgentsEndpoint,
+  isEphemeralAgentId,
+  supportsBalanceCheck,
+  isBedrockDocumentType,
 } = require('librechat-data-provider');
-const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
+const {
+  updateMessage,
+  getMessages,
+  saveMessage,
+  saveConvo,
+  getConvo,
+  getFiles,
+} = require('~/models');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
-const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
-const { logger } = require('~/config');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -37,6 +56,8 @@ class BaseClient {
     this.conversationId;
     /** @type {string} */
     this.responseMessageId;
+    /** @type {string} */
+    this.parentMessageId;
     /** @type {TAttachment[]} */
     this.attachments;
     /** The key for the usage object's input tokens
@@ -69,6 +90,7 @@ class BaseClient {
     throw new Error("Method 'getCompletion' must be implemented.");
   }
 
+  /** @type {sendCompletion} */
   async sendCompletion() {
     throw new Error("Method 'sendCompletion' must be implemented.");
   }
@@ -102,7 +124,9 @@ class BaseClient {
    * @returns {number}
    */
   getTokenCountForResponse(responseMessage) {
-    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', responseMessage);
+    logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
+      messageId: responseMessage?.messageId,
+    });
   }
 
   /**
@@ -110,13 +134,17 @@ class BaseClient {
    * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
    * Should only be used if `recordCollectedUsage` was not used instead.
    * @param {string} [model]
+   * @param {AppConfig['balance']} [balance]
    * @param {number} promptTokens
    * @param {number} completionTokens
+   * @param {string} [messageId]
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, promptTokens, completionTokens }) {
+  async recordTokenUsage({ model, balance, promptTokens, completionTokens, messageId }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
+      balance,
+      messageId,
       promptTokens,
       completionTokens,
     });
@@ -185,7 +213,8 @@ class BaseClient {
     this.user = user;
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
-    const conversationId = overrideConvoId ?? opts.conversationId ?? crypto.randomUUID();
+    const requestConvoId = overrideConvoId ?? opts.conversationId;
+    const conversationId = requestConvoId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId =
       overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
@@ -210,11 +239,12 @@ class BaseClient {
       ...opts,
       user,
       head,
+      saveOptions,
+      userMessageId,
+      requestConvoId,
       conversationId,
       parentMessageId,
-      userMessageId,
       responseMessageId,
-      saveOptions,
     };
   }
 
@@ -233,11 +263,12 @@ class BaseClient {
     const {
       user,
       head,
+      saveOptions,
+      userMessageId,
+      requestConvoId,
       conversationId,
       parentMessageId,
-      userMessageId,
       responseMessageId,
-      saveOptions,
     } = await this.setMessageOptions(opts);
 
     const userMessage = opts.isEdited
@@ -259,7 +290,8 @@ class BaseClient {
     }
 
     if (typeof opts?.onStart === 'function') {
-      opts.onStart(userMessage, responseMessageId);
+      const isNewConvo = !requestConvoId && parentMessageId === Constants.NO_PARENT;
+      opts.onStart(userMessage, responseMessageId, isNewConvo);
     }
 
     return {
@@ -565,6 +597,7 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
@@ -614,30 +647,45 @@ class BaseClient {
       this.currentMessages.push(userMessage);
     }
 
+    /**
+     * When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
+     * this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
+     */
+    const parentMessageId = isEdited ? head : userMessage.messageId;
+    this.parentMessageId = parentMessageId;
     let {
       prompt: payload,
       tokenCountMap,
       promptTokens,
     } = await this.buildMessages(
       this.currentMessages,
-      // When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
-      // this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
-      isEdited ? head : userMessage.messageId,
+      parentMessageId,
       this.getBuildMessagesOptions(opts),
       opts,
     );
 
     if (tokenCountMap) {
-      logger.debug('[BaseClient] tokenCountMap', tokenCountMap);
       if (tokenCountMap[userMessage.messageId]) {
         userMessage.tokenCount = tokenCountMap[userMessage.messageId];
-        logger.debug('[BaseClient] userMessage', userMessage);
+        logger.debug('[BaseClient] userMessage', {
+          messageId: userMessage.messageId,
+          tokenCount: userMessage.tokenCount,
+          conversationId: userMessage.conversationId,
+        });
       }
 
       this.handleTokenCountMap(tokenCountMap);
     }
 
     if (!isEdited && !this.skipSaveUserMessage) {
+      const reqFiles = this.options.req?.body?.files;
+      if (reqFiles && Array.isArray(this.options.attachments)) {
+        const files = buildMessageFiles(reqFiles, this.options.attachments);
+        if (files.length > 0) {
+          userMessage.files = files;
+        }
+        delete userMessage.image_urls;
+      }
       userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
       this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {
@@ -647,9 +695,9 @@ class BaseClient {
       }
     }
 
-    const balance = this.options.req?.app?.locals?.balance;
+    const balanceConfig = getBalanceConfig(appConfig);
     if (
-      balance?.enabled &&
+      balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
       await checkBalance({
@@ -666,8 +714,7 @@ class BaseClient {
       });
     }
 
-    /** @type {string|string[]|undefined} */
-    const completion = await this.sendCompletion(payload, opts);
+    const { completion, metadata } = await this.sendCompletion(payload, opts);
     if (this.abortController) {
       this.abortController.requestCompleted = true;
     }
@@ -685,6 +732,7 @@ class BaseClient {
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
+      metadata: Object.keys(metadata ?? {}).length > 0 ? metadata : undefined,
     };
 
     if (typeof completion === 'string') {
@@ -748,9 +796,19 @@ class BaseClient {
           usage,
           promptTokens,
           completionTokens,
-          model: responseMessage.model,
+          balance: balanceConfig,
+          /** Note: When using agents, responseMessage.model is the agent ID, not the model */
+          model: this.model,
+          messageId: this.responseMessageId,
         });
       }
+
+      logger.debug('[BaseClient] Response token usage', {
+        messageId: responseMessage.messageId,
+        model: responseMessage.model,
+        promptTokens,
+        completionTokens,
+      });
     }
 
     if (userMessagePromise) {
@@ -906,6 +964,7 @@ class BaseClient {
       throw new Error('User mismatch.');
     }
 
+    const hasAddedConvo = this.options?.req?.body?.addedConvo != null;
     const savedMessage = await saveMessage(
       this.options?.req,
       {
@@ -913,6 +972,7 @@ class BaseClient {
         endpoint: this.options.endpoint,
         unfinished: false,
         user,
+        ...(hasAddedConvo && { addedConvo: true }),
       },
       { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage' },
     );
@@ -935,6 +995,13 @@ class BaseClient {
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
+    const hasNonEphemeralAgent =
+      isAgentsEndpoint(this.options.endpoint) &&
+      endpointOptions?.agent_id &&
+      !isEphemeralAgentId(endpointOptions.agent_id);
+    if (hasNonEphemeralAgent) {
+      exceptions.add('model');
+    }
     if (existingConvo != null) {
       this.fetchedConvo = true;
       for (const key in existingConvo) {
@@ -986,7 +1053,8 @@ class BaseClient {
    * @param {Object} options - The options for the function.
    * @param {TMessage[]} options.messages - An array of message objects. Each object should have either an 'id' or 'messageId' property, and may have a 'parentMessageId' property.
    * @param {string} options.parentMessageId - The ID of the parent message to start the traversal from.
-   * @param {Function} [options.mapMethod] - An optional function to map over the ordered messages. If provided, it will be applied to each message in the resulting array.
+   * @param {Function} [options.mapMethod] - An optional function to map over the ordered messages. Applied conditionally based on mapCondition.
+   * @param {(message: TMessage) => boolean} [options.mapCondition] - An optional function to determine whether mapMethod should be applied to a given message. If not provided and mapMethod is set, mapMethod applies to all messages.
    * @param {boolean} [options.summary=false] - If set to true, the traversal modifies messages with 'summary' and 'summaryTokenCount' properties and stops at the message with a 'summary' property.
    * @returns {TMessage[]} An array containing the messages in the order they should be displayed, starting with the most recent message with a 'summary' property if the 'summary' option is true, and ending with the message identified by 'parentMessageId'.
    */
@@ -994,6 +1062,7 @@ class BaseClient {
     messages,
     parentMessageId,
     mapMethod = null,
+    mapCondition = null,
     summary = false,
   }) {
     if (!messages || messages.length === 0) {
@@ -1028,7 +1097,9 @@ class BaseClient {
         message.tokenCount = message.summaryTokenCount;
       }
 
-      orderedMessages.push(message);
+      const shouldMap = mapMethod != null && (mapCondition != null ? mapCondition(message) : true);
+      const processedMessage = shouldMap ? mapMethod(message) : message;
+      orderedMessages.push(processedMessage);
 
       if (summary && message.summary) {
         break;
@@ -1039,11 +1110,6 @@ class BaseClient {
     }
 
     orderedMessages.reverse();
-
-    if (mapMethod) {
-      return orderedMessages.map(mapMethod);
-    }
-
     return orderedMessages;
   }
 
@@ -1183,8 +1249,148 @@ class BaseClient {
     return await this.sendCompletion(payload, opts);
   }
 
+  async addDocuments(message, attachments) {
+    const documentResult = await encodeAndFormatDocuments(
+      this.options.req,
+      attachments,
+      {
+        provider: this.options.agent?.provider ?? this.options.endpoint,
+        endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+        useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+      },
+      getStrategyFunctions,
+    );
+    message.documents =
+      documentResult.documents && documentResult.documents.length
+        ? documentResult.documents
+        : undefined;
+    return documentResult.files;
+  }
+
+  async addVideos(message, attachments) {
+    const videoResult = await encodeAndFormatVideos(
+      this.options.req,
+      attachments,
+      {
+        provider: this.options.agent?.provider ?? this.options.endpoint,
+        endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+      },
+      getStrategyFunctions,
+    );
+    message.videos =
+      videoResult.videos && videoResult.videos.length ? videoResult.videos : undefined;
+    return videoResult.files;
+  }
+
+  async addAudios(message, attachments) {
+    const audioResult = await encodeAndFormatAudios(
+      this.options.req,
+      attachments,
+      {
+        provider: this.options.agent?.provider ?? this.options.endpoint,
+        endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+      },
+      getStrategyFunctions,
+    );
+    message.audios =
+      audioResult.audios && audioResult.audios.length ? audioResult.audios : undefined;
+    return audioResult.files;
+  }
+
   /**
-   *
+   * Extracts text context from attachments and sets it on the message.
+   * This handles text that was already extracted from files (OCR, transcriptions, document text, etc.)
+   * @param {TMessage} message - The message to add context to
+   * @param {MongoFile[]} attachments - Array of file attachments
+   * @returns {Promise<void>}
+   */
+  async addFileContextToMessage(message, attachments) {
+    const fileContext = await extractFileContext({
+      attachments,
+      req: this.options?.req,
+      tokenCountFn: (text) => countTokens(text),
+    });
+
+    if (fileContext) {
+      message.fileContext = fileContext;
+    }
+  }
+
+  async processAttachments(message, attachments) {
+    const categorizedAttachments = {
+      images: [],
+      videos: [],
+      audios: [],
+      documents: [],
+    };
+
+    const allFiles = [];
+
+    const provider = this.options.agent?.provider ?? this.options.endpoint;
+    const isBedrock = provider === EModelEndpoint.bedrock;
+
+    for (const file of attachments) {
+      /** @type {FileSources} */
+      const source = file.source ?? FileSources.local;
+      if (source === FileSources.text) {
+        allFiles.push(file);
+        continue;
+      }
+      if (file.embedded === true || file.metadata?.fileIdentifier != null) {
+        allFiles.push(file);
+        continue;
+      }
+
+      if (file.type.startsWith('image/')) {
+        categorizedAttachments.images.push(file);
+      } else if (file.type === 'application/pdf') {
+        categorizedAttachments.documents.push(file);
+        allFiles.push(file);
+      } else if (isBedrock && isBedrockDocumentType(file.type)) {
+        categorizedAttachments.documents.push(file);
+        allFiles.push(file);
+      } else if (file.type.startsWith('video/')) {
+        categorizedAttachments.videos.push(file);
+        allFiles.push(file);
+      } else if (file.type.startsWith('audio/')) {
+        categorizedAttachments.audios.push(file);
+        allFiles.push(file);
+      }
+    }
+
+    const [imageFiles] = await Promise.all([
+      categorizedAttachments.images.length > 0
+        ? this.addImageURLs(message, categorizedAttachments.images)
+        : Promise.resolve([]),
+      categorizedAttachments.documents.length > 0
+        ? this.addDocuments(message, categorizedAttachments.documents)
+        : Promise.resolve([]),
+      categorizedAttachments.videos.length > 0
+        ? this.addVideos(message, categorizedAttachments.videos)
+        : Promise.resolve([]),
+      categorizedAttachments.audios.length > 0
+        ? this.addAudios(message, categorizedAttachments.audios)
+        : Promise.resolve([]),
+    ]);
+
+    allFiles.push(...imageFiles);
+
+    const seenFileIds = new Set();
+    const uniqueFiles = [];
+
+    for (const file of allFiles) {
+      if (file.file_id && !seenFileIds.has(file.file_id)) {
+        seenFileIds.add(file.file_id);
+        uniqueFiles.push(file);
+      } else if (!file.file_id) {
+        uniqueFiles.push(file);
+      }
+    }
+
+    return uniqueFiles;
+  }
+
+  /**
    * @param {TMessage[]} _messages
    * @returns {Promise<TMessage[]>}
    */
@@ -1233,7 +1439,8 @@ class BaseClient {
         {},
       );
 
-      await this.addImageURLs(message, files, this.visionMode);
+      await this.addFileContextToMessage(message, files);
+      await this.processAttachments(message, files);
 
       this.message_file_map[message.messageId] = files;
       return message;

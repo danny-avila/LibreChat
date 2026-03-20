@@ -1,8 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
 import type { AgentToolResources, TFile, AgentBaseResource } from 'librechat-data-provider';
+import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
-import type { IMongoFile } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
 
 /**
@@ -10,15 +10,25 @@ import type { Request as ServerRequest } from 'express';
  * @param filter - MongoDB filter query for files
  * @param _sortOptions - Sorting options (currently unused)
  * @param selectFields - Field selection options
- * @param options - Additional options including userId and agentId for access control
  * @returns Promise resolving to array of files
  */
 export type TGetFiles = (
   filter: FilterQuery<IMongoFile>,
   _sortOptions: ProjectionType<IMongoFile> | null | undefined,
   selectFields: QueryOptions<IMongoFile> | null | undefined,
-  options?: { userId?: string; agentId?: string },
 ) => Promise<Array<TFile>>;
+
+/**
+ * Function type for filtering files by agent access permissions.
+ * Used to enforce that only files the user has access to (via ownership or agent attachment)
+ * are returned after a raw DB query.
+ */
+export type TFilterFilesByAgentAccess = (params: {
+  files: Array<TFile>;
+  userId: string;
+  role?: string;
+  agentId: string;
+}) => Promise<Array<TFile>>;
 
 /**
  * Helper function to add a file to a specific tool resource category
@@ -128,32 +138,39 @@ const categorizeFileForToolResources = ({
 /**
  * Primes resources for agent execution by processing attachments and tool resources
  * This function:
- * 1. Fetches OCR files if OCR is enabled
+ * 1. Fetches context/OCR files (filtered by agent access control when available)
  * 2. Processes attachment files
  * 3. Categorizes files into appropriate tool resources
  * 4. Prevents duplicate files across all sources
  *
  * @param params - Parameters object
- * @param params.req - Express request object containing app configuration
+ * @param params.req - Express request object
+ * @param params.appConfig - Application configuration object
  * @param params.getFiles - Function to retrieve files from database
+ * @param params.filterFiles - Optional function to enforce agent-based file access control
  * @param params.requestFileSet - Set of file IDs from the current request
  * @param params.attachments - Promise resolving to array of attachment files
  * @param params.tool_resources - Existing tool resources for the agent
+ * @param params.agentId - Agent ID used for access control filtering
  * @returns Promise resolving to processed attachments and updated tool resources
  */
 export const primeResources = async ({
   req,
+  appConfig,
   getFiles,
+  filterFiles,
   requestFileSet,
   attachments: _attachments,
   tool_resources: _tool_resources,
   agentId,
 }: {
-  req: ServerRequest;
+  req: ServerRequest & { user?: IUser };
+  appConfig?: AppConfig;
   requestFileSet: Set<string>;
   attachments: Promise<Array<TFile | null>> | undefined;
   tool_resources: AgentToolResources | undefined;
   getFiles: TGetFiles;
+  filterFiles?: TFilterFilesByAgentAccess;
   agentId?: string;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
@@ -179,18 +196,32 @@ export const primeResources = async ({
     const processedResourceFiles = new Set<string>();
     /**
      * The agent's tool resources object that will be updated with categorized files
-     * Initialized from input parameter or empty object if not provided
+     * Create a shallow copy first to avoid mutating the original
      */
-    const tool_resources = _tool_resources ?? {};
+    const tool_resources: AgentToolResources = { ...(_tool_resources ?? {}) };
 
-    // Track existing files in tool_resources to prevent duplicates within resources
+    // Deep copy each resource to avoid mutating nested objects/arrays
     for (const [resourceType, resource] of Object.entries(tool_resources)) {
-      if (resource?.files && Array.isArray(resource.files)) {
+      if (!resource) {
+        continue;
+      }
+
+      // Deep copy the resource to avoid mutations
+      tool_resources[resourceType as keyof AgentToolResources] = {
+        ...resource,
+        // Deep copy arrays to prevent mutations
+        ...(resource.files && { files: [...resource.files] }),
+        ...(resource.file_ids && { file_ids: [...resource.file_ids] }),
+        ...(resource.vector_store_ids && { vector_store_ids: [...resource.vector_store_ids] }),
+      } as AgentBaseResource;
+
+      // Now track existing files
+      if (resource.files && Array.isArray(resource.files)) {
         for (const file of resource.files) {
           if (file?.file_id) {
             processedResourceFiles.add(`${resourceType}:${file.file_id}`);
-            // Files from non-OCR resources should not be added to attachments from _attachments
-            if (resourceType !== EToolResources.ocr) {
+            // Files from non-context resources should not be added to attachments from _attachments
+            if (resourceType !== EToolResources.context && resourceType !== EToolResources.ocr) {
               attachmentFileIds.add(file.file_id);
             }
           }
@@ -198,19 +229,35 @@ export const primeResources = async ({
       }
     }
 
-    const isOCREnabled = (req.app.locals?.[EModelEndpoint.agents]?.capabilities ?? []).includes(
-      AgentCapabilities.ocr,
-    );
+    const isContextEnabled = (
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? []
+    ).includes(AgentCapabilities.context);
 
-    if (tool_resources[EToolResources.ocr]?.file_ids && isOCREnabled) {
-      const context = await getFiles(
+    const fileIds = tool_resources[EToolResources.context]?.file_ids ?? [];
+    const ocrFileIds = tool_resources[EToolResources.ocr]?.file_ids;
+    if (ocrFileIds != null) {
+      fileIds.push(...ocrFileIds);
+      delete tool_resources[EToolResources.ocr];
+    }
+
+    if (fileIds.length > 0 && isContextEnabled) {
+      delete tool_resources[EToolResources.context];
+      let context = await getFiles(
         {
-          file_id: { $in: tool_resources.ocr.file_ids },
+          file_id: { $in: fileIds },
         },
         {},
         {},
-        { userId: req.user?.id, agentId },
       );
+
+      if (filterFiles && req.user?.id && agentId) {
+        context = await filterFiles({
+          files: context,
+          userId: req.user.id,
+          role: req.user.role,
+          agentId,
+        });
+      }
 
       for (const file of context) {
         if (!file?.file_id) {

@@ -1,18 +1,22 @@
 const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
-const { isAgentsEndpoint } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
+const { verifyAgentUploadPermission } = require('@librechat/api');
+const { isAssistantsEndpoint } = require('librechat-data-provider');
 const {
-  filterFile,
-  processImageFile,
   processAgentFileUpload,
+  processImageFile,
+  filterFile,
 } = require('~/server/services/Files/process');
-const { logger } = require('~/config');
+const { checkPermission } = require('~/server/services/PermissionService');
+const { getAgent } = require('~/models/Agent');
 
 const router = express.Router();
 
 router.post('/', async (req, res) => {
   const metadata = req.body;
+  const appConfig = req.config;
 
   try {
     filterFile({ req, image: true });
@@ -20,7 +24,17 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (isAgentsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
+    if (!isAssistantsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent,
+        checkPermission,
+      });
+      if (denied) {
+        return;
+      }
       return await processAgentFileUpload({ req, res, metadata });
     }
 
@@ -28,9 +42,20 @@ router.post('/', async (req, res) => {
   } catch (error) {
     // TODO: delete remote file if it exists
     logger.error('[/files/images] Error processing file:', error);
+
+    let message = 'Error processing file';
+
+    if (
+      error.message?.includes('Invalid file format') ||
+      error.message?.includes('No OCR result') ||
+      error.message?.includes('exceeds token limit')
+    ) {
+      message = error.message;
+    }
+
     try {
       const filepath = path.join(
-        req.app.locals.paths.imageOutput,
+        appConfig.paths.imageOutput,
         req.user.id,
         path.basename(req.file.filename),
       );
@@ -38,12 +63,12 @@ router.post('/', async (req, res) => {
     } catch (error) {
       logger.error('[/files/images] Error deleting file:', error);
     }
-    res.status(500).json({ message: 'Error processing file' });
+    res.status(500).json({ message });
   } finally {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/files/images] Temp. image upload file deleted');
-    } catch (error) {
+    } catch {
       logger.debug('[/files/images] Temp. image upload file already deleted');
     }
   }

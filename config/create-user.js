@@ -1,5 +1,5 @@
 const path = require('path');
-const mongoose = require(path.resolve(__dirname, '..', 'api', 'node_modules', 'mongoose'));
+const mongoose = require('mongoose');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { registerUser } = require('~/server/services/AuthService');
@@ -14,7 +14,7 @@ const connect = require('./connect');
   console.purple('--------------------------');
 
   if (process.argv.length < 5) {
-    console.orange('Usage: npm run create-user <email> <name> <username> [--email-verified=false]');
+    console.orange('Usage: npm run create-user -- <email> <name> <username> [--email-verified=false]');
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.orange(
       'If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).',
@@ -23,32 +23,32 @@ const connect = require('./connect');
     console.purple('--------------------------');
   }
 
-  let email = '';
-  let password = '';
-  let name = '';
-  let username = '';
-  let emailVerified = true;
-
   // Parse command line arguments
+  let email, password, name, username, emailVerified, provider;
   for (let i = 2; i < process.argv.length; i++) {
     if (process.argv[i].startsWith('--email-verified=')) {
       emailVerified = process.argv[i].split('=')[1].toLowerCase() !== 'false';
       continue;
     }
 
-    if (!email) {
+    if (process.argv[i].startsWith('--provider=')) {
+      provider = process.argv[i].split('=')[1];
+      continue;
+    }
+
+    if (email === undefined) {
       email = process.argv[i];
-    } else if (!name) {
+    } else if (name === undefined) {
       name = process.argv[i];
-    } else if (!username) {
+    } else if (username === undefined) {
       username = process.argv[i];
-    } else if (!password) {
+    } else if (password === undefined) {
       console.red('Warning: password passed in as argument, this is not secure!');
       password = process.argv[i];
     }
   }
 
-  if (!email) {
+  if (email === undefined) {
     email = await askQuestion('Email:');
   }
   if (!email.includes('@')) {
@@ -57,19 +57,19 @@ const connect = require('./connect');
   }
 
   const defaultName = email.split('@')[0];
-  if (!name) {
+  if (name === undefined) {
     name = await askQuestion('Name: (default is: ' + defaultName + ')');
     if (!name) {
       name = defaultName;
     }
   }
-  if (!username) {
+  if (username === undefined) {
     username = await askQuestion('Username: (default is: ' + defaultName + ')');
     if (!username) {
       username = defaultName;
     }
   }
-  if (!password) {
+  if (password === undefined) {
     password = await askQuestion('Password: (leave blank, to generate one)');
     if (!password) {
       password = Math.random().toString(36).slice(-18);
@@ -78,7 +78,7 @@ const connect = require('./connect');
   }
 
   // Only prompt for emailVerified if it wasn't set via CLI
-  if (!process.argv.some((arg) => arg.startsWith('--email-verified='))) {
+  if (emailVerified === undefined) {
     const emailVerifiedInput = await askQuestion(`Email verified? (Y/n, default is Y):
 
 If \`y\`, the user's email will be considered verified.
@@ -88,7 +88,11 @@ If \`n\`, and email service is configured, the user will be sent a verification 
 If \`n\`, and email service is not configured, you must have the \`ALLOW_UNVERIFIED_EMAIL_LOGIN\` .env variable set to true,
 or the user will need to attempt logging in to have a verification link sent to them.`);
 
-    if (emailVerifiedInput.toLowerCase() === 'n') {
+    const normalizedEmailVerifiedInput = emailVerifiedInput.trim().toLowerCase()
+
+    emailVerified = true
+
+    if (normalizedEmailVerifiedInput === 'n') {
       emailVerified = false;
     }
   }
@@ -99,7 +103,7 @@ or the user will need to attempt logging in to have a verification link sent to 
     silentExit(1);
   }
 
-  const user = { email, password, name, username, confirm_password: password };
+  const user = { email, password, name, username, confirm_password: password, provider };
   let result;
   try {
     result = await registerUser(user, { emailVerified });

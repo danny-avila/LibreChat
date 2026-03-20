@@ -9,6 +9,10 @@ import {
   PlaneTakeoffIcon,
   GraduationCapIcon,
   TerminalSquareIcon,
+  // NEW: Add these for agent categories
+  Users as UsersIcon,
+  Beaker as BeakerIcon,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import { cn } from '~/utils';
 
@@ -22,6 +26,13 @@ const categoryIconMap: Record<string, React.ElementType> = {
   code: TerminalSquareIcon,
   travel: PlaneTakeoffIcon,
   teach_or_explain: GraduationCapIcon,
+  // NEW: Agent categories
+  general: BoxIcon,
+  hr: UsersIcon,
+  rd: BeakerIcon,
+  it: TerminalSquareIcon,
+  sales: LineChartIcon,
+  aftersales: SettingsIcon,
 };
 
 const categoryColorMap: Record<string, string> = {
@@ -34,6 +45,13 @@ const categoryColorMap: Record<string, string> = {
   finance: 'text-orange-400',
   roleplay: 'text-orange-400',
   teach_or_explain: 'text-blue-300',
+  // NEW: Agent categories
+  general: 'text-blue-500',
+  hr: 'text-green-500',
+  rd: 'text-purple-500',
+  it: 'text-red-500',
+  sales: 'text-orange-500',
+  aftersales: 'text-yellow-500',
 };
 
 export default function CategoryIcon({

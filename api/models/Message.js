@@ -1,7 +1,6 @@
 const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
 const { createTempChatExpirationDate } = require('@librechat/api');
-const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 const { Message } = require('~/db/models');
 
 const idSchema = z.string().uuid();
@@ -11,7 +10,7 @@ const idSchema = z.string().uuid();
  *
  * @async
  * @function saveMessage
- * @param {Express.Request} req - The request object containing user information.
+ * @param {ServerRequest} req - The request object containing user information.
  * @param {Object} params - The message data object.
  * @param {string} params.endpoint - The endpoint where the message originated.
  * @param {string} params.iconURL - The URL of the sender's icon.
@@ -57,8 +56,8 @@ async function saveMessage(req, params, metadata) {
 
     if (req?.body?.isTemporary) {
       try {
-        const customConfig = await getCustomConfig();
-        update.expiredAt = createTempChatExpirationDate(customConfig);
+        const appConfig = req.config;
+        update.expiredAt = createTempChatExpirationDate(appConfig?.interfaceConfig);
       } catch (err) {
         logger.error('Error creating temporary chat expiration date:', err);
         logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
@@ -347,8 +346,8 @@ async function getMessage({ user, messageId }) {
  *
  * @async
  * @function deleteMessages
- * @param {Object} filter - The filter criteria to find messages to delete.
- * @returns {Promise<Object>} The metadata with count of deleted messages.
+ * @param {import('mongoose').FilterQuery<import('mongoose').Document>} filter - The filter criteria to find messages to delete.
+ * @returns {Promise<import('mongoose').DeleteResult>} The metadata with count of deleted messages.
  * @throws {Error} If there is an error in deleting messages.
  */
 async function deleteMessages(filter) {

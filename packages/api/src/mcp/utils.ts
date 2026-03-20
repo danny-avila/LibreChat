@@ -1,6 +1,71 @@
 import { Constants } from 'librechat-data-provider';
+import type { ParsedServerConfig } from '~/mcp/types';
 
 export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
+
+/** Checks that `customUserVars` is present AND non-empty (guards against truthy `{}`) */
+export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVars'>): boolean {
+  return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;
+}
+
+/**
+ * Allowlist-based sanitization for API responses. Only explicitly listed fields are included;
+ * new fields added to ParsedServerConfig are excluded by default until allowlisted here.
+ *
+ * URLs are returned as-is: DB-stored configs reject ${VAR} patterns at validation time
+ * (MCPServerUserInputSchema), and YAML configs are admin-managed. Env variable resolution
+ * is handled at the schema/input boundary, not the output boundary.
+ */
+export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedServerConfig> {
+  const safe: Partial<ParsedServerConfig> = {
+    type: config.type,
+    url: config.url,
+    title: config.title,
+    description: config.description,
+    iconPath: config.iconPath,
+    chatMenu: config.chatMenu,
+    requiresOAuth: config.requiresOAuth,
+    capabilities: config.capabilities,
+    tools: config.tools,
+    toolFunctions: config.toolFunctions,
+    initDuration: config.initDuration,
+    updatedAt: config.updatedAt,
+    dbId: config.dbId,
+    consumeOnly: config.consumeOnly,
+    inspectionFailed: config.inspectionFailed,
+    customUserVars: config.customUserVars,
+    serverInstructions: config.serverInstructions,
+  };
+
+  if (config.apiKey) {
+    safe.apiKey = {
+      source: config.apiKey.source,
+      authorization_type: config.apiKey.authorization_type,
+      ...(config.apiKey.custom_header && { custom_header: config.apiKey.custom_header }),
+    };
+  }
+
+  if (config.oauth) {
+    const { client_secret: _secret, ...safeOAuth } = config.oauth;
+    safe.oauth = safeOAuth;
+  }
+
+  return Object.fromEntries(
+    Object.entries(safe).filter(([, v]) => v !== undefined),
+  ) as Partial<ParsedServerConfig>;
+}
+
+/** Applies allowlist-based sanitization to a map of server configs. */
+export function redactAllServerSecrets(
+  configs: Record<string, ParsedServerConfig>,
+): Record<string, Partial<ParsedServerConfig>> {
+  const result: Record<string, Partial<ParsedServerConfig>> = {};
+  for (const [key, config] of Object.entries(configs)) {
+    result[key] = redactServerSecrets(config);
+  }
+  return result;
+}
+
 /**
  * Normalizes a server name to match the pattern ^[a-zA-Z0-9_.-]+$
  * This is required for Azure OpenAI models with Tool Calling
@@ -12,7 +77,7 @@ export function normalizeServerName(serverName: string): string {
   }
 
   /** Replace non-matching characters with underscores.
-    This preserves the general structure while ensuring compatibility. 
+    This preserves the general structure while ensuring compatibility.
     Trims leading/trailing underscores
     */
   const normalized = serverName.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^_+|_+$/g, '');
@@ -30,4 +95,45 @@ export function normalizeServerName(serverName: string): string {
   }
 
   return normalized;
+}
+
+/**
+ * Sanitizes a URL by removing query parameters to prevent credential leakage in logs.
+ * @param url - The URL to sanitize (string or URL object)
+ * @returns The sanitized URL string without query parameters
+ */
+export function sanitizeUrlForLogging(url: string | URL): string {
+  try {
+    const urlObj = typeof url === 'string' ? new URL(url) : url;
+    return `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}`;
+  } catch {
+    return '[invalid URL]';
+  }
+}
+
+/**
+ * Escapes special regex characters in a string so they are treated literally.
+ * @param str - The string to escape
+ * @returns The escaped string safe for use in a regex pattern
+ */
+export function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Generates a URL-friendly server name from a title.
+ * Converts to lowercase, replaces spaces with hyphens, removes special characters.
+ * @param title - The display title to convert
+ * @returns A slug suitable for use as serverName (e.g., "GitHub MCP Tool" → "github-mcp-tool")
+ */
+export function generateServerNameFromTitle(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '') // Remove special chars except spaces and hyphens
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Remove consecutive hyphens
+    .replace(/^-|-$/g, ''); // Trim leading/trailing hyphens
+
+  return slug || 'mcp-server'; // Fallback if empty
 }

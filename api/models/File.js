@@ -1,7 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { EToolResources, FileContext, Constants } = require('librechat-data-provider');
-const { getProjectByName } = require('./Project');
-const { getAgent } = require('./Agent');
+const { EToolResources, FileContext } = require('librechat-data-provider');
 const { File } = require('~/db/models');
 
 /**
@@ -15,127 +13,21 @@ const findFileById = async (file_id, options = {}) => {
 };
 
 /**
- * Checks if a user has access to multiple files through a shared agent (batch operation)
- * @param {string} userId - The user ID to check access for
- * @param {string[]} fileIds - Array of file IDs to check
- * @param {string} agentId - The agent ID that might grant access
- * @returns {Promise<Map<string, boolean>>} Map of fileId to access status
- */
-const hasAccessToFilesViaAgent = async (userId, fileIds, agentId, checkCollaborative = true) => {
-  const accessMap = new Map();
-
-  // Initialize all files as no access
-  fileIds.forEach((fileId) => accessMap.set(fileId, false));
-
-  try {
-    const agent = await getAgent({ id: agentId });
-
-    if (!agent) {
-      return accessMap;
-    }
-
-    // Check if user is the author - if so, grant access to all files
-    if (agent.author.toString() === userId) {
-      fileIds.forEach((fileId) => accessMap.set(fileId, true));
-      return accessMap;
-    }
-
-    // Check if agent is shared with the user via projects
-    if (!agent.projectIds || agent.projectIds.length === 0) {
-      return accessMap;
-    }
-
-    // Check if agent is in global project
-    const globalProject = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, '_id');
-    if (
-      !globalProject ||
-      !agent.projectIds.some((pid) => pid.toString() === globalProject._id.toString())
-    ) {
-      return accessMap;
-    }
-
-    // Agent is globally shared - check if it's collaborative
-    if (checkCollaborative && !agent.isCollaborative) {
-      return accessMap;
-    }
-
-    // Check which files are actually attached
-    const attachedFileIds = new Set();
-    if (agent.tool_resources) {
-      for (const [_resourceType, resource] of Object.entries(agent.tool_resources)) {
-        if (resource?.file_ids && Array.isArray(resource.file_ids)) {
-          resource.file_ids.forEach((fileId) => attachedFileIds.add(fileId));
-        }
-      }
-    }
-
-    // Grant access only to files that are attached to this agent
-    fileIds.forEach((fileId) => {
-      if (attachedFileIds.has(fileId)) {
-        accessMap.set(fileId, true);
-      }
-    });
-
-    return accessMap;
-  } catch (error) {
-    logger.error('[hasAccessToFilesViaAgent] Error checking file access:', error);
-    return accessMap;
-  }
-};
-
-/**
  * Retrieves files matching a given filter, sorted by the most recently updated.
  * @param {Object} filter - The filter criteria to apply.
  * @param {Object} [_sortOptions] - Optional sort parameters.
  * @param {Object|String} [selectFields={ text: 0 }] - Fields to include/exclude in the query results.
  *                                                   Default excludes the 'text' field.
- * @param {Object} [options] - Additional options
- * @param {string} [options.userId] - User ID for access control
- * @param {string} [options.agentId] - Agent ID that might grant access to files
  * @returns {Promise<Array<MongoFile>>} A promise that resolves to an array of file documents.
  */
-const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }, options = {}) => {
+const getFiles = async (filter, _sortOptions, selectFields = { text: 0 }) => {
   const sortOptions = { updatedAt: -1, ..._sortOptions };
-  const files = await File.find(filter).select(selectFields).sort(sortOptions).lean();
-
-  // If userId and agentId are provided, filter files based on access
-  if (options.userId && options.agentId) {
-    // Collect file IDs that need access check
-    const filesToCheck = [];
-    const ownedFiles = [];
-
-    for (const file of files) {
-      if (file.user && file.user.toString() === options.userId) {
-        ownedFiles.push(file);
-      } else {
-        filesToCheck.push(file);
-      }
-    }
-
-    if (filesToCheck.length === 0) {
-      return ownedFiles;
-    }
-
-    // Batch check access for all non-owned files
-    const fileIds = filesToCheck.map((f) => f.file_id);
-    const accessMap = await hasAccessToFilesViaAgent(
-      options.userId,
-      fileIds,
-      options.agentId,
-      false,
-    );
-
-    // Filter files based on access
-    const accessibleFiles = filesToCheck.filter((file) => accessMap.get(file.file_id));
-
-    return [...ownedFiles, ...accessibleFiles];
-  }
-
-  return files;
+  return await File.find(filter).select(selectFields).sort(sortOptions).lean();
 };
 
 /**
- * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs
+ * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs.
+ * Note: execute_code files are handled separately by getCodeGeneratedFiles.
  * @param {string[]} fileIds - Array of file_id strings to search for
  * @param {Set<EToolResources>} toolResourceSet - Optional filter for tool resources
  * @returns {Promise<Array<MongoFile>>} Files that match the criteria
@@ -146,20 +38,24 @@ const getToolFilesByIds = async (fileIds, toolResourceSet) => {
   }
 
   try {
-    const filter = {
-      file_id: { $in: fileIds },
-      $or: [],
-    };
+    const orConditions = [];
 
-    if (toolResourceSet.has(EToolResources.ocr)) {
-      filter.$or.push({ text: { $exists: true, $ne: null }, context: FileContext.agents });
+    if (toolResourceSet.has(EToolResources.context)) {
+      orConditions.push({ text: { $exists: true, $ne: null }, context: FileContext.agents });
     }
     if (toolResourceSet.has(EToolResources.file_search)) {
-      filter.$or.push({ embedded: true });
+      orConditions.push({ embedded: true });
     }
-    if (toolResourceSet.has(EToolResources.execute_code)) {
-      filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
+
+    if (orConditions.length === 0) {
+      return [];
     }
+
+    const filter = {
+      file_id: { $in: fileIds },
+      context: { $ne: FileContext.execute_code }, // Exclude code-generated files
+      $or: orConditions,
+    };
 
     const selectFields = { text: 0 };
     const sortOptions = { updatedAt: -1 };
@@ -168,6 +64,70 @@ const getToolFilesByIds = async (fileIds, toolResourceSet) => {
   } catch (error) {
     logger.error('[getToolFilesByIds] Error retrieving tool files:', error);
     throw new Error('Error retrieving tool files');
+  }
+};
+
+/**
+ * Retrieves files generated by code execution for a given conversation.
+ * These files are stored locally with fileIdentifier metadata for code env re-upload.
+ * @param {string} conversationId - The conversation ID to search for
+ * @param {string[]} [messageIds] - Optional array of messageIds to filter by (for linear thread filtering)
+ * @returns {Promise<Array<MongoFile>>} Files generated by code execution in the conversation
+ */
+const getCodeGeneratedFiles = async (conversationId, messageIds) => {
+  if (!conversationId) {
+    return [];
+  }
+
+  /** messageIds are required for proper thread filtering of code-generated files */
+  if (!messageIds || messageIds.length === 0) {
+    return [];
+  }
+
+  try {
+    const filter = {
+      conversationId,
+      context: FileContext.execute_code,
+      messageId: { $exists: true, $in: messageIds },
+      'metadata.fileIdentifier': { $exists: true },
+    };
+
+    const selectFields = { text: 0 };
+    const sortOptions = { createdAt: 1 };
+
+    return await getFiles(filter, sortOptions, selectFields);
+  } catch (error) {
+    logger.error('[getCodeGeneratedFiles] Error retrieving code generated files:', error);
+    return [];
+  }
+};
+
+/**
+ * Retrieves user-uploaded execute_code files (not code-generated) by their file IDs.
+ * These are files with fileIdentifier metadata but context is NOT execute_code (e.g., agents or message_attachment).
+ * File IDs should be collected from message.files arrays in the current thread.
+ * @param {string[]} fileIds - Array of file IDs to fetch (from message.files in the thread)
+ * @returns {Promise<Array<MongoFile>>} User-uploaded execute_code files
+ */
+const getUserCodeFiles = async (fileIds) => {
+  if (!fileIds || fileIds.length === 0) {
+    return [];
+  }
+
+  try {
+    const filter = {
+      file_id: { $in: fileIds },
+      context: { $ne: FileContext.execute_code },
+      'metadata.fileIdentifier': { $exists: true },
+    };
+
+    const selectFields = { text: 0 };
+    const sortOptions = { createdAt: 1 };
+
+    return await getFiles(filter, sortOptions, selectFields);
+  } catch (error) {
+    logger.error('[getUserCodeFiles] Error retrieving user code files:', error);
+    return [];
   }
 };
 
@@ -278,6 +238,8 @@ module.exports = {
   findFileById,
   getFiles,
   getToolFilesByIds,
+  getCodeGeneratedFiles,
+  getUserCodeFiles,
   createFile,
   updateFile,
   updateFileUsage,
@@ -285,5 +247,4 @@ module.exports = {
   deleteFiles,
   deleteFileByFilter,
   batchUpdateFiles,
-  hasAccessToFilesViaAgent,
 };

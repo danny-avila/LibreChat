@@ -1,11 +1,11 @@
+import type { AppConfig } from '@librechat/data-schemas';
 import {
+  createTempChatExpirationDate,
+  getTempChatRetentionHours,
+  DEFAULT_RETENTION_HOURS,
   MIN_RETENTION_HOURS,
   MAX_RETENTION_HOURS,
-  DEFAULT_RETENTION_HOURS,
-  getTempChatRetentionHours,
-  createTempChatExpirationDate,
 } from './tempChatRetention';
-import type { TCustomConfig } from 'librechat-data-provider';
 
 describe('tempChatRetention', () => {
   const originalEnv = process.env;
@@ -33,43 +33,43 @@ describe('tempChatRetention', () => {
     });
 
     it('should use config value when set', () => {
-      const config: Partial<TCustomConfig> = {
-        interface: {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
           temporaryChatRetention: 12,
         },
       };
-      const result = getTempChatRetentionHours(config);
+      const result = getTempChatRetentionHours(config?.interfaceConfig);
       expect(result).toBe(12);
     });
 
     it('should prioritize config over environment variable', () => {
       process.env.TEMP_CHAT_RETENTION_HOURS = '48';
-      const config: Partial<TCustomConfig> = {
-        interface: {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
           temporaryChatRetention: 12,
         },
       };
-      const result = getTempChatRetentionHours(config);
+      const result = getTempChatRetentionHours(config?.interfaceConfig);
       expect(result).toBe(12);
     });
 
     it('should enforce minimum retention period', () => {
-      const config: Partial<TCustomConfig> = {
-        interface: {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
           temporaryChatRetention: 0,
         },
       };
-      const result = getTempChatRetentionHours(config);
+      const result = getTempChatRetentionHours(config?.interfaceConfig);
       expect(result).toBe(MIN_RETENTION_HOURS);
     });
 
     it('should enforce maximum retention period', () => {
-      const config: Partial<TCustomConfig> = {
-        interface: {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
           temporaryChatRetention: 10000,
         },
       };
-      const result = getTempChatRetentionHours(config);
+      const result = getTempChatRetentionHours(config?.interfaceConfig);
       expect(result).toBe(MAX_RETENTION_HOURS);
     });
 
@@ -80,43 +80,47 @@ describe('tempChatRetention', () => {
     });
 
     it('should handle invalid config value', () => {
-      const config: Partial<TCustomConfig> = {
-        interface: {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
           temporaryChatRetention: 'invalid' as unknown as number,
         },
       };
-      const result = getTempChatRetentionHours(config);
+      const result = getTempChatRetentionHours(config?.interfaceConfig);
       expect(result).toBe(DEFAULT_RETENTION_HOURS);
     });
   });
 
   describe('createTempChatExpirationDate', () => {
     it('should create expiration date with default retention period', () => {
+      const beforeCall = Date.now();
       const result = createTempChatExpirationDate();
+      const afterCall = Date.now();
 
-      const expectedDate = new Date();
-      expectedDate.setHours(expectedDate.getHours() + DEFAULT_RETENTION_HOURS);
+      const expectedMin = beforeCall + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000;
+      const expectedMax = afterCall + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000;
 
-      // Allow for small time differences in test execution
-      const timeDiff = Math.abs(result.getTime() - expectedDate.getTime());
-      expect(timeDiff).toBeLessThan(1000); // Less than 1 second difference
+      // Result should be between expectedMin and expectedMax
+      expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
+      expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
 
     it('should create expiration date with custom retention period', () => {
-      const config: Partial<TCustomConfig> = {
-        interface: {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
           temporaryChatRetention: 12,
         },
       };
 
-      const result = createTempChatExpirationDate(config);
+      const beforeCall = Date.now();
+      const result = createTempChatExpirationDate(config?.interfaceConfig);
+      const afterCall = Date.now();
 
-      const expectedDate = new Date();
-      expectedDate.setHours(expectedDate.getHours() + 12);
+      const expectedMin = beforeCall + 12 * 60 * 60 * 1000;
+      const expectedMax = afterCall + 12 * 60 * 60 * 1000;
 
-      // Allow for small time differences in test execution
-      const timeDiff = Math.abs(result.getTime() - expectedDate.getTime());
-      expect(timeDiff).toBeLessThan(1000); // Less than 1 second difference
+      // Result should be between expectedMin and expectedMax
+      expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
+      expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
 
     it('should return a Date object', () => {

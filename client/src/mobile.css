@@ -9,7 +9,7 @@
 
 .nav {
   position: fixed;
-  z-index: 64;
+  z-index: 110;
   top: 0;
 
   /* max-width: 260px; */
@@ -36,7 +36,7 @@
   }
   .nav-mask {
     position: fixed;
-    z-index: 63;
+    z-index: 105;
     left: 0;
     right: 0;
     top: 0;
@@ -153,7 +153,7 @@
     right: 0;
     top: 0;
     bottom: 0;
-    background-color: rgba(86, 88, 105, 0.75);
+    background-color: rgba(7, 7, 7, 0.4);
     padding-left: 420px;
     padding-top: 12px;
     opacity: 0;
@@ -313,20 +313,30 @@
   background-color: transparent;  /* Color of the tracking area */
 }
 
-.sp-preview-container {
-  @apply flex h-full w-full grow flex-col justify-center;
-}
-
-.sp-preview {
-  @apply flex h-full w-full grow flex-col justify-center;
-}
-
-.sp-preview-iframe {
-  @apply grow;
-}
-
+/* Base wrapper for both preview and editor */
 .sp-wrapper {
-  @apply flex h-full w-full grow flex-col justify-center;
+  @apply flex h-full w-full grow flex-col;
+}
+
+/* Stack containers (sp-preview and sp-editor) */
+.sp-preview,
+.sp-editor {
+  @apply flex h-full w-full grow flex-col;
+}
+
+/* Inner containers */
+.sp-preview-container,
+.sp-code-editor {
+  @apply flex h-full w-full grow flex-col;
+}
+
+/* Content elements */
+.sp-preview-iframe {
+  @apply h-full w-full grow;
+}
+
+.sp-cm {
+  @apply h-full w-full grow;
 }
 
 @keyframes shake {
@@ -337,26 +347,6 @@
 
 .shake {
   animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
-}
-
-div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"] {
-  scrollbar-gutter: stable !important;
-  background-color: rgba(205, 205, 205, 0.66) !important;
-}
-
-div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar {
-  width: 12px !important;
-}
-
-div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar-thumb {
-  background-color: rgba(56, 56, 56) !important;
-  border-radius: 6px !important;
-  border: 2px solid transparent !important;
-  background-clip: padding-box !important;
-}
-
-div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar-track {
-  background-color: transparent !important;
 }
 
 .cm-content:focus {
