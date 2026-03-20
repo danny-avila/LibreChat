@@ -14,7 +14,6 @@ import type {
 } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { LocalizeFunction } from '~/common';
-import _ from 'lodash';
 
 export const TEXT_KEY_DIVIDER = '|||';
 
@@ -185,27 +184,34 @@ export const clearMessagesCache = (
   }
 };
 
+/** Returns a 1-based message number, or null if depth is absent or invalid. */
+const getMessageNumber = (message: TMessage): number | null => {
+  if (message.depth == null || message.depth < 0) {
+    return null;
+  }
+  return message.depth + 1;
+};
+
 export const getMessageAriaLabel = (message: TMessage, localize: LocalizeFunction): string => {
-  return !_.isNil(message.depth)
-    ? localize('com_endpoint_message_new', { 0: message.depth + 1 })
+  const number = getMessageNumber(message);
+  return number != null
+    ? localize('com_endpoint_message_new', { 0: number })
     : localize('com_endpoint_message');
 };
 
 /**
- * Provides better context for screen readers in a conversation.
- *
- * Instead of each message being solely the name of the user (or AI), it prefixes with
- * whether it's a prompt or response (and the depth) so that the parts of a conversation
- * are more easily navigable by screen reader.
+ * Provides a screen-reader-only heading prefix distinguishing prompts from responses,
+ * with an optional 1-based turn number derived from message depth.
  */
 export const getHeaderPrefixForScreenReader = (
   message: TMessage,
   localize: LocalizeFunction,
 ): string => {
-  const number = !_.isNil(message.depth) ? ` ${message.depth + 1}` : ``;
+  const number = getMessageNumber(message);
+  const suffix = number != null ? ` ${number}` : '';
   return message.isCreatedByUser
-    ? `${localize('com_ui_prompt')}${number}: `
-    : `${localize('com_ui_response')}${number}: `;
+    ? `${localize('com_ui_prompt')}${suffix}: `
+    : `${localize('com_ui_response')}${suffix}: `;
 };
 
 /**
