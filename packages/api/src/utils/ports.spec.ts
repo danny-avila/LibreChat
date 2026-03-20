@@ -75,7 +75,7 @@ describe('removePorts', () => {
       expect(removePorts(req(undefined))).toBeUndefined();
     });
 
-    test('returns undefined when ip is empty string', () => {
+    test('returns empty string when ip is empty string', () => {
       expect(removePorts({ ip: '' } as Request)).toBe('');
     });
 
@@ -87,6 +87,12 @@ describe('removePorts', () => {
   describe('IPv4-mapped IPv6 with port', () => {
     test('strips port from an IPv4-mapped IPv6 address', () => {
       expect(removePorts(req('::ffff:1.2.3.4:8080'))).toBe('::ffff:1.2.3.4');
+    });
+  });
+
+  describe('express-rate-limit v8 heuristic guard', () => {
+    test('function source does not contain "req.ip" (guards against ERR_ERL_KEY_GEN_IPV6)', () => {
+      expect(removePorts.toString()).not.toContain('req.ip');
     });
   });
 
