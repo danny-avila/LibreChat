@@ -117,7 +117,9 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
           allowExecution={allowExecution}
         />
       </div>
-      <div className={cn(classProp, 'overflow-y-auto bg-surface-tertiary p-4')}>
+      <div
+        className={cn(classProp, 'overflow-y-auto bg-surface-chat p-4 dark:bg-surface-primary-alt')}
+      >
         <code
           ref={codeRef}
           className={cn(
@@ -138,7 +140,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
       />
       {allowExecution === true && toolCalls && toolCalls.length > 0 && (
         <>
-          <div className="border-t border-border-light bg-surface-tertiary p-4 text-xs">
+          <div className="border-t border-border-light bg-surface-primary-alt p-4 text-xs dark:bg-transparent">
             <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
               {localize('com_ui_output')}
             </div>
