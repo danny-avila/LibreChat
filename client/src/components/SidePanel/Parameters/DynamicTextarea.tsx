@@ -1,7 +1,7 @@
 import { OptionTypes } from 'librechat-data-provider';
+import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '@librechat/client';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
-import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '@librechat/client';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -82,7 +82,7 @@ function DynamicTextarea({
                 : placeholder
             }
             className={cn(
-              'flex max-h-[138px] min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-surface-secondary px-3 py-2 focus:outline-none',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm focus:outline-none',
             )}
           />
         </HoverCardTrigger>
