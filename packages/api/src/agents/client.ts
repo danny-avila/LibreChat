@@ -104,7 +104,7 @@ function estimateDocumentBlockTokens(
       if (mime.startsWith('image/')) {
         return estimateImageDataTokens(block.data, isClaude);
       }
-      return 0;
+      return countTokens != null ? countTokens(block.data) : Math.ceil(block.data.length / 4);
     }
     return URL_DOCUMENT_FALLBACK_TOKENS;
   }
@@ -124,7 +124,9 @@ function estimateDocumentBlockTokens(
       if (mime.startsWith('image/')) {
         return estimateImageDataTokens(block.source.data, isClaude);
       }
-      return 0;
+      return countTokens != null
+        ? countTokens(block.source.data)
+        : Math.ceil(block.source.data.length / 4);
     }
     if (block.source.type === 'url') {
       return URL_DOCUMENT_FALLBACK_TOKENS;
