@@ -689,7 +689,6 @@ export default function useStepHandler({
             }
           }
         } else {
-          announcePolite({ message: 'summarize_completed', isStatus: true });
           let didFinalize = false;
           const updatedContent = targetMessage.content.map((part) => {
             if (part?.type === ContentTypes.SUMMARY && (part as SummaryContentPart).summarizing) {
@@ -702,6 +701,7 @@ export default function useStepHandler({
             return part;
           });
           if (didFinalize && targetIndex >= 0) {
+            announcePolite({ message: 'summarize_completed', isStatus: true });
             const finalized = { ...targetMessage, content: updatedContent };
             messageMap.current.set(completeMessageId, finalized);
             const updated = [...currentMessages];
@@ -713,21 +713,15 @@ export default function useStepHandler({
         const _exhaustive: never = stepEvent;
         console.warn('Unhandled step event', (_exhaustive as TStepEvent).event);
       }
-
-      return () => {
-        if (summarizeDeltaRaf.current != null) {
-          cancelAnimationFrame(summarizeDeltaRaf.current);
-          summarizeDeltaRaf.current = null;
-        }
-        toolCallIdMap.current.clear();
-        messageMap.current.clear();
-        stepMap.current.clear();
-      };
     },
     [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages, calculateContentIndex],
   );
 
   const clearStepMaps = useCallback(() => {
+    if (summarizeDeltaRaf.current != null) {
+      cancelAnimationFrame(summarizeDeltaRaf.current);
+      summarizeDeltaRaf.current = null;
+    }
     toolCallIdMap.current.clear();
     messageMap.current.clear();
     stepMap.current.clear();
