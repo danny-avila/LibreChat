@@ -175,6 +175,12 @@ export async function initializeCustom({
     (options as InitializeResultBase).endpointTokenConfig = endpointTokenConfig;
   }
 
+  /** Custom providers don't support the Responses API — strip the flag to prevent
+   *  @librechat/agents from choosing the wrong streaming path (flat tool format). */
+  if (options.llmConfig && 'useResponsesApi' in options.llmConfig) {
+    delete (options.llmConfig as Record<string, unknown>).useResponsesApi;
+  }
+
   const streamRate = clientOptions.streamRate as number | undefined;
   if (streamRate) {
     (options.llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;

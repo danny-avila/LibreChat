@@ -117,3 +117,48 @@ describe('initializeCustom – SSRF guard wiring', () => {
     expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
   });
 });
+
+describe('initializeCustom – useResponsesApi stripping', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should strip useResponsesApi from llmConfig when returned by getOpenAIConfig', async () => {
+    mockGetOpenAIConfig.mockReturnValueOnce({
+      llmConfig: { model: 'grok-3', useResponsesApi: true },
+      configOptions: {},
+    });
+
+    const params = createParams({ apiKey: 'sk-test-key' });
+    const result = await initializeCustom(params);
+
+    expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+    expect(result.llmConfig).toHaveProperty('model', 'grok-3');
+  });
+
+  it('should strip useResponsesApi even when set via model_parameters', async () => {
+    mockGetOpenAIConfig.mockReturnValueOnce({
+      llmConfig: { model: 'grok-3', useResponsesApi: true, streaming: true },
+      configOptions: {},
+    });
+
+    const params = createParams({ apiKey: 'sk-test-key' });
+    params.model_parameters = { model: 'grok-3', useResponsesApi: true };
+    const result = await initializeCustom(params);
+
+    expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+  });
+
+  it('should not break when useResponsesApi is absent', async () => {
+    mockGetOpenAIConfig.mockReturnValueOnce({
+      llmConfig: { model: 'grok-3', streaming: true },
+      configOptions: {},
+    });
+
+    const params = createParams({ apiKey: 'sk-test-key' });
+    const result = await initializeCustom(params);
+
+    expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+    expect(result.llmConfig).toHaveProperty('model', 'grok-3');
+  });
+});
