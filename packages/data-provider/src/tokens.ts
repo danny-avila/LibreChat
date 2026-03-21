@@ -1,40 +1,44 @@
-import z from 'zod';
-import {
-  EModelEndpoint,
-  findMatchingPattern as findMatchingPatternSimple,
-  getModelMaxTokens as getModelMaxTokensSimple,
-  getModelMaxOutputTokens as getModelMaxOutputTokensSimple,
-  matchModelName as matchModelNameSimple,
-} from 'librechat-data-provider';
-import type { EndpointTokenConfig, TokenConfig } from 'librechat-data-provider';
+import { EModelEndpoint } from './schemas';
+
+/** Configuration object mapping model keys to their respective prompt, completion rates, and context limit */
+export interface TokenConfig {
+  prompt: number;
+  completion: number;
+  context: number;
+  [key: string]: unknown;
+}
+
+/** An endpoint's config object mapping model keys to their respective prompt, completion rates, and context limit */
+export type EndpointTokenConfig = Record<string, TokenConfig>;
 
 /**
  * Model Token Configuration Maps
  *
- * Pattern Matching
- * ================
- * `findMatchingPattern` uses `modelName.includes(key)` and selects the **longest**
- * matching key. If a key's length equals the model name's length (exact match), it
- * returns immediately — no further keys are checked.
+ * Pattern Matching Behavior
+ * ========================
+ * The `findMatchingPattern` function uses `modelName.includes(key)` for matching
+ * and selects the **longest matching key** to ensure the most specific pattern wins.
  *
- * For keys of different lengths, definition order does not affect the result — the
- * longest match always wins. For **same-length ties**, the function iterates in
- * reverse, so the last-defined key wins. Key ordering therefore matters for:
+ * For example, given model name "kimi-k2.5-latest":
+ * - "kimi" matches (length 4)
+ * - "kimi-k2" matches (length 7)
+ * - "kimi-k2.5" matches (length 9) <-- selected as longest match
  *
- * 1. **Performance**: list older/legacy models first, newer models last — newer
- *    models are more commonly used and will match earlier in the reverse scan.
- * 2. **Same-length tie-breaking**: in `aggregateModels`, OpenAI is spread last
- *    so its keys are preferred when two keys of equal length both match.
+ * This means key insertion order does NOT affect specificity — the longest key always
+ * wins. However, for equal-length keys, insertion order still serves as a tiebreaker
+ * (last-defined key checked first via reverse iteration).
+ *
+ * When adding new model families, ensure no pattern key is an unintended substring
+ * of another that maps to a different value.
  */
 
 const openAIModels = {
-  'gpt-3.5-turbo-0301': 4092, // -5 from max
-  'gpt-3.5-turbo-0613': 4092, // -5 from max
-  'gpt-3.5-turbo-16k': 16375, // -10 from max
-  'gpt-3.5-turbo-16k-0613': 16375, // -10 from max
-  'gpt-3.5-turbo-1106': 16375, // -10 from max
-  'gpt-3.5-turbo-0125': 16375, // -10 from max
-  'gpt-3.5-turbo': 16375, // -10 from max
+  'o4-mini': 200000,
+  'o3-mini': 195000, // -5000 from max
+  o3: 200000,
+  o1: 195000, // -5000 from max
+  'o1-mini': 127500, // -500 from max
+  'o1-preview': 127500, // -500 from max
   'gpt-4': 8187, // -5 from max
   'gpt-4-0613': 8187, // -5 from max
   'gpt-4-32k': 32758, // -10 from max
@@ -42,31 +46,28 @@ const openAIModels = {
   'gpt-4-32k-0613': 32758, // -10 from max
   'gpt-4-1106': 127500, // -500 from max
   'gpt-4-0125': 127500, // -500 from max
-  'gpt-4-turbo': 127500, // -500 from max
-  'gpt-4-vision': 127500, // -500 from max
-  'gpt-4o-2024-05-13': 127500, // -500 from max
-  'gpt-4o-mini': 127500, // -500 from max
-  'gpt-4o': 127500, // -500 from max
   'gpt-4.5': 127500, // -500 from max
-  'o1-mini': 127500, // -500 from max
-  'o1-preview': 127500, // -500 from max
-  o1: 195000, // -5000 from max
-  'o3-mini': 195000, // -5000 from max
-  o3: 200000,
-  'o4-mini': 200000,
   'gpt-4.1': 1047576,
   'gpt-4.1-mini': 1047576,
   'gpt-4.1-nano': 1047576,
   'gpt-5': 400000,
   'gpt-5.1': 400000,
   'gpt-5.2': 400000,
-  'gpt-5.3': 400000,
-  'gpt-5.4': 272000, // standard context; 1M experimental available via API opt-in (2x rate)
-  'gpt-5.4-pro': 272000, // same window as gpt-5.4
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
   'gpt-5-pro': 400000,
-  'gpt-5.2-pro': 400000,
+  'gpt-4o': 127500, // -500 from max
+  'gpt-4o-mini': 127500, // -500 from max
+  'gpt-4o-2024-05-13': 127500, // -500 from max
+  'gpt-4-turbo': 127500, // -500 from max
+  'gpt-4-vision': 127500, // -500 from max
+  'gpt-3.5-turbo': 16375, // -10 from max
+  'gpt-3.5-turbo-0613': 4092, // -5 from max
+  'gpt-3.5-turbo-0301': 4092, // -5 from max
+  'gpt-3.5-turbo-16k': 16375, // -10 from max
+  'gpt-3.5-turbo-16k-0613': 16375, // -10 from max
+  'gpt-3.5-turbo-1106': 16375, // -10 from max
+  'gpt-3.5-turbo-0125': 16375, // -10 from max
 };
 
 const mistralModels = {
@@ -75,15 +76,15 @@ const mistralModels = {
   'mistral-small': 31990, // -10 from max
   'mixtral-8x7b': 31990, // -10 from max
   'mixtral-8x22b': 65536,
+  'mistral-large': 131000,
   'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
-  'mistral-large': 131000,
-  'mistral-saba': 32000,
-  'ministral-3b': 131000,
-  'ministral-8b': 131000,
   'mistral-nemo': 131000,
   'pixtral-large': 131000,
+  'mistral-saba': 32000,
   codestral: 256000,
+  'ministral-8b': 131000,
+  'ministral-3b': 131000,
 };
 
 const cohereModels = {
@@ -104,22 +105,30 @@ const googleModels = {
   'gemma-3-27b': 131072,
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
-  'gemini-1.5': 1000000,
-  'gemini-1.5-flash': 1000000,
-  'gemini-1.5-flash-8b': 1000000,
-  'gemini-2.0': 2000000,
-  'gemini-2.0-flash': 1000000,
-  'gemini-2.0-flash-lite': 1000000,
   'gemini-exp': 2000000,
-  'gemini-2.5': 1000000,
+  'gemini-3': 1000000, // 1M input tokens, 64k output tokens
+  'gemini-3-pro-image': 1000000,
+  'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5-pro': 1000000,
   'gemini-2.5-flash': 1000000,
   'gemini-2.5-flash-image': 1000000,
   'gemini-2.5-flash-lite': 1000000,
-  'gemini-3': 1000000,
-  'gemini-3-pro-image': 1000000,
-  'gemini-3.1': 1000000,
-  'gemini-3.1-flash-lite': 1000000,
+  'gemini-2.0': 2000000,
+  'gemini-2.0-flash': 1000000,
+  'gemini-2.0-flash-lite': 1000000,
+  'gemini-1.5': 1000000,
+  'gemini-1.5-flash': 1000000,
+  'gemini-1.5-flash-8b': 1000000,
+  'text-bison-32k': 32758, // -10 from max
+  'chat-bison-32k': 32758, // -10 from max
+  'code-bison-32k': 32758, // -10 from max
+  'codechat-bison-32k': 32758,
+  /* Codey, -5 from max: 6144 */
+  'code-': 6139,
+  'codechat-': 6139,
+  /* PaLM2, -5 from max: 8192 */
+  'text-': 8187,
+  'chat-': 8187,
 };
 
 const anthropicModels = {
@@ -131,35 +140,48 @@ const anthropicModels = {
   'claude-3-haiku': 200000,
   'claude-3-sonnet': 200000,
   'claude-3-opus': 200000,
+  'claude-3.5-haiku': 200000,
+  'claude-3-5-haiku': 200000,
   'claude-3-5-sonnet': 200000,
   'claude-3.5-sonnet': 200000,
-  'claude-3-5-sonnet-latest': 200000,
-  'claude-3.5-sonnet-latest': 200000,
-  'claude-3-5-haiku': 200000,
-  'claude-3.5-haiku': 200000,
   'claude-3-7-sonnet': 200000,
   'claude-3.7-sonnet': 200000,
-  'claude-4': 200000,
+  'claude-3-5-sonnet-latest': 200000,
+  'claude-3.5-sonnet-latest': 200000,
   'claude-haiku-4-5': 200000,
+  'claude-sonnet-4': 1000000,
+  'claude-4': 200000,
   'claude-opus-4': 200000,
   'claude-opus-4-5': 200000,
-  'claude-sonnet-4': 1000000,
-  'claude-sonnet-4-6': 1000000,
   'claude-opus-4-6': 1000000,
 };
 
 const deepseekModels = {
   deepseek: 128000,
   'deepseek-chat': 128000,
+  'deepseek-reasoner': 128000,
+  'deepseek-r1': 128000,
   'deepseek-v3': 128000,
   'deepseek.r1': 128000,
-  'deepseek-r1': 128000,
-  'deepseek-reasoner': 128000,
 };
 
 const moonshotModels = {
-  // moonshot-v1 series (older)
+  // Base patterns (check last due to reverse iteration)
+  kimi: 262144,
   moonshot: 131072,
+  // kimi-k2 series (specific patterns)
+  'kimi-latest': 128000,
+  'kimi-k2': 262144,
+  'kimi-k2.5': 262144,
+  'kimi-k2-turbo': 262144,
+  'kimi-k2-turbo-preview': 262144,
+  'kimi-k2-0905': 262144,
+  'kimi-k2-0905-preview': 262144,
+  'kimi-k2-0711': 131072,
+  'kimi-k2-0711-preview': 131072,
+  'kimi-k2-thinking': 262144,
+  'kimi-k2-thinking-turbo': 262144,
+  // moonshot-v1 series (specific patterns)
   'moonshot-v1': 131072,
   'moonshot-v1-auto': 131072,
   'moonshot-v1-8k': 8192,
@@ -171,100 +193,97 @@ const moonshotModels = {
   'moonshot-v1-128k': 131072,
   'moonshot-v1-128k-vision': 131072,
   'moonshot-v1-128k-vision-preview': 131072,
-  // kimi series
-  kimi: 262144,
-  'kimi-latest': 128000,
-  'kimi-k2-0711': 131072,
-  'kimi-k2-0711-preview': 131072,
-  'kimi-k2-0905': 262144,
-  'kimi-k2-0905-preview': 262144,
-  'kimi-k2': 262144,
-  'kimi-k2-turbo': 262144,
-  'kimi-k2-turbo-preview': 262144,
-  'kimi-k2-thinking': 262144,
-  'kimi-k2-thinking-turbo': 262144,
-  'kimi-k2.5': 262144,
   // Bedrock moonshot models
-  'moonshot.kimi-k2-0711': 131072,
   'moonshot.kimi': 262144,
   'moonshot.kimi-k2': 262144,
-  'moonshot.kimi-k2-thinking': 262144,
-  'moonshotai.kimi': 262144,
   'moonshot.kimi-k2.5': 262144,
-  'moonshotai.kimi-k2.5': 262144,
+  'moonshot.kimi-k2-thinking': 262144,
+  'moonshot.kimi-k2-0711': 131072,
 };
 
 const metaModels = {
-  // Llama 2 (oldest)
-  llama2: 4000,
-  'llama-2': 4000,
-  'llama2-13b': 4000,
-  'llama2-70b': 4000,
-  'llama2:70b': 4000,
-  // Llama 3 base
+  // Basic patterns
   llama3: 8000,
+  llama2: 4000,
   'llama-3': 8000,
-  'llama3-8b': 8000,
-  'llama3-70b': 8000,
-  'llama3:8b': 8000,
-  'llama3:70b': 8000,
-  // Llama 3.1
+  'llama-2': 4000,
+
+  // llama3.x pattern
   'llama3.1': 127500,
-  'llama3-1': 127500,
-  'llama-3.1': 127500,
-  'llama3.1:8b': 127500,
-  'llama3.1:70b': 127500,
-  'llama3.1:405b': 127500,
-  'llama3-1-8b': 127500,
-  'llama3-1-70b': 127500,
-  'llama3-1-405b': 127500,
-  'llama-3.1-8b': 127500,
-  'llama-3.1-70b': 127500,
-  'llama-3.1-405b': 127500,
-  // Llama 3.2
   'llama3.2': 127500,
+  'llama3.3': 127500,
+
+  // llama3-x pattern
+  'llama3-1': 127500,
   'llama3-2': 127500,
+  'llama3-3': 127500,
+
+  // llama-3.x pattern
+  'llama-3.1': 127500,
   'llama-3.2': 127500,
+  'llama-3.3': 127500,
+
+  // llama3.x:Nb pattern
+  'llama3.1:405b': 127500,
+  'llama3.1:70b': 127500,
+  'llama3.1:8b': 127500,
   'llama3.2:1b': 127500,
   'llama3.2:3b': 127500,
   'llama3.2:11b': 127500,
   'llama3.2:90b': 127500,
+  'llama3.3:70b': 127500,
+
+  // llama3-x-Nb pattern
+  'llama3-1-405b': 127500,
+  'llama3-1-70b': 127500,
+  'llama3-1-8b': 127500,
   'llama3-2-1b': 127500,
   'llama3-2-3b': 127500,
   'llama3-2-11b': 127500,
   'llama3-2-90b': 127500,
+  'llama3-3-70b': 127500,
+
+  // llama-3.x-Nb pattern
+  'llama-3.1-405b': 127500,
+  'llama-3.1-70b': 127500,
+  'llama-3.1-8b': 127500,
   'llama-3.2-1b': 127500,
   'llama-3.2-3b': 127500,
   'llama-3.2-11b': 127500,
   'llama-3.2-90b': 127500,
-  // Llama 3.3 (newest)
-  'llama3.3': 127500,
-  'llama3-3': 127500,
-  'llama-3.3': 127500,
-  'llama3.3:70b': 127500,
-  'llama3-3-70b': 127500,
   'llama-3.3-70b': 127500,
+
+  // Original llama2/3 patterns
+  'llama3-70b': 8000,
+  'llama3-8b': 8000,
+  'llama2-70b': 4000,
+  'llama2-13b': 4000,
+  'llama3:70b': 8000,
+  'llama3:8b': 8000,
+  'llama2:70b': 4000,
 };
 
 const qwenModels = {
   qwen: 32000,
   'qwen2.5': 32000,
-  'qwen-max': 32000,
-  'qwen-plus': 131000,
   'qwen-turbo': 1000000,
+  'qwen-plus': 131000,
+  'qwen-max': 32000,
   'qwq-32b': 32000,
-  // Qwen3 models (newest)
-  qwen3: 40960,
+  // Qwen3 models
+  qwen3: 40960, // Qwen3 base pattern (using qwen3-4b context)
+  'qwen3-8b': 128000,
   'qwen3-14b': 40960,
   'qwen3-30b-a3b': 40960,
   'qwen3-32b': 40960,
   'qwen3-235b-a22b': 40960,
-  'qwen3-8b': 128000,
-  'qwen3-vl-235b-a22b': 131072,
+  // Qwen3 VL (Vision-Language) models
   'qwen3-vl-8b-thinking': 256000,
-  'qwen3-max': 256000,
   'qwen3-vl-8b-instruct': 262144,
   'qwen3-vl-30b-a3b': 262144,
+  'qwen3-vl-235b-a22b': 131072,
+  // Qwen3 specialized models
+  'qwen3-max': 256000,
   'qwen3-coder': 262144,
   'qwen3-coder-30b-a3b': 262144,
   'qwen3-coder-plus': 128000,
@@ -291,12 +310,8 @@ const amazonModels = {
   'nova-premier': 995000, // -5000 from max
 };
 
-const openAIBedrockModels = {
-  'openai.gpt-oss-20b': 128000,
-  'openai.gpt-oss-120b': 128000,
-};
-
 const bedrockModels = {
+  ...anthropicModels,
   ...mistralModels,
   ...cohereModels,
   ...deepseekModels,
@@ -304,8 +319,6 @@ const bedrockModels = {
   ...metaModels,
   ...ai21Models,
   ...amazonModels,
-  ...openAIBedrockModels,
-  ...anthropicModels,
 };
 
 const xAIModels = {
@@ -322,13 +335,24 @@ const xAIModels = {
   'grok-3-fast': 131072,
   'grok-3-mini': 131072,
   'grok-3-mini-fast': 131072,
-  'grok-code-fast': 256000, // 256K context
   'grok-4': 256000, // 256K context
   'grok-4-fast': 2000000, // 2M context
   'grok-4-1-fast': 2000000, // 2M context (covers reasoning & non-reasoning variants)
+  'grok-code-fast': 256000, // 256K context
 };
 
 const aggregateModels = {
+  ...openAIModels,
+  ...googleModels,
+  ...bedrockModels,
+  ...xAIModels,
+  ...qwenModels,
+  // GPT-OSS
+  'gpt-oss': 131000,
+  'gpt-oss:20b': 131000,
+  'gpt-oss-20b': 131000,
+  'gpt-oss:120b': 131000,
+  'gpt-oss-120b': 131000,
   // GLM models (Zhipu AI)
   glm4: 128000,
   'glm-4': 128000,
@@ -337,18 +361,6 @@ const aggregateModels = {
   'glm-4.5-air': 131000,
   'glm-4.5v': 66000,
   'glm-4.6': 200000,
-  // GPT-OSS
-  'gpt-oss': 131000,
-  'gpt-oss:20b': 131000,
-  'gpt-oss-20b': 131000,
-  'gpt-oss:120b': 131000,
-  'gpt-oss-120b': 131000,
-  ...qwenModels,
-  ...xAIModels,
-  ...googleModels,
-  ...bedrockModels,
-  // OpenAI last — reverse iteration checks last-spread keys first for same-length ties
-  ...openAIModels,
 };
 
 export const maxTokensMap = {
@@ -368,13 +380,9 @@ export const modelMaxOutputs = {
   'gpt-5': 128000,
   'gpt-5.1': 128000,
   'gpt-5.2': 128000,
-  'gpt-5.3': 128000,
-  'gpt-5.4': 128000,
-  'gpt-5.4-pro': 128000,
   'gpt-5-mini': 128000,
   'gpt-5-nano': 128000,
   'gpt-5-pro': 128000,
-  'gpt-5.2-pro': 128000,
   'gpt-oss-20b': 131000,
   'gpt-oss-120b': 131000,
   system_default: 32000,
@@ -387,7 +395,6 @@ const anthropicMaxOutputs = {
   'claude-3-opus': 4096,
   'claude-haiku-4-5': 64000,
   'claude-sonnet-4': 64000,
-  'claude-sonnet-4-6': 64000,
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,
   'claude-opus-4-6': 128000,
@@ -414,15 +421,17 @@ export const maxOutputTokensMap = {
   [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
 };
 
-// Re-export simple versions (for use without EndpointTokenConfig)
-export {
-  findMatchingPatternSimple,
-  getModelMaxTokensSimple,
-  getModelMaxOutputTokensSimple,
-  matchModelNameSimple,
-};
-
-/** Finds the longest matching key in the tokens map via substring match. */
+/**
+ * Finds the most specific matching pattern in the tokens map.
+ *
+ * Uses `includes()` matching so provider-prefixed names (e.g. "openai/gpt-4")
+ * resolve correctly. When multiple keys match, the longest key wins to ensure
+ * specific patterns like "kimi-k2.5" take priority over broader ones like "kimi".
+ *
+ * @param {string} modelName
+ * @param {Record<string, number> | EndpointTokenConfig} tokensMap
+ * @returns {string|null}
+ */
 export function findMatchingPattern(
   modelName: string,
   tokensMap: Record<string, number> | EndpointTokenConfig,
@@ -431,15 +440,12 @@ export function findMatchingPattern(
   const lowerModelName = modelName.toLowerCase();
   let bestMatch: string | null = null;
   let bestLength = 0;
+
   for (let i = keys.length - 1; i >= 0; i--) {
-    const key = keys[i];
-    const lowerKey = key.toLowerCase();
-    if (lowerKey.length > bestLength && lowerModelName.includes(lowerKey)) {
-      if (lowerKey.length === lowerModelName.length) {
-        return key;
-      }
-      bestMatch = key;
-      bestLength = lowerKey.length;
+    const modelKey = keys[i];
+    if (lowerModelName.includes(modelKey) && modelKey.length > bestLength) {
+      bestMatch = modelKey;
+      bestLength = modelKey.length;
     }
   }
 
@@ -557,53 +563,4 @@ export function matchModelName(
 
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
   return matchedPattern || modelName;
-}
-
-export const modelSchema = z.object({
-  id: z.string(),
-  pricing: z.object({
-    prompt: z.string(),
-    completion: z.string(),
-  }),
-  context_length: z.number(),
-});
-
-export const inputSchema = z.object({
-  data: z.array(modelSchema),
-});
-
-/**
- * Processes a list of model data from an API and organizes it into structured data based on URL and specifics of rates and context.
- * @param {{ data: Array<z.infer<typeof modelSchema>> }} input The input object containing base URL and data fetched from the API.
- * @returns {EndpointTokenConfig} The processed model data.
- */
-export function processModelData(input: z.infer<typeof inputSchema>): EndpointTokenConfig {
-  const validationResult = inputSchema.safeParse(input);
-  if (!validationResult.success) {
-    throw new Error('Invalid input data');
-  }
-  const { data } = validationResult.data;
-
-  /** @type {EndpointTokenConfig} */
-  const tokenConfig: EndpointTokenConfig = {};
-
-  for (const model of data) {
-    const modelKey = model.id;
-    if (modelKey === 'openrouter/auto') {
-      model.pricing = {
-        prompt: '0.00001',
-        completion: '0.00003',
-      };
-    }
-    const prompt = parseFloat(model.pricing.prompt) * 1000000;
-    const completion = parseFloat(model.pricing.completion) * 1000000;
-
-    tokenConfig[modelKey] = {
-      prompt,
-      completion,
-      context: model.context_length,
-    };
-  }
-
-  return tokenConfig;
 }

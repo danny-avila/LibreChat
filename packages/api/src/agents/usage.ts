@@ -1,5 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
+import type {
+  TCustomConfig,
+  TTransactionsConfig,
+  EndpointTokenConfig,
+} from 'librechat-data-provider';
 import type {
   StructuredTokenUsage,
   BulkWriteDeps,
@@ -9,7 +13,6 @@ import type {
   PricingFns,
 } from './transactions';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
-import type { EndpointTokenConfig } from '~/types/tokens';
 import {
   prepareStructuredTokenSpend,
   bulkWriteTransactions,
