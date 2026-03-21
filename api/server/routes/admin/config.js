@@ -27,7 +27,7 @@ router.get('/', handlers.listConfigs);
 router.get('/:principalType/:principalId', handlers.getConfig);
 router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
 router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);
-router.delete('/:principalType/:principalId/fields/:fieldPath(*)', handlers.deleteConfigField);
+router.delete('/:principalType/:principalId/fields', handlers.deleteConfigField);
 router.delete('/:principalType/:principalId', handlers.deleteConfigOverrides);
 router.patch('/:principalType/:principalId/active', handlers.toggleConfig);
 
