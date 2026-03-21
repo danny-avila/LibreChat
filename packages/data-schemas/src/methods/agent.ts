@@ -741,19 +741,39 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     return await Agent.countDocuments({ is_promoted: true });
   }
 
+  /** Removes an agent from the favorites of specified users. */
+  async function removeAgentFromUserFavorites(
+    resourceId: string,
+    userIds: string[],
+  ): Promise<void> {
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const User = mongoose.models.User as Model<unknown>;
+
+    const agent = await Agent.findOne({ _id: resourceId }, { id: 1 }).lean();
+    if (!agent) {
+      return;
+    }
+
+    await User.updateMany(
+      { _id: { $in: userIds }, 'favorites.agentId': agent.id },
+      { $pull: { favorites: { agentId: agent.id } } },
+    );
+  }
+
   return {
-    createAgent,
     getAgent,
     getAgents,
+    createAgent,
     updateAgent,
     deleteAgent,
     deleteUserAgents,
     revertAgentVersion,
     countPromotedAgents,
     addAgentResourceFile,
-    removeAgentResourceFiles,
     getListAgentsByAccess,
+    removeAgentResourceFiles,
     generateActionMetadataHash,
+    removeAgentFromUserFavorites,
   };
 }
 
