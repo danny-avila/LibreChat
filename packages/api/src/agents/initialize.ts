@@ -39,7 +39,11 @@ import type {
   InitializeResultBase,
 } from '~/types';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
-import type { TFilterFilesByAgentAccess } from './resources';
+import type {
+  TFilterFilesByAgentAccess,
+  TProvisionToCodeEnv,
+  TProvisionToVectorDB,
+} from './resources';
 import {
   injectSkillCatalog,
   resolveManualSkills,
@@ -582,6 +586,10 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     has_more?: boolean;
     after?: string | null;
   }>;
+  /** Optional: provision a file to the code execution environment */
+  provisionToCodeEnv?: TProvisionToCodeEnv;
+  /** Optional: provision a file to the vector DB for file_search */
+  provisionToVectorDB?: TProvisionToVectorDB;
 }
 
 /**
@@ -747,6 +755,14 @@ export async function initializeAgent(
     conversationId,
   });
 
+  /** Build the set of tool resources the agent has enabled */
+  const toolResourceSet = new Set<EToolResources>();
+  for (const tool of agent.tools ?? []) {
+    if (EToolResources[tool as keyof typeof EToolResources]) {
+      toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
+    }
+  }
+
   /**
    * Load conversation files for ALL agents, not just the initial agent.
    * This enables handoff agents to access files that were uploaded earlier
@@ -754,13 +770,6 @@ export async function initializeAgent(
    * on handoff agents would fail to find previously attached files.
    */
   if (conversationId != null && resendFiles) {
-    const toolResourceSet = new Set<EToolResources>();
-    for (const tool of agent.tools ?? []) {
-      if (EToolResources[tool as keyof typeof EToolResources]) {
-        toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
-      }
-    }
-
     const getThreadMessages = db.getMessages;
     /** Falsy anchors cannot match a parent chain, so they get no walk. */
     const threadAnchor =
@@ -892,6 +901,9 @@ export async function initializeAgent(
       : undefined,
     tool_resources: agent.tool_resources,
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
+    enabledToolResources: toolResourceSet,
+    provisionToCodeEnv: db.provisionToCodeEnv,
+    provisionToVectorDB: db.provisionToVectorDB,
   });
 
   /**
