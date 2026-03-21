@@ -24,15 +24,12 @@ function getInitialWidth(): number {
 }
 
 /**
- * Isolates useChatHelpers subscriptions from the sidebar layout.
- * Atom changes (e.g. during streaming) only re-render this provider
+ * Isolates useChatHelpers Recoil subscriptions from the sidebar layout.
+ * Atom changes (e.g. during streaming) only re-render this component
  * and the active panel — not the sidebar shell, resize logic, or icon strip.
+ * This works because Recoil subscriptions don't propagate to parent components.
  */
-const SidebarChatProvider = memo(function SidebarChatProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
+function SidebarChatProvider({ children }: { children: ReactNode }) {
   const chatHelpers = useChatHelpers(0);
   const sidebarFormMethods = useForm<ChatFormValues>({ defaultValues: { text: '' } });
   return (
@@ -40,7 +37,7 @@ const SidebarChatProvider = memo(function SidebarChatProvider({
       <ChatContext.Provider value={chatHelpers}>{children}</ChatContext.Provider>
     </ChatFormProvider>
   );
-});
+}
 
 function UnifiedSidebar() {
   const localize = useLocalize();
