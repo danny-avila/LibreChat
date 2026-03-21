@@ -143,6 +143,10 @@ export const conversationPreset = {
   web_search: {
     type: Boolean,
   },
+  /** Google API */
+  url_context: {
+    type: Boolean,
+  },
   disableStreaming: {
     type: Boolean,
   },

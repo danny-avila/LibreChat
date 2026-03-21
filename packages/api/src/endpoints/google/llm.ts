@@ -150,6 +150,7 @@ export function getGoogleConfig(
 
   const {
     web_search,
+    url_context,
     thinkingLevel,
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
@@ -157,6 +158,7 @@ export function getGoogleConfig(
   } = options.modelOptions || {};
 
   let enableWebSearch = web_search;
+  let enableUrlContext = url_context;
 
   const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues(
     {
@@ -282,6 +284,14 @@ export function getGoogleConfig(
         continue;
       }
 
+      /** Handle url_context separately - don't add to config */
+      if (key === 'url_context') {
+        if (enableUrlContext === undefined && typeof value === 'boolean') {
+          enableUrlContext = value;
+        }
+        continue;
+      }
+
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig only if undefined */
         applyDefaultParams(llmConfig as Record<string, unknown>, { [key]: value });
@@ -297,6 +307,14 @@ export function getGoogleConfig(
       if (key === 'web_search') {
         if (typeof value === 'boolean') {
           enableWebSearch = value;
+        }
+        continue;
+      }
+
+      /** Handle url_context separately - don't add to config */
+      if (key === 'url_context') {
+        if (typeof value === 'boolean') {
+          enableUrlContext = value;
         }
         continue;
       }
@@ -317,6 +335,11 @@ export function getGoogleConfig(
         return;
       }
 
+      if (param === 'url_context') {
+        enableUrlContext = false;
+        return;
+      }
+
       if (param in llmConfig) {
         delete (llmConfig as Record<string, unknown>)[param];
       }
@@ -327,6 +350,10 @@ export function getGoogleConfig(
 
   if (enableWebSearch) {
     tools.push({ googleSearch: {} });
+  }
+
+  if (enableUrlContext) {
+    tools.push({ urlContext: {} });
   }
 
   // Return the final shape
