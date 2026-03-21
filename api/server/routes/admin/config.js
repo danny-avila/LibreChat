@@ -6,6 +6,7 @@ const {
   hasConfigCapability,
 } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
+const { signalConfigChange } = require('~/server/services/Config/app');
 const db = require('~/models');
 
 const router = express.Router();
@@ -19,6 +20,7 @@ const handlers = createAdminConfigHandlers({
   deleteConfig: db.deleteConfig,
   toggleConfigActive: db.toggleConfigActive,
   hasConfigCapability,
+  signalConfigChange,
 });
 
 router.use(requireJwtAuth, requireAdminAccess);

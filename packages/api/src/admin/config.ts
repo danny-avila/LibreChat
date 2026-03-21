@@ -113,6 +113,7 @@ export interface AdminConfigDeps {
     section: ConfigSection,
     verb?: 'manage' | 'read',
   ) => Promise<boolean>;
+  signalConfigChange?: () => Promise<void>;
 }
 
 // ── Validation helpers ───────────────────────────────────────────────
@@ -157,7 +158,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
     deleteConfig,
     toggleConfigActive,
     hasConfigCapability,
+    signalConfigChange,
   } = deps;
+
+  /** Notify the config cache that DB overrides have changed. */
+  const notifyChange = async () => {
+    try {
+      await signalConfigChange?.();
+    } catch (err) {
+      logger.warn('[adminConfig] Failed to signal config change:', err);
+    }
+  };
 
   /**
    * GET / — List all active config overrides.
@@ -272,6 +283,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         priority ?? 10,
       );
 
+      await notifyChange();
       return res.status(200).json({ config });
     } catch (error) {
       logger.error('[adminConfig] upsertConfigOverrides error:', error);
@@ -345,6 +357,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         priority ?? existing?.priority ?? 10,
       );
 
+      await notifyChange();
       return res.status(200).json({ config });
     } catch (error) {
       logger.error('[adminConfig] patchConfigField error:', error);
@@ -411,6 +424,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         existing.priority,
       );
 
+      await notifyChange();
       return res.status(200).json({ config });
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', error);
@@ -447,6 +461,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(404).json({ error: 'Config not found' });
       }
 
+      await notifyChange();
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminConfig] deleteConfigOverrides error:', error);
@@ -488,6 +503,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(404).json({ error: 'Config not found' });
       }
 
+      await notifyChange();
       return res.status(200).json({ config });
     } catch (error) {
       logger.error('[adminConfig] toggleConfig error:', error);
