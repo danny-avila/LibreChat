@@ -36,6 +36,7 @@ const {
 const {
   canAccessPromptGroupResource,
   canAccessPromptViaGroup,
+  promptUsageLimiter,
   requireJwtAuth,
 } = require('~/server/middleware');
 const {
@@ -346,6 +347,7 @@ router.post(
  */
 router.post(
   '/groups/:groupId/use',
+  promptUsageLimiter,
   canAccessPromptGroupResource({
     requiredPermission: PermissionBits.VIEW,
   }),
@@ -359,6 +361,9 @@ router.post(
       res.status(200).send(result);
     } catch (error) {
       logger.error('[recordPromptUsage]', error);
+      if (error.message === 'Invalid groupId') {
+        return res.status(400).send({ error: 'Invalid groupId' });
+      }
       if (error.message === 'Prompt group not found') {
         return res.status(404).send({ error: 'Prompt group not found' });
       }
