@@ -102,8 +102,8 @@ export async function recordCollectedUsage(
   const processUsageGroup = (
     usages: UsageMetadata[],
     usageContext: string,
-  ): PreparedEntry[] => {
-    const docs: PreparedEntry[] = [];
+    docs: PreparedEntry[],
+  ): void => {
     for (const usage of usages) {
       if (!usage) {
         continue;
@@ -114,9 +114,7 @@ export async function recordCollectedUsage(
         Number(usage.cache_creation_input_tokens) ||
         0;
       const cache_read =
-        Number(usage.input_token_details?.cache_read) ||
-        Number(usage.cache_read_input_tokens) ||
-        0;
+        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
 
       total_output_tokens += Number(usage.output_tokens) || 0;
 
@@ -189,15 +187,14 @@ export async function recordCollectedUsage(
           );
         });
     }
-    return docs;
   };
 
-  const messageDocs = processUsageGroup(messageUsages, context);
-  const summarizationDocs = processUsageGroup(summarizationUsages, 'summarization');
-  const combinedDocs = [...messageDocs, ...summarizationDocs];
-  if (useBulk && combinedDocs.length > 0) {
+  const allDocs: PreparedEntry[] = [];
+  processUsageGroup(messageUsages, context, allDocs);
+  processUsageGroup(summarizationUsages, 'summarization', allDocs);
+  if (useBulk && allDocs.length > 0) {
     try {
-      await bulkWriteTransactions({ user, docs: combinedDocs }, bulkWriteOps);
+      await bulkWriteTransactions({ user, docs: allDocs }, bulkWriteOps);
     } catch (err) {
       logger.error('[packages/api #recordCollectedUsage] Error in bulk write', err);
     }
