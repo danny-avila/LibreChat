@@ -15,13 +15,7 @@ const {
   GenerationJobManager,
   resolveJsonSchemaRefs,
 } = require('@librechat/api');
-const {
-  Time,
-  CacheKeys,
-  Constants,
-  ContentTypes,
-  isAssistantsEndpoint,
-} = require('librechat-data-provider');
+const { Time, CacheKeys, Constants, isAssistantsEndpoint } = require('librechat-data-provider');
 const {
   getOAuthReconnectionManager,
   getMCPServersRegistry,
@@ -604,9 +598,6 @@ function createToolInstance({
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];
-      }
-      if (isGoogle && Array.isArray(result[0]) && result[0][0]?.type === ContentTypes.TEXT) {
-        return [result[0][0].text, result[1]];
       }
       return result;
     } catch (error) {
