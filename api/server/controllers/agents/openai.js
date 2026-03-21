@@ -443,11 +443,11 @@ const OpenAIChatCompletionController = async (req, res) => {
         handle: (_event, data, metadata) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
-            markSummarizationUsage(usage, metadata);
-            collectedUsage.push(usage);
+            const taggedUsage = markSummarizationUsage(usage, metadata);
+            collectedUsage.push(taggedUsage);
             const target = isStreaming ? tracker : aggregator;
-            target.usage.promptTokens += usage.input_tokens ?? 0;
-            target.usage.completionTokens += usage.output_tokens ?? 0;
+            target.usage.promptTokens += taggedUsage.input_tokens ?? 0;
+            target.usage.completionTokens += taggedUsage.output_tokens ?? 0;
           }
         },
       },

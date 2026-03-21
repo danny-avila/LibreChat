@@ -463,8 +463,8 @@ const createResponse = async (req, res) => {
             responsesHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              markSummarizationUsage(usage, metadata);
-              collectedUsage.push(usage);
+              const taggedUsage = markSummarizationUsage(usage, metadata);
+              collectedUsage.push(taggedUsage);
             }
           },
         },
@@ -627,8 +627,8 @@ const createResponse = async (req, res) => {
             aggregatorHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              markSummarizationUsage(usage, metadata);
-              collectedUsage.push(usage);
+              const taggedUsage = markSummarizationUsage(usage, metadata);
+              collectedUsage.push(taggedUsage);
             }
           },
         },

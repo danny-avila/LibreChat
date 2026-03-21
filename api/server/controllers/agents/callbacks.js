@@ -77,9 +77,9 @@ class ModelEndHandler {
         usage.model = modelName;
       }
 
-      markSummarizationUsage(usage, metadata);
+      const taggedUsage = markSummarizationUsage(usage, metadata);
 
-      this.collectedUsage.push(usage);
+      this.collectedUsage.push(taggedUsage);
     } catch (error) {
       logger.error('Error handling model end event:', error);
       return this.finalize(errorMessage);
@@ -726,8 +726,9 @@ function agentLogHandler(_event, data) {
 function markSummarizationUsage(usage, metadata) {
   const node = metadata?.langgraph_node;
   if (typeof node === 'string' && node.startsWith(GraphNodeKeys.SUMMARIZE)) {
-    usage.usage_type = 'summarization';
+    return { ...usage, usage_type: 'summarization' };
   }
+  return usage;
 }
 
 const agentLogHandlerObj = { handle: agentLogHandler };
