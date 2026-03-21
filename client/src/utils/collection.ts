@@ -172,21 +172,27 @@ export const updateFieldsInPlace = <TCollection, TData>(
   collectionName: string,
   identifierField: keyof TData,
 ): InfiniteData<TCollection> => {
-  const newData = JSON.parse(JSON.stringify(data)) as InfiniteData<TCollection>;
-  const { pageIndex, index } = findPage<TCollection>(newData, (page) =>
+  const { pageIndex, index } = findPage<TCollection>(data, (page) =>
     page[collectionName].findIndex(
       (item: TData) => item[identifierField] === updatedItem[identifierField],
     ),
   );
 
-  if (pageIndex !== -1 && index !== -1) {
-    newData.pages[pageIndex][collectionName][index] = {
-      ...newData.pages[pageIndex][collectionName][index],
-      ...updatedItem,
-    };
+  if (pageIndex === -1 || index === -1) {
+    return data;
   }
 
-  return newData;
+  const oldItem = data.pages[pageIndex][collectionName][index];
+  const newItem = { ...oldItem, ...updatedItem };
+
+  const newCollection = [...data.pages[pageIndex][collectionName]];
+  newCollection[index] = newItem;
+
+  const newPage = { ...data.pages[pageIndex], [collectionName]: newCollection };
+  const newPages = [...data.pages];
+  newPages[pageIndex] = newPage;
+
+  return { ...data, pages: newPages };
 };
 
 type UpdateCacheListOptions<TData> = {
