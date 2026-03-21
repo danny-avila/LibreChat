@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { createTempChatExpirationDate } = require('@librechat/api');
+const { searchConversationsAndMessages } = require('./search');
 const { getMessages, deleteMessages } = require('./Message');
 const { Conversation } = require('~/db/models');
 
@@ -187,10 +188,8 @@ module.exports = {
 
     if (search) {
       try {
-        const meiliResults = await Conversation.meiliSearch(search, { filter: `user = "${user}"` });
-        const matchingIds = Array.isArray(meiliResults.hits)
-          ? meiliResults.hits.map((result) => result.conversationId)
-          : [];
+        const { conversationIds } = await searchConversationsAndMessages(search, user);
+        const matchingIds = Array.from(conversationIds);
         if (!matchingIds.length) {
           return { conversations: [], nextCursor: null };
         }

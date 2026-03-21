@@ -13,6 +13,7 @@ const {
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
+const { searchConversationsAndMessages, buildLatestMessagePipeline } = require('~/models/search');
 const { getConvosQueried } = require('~/models/Conversation');
 const { Message } = require('~/db/models');
 
@@ -63,21 +64,17 @@ router.get('/', async (req, res) => {
       }
       response = { messages, nextCursor };
     } else if (search) {
-      const searchResults = await Message.meiliSearch(search, { filter: `user = "${user}"` }, true);
+      const { messageHits, conversationIds } = await searchConversationsAndMessages(
+        search,
+        user,
+        true,
+      );
 
-      const messages = searchResults.hits || [];
+      const convoRefs = [...conversationIds].map((id) => ({ conversationId: id }));
+      const result = await getConvosQueried(req.user.id, convoRefs, null, convoRefs.length);
 
-      const result = await getConvosQueried(req.user.id, messages, cursor);
-
-      const messageIds = [];
-      const cleanedMessages = [];
-      for (let i = 0; i < messages.length; i++) {
-        let message = messages[i];
-        if (result.convoMap[message.conversationId]) {
-          messageIds.push(message.messageId);
-          cleanedMessages.push(message);
-        }
-      }
+      const cleanedMessages = messageHits.filter((m) => result.convoMap[m.conversationId]);
+      const messageIds = cleanedMessages.map((m) => m.messageId);
 
       const dbMessages = await getMessages({
         user,
@@ -97,13 +94,62 @@ router.get('/', async (req, res) => {
         activeMessages.push({
           ...message,
           title: convo.title,
-          conversationId: message.conversationId,
           model: convo.model,
           isCreatedByUser: dbMessage?.isCreatedByUser,
           endpoint: dbMessage?.endpoint,
           iconURL: dbMessage?.iconURL,
         });
       }
+
+      const messageConversationIds = new Set(cleanedMessages.map((m) => m.conversationId));
+      const titleOnlyConversationIds = result.conversations
+        .filter((c) => !messageConversationIds.has(c.conversationId))
+        .map((c) => c.conversationId);
+
+      if (titleOnlyConversationIds.length > 0) {
+        const latestMessages = await Message.aggregate(
+          buildLatestMessagePipeline(user, titleOnlyConversationIds),
+        );
+
+        const coveredConvoIds = new Set();
+        for (const entry of latestMessages) {
+          const latest = entry?.message;
+          if (!latest?.conversationId || !result.convoMap[latest.conversationId]) {
+            continue;
+          }
+          coveredConvoIds.add(latest.conversationId);
+          const convo = result.convoMap[latest.conversationId];
+          activeMessages.push({
+            ...latest,
+            title: convo.title,
+            model: convo.model,
+          });
+        }
+
+        for (const convoId of titleOnlyConversationIds) {
+          if (coveredConvoIds.has(convoId)) {
+            continue;
+          }
+          const convo = result.convoMap[convoId];
+          if (!convo) {
+            continue;
+          }
+          activeMessages.push({
+            conversationId: convoId,
+            title: convo.title,
+            model: convo.model,
+            endpoint: convo.endpoint,
+            updatedAt: convo.updatedAt,
+          });
+        }
+      }
+
+      activeMessages.sort((a, b) => {
+        if (!a?.updatedAt || !b?.updatedAt) {
+          return 0;
+        }
+        return new Date(b.updatedAt) - new Date(a.updatedAt);
+      });
 
       response = { messages: activeMessages, nextCursor: null };
     } else {
