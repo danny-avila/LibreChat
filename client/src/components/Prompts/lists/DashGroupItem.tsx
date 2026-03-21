@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useCallback } from 'react';
+import { memo, useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { EarthIcon, Pencil, Trash2, User } from 'lucide-react';
 import { PermissionBits, ResourceType, type TPromptGroup } from 'librechat-data-provider';
@@ -34,6 +34,12 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const { showToast } = useToastContext();
   const [nameInputValue, setNameInputValue] = useState(group.name);
   const [renameOpen, setRenameOpen] = useState(false);
+
+  useEffect(() => {
+    if (!renameOpen) {
+      setNameInputValue(group.name);
+    }
+  }, [group.name, renameOpen]);
 
   const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');
   const canEdit = hasPermission(PermissionBits.EDIT);
