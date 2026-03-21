@@ -1,4 +1,5 @@
 import { useCallback, useState, useEffect, useRef, memo, startTransition } from 'react';
+import type { ReactNode } from 'react';
 import { useRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { useMediaQuery } from '@librechat/client';
@@ -22,6 +23,25 @@ function getInitialWidth(): number {
   return saved ? Math.max(Number(saved), EXPANDED_MIN) : EXPANDED_MIN;
 }
 
+/**
+ * Isolates useChatHelpers subscriptions from the sidebar layout.
+ * Atom changes (e.g. during streaming) only re-render this provider
+ * and the active panel — not the sidebar shell, resize logic, or icon strip.
+ */
+const SidebarChatProvider = memo(function SidebarChatProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const chatHelpers = useChatHelpers(0);
+  const sidebarFormMethods = useForm<ChatFormValues>({ defaultValues: { text: '' } });
+  return (
+    <ChatFormProvider {...sidebarFormMethods}>
+      <ChatContext.Provider value={chatHelpers}>{children}</ChatContext.Provider>
+    </ChatFormProvider>
+  );
+});
+
 function UnifiedSidebar() {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
@@ -30,8 +50,6 @@ function UnifiedSidebar() {
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
 
-  const chatHelpers = useChatHelpers(0);
-  const sidebarFormMethods = useForm<ChatFormValues>({ defaultValues: { text: '' } });
   const links = useUnifiedSidebarLinks();
 
   const handleCollapse = useCallback(() => {
@@ -82,6 +100,17 @@ function UnifiedSidebar() {
     document.addEventListener('mouseup', up);
   }, []);
 
+  const handleResizeKeyboard = useCallback((direction: 'shrink' | 'grow') => {
+    setSidebarWidth((w) => {
+      const next =
+        direction === 'shrink'
+          ? Math.max(w - 20, EXPANDED_MIN)
+          : Math.min(w + 20, window.innerWidth * 0.4);
+      localStorage.setItem('side:width', String(Math.round(next)));
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     return () => {
       if (resizeHandlers.current) {
@@ -89,13 +118,6 @@ function UnifiedSidebar() {
         document.removeEventListener('mouseup', resizeHandlers.current.up);
       }
     };
-  }, []);
-
-  useEffect(() => {
-    if (isSmallScreen && localStorage.getItem('unifiedSidebarExpanded') === null) {
-      setExpanded(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -125,16 +147,14 @@ function UnifiedSidebar() {
           }}
           {...{ inert: !expanded ? '' : undefined }}
         >
-          <ChatFormProvider {...sidebarFormMethods}>
-            <ChatContext.Provider value={chatHelpers}>
-              <ActivePanelProvider>
-                <ExpandedPanel links={links} onCollapse={handleCollapse} />
-                <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
-                  <SidePanelNav links={links} />
-                </nav>
-              </ActivePanelProvider>
-            </ChatContext.Provider>
-          </ChatFormProvider>
+          <SidebarChatProvider>
+            <ActivePanelProvider>
+              <ExpandedPanel links={links} onCollapse={handleCollapse} />
+              <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
+                <SidePanelNav links={links} />
+              </nav>
+            </ActivePanelProvider>
+          </SidebarChatProvider>
         </div>
         <div
           className={cn(
@@ -156,31 +176,29 @@ function UnifiedSidebar() {
   }
 
   return (
-    <ChatFormProvider {...sidebarFormMethods}>
-      <ChatContext.Provider value={chatHelpers}>
-        <ActivePanelProvider>
-          <aside
-            className="relative flex h-full flex-shrink-0 overflow-hidden"
-            style={{
-              width: expanded ? sidebarWidth : COLLAPSED_WIDTH,
-              minWidth: expanded ? EXPANDED_MIN : COLLAPSED_WIDTH,
-              maxWidth: expanded ? '40%' : COLLAPSED_WIDTH,
-              transition: isResizing ? 'none' : `width ${TRANSITION_MS}ms ${EASING}`,
-            }}
-            aria-label={localize('com_nav_control_panel')}
-          >
-            <Sidebar
-              links={links}
-              expanded={expanded}
-              onCollapse={handleCollapse}
-              onExpand={handleExpand}
-              onResizeStart={handleResizeStart}
-              setSidebarWidth={setSidebarWidth}
-            />
-          </aside>
-        </ActivePanelProvider>
-      </ChatContext.Provider>
-    </ChatFormProvider>
+    <SidebarChatProvider>
+      <ActivePanelProvider>
+        <aside
+          className="relative flex h-full flex-shrink-0 overflow-hidden"
+          style={{
+            width: expanded ? sidebarWidth : COLLAPSED_WIDTH,
+            minWidth: expanded ? EXPANDED_MIN : COLLAPSED_WIDTH,
+            maxWidth: expanded ? '40%' : COLLAPSED_WIDTH,
+            transition: isResizing ? 'none' : `width ${TRANSITION_MS}ms ${EASING}`,
+          }}
+          aria-label={localize('com_nav_control_panel')}
+        >
+          <Sidebar
+            links={links}
+            expanded={expanded}
+            onCollapse={handleCollapse}
+            onExpand={handleExpand}
+            onResizeStart={handleResizeStart}
+            onResizeKeyboard={handleResizeKeyboard}
+          />
+        </aside>
+      </ActivePanelProvider>
+    </SidebarChatProvider>
   );
 }
 

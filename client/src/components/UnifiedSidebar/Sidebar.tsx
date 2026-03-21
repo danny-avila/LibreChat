@@ -1,5 +1,4 @@
 import { memo } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
 import type { NavLink } from '~/common';
 import SidePanelNav from '~/components/SidePanel/Nav';
 import ExpandedPanel from './ExpandedPanel';
@@ -11,14 +10,14 @@ function Sidebar({
   onCollapse,
   onExpand,
   onResizeStart,
-  setSidebarWidth,
+  onResizeKeyboard,
 }: {
   links: NavLink[];
   expanded: boolean;
   onCollapse: () => void;
   onExpand: () => void;
   onResizeStart: (e: React.MouseEvent) => void;
-  setSidebarWidth: Dispatch<SetStateAction<number>>;
+  onResizeKeyboard: (direction: 'shrink' | 'grow') => void;
 }) {
   return (
     <>
@@ -53,17 +52,9 @@ function Sidebar({
         onMouseDown={onResizeStart}
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft') {
-            setSidebarWidth((w) => {
-              const next = Math.max(w - 20, 360);
-              localStorage.setItem('side:width', String(next));
-              return next;
-            });
+            onResizeKeyboard('shrink');
           } else if (e.key === 'ArrowRight') {
-            setSidebarWidth((w) => {
-              const next = Math.min(w + 20, window.innerWidth * 0.4);
-              localStorage.setItem('side:width', String(Math.round(next)));
-              return next;
-            });
+            onResizeKeyboard('grow');
           }
         }}
       />

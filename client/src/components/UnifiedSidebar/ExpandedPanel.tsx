@@ -1,6 +1,7 @@
 import { memo, lazy, Suspense } from 'react';
 import { Skeleton, Sidebar, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
+import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import { useActivePanel } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -30,6 +31,8 @@ function ExpandedPanel({
         description={localize(toggleLabel)}
         render={
           <Button
+            id={expanded ? CLOSE_SIDEBAR_ID : undefined}
+            data-testid={expanded ? 'close-sidebar-button' : 'open-sidebar-button'}
             size="icon"
             variant="ghost"
             aria-label={localize(toggleLabel)}
