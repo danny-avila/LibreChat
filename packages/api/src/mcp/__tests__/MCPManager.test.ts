@@ -847,6 +847,46 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.discoverTools).toHaveBeenCalled();
     });
 
+    it('should forward user, customUserVars, requestBody, and connectionTimeout to discoverTools in the non-OAuth path', async () => {
+      const mockUser = { id: 'user123', email: 'test@example.com' } as unknown as IUser;
+      const customUserVars = { MY_CUSTOM_KEY: 'c527bd0abc123' };
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://my-mcp.server.com?key={{MY_CUSTOM_KEY}}',
+      });
+
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.discoverServerTools({
+        serverName,
+        user: mockUser,
+        customUserVars,
+        requestBody: { conversationId: 'conv-123' } as t.ToolDiscoveryOptions['requestBody'],
+        connectionTimeout: 10000,
+      });
+
+      expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName }),
+        expect.objectContaining({
+          user: mockUser,
+          customUserVars,
+          requestBody: { conversationId: 'conv-123' },
+          connectionTimeout: 10000,
+        }),
+      );
+    });
+
     it('should return null tools when server config not found', async () => {
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),

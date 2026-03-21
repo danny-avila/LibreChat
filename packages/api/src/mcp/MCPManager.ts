@@ -113,7 +113,12 @@ export class MCPManager extends UserConnectionManager {
     };
 
     if (!useOAuth) {
-      const result = await MCPConnectionFactory.discoverTools(basic);
+      const result = await MCPConnectionFactory.discoverTools(basic, {
+        user: args.user,
+        customUserVars: args.customUserVars,
+        requestBody: args.requestBody,
+        connectionTimeout: args.connectionTimeout,
+      });
       return {
         tools: result.tools,
         oauthRequired: result.oauthRequired,
