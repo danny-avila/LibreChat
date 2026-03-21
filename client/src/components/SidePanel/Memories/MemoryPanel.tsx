@@ -122,7 +122,7 @@ export default function MemoryPanel() {
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div role="region" aria-label={localize('com_ui_memories')} className="mt-2 space-y-3">
+      <div role="region" aria-label={localize('com_ui_memories')} className="space-y-2">
         {/* Header: Filter + Create Button */}
         <div className="flex items-center gap-2">
           <FilterInput
