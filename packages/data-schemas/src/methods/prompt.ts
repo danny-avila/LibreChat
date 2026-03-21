@@ -305,6 +305,10 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
    * Increment the numberOfGenerations counter for a prompt group.
    */
   async function incrementPromptGroupUsage(groupId: string) {
+    if (!isValidObjectIdString(groupId)) {
+      throw new Error('Invalid groupId');
+    }
+
     const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
     const result = await PromptGroup.findByIdAndUpdate(
       groupId,
