@@ -113,7 +113,11 @@ export class MCPManager extends UserConnectionManager {
     };
 
     if (!useOAuth) {
-      const result = await MCPConnectionFactory.discoverTools(basic);
+      const result = await MCPConnectionFactory.discoverTools(basic, {
+        useOAuth: false,
+        user: args.user,
+        customUserVars: args.customUserVars,
+      } as unknown as Omit<t.OAuthConnectionOptions, 'returnOnOAuth'>);
       return {
         tools: result.tools,
         oauthRequired: result.oauthRequired,
