@@ -196,6 +196,12 @@ const PromptForm = () => {
   const [showSidePanel, setShowSidePanel] = useState(false);
   const sidePanelWidth = '320px';
 
+  // Reset selection when navigating to a different prompt group
+  useEffect(() => {
+    setSelectionIndex(0);
+    setIsEditing(false);
+  }, [promptId]);
+
   const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId, {
     enabled: hasAccess && !!promptId,
   });
@@ -311,8 +317,13 @@ const PromptForm = () => {
     setInitialLoad(false);
   }, [isLoadingGroup, isLoadingPrompts]);
 
+  const selectedPromptRef = useRef(selectedPrompt);
   useEffect(() => {
-    if (prevIsEditingRef.current && !isEditing && canEdit) {
+    selectedPromptRef.current = selectedPrompt;
+  }, [selectedPrompt]);
+
+  useEffect(() => {
+    if (prevIsEditingRef.current && !isEditing && canEdit && selectedPromptRef.current) {
       handleSubmit((data) => onSave(data.prompt))();
     }
     prevIsEditingRef.current = isEditing;
@@ -338,10 +349,12 @@ const PromptForm = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  useFocusTrap(sidePanelRef, showSidePanel, () => {
+  const handleSidePanelEscape = useCallback(() => {
     setShowSidePanel(false);
     sidePanelTriggerRef.current?.focus();
-  });
+  }, []);
+
+  useFocusTrap(sidePanelRef, showSidePanel, handleSidePanelEscape);
 
   const debouncedUpdateOneliner = useMemo(
     () =>
@@ -548,18 +561,15 @@ const PromptForm = () => {
           </div>
 
           {/* Mobile Overlay */}
-          <button
-            type="button"
-            className={cn(
-              'absolute inset-0 z-40 cursor-default bg-black/20',
-              showSidePanel ? 'opacity-100' : 'pointer-events-none opacity-0',
-            )}
-            style={{ transition: 'opacity 0.3s ease-in-out' }}
-            onClick={() => setShowSidePanel(false)}
-            aria-hidden={!showSidePanel}
-            tabIndex={showSidePanel ? 0 : -1}
-            aria-label={localize('com_ui_close_menu')}
-          />
+          {showSidePanel && (
+            <button
+              type="button"
+              className="absolute inset-0 z-40 cursor-default bg-black/20"
+              style={{ transition: 'opacity 0.3s ease-in-out' }}
+              onClick={() => setShowSidePanel(false)}
+              aria-label={localize('com_ui_close_menu')}
+            />
+          )}
 
           {/* Mobile Versions Panel */}
           <div
