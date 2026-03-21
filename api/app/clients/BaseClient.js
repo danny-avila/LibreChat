@@ -573,12 +573,7 @@ class BaseClient {
       responseMessage.text = completion.join('');
     }
 
-    if (
-      tokenCountMap &&
-      this.recordTokenUsage &&
-      this.getTokenCountForResponse &&
-      this.getTokenCount
-    ) {
+    if (tokenCountMap && this.recordTokenUsage && this.getTokenCountForResponse) {
       let completionTokens;
 
       /**

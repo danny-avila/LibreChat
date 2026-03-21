@@ -3,7 +3,6 @@ const { logger } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const {
   createRun,
-  Tokenizer,
   isEnabled,
   checkAccess,
   buildToolSet,
@@ -25,9 +24,8 @@ const {
   createMemoryProcessor,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
-  CLAUDE_TOKEN_CORRECTION,
   filterMalformedContentParts,
-  estimateMediaTokensForMessage,
+  countFormattedMessageTokens,
   hydrateMissingIndexTokenCounts,
 } = require('@librechat/api');
 const {
@@ -271,7 +269,10 @@ class AgentClient extends BaseClient {
       const needsTokenCount = !dbTokenCount || message.fileContext;
 
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
-        orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
+        orderedMessages[i].tokenCount = countFormattedMessageTokens(
+          formattedMessage,
+          this.getEncoding(),
+        );
       }
 
       if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
@@ -696,10 +697,7 @@ class AgentClient extends BaseClient {
    * @returns {number}
    */
   getTokenCountForResponse({ content }) {
-    return this.getTokenCountForMessage({
-      role: 'assistant',
-      content,
-    });
+    return countFormattedMessageTokens({ role: 'assistant', content }, this.getEncoding());
   }
 
   /**
@@ -1233,32 +1231,6 @@ class AgentClient extends BaseClient {
       return 'claude';
     }
     return 'o200k_base';
-  }
-
-  /**
-   * Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
-   * @param {string} text - The text to get the token count for.
-   * @returns {number} The token count of the given text.
-   */
-  getTokenCount(text) {
-    const encoding = this.getEncoding();
-    return Tokenizer.getTokenCount(text, encoding);
-  }
-
-  /**
-   * @param {object} message
-   * @returns {number}
-   */
-  getTokenCountForMessage(message) {
-    const isClaude = this.getEncoding() === 'claude';
-    let count = super.getTokenCountForMessage(message);
-    count += estimateMediaTokensForMessage(message.content ?? message.text, isClaude, (text) =>
-      this.getTokenCount(text),
-    );
-    if (isClaude) {
-      return Math.ceil(count * CLAUDE_TOKEN_CORRECTION);
-    }
-    return count;
   }
 }
 
