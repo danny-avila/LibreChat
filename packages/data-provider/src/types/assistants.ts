@@ -523,7 +523,7 @@ export type TextData = (Text & PartMetadata) | undefined;
 
 export type SummaryContentPart = {
   type: ContentTypes.SUMMARY;
-  content?: Agents.MessageContentComplex[];
+  content?: Array<{ type: ContentTypes.TEXT; text: string }>;
   tokenCount?: number;
   summarizing?: boolean;
   summaryVersion?: number;
