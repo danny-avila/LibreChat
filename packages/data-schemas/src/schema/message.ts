@@ -114,6 +114,14 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: String,
     },
     metadata: { type: mongoose.Schema.Types.Mixed },
+    contextMeta: {
+      type: {
+        calibrationRatio: { type: Number },
+        encoding: { type: String },
+      },
+      _id: false,
+      default: undefined,
+    },
     attachments: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
     /*
     attachments: {

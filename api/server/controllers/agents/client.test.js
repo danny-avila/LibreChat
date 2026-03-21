@@ -1818,7 +1818,7 @@ describe('AgentClient - titleConvo', () => {
 
       /** Traversal stops at msg-2 (has summary), so we get msg-4 -> msg-3 -> msg-2 */
       expect(result).toHaveLength(3);
-      expect(result[0].text).toBe('Summary of conversation');
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Summary of conversation' }]);
       expect(result[0].role).toBe('system');
       expect(result[0].mapped).toBe(true);
       expect(result[1].mapped).toBe(true);
