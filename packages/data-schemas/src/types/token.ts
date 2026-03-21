@@ -26,6 +26,7 @@ export interface TokenQuery {
   userId?: Types.ObjectId | string;
   token?: string;
   email?: string;
+  type?: string;
   identifier?: string;
 }
 
