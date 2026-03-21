@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useCallback, useEffect } from 'react';
+import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { EarthIcon, Pencil, Trash2, User } from 'lucide-react';
 import { PermissionBits, ResourceType, type TPromptGroup } from 'librechat-data-provider';
@@ -71,13 +71,18 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const { isLoading: isSaving } = updateGroup;
   const isDeleting = deleteGroup.isLoading;
 
+  const updateGroupRef = useRef(updateGroup);
+  updateGroupRef.current = updateGroup;
+  const deleteGroupRef = useRef(deleteGroup);
+  deleteGroupRef.current = deleteGroup;
+
   const handleSaveRename = useCallback(() => {
-    updateGroup.mutate({ id: group._id ?? '', payload: { name: nameInputValue } });
-  }, [group._id, nameInputValue, updateGroup]);
+    updateGroupRef.current.mutate({ id: group._id ?? '', payload: { name: nameInputValue } });
+  }, [group._id, nameInputValue]);
 
   const handleDelete = useCallback(() => {
-    deleteGroup.mutate({ id: group._id ?? '' });
-  }, [group._id, deleteGroup]);
+    deleteGroupRef.current.mutate({ id: group._id ?? '' });
+  }, [group._id]);
 
   const handleContainerClick = useCallback(() => {
     navigate(`/d/prompts/${group._id}`, { replace: true });
