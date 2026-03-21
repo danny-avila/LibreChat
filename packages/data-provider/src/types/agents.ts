@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
-import type { TAttachment, TPlugin } from 'src/schemas';
 import type { FunctionToolCall, SummaryContentPart } from './assistants';
+import type { TAttachment, TPlugin } from 'src/schemas';
 
 export namespace Agents {
   export type MessageType = 'human' | 'ai' | 'generic' | 'system' | 'function' | 'tool' | 'remove';
