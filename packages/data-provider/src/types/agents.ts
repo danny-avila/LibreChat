@@ -79,6 +79,8 @@ export namespace Agents {
     output?: string;
     /** Auth URL */
     auth?: string;
+    /** Validation ID for tool call approval flow */
+    validation?: string;
     /** Expiration time */
     expires_at?: number;
   };
@@ -244,6 +246,7 @@ export namespace Agents {
     type: StepTypes.TOOL_CALLS | string;
     tool_calls?: ToolCallChunk[];
     auth?: string;
+    validation?: string;
     expires_at?: number;
   };
   export type AgentToolCall = FunctionToolCall | ToolCall;

@@ -21,6 +21,7 @@ jest.mock('~/hooks', () => ({
     return translations[key] || key;
   },
   useProgress: (initialProgress: number) => (initialProgress >= 1 ? 1 : initialProgress),
+  useAuthContext: () => ({ token: 'mock-token' }),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
@@ -62,6 +63,8 @@ jest.mock('lucide-react', () => ({
   ChevronDown: () => <span>{'ChevronDown'}</span>,
   ChevronUp: () => <span>{'ChevronUp'}</span>,
   TriangleAlert: () => <span>{'TriangleAlert'}</span>,
+  CheckCircle: () => <span>{'CheckCircle'}</span>,
+  XCircle: () => <span>{'XCircle'}</span>,
 }));
 
 jest.mock('~/utils', () => ({
