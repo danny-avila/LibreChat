@@ -42,7 +42,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
     >
       <div
         className={cn(
-          'mw-full whitespace-pre-line text-center text-sm text-black dark:text-white md:text-base lg:text-lg',
+          'w-full whitespace-pre-line text-center text-sm text-black dark:text-white md:text-base lg:text-lg',
           !banner.persistable && 'px-4',
         )}
         dangerouslySetInnerHTML={{ __html: formattedMessage }}
