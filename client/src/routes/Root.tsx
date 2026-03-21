@@ -18,19 +18,20 @@ import {
 } from '~/Providers';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
-import { TermsAndConditionsModal } from '~/components/ui';
+import { TermsAndConditionsModal, ImportantNoticeModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
+  const [showTestingNotice, setShowTestingNotice] = useState(false);
   const [bannerHeight, setBannerHeight] = useState(0);
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
 
-  const { isAuthenticated, logout } = useAuthContext();
+  const { isAuthenticated, logout, user } = useAuthContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   // Global health check - runs once per authenticated session
@@ -47,19 +48,41 @@ export default function Root() {
 
   useSearchEnabled(isAuthenticated);
 
+  const noticeKey = `hasAcceptedTestingNotice_${user?.id ?? 'guest'}`;
+
   useEffect(() => {
     if (termsData) {
       setShowTerms(!termsData.termsAccepted);
+      if (termsData.termsAccepted) {
+        const hasAcceptedNotice = localStorage.getItem(noticeKey);
+        if (!hasAcceptedNotice) {
+          setShowTestingNotice(true);
+        }
+      }
     }
-  }, [termsData]);
+  }, [termsData, noticeKey]);
 
   const handleAcceptTerms = () => {
     setShowTerms(false);
+    const hasAcceptedNotice = localStorage.getItem(noticeKey);
+    if (!hasAcceptedNotice) {
+      setShowTestingNotice(true);
+    }
   };
 
   const handleDeclineTerms = () => {
     setShowTerms(false);
     logout('/login?redirect=false');
+  };
+
+  const handleAcceptTestingNotice = () => {
+    localStorage.setItem(noticeKey, 'true');
+    setShowTestingNotice(false);
+  };
+
+  const handleDeclineTestingNotice = () => {
+    setShowTestingNotice(false);
+    logout('/login');
   };
 
   if (!isAuthenticated) {
@@ -106,6 +129,12 @@ export default function Root() {
               modalContent={config.interface.termsOfService.modalContent}
             />
           )}
+          <ImportantNoticeModal
+            open={showTestingNotice}
+            onOpenChange={setShowTestingNotice}
+            onAccept={handleAcceptTestingNotice}
+            onDecline={handleDeclineTestingNotice}
+          />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SetConvoProvider>
