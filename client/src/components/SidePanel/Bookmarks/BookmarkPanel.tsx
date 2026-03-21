@@ -6,7 +6,7 @@ const BookmarkPanel = () => {
   const { data } = useConversationTagsQuery();
 
   return (
-    <div className="h-auto max-w-full overflow-x-visible">
+    <div className="h-auto max-w-full overflow-x-hidden">
       <BookmarkContext.Provider value={{ bookmarks: data || [] }}>
         <BookmarkTable />
       </BookmarkContext.Provider>

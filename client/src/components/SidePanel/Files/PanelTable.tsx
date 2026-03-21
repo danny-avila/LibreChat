@@ -222,7 +222,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   {headerGroup.headers.map((header, index) => (
                     <TableHead
                       key={header.id}
-                      style={{ width: index === 0 ? '75%' : '25%' }}
+                      style={{ width: index === 0 ? '65%' : '35%' }}
                       className="bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary"
                     >
                       <div className="px-4">
@@ -249,8 +249,6 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                       return (
                         <TableCell
                           style={{
-                            width: '150px',
-                            maxWidth: '150px',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
@@ -313,7 +311,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Button
           ref={manageFilesRef}
           variant="outline"
@@ -325,7 +323,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           <span className="ml-2">{localize('com_sidepanel_manage_files')}</span>
         </Button>
 
-        <div className="flex items-center gap-2" role="navigation" aria-label="Pagination">
+        <div className="flex items-center gap-1.5" role="navigation" aria-label="Pagination">
           <Button
             variant="outline"
             size="sm"
@@ -335,9 +333,9 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           >
             {localize('com_ui_prev')}
           </Button>
-          <div aria-live="polite" className="text-sm">
+          <span aria-live="polite" className="text-xs text-text-secondary">
             {`${pageIndex + 1} / ${table.getPageCount()}`}
-          </div>
+          </span>
           <Button
             variant="outline"
             size="sm"
