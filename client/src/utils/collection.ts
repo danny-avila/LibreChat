@@ -172,10 +172,13 @@ export const updateFieldsInPlace = <TCollection, TData>(
   collectionName: string,
   identifierField: keyof TData,
 ): InfiniteData<TCollection> => {
+  const identifierValue = updatedItem[identifierField];
+  if (identifierValue == null) {
+    return data;
+  }
+
   const { pageIndex, index } = findPage<TCollection>(data, (page) =>
-    page[collectionName].findIndex(
-      (item: TData) => item[identifierField] === updatedItem[identifierField],
-    ),
+    page[collectionName].findIndex((item: TData) => item[identifierField] === identifierValue),
   );
 
   if (pageIndex === -1 || index === -1) {
