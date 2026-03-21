@@ -1,0 +1,34 @@
+const express = require('express');
+const { createAdminConfigHandlers } = require('@librechat/api');
+const { SystemCapabilities } = require('@librechat/data-schemas');
+const {
+  requireCapability,
+  hasConfigCapability,
+} = require('~/server/middleware/roles/capabilities');
+const { requireJwtAuth } = require('~/server/middleware');
+const db = require('~/models');
+
+const router = express.Router();
+
+const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
+
+const handlers = createAdminConfigHandlers({
+  findConfigByPrincipal: db.findConfigByPrincipal,
+  getApplicableConfigs: db.getApplicableConfigs,
+  upsertConfig: db.upsertConfig,
+  deleteConfig: db.deleteConfig,
+  toggleConfigActive: db.toggleConfigActive,
+  hasConfigCapability,
+});
+
+router.use(requireJwtAuth, requireAdminAccess);
+
+router.get('/', handlers.listConfigs);
+router.get('/:principalType/:principalId', handlers.getConfig);
+router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
+router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);
+router.delete('/:principalType/:principalId/fields/:fieldPath(*)', handlers.deleteConfigField);
+router.delete('/:principalType/:principalId', handlers.deleteConfigOverrides);
+router.patch('/:principalType/:principalId/active', handlers.toggleConfig);
+
+module.exports = router;
