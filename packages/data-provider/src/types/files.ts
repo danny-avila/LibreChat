@@ -42,6 +42,7 @@ export type EndpointFileConfig = {
   fileSizeLimit?: number;
   totalSizeLimit?: number;
   supportedMimeTypes?: RegExp[];
+  defaultFileInteraction?: 'text' | 'provider' | 'deferred' | 'legacy';
 };
 
 export type FileConfig = {
@@ -67,6 +68,7 @@ export type FileConfig = {
     supportedMimeTypes?: RegExp[];
   };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+  defaultFileInteraction?: 'text' | 'provider' | 'deferred' | 'legacy';
 };
 
 export type FileConfigInput = {
@@ -91,6 +93,7 @@ export type FileConfigInput = {
     supportedMimeTypes?: string[];
   };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+  defaultFileInteraction?: 'text' | 'provider' | 'deferred' | 'legacy';
 };
 
 export type TFile = {

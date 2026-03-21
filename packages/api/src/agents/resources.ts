@@ -6,6 +6,26 @@ import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { Request as ServerRequest } from 'express';
 
 /**
+ * Function type for provisioning a file to the code execution environment.
+ * @returns The fileIdentifier from the code env
+ */
+export type TProvisionToCodeEnv = (params: {
+  req: ServerRequest & { user?: IUser };
+  file: TFile;
+  entity_id?: string;
+}) => Promise<string>;
+
+/**
+ * Function type for provisioning a file to the vector DB for file_search.
+ * @returns Object with embedded status
+ */
+export type TProvisionToVectorDB = (params: {
+  req: ServerRequest & { user?: IUser };
+  file: TFile;
+  entity_id?: string;
+}) => Promise<{ embedded: boolean }>;
+
+/**
  * Function type for retrieving files from the database
  * @param filter - MongoDB filter query for files
  * @param _sortOptions - Sorting options (currently unused)
@@ -100,6 +120,7 @@ const categorizeFileForToolResources = ({
   requestFileSet: Set<string>;
   processedResourceFiles: Set<string>;
 }): void => {
+  // No early returns — a file can belong to multiple tool resources simultaneously
   if (file.metadata?.fileIdentifier) {
     addFileToResource({
       file,
@@ -107,7 +128,6 @@ const categorizeFileForToolResources = ({
       tool_resources,
       processedResourceFiles,
     });
-    return;
   }
 
   if (file.embedded === true) {
@@ -117,7 +137,6 @@ const categorizeFileForToolResources = ({
       tool_resources,
       processedResourceFiles,
     });
-    return;
   }
 
   if (
@@ -163,6 +182,9 @@ export const primeResources = async ({
   attachments: _attachments,
   tool_resources: _tool_resources,
   agentId,
+  enabledToolResources,
+  provisionToCodeEnv,
+  provisionToVectorDB,
 }: {
   req: ServerRequest & { user?: IUser };
   appConfig?: AppConfig;
@@ -172,6 +194,12 @@ export const primeResources = async ({
   getFiles: TGetFiles;
   filterFiles?: TFilterFilesByAgentAccess;
   agentId?: string;
+  /** Set of tool resource types the agent has enabled (e.g., execute_code, file_search) */
+  enabledToolResources?: Set<EToolResources>;
+  /** Optional callback to provision a file to the code execution environment */
+  provisionToCodeEnv?: TProvisionToCodeEnv;
+  /** Optional callback to provision a file to the vector DB for file_search */
+  provisionToVectorDB?: TProvisionToVectorDB;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
   tool_resources: AgentToolResources | undefined;
@@ -306,6 +334,87 @@ export const primeResources = async ({
       attachments.push(file);
       if (file.file_id) {
         attachmentFileIds.add(file.file_id);
+      }
+    }
+
+    /**
+     * Lazy provisioning: for deferred files that haven't been provisioned to the
+     * agent's enabled tool resources, provision them now (at chat-request start).
+     * This handles files uploaded via the unified upload flow (no tool_resource chosen at upload time).
+     */
+    if (enabledToolResources && enabledToolResources.size > 0 && attachments.length > 0) {
+      const needsCodeEnv =
+        enabledToolResources.has(EToolResources.execute_code) && provisionToCodeEnv != null;
+      const needsVectorDB =
+        enabledToolResources.has(EToolResources.file_search) && provisionToVectorDB != null;
+
+      if (needsCodeEnv || needsVectorDB) {
+        for (const file of attachments) {
+          if (!file?.file_id) {
+            continue;
+          }
+
+          // Skip images for file_search (not supported)
+          const isImage = file.type?.startsWith('image') ?? false;
+
+          // Provision to code env if needed and not already provisioned
+          if (
+            needsCodeEnv &&
+            !file.metadata?.fileIdentifier &&
+            !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
+          ) {
+            try {
+              const fileIdentifier = await provisionToCodeEnv({
+                req: req as ServerRequest & { user?: IUser },
+                file,
+                entity_id: agentId,
+              });
+              // Update the file object in-place so categorization picks it up
+              file.metadata = { ...file.metadata, fileIdentifier };
+              addFileToResource({
+                file,
+                resourceType: EToolResources.execute_code,
+                tool_resources,
+                processedResourceFiles,
+              });
+            } catch (error) {
+              logger.error(
+                `[primeResources] Failed to provision file "${file.filename}" to code env`,
+                error,
+              );
+            }
+          }
+
+          // Provision to vector DB if needed and not already provisioned
+          if (
+            needsVectorDB &&
+            !isImage &&
+            file.embedded !== true &&
+            !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
+          ) {
+            try {
+              const result = await provisionToVectorDB({
+                req: req as ServerRequest & { user?: IUser },
+                file,
+                entity_id: agentId,
+              });
+              if (result.embedded) {
+                file.embedded = true;
+                addFileToResource({
+                  file,
+                  resourceType: EToolResources.file_search,
+                  tool_resources,
+                  processedResourceFiles,
+                });
+              }
+            } catch (error) {
+              logger.error(
+                `[primeResources] Failed to provision file "${file.filename}" to vector DB`,
+                error,
+              );
+            }
+          }
+        }
       }
     }
 
