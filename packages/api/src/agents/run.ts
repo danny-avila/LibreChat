@@ -182,6 +182,69 @@ type RunAgent = Omit<Agent, 'tools'> & {
   maxToolResultChars?: number;
 };
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * Merges per-agent and global summarization overrides with agent-derived defaults,
+ * then produces the exact shapes expected by AgentInputs.
+ */
+function resolveSummarizationForAgent(
+  agentProvider: string,
+  agentModel: string | undefined,
+  agentOverride: SummarizationConfig | undefined,
+  globalConfig: SummarizationConfig | undefined,
+) {
+  const defaults: SummarizationConfig = {
+    enabled: true,
+    provider: agentProvider,
+    model: agentModel,
+  };
+  const override = agentOverride ?? globalConfig;
+  const resolved = override != null ? { ...defaults, ...override } : defaults;
+
+  const trigger =
+    resolved.trigger?.type && resolved.trigger?.value
+      ? { type: resolved.trigger.type, value: resolved.trigger.value }
+      : undefined;
+
+  return {
+    enabled:
+      resolved.enabled !== false &&
+      isNonEmptyString(resolved.provider) &&
+      isNonEmptyString(resolved.model),
+    config: {
+      trigger,
+      provider: resolved.provider,
+      model: resolved.model,
+      parameters: resolved.parameters,
+      prompt: resolved.prompt,
+      updatePrompt: resolved.updatePrompt,
+      reserveRatio: resolved.reserveRatio,
+      maxSummaryTokens: resolved.maxSummaryTokens,
+    } satisfies AgentSummarizationConfig,
+    contextPruning: resolved.contextPruning as ContextPruningConfig | undefined,
+    reserveRatio: resolved.reserveRatio,
+  };
+}
+
+/**
+ * Applies `reserveRatio` against the pre-ratio base context budget, falling
+ * back to the pre-computed `maxContextTokens` from initializeAgent.
+ */
+function computeEffectiveMaxContextTokens(
+  reserveRatio: number | undefined,
+  baseContextTokens: number | undefined,
+  maxContextTokens: number | undefined,
+): number | undefined {
+  if (reserveRatio == null || reserveRatio <= 0 || reserveRatio >= 1 || baseContextTokens == null) {
+    return maxContextTokens;
+  }
+  const ratioComputed = Math.max(1024, Math.round(baseContextTokens * (1 - reserveRatio)));
+  return Math.min(maxContextTokens ?? ratioComputed, ratioComputed);
+}
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -253,25 +316,12 @@ export async function createRun({
       ] as unknown as Providers) ?? agent.provider;
     const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
 
-    const baseSummarizationConfig: SummarizationConfig = {
-      enabled: true,
-      provider: provider as string,
-      model: selfModel,
-    };
-    const overrideConfig = agent.summarization ?? summarizationConfig;
-    const resolvedSummarizationConfig: SummarizationConfig =
-      overrideConfig != null
-        ? { ...baseSummarizationConfig, ...overrideConfig }
-        : baseSummarizationConfig;
-
-    const resolvedSummarizationProvider = resolvedSummarizationConfig.provider;
-    const resolvedSummarizationModel = resolvedSummarizationConfig.model;
-    const hasSummarizationProvider =
-      typeof resolvedSummarizationProvider === 'string' &&
-      resolvedSummarizationProvider.trim().length > 0;
-    const hasSummarizationModel =
-      typeof resolvedSummarizationModel === 'string' &&
-      resolvedSummarizationModel.trim().length > 0;
+    const summarization = resolveSummarizationForAgent(
+      provider as string,
+      selfModel,
+      agent.summarization,
+      summarizationConfig,
+    );
 
     const llmConfig: t.RunLLMConfig = Object.assign(
       {
@@ -339,20 +389,11 @@ export async function createRun({
       }
     }
 
-    // Apply configurable reserve ratio when available, falling back to the
-    // pre-computed maxContextTokens from initializeAgent.
-    const reserveRatio = resolvedSummarizationConfig?.reserveRatio;
-    const ratioComputed =
-      reserveRatio != null &&
-      reserveRatio > 0 &&
-      reserveRatio < 1 &&
-      agent.baseContextTokens != null
-        ? Math.max(1024, Math.round(agent.baseContextTokens * (1 - reserveRatio)))
-        : null;
-    const effectiveMaxContextTokens =
-      ratioComputed != null
-        ? Math.min(agent.maxContextTokens ?? ratioComputed, ratioComputed)
-        : agent.maxContextTokens;
+    const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
+      summarization.reserveRatio,
+      agent.baseContextTokens,
+      agent.maxContextTokens,
+    );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const agentInput: AgentInputs = {
@@ -368,30 +409,10 @@ export async function createRun({
       maxContextTokens: effectiveMaxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
       discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
-      summarizationEnabled:
-        resolvedSummarizationConfig.enabled !== false &&
-        hasSummarizationProvider &&
-        hasSummarizationModel,
-      summarizationConfig: {
-        trigger:
-          resolvedSummarizationConfig.trigger?.type && resolvedSummarizationConfig.trigger?.value
-            ? {
-                type: resolvedSummarizationConfig.trigger.type,
-                value: resolvedSummarizationConfig.trigger.value,
-              }
-            : undefined,
-        provider: resolvedSummarizationConfig.provider,
-        model: resolvedSummarizationConfig.model,
-        parameters: resolvedSummarizationConfig.parameters,
-        prompt: resolvedSummarizationConfig.prompt,
-        updatePrompt: resolvedSummarizationConfig.updatePrompt,
-        reserveRatio: resolvedSummarizationConfig.reserveRatio,
-        maxSummaryTokens: resolvedSummarizationConfig.maxSummaryTokens,
-      } satisfies AgentSummarizationConfig,
+      summarizationEnabled: summarization.enabled,
+      summarizationConfig: summarization.config,
       initialSummary,
-      contextPruningConfig: resolvedSummarizationConfig?.contextPruning as
-        | ContextPruningConfig
-        | undefined,
+      contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
     agentInputs.push(agentInput);
