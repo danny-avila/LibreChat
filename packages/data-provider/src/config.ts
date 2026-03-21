@@ -976,7 +976,7 @@ export const summarizationConfigSchema = z.object({
   contextPruning: contextPruningSchema.optional(),
 });
 
-export type SummarizationConfig = DeepPartial<z.infer<typeof summarizationConfigSchema>>;
+export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 

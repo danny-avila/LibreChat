@@ -30,10 +30,6 @@ export type ConvertJsonSchemaToZodOptions = {
   transformOneOfAnyOf?: boolean;
 };
 
-export type AppSummarizationConfig = SummarizationConfig & {
-  enabled: boolean;
-};
-
 export interface FunctionTool {
   type: 'function';
   function: {
@@ -62,7 +58,7 @@ export interface AppConfig {
   /** Memory configuration */
   memory?: TMemoryConfig;
   /** Summarization configuration */
-  summarization?: AppSummarizationConfig;
+  summarization?: SummarizationConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
