@@ -17,6 +17,7 @@ import type {
 } from 'mongoose';
 import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
 import { createAgentMethods, type AgentMethods } from './agent';
+import { createAclEntryMethods } from './aclEntry';
 import { createModels } from '~/models';
 
 /** Version snapshot stored in `IAgent.versions[]`. Extends the base omit with runtime-only fields. */
@@ -76,7 +77,14 @@ beforeAll(async () => {
     await AclEntry.deleteMany({ resourceType, resourceId });
   };
 
-  methods = createAgentMethods(mongoose, { removeAllPermissions, getActions });
+  const aclEntryMethods = createAclEntryMethods(mongoose);
+  const { getSoleOwnedResourceIds } = aclEntryMethods;
+
+  methods = createAgentMethods(mongoose, {
+    removeAllPermissions,
+    getActions,
+    getSoleOwnedResourceIds,
+  });
   createAgent = methods.createAgent;
   getAgent = methods.getAgent;
   updateAgent = methods.updateAgent;
@@ -932,21 +940,27 @@ describe('Agent Methods', () => {
         author: otherAuthorId,
       });
 
-      await permissionService.grantPermission({
+      const ownerBits =
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+      await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: authorId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent1._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        permBits: ownerBits,
         grantedBy: authorId,
+        grantedAt: new Date(),
       });
-      await permissionService.grantPermission({
+      await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: authorId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent2._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        permBits: ownerBits,
         grantedBy: authorId,
+        grantedAt: new Date(),
       });
 
       await User.create({
@@ -1016,21 +1030,27 @@ describe('Agent Methods', () => {
         author: authorId,
       });
 
-      await permissionService.grantPermission({
+      const ownerBits =
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+      await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: authorId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent1._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        permBits: ownerBits,
         grantedBy: authorId,
+        grantedAt: new Date(),
       });
-      await permissionService.grantPermission({
+      await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: authorId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent2._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        permBits: ownerBits,
         grantedBy: authorId,
+        grantedAt: new Date(),
       });
 
       await User.create({
@@ -1096,13 +1116,17 @@ describe('Agent Methods', () => {
         author: otherAuthorId,
       });
 
-      await permissionService.grantPermission({
+      const ownerBits =
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+      await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: otherAuthorId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: existingAgent._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        permBits: ownerBits,
         grantedBy: otherAuthorId,
+        grantedAt: new Date(),
       });
 
       await User.create({
@@ -1150,21 +1174,27 @@ describe('Agent Methods', () => {
         author: authorId,
       });
 
-      await permissionService.grantPermission({
+      const ownerBits =
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+      await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: authorId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent1._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        permBits: ownerBits,
         grantedBy: authorId,
+        grantedAt: new Date(),
       });
-      await permissionService.grantPermission({
+      await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: authorId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: agent2._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        permBits: ownerBits,
         grantedBy: authorId,
+        grantedAt: new Date(),
       });
 
       await User.create({
@@ -1216,24 +1246,27 @@ describe('Agent Methods', () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: deletingUserId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: (soleAgent as unknown as { _id: mongoose.Types.ObjectId })._id,
-        permBits: PermissionBits.DELETE | PermissionBits.READ | PermissionBits.WRITE,
+        permBits: PermissionBits.DELETE | PermissionBits.VIEW | PermissionBits.EDIT,
       });
 
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: deletingUserId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: (multiAgent as unknown as { _id: mongoose.Types.ObjectId })._id,
-        permBits: PermissionBits.DELETE | PermissionBits.READ | PermissionBits.WRITE,
+        permBits: PermissionBits.DELETE | PermissionBits.VIEW | PermissionBits.EDIT,
       });
       await AclEntry.create({
         principalType: PrincipalType.USER,
         principalId: otherOwnerId,
+        principalModel: PrincipalModel.USER,
         resourceType: ResourceType.AGENT,
         resourceId: (multiAgent as unknown as { _id: mongoose.Types.ObjectId })._id,
-        permBits: PermissionBits.DELETE | PermissionBits.READ | PermissionBits.WRITE,
+        permBits: PermissionBits.DELETE | PermissionBits.VIEW | PermissionBits.EDIT,
       });
 
       await deleteUserAgents(deletingUserId.toString());
