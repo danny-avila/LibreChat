@@ -186,46 +186,33 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-/**
- * Merges per-agent and global summarization overrides with agent-derived defaults,
- * then produces the exact shapes expected by AgentInputs.
- */
-function resolveSummarizationForAgent(
-  agentProvider: string,
-  agentModel: string | undefined,
-  agentOverride: SummarizationConfig | undefined,
-  globalConfig: SummarizationConfig | undefined,
+/** Shapes a SummarizationConfig into the format expected by AgentInputs. */
+function shapeSummarizationConfig(
+  config: SummarizationConfig | undefined,
+  fallbackProvider: string,
+  fallbackModel: string | undefined,
 ) {
-  const defaults: SummarizationConfig = {
-    enabled: true,
-    provider: agentProvider,
-    model: agentModel,
-  };
-  const override = agentOverride ?? globalConfig;
-  const resolved = override != null ? { ...defaults, ...override } : defaults;
-
+  const provider = config?.provider ?? fallbackProvider;
+  const model = config?.model ?? fallbackModel;
   const trigger =
-    resolved.trigger?.type && resolved.trigger?.value
-      ? { type: resolved.trigger.type, value: resolved.trigger.value }
+    config?.trigger?.type && config?.trigger?.value
+      ? { type: config.trigger.type, value: config.trigger.value }
       : undefined;
 
   return {
-    enabled:
-      resolved.enabled !== false &&
-      isNonEmptyString(resolved.provider) &&
-      isNonEmptyString(resolved.model),
+    enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
     config: {
       trigger,
-      provider: resolved.provider,
-      model: resolved.model,
-      parameters: resolved.parameters,
-      prompt: resolved.prompt,
-      updatePrompt: resolved.updatePrompt,
-      reserveRatio: resolved.reserveRatio,
-      maxSummaryTokens: resolved.maxSummaryTokens,
+      provider,
+      model,
+      parameters: config?.parameters,
+      prompt: config?.prompt,
+      updatePrompt: config?.updatePrompt,
+      reserveRatio: config?.reserveRatio,
+      maxSummaryTokens: config?.maxSummaryTokens,
     } satisfies AgentSummarizationConfig,
-    contextPruning: resolved.contextPruning as ContextPruningConfig | undefined,
-    reserveRatio: resolved.reserveRatio,
+    contextPruning: config?.contextPruning as ContextPruningConfig | undefined,
+    reserveRatio: config?.reserveRatio,
   };
 }
 
@@ -316,11 +303,10 @@ export async function createRun({
       ] as unknown as Providers) ?? agent.provider;
     const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
 
-    const summarization = resolveSummarizationForAgent(
+    const summarization = shapeSummarizationConfig(
+      agent.summarization ?? summarizationConfig,
       provider as string,
       selfModel,
-      agent.summarization,
-      summarizationConfig,
     );
 
     const llmConfig: t.RunLLMConfig = Object.assign(
