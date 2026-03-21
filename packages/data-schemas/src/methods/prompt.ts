@@ -1,6 +1,6 @@
-import type { Model, Types } from 'mongoose';
 import { ResourceType, SystemCategories } from 'librechat-data-provider';
-import type { IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
+import type { Model, Types } from 'mongoose';
+import type { IAclEntry, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -544,7 +544,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
     try {
       const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
       const Prompt = mongoose.models.Prompt as Model<IPrompt>;
-      const AclEntry = mongoose.models.AclEntry;
+      const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
 
       const userObjectId = new ObjectId(userId);
       const soleOwnedIds = await getSoleOwnedResourceIds(userObjectId, ResourceType.PROMPTGROUP);
@@ -561,12 +561,8 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
               .select('resourceId')
               .lean()
           : [];
-      const migratedIds = new Set(
-        (migratedEntries as Array<{ resourceId: Types.ObjectId }>).map((e) => e.resourceId.toString()),
-      );
-      const legacyGroupIds = authoredGroupIds.filter(
-        (id) => !migratedIds.has(id.toString()),
-      );
+      const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
+      const legacyGroupIds = authoredGroupIds.filter((id) => !migratedIds.has(id.toString()));
 
       const allGroupIdsToDelete = [...soleOwnedIds, ...legacyGroupIds];
 

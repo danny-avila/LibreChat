@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import type { FilterQuery, Model, Types } from 'mongoose';
 import { Constants, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import type { FilterQuery, Model, Types } from 'mongoose';
+import type { IAgent, IAclEntry } from '~/types';
 import logger from '~/config/winston';
-import type { IAgent } from '~/types';
 
 const { mcp_delimiter } = Constants;
 
@@ -525,7 +525,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
    */
   async function deleteUserAgents(userId: string): Promise<void> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const AclEntry = mongoose.models.AclEntry as Model<unknown>;
+    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const User = mongoose.models.User as Model<unknown>;
 
     try {
@@ -546,9 +546,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
               .select('resourceId')
               .lean()
           : [];
-      const migratedIds = new Set(
-        (migratedEntries as Array<{ resourceId: Types.ObjectId }>).map((e) => e.resourceId.toString()),
-      );
+      const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
       const legacyAgents = authoredAgents.filter((a) => !migratedIds.has(a._id.toString()));
 
       const soleOwnedAgents =
