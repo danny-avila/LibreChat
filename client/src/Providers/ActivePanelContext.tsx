@@ -1,29 +1,25 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode } from 'react';
+
+const STORAGE_KEY = 'side:active-panel';
+const DEFAULT_PANEL = 'conversations';
+
+function getInitialActivePanel(): string {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  return saved ? saved : DEFAULT_PANEL;
+}
 
 interface ActivePanelContextType {
-  active: string | undefined;
+  active: string;
   setActive: (id: string) => void;
 }
 
 const ActivePanelContext = createContext<ActivePanelContextType | undefined>(undefined);
 
-export function ActivePanelProvider({
-  children,
-  defaultActive,
-}: {
-  children: ReactNode;
-  defaultActive?: string;
-}) {
-  const [active, _setActive] = useState<string | undefined>(defaultActive);
-
-  useEffect(() => {
-    if (defaultActive != null) {
-      _setActive(defaultActive);
-    }
-  }, [defaultActive]);
+export function ActivePanelProvider({ children }: { children: ReactNode }) {
+  const [active, _setActive] = useState<string>(getInitialActivePanel);
 
   const setActive = (id: string) => {
-    localStorage.setItem('side:active-panel', id);
+    localStorage.setItem(STORAGE_KEY, id);
     _setActive(id);
   };
 

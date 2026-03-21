@@ -12,13 +12,11 @@ function ExpandedPanel({
   expanded = true,
   onCollapse,
   onExpand,
-  onExpandToSection,
 }: {
   links: NavLink[];
   expanded?: boolean;
   onCollapse?: () => void;
   onExpand?: () => void;
-  onExpandToSection?: (sectionId: string) => void;
 }) {
   const localize = useLocalize();
   const { active, setActive } = useActivePanel();
@@ -67,12 +65,11 @@ function ExpandedPanel({
                     link.onClick(e);
                     return;
                   }
-                  if (expanded) {
-                    if (link.id !== active) {
-                      setActive(link.id);
-                    }
-                  } else {
-                    onExpandToSection?.(link.id);
+                  if (link.id !== active) {
+                    setActive(link.id);
+                  }
+                  if (!expanded) {
+                    onExpand?.();
                   }
                 }}
               >

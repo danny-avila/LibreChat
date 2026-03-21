@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { MessageSquare } from 'lucide-react';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
@@ -40,15 +40,13 @@ export default function useUnifiedSidebarLinks() {
     [keyExpiry.expiresAt, userProvidesKey],
   );
 
-  const hidePanel = useCallback(() => {}, []);
-
   const sideNavLinks = useSideNavLinks({
-    endpoint,
-    hidePanel,
     keyProvided,
+    endpoint,
     endpointType,
     interfaceConfig,
     endpointsConfig,
+    includeHidePanel: false,
   });
 
   const links = useMemo(() => {
@@ -60,8 +58,7 @@ export default function useUnifiedSidebarLinks() {
       Component: ConversationsSection,
     };
 
-    const filtered = sideNavLinks.filter((link) => link.id !== 'hide-panel');
-    return [conversationLink, ...filtered];
+    return [conversationLink, ...sideNavLinks];
   }, [sideNavLinks]);
 
   return links;

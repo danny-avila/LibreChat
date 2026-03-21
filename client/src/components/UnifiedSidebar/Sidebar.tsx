@@ -3,7 +3,6 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { NavLink } from '~/common';
 import SidePanelNav from '~/components/SidePanel/Nav';
 import ExpandedPanel from './ExpandedPanel';
-import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 function Sidebar({
@@ -11,7 +10,6 @@ function Sidebar({
   expanded,
   onCollapse,
   onExpand,
-  onExpandToSection,
   onResizeStart,
   setSidebarWidth,
 }: {
@@ -19,12 +17,9 @@ function Sidebar({
   expanded: boolean;
   onCollapse: () => void;
   onExpand: () => void;
-  onExpandToSection: (sectionId: string) => void;
   onResizeStart: (e: React.MouseEvent) => void;
   setSidebarWidth: Dispatch<SetStateAction<number>>;
 }) {
-  const localize = useLocalize();
-
   return (
     <>
       <div className="flex h-full w-full overflow-hidden">
@@ -33,7 +28,6 @@ function Sidebar({
           expanded={expanded}
           onCollapse={onCollapse}
           onExpand={onExpand}
-          onExpandToSection={onExpandToSection}
         />
         <nav
           className={cn(
@@ -41,7 +35,6 @@ function Sidebar({
             expanded ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
           style={{ transition: expanded ? 'opacity 200ms ease 80ms' : 'opacity 150ms ease' }}
-          aria-label={localize('com_nav_control_panel')}
           aria-hidden={!expanded}
         >
           <SidePanelNav links={links} />

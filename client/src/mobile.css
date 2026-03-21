@@ -131,7 +131,6 @@
   width: 100px;
 }
 
-
 @keyframes tuning {
   0% { transform: rotate(30deg); }
   25% { transform: rotate(110deg); }
