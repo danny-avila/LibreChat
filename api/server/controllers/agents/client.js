@@ -275,14 +275,6 @@ class AgentClient extends BaseClient {
         );
       }
 
-      if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
-        const id = (message.messageId ?? '').slice(-8);
-        const recalced = needsTokenCount ? orderedMessages[i].tokenCount : null;
-        logger.debug(
-          `[AgentClient] buildMessages[${i}] id=…${id} db=${dbTokenCount} needsRecount=${needsTokenCount} recalced=${recalced}`,
-        );
-      }
-
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
         const attachments = this.message_file_map[message.messageId];
@@ -306,22 +298,20 @@ class AgentClient extends BaseClient {
         tokenCountMap[message.messageId] = normalizedTokenCount;
       }
 
-      return formattedMessage;
-    });
-
-    if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
-      for (let i = 0; i < orderedMessages.length; i++) {
-        const msg = orderedMessages[i];
-        const role = msg.isCreatedByUser ? 'user' : 'assistant';
+      if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
+        const role = message.isCreatedByUser ? 'user' : 'assistant';
         const hasSummary =
-          Array.isArray(msg.content) && msg.content.some((p) => p && p.type === 'summary');
+          Array.isArray(message.content) && message.content.some((p) => p && p.type === 'summary');
         const suffix = hasSummary ? '[S]' : '';
-        const id = (msg.messageId ?? msg.id ?? '').slice(-8);
+        const id = (message.messageId ?? message.id ?? '').slice(-8);
+        const recalced = needsTokenCount ? orderedMessages[i].tokenCount : null;
         logger.debug(
-          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} tokens=${canonicalTokenCountMap[i]}`,
+          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsTokenCount} recalced=${recalced} tokens=${normalizedTokenCount}`,
         );
       }
-    }
+
+      return formattedMessage;
+    });
 
     payload = formattedMessages;
     messages = orderedMessages;
