@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
+import type { TAttachment } from 'librechat-data-provider';
 import RetrievalCall from '../RetrievalCall';
 
 jest.mock('~/hooks', () => ({
@@ -10,6 +11,9 @@ jest.mock('~/hooks', () => ({
       com_ui_retrieved_files: 'Retrieved files',
       com_ui_retrieval_failed: 'failed',
       com_ui_tool_failed: 'failed',
+      com_ui_preview: 'Preview',
+      com_ui_relevance: 'Relevance',
+      com_file_pages: 'Pages',
     };
     return translations[key] || key;
   },
@@ -72,17 +76,39 @@ jest.mock('~/utils', () => ({
   logger: { error: jest.fn(), debug: jest.fn() },
 }));
 
+jest.mock('~/data-provider', () => ({
+  useGetFiles: jest.fn(() => ({ data: [] })),
+}));
+
+jest.mock('../FilePreviewDialog', () => ({
+  __esModule: true,
+  default: ({ open, fileId, fileName }: { open: boolean; fileId?: string; fileName: string }) =>
+    open ? (
+      <div data-testid="file-preview-dialog" data-file-id={fileId}>
+        {fileName}
+      </div>
+    ) : null,
+}));
+
 const defaultProps = {
   initialProgress: 1,
   isSubmitting: false,
 };
 
-const renderRetrievalCall = (props: Partial<typeof defaultProps & { output?: string }> = {}) =>
+const renderRetrievalCall = (
+  props: Partial<typeof defaultProps & { output?: string; attachments?: TAttachment[] }> = {},
+) =>
   render(
     <RecoilRoot>
       <RetrievalCall {...defaultProps} {...props} />
     </RecoilRoot>,
   );
+
+const mockedUseGetFiles = jest.requireMock('~/data-provider').useGetFiles as jest.Mock;
+
+beforeEach(() => {
+  mockedUseGetFiles.mockReturnValue({ data: [] });
+});
 
 describe('RetrievalCall - LGCY-02: Modern visual patterns', () => {
   it('renders ToolIcon with type="file_search"', () => {
@@ -115,7 +141,7 @@ describe('RetrievalCall - LGCY-02: Modern visual patterns', () => {
 describe('RetrievalCall - LGCY-02: Collapsible output panel', () => {
   it('shows collapsible panel when output exists and is clicked', () => {
     renderRetrievalCall({
-      output: 'file results here',
+      output: 'File: notes.txt\nRelevance: 0.8\nContent: file results here',
       initialProgress: 1,
       isSubmitting: false,
     });
@@ -182,5 +208,69 @@ describe('RetrievalCall - A11Y-04: screen reader status announcements', () => {
     const liveRegion = document.querySelector('[aria-live="polite"]');
     expect(liveRegion).not.toBeNull();
     expect(liveRegion!.className).toContain('sr-only');
+  });
+});
+
+describe('RetrievalCall - file preview resolution', () => {
+  it('resolves parsed filenames against known files and opens preview', () => {
+    mockedUseGetFiles.mockReturnValue({
+      data: [
+        {
+          file_id: 'file-123',
+          filename: 'Tutorial Imazing.pdf',
+          bytes: 2048,
+          type: 'application/pdf',
+        },
+      ],
+    });
+
+    renderRetrievalCall({
+      initialProgress: 1,
+      isSubmitting: false,
+      output:
+        'File: Tutorial_Imazing.pdf\nRelevance: 0.4442\nContent: Example content from parsed output',
+    });
+
+    fireEvent.click(screen.getByTestId('progress-text'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview: Tutorial Imazing.pdf' }));
+
+    expect(screen.getByTestId('file-preview-dialog')).toHaveAttribute('data-file-id', 'file-123');
+  });
+
+  it('keeps multiple parsed results clickable when only one attachment source is available', () => {
+    renderRetrievalCall({
+      initialProgress: 1,
+      isSubmitting: false,
+      output:
+        'File: Tutorial_Imazing.pdf\nRelevance: 0.4843\nContent: First result\n---\nFile: Tutorial_Imazing.pdf\nRelevance: 0.3751\nContent: Second result',
+      attachments: [
+        {
+          type: 'file_search',
+          toolCallId: 'call-1',
+          file_search: {
+            sources: [
+              {
+                fileId: 'file-123',
+                fileName: 'Tutorial Imazing.pdf',
+                relevance: 0.4843,
+                content: 'First result',
+                pages: [1],
+                pageRelevance: { 1: 0.4843 },
+                metadata: {
+                  fileType: 'application/pdf',
+                  fileBytes: 2048,
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getByTestId('progress-text'));
+
+    expect(screen.getAllByRole('button', { name: 'Preview: Tutorial Imazing.pdf' })).toHaveLength(
+      2,
+    );
   });
 });
