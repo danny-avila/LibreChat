@@ -353,15 +353,20 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   }
 
   /**
-   * DELETE /:principalType/:principalId/fields/:fieldPath — Remove a field from overrides.
+   * DELETE /:principalType/:principalId/fields — Remove a field from overrides.
+   * Field path is sent in the request body as { fieldPath: "dotted.path" }.
    */
   async function deleteConfigField(req: ServerRequest, res: Response) {
     try {
-      const { principalType, principalId, fieldPath } = req.params as {
+      const { principalType, principalId } = req.params as {
         principalType: string;
         principalId: string;
-        fieldPath: string;
       };
+      const { fieldPath } = req.body as { fieldPath?: string };
+
+      if (!fieldPath || typeof fieldPath !== 'string') {
+        return res.status(400).json({ error: 'fieldPath is required in request body' });
+      }
 
       if (!validatePrincipalType(principalType)) {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
