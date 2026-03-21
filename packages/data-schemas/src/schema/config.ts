@@ -47,6 +47,8 @@ const configSchema = new Schema<IConfig>(
   { timestamps: true },
 );
 
+// Enforce 1:1 principal-to-config (one config document per principal per tenant)
+configSchema.index({ principalType: 1, principalId: 1, tenantId: 1 }, { unique: true });
 configSchema.index({ principalType: 1, principalId: 1, isActive: 1, tenantId: 1 });
 configSchema.index({ priority: 1, isActive: 1, tenantId: 1 });
 
