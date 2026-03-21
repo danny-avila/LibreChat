@@ -24,27 +24,17 @@ export default function ListCard({
     ? localize('com_ui_prompt_group_button', { name, category })
     : localize('com_ui_prompt_group_button_no_category', { name });
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!onClick || e.target !== e.currentTarget) {
-      return;
-    }
-
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onClick();
-    }
-  };
-
   return (
-    <div
-      className="relative flex w-full cursor-pointer flex-col gap-2 rounded-xl px-3 pb-4 pt-3 text-start align-top text-[15px] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-      onClick={onClick}
-      onKeyDown={handleKeyDown}
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      aria-label={ariaLabel}
-      aria-describedby={`card-snippet-${name}`}
-    >
+    <div className="relative flex w-full cursor-pointer flex-col gap-2 rounded-xl px-3 pb-4 pt-3 text-start align-top text-[15px]">
+      {onClick && (
+        <button
+          type="button"
+          className="absolute inset-0 z-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+          onClick={onClick}
+          aria-label={ariaLabel}
+          aria-describedby={`card-snippet-${name}`}
+        />
+      )}
       <div className="flex w-full justify-between gap-2">
         <div className="flex min-w-0 flex-1 flex-row items-center gap-2 overflow-hidden">
           <CategoryIcon category={category} className="icon-md shrink-0" aria-hidden="true" />
