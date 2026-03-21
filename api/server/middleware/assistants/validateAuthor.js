@@ -1,5 +1,5 @@
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
-const { hasCapability } = require('~/server/middleware');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getAssistant } = require('~/models');
 
 /**

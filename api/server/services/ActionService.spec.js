@@ -3,12 +3,12 @@ const { domainParser, legacyDomainEncode, validateAndUpdateTool } = require('./A
 
 jest.mock('keyv');
 
-jest.mock('~/models/Action', () => ({
+jest.mock('~/models', () => ({
   getActions: jest.fn(),
   deleteActions: jest.fn(),
 }));
 
-const { getActions } = require('~/models/Action');
+const { getActions } = require('~/models');
 
 let mockDomainCache = {};
 jest.mock('~/cache/getLogStores', () => {

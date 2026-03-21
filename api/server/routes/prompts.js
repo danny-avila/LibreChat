@@ -32,7 +32,6 @@ const {
   getPrompt,
 } = require('~/models');
 const {
-  hasCapability,
   canAccessPromptGroupResource,
   canAccessPromptViaGroup,
   requireJwtAuth,
@@ -43,6 +42,7 @@ const {
   findAccessibleResources,
   grantPermission,
 } = require('~/server/services/PermissionService');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 const router = express.Router();
 

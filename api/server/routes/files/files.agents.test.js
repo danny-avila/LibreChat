@@ -2,15 +2,14 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { createMethods, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   SystemRoles,
   AccessRoleIds,
   ResourceType,
   PrincipalType,
 } = require('librechat-data-provider');
-const { SystemCapabilities } = require('@librechat/data-schemas');
 const { createAgent, createFile } = require('~/models');
 
 // Only mock the external dependencies that we don't want to test

@@ -32,7 +32,10 @@ const {
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
+  buildSummarizationHandlers,
+  markSummarizationUsage,
   createToolEndCallback,
+  agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
@@ -277,6 +280,7 @@ const createResponse = async (req, res) => {
   const request = validation.request;
   const agentId = request.model;
   const isStreaming = request.stream === true;
+  const summarizationConfig = req.config?.summarization;
 
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });
@@ -319,7 +323,7 @@ const createResponse = async (req, res) => {
           'invalid_request',
         );
       }
-      if (!(await getConvo(req.user?.id, request.previous_response_id))) {
+      if (!(await db.getConvo(req.user?.id, request.previous_response_id))) {
         return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
       }
     }
@@ -387,11 +391,11 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
-      allMessages,
-      {},
-      toolSet,
-    );
+    const {
+      messages: formattedMessages,
+      indexTokenCountMap,
+      summary: initialSummary,
+    } = formatAgentMessages(allMessages, {}, toolSet);
 
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = actuallyStreaming ? createResponseTracker() : null;
@@ -455,11 +459,12 @@ const createResponse = async (req, res) => {
         on_run_step: responsesHandlers.on_run_step,
         on_run_step_delta: responsesHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data) => {
+          handle: (event, data, metadata) => {
             responsesHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              collectedUsage.push(usage);
+              const taggedUsage = markSummarizationUsage(usage, metadata);
+              collectedUsage.push(taggedUsage);
             }
           },
         },
@@ -470,6 +475,10 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        on_agent_log: agentLogHandlerObj,
+        ...(summarizationConfig?.enabled !== false
+          ? buildSummarizationHandlers({ isStreaming: actuallyStreaming, res })
+          : {}),
       };
 
       // Create and run the agent
@@ -480,7 +489,9 @@ const createResponse = async (req, res) => {
         agents: [primaryConfig],
         messages: formattedMessages,
         indexTokenCountMap,
+        initialSummary,
         runId: responseId,
+        summarizationConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -612,11 +623,12 @@ const createResponse = async (req, res) => {
         on_run_step: aggregatorHandlers.on_run_step,
         on_run_step_delta: aggregatorHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data) => {
+          handle: (event, data, metadata) => {
             aggregatorHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              collectedUsage.push(usage);
+              const taggedUsage = markSummarizationUsage(usage, metadata);
+              collectedUsage.push(taggedUsage);
             }
           },
         },
@@ -627,6 +639,10 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        on_agent_log: agentLogHandlerObj,
+        ...(summarizationConfig?.enabled !== false
+          ? buildSummarizationHandlers({ isStreaming: false, res })
+          : {}),
       };
 
       const userId = req.user?.id ?? 'api-user';
@@ -636,7 +652,9 @@ const createResponse = async (req, res) => {
         agents: [primaryConfig],
         messages: formattedMessages,
         indexTokenCountMap,
+        initialSummary,
         runId: responseId,
+        summarizationConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {

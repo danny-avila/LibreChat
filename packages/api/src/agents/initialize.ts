@@ -34,6 +34,13 @@ import { primeResources } from './resources';
 import type { TFilterFilesByAgentAccess } from './resources';
 
 /**
+ * Fraction of context budget reserved as headroom when no explicit maxContextTokens is set.
+ * Reduced from 0.10 to 0.05 alongside the introduction of summarization, which actively
+ * manages overflow. `createRun` can further override this via `SummarizationConfig.reserveRatio`.
+ */
+const DEFAULT_RESERVE_RATIO = 0.05;
+
+/**
  * Extended agent type with additional fields needed after initialization
  */
 export type InitializedAgent = Agent & {
@@ -41,6 +48,8 @@ export type InitializedAgent = Agent & {
   attachments: IMongoFile[];
   toolContextMap: Record<string, unknown>;
   maxContextTokens: number;
+  /** Pre-ratio context budget (agentMaxContextNum - maxOutputTokensNum). Used by createRun to apply a configurable reserve ratio. */
+  baseContextTokens?: number;
   useLegacyContent: boolean;
   resendFiles: boolean;
   tool_resources?: AgentToolResources;
@@ -55,6 +64,8 @@ export type InitializedAgent = Agent & {
   hasDeferredTools?: boolean;
   /** Whether the actions capability is enabled (resolved during tool loading) */
   actionsEnabled?: boolean;
+  /** Maximum characters allowed in a single tool result before truncation. */
+  maxToolResultChars?: number;
 };
 
 /**
@@ -311,7 +322,7 @@ export async function initializeAgent(
     actionsEnabled: undefined,
   };
 
-  const { getOptions, overrideProvider } = getProviderConfig({
+  const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
     provider,
     appConfig: req.config,
   });
@@ -405,10 +416,24 @@ export async function initializeAgent(
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || 18000;
   const maxOutputTokensNum = Number(maxOutputTokens) || 0;
+  const baseContextTokens = Math.max(0, agentMaxContextNum - maxOutputTokensNum);
 
   const finalAttachments: IMongoFile[] = (primedAttachments ?? [])
     .filter((a): a is TFile => a != null)
     .map((a) => a as unknown as IMongoFile);
+
+  const endpointConfigs = req.config?.endpoints;
+  const providerConfig =
+    customEndpointConfig ?? endpointConfigs?.[agent.provider as keyof typeof endpointConfigs];
+  const providerMaxToolResultChars =
+    providerConfig != null &&
+    typeof providerConfig === 'object' &&
+    !Array.isArray(providerConfig) &&
+    'maxToolResultChars' in providerConfig
+      ? (providerConfig.maxToolResultChars as number | undefined)
+      : undefined;
+  const maxToolResultCharsResolved =
+    providerMaxToolResultChars ?? endpointConfigs?.all?.maxToolResultChars;
 
   const initializedAgent: InitializedAgent = {
     ...agent,
@@ -419,14 +444,16 @@ export async function initializeAgent(
     toolDefinitions,
     hasDeferredTools,
     actionsEnabled,
+    baseContextTokens,
     attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
+    maxToolResultChars: maxToolResultCharsResolved,
     maxContextTokens:
       maxContextTokens != null && maxContextTokens > 0
         ? maxContextTokens
-        : Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
+        : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
   };
 
   return initializedAgent;

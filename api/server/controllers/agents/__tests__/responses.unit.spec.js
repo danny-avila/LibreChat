@@ -104,10 +104,20 @@ jest.mock('~/server/services/ToolService', () => ({
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
 const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
 
-jest.mock('~/server/controllers/agents/callbacks', () => ({
-  createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-  createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-}));
+jest.mock('~/server/controllers/agents/callbacks', () => {
+  const noop = { handle: jest.fn() };
+  return {
+    createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+    createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+    markSummarizationUsage: jest.fn().mockImplementation((usage) => usage),
+    agentLogHandlerObj: noop,
+    buildSummarizationHandlers: jest.fn().mockReturnValue({
+      on_summarize_start: noop,
+      on_summarize_delta: noop,
+      on_summarize_complete: noop,
+    }),
+  };
+});
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
@@ -175,7 +185,7 @@ describe('createResponse controller', () => {
 
   describe('conversation ownership validation', () => {
     it('should skip ownership check when previous_response_id is not provided', async () => {
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       await createResponse(req, res);
       expect(getConvo).not.toHaveBeenCalled();
     });
@@ -202,7 +212,7 @@ describe('createResponse controller', () => {
 
     it('should return 404 when conversation is not owned by user', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -225,7 +235,7 @@ describe('createResponse controller', () => {
 
     it('should proceed when conversation is owned by user', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -248,7 +258,7 @@ describe('createResponse controller', () => {
 
     it('should return 500 when getConvo throws a DB error', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models/Conversation');
+      const { getConvo } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -370,28 +380,7 @@ describe('createResponse controller', () => {
     it('should collect usage from on_chat_model_end events', async () => {
       const api = require('@librechat/api');
 
-      let capturedOnChatModelEnd;
-      api.createAggregatorEventHandlers.mockImplementation(() => {
-        return {
-          on_message_delta: { handle: jest.fn() },
-          on_reasoning_delta: { handle: jest.fn() },
-          on_run_step: { handle: jest.fn() },
-          on_run_step_delta: { handle: jest.fn() },
-          on_chat_model_end: {
-            handle: jest.fn((event, data) => {
-              if (capturedOnChatModelEnd) {
-                capturedOnChatModelEnd(event, data);
-              }
-            }),
-          },
-        };
-      });
-
       api.createRun.mockImplementation(async ({ customHandlers }) => {
-        capturedOnChatModelEnd = (event, data) => {
-          customHandlers.on_chat_model_end.handle(event, data);
-        };
-
         return {
           processStream: jest.fn().mockImplementation(async () => {
             customHandlers.on_chat_model_end.handle('on_chat_model_end', {
@@ -408,7 +397,6 @@ describe('createResponse controller', () => {
       });
 
       await createResponse(req, res);
-
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
         expect.any(Object),
         expect.objectContaining({

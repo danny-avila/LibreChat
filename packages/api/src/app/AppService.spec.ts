@@ -181,6 +181,43 @@ describe('AppService', () => {
     );
   });
 
+  it('should enable summarization when it is configured without enabled flag', async () => {
+    const config = {
+      summarization: {
+        prompt: 'Summarize with emphasis on next actions',
+      },
+    } as Partial<TCustomConfig> & { summarization: Record<string, unknown> };
+
+    const result = await AppService({ config });
+    expect(result).toEqual(
+      expect.objectContaining({
+        summarization: expect.objectContaining({
+          enabled: true,
+          prompt: 'Summarize with emphasis on next actions',
+        }),
+      }),
+    );
+  });
+
+  it('should preserve explicit summarization disable flag', async () => {
+    const config = {
+      summarization: {
+        enabled: false,
+        prompt: 'Ignored while disabled',
+      },
+    } as Partial<TCustomConfig> & { summarization: Record<string, unknown> };
+
+    const result = await AppService({ config });
+    expect(result).toEqual(
+      expect.objectContaining({
+        summarization: expect.objectContaining({
+          enabled: false,
+          prompt: 'Ignored while disabled',
+        }),
+      }),
+    );
+  });
+
   it('should load and format tools accurately with defined structure', async () => {
     const config = {};
 

@@ -65,12 +65,18 @@ export interface SerializableJobData {
  * ```
  */
 export interface UsageMetadata {
+  /** Logical usage bucket for accounting/reporting. Defaults to model response usage. */
+  usage_type?: 'message' | 'summarization';
   /** Total input tokens (prompt tokens) */
   input_tokens?: number;
   /** Total output tokens (completion tokens) */
   output_tokens?: number;
+  /** Total billed tokens when provided by the model/runtime */
+  total_tokens?: number;
   /** Model identifier that generated this usage */
   model?: string;
+  /** Provider identifier that generated this usage */
+  provider?: string;
   /**
    * OpenAI-style cache token details.
    * Present for OpenAI models (GPT-4, o1, etc.)
