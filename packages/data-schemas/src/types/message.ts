@@ -39,6 +39,10 @@ export interface IMessage extends Document {
   iconURL?: string;
   addedConvo?: boolean;
   metadata?: Record<string, unknown>;
+  contextMeta?: {
+    calibrationRatio?: number;
+    encoding?: string;
+  };
   attachments?: unknown[];
   expiredAt?: Date | null;
   createdAt?: Date;

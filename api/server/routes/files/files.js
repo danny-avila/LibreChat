@@ -27,11 +27,11 @@ const {
 const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { cleanFileName } = require('~/server/utils/files');
-const { hasCapability } = require('~/server/middleware');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
 const db = require('~/models');
