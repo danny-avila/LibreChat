@@ -66,6 +66,7 @@ jest.mock('~/models', () => ({
   deleteTokens: jest.fn(),
   removeUserFromAllGroups: jest.fn(),
   deleteAclEntries: jest.fn(),
+  getSoleOwnedResourceIds: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('~/server/services/PluginService', () => ({
@@ -98,10 +99,6 @@ jest.mock('~/server/services/Files/process', () => ({
 
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
-}));
-
-jest.mock('~/server/services/PermissionService', () => ({
-  getSoleOwnedResourceIds: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('~/cache', () => ({
