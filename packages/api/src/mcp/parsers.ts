@@ -83,6 +83,10 @@ function parseAsString(result: t.MCPToolCallResponse): string {
  * Converts MCPToolCallResponse content into a plain-text string plus optional artifacts
  * (images, UI resources). All providers receive string content; images are separated into
  * artifacts and merged back by the agents package via formatArtifactPayload / formatAnthropicArtifactContent.
+ *
+ * @param provider - Used only to distinguish recognized vs. unrecognized providers.
+ * All recognized providers currently produce identical string output;
+ * provider-specific artifact merging is delegated to the agents package.
  */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
@@ -184,16 +188,16 @@ UI Resource Markers Available:
   }
 
   let artifacts: t.Artifacts = undefined;
-  if (imageUrls.length) {
+  if (imageUrls.length > 0) {
     artifacts = { content: imageUrls };
   }
 
-  if (uiResources.length) {
+  if (uiResources.length > 0) {
     artifacts = {
       ...artifacts,
       [Tools.ui_resources]: { data: uiResources },
     };
   }
 
-  return [currentTextBlock || '(No response)', artifacts];
+  return [currentTextBlock || (artifacts !== undefined ? '' : '(No response)'), artifacts];
 }

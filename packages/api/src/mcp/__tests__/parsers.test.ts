@@ -96,7 +96,8 @@ describe('formatToolContent', () => {
         content: [{ type: 'image', data: 'https://example.com/image.png', mimeType: 'image/png' }],
       };
 
-      const [_content, artifacts] = formatToolContent(result, 'openai');
+      const [content, artifacts] = formatToolContent(result, 'openai');
+      expect(content).toBe('');
       expect(artifacts).toEqual({
         content: [
           {
@@ -112,7 +113,8 @@ describe('formatToolContent', () => {
         content: [{ type: 'image', data: 'iVBORw0KGgoAAAA...', mimeType: 'image/png' }],
       };
 
-      const [_content, artifacts] = formatToolContent(result, 'openai');
+      const [content, artifacts] = formatToolContent(result, 'openai');
+      expect(content).toBe('');
       expect(artifacts).toEqual({
         content: [
           {
@@ -121,6 +123,29 @@ describe('formatToolContent', () => {
           },
         ],
       });
+    });
+
+    it('should return empty string for image-only content when artifacts exist', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'base64data', mimeType: 'image/png' }],
+      };
+      const [content, artifacts] = formatToolContent(result, 'anthropic');
+      expect(content).toBe('');
+      expect(artifacts).toBeDefined();
+      expect(artifacts?.content).toHaveLength(1);
+    });
+
+    it('should handle multiple images without text', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          { type: 'image', data: 'https://example.com/a.png', mimeType: 'image/png' },
+          { type: 'image', data: 'https://example.com/b.jpg', mimeType: 'image/jpeg' },
+        ],
+      };
+      const [content, artifacts] = formatToolContent(result, 'google');
+      expect(content).toBe('');
+      expect(artifacts).toBeDefined();
+      expect(artifacts?.content).toHaveLength(2);
     });
   });
 
