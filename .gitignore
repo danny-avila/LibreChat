@@ -63,6 +63,7 @@ bower_components/
 .clineignore
 .cursor
 .aider*
+.bg-shell/
 
 # Floobits
 .floo
