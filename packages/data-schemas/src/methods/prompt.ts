@@ -2,6 +2,7 @@ import { ResourceType, SystemCategories } from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
 import type { IAclEntry, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
 import { escapeRegExp } from '~/utils/string';
+import { isValidObjectIdString } from '~/utils/objectId';
 import logger from '~/config/winston';
 
 export interface PromptDeps {
@@ -17,8 +18,6 @@ export interface PromptDeps {
 export function createPromptMethods(mongoose: typeof import('mongoose'), deps: PromptDeps) {
   const { getSoleOwnedResourceIds } = deps;
   const { ObjectId } = mongoose.Types;
-
-  const isValidObjectIdString = (id: string) => /^[a-f\d]{24}$/i.test(id);
 
   /**
    * Batch-fetches production prompts for an array of prompt groups

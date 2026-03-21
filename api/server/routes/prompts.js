@@ -1,6 +1,6 @@
 const express = require('express');
 const { ObjectId } = require('mongodb');
-const { logger } = require('@librechat/data-schemas');
+const { logger, isValidObjectIdString } = require('@librechat/data-schemas');
 const {
   generateCheckAccess,
   markPublicPromptGroups,
@@ -59,7 +59,8 @@ const checkPromptCreate = generateCheckAccess({
   getRoleByName,
 });
 
-const isValidObjectIdString = (id) => /^[a-f\d]{24}$/i.test(id);
+router.use(requireJwtAuth);
+router.use(checkPromptAccess);
 
 const checkGlobalPromptShare = generateCheckAccess({
   permissionType: PermissionTypes.PROMPTS,
@@ -69,9 +70,6 @@ const checkGlobalPromptShare = generateCheckAccess({
   },
   getRoleByName,
 });
-
-router.use(requireJwtAuth);
-router.use(checkPromptAccess);
 
 /**
  * Route to get single prompt group by its ID
