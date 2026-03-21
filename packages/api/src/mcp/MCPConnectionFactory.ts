@@ -58,9 +58,13 @@ export class MCPConnectionFactory {
    */
   static async discoverTools(
     basic: t.BasicConnectionOptions,
-    oauth?: Omit<t.OAuthConnectionOptions, 'returnOnOAuth'>,
+    options?: Omit<t.OAuthConnectionOptions, 'returnOnOAuth'> | t.UserConnectionContext,
   ): Promise<ToolDiscoveryResult> {
-    const factory = new this(basic, oauth ? { ...oauth, returnOnOAuth: true } : undefined);
+    if (options != null && 'useOAuth' in options) {
+      const factory = new this(basic, { ...options, returnOnOAuth: true });
+      return factory.discoverToolsInternal();
+    }
+    const factory = new this(basic, options);
     return factory.discoverToolsInternal();
   }
 
@@ -187,31 +191,36 @@ export class MCPConnectionFactory {
     return null;
   }
 
-  protected constructor(basic: t.BasicConnectionOptions, oauth?: t.OAuthConnectionOptions) {
+  protected constructor(
+    basic: t.BasicConnectionOptions,
+    options?: t.OAuthConnectionOptions | t.UserConnectionContext,
+  ) {
     this.serverConfig = processMCPEnv({
-      user: oauth?.user,
-      body: oauth?.requestBody,
+      user: options?.user,
+      body: options?.requestBody,
       dbSourced: basic.dbSourced,
       options: basic.serverConfig,
-      customUserVars: oauth?.customUserVars,
+      customUserVars: options?.customUserVars,
     });
     this.serverName = basic.serverName;
-    this.useOAuth = !!oauth?.useOAuth;
     this.useSSRFProtection = basic.useSSRFProtection === true;
     this.allowedDomains = basic.allowedDomains;
-    this.connectionTimeout = oauth?.connectionTimeout;
-    this.logPrefix = oauth?.user
-      ? `[MCP][${basic.serverName}][${oauth.user.id}]`
+    this.connectionTimeout = options?.connectionTimeout;
+    this.logPrefix = options?.user
+      ? `[MCP][${basic.serverName}][${options.user.id}]`
       : `[MCP][${basic.serverName}]`;
 
-    if (oauth?.useOAuth) {
-      this.userId = oauth.user?.id;
-      this.flowManager = oauth.flowManager;
-      this.tokenMethods = oauth.tokenMethods;
-      this.signal = oauth.signal;
-      this.oauthStart = oauth.oauthStart;
-      this.oauthEnd = oauth.oauthEnd;
-      this.returnOnOAuth = oauth.returnOnOAuth;
+    if (options != null && 'useOAuth' in options) {
+      this.useOAuth = true;
+      this.userId = options.user?.id;
+      this.flowManager = options.flowManager;
+      this.tokenMethods = options.tokenMethods;
+      this.signal = options.signal;
+      this.oauthStart = options.oauthStart;
+      this.oauthEnd = options.oauthEnd;
+      this.returnOnOAuth = options.returnOnOAuth;
+    } else {
+      this.useOAuth = false;
     }
   }
 

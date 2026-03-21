@@ -174,18 +174,22 @@ export interface BasicConnectionOptions {
   dbSourced?: boolean;
 }
 
-export interface OAuthConnectionOptions {
+/** User context for placeholder resolution in MCP connections (non-OAuth and OAuth alike) */
+export interface UserConnectionContext {
   user?: IUser;
-  useOAuth: true;
-  requestBody?: RequestBody;
   customUserVars?: Record<string, string>;
+  requestBody?: RequestBody;
+  connectionTimeout?: number;
+}
+
+export interface OAuthConnectionOptions extends UserConnectionContext {
+  useOAuth: true;
   flowManager: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
   oauthStart?: (authURL: string) => Promise<void>;
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
-  connectionTimeout?: number;
 }
 
 export interface ToolDiscoveryOptions {
