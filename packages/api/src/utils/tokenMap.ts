@@ -22,9 +22,10 @@ export function hydrateMissingIndexTokenCounts({
   const hydratedMap: Record<number, number> = {};
 
   if (indexTokenCountMap) {
-    for (const [index, tokenCount] of Object.entries(indexTokenCountMap)) {
+    for (const key in indexTokenCountMap) {
+      const tokenCount = indexTokenCountMap[Number(key)];
       if (typeof tokenCount === 'number' && Number.isFinite(tokenCount) && tokenCount > 0) {
-        hydratedMap[Number(index)] = tokenCount;
+        hydratedMap[Number(key)] = tokenCount;
       }
     }
   }
