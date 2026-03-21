@@ -22,7 +22,6 @@ const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getAppConfig } = require('~/server/services/Config');
-const { getSoleOwnedResourceIds } = require('~/server/services/PermissionService');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -111,7 +110,7 @@ const deleteUserMcpServers = async (userId) => {
     }
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    const soleOwnedIds = await getSoleOwnedResourceIds(userObjectId, ResourceType.MCPSERVER);
+    const soleOwnedIds = await db.getSoleOwnedResourceIds(userObjectId, ResourceType.MCPSERVER);
 
     const authoredServers = await MCPServer.find({ author: userObjectId })
       .select('_id serverName')
