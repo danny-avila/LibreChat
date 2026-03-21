@@ -34,20 +34,18 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
       onHeightChange(0);
     }
   };
-
+  const formattedMessage = banner.message.replace(/\n/g, '<br />');
   return (
     <div
       ref={bannerRef}
-      className="sticky top-0 z-20 flex items-center bg-presentation px-3 py-2 text-text-primary dark:bg-gradient-to-r md:relative"
+      className="sticky top-0 z-20 flex items-center bg-presentation px-3 py-2 text-black dark:text-white md:relative"
     >
       <div
         className={cn(
-          'md:text-md text-xs sm:text-sm',
-          'w-full whitespace-normal break-words text-center',
-          '[&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-400',
+          'mw-full whitespace-pre-line text-center text-sm text-black dark:text-white md:text-base lg:text-lg',
           !banner.persistable && 'px-4',
         )}
-        dangerouslySetInnerHTML={{ __html: banner.message }}
+        dangerouslySetInnerHTML={{ __html: formattedMessage }}
       ></div>
       {/* {!banner.persistable && (
         <Button
