@@ -26,6 +26,6 @@ export default function CreatePromptButton() {
           </Link>
         </Button>
       }
-    ></TooltipAnchor>
+    />
   );
 }
