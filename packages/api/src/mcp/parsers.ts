@@ -18,7 +18,6 @@ const RECOGNIZED_PROVIDERS = new Set([
   'ollama',
   'bedrock',
 ]);
-const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'azureopenai', 'openai']);
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
   // google: (item) => ({
@@ -81,13 +80,9 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 }
 
 /**
- * Converts MCPToolCallResponse content into recognized content block types
- * First element: string or formatted content (excluding image_url)
- * Second element: Recognized types - "image", "image_url", "text", "json"
- *
- * @param  result - The MCPToolCallResponse object
- * @param provider - The provider name (google, anthropic, openai)
- * @returns Tuple of content and image_urls
+ * Converts MCPToolCallResponse content into a plain-text string plus optional artifacts
+ * (images, UI resources). All providers receive string content; images are separated into
+ * artifacts and merged back by the agents package via formatArtifactPayload / formatAnthropicArtifactContent.
  */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
@@ -99,13 +94,12 @@ export function formatToolContent(
 
   const content = result?.content ?? [];
   if (!content.length) {
-    return [[{ type: 'text', text: '(No response)' }], undefined];
+    return ['(No response)', undefined];
   }
 
-  const formattedContent: t.FormattedContent[] = [];
   const imageUrls: t.FormattedContent[] = [];
-  let currentTextBlock = '';
   const uiResources: UIResource[] = [];
+  let currentTextBlock = '';
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -122,17 +116,11 @@ export function formatToolContent(
       if (!isImageContent(item)) {
         return;
       }
-      if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
-        formattedContent.push({ type: 'text', text: currentTextBlock });
-        currentTextBlock = '';
-      }
       const formatter = imageFormatters.default as t.ImageFormatter;
       const formattedImage = formatter(item);
 
       if (formattedImage.type === 'image_url') {
         imageUrls.push(formattedImage);
-      } else {
-        formattedContent.push(formattedImage);
       }
     },
 
@@ -195,10 +183,6 @@ UI Resource Markers Available:
     currentTextBlock += uiInstructions;
   }
 
-  if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
-    formattedContent.push({ type: 'text', text: currentTextBlock });
-  }
-
   let artifacts: t.Artifacts = undefined;
   if (imageUrls.length) {
     artifacts = { content: imageUrls };
@@ -211,9 +195,5 @@ UI Resource Markers Available:
     };
   }
 
-  if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
-    return [formattedContent, artifacts];
-  }
-
-  return [currentTextBlock, artifacts];
+  return [currentTextBlock || '(No response)', artifacts];
 }
