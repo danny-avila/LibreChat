@@ -1,5 +1,4 @@
-version: '3.8'
-
+# Compose Specification (Docker Compose v2+) — no version key needed
 services:
   vectordb:
     image: pgvector/pgvector:0.8.0-pg15-trixie
@@ -11,6 +10,12 @@ services:
       - pgdata2:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   rag_api:
     image: registry.librechat.ai/danny-avila/librechat-rag-api-dev:latest
@@ -23,7 +28,8 @@ services:
     ports:
       - "${RAG_PORT}:${RAG_PORT}"
     depends_on:
-      - vectordb
+      vectordb:
+        condition: service_healthy
     env_file:
       - .env
 
