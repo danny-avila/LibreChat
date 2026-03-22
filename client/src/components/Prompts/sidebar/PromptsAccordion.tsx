@@ -12,9 +12,7 @@ export default function PromptsAccordion() {
         {...groupsNav}
       >
         <FilterPrompts />
-        <div className="flex w-full flex-row items-center justify-end">
-          <AutoSendPrompt className="text-xs dark:text-white" />
-        </div>
+        <AutoSendPrompt />
       </PromptSidePanel>
     </div>
   );
