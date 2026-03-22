@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { lowlight } from 'lowlight';
 import { useRecoilValue } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
-import { lowlight } from 'lowlight';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import { useProgress, useLocalize, useExpandCollapse } from '~/hooks';

@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
-import { ChevronDown } from 'lucide-react';
 import CancelledIcon from './CancelledIcon';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '~/utils';
 
 const wrapperClass =

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
   Tools,
   Constants,
@@ -6,7 +7,6 @@ import {
   imageGenTools,
   isImageVisionTool,
 } from 'librechat-data-provider';
-import { memo } from 'react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
 import { ImageGen, ExecuteCode, AgentUpdate, EmptyText, Reasoning, Summary, Text } from './Parts';
 import { ErrorMessage } from './MessageContent';
@@ -158,10 +158,7 @@ const Part = memo(function Part({
           isLast={isLast}
         />
       );
-    } else if (
-      isToolCall &&
-      (toolCall.name === 'file_search' || toolCall.name === 'retrieval')
-    ) {
+    } else if (isToolCall && (toolCall.name === 'file_search' || toolCall.name === 'retrieval')) {
       return (
         <RetrievalCall
           initialProgress={toolCall.progress ?? 0.1}

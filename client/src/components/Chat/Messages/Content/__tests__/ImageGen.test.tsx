@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
+import { render, screen } from '@testing-library/react';
 import ImageGen from '../Parts/OpenAIImageGen/OpenAIImageGen';
 
 jest.mock('~/hooks', () => ({

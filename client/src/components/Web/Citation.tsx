@@ -1,6 +1,6 @@
 import { memo, useState, useContext, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import { Button } from '@librechat/client';
+import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import type { CitationProps } from './types';
 import { SourceHovercard, FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';

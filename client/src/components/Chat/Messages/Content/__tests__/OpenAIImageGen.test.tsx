@@ -18,18 +18,8 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/components/Chat/Messages/Content/Image', () => ({
   __esModule: true,
-  default: ({
-    altText,
-    imagePath,
-  }: {
-    altText: string;
-    imagePath: string;
-  }) => (
-    <div
-      data-testid="image-component"
-      data-alt={altText}
-      data-src={imagePath}
-    />
+  default: ({ altText, imagePath }: { altText: string; imagePath: string }) => (
+    <div data-testid="image-component" data-alt={altText} data-src={imagePath} />
   ),
 }));
 

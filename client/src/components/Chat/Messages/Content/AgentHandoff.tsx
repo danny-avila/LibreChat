@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { ChevronDown } from 'lucide-react';
+import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import MessageIcon from '~/components/Share/MessageIcon';
-import { useAgentsMapContext } from '~/Providers';
 import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useAgentsMapContext } from '~/Providers';
 import { cn } from '~/utils';
 
 interface AgentHandoffProps {

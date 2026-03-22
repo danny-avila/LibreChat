@@ -10,8 +10,8 @@ import {
 } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
-import { useMCPIconMap } from '~/hooks/MCP';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
+import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
