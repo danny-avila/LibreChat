@@ -1,10 +1,20 @@
 const fs = require('fs');
-const { EnvVar } = require('@librechat/agents');
+const path = require('path');
+const os = require('os');
+const { EnvVar, getCodeBaseURL } = require('@librechat/agents');
+const {
+  logAxiosError,
+  createAxiosInstance,
+  codeServerHttpAgent,
+  codeServerHttpsAgent,
+} = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getStrategyFunctions } = require('./strategies');
 const { updateFile } = require('~/models');
+
+const axios = createAxiosInstance();
 
 /**
  * Provisions a file to the code execution environment.
@@ -78,9 +88,7 @@ async function provisionToVectorDB({ req, file, entity_id }) {
 
   // The uploadVectors function expects a file-like object with a `path` property for fs.createReadStream.
   // Since we're provisioning from storage (not a multer upload), we need to stream to a temp file first.
-  const os = require('os');
-  const path = require('path');
-  const tmpPath = path.join(os.tmpdir(), `provision-${file.file_id}-${file.filename}`);
+  const tmpPath = path.join(os.tmpdir(), `provision-${file.file_id}${path.extname(file.filename)}`);
 
   try {
     const stream = await getDownloadStream(req, file.filepath);
@@ -129,7 +137,134 @@ async function provisionToVectorDB({ req, file, entity_id }) {
   }
 }
 
+/**
+ * Check if a single code env file is still alive by querying its session.
+ *
+ * @param {object} params
+ * @param {import('librechat-data-provider').TFile} params.file - File with metadata.fileIdentifier
+ * @param {string} params.apiKey - CODE_API_KEY
+ * @returns {Promise<boolean>} true if the file is still accessible in the code env
+ */
+async function checkCodeEnvFileAlive({ file, apiKey }) {
+  if (!file.metadata?.fileIdentifier) {
+    return false;
+  }
+
+  try {
+    const baseURL = getCodeBaseURL();
+    const [filePath, queryString] = file.metadata.fileIdentifier.split('?');
+    const session_id = filePath.split('/')[0];
+
+    let queryParams = {};
+    if (queryString) {
+      queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
+    }
+
+    const response = await axios({
+      method: 'get',
+      url: `${baseURL}/files/${session_id}`,
+      params: { detail: 'summary', ...queryParams },
+      headers: {
+        'User-Agent': 'LibreChat/1.0',
+        'X-API-Key': apiKey,
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 5000,
+    });
+
+    const found = response.data?.some((f) => f.name?.startsWith(filePath));
+    return !!found;
+  } catch (error) {
+    logAxiosError({
+      message: `[checkCodeEnvFileAlive] Error checking file "${file.filename}": ${error.message}`,
+      error,
+    });
+    return false;
+  }
+}
+
+/**
+ * Batch-check code env file liveness by session_id.
+ * Groups files by session, makes one API call per session.
+ *
+ * @param {object} params
+ * @param {import('librechat-data-provider').TFile[]} params.files - Files with metadata.fileIdentifier
+ * @param {string} params.userId - User ID for loading CODE_API_KEY
+ * @param {number} [params.staleSafeWindowMs=21600000] - Skip check if file updated within this window (default 6h)
+ * @returns {Promise<Set<string>>} Set of file_ids that are confirmed alive
+ */
+async function checkSessionsAlive({ files, userId, staleSafeWindowMs = 6 * 60 * 60 * 1000 }) {
+  const result = await loadAuthValues({ userId, authFields: [EnvVar.CODE_API_KEY] });
+  const apiKey = result[EnvVar.CODE_API_KEY];
+  const aliveFileIds = new Set();
+  const now = Date.now();
+
+  // Group files by session_id, skip recently-updated files (fast pre-filter)
+  /** @type {Map<string, Array<{ file_id: string; filePath: string }>>} */
+  const sessionGroups = new Map();
+
+  for (const file of files) {
+    if (!file.metadata?.fileIdentifier) {
+      continue;
+    }
+
+    const updatedAt = file.updatedAt ? new Date(file.updatedAt).getTime() : 0;
+    if (now - updatedAt < staleSafeWindowMs) {
+      aliveFileIds.add(file.file_id);
+      continue;
+    }
+
+    const [filePath] = file.metadata.fileIdentifier.split('?');
+    const session_id = filePath.split('/')[0];
+
+    if (!sessionGroups.has(session_id)) {
+      sessionGroups.set(session_id, []);
+    }
+    sessionGroups.get(session_id).push({ file_id: file.file_id, filePath });
+  }
+
+  // One API call per session (in parallel)
+  const baseURL = getCodeBaseURL();
+  const sessionChecks = Array.from(sessionGroups.entries()).map(
+    async ([session_id, fileEntries]) => {
+      try {
+        const response = await axios({
+          method: 'get',
+          url: `${baseURL}/files/${session_id}`,
+          params: { detail: 'summary' },
+          headers: {
+            'User-Agent': 'LibreChat/1.0',
+            'X-API-Key': apiKey,
+          },
+          httpAgent: codeServerHttpAgent,
+          httpsAgent: codeServerHttpsAgent,
+          timeout: 5000,
+        });
+
+        const remoteFiles = response.data ?? [];
+        for (const { file_id, filePath } of fileEntries) {
+          if (remoteFiles.some((f) => f.name?.startsWith(filePath))) {
+            aliveFileIds.add(file_id);
+          }
+        }
+      } catch (error) {
+        logAxiosError({
+          message: `[checkSessionsAlive] Error checking session "${session_id}": ${error.message}`,
+          error,
+        });
+        // All files in this session treated as expired
+      }
+    },
+  );
+
+  await Promise.allSettled(sessionChecks);
+  return aliveFileIds;
+}
+
 module.exports = {
   provisionToCodeEnv,
   provisionToVectorDB,
+  checkCodeEnvFileAlive,
+  checkSessionsAlive,
 };
