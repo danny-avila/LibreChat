@@ -1,6 +1,7 @@
 export { default as PromptName } from './PromptName';
 export { default as PromptsView } from './PromptsView';
 export { default as PromptEditor } from './PromptEditor';
+export { default as PromptEditorView } from './PromptEditorView';
 export { default as PromptForm } from './PromptForm';
 export { default as PreviewLabels } from './PreviewLabels';
 export { default as PromptGroupsList } from './Groups/List';

@@ -73,7 +73,7 @@ const CreatePromptForm = ({
 
   const createPromptMutation = useCreatePrompt({
     onSuccess: (response) => {
-      navigate(`/d/prompts/${response.prompt.groupId}`, { replace: true });
+      navigate(`/prompts/${response.prompt.groupId}`, { replace: true });
     },
   });
 

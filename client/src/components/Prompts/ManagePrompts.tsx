@@ -14,7 +14,7 @@ export default function ManagePrompts({ className }: { className?: string }) {
     setPromptsCategory('');
   }, [setPromptsName, setPromptsCategory]);
 
-  const customLink = useCustomLink('/d/prompts', clickCallback);
+  const customLink = useCustomLink('/prompts/new', clickCallback);
   const clickHandler = (e: React.MouseEvent<HTMLButtonElement>) => {
     customLink(e as unknown as React.MouseEvent<HTMLAnchorElement>);
   };

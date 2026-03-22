@@ -9,6 +9,7 @@ import {
   RequestPasswordReset,
 } from '~/components/Auth';
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
+import { PromptEditorView } from '~/components/Prompts';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
@@ -110,6 +111,14 @@ export const router = createBrowserRouter(
             {
               path: 'search',
               element: <Search />,
+            },
+            {
+              path: 'prompts/new',
+              element: <PromptEditorView />,
+            },
+            {
+              path: 'prompts/:promptId',
+              element: <PromptEditorView />,
             },
             {
               path: 'agents',

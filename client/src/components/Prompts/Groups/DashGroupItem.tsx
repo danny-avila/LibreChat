@@ -65,7 +65,7 @@ function DashGroupItemComponent({ group }: DashGroupItemProps) {
     (e: KeyboardEvent<HTMLButtonElement>) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        navigate(`/d/prompts/${group._id}`, { replace: true });
+        navigate(`/prompts/${group._id}`, { replace: true });
       }
     },
     [group._id, navigate],
@@ -76,7 +76,7 @@ function DashGroupItemComponent({ group }: DashGroupItemProps) {
   }, [group._id, deleteGroup]);
 
   const handleContainerClick = useCallback(() => {
-    navigate(`/d/prompts/${group._id}`, { replace: true });
+    navigate(`/prompts/${group._id}`, { replace: true });
   }, [group._id, navigate]);
 
   return (

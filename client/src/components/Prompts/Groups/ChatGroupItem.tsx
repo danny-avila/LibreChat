@@ -113,7 +113,7 @@ function ChatGroupItem({ group }: { group: TPromptGroup }) {
                     className="cursor-pointer rounded-lg text-text-primary hover:bg-surface-hover focus:bg-surface-hover disabled:cursor-not-allowed"
                     asChild
                   >
-                    <Link to={`/d/prompts/${group._id}`}>
+                    <Link to={`/prompts/${group._id}`}>
                       <EditIcon className="mr-2 h-4 w-4 text-text-primary" aria-hidden="true" />
                       <span>{localize('com_ui_edit')}</span>
                     </Link>

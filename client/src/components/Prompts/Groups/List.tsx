@@ -33,7 +33,7 @@ export default function List({
             className={cn('w-full bg-transparent', !isChatRoute && 'mx-2')}
             aria-label={localize('com_ui_create_prompt')}
           >
-            <Link to="/d/prompts/new">
+            <Link to="/prompts/new">
               <Plus className="size-4" aria-hidden="true" />
               {localize('com_ui_create_prompt')}
             </Link>
