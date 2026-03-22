@@ -2,6 +2,7 @@ import { ResourceType, SystemCategories } from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
 import type { IAclEntry, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
 import { escapeRegExp } from '~/utils/string';
+import { isValidObjectIdString } from '~/utils/objectId';
 import logger from '~/config/winston';
 
 export interface PromptDeps {
@@ -72,12 +73,14 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       }
 
       const groups = await PromptGroup.find(query)
-        .sort({ createdAt: -1 })
-        .select('name oneliner category author authorName createdAt updatedAt command productionId')
+        .sort({ numberOfGenerations: -1, updatedAt: -1, _id: 1 })
+        .select(
+          'name numberOfGenerations oneliner category author authorName createdAt updatedAt command productionId',
+        )
         .lean();
       return await attachProductionPrompts(groups as unknown as Array<Record<string, unknown>>);
     } catch (error) {
-      console.error('Error getting all prompt groups', error);
+      logger.error('Error getting all prompt groups', error);
       return { message: 'Error getting all prompt groups' };
     }
   }
@@ -122,7 +125,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
 
       const [groups, totalPromptGroups] = await Promise.all([
         PromptGroup.find(query)
-          .sort({ createdAt: -1 })
+          .sort({ numberOfGenerations: -1, updatedAt: -1, _id: 1 })
           .skip(skip)
           .limit(limit)
           .select(
@@ -143,7 +146,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
         pages: Math.ceil(totalPromptGroups / validatedPageSize).toString(),
       };
     } catch (error) {
-      console.error('Error getting prompt groups', error);
+      logger.error('Error getting prompt groups', error);
       return { message: 'Error getting prompt groups' };
     }
   }
@@ -207,35 +210,52 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       _id: { $in: accessibleIds },
     };
 
+    let matchQuery: Record<string, unknown> = baseQuery;
+
     if (after && typeof after === 'string' && after !== 'undefined' && after !== 'null') {
       try {
         const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
-        const { updatedAt, _id } = cursor;
+        const { numberOfGenerations = 0, updatedAt, _id } = cursor;
 
-        const cursorCondition = {
-          $or: [
-            { updatedAt: { $lt: new Date(updatedAt) } },
-            { updatedAt: new Date(updatedAt), _id: { $gt: new ObjectId(_id) } },
-          ],
-        };
-
-        if (Object.keys(baseQuery).length > 0) {
-          baseQuery.$and = [{ ...baseQuery }, cursorCondition];
-          Object.keys(baseQuery).forEach((key) => {
-            if (key !== '$and') {
-              delete baseQuery[key];
-            }
-          });
+        if (
+          typeof numberOfGenerations !== 'number' ||
+          !Number.isFinite(numberOfGenerations) ||
+          typeof updatedAt !== 'string' ||
+          Number.isNaN(new Date(updatedAt).getTime()) ||
+          typeof _id !== 'string' ||
+          !isValidObjectIdString(_id)
+        ) {
+          logger.warn(
+            '[getListPromptGroupsByAccess] Invalid cursor fields, skipping cursor condition',
+          );
         } else {
-          Object.assign(baseQuery, cursorCondition);
+          const cursorCondition = {
+            $or: [
+              { numberOfGenerations: { $lt: numberOfGenerations } },
+              {
+                numberOfGenerations,
+                updatedAt: { $lt: new Date(updatedAt) },
+              },
+              {
+                numberOfGenerations,
+                updatedAt: new Date(updatedAt),
+                _id: { $gt: new ObjectId(_id) },
+              },
+            ],
+          };
+
+          matchQuery =
+            Object.keys(baseQuery).length > 0
+              ? { $and: [baseQuery, cursorCondition] }
+              : cursorCondition;
         }
       } catch (error) {
         logger.warn('Invalid cursor:', (error as Error).message);
       }
     }
 
-    const findQuery = PromptGroup.find(baseQuery)
-      .sort({ updatedAt: -1, _id: 1 })
+    const findQuery = PromptGroup.find(matchQuery)
+      .sort({ numberOfGenerations: -1, updatedAt: -1, _id: 1 })
       .select(
         'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt',
       );
@@ -264,6 +284,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       const lastGroup = promptGroups[normalizedLimit - 1] as Record<string, unknown>;
       nextCursor = Buffer.from(
         JSON.stringify({
+          numberOfGenerations: lastGroup.numberOfGenerations,
           updatedAt: (lastGroup.updatedAt as Date).toISOString(),
           _id: (lastGroup._id as Types.ObjectId).toString(),
         }),
@@ -278,6 +299,28 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       has_more: hasMore,
       after: nextCursor,
     };
+  }
+
+  /**
+   * Increment the numberOfGenerations counter for a prompt group.
+   */
+  async function incrementPromptGroupUsage(groupId: string) {
+    if (!isValidObjectIdString(groupId)) {
+      throw new Error('Invalid groupId');
+    }
+
+    const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
+    const result = await PromptGroup.findByIdAndUpdate(
+      groupId,
+      { $inc: { numberOfGenerations: 1 } },
+      { new: true, select: 'numberOfGenerations' },
+    ).lean();
+
+    if (!result) {
+      throw new Error('Prompt group not found');
+    }
+
+    return { numberOfGenerations: result.numberOfGenerations };
   }
 
   /**
@@ -455,15 +498,56 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
   }
 
   /**
-   * Get a single prompt group by filter.
+   * Get a single prompt group by filter, with productionPrompt populated via $lookup.
    */
   async function getPromptGroup(filter: Record<string, unknown>) {
     try {
       const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
-      return await PromptGroup.findOne(filter).lean();
+      // Cast string _id to ObjectId for aggregation (findOne auto-casts, aggregate does not)
+      const matchFilter = { ...filter };
+      if (typeof matchFilter._id === 'string') {
+        matchFilter._id = new ObjectId(matchFilter._id);
+      }
+      const result = await PromptGroup.aggregate([
+        { $match: matchFilter },
+        {
+          $lookup: {
+            from: 'prompts',
+            localField: 'productionId',
+            foreignField: '_id',
+            as: 'productionPrompt',
+          },
+        },
+        { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
+      ]);
+      const group = result[0] || null;
+      if (group?.author) {
+        group.author = group.author.toString();
+      }
+      return group;
     } catch (error) {
       logger.error('Error getting prompt group', error);
-      return { message: 'Error getting prompt group' };
+      return null;
+    }
+  }
+
+  /**
+   * Returns the _id values of all prompt groups authored by the given user.
+   * Used by the "Shared Prompts" and "My Prompts" filters to distinguish
+   * owned prompts from prompts shared with the user.
+   */
+  async function getOwnedPromptGroupIds(author: string) {
+    try {
+      const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
+      if (!author || !ObjectId.isValid(author)) {
+        logger.warn('getOwnedPromptGroupIds called with invalid author', { author });
+        return [];
+      }
+      const groups = await PromptGroup.find({ author: new ObjectId(author) }, { _id: 1 }).lean();
+      return groups.map((g) => g._id);
+    } catch (error) {
+      logger.error('Error getting owned prompt group IDs', error);
+      return [];
     }
   }
 
@@ -657,6 +741,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
     deletePromptGroup,
     getAllPromptGroups,
     getListPromptGroupsByAccess,
+    incrementPromptGroupUsage,
     createPromptGroup,
     savePrompt,
     getPrompts,
@@ -664,6 +749,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
     getRandomPromptGroups,
     getPromptGroupsWithPrompts,
     getPromptGroup,
+    getOwnedPromptGroupIds,
     deletePrompt,
     deleteUserPrompts,
     updatePromptGroup,

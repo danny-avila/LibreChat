@@ -4,7 +4,7 @@ import { matchSorter } from 'match-sorter';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Button,
-  Switch,
+  Checkbox,
   Spinner,
   FilterInput,
   TooltipAnchor,
@@ -169,15 +169,23 @@ export default function MemoryPanel() {
 
             {/* Memory Toggle */}
             {hasOptOutAccess && (
-              <div className="ml-auto flex items-center gap-2 text-xs">
-                <span className="text-text-secondary">{localize('com_ui_use_memory')}</span>
-                <Switch
+              <Button
+                size="sm"
+                variant="outline"
+                className={`ml-auto ${referenceSavedMemories ? 'bg-surface-hover hover:bg-surface-hover' : ''}`}
+                onClick={() => handleMemoryToggle(!referenceSavedMemories)}
+                aria-label={localize('com_ui_use_memory')}
+                aria-pressed={referenceSavedMemories}
+                disabled={updateMemoryPreferencesMutation.isLoading}
+              >
+                <Checkbox
                   checked={referenceSavedMemories}
-                  onCheckedChange={handleMemoryToggle}
-                  aria-label={localize('com_ui_use_memory')}
-                  disabled={updateMemoryPreferencesMutation.isLoading}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  className="pointer-events-none mr-2"
                 />
-              </div>
+                {localize('com_ui_use_memory')}
+              </Button>
             )}
           </div>
         )}
