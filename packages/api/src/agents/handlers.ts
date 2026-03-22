@@ -43,6 +43,8 @@ export interface ToolExecuteOptions {
   }>;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
+  /** Called once per batch before tool execution to lazily provision files to tool environments */
+  provisionFiles?: (toolNames: string[], agentId?: string) => Promise<void>;
 }
 
 /**
@@ -51,7 +53,7 @@ export interface ToolExecuteOptions {
  * executes them in parallel, and resolves with the results.
  */
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
-  const { loadTools, toolEndCallback } = options;
+  const { loadTools, toolEndCallback, provisionFiles } = options;
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
@@ -61,6 +63,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
         await runOutsideTracing(async () => {
           try {
             const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
+
+            if (provisionFiles) {
+              await provisionFiles(toolNames, agentId);
+            }
+
             const { loadedTools, configurable: toolConfigurable } = await loadTools(
               toolNames,
               agentId,
