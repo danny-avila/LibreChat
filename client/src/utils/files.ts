@@ -273,8 +273,13 @@ export const validateFiles = ({
     }
 
     let mimeTypesToCheck = supportedMimeTypes;
-    if (toolResource === EToolResources.context) {
+    const isUnifiedMode =
+      !toolResource &&
+      endpointFileConfig.defaultFileInteraction != null &&
+      endpointFileConfig.defaultFileInteraction !== 'legacy';
+    if (toolResource === EToolResources.context || isUnifiedMode) {
       mimeTypesToCheck = [
+        ...(supportedMimeTypes || []),
         ...(fileConfig?.text?.supportedMimeTypes || []),
         ...(fileConfig?.ocr?.supportedMimeTypes || []),
         ...(fileConfig?.stt?.supportedMimeTypes || []),
