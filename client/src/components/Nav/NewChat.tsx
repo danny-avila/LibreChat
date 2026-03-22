@@ -32,7 +32,7 @@ export default function NewChat({ className }: { className?: string }) {
           data-testid="new-chat-button"
           aria-label={localize('com_ui_new_chat')}
           className={cn(
-            'rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt max-md:hidden',
+            'size-9 rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt max-md:hidden',
             className,
           )}
           onClick={clickHandler}

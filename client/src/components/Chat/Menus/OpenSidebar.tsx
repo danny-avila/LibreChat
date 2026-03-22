@@ -39,7 +39,7 @@ export default function OpenSidebar({ className }: { className?: string }) {
           )}
           onClick={handleClick}
         >
-          <Sidebar aria-hidden="true" />
+          <Sidebar className="icon-md" aria-hidden="true" />
         </Button>
       }
     />
