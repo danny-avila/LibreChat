@@ -26,6 +26,17 @@ export type TProvisionToVectorDB = (params: {
 }) => Promise<{ embedded: boolean }>;
 
 /**
+ * Function type for batch-checking code env file liveness.
+ * Groups files by session, makes one API call per session.
+ * @returns Set of file_ids that are confirmed alive
+ */
+export type TCheckSessionsAlive = (params: {
+  files: TFile[];
+  userId: string;
+  staleSafeWindowMs?: number;
+}) => Promise<Set<string>>;
+
+/**
  * Function type for retrieving files from the database
  * @param filter - MongoDB filter query for files
  * @param _sortOptions - Sorting options (currently unused)
@@ -185,6 +196,7 @@ export const primeResources = async ({
   enabledToolResources,
   provisionToCodeEnv,
   provisionToVectorDB,
+  checkSessionsAlive,
 }: {
   req: ServerRequest & { user?: IUser };
   appConfig?: AppConfig;
@@ -200,9 +212,12 @@ export const primeResources = async ({
   provisionToCodeEnv?: TProvisionToCodeEnv;
   /** Optional callback to provision a file to the vector DB for file_search */
   provisionToVectorDB?: TProvisionToVectorDB;
+  /** Optional callback to batch-check code env file liveness by session */
+  checkSessionsAlive?: TCheckSessionsAlive;
 }): Promise<{
-  attachments: Array<TFile | undefined> | undefined;
+  attachments: Array<TFile | undefined>;
   tool_resources: AgentToolResources | undefined;
+  warnings: string[];
 }> => {
   try {
     /**
@@ -310,7 +325,7 @@ export const primeResources = async ({
     }
 
     if (!_attachments) {
-      return { attachments: attachments.length > 0 ? attachments : undefined, tool_resources };
+      return { attachments, tool_resources, warnings: [] };
     }
 
     const files = await _attachments;
@@ -342,6 +357,8 @@ export const primeResources = async ({
      * agent's enabled tool resources, provision them now (at chat-request start).
      * This handles files uploaded via the unified upload flow (no tool_resource chosen at upload time).
      */
+    const warnings: string[] = [];
+
     if (enabledToolResources && enabledToolResources.size > 0 && attachments.length > 0) {
       const needsCodeEnv =
         enabledToolResources.has(EToolResources.execute_code) && provisionToCodeEnv != null;
@@ -349,76 +366,117 @@ export const primeResources = async ({
         enabledToolResources.has(EToolResources.file_search) && provisionToVectorDB != null;
 
       if (needsCodeEnv || needsVectorDB) {
-        for (const file of attachments) {
-          if (!file?.file_id) {
-            continue;
+        // Batch staleness check: verify code env files are still alive
+        let aliveFileIds: Set<string> = new Set();
+        if (needsCodeEnv && checkSessionsAlive && req.user?.id) {
+          const filesWithIdentifiers = attachments.filter(
+            (f) => f?.metadata?.fileIdentifier && f.file_id,
+          );
+          if (filesWithIdentifiers.length > 0) {
+            aliveFileIds = await checkSessionsAlive({
+              files: filesWithIdentifiers as TFile[],
+              userId: req.user.id,
+            });
           }
+        }
 
-          // Skip images for file_search (not supported)
-          const isImage = file.type?.startsWith('image') ?? false;
-
-          // Provision to code env if needed and not already provisioned
-          if (
-            needsCodeEnv &&
-            !file.metadata?.fileIdentifier &&
-            !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
-          ) {
-            try {
-              const fileIdentifier = await provisionToCodeEnv({
-                req: req as ServerRequest & { user?: IUser },
-                file,
-                entity_id: agentId,
-              });
-              // Update the file object in-place so categorization picks it up
-              file.metadata = { ...file.metadata, fileIdentifier };
-              addFileToResource({
-                file,
-                resourceType: EToolResources.execute_code,
-                tool_resources,
-                processedResourceFiles,
-              });
-            } catch (error) {
-              logger.error(
-                `[primeResources] Failed to provision file "${file.filename}" to code env`,
-                error,
-              );
+        // Provision files in parallel
+        const provisionResults = await Promise.allSettled(
+          attachments.map(async (file) => {
+            if (!file?.file_id) {
+              return;
             }
-          }
 
-          // Provision to vector DB if needed and not already provisioned
-          if (
-            needsVectorDB &&
-            !isImage &&
-            file.embedded !== true &&
-            !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
-          ) {
-            try {
-              const result = await provisionToVectorDB({
-                req: req as ServerRequest & { user?: IUser },
-                file,
-                entity_id: agentId,
-              });
-              if (result.embedded) {
-                file.embedded = true;
+            const isImage = file.type?.startsWith('image') ?? false;
+            const typedReq = req as ServerRequest & { user?: IUser };
+
+            // Code env provisioning (with staleness check)
+            if (
+              needsCodeEnv &&
+              !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
+            ) {
+              const hasFileIdentifier = !!file.metadata?.fileIdentifier;
+              const isStale = hasFileIdentifier && !aliveFileIds.has(file.file_id);
+              const needsProvision = !hasFileIdentifier || isStale;
+
+              if (needsProvision) {
+                if (isStale) {
+                  logger.info(
+                    `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), re-provisioning`,
+                  );
+                  file.metadata = { ...file.metadata, fileIdentifier: undefined };
+                }
+
+                try {
+                  const fileIdentifier = await provisionToCodeEnv({
+                    req: typedReq,
+                    file,
+                    entity_id: agentId,
+                  });
+                  file.metadata = { ...file.metadata, fileIdentifier };
+                  addFileToResource({
+                    file,
+                    resourceType: EToolResources.execute_code,
+                    tool_resources,
+                    processedResourceFiles,
+                  });
+                } catch (error) {
+                  const msg = `Failed to provision "${file.filename}" to code env`;
+                  logger.error(`[primeResources] ${msg}`, error);
+                  warnings.push(msg);
+                }
+              } else {
+                // File is alive, ensure it's categorized
                 addFileToResource({
                   file,
-                  resourceType: EToolResources.file_search,
+                  resourceType: EToolResources.execute_code,
                   tool_resources,
                   processedResourceFiles,
                 });
               }
-            } catch (error) {
-              logger.error(
-                `[primeResources] Failed to provision file "${file.filename}" to vector DB`,
-                error,
-              );
             }
+
+            // Vector DB provisioning
+            if (
+              needsVectorDB &&
+              !isImage &&
+              file.embedded !== true &&
+              !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
+            ) {
+              try {
+                const result = await provisionToVectorDB({
+                  req: typedReq,
+                  file,
+                  entity_id: agentId,
+                });
+                if (result.embedded) {
+                  file.embedded = true;
+                  addFileToResource({
+                    file,
+                    resourceType: EToolResources.file_search,
+                    tool_resources,
+                    processedResourceFiles,
+                  });
+                }
+              } catch (error) {
+                const msg = `Failed to provision "${file.filename}" to vector DB`;
+                logger.error(`[primeResources] ${msg}`, error);
+                warnings.push(msg);
+              }
+            }
+          }),
+        );
+
+        // Log any unexpected rejections from Promise.allSettled
+        for (const result of provisionResults) {
+          if (result.status === 'rejected') {
+            logger.error('[primeResources] Unexpected provisioning rejection', result.reason);
           }
         }
       }
     }
 
-    return { attachments: attachments.length > 0 ? attachments : [], tool_resources };
+    return { attachments, tool_resources, warnings };
   } catch (error) {
     logger.error('Error priming resources', error);
 
@@ -438,6 +496,7 @@ export const primeResources = async ({
     return {
       attachments: safeAttachments,
       tool_resources: _tool_resources,
+      warnings: [],
     };
   }
 };
