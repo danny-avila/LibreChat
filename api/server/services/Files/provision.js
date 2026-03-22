@@ -12,9 +12,20 @@ const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getStrategyFunctions } = require('./strategies');
-const { updateFile } = require('~/models');
 
 const axios = createAxiosInstance();
+
+/**
+ * Loads the CODE_API_KEY for a user. Call once per request and pass the result
+ * to provisionToCodeEnv / checkSessionsAlive to avoid redundant lookups.
+ *
+ * @param {string} userId
+ * @returns {Promise<string>} The CODE_API_KEY
+ */
+async function loadCodeApiKey(userId) {
+  const result = await loadAuthValues({ userId, authFields: [EnvVar.CODE_API_KEY] });
+  return result[EnvVar.CODE_API_KEY];
+}
 
 /**
  * Provisions a file to the code execution environment.
@@ -24,9 +35,10 @@ const axios = createAxiosInstance();
  * @param {object} params.req - Express request object (needs req.user.id)
  * @param {import('librechat-data-provider').TFile} params.file - The file record from DB
  * @param {string} [params.entity_id] - Optional entity ID (agent_id)
- * @returns {Promise<string>} The fileIdentifier from the code env
+ * @param {string} [params.apiKey] - Pre-loaded CODE_API_KEY (avoids redundant loadAuthValues)
+ * @returns {Promise<{ fileIdentifier: string, fileUpdate: object }>} Result with deferred DB update
  */
-async function provisionToCodeEnv({ req, file, entity_id = '' }) {
+async function provisionToCodeEnv({ req, file, entity_id = '', apiKey }) {
   const { getDownloadStream } = getStrategyFunctions(file.source);
   if (!getDownloadStream) {
     throw new Error(
@@ -34,33 +46,26 @@ async function provisionToCodeEnv({ req, file, entity_id = '' }) {
     );
   }
 
+  const resolvedApiKey = apiKey ?? (await loadCodeApiKey(req.user.id));
   const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
-  const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
   const stream = await getDownloadStream(req, file.filepath);
 
   const fileIdentifier = await uploadCodeEnvFile({
     req,
     stream,
     filename: file.filename,
-    apiKey: result[EnvVar.CODE_API_KEY],
+    apiKey: resolvedApiKey,
     entity_id,
-  });
-
-  const updatedMetadata = {
-    ...file.metadata,
-    fileIdentifier,
-  };
-
-  await updateFile({
-    file_id: file.file_id,
-    metadata: updatedMetadata,
   });
 
   logger.debug(
     `[provisionToCodeEnv] Provisioned file "${file.filename}" (${file.file_id}) to code env`,
   );
 
-  return fileIdentifier;
+  return {
+    fileIdentifier,
+    fileUpdate: { file_id: file.file_id, metadata: { ...file.metadata, fileIdentifier } },
+  };
 }
 
 /**
@@ -71,27 +76,31 @@ async function provisionToCodeEnv({ req, file, entity_id = '' }) {
  * @param {object} params.req - Express request object
  * @param {import('librechat-data-provider').TFile} params.file - The file record from DB
  * @param {string} [params.entity_id] - Optional entity ID (agent_id)
- * @returns {Promise<{ embedded: boolean }>} Embedding result
+ * @param {import('stream').Readable} [params.existingStream] - Pre-fetched download stream (avoids duplicate storage fetch)
+ * @returns {Promise<{ embedded: boolean, fileUpdate: object | null }>} Result with deferred DB update
  */
-async function provisionToVectorDB({ req, file, entity_id }) {
+async function provisionToVectorDB({ req, file, entity_id, existingStream }) {
   if (!process.env.RAG_API_URL) {
     logger.warn('[provisionToVectorDB] RAG_API_URL not defined, skipping vector provisioning');
-    return { embedded: false };
+    return { embedded: false, fileUpdate: null };
   }
 
-  const { getDownloadStream } = getStrategyFunctions(file.source);
-  if (!getDownloadStream) {
-    throw new Error(
-      `Cannot provision file "${file.filename}" to vector DB: storage source "${file.source}" does not support download streams`,
-    );
-  }
-
-  // The uploadVectors function expects a file-like object with a `path` property for fs.createReadStream.
-  // Since we're provisioning from storage (not a multer upload), we need to stream to a temp file first.
   const tmpPath = path.join(os.tmpdir(), `provision-${file.file_id}${path.extname(file.filename)}`);
 
   try {
-    const stream = await getDownloadStream(req, file.filepath);
+    let stream = existingStream;
+    if (!stream) {
+      const { getDownloadStream } = getStrategyFunctions(file.source);
+      if (!getDownloadStream) {
+        throw new Error(
+          `Cannot provision file "${file.filename}" to vector DB: storage source "${file.source}" does not support download streams`,
+        );
+      }
+      stream = await getDownloadStream(req, file.filepath);
+    }
+
+    // uploadVectors expects a file-like object with a `path` property for fs.createReadStream.
+    // Since we're provisioning from storage (not a multer upload), we stream to a temp file first.
     await new Promise((resolve, reject) => {
       const writeStream = fs.createWriteStream(tmpPath);
       stream.pipe(writeStream);
@@ -117,18 +126,15 @@ async function provisionToVectorDB({ req, file, entity_id }) {
 
     const embedded = embeddingResult?.embedded ?? false;
 
-    await updateFile({
-      file_id: file.file_id,
-      embedded,
-    });
-
     logger.debug(
       `[provisionToVectorDB] Provisioned file "${file.filename}" (${file.file_id}) to vector DB, embedded=${embedded}`,
     );
 
-    return { embedded };
+    return {
+      embedded,
+      fileUpdate: embedded ? { file_id: file.file_id, embedded } : null,
+    };
   } finally {
-    // Clean up temp file
     try {
       fs.unlinkSync(tmpPath);
     } catch {
@@ -190,13 +196,11 @@ async function checkCodeEnvFileAlive({ file, apiKey }) {
  *
  * @param {object} params
  * @param {import('librechat-data-provider').TFile[]} params.files - Files with metadata.fileIdentifier
- * @param {string} params.userId - User ID for loading CODE_API_KEY
+ * @param {string} params.apiKey - Pre-loaded CODE_API_KEY
  * @param {number} [params.staleSafeWindowMs=21600000] - Skip check if file updated within this window (default 6h)
  * @returns {Promise<Set<string>>} Set of file_ids that are confirmed alive
  */
-async function checkSessionsAlive({ files, userId, staleSafeWindowMs = 6 * 60 * 60 * 1000 }) {
-  const result = await loadAuthValues({ userId, authFields: [EnvVar.CODE_API_KEY] });
-  const apiKey = result[EnvVar.CODE_API_KEY];
+async function checkSessionsAlive({ files, apiKey, staleSafeWindowMs = 6 * 60 * 60 * 1000 }) {
   const aliveFileIds = new Set();
   const now = Date.now();
 
@@ -263,6 +267,7 @@ async function checkSessionsAlive({ files, userId, staleSafeWindowMs = 6 * 60 * 
 }
 
 module.exports = {
+  loadCodeApiKey,
   provisionToCodeEnv,
   provisionToVectorDB,
   checkCodeEnvFileAlive,
