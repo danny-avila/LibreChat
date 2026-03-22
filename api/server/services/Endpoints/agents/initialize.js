@@ -33,7 +33,11 @@ const {
   enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
 } = require('./skillDeps');
-const { provisionToCodeEnv, provisionToVectorDB } = require('~/server/services/Files/provision');
+const {
+  provisionToCodeEnv,
+  provisionToVectorDB,
+  checkSessionsAlive,
+} = require('~/server/services/Files/provision');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -320,6 +324,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getSkillByName: db.getSkillByName,
       provisionToCodeEnv,
       provisionToVectorDB,
+      checkSessionsAlive,
     },
   );
 
@@ -397,6 +402,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getSkillByName: db.getSkillByName,
         provisionToCodeEnv,
         provisionToVectorDB,
+        checkSessionsAlive,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
