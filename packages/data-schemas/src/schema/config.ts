@@ -37,7 +37,7 @@ const configSchema = new Schema<IConfig>(
     },
     configVersion: {
       type: Number,
-      default: 1,
+      default: 0,
     },
     tenantId: {
       type: String,
@@ -53,8 +53,8 @@ configSchema.index({ principalType: 1, principalId: 1, isActive: 1, tenantId: 1 
 configSchema.index({ priority: 1, isActive: 1, tenantId: 1 });
 
 configSchema.pre('save', function (next) {
-  if (this.isModified('overrides')) {
-    this.configVersion += 1;
+  if (!this.isNew && this.isModified('overrides')) {
+    this.configVersion = (this.configVersion || 0) + 1;
   }
   next();
 });

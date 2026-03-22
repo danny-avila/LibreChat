@@ -14,8 +14,8 @@ const router = express.Router();
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
 const handlers = createAdminConfigHandlers({
+  listAllConfigs: db.listAllConfigs,
   findConfigByPrincipal: db.findConfigByPrincipal,
-  getApplicableConfigs: db.getApplicableConfigs,
   upsertConfig: db.upsertConfig,
   deleteConfig: db.deleteConfig,
   toggleConfigActive: db.toggleConfigActive,

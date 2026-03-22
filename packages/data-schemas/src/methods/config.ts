@@ -13,9 +13,18 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     const Config = mongoose.models.Config as Model<IConfig>;
     const query = Config.findOne({
       principalType,
-      principalId,
+      principalId: principalId.toString(),
       isActive: true,
     });
+    if (session) {
+      query.session(session);
+    }
+    return await query.lean();
+  }
+
+  async function listAllConfigs(session?: ClientSession): Promise<IConfig[]> {
+    const Config = mongoose.models.Config as Model<IConfig>;
+    const query = Config.find({ isActive: true }).sort({ priority: 1 });
     if (session) {
       query.session(session);
     }
@@ -40,7 +49,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
         if (p.principalId !== undefined) {
           principalsQuery.push({
             principalType: p.principalType,
-            principalId: p.principalId as string,
+            principalId: p.principalId.toString(),
           });
         }
       }
@@ -70,7 +79,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
 
     const query = {
       principalType,
-      principalId,
+      principalId: principalId.toString(),
     };
 
     const update = {
@@ -80,11 +89,13 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
         priority,
         isActive: true,
       },
+      $inc: { configVersion: 1 },
     };
 
     const options = {
       upsert: true,
       new: true,
+      setDefaultsOnInsert: true,
       ...(session ? { session } : {}),
     };
 
@@ -100,7 +111,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
 
     const query = Config.findOneAndDelete({
       principalType,
-      principalId,
+      principalId: principalId.toString(),
     });
 
     if (session) {
@@ -119,7 +130,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     const Config = mongoose.models.Config as Model<IConfig>;
 
     const query = Config.findOneAndUpdate(
-      { principalType, principalId },
+      { principalType, principalId: principalId.toString() },
       { $set: { isActive } },
       { new: true },
     );
@@ -132,6 +143,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
   }
 
   return {
+    listAllConfigs,
     findConfigByPrincipal,
     getApplicableConfigs,
     upsertConfig,
