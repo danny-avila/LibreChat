@@ -84,6 +84,7 @@
   "com_agents_no_agent_id_error": "未找到智能体 ID，请首先确保智能体已创建。",
   "com_agents_no_more_results": "您已到达结果末尾",
   "com_agents_not_available": "智能体不可用",
+  "com_agents_prompt_selection": "按名称或命令选择提示。",
   "com_agents_recommended": "我们推荐的智能体",
   "com_agents_results_for": "'{{query}}' 的结果",
   "com_agents_search_aria": "搜索智能体",

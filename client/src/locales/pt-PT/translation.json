@@ -53,6 +53,7 @@
   "com_agents_no_agent_id_error": "Nenhum ID de Agente Encontrado. Por favor, garante que tens um agente criado.",
   "com_agents_no_more_results": "Chegou ao fim dos resultados",
   "com_agents_not_available": "Agente não disponível.",
+  "com_agents_prompt_selection": "Selecione um prompt pelo nome ou comando.",
   "com_agents_recommended": "Os nossos agentes recomendados",
   "com_agents_results_for": "Resultados para '{{query}}'",
   "com_agents_search_aria": "Pesquisar agentes",
