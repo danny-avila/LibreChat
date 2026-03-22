@@ -167,7 +167,7 @@ export default function MCPCardActions({
       )}
 
       {/* Revoke button - for OAuth servers (available regardless of connection state) */}
-      {serverStatus?.requiresOAuth && onRevoke && (
+      {serverStatus?.requiresOAuth && serverStatus?.hasOAuthTokens && onRevoke && (
         <TooltipAnchor
           description={localize('com_ui_revoke')}
           side="top"
