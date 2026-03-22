@@ -481,7 +481,8 @@ export async function initializeAgent(
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
     maxToolResultChars: maxToolResultCharsResolved,
-    provisionWarnings: provisionWarnings.length > 0 ? provisionWarnings : undefined,
+    provisionWarnings:
+      provisionWarnings != null && provisionWarnings.length > 0 ? provisionWarnings : undefined,
     maxContextTokens:
       maxContextTokens != null && maxContextTokens > 0
         ? maxContextTokens
