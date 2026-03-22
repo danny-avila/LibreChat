@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo, memo } from 'react';
-import throttle from 'lodash/throttle';
+import { useState, memo } from 'react';
 import { ResizablePanel, ResizablePanelGroup, useMediaQuery } from '@librechat/client';
+import { useDefaultLayout } from 'react-resizable-panels';
 import ArtifactsPanel from './ArtifactsPanel';
-import { normalizeLayout } from '~/utils';
+
+const PANEL_IDS_SINGLE = ['messages-view'];
+const PANEL_IDS_SPLIT = ['messages-view', 'artifacts-panel'];
 
 interface SidePanelProps {
   artifacts?: React.ReactNode;
@@ -13,46 +15,29 @@ const SidePanelGroup = memo(({ artifacts, children }: SidePanelProps) => {
   const [shouldRenderArtifacts, setShouldRenderArtifacts] = useState(artifacts != null);
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
-  const currentLayout = useMemo(() => {
-    if (artifacts == null) {
-      return [100];
-    }
-    return normalizeLayout([50, 50]);
-  }, [artifacts]);
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: 'side-panel-layout',
+    panelIds: artifacts != null ? PANEL_IDS_SPLIT : PANEL_IDS_SINGLE,
+    storage: localStorage,
+  });
 
-  const throttledSaveLayout = useMemo(
-    () =>
-      throttle((sizes: number[]) => {
-        const normalizedSizes = normalizeLayout(sizes);
-        localStorage.setItem('react-resizable-panels:layout', JSON.stringify(normalizedSizes));
-      }, 350),
-    [],
-  );
-
-  useEffect(() => () => throttledSaveLayout.cancel(), [throttledSaveLayout]);
-
-  const minSizeMain = useMemo(() => (artifacts != null ? 15 : 30), [artifacts]);
+  const minSizeMain = artifacts != null ? '15' : '30';
 
   return (
     <>
       <ResizablePanelGroup
-        direction="horizontal"
-        onLayout={(sizes) => throttledSaveLayout(sizes)}
-        className="relative h-full w-full flex-1 overflow-auto bg-presentation"
+        orientation="horizontal"
+        defaultLayout={defaultLayout}
+        onLayoutChanged={onLayoutChanged}
+        className="relative flex-1 bg-presentation"
       >
-        <ResizablePanel
-          defaultSize={currentLayout[0]}
-          minSize={minSizeMain}
-          order={1}
-          id="messages-view"
-        >
+        <ResizablePanel defaultSize="50" minSize={minSizeMain} id="messages-view">
           {children}
         </ResizablePanel>
 
         {!isSmallScreen && (
           <ArtifactsPanel
             artifacts={artifacts}
-            currentLayout={currentLayout}
             minSizeMain={minSizeMain}
             shouldRender={shouldRenderArtifacts}
             onRenderChange={setShouldRenderArtifacts}
