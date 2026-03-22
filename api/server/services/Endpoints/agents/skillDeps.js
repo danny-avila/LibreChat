@@ -281,6 +281,7 @@ function buildAgentToolContext({ agent, config }) {
     fileAuthoringToolNames: config.fileAuthoringToolNames,
     skillPrimedIdsByName:
       buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
+    provisionState: config.provisionState,
   };
 }
 
