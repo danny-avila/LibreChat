@@ -47,10 +47,12 @@ import type { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { SkillContentInput } from '../protection/adapters/submissions';
 import type { TextContentFragment } from '../protection/types';
 import type {
+  TFileUpdate,
   TFilterFilesByAgentAccess,
   TProvisionToCodeEnv,
   TProvisionToVectorDB,
   TCheckSessionsAlive,
+  TLoadCodeApiKey,
 } from './resources';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { AgentExecutionContext } from './runtime';
@@ -713,6 +715,10 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   provisionToVectorDB?: TProvisionToVectorDB;
   /** Optional: batch-check code env file liveness */
   checkSessionsAlive?: TCheckSessionsAlive;
+  /** Optional: load CODE_API_KEY once per request */
+  loadCodeApiKey?: TLoadCodeApiKey;
+  /** Optional: persist file metadata updates after provisioning */
+  updateFile?: (data: TFileUpdate) => Promise<unknown>;
 }
 
 /**
@@ -1202,6 +1208,8 @@ export async function initializeAgent(
     provisionToCodeEnv: db.provisionToCodeEnv,
     provisionToVectorDB: db.provisionToVectorDB,
     checkSessionsAlive: db.checkSessionsAlive,
+    loadCodeApiKey: db.loadCodeApiKey,
+    updateFile: db.updateFile as ((data: TFileUpdate) => Promise<unknown>) | undefined,
   });
 
   /**
