@@ -121,8 +121,8 @@ export default function MemoryPanel() {
   const totalPages = Math.ceil(filteredMemories.length / pageSize);
 
   return (
-    <div className="flex h-full w-full flex-col">
-      <div role="region" aria-label={localize('com_ui_memories')} className="mt-2 space-y-3">
+    <div className="flex h-auto w-full flex-col px-3 pb-3">
+      <div role="region" aria-label={localize('com_ui_memories')} className="space-y-2">
         {/* Header: Filter + Create Button */}
         <div className="flex items-center gap-2">
           <FilterInput
@@ -142,7 +142,7 @@ export default function MemoryPanel() {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="shrink-0 bg-transparent"
+                      className="size-9 shrink-0 bg-transparent"
                       aria-label={localize('com_ui_create_memory')}
                       onClick={() => setCreateDialogOpen(true)}
                     >
@@ -169,7 +169,7 @@ export default function MemoryPanel() {
 
             {/* Memory Toggle */}
             {hasOptOutAccess && (
-              <div className="flex items-center gap-2 text-xs">
+              <div className="ml-auto flex items-center gap-2 text-xs">
                 <span className="text-text-secondary">{localize('com_ui_use_memory')}</span>
                 <Switch
                   checked={referenceSavedMemories}

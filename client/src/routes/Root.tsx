@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Outlet } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
-import type { ContextType } from '~/common';
 import {
   useSearchEnabled,
   useAssistantsMap,
@@ -9,6 +9,7 @@ import {
   useAgentsMap,
   useFileMap,
 } from '~/hooks';
+import store from '~/store';
 import {
   PromptGroupsProvider,
   AssistantsMapContext,
@@ -17,7 +18,7 @@ import {
   FileMapContext,
 } from '~/Providers';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
-import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
+import { UnifiedSidebar } from '~/components/UnifiedSidebar';
 import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
@@ -25,15 +26,11 @@ import { Banner } from '~/components/Banners';
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const [bannerHeight, setBannerHeight] = useState(0);
-  const [navVisible, setNavVisible] = useState(() => {
-    const savedNavVisible = localStorage.getItem('navVisible');
-    return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
-  });
-
-  const { isAuthenticated, logout } = useAuthContext();
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
-  // Global health check - runs once per authenticated session
+  const { isAuthenticated, logout } = useAuthContext();
+
   useHealthCheck(isAuthenticated);
 
   const assistantsMap = useAssistantsMap({ isAuthenticated });
@@ -75,23 +72,17 @@ export default function Root() {
               <Banner onHeightChange={setBannerHeight} />
               <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
-                  <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
+                  <UnifiedSidebar />
                   <div
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
-                    style={
-                      isSmallScreen
-                        ? {
-                            transform: navVisible
-                              ? `translateX(${NAV_WIDTH.MOBILE}px)`
-                              : 'translateX(0)',
-                            transition: 'transform 0.2s ease-out',
-                          }
-                        : undefined
-                    }
-                    {...{ inert: navVisible && isSmallScreen ? '' : undefined }}
+                    style={{
+                      transform:
+                        isSmallScreen && sidebarExpanded ? 'translateX(min(85vw, 380px))' : 'none',
+                      transition: 'transform 300ms cubic-bezier(0.2, 0, 0, 1)',
+                    }}
+                    {...{ inert: isSmallScreen && sidebarExpanded ? '' : undefined }}
                   >
-                    <MobileNav navVisible={navVisible} setNavVisible={setNavVisible} />
-                    <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
+                    <Outlet />
                   </div>
                 </div>
               </div>

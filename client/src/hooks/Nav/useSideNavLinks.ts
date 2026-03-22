@@ -28,13 +28,15 @@ export default function useSideNavLinks({
   endpointType,
   interfaceConfig,
   endpointsConfig,
+  includeHidePanel = true,
 }: {
-  hidePanel: () => void;
+  hidePanel?: () => void;
   keyProvided: boolean;
   endpoint?: EModelEndpoint | null;
   endpointType?: EModelEndpoint | null;
   interfaceConfig: Partial<TInterfaceConfig>;
   endpointsConfig: TEndpointsConfig;
+  includeHidePanel?: boolean;
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -172,13 +174,15 @@ export default function useSideNavLinks({
       });
     }
 
-    links.push({
-      title: 'com_sidepanel_hide_panel',
-      label: '',
-      icon: ArrowRightToLine,
-      onClick: hidePanel,
-      id: 'hide-panel',
-    });
+    if (includeHidePanel && hidePanel) {
+      links.push({
+        title: 'com_sidepanel_hide_panel',
+        label: '',
+        icon: ArrowRightToLine,
+        onClick: hidePanel,
+        id: 'hide-panel',
+      });
+    }
 
     return links;
   }, [
@@ -196,6 +200,7 @@ export default function useSideNavLinks({
     availableMCPServers,
     hasAccessToUseMCPSettings,
     hasAccessToCreateMCP,
+    includeHidePanel,
     hidePanel,
   ]);
 
