@@ -6,9 +6,9 @@ import { useMediaQuery } from '@librechat/client';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
+import { useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
 import ExpandedPanel from './ExpandedPanel';
-import { useChatHelpers, useLocalize } from '~/hooks';
 import Sidebar from './Sidebar';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -181,7 +181,9 @@ function UnifiedSidebar() {
             width: expanded ? sidebarWidth : COLLAPSED_WIDTH,
             minWidth: expanded ? EXPANDED_MIN : COLLAPSED_WIDTH,
             maxWidth: expanded ? '40%' : COLLAPSED_WIDTH,
-            transition: isResizing ? 'none' : `width ${TRANSITION_MS}ms ${EASING}`,
+            transition: isResizing
+              ? 'none'
+              : `width ${TRANSITION_MS}ms ${EASING}, min-width ${TRANSITION_MS}ms ${EASING}, max-width ${TRANSITION_MS}ms ${EASING}`,
           }}
           aria-label={localize('com_nav_control_panel')}
         >
