@@ -39,6 +39,7 @@ const {
   enrichLoadedToolsWithAgentContext,
 } = require('./skillDeps');
 const {
+  loadCodeApiKey,
   provisionToCodeEnv,
   provisionToVectorDB,
   checkSessionsAlive,
@@ -384,6 +385,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       provisionToCodeEnv,
       provisionToVectorDB,
       checkSessionsAlive,
+      loadCodeApiKey,
+      updateFile: db.updateFile,
     },
   );
 
@@ -458,6 +461,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         provisionToCodeEnv,
         provisionToVectorDB,
         checkSessionsAlive,
+        loadCodeApiKey,
+        updateFile: db.updateFile,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —

@@ -48,10 +48,12 @@ import {
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type {
+  TFileUpdate,
   TFilterFilesByAgentAccess,
   TProvisionToCodeEnv,
   TProvisionToVectorDB,
   TCheckSessionsAlive,
+  TLoadCodeApiKey,
 } from './resources';
 
 /**
@@ -454,6 +456,10 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   provisionToVectorDB?: TProvisionToVectorDB;
   /** Optional: batch-check code env file liveness */
   checkSessionsAlive?: TCheckSessionsAlive;
+  /** Optional: load CODE_API_KEY once per request */
+  loadCodeApiKey?: TLoadCodeApiKey;
+  /** Optional: persist file metadata updates after provisioning */
+  updateFile?: (data: TFileUpdate) => Promise<unknown>;
 }
 
 /**
@@ -627,6 +633,8 @@ export async function initializeAgent(
     provisionToCodeEnv: db.provisionToCodeEnv,
     provisionToVectorDB: db.provisionToVectorDB,
     checkSessionsAlive: db.checkSessionsAlive,
+    loadCodeApiKey: db.loadCodeApiKey,
+    updateFile: db.updateFile as ((data: TFileUpdate) => Promise<unknown>) | undefined,
   });
 
   /**
