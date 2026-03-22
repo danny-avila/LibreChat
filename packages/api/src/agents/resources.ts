@@ -5,25 +5,34 @@ import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { Request as ServerRequest } from 'express';
 
+/** Deferred DB update from provisioning (batched after all files are provisioned) */
+export type TFileUpdate = {
+  file_id: string;
+  metadata?: Record<string, unknown>;
+  embedded?: boolean;
+};
+
 /**
  * Function type for provisioning a file to the code execution environment.
- * @returns The fileIdentifier from the code env
+ * @returns The fileIdentifier and a deferred DB update object
  */
 export type TProvisionToCodeEnv = (params: {
   req: ServerRequest & { user?: IUser };
   file: TFile;
   entity_id?: string;
-}) => Promise<string>;
+  apiKey?: string;
+}) => Promise<{ fileIdentifier: string; fileUpdate: TFileUpdate }>;
 
 /**
  * Function type for provisioning a file to the vector DB for file_search.
- * @returns Object with embedded status
+ * @returns Object with embedded status and a deferred DB update object
  */
 export type TProvisionToVectorDB = (params: {
   req: ServerRequest & { user?: IUser };
   file: TFile;
   entity_id?: string;
-}) => Promise<{ embedded: boolean }>;
+  existingStream?: unknown;
+}) => Promise<{ embedded: boolean; fileUpdate: TFileUpdate | null }>;
 
 /**
  * Function type for batch-checking code env file liveness.
@@ -32,9 +41,12 @@ export type TProvisionToVectorDB = (params: {
  */
 export type TCheckSessionsAlive = (params: {
   files: TFile[];
-  userId: string;
+  apiKey: string;
   staleSafeWindowMs?: number;
 }) => Promise<Set<string>>;
+
+/** Loads CODE_API_KEY for a user. Call once per request. */
+export type TLoadCodeApiKey = (userId: string) => Promise<string>;
 
 /**
  * Function type for retrieving files from the database
@@ -197,6 +209,8 @@ export const primeResources = async ({
   provisionToCodeEnv,
   provisionToVectorDB,
   checkSessionsAlive,
+  loadCodeApiKey,
+  updateFile,
 }: {
   req: ServerRequest & { user?: IUser };
   appConfig?: AppConfig;
@@ -214,6 +228,10 @@ export const primeResources = async ({
   provisionToVectorDB?: TProvisionToVectorDB;
   /** Optional callback to batch-check code env file liveness by session */
   checkSessionsAlive?: TCheckSessionsAlive;
+  /** Optional callback to load CODE_API_KEY once per request */
+  loadCodeApiKey?: TLoadCodeApiKey;
+  /** Optional callback to persist file metadata updates after provisioning */
+  updateFile?: (data: TFileUpdate) => Promise<unknown>;
 }): Promise<{
   attachments: Array<TFile | undefined>;
   tool_resources: AgentToolResources | undefined;
@@ -366,19 +384,33 @@ export const primeResources = async ({
         enabledToolResources.has(EToolResources.file_search) && provisionToVectorDB != null;
 
       if (needsCodeEnv || needsVectorDB) {
+        // Load CODE_API_KEY once for all code env operations
+        let codeApiKey: string | undefined;
+        if (needsCodeEnv && loadCodeApiKey && req.user?.id) {
+          try {
+            codeApiKey = await loadCodeApiKey(req.user.id);
+          } catch (error) {
+            logger.error('[primeResources] Failed to load CODE_API_KEY', error);
+            warnings.push('Code execution file provisioning unavailable');
+          }
+        }
+
         // Batch staleness check: verify code env files are still alive
         let aliveFileIds: Set<string> = new Set();
-        if (needsCodeEnv && checkSessionsAlive && req.user?.id) {
+        if (needsCodeEnv && codeApiKey && checkSessionsAlive) {
           const filesWithIdentifiers = attachments.filter(
             (f) => f?.metadata?.fileIdentifier && f.file_id,
           );
           if (filesWithIdentifiers.length > 0) {
             aliveFileIds = await checkSessionsAlive({
               files: filesWithIdentifiers as TFile[],
-              userId: req.user.id,
+              apiKey: codeApiKey,
             });
           }
         }
+
+        // Collect deferred DB updates from provisioning
+        const pendingUpdates: TFileUpdate[] = [];
 
         // Provision files in parallel
         const provisionResults = await Promise.allSettled(
@@ -393,6 +425,7 @@ export const primeResources = async ({
             // Code env provisioning (with staleness check)
             if (
               needsCodeEnv &&
+              codeApiKey &&
               !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
             ) {
               const hasFileIdentifier = !!file.metadata?.fileIdentifier;
@@ -408,12 +441,14 @@ export const primeResources = async ({
                 }
 
                 try {
-                  const fileIdentifier = await provisionToCodeEnv({
+                  const { fileIdentifier, fileUpdate } = await provisionToCodeEnv({
                     req: typedReq,
                     file,
                     entity_id: agentId,
+                    apiKey: codeApiKey,
                   });
                   file.metadata = { ...file.metadata, fileIdentifier };
+                  pendingUpdates.push(fileUpdate);
                   addFileToResource({
                     file,
                     resourceType: EToolResources.execute_code,
@@ -451,6 +486,9 @@ export const primeResources = async ({
                 });
                 if (result.embedded) {
                   file.embedded = true;
+                  if (result.fileUpdate) {
+                    pendingUpdates.push(result.fileUpdate);
+                  }
                   addFileToResource({
                     file,
                     resourceType: EToolResources.file_search,
@@ -472,6 +510,11 @@ export const primeResources = async ({
           if (result.status === 'rejected') {
             logger.error('[primeResources] Unexpected provisioning rejection', result.reason);
           }
+        }
+
+        // Batch DB updates after all provisioning completes
+        if (pendingUpdates.length > 0 && updateFile) {
+          await Promise.allSettled(pendingUpdates.map((update) => updateFile(update)));
         }
       }
     }
