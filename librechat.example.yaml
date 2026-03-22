@@ -102,7 +102,15 @@ interface:
     groups: true
     roles: true
   marketplace:
-    use: false
+    use: false 
+    categories:
+      enableDefaultCategories: true 
+        # list:
+        #     - value: "Education"
+        #       description: "Educational agents."
+        #     - value: "Productivity"
+        #       description: "Productivity agents."
+
   fileCitations: true
   # Remote Agents configuration
   # Controls user permissions for remote agents with external API support
