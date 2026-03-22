@@ -33,6 +33,7 @@ export interface IConversation extends Document {
   resendFiles?: boolean;
   imageDetail?: string;
   agent_id?: string;
+  openclawSessionKey?: string;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];

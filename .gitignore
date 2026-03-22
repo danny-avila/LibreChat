@@ -7,6 +7,12 @@ data/
 logs
 *.log
 
+# OpenClaw bridge/debug artifacts
+bridge-transcript-*.jsonl
+debug_log*.txt
+debug_log.txt
+latest
+
 # Runtime data
 pids
 *.pid

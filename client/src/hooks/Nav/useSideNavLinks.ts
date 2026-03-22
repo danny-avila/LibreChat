@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
-import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote } from 'lucide-react';
+import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote, Zap } from 'lucide-react';
 import {
   Permissions,
   EModelEndpoint,
@@ -19,6 +19,7 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
+import { OpenClawSkillsPanel } from '~/components/SidePanel/OpenClaw';
 import { useHasAccess, useMCPServerManager } from '~/hooks';
 
 export default function useSideNavLinks({
@@ -103,6 +104,16 @@ export default function useSideNavLinks({
         icon: Blocks,
         id: EModelEndpoint.agents,
         Component: AgentPanelSwitch,
+      });
+    }
+
+    if (endpoint === EModelEndpoint.openclaw) {
+      links.push({
+        title: 'com_sidepanel_openclaw_skills',
+        label: '',
+        icon: Zap,
+        id: 'openclaw-skills',
+        Component: OpenClawSkillsPanel,
       });
     }
 

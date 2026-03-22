@@ -245,6 +245,12 @@ actions:
 
 # Definition of custom endpoints
 endpoints:
+  # OpenClaw Gateway — WebSocket protocol bridge (ws://127.0.0.1:18789)
+  # openclaw:
+  #   apiKey: "${OPENCLAW_API_KEY}"  # Set to your OpenClaw gateway API key, or leave blank if auth is disabled
+  #   gatewayUrl: "ws://127.0.0.1:18789"  # WebSocket URL for the OpenClaw gateway
+  #   defaultThinkingLevel: "medium"  # Default thinking depth: off | minimal | low | medium | high | xhigh
+  #   sessionMode: "auto"  # Session management: auto | persistent | ephemeral
   # assistants:
   #   disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
   #   pollIntervalMs: 3000  # Polling interval for checking assistant updates

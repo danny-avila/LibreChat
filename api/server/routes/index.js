@@ -17,6 +17,7 @@ const models = require('./models');
 const convos = require('./convos');
 const config = require('./config');
 const agents = require('./agents');
+const openclaw = require('./openclaw');
 const roles = require('./roles');
 const oauth = require('./oauth');
 const files = require('./files');
@@ -41,6 +42,7 @@ module.exports = {
   share,
   banner,
   agents,
+  openclaw,
   convos,
   search,
   config,

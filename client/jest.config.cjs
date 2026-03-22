@@ -31,6 +31,7 @@ module.exports = {
     '^~/(.*)$': '<rootDir>/src/$1',
     '^librechat-data-provider/react-query$':
       '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
+    '^@librechat/client$': '<rootDir>/../node_modules/@librechat/client/src/index.ts',
   },
   maxWorkers: '50%',
   restoreMocks: true,

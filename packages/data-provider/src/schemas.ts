@@ -25,6 +25,7 @@ export enum EModelEndpoint {
   agents = 'agents',
   custom = 'custom',
   bedrock = 'bedrock',
+  openclaw = 'openclaw',
 }
 
 /** Mirrors `@librechat/agents` providers */
@@ -91,6 +92,7 @@ export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
   EModelEndpoint.google,
+  EModelEndpoint.openclaw,
 ]);
 
 export enum BedrockProviders {
@@ -919,6 +921,7 @@ export type TSetOption = (
 export type TConversation = z.infer<typeof tConversationSchema> & {
   presetOverride?: Partial<TPreset>;
   disableParams?: boolean;
+  openclawSessionKey?: string;
 };
 
 export const tSharedLinkSchema = z.object({

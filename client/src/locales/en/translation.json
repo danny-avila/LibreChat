@@ -1524,5 +1524,19 @@
   "com_ui_zoom_in": "Zoom in",
   "com_ui_zoom_level": "Zoom level",
   "com_ui_zoom_out": "Zoom out",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_openclaw_thinking_level": "Thinking Level",
+  "com_openclaw_thinking_off": "Off",
+  "com_openclaw_thinking_minimal": "Minimal",
+  "com_openclaw_thinking_low": "Low",
+  "com_openclaw_thinking_medium": "Medium",
+  "com_openclaw_thinking_high": "High",
+  "com_openclaw_thinking_xhigh": "Max",
+  "com_openclaw_model_switcher": "Switch Model",
+  "com_openclaw_skills": "Skills",
+  "com_openclaw_skills_empty": "No skills available",
+  "com_openclaw_insert_skill": "Insert skill into chat",
+  "com_openclaw_loading": "Loading...",
+  "com_openclaw_gateway_error": "OpenClaw gateway unavailable",
+  "com_sidepanel_openclaw_skills": "OpenClaw Skills"
 }

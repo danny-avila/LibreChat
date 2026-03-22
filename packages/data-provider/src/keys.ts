@@ -64,6 +64,10 @@ export enum QueryKeys {
   activeJobs = 'activeJobs',
   /* Agent API Keys */
   agentApiKeys = 'agentApiKeys',
+  /* OpenClaw */
+  openClawModels = 'openClawModels',
+  openClawSkills = 'openClawSkills',
+  openClawTools = 'openClawTools',
 }
 
 // Dynamic query keys that require parameters

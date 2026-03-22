@@ -26,6 +26,9 @@ const convoSchema: Schema<IConversation> = new Schema(
     agent_id: {
       type: String,
     },
+    openclawSessionKey: {
+      type: String,
+    },
     tags: {
       type: [String],
       default: [],

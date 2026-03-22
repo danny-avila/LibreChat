@@ -1085,3 +1085,20 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* OpenClaw */
+import type { OpenClawModelEntry, OpenClawSkillEntry, OpenClawToolCatalogEntry } from './types/openclaw';
+
+export const getOpenClawModels = (): Promise<{ models: OpenClawModelEntry[] }> =>
+  request.get(endpoints.openClawModels());
+
+export const getOpenClawSkills = (): Promise<{ skills: OpenClawSkillEntry[] }> =>
+  request.get(endpoints.openClawSkills());
+
+export const getOpenClawTools = (): Promise<{ tools: OpenClawToolCatalogEntry[] }> =>
+  request.get(endpoints.openClawTools());
+
+export const switchOpenClawModel = (payload: {
+  model: string;
+  sessionKey: string;
+}): Promise<{ success: boolean }> => request.post(endpoints.openClawSwitchModel(), payload);

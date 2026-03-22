@@ -438,3 +438,10 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+
+/* OpenClaw */
+export const openClawModels = () => `${BASE_URL}/api/openclaw/models`;
+export const openClawSkills = () => `${BASE_URL}/api/openclaw/skills`;
+export const openClawTools = () => `${BASE_URL}/api/openclaw/tools`;
+export const openClawSwitchModel = () => `${BASE_URL}/api/openclaw/models/switch`;

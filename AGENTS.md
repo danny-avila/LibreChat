@@ -136,8 +136,35 @@ Multi-line imports count total character length across all lines. Consolidate va
 | `npm run frontend` | Build all compiled code sequentially (legacy fallback) |
 | `npm run frontend:dev` | Start frontend dev server with HMR (port 3090, requires backend running) |
 | `npm run build:data-provider` | Rebuild `packages/data-provider` after changes |
+| `npm run lint` / `npm run lint:fix` | Run ESLint / with auto-fix |
+| `npm run format` | Format code with Prettier |
+
+### Bun Commands (faster)
+| Command | Purpose |
+|---|---|
+| `npm run b:client` | Full build with bun |
+| `npm run b:api:dev` | Backend dev server with bun + watch |
+| `npm run b:test:client` / `npm run b:test:api` | Run tests with bun |
+
+### Testing Commands
+| Command | Purpose |
+|---|---|
+| `npm run test:all` | Run all tests (client, api, packages) |
+| `npm run test:client` / `npm run test:api` | Run specific workspace tests |
+| `npm run test:packages:api` / `npm run test:packages:data-provider` | Run package-specific tests |
+| `npm run e2e` / `npm run e2e:headed` | Run E2E tests (headless / visible browser) |
+| `npm run e2e:ci` | Run E2E in CI mode |
+
+### User Management (requires running backend)
+| Command | Purpose |
+|---|---|
+| `npm run create-user` | Create a new user |
+| `npm run list-users` | List all users |
+| `npm run reset-password` | Reset user password |
+| `npm run ban-user` / `npm run delete-user` | Manage users |
 
 - Node.js: v20.19.0+ or ^22.12.0 or >= 23.0.0
+- Bun: supported for faster builds and tests
 - Database: MongoDB
 - Backend runs on `http://localhost:3080/`; frontend dev server on `http://localhost:3090/`
 

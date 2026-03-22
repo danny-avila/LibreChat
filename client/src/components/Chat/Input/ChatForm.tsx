@@ -34,6 +34,8 @@ import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
+import ThinkingLevelSelector from './ThinkingLevelSelector';
+import OpenClawModelSwitcher from './OpenClawModelSwitcher';
 
 const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
@@ -329,7 +331,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   Array.isArray(conversation?.messages) && conversation.messages.length >= 1
                 }
               />
-              <div className="mx-auto flex" />
+              <div className="mx-auto flex items-center gap-2">
+                <ThinkingLevelSelector />
+                <OpenClawModelSwitcher />
+              </div>
               {SpeechToText && (
                 <AudioRecorder
                   methods={methods}

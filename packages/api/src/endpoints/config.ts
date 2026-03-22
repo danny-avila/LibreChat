@@ -8,6 +8,7 @@ import { initializeBedrock } from './bedrock/initialize';
 import { initializeCustom } from './custom/initialize';
 import { initializeGoogle } from './google/initialize';
 import { initializeOpenAI } from './openai/initialize';
+import { initializeOpenClaw } from './openclaw/initialize';
 import { getCustomEndpointConfig } from '~/app/config';
 
 /**
@@ -39,6 +40,7 @@ export const providerConfigMap: Record<string, InitializeFn> = {
   [EModelEndpoint.bedrock]: initializeBedrock,
   [EModelEndpoint.azureOpenAI]: initializeOpenAI,
   [EModelEndpoint.anthropic]: initializeAnthropic,
+  [EModelEndpoint.openclaw]: initializeOpenClaw,
 };
 
 /**
