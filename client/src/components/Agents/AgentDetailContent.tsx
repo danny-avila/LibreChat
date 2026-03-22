@@ -12,7 +12,7 @@ import {
 } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useLocalize, useDefaultConvo, useFavorites } from '~/hooks';
-import { renderAgentAvatar, clearMessagesCache } from '~/utils';
+import { AgentAvatar, clearMessagesCache } from '~/utils';
 import { useChatContext } from '~/Providers';
 
 interface SupportContact {
@@ -140,7 +140,9 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
   return (
     <OGDialogContent className="max-h-[90vh] w-11/12 max-w-lg overflow-y-auto">
       {/* Agent avatar */}
-      <div className="mt-6 flex justify-center">{renderAgentAvatar(agent, { size: 'xl' })}</div>
+      <div className="mt-6 flex justify-center">
+        <AgentAvatar agent={agent} size="xl" />
+      </div>
 
       {/* Agent name */}
       <div className="mt-3 text-center">
