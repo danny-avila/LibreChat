@@ -27,6 +27,7 @@ import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/t
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type {
   TFileUpdate,
+  ProvisionState,
   TFilterFilesByAgentAccess,
   TProvisionToCodeEnv,
   TProvisionToVectorDB,
@@ -315,6 +316,8 @@ export type InitializedAgent = Agent & {
   primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
   /** Warnings from lazy file provisioning (e.g., failed uploads) */
   provisionWarnings?: string[];
+  /** State for deferred file provisioning — actual uploads happen at tool invocation time */
+  provisionState?: ProvisionState;
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -707,6 +710,7 @@ export async function initializeAgent(
     requestAttachments: primedRequestAttachments,
     agentContextAttachments: primedAgentContextAttachments,
     tool_resources,
+    provisionState,
     warnings: provisionWarnings,
   } = await primeResources({
     req: req as never,
@@ -720,11 +724,8 @@ export async function initializeAgent(
     tool_resources: agent.tool_resources,
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
     enabledToolResources: toolResourceSet,
-    provisionToCodeEnv: db.provisionToCodeEnv,
-    provisionToVectorDB: db.provisionToVectorDB,
     checkSessionsAlive: db.checkSessionsAlive,
     loadCodeApiKey: db.loadCodeApiKey,
-    updateFile: db.updateFile as ((data: TFileUpdate) => Promise<unknown>) | undefined,
   });
 
   /**
@@ -1240,6 +1241,7 @@ export async function initializeAgent(
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
     maxToolResultChars: maxToolResultCharsResolved,
+    provisionState,
     provisionWarnings:
       provisionWarnings != null && provisionWarnings.length > 0 ? provisionWarnings : undefined,
     maxContextTokens:
