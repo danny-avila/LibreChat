@@ -2,11 +2,10 @@ import { memo, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
-import { NewChat } from '~/components/Nav';
-import { OpenSidebar, PresetsMenu } from './Menus';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
+import { OpenSidebar, PresetsMenu } from './Menus';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
@@ -47,7 +46,6 @@ function Header() {
       <div className="hide-scrollbar flex w-full items-center justify-between gap-2 overflow-x-auto">
         <div className="mx-1 flex items-center">
           <OpenSidebar className="md:hidden" />
-          <NewChat />
           {!(navVisible && isSmallScreen) && (
             <div
               className={cn(
