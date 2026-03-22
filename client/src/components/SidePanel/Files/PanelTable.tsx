@@ -313,11 +313,12 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="space-y-2">
         <Button
           ref={manageFilesRef}
           variant="outline"
           size="sm"
+          className="w-full"
           onClick={() => setShowFilesModal(true)}
           aria-label={localize('com_sidepanel_manage_files')}
         >
@@ -325,7 +326,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           <span className="ml-2">{localize('com_sidepanel_manage_files')}</span>
         </Button>
 
-        <div className="flex items-center gap-2" role="navigation" aria-label="Pagination">
+        <div
+          className="flex items-center justify-between"
+          role="navigation"
+          aria-label="Pagination"
+        >
           <Button
             variant="outline"
             size="sm"

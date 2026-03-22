@@ -55,7 +55,7 @@ const BookmarkTable = () => {
 
   return (
     <BookmarkContext.Provider value={{ bookmarks }}>
-      <div role="region" aria-label={localize('com_ui_bookmarks')} className="space-y-2">
+      <div role="region" aria-label={localize('com_ui_bookmarks')} className="space-y-2 px-3 pb-3">
         {/* Header: Filter + Create Button */}
         <div className="flex items-center gap-2">
           <FilterInput

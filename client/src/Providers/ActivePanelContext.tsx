@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, ReactNode } from 'react';
 
 const STORAGE_KEY = 'side:active-panel';
 const DEFAULT_PANEL = 'conversations';
@@ -18,16 +18,14 @@ const ActivePanelContext = createContext<ActivePanelContextType | undefined>(und
 export function ActivePanelProvider({ children }: { children: ReactNode }) {
   const [active, _setActive] = useState<string>(getInitialActivePanel);
 
-  const setActive = (id: string) => {
+  const setActive = useCallback((id: string) => {
     localStorage.setItem(STORAGE_KEY, id);
     _setActive(id);
-  };
+  }, []);
 
-  return (
-    <ActivePanelContext.Provider value={{ active, setActive }}>
-      {children}
-    </ActivePanelContext.Provider>
-  );
+  const value = useMemo(() => ({ active, setActive }), [active, setActive]);
+
+  return <ActivePanelContext.Provider value={value}>{children}</ActivePanelContext.Provider>;
 }
 
 export function useActivePanel() {

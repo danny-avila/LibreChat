@@ -36,7 +36,7 @@ export default function MCPBuilderPanel() {
   }, [availableMCPServers, searchQuery]);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-visible">
+    <div className="flex h-auto w-full flex-col px-3 pb-3">
       <div role="region" aria-label={localize('com_ui_mcp_servers')} className="space-y-2">
         {/* Toolbar: Search + Add Button */}
         <div className="flex items-center gap-2">

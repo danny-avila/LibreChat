@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify';
 import * as Ariakit from '@ariakit/react';
-import { forwardRef, useId, useMemo } from 'react';
+import { forwardRef, useCallback, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '~/utils';
 import './Tooltip.css';
@@ -65,12 +65,15 @@ export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(func
     }
   }, [placement]);
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (role === 'button' && event.key === 'Enter') {
-      event.preventDefault();
-      (event.target as HTMLDivElement).click();
-    }
-  };
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (role === 'button' && event.key === 'Enter') {
+        event.preventDefault();
+        (event.target as HTMLDivElement).click();
+      }
+    },
+    [role],
+  );
 
   return (
     <Ariakit.TooltipProvider store={tooltip} hideTimeout={0}>
