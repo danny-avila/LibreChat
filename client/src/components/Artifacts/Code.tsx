@@ -40,6 +40,7 @@ export const CopyCodeButton: React.FC<{ content: string }> = ({ content }) => {
     <Button
       size="icon"
       variant="ghost"
+      className="h-9 w-9"
       onClick={handleCopy}
       aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
     >
