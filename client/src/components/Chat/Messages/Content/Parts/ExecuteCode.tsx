@@ -1,5 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { lowlight } from 'lowlight';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
@@ -43,15 +42,75 @@ function hastToReact(nodes: HastNode[]): React.ReactNode[] {
   });
 }
 
-function highlightCode(code: string, lang: string): React.ReactNode[] {
+type LowlightModule = typeof import('lowlight');
+
+/** Lazy-loaded lowlight singleton — only fetched when syntax highlighting is first needed. */
+let lowlightPromise: Promise<LowlightModule> | null = null;
+let lowlightModule: LowlightModule | null = null;
+
+function loadLowlight(): Promise<LowlightModule> {
+  if (lowlightModule) {
+    return Promise.resolve(lowlightModule);
+  }
+  if (!lowlightPromise) {
+    lowlightPromise = import('lowlight').then((mod) => {
+      lowlightModule = mod;
+      return mod;
+    });
+  }
+  return lowlightPromise;
+}
+
+function highlightCode(mod: LowlightModule, code: string, lang: string): React.ReactNode[] {
   try {
-    const tree = lowlight.registered(lang)
-      ? lowlight.highlight(lang, code)
-      : lowlight.highlightAuto(code);
+    const tree = mod.lowlight.registered(lang)
+      ? mod.lowlight.highlight(lang, code)
+      : mod.lowlight.highlightAuto(code);
     return hastToReact(tree.children as HastNode[]);
   } catch {
     return [code];
   }
+}
+
+/** Hook that lazily loads lowlight and returns highlighted nodes once ready. */
+function useLazyHighlight(code: string | undefined, lang: string): React.ReactNode[] | null {
+  const [highlighted, setHighlighted] = useState<React.ReactNode[] | null>(() => {
+    if (!code || !lowlightModule) {
+      return null;
+    }
+    return highlightCode(lowlightModule, code, lang);
+  });
+  const prevKey = useRef('');
+
+  useEffect(() => {
+    const key = `${lang}\0${code ?? ''}`;
+    if (key === prevKey.current) {
+      return;
+    }
+    prevKey.current = key;
+
+    if (!code) {
+      setHighlighted(null);
+      return;
+    }
+
+    if (lowlightModule) {
+      setHighlighted(highlightCode(lowlightModule, code, lang));
+      return;
+    }
+
+    let cancelled = false;
+    loadLowlight().then((mod) => {
+      if (!cancelled) {
+        setHighlighted(highlightCode(mod, code, lang));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, lang]);
+
+  return highlighted;
 }
 
 export function useParseArgs(args?: string | Record<string, unknown>): ParsedArgs | null {
@@ -118,7 +177,7 @@ export default function ExecuteCode({
   }, [autoExpand, hasContent]);
   const progress = useProgress(initialProgress);
 
-  const highlighted = useMemo(() => (code ? highlightCode(code, lang) : null), [code, lang]);
+  const highlighted = useLazyHighlight(code, lang);
 
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
 
