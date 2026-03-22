@@ -108,12 +108,19 @@ export interface BedrockDocumentBlock {
   };
 }
 
+/** Mistral document_url block format for PDF/document uploads */
+export interface MistralDocumentBlock {
+  type: 'document_url';
+  document_url: string;
+}
+
 export type DocumentBlock =
   | AnthropicDocumentBlock
   | GoogleDocumentBlock
   | OpenAIFileBlock
   | OpenAIInputFileBlock
-  | BedrockDocumentBlock;
+  | BedrockDocumentBlock
+  | MistralDocumentBlock;
 
 export interface DocumentResult {
   documents: DocumentBlock[];
