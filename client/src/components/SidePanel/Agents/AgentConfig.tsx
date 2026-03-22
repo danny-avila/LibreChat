@@ -265,7 +265,7 @@ export default function AgentConfig() {
           <button
             type="button"
             onClick={() => setActivePanel(Panel.model)}
-            className="btn btn-neutral border-token-border-light relative h-10 w-full rounded-lg font-medium"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
             aria-haspopup="true"
             aria-expanded="false"
           >

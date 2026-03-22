@@ -110,7 +110,7 @@ function DynamicTags({
           <div className="flex w-full justify-between">
             <Label
               htmlFor={`${settingKey}-dynamic-input`}
-              className="text-left text-sm font-medium"
+              className="text-left text-xs font-medium"
             >
               {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
