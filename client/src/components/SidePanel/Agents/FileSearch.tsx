@@ -114,7 +114,7 @@ function FileSearch({
   const menuTrigger = (
     <Ariakit.MenuButton
       disabled={disabledUploadButton}
-      className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+      className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
     >
       <div className="flex w-full items-center justify-center gap-1">
         <AttachmentIcon className="text-token-text-primary h-4 w-4" />
@@ -127,7 +127,7 @@ function FileSearch({
     <div className="w-full">
       <div className="mb-1.5 flex items-center gap-2">
         <span>
-          <label className="text-token-text-primary block font-medium">
+          <label className="text-token-text-primary block text-sm font-medium">
             {localize('com_assistants_file_search')}
           </label>
         </span>
@@ -158,7 +158,7 @@ function FileSearch({
             <button
               type="button"
               disabled={disabledUploadButton}
-              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
               onClick={handleButtonClick}
             >
               <div className="flex w-full items-center justify-center gap-1">

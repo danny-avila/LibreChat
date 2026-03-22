@@ -132,13 +132,6 @@ export type NavLink = {
   id: string;
 };
 
-export interface NavProps {
-  isCollapsed: boolean;
-  links: NavLink[];
-  resize?: (size: number) => void;
-  defaultActive?: string;
-}
-
 export interface DataColumnMeta {
   meta:
     | {
@@ -560,11 +553,6 @@ export interface ModelItemProps {
   icon?: JSX.Element;
   className?: string;
 }
-
-export type ContextType = {
-  navVisible: boolean;
-  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
-};
 
 export interface SwitcherProps {
   endpoint?: t.EModelEndpoint | null;
