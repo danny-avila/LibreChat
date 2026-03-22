@@ -92,6 +92,8 @@ export interface AppConfig {
   secureImageLinks?: TCustomConfig['secureImageLinks'];
   /** Processed model specifications */
   modelSpecs?: TCustomConfig['modelSpecs'];
+  /** Floating buttons configuration */
+  floatingButtons?: TCustomConfig['floatingButtons'];
   /** Available tools */
   availableTools?: Record<string, FunctionTool>;
   endpoints?: {

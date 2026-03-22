@@ -110,6 +110,7 @@ export const AppService = async (params?: {
     fileConfig: config?.fileConfig as AppConfig['fileConfig'],
     secureImageLinks: config?.secureImageLinks,
     modelSpecs: processModelSpecs(config?.endpoints, config.modelSpecs, interfaceConfig),
+    floatingButtons: config?.floatingButtons,
     endpoints: loadedEndpoints,
   };
 
