@@ -1,6 +1,7 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { ChevronDown } from 'lucide-react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
@@ -9,8 +10,10 @@ import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useActiveJobs } from '~/data-provider';
 import { groupConversationsByDate, cn } from '~/utils';
+import BulkSelectionToolbar from './BulkSelectionToolbar';
 import Convo from './Convo';
 import store from '~/store';
+import { isBulkSelectModeAtom, selectedConvoIdsAtom } from '~/store/bulkSelection';
 
 export type CellPosition = {
   columnIndex: number;
@@ -32,6 +35,10 @@ interface ConversationsProps {
   isSearchLoading: boolean;
   isChatsExpanded: boolean;
   setIsChatsExpanded: (expanded: boolean) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+  onExitSelectMode: () => void;
+  onToggleSelect: (id: string) => void;
 }
 
 interface MeasuredRowProps {
@@ -125,11 +132,17 @@ const MemoizedConvo = memo(
     retainView,
     toggleNav,
     isGenerating,
+    isSelectMode,
+    isSelected,
+    onToggleSelect,
   }: {
     conversation: TConversation;
     retainView: () => void;
     toggleNav: () => void;
     isGenerating: boolean;
+    isSelectMode: boolean;
+    isSelected: boolean;
+    onToggleSelect: (id: string) => void;
   }) => {
     return (
       <Convo
@@ -137,6 +150,9 @@ const MemoizedConvo = memo(
         retainView={retainView}
         toggleNav={toggleNav}
         isGenerating={isGenerating}
+        isSelectMode={isSelectMode}
+        isSelected={isSelected}
+        onToggleSelect={onToggleSelect}
       />
     );
   },
@@ -145,7 +161,9 @@ const MemoizedConvo = memo(
       prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
       prevProps.conversation.title === nextProps.conversation.title &&
       prevProps.conversation.endpoint === nextProps.conversation.endpoint &&
-      prevProps.isGenerating === nextProps.isGenerating
+      prevProps.isGenerating === nextProps.isGenerating &&
+      prevProps.isSelectMode === nextProps.isSelectMode &&
+      prevProps.isSelected === nextProps.isSelected
     );
   },
 );
@@ -160,7 +178,13 @@ const Conversations: FC<ConversationsProps> = ({
   isSearchLoading,
   isChatsExpanded,
   setIsChatsExpanded,
+  onSelectAll,
+  onDeselectAll,
+  onExitSelectMode,
+  onToggleSelect,
 }) => {
+  const isSelectMode = useAtomValue(isBulkSelectModeAtom);
+  const selectedIds = useAtomValue(selectedConvoIdsAtom);
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
@@ -182,6 +206,11 @@ const Conversations: FC<ConversationsProps> = ({
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
     [rawConversations],
+  );
+
+  const allConvoIds = useMemo(
+    () => filteredConversations.map((c) => c.conversationId ?? '').filter(Boolean),
+    [filteredConversations],
   );
 
   const groupedConversations = useMemo(
@@ -313,7 +342,9 @@ const Conversations: FC<ConversationsProps> = ({
       }
 
       if (item.type === 'convo') {
-        const isGenerating = activeJobIds.has(item.convo.conversationId ?? '');
+        const convoId = item.convo.conversationId ?? '';
+        const isGenerating = activeJobIds.has(convoId);
+        const isSelected = selectedIds.has(convoId);
         return (
           <MeasuredRow key={key} {...rowProps}>
             <MemoizedConvo
@@ -321,6 +352,9 @@ const Conversations: FC<ConversationsProps> = ({
               retainView={moveToTop}
               toggleNav={toggleNav}
               isGenerating={isGenerating}
+              isSelectMode={isSelectMode}
+              isSelected={isSelected}
+              onToggleSelect={onToggleSelect}
             />
           </MeasuredRow>
         );
@@ -339,6 +373,9 @@ const Conversations: FC<ConversationsProps> = ({
       setIsChatsExpanded,
       shouldShowFavorites,
       activeJobIds,
+      isSelectMode,
+      selectedIds,
+      onToggleSelect,
     ],
   );
 
@@ -362,14 +399,24 @@ const Conversations: FC<ConversationsProps> = ({
   );
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
+    <div className="relative flex h-full min-h-0 flex-col text-sm text-text-primary">
+      {isSelectMode && (
+        <BulkSelectionToolbar
+          selectedIds={selectedIds}
+          allConvoIds={allConvoIds}
+          onSelectAll={onSelectAll}
+          onDeselectAll={onDeselectAll}
+          onExit={onExitSelectMode}
+          retainView={moveToTop}
+        />
+      )}
       {isSearchLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner className="text-text-primary" />
           <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
         </div>
       ) : (
-        <div className="flex-1">
+        <div className="flex-1 pb-2">
           <AutoSizer>
             {({ width, height }) => (
               <List

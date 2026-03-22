@@ -1,6 +1,115 @@
 const express = require('express');
 const request = require('supertest');
 
+jest.mock('@librechat/agents', () => ({
+  sleep: jest.fn(),
+}));
+
+jest.mock('@librechat/api', () => ({
+  isEnabled: jest.fn(),
+  createAxiosInstance: jest.fn(() => ({
+    get: jest.fn(),
+    post: jest.fn(),
+    put: jest.fn(),
+    delete: jest.fn(),
+  })),
+  logAxiosError: jest.fn(),
+}));
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+  createModels: jest.fn(() => ({
+    User: {},
+    Conversation: {},
+    Message: {},
+    SharedLink: {},
+  })),
+}));
+
+jest.mock('~/models/Conversation', () => ({
+  getConvosByCursor: jest.fn(),
+  getConvo: jest.fn(),
+  deleteConvos: jest.fn(),
+  saveConvo: jest.fn(),
+}));
+
+jest.mock('~/models/ToolCall', () => ({
+  deleteToolCalls: jest.fn(),
+}));
+
+jest.mock('~/models', () => ({
+  deleteAllSharedLinks: jest.fn(),
+  deleteConvoSharedLink: jest.fn(),
+}));
+
+jest.mock('~/db/models', () => ({
+  Conversation: {
+    updateMany: jest.fn(),
+  },
+}));
+
+jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
+
+jest.mock('~/server/middleware', () => ({
+  createImportLimiters: jest.fn(() => ({
+    importIpLimiter: (req, res, next) => next(),
+    importUserLimiter: (req, res, next) => next(),
+  })),
+  createForkLimiters: jest.fn(() => ({
+    forkIpLimiter: (req, res, next) => next(),
+    forkUserLimiter: (req, res, next) => next(),
+  })),
+  configMiddleware: (req, res, next) => next(),
+  validateConvoAccess: (req, res, next) => next(),
+}));
+
+jest.mock('~/server/utils/import/fork', () => ({
+  forkConversation: jest.fn(),
+  duplicateConversation: jest.fn(),
+}));
+
+jest.mock('~/server/utils/import', () => ({
+  importConversations: jest.fn(),
+}));
+
+jest.mock('~/cache/getLogStores', () => jest.fn());
+
+jest.mock('~/server/routes/files/multer', () => ({
+  storage: {},
+  importFileFilter: jest.fn(),
+}));
+
+jest.mock('multer', () => {
+  return jest.fn(() => ({
+    single: jest.fn(() => (req, res, next) => {
+      req.file = { path: '/tmp/test-file.json' };
+      next();
+    }),
+  }));
+});
+
+jest.mock('librechat-data-provider', () => ({
+  CacheKeys: {
+    GEN_TITLE: 'GEN_TITLE',
+  },
+  EModelEndpoint: {
+    azureAssistants: 'azureAssistants',
+    assistants: 'assistants',
+  },
+}));
+
+jest.mock('~/server/services/Endpoints/azureAssistants', () => ({
+  initializeClient: jest.fn(),
+}));
+
+jest.mock('~/server/services/Endpoints/assistants', () => ({
+  initializeClient: jest.fn(),
+}));
 const MOCKS = '../__test-utils__/convos-route-mocks';
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
@@ -26,6 +135,7 @@ describe('Convos Routes', () => {
   const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
   const { deleteConvos, saveConvo } = require('~/models/Conversation');
   const { deleteToolCalls } = require('~/models/ToolCall');
+  const { Conversation } = require('~/db/models');
 
   beforeAll(() => {
     convosRouter = require('../convos');
@@ -540,6 +650,188 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'conversationId is required' });
+    });
+  });
+
+  describe('DELETE /bulk-delete', () => {
+    it('should bulk delete conversations, tool calls, and shared links', async () => {
+      const mockConversationIds = ['conv-1', 'conv-2', 'conv-3'];
+      const mockDbResponse = { acknowledged: true, deletedCount: 3 };
+
+      deleteConvos.mockResolvedValue(mockDbResponse);
+      deleteToolCalls.mockResolvedValue({ deletedCount: 5 });
+      deleteConvoSharedLink.mockResolvedValue({ deletedCount: 1 });
+
+      const response = await request(app)
+        .delete('/api/convos/bulk-delete')
+        .send({ conversationIds: mockConversationIds });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual(mockDbResponse);
+
+      /** Verify deleteConvos was called with the $in filter */
+      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {
+        conversationId: { $in: mockConversationIds },
+      });
+      expect(deleteConvos).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call deleteToolCalls and deleteConvoSharedLink for each conversation ID', async () => {
+      const mockConversationIds = ['conv-1', 'conv-2'];
+
+      deleteConvos.mockResolvedValue({ deletedCount: 2 });
+      deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
+      deleteConvoSharedLink.mockResolvedValue({ deletedCount: 0 });
+
+      await request(app)
+        .delete('/api/convos/bulk-delete')
+        .send({ conversationIds: mockConversationIds });
+
+      expect(deleteToolCalls).toHaveBeenCalledTimes(2);
+      expect(deleteConvoSharedLink).toHaveBeenCalledTimes(2);
+
+      expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123', 'conv-1');
+      expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123', 'conv-2');
+      expect(deleteConvoSharedLink).toHaveBeenCalledWith('test-user-123', 'conv-1');
+      expect(deleteConvoSharedLink).toHaveBeenCalledWith('test-user-123', 'conv-2');
+    });
+
+    it('should return 400 when conversationIds is an empty array', async () => {
+      const response = await request(app)
+        .delete('/api/convos/bulk-delete')
+        .send({ conversationIds: [] });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'conversationIds array is required' });
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when conversationIds is missing from body', async () => {
+      const response = await request(app).delete('/api/convos/bulk-delete').send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'conversationIds array is required' });
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when conversationIds is not an array', async () => {
+      const response = await request(app)
+        .delete('/api/convos/bulk-delete')
+        .send({ conversationIds: 'conv-1' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'conversationIds array is required' });
+      expect(deleteConvos).not.toHaveBeenCalled();
+    });
+
+    it('should return 500 if deleteConvos fails', async () => {
+      deleteConvos.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app)
+        .delete('/api/convos/bulk-delete')
+        .send({ conversationIds: ['conv-1'] });
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error bulk deleting conversations');
+
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith(
+        'Error bulk deleting conversations',
+        expect.any(Error),
+      );
+    });
+  });
+
+  describe('POST /bulk-archive', () => {
+    it('should archive multiple conversations successfully', async () => {
+      const mockConversationIds = ['conv-1', 'conv-2'];
+      Conversation.updateMany.mockResolvedValue({ modifiedCount: 2 });
+
+      const response = await request(app)
+        .post('/api/convos/bulk-archive')
+        .send({ conversationIds: mockConversationIds, isArchived: true });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ modifiedCount: 2 });
+
+      expect(Conversation.updateMany).toHaveBeenCalledWith(
+        { conversationId: { $in: mockConversationIds }, user: 'test-user-123' },
+        { $set: { isArchived: true, expiredAt: null } },
+      );
+    });
+
+    it('should unarchive multiple conversations successfully', async () => {
+      const mockConversationIds = ['conv-1', 'conv-2'];
+      Conversation.updateMany.mockResolvedValue({ modifiedCount: 2 });
+
+      const response = await request(app)
+        .post('/api/convos/bulk-archive')
+        .send({ conversationIds: mockConversationIds, isArchived: false });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ modifiedCount: 2 });
+
+      expect(Conversation.updateMany).toHaveBeenCalledWith(
+        { conversationId: { $in: mockConversationIds }, user: 'test-user-123' },
+        { $set: { isArchived: false, expiredAt: null } },
+      );
+    });
+
+    it('should return 400 when conversationIds is an empty array', async () => {
+      const response = await request(app)
+        .post('/api/convos/bulk-archive')
+        .send({ conversationIds: [], isArchived: true });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'conversationIds array is required' });
+      expect(Conversation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when conversationIds is missing', async () => {
+      const response = await request(app)
+        .post('/api/convos/bulk-archive')
+        .send({ isArchived: true });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'conversationIds array is required' });
+      expect(Conversation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when isArchived is not a boolean', async () => {
+      const response = await request(app)
+        .post('/api/convos/bulk-archive')
+        .send({ conversationIds: ['conv-1'], isArchived: 'true' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'isArchived must be a boolean' });
+      expect(Conversation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when isArchived is undefined', async () => {
+      const response = await request(app)
+        .post('/api/convos/bulk-archive')
+        .send({ conversationIds: ['conv-1'] });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'isArchived must be a boolean' });
+      expect(Conversation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('should return 500 if updateMany fails', async () => {
+      Conversation.updateMany.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app)
+        .post('/api/convos/bulk-archive')
+        .send({ conversationIds: ['conv-1'], isArchived: true });
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error bulk archiving conversations');
+
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith(
+        'Error bulk archiving conversations',
+        expect.any(Error),
+      );
     });
   });
 });

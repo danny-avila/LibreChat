@@ -526,6 +526,101 @@ export const useDeleteConversationMutation = (
   );
 };
 
+export const useBulkDeleteConversationsMutation = (
+  options?: t.BulkDeleteConversationsOptions,
+): UseMutationResult<
+  t.TBulkDeleteConversationsResponse,
+  unknown,
+  t.TBulkDeleteConversationsRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError } = options ?? {};
+
+  return useMutation(
+    (payload: t.TBulkDeleteConversationsRequest) => dataService.bulkDeleteConversations(payload),
+    {
+      onSuccess: (data, vars, context) => {
+        for (const conversationId of vars.conversationIds) {
+          removeConvoFromAllQueries(queryClient, conversationId);
+          queryClient.removeQueries({
+            queryKey: [QueryKeys.conversation, conversationId],
+            exact: true,
+          });
+        }
+
+        const archivedQueries = queryClient
+          .getQueryCache()
+          .findAll([QueryKeys.archivedConversations], { exact: false });
+
+        for (const query of archivedQueries) {
+          queryClient.setQueryData<InfiniteData<ConversationListResponse>>(
+            query.queryKey,
+            (oldData) => {
+              if (!oldData) {
+                return oldData;
+              }
+              const idSet = new Set(vars.conversationIds);
+              return {
+                ...oldData,
+                pages: oldData.pages.map((page) => ({
+                  ...page,
+                  conversations: page.conversations.filter(
+                    (conv) => !idSet.has(conv.conversationId ?? ''),
+                  ),
+                })),
+              };
+            },
+          );
+        }
+
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.allConversations],
+          refetchPage: (_, index) => index === 0,
+        });
+
+        onSuccess?.(data, vars, context);
+      },
+      onError,
+    },
+  );
+};
+
+export const useBulkArchiveConversationsMutation = (
+  options?: t.BulkArchiveConversationsOptions,
+): UseMutationResult<
+  t.TBulkArchiveConversationsResponse,
+  unknown,
+  t.TBulkArchiveConversationsRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError } = options ?? {};
+
+  return useMutation(
+    (payload: t.TBulkArchiveConversationsRequest) => dataService.bulkArchiveConversations(payload),
+    {
+      onSuccess: (data, vars, context) => {
+        for (const conversationId of vars.conversationIds) {
+          removeConvoFromAllQueries(queryClient, conversationId);
+        }
+
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.allConversations],
+          refetchPage: (_, index) => index === 0,
+        });
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.archivedConversations],
+          refetchType: 'all',
+        });
+
+        onSuccess?.(data, vars, context);
+      },
+      onError,
+    },
+  );
+};
+
 export const useDuplicateConversationMutation = (
   options?: t.DuplicateConvoOptions,
 ): UseMutationResult<t.TDuplicateConvoResponse, unknown, t.TDuplicateConvoRequest, unknown> => {

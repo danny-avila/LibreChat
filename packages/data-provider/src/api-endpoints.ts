@@ -126,6 +126,10 @@ export const forkConversation = () => `${conversationsRoot}/fork`;
 
 export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
 
+export const bulkDeleteConversations = () => `${conversationsRoot}/bulk-delete`;
+
+export const bulkArchiveConversations = () => `${conversationsRoot}/bulk-archive`;
+
 export const search = (q: string, cursor?: string | null) =>
   `${BASE_URL}/api/search?q=${q}${cursor ? `&cursor=${cursor}` : ''}`;
 

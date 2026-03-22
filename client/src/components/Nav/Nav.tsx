@@ -9,9 +9,10 @@ import {
   useRef,
   startTransition,
 } from 'react';
+import { ListChecks, X } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { motion } from 'framer-motion';
-import { Skeleton, useMediaQuery } from '@librechat/client';
+import { Button, Skeleton, TooltipAnchor, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
@@ -22,6 +23,7 @@ import {
   useAuthContext,
   useLocalStorage,
   useNavScrolling,
+  useBulkSelection,
 } from '~/hooks';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
@@ -132,6 +134,18 @@ const Nav = memo(
       return data ? data.pages.flatMap((page) => page.conversations) : [];
     }, [data]);
 
+    const allConvoIds = useMemo(
+      () =>
+        conversations
+          .filter(Boolean)
+          .map((c) => c?.conversationId ?? '')
+          .filter(Boolean),
+      [conversations],
+    );
+
+    const { isSelectMode, enterSelectMode, exitSelectMode, selectAll, deselectAll, toggleSelect } =
+      useBulkSelection(allConvoIds);
+
     const toggleNavVisible = useCallback(() => {
       // Use startTransition to mark this as a non-urgent update
       // This prevents blocking the main thread during the cascade of re-renders
@@ -194,9 +208,32 @@ const Nav = memo(
               </Suspense>
             </>
           )}
+          <TooltipAnchor
+            description={localize(
+              isSelectMode ? 'com_ui_exit_select_mode' : 'com_ui_select_conversations',
+            )}
+            render={
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={isSelectMode ? exitSelectMode : enterSelectMode}
+                aria-label={localize(
+                  isSelectMode ? 'com_ui_exit_select_mode' : 'com_ui_select_conversations',
+                )}
+                aria-pressed={isSelectMode}
+                className="rounded-full border-none bg-transparent duration-0 hover:bg-surface-active-alt focus-visible:ring-inset focus-visible:ring-black focus-visible:ring-offset-0 dark:focus-visible:ring-white md:rounded-xl"
+              >
+                {isSelectMode ? (
+                  <X className="icon-lg text-text-primary" aria-hidden="true" />
+                ) : (
+                  <ListChecks className="icon-lg text-text-primary" aria-hidden="true" />
+                )}
+              </Button>
+            }
+          />
         </>
       ),
-      [hasAccessToBookmarks, tags],
+      [hasAccessToBookmarks, tags, isSelectMode, enterSelectMode, exitSelectMode, localize],
     );
 
     const [isSearchLoading, setIsSearchLoading] = useState(
@@ -245,6 +282,10 @@ const Nav = memo(
                 isSearchLoading={isSearchLoading}
                 isChatsExpanded={isChatsExpanded}
                 setIsChatsExpanded={setIsChatsExpanded}
+                onSelectAll={selectAll}
+                onDeselectAll={deselectAll}
+                onExitSelectMode={exitSelectMode}
+                onToggleSelect={toggleSelect}
               />
             </div>
           </div>
