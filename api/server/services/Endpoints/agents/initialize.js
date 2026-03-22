@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { createContentAggregator } = require('@librechat/agents');
+const { Constants, createContentAggregator } = require('@librechat/agents');
 const {
   loadSkillStates,
   initializeAgent,
@@ -211,6 +211,70 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     },
     toolEndCallback,
     ...getSkillToolDeps(),
+    provisionFiles: async (toolNames, agentId) => {
+      const ctx = agentToolContexts.get(agentId);
+      if (!ctx?.provisionState) {
+        return;
+      }
+
+      const { provisionState } = ctx;
+      const needsCode =
+        toolNames.includes(Constants.EXECUTE_CODE) ||
+        toolNames.includes(Constants.PROGRAMMATIC_TOOL_CALLING);
+      const needsSearch = toolNames.includes('file_search');
+
+      if (!needsCode && !needsSearch) {
+        return;
+      }
+
+      /** @type {import('@librechat/api').TFileUpdate[]} */
+      const pendingUpdates = [];
+
+      if (needsCode && provisionState.codeEnvFiles.length > 0 && provisionState.codeApiKey) {
+        const results = await Promise.allSettled(
+          provisionState.codeEnvFiles.map(async (file) => {
+            const { fileIdentifier, fileUpdate } = await provisionToCodeEnv({
+              req,
+              file,
+              entity_id: agentId,
+              apiKey: provisionState.codeApiKey,
+            });
+            file.metadata = { ...file.metadata, fileIdentifier };
+            pendingUpdates.push(fileUpdate);
+          }),
+        );
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            logger.error('[provisionFiles] Code env provisioning failed', result.reason);
+          }
+        }
+        provisionState.codeEnvFiles = [];
+      }
+
+      if (needsSearch && provisionState.vectorDBFiles.length > 0) {
+        const results = await Promise.allSettled(
+          provisionState.vectorDBFiles.map(async (file) => {
+            const result = await provisionToVectorDB({ req, file, entity_id: agentId });
+            if (result.embedded) {
+              file.embedded = true;
+              if (result.fileUpdate) {
+                pendingUpdates.push(result.fileUpdate);
+              }
+            }
+          }),
+        );
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            logger.error('[provisionFiles] Vector DB provisioning failed', result.reason);
+          }
+        }
+        provisionState.vectorDBFiles = [];
+      }
+
+      if (pendingUpdates.length > 0) {
+        await Promise.allSettled(pendingUpdates.map((update) => db.updateFile(update)));
+      }
+    },
   };
 
   const summarizationOptions =
@@ -354,6 +418,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     activeSkillNames: primaryConfig.activeSkillNames,
     codeEnvAvailable: primaryConfig.codeEnvAvailable,
     skillPrimedIdsByName,
+    provisionState: primaryConfig.provisionState,
   });
 
   const {
@@ -436,6 +501,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
             config.manualSkillPrimes,
             config.alwaysApplySkillPrimes,
           ),
+          provisionState: config.provisionState,
         });
       },
       // Pass through the `@librechat/api` exports so that tests which
@@ -492,6 +558,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       accessibleSkillIds: config.accessibleSkillIds,
       activeSkillNames: config.activeSkillNames,
       codeEnvAvailable: config.codeEnvAvailable,
+      provisionState: config.provisionState,
     });
   }
 
@@ -623,6 +690,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           listSkillsByAccess: db.listSkillsByAccess,
           listAlwaysApplySkills: db.listAlwaysApplySkills,
           getSkillByName: db.getSkillByName,
+          provisionToCodeEnv,
+          provisionToVectorDB,
+          checkSessionsAlive,
+          loadCodeApiKey,
+          updateFile: db.updateFile,
         },
       );
       agentConfigs.set(agentId, config);
@@ -639,6 +711,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           config.manualSkillPrimes,
           config.alwaysApplySkillPrimes,
         ),
+        provisionState: config.provisionState,
       });
       return config;
     } catch (err) {
