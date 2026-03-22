@@ -31,6 +31,8 @@ interface BaseTxData {
   endpointTokenConfig?: EndpointTokenConfig;
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
+  /** Active modelSpec name — when set, debits the per-spec bucket instead of global credits */
+  specName?: string;
 }
 
 interface StandardTxData extends BaseTxData {
@@ -53,6 +55,7 @@ export interface PreparedEntry {
   doc: TransactionData;
   tokenValue: number;
   balance?: Partial<TCustomConfig['balance']> | null;
+  specName?: string;
 }
 
 export interface TokenUsage {
@@ -80,11 +83,17 @@ export interface TxMetadata {
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
   endpointTokenConfig?: EndpointTokenConfig;
+  /** Active modelSpec name — when set, debits the per-spec bucket instead of global credits */
+  specName?: string;
 }
 
 export interface BulkWriteDeps {
   insertMany: (docs: TransactionData[]) => Promise<unknown>;
-  updateBalance: (params: { user: string; incrementValue: number }) => Promise<unknown>;
+  updateBalance: (params: {
+    user: string;
+    incrementValue: number;
+    specName?: string;
+  }) => Promise<unknown>;
 }
 
 function calculateTokenValue(
@@ -193,6 +202,7 @@ function prepareStandardTx(
     doc: { ...txData, tokenValue, rate },
     tokenValue,
     balance,
+    specName: txData.specName,
   };
 }
 
@@ -222,6 +232,7 @@ function prepareStructuredTx(
     },
     tokenValue,
     balance,
+    specName: txData.specName,
   };
 }
 
@@ -329,16 +340,20 @@ export async function bulkWriteTransactions(
 
   let totalTokenValue = 0;
   let balanceEnabled = false;
-  const plainDocs = docs.map(({ doc, tokenValue, balance }) => {
+  let specName: string | undefined;
+  const plainDocs = docs.map(({ doc, tokenValue, balance, specName: entrySpecName }) => {
     if (balance?.enabled) {
       balanceEnabled = true;
       totalTokenValue += tokenValue;
+    }
+    if (specName === undefined && entrySpecName) {
+      specName = entrySpecName;
     }
     return doc;
   });
 
   if (balanceEnabled) {
-    await dbOps.updateBalance({ user, incrementValue: totalTokenValue });
+    await dbOps.updateBalance({ user, incrementValue: totalTokenValue, specName });
   }
 
   await dbOps.insertMany(plainDocs);

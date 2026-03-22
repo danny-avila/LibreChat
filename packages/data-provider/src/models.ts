@@ -8,6 +8,20 @@ import {
   authTypeSchema,
 } from './schemas';
 
+/** Balance override for a specific model spec — all fields optional, no defaults. */
+export const specBalanceSchema = z.object({
+  enabled: z.boolean().optional(),
+  startBalance: z.number().optional(),
+  autoRefillEnabled: z.boolean().optional(),
+  refillIntervalValue: z.number().optional(),
+  refillIntervalUnit: z
+    .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
+    .optional(),
+  refillAmount: z.number().optional(),
+});
+
+export type TSpecBalance = z.infer<typeof specBalanceSchema>;
+
 export type TModelSpec = {
   name: string;
   label: string;
@@ -37,6 +51,8 @@ export type TModelSpec = {
   executeCode?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
+  /** Per-spec balance configuration — overrides the global balance config for users of this spec. */
+  balance?: TSpecBalance;
 };
 
 export const tModelSpecSchema = z.object({
@@ -57,6 +73,7 @@ export const tModelSpecSchema = z.object({
   executeCode: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
+  balance: specBalanceSchema.optional(),
 });
 
 export const specsConfigSchema = z.object({

@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
 import type { IBalance, IUser, BalanceConfig, ObjectId, AppConfig } from '@librechat/data-schemas';
+import type { TSpecBalance } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
 import type { BalanceUpdateFields } from '~/types';
 import { getBalanceConfig } from '~/app/config';
@@ -69,6 +70,33 @@ function buildUpdateFields(
 }
 
 /**
+ * Resolves the effective balance config by merging the active spec's balance override (if any)
+ * over the global config. Selects the default spec, or the sole spec when enforce mode is on
+ * with exactly one spec in the list. Falls back to the global config when no applicable spec
+ * balance override is found.
+ */
+function resolveEffectiveBalanceConfig(
+  globalConfig: BalanceConfig,
+  appConfig: AppConfig,
+): BalanceConfig {
+  const specsList = appConfig?.['modelSpecs']?.list;
+  if (!specsList?.length) {
+    return globalConfig;
+  }
+
+  const enforce: boolean = appConfig?.['modelSpecs']?.enforce ?? false;
+  const activeSpec =
+    specsList.find((s) => s.default) ?? (enforce && specsList.length === 1 ? specsList[0] : null);
+
+  const specBalance = (activeSpec as { balance?: TSpecBalance } | null)?.balance;
+  if (!specBalance) {
+    return globalConfig;
+  }
+
+  return { ...globalConfig, ...specBalance };
+}
+
+/**
  * Factory function to create middleware that synchronizes user balance settings with current balance configuration.
  * @param options - Options containing getBalanceConfig function and Balance model
  * @returns Express middleware function
@@ -85,17 +113,19 @@ export function createSetBalanceConfig({
     try {
       const user = req.user as IUser & { _id: string | ObjectId };
       const appConfig = await getAppConfig({ role: user?.role });
-      const balanceConfig = getBalanceConfig(appConfig);
-      if (!balanceConfig?.enabled) {
+      const globalBalanceConfig = getBalanceConfig(appConfig);
+      if (!globalBalanceConfig?.enabled) {
         return next();
       }
-      if (balanceConfig.startBalance == null) {
+      if (globalBalanceConfig.startBalance == null) {
         return next();
       }
 
       if (!user || !user._id) {
         return next();
       }
+
+      const balanceConfig = resolveEffectiveBalanceConfig(globalBalanceConfig, appConfig);
       const userId = typeof user._id === 'string' ? user._id : user._id.toString();
       const userBalanceRecord = await Balance.findOne({ user: userId }).lean();
       const updateFields = buildUpdateFields(balanceConfig, userBalanceRecord, userId);

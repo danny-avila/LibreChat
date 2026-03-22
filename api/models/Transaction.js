@@ -18,45 +18,64 @@ function calculateTokenValue(txn) {
 }
 
 /**
- * New static method to create an auto-refill transaction that does NOT trigger a balance update.
+ * New static method to create an auto-refill transaction.
+ *
+ * When `specName` is provided the refill is applied to the per-spec bucket and the
+ * per-spec `lastRefill` timestamp is recorded via `perModelSpecLastRefillEntry`.
+ *
  * @param {object} txData - Transaction data.
  * @param {string} txData.user - The user ID.
  * @param {string} txData.tokenType - The type of token.
  * @param {string} txData.context - The context of the transaction.
  * @param {number} txData.rawAmount - The raw amount of tokens.
+ * @param {string} [txData.specName] - Active modelSpec name; routes refill to the per-spec bucket.
  * @returns {Promise<object>} - The created transaction.
  */
 async function createAutoRefillTransaction(txData) {
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
-  const transaction = new Transaction(txData);
+
+  const { specName, ...rest } = txData;
+
+  const transaction = new Transaction(rest);
   transaction.endpointTokenConfig = txData.endpointTokenConfig;
   transaction.inputTokenCount = txData.inputTokenCount;
   calculateTokenValue(transaction);
   await transaction.save();
 
+  const setValues =
+    specName != null
+      ? { perModelSpecLastRefillEntry: { specName, date: new Date() } }
+      : { lastRefill: new Date() };
+
   const balanceResponse = await updateBalance({
     user: transaction.user,
     incrementValue: txData.rawAmount,
-    setValues: { lastRefill: new Date() },
+    specName,
+    setValues,
   });
+
   const result = {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balanceResponse.tokenCredits,
+    balance:
+      specName != null
+        ? ((balanceResponse?.perModelSpecTokenCredits ?? {})[specName] ?? 0)
+        : balanceResponse.tokenCredits,
   };
-  logger.debug('[Balance.check] Auto-refill performed', result);
+  logger.debug('[Balance.check] Auto-refill performed', { ...result, specName });
   result.transaction = transaction;
   return result;
 }
 
 /**
- * Static method to create a transaction and update the balance
+ * Static method to create a transaction and update the balance.
+ * When `specName` is present in `_txData`, the balance debit targets the per-spec bucket.
  * @param {txData} _txData - Transaction data.
  */
 async function createTransaction(_txData) {
-  const { balance, transactions, ...txData } = _txData;
+  const { balance, transactions, specName, ...txData } = _txData;
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
@@ -75,26 +94,33 @@ async function createTransaction(_txData) {
     return;
   }
 
-  let incrementValue = transaction.tokenValue;
+  const incrementValue = transaction.tokenValue;
   const balanceResponse = await updateBalance({
     user: transaction.user,
     incrementValue,
+    specName,
   });
+
+  const resolvedBalance =
+    specName != null
+      ? ((balanceResponse?.perModelSpecTokenCredits ?? {})[specName] ?? 0)
+      : balanceResponse.tokenCredits;
 
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balanceResponse.tokenCredits,
+    balance: resolvedBalance,
     [transaction.tokenType]: incrementValue,
   };
 }
 
 /**
- * Static method to create a structured transaction and update the balance
+ * Static method to create a structured transaction and update the balance.
+ * When `specName` is present in `_txData`, the balance debit targets the per-spec bucket.
  * @param {txData} _txData - Transaction data.
  */
 async function createStructuredTransaction(_txData) {
-  const { balance, transactions, ...txData } = _txData;
+  const { balance, transactions, specName, ...txData } = _txData;
   if (transactions?.enabled === false) {
     return;
   }
@@ -111,17 +137,23 @@ async function createStructuredTransaction(_txData) {
     return;
   }
 
-  let incrementValue = transaction.tokenValue;
+  const incrementValue = transaction.tokenValue;
 
   const balanceResponse = await updateBalance({
     user: transaction.user,
     incrementValue,
+    specName,
   });
+
+  const resolvedBalance =
+    specName != null
+      ? ((balanceResponse?.perModelSpecTokenCredits ?? {})[specName] ?? 0)
+      : balanceResponse.tokenCredits;
 
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: balanceResponse.tokenCredits,
+    balance: resolvedBalance,
     [transaction.tokenType]: incrementValue,
   };
 }

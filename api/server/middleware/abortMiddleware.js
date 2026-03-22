@@ -30,6 +30,7 @@ const { abortRun } = require('./abortRun');
  * @param {Array<Object>} params.collectedUsage - Usage metadata from all models
  * @param {string} [params.fallbackModel] - Fallback model name if not in usage
  * @param {string} [params.messageId] - The response message ID for transaction correlation
+ * @param {string} [params.specName] - The active modelSpec name for per-spec balance
  */
 async function spendCollectedUsage({
   userId,
@@ -37,6 +38,7 @@ async function spendCollectedUsage({
   collectedUsage,
   fallbackModel,
   messageId,
+  specName,
 }) {
   if (!collectedUsage || collectedUsage.length === 0) {
     return;
@@ -56,6 +58,7 @@ async function spendCollectedUsage({
       context: 'abort',
       messageId,
       model: fallbackModel,
+      specName,
     },
   );
 
@@ -120,11 +123,12 @@ async function abortMessage(req, res) {
       collectedUsage,
       fallbackModel: jobData?.model,
       messageId: jobData?.responseMessageId,
+      specName: jobData?.spec,
     });
   } else {
     // Fallback: no collected usage, use text-based token counting for primary model only
     await spendTokens(
-      { ...responseMessage, context: 'incomplete', user: userId },
+      { ...responseMessage, context: 'incomplete', user: userId, specName: jobData?.spec },
       { promptTokens, completionTokens },
     );
   }

@@ -15,6 +15,12 @@ function AccountSettings() {
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
+  const totalCredits = (startupConfig?.modelSpecs?.list ?? [])
+    .filter((spec) => spec.balance?.enabled === true)
+    .reduce(
+      (sum, spec) => sum + (balanceQuery.data?.perModelSpecTokenCredits?.[spec.name] ?? 0),
+      balanceQuery.data?.tokenCredits ?? 0,
+    );
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -54,7 +60,7 @@ function AccountSettings() {
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
               {localize('com_nav_balance')}:{' '}
-              {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
+              {new Intl.NumberFormat().format(Math.round(totalCredits))}
             </div>
             <DropdownMenuSeparator />
           </>

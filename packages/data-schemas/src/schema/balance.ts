@@ -36,6 +36,18 @@ const balanceSchema = new Schema<t.IBalance>({
     type: Number,
     default: 0,
   },
+  /** Per-modelSpec isolated credit pools. Key is the modelSpec name. */
+  perModelSpecTokenCredits: {
+    type: Map,
+    of: Number,
+    default: {},
+  },
+  /** Tracks the last auto-refill timestamp per modelSpec. Key is the modelSpec name. */
+  perModelSpecLastRefill: {
+    type: Map,
+    of: Date,
+    default: {},
+  },
 });
 
 export default balanceSchema;

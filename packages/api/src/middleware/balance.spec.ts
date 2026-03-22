@@ -650,4 +650,243 @@ describe('createSetBalanceConfig', () => {
       },
     );
   });
+
+  describe('Per-Spec Balance Override', () => {
+    test('should use default spec balance config when a default spec has balance override', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: false,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'buzz-gpt-4',
+              label: 'Buzz GPT-4',
+              default: true,
+              preset: { endpoint: 'azureOpenAI', model: 'gpt-4' },
+              balance: {
+                startBalance: 999,
+                autoRefillEnabled: true,
+                refillIntervalValue: 1,
+                refillIntervalUnit: 'seconds',
+                refillAmount: 111,
+              },
+            },
+          ],
+        },
+      });
+
+      const middleware = createSetBalanceConfig({ getAppConfig, Balance });
+      const req = createMockRequest(userId);
+      const res = createMockResponse();
+
+      await middleware(req as ServerRequest, res as ServerResponse, mockNext);
+
+      const balanceRecord = await Balance.findOne({ user: userId });
+      expect(balanceRecord).toBeTruthy();
+      // startBalance from spec overrides global
+      expect(balanceRecord?.tokenCredits).toBe(999);
+      // auto-refill settings from spec
+      expect(balanceRecord?.autoRefillEnabled).toBe(true);
+      expect(balanceRecord?.refillIntervalValue).toBe(1);
+      expect(balanceRecord?.refillIntervalUnit).toBe('seconds');
+      expect(balanceRecord?.refillAmount).toBe(111);
+    });
+
+    test('should use first spec balance config in enforce mode with single spec', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: false,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+        modelSpecs: {
+          enforce: true,
+          list: [
+            {
+              name: 'only-spec',
+              label: 'Only Spec',
+              preset: { endpoint: 'openAI', model: 'gpt-4o' },
+              balance: {
+                startBalance: 5000,
+                autoRefillEnabled: true,
+                refillIntervalValue: 7,
+                refillIntervalUnit: 'days',
+                refillAmount: 2500,
+              },
+            },
+          ],
+        },
+      });
+
+      const middleware = createSetBalanceConfig({ getAppConfig, Balance });
+      const req = createMockRequest(userId);
+      const res = createMockResponse();
+
+      await middleware(req as ServerRequest, res as ServerResponse, mockNext);
+
+      const balanceRecord = await Balance.findOne({ user: userId });
+      expect(balanceRecord?.tokenCredits).toBe(5000);
+      expect(balanceRecord?.autoRefillEnabled).toBe(true);
+      expect(balanceRecord?.refillIntervalValue).toBe(7);
+      expect(balanceRecord?.refillIntervalUnit).toBe('days');
+      expect(balanceRecord?.refillAmount).toBe(2500);
+    });
+
+    test('should fall back to global config when no spec has a default and enforce is false with multiple specs', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'spec-a',
+              label: 'Spec A',
+              preset: { endpoint: 'openAI', model: 'gpt-4o' },
+              balance: { startBalance: 9999 },
+            },
+            {
+              name: 'spec-b',
+              label: 'Spec B',
+              preset: { endpoint: 'anthropic', model: 'claude-3-5-sonnet' },
+              balance: { startBalance: 8888 },
+            },
+          ],
+        },
+      });
+
+      const middleware = createSetBalanceConfig({ getAppConfig, Balance });
+      const req = createMockRequest(userId);
+      const res = createMockResponse();
+
+      await middleware(req as ServerRequest, res as ServerResponse, mockNext);
+
+      const balanceRecord = await Balance.findOne({ user: userId });
+      // No default spec and not enforce — falls back to global startBalance
+      expect(balanceRecord?.tokenCredits).toBe(1000);
+      expect(balanceRecord?.refillIntervalValue).toBe(30);
+      expect(balanceRecord?.refillAmount).toBe(500);
+    });
+
+    test('should fall back to global config when no specs have a balance field', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'spec-no-balance',
+              label: 'Spec No Balance',
+              default: true,
+              preset: { endpoint: 'openAI', model: 'gpt-4o' },
+            },
+          ],
+        },
+      });
+
+      const middleware = createSetBalanceConfig({ getAppConfig, Balance });
+      const req = createMockRequest(userId);
+      const res = createMockResponse();
+
+      await middleware(req as ServerRequest, res as ServerResponse, mockNext);
+
+      const balanceRecord = await Balance.findOne({ user: userId });
+      expect(balanceRecord?.tokenCredits).toBe(1000);
+      expect(balanceRecord?.refillIntervalValue).toBe(30);
+      expect(balanceRecord?.refillAmount).toBe(500);
+    });
+
+    test('should fall back to global config when no modelSpecs are configured', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 2000,
+          autoRefillEnabled: false,
+        },
+      });
+
+      const middleware = createSetBalanceConfig({ getAppConfig, Balance });
+      const req = createMockRequest(userId);
+      const res = createMockResponse();
+
+      await middleware(req as ServerRequest, res as ServerResponse, mockNext);
+
+      const balanceRecord = await Balance.findOne({ user: userId });
+      expect(balanceRecord?.tokenCredits).toBe(2000);
+    });
+
+    test('should merge spec balance over global — spec fields win, global fills gaps', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: {
+          enabled: true,
+          startBalance: 1000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 500,
+        },
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'partial-spec',
+              label: 'Partial Spec',
+              default: true,
+              preset: { endpoint: 'openAI', model: 'gpt-4o' },
+              // Only overrides refillAmount — other fields inherited from global
+              balance: {
+                autoRefillEnabled: true,
+                refillIntervalValue: 30,
+                refillIntervalUnit: 'days',
+                refillAmount: 9999,
+              },
+            },
+          ],
+        },
+      });
+
+      const middleware = createSetBalanceConfig({ getAppConfig, Balance });
+      const req = createMockRequest(userId);
+      const res = createMockResponse();
+
+      await middleware(req as ServerRequest, res as ServerResponse, mockNext);
+
+      const balanceRecord = await Balance.findOne({ user: userId });
+      // startBalance falls through from global since spec doesn't define it
+      expect(balanceRecord?.tokenCredits).toBe(1000);
+      // refillAmount comes from spec
+      expect(balanceRecord?.refillAmount).toBe(9999);
+      expect(balanceRecord?.refillIntervalValue).toBe(30);
+    });
+  });
+
 });

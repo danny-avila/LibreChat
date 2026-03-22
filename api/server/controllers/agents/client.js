@@ -621,11 +621,13 @@ class AgentClient extends BaseClient {
    * @param {AppConfig['balance']} [params.balance]
    * @param {AppConfig['transactions']} [params.transactions]
    * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
+   * @param {string} [params.specName]
    */
   async recordCollectedUsage({
     model,
     balance,
     transactions,
+    specName,
     context = 'message',
     collectedUsage = this.collectedUsage,
   }) {
@@ -646,6 +648,7 @@ class AgentClient extends BaseClient {
         balance,
         transactions,
         endpointTokenConfig: this.options.endpointTokenConfig,
+        specName,
       },
     );
 
@@ -889,6 +892,7 @@ class AgentClient extends BaseClient {
             context: 'message',
             balance: balanceConfig,
             transactions: transactionsConfig,
+            specName: this.options.req?.body?.spec,
           });
         } else {
           logger.debug(
@@ -1101,6 +1105,7 @@ class AgentClient extends BaseClient {
         balance: balanceConfig,
         transactions: transactionsConfig,
         messageId: this.responseMessageId,
+        specName: this.options.req?.body?.spec,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
@@ -1123,6 +1128,7 @@ class AgentClient extends BaseClient {
    * @param {OpenAIUsageMetadata} [params.usage]
    * @param {AppConfig['balance']} [params.balance]
    * @param {string} [params.context='message']
+   * @param {string} [params.specName]
    * @returns {Promise<void>}
    */
   async recordTokenUsage({
@@ -1131,6 +1137,7 @@ class AgentClient extends BaseClient {
     balance,
     promptTokens,
     completionTokens,
+    specName,
     context = 'message',
   }) {
     try {
@@ -1139,6 +1146,7 @@ class AgentClient extends BaseClient {
           model,
           context,
           balance,
+          specName,
           messageId: this.responseMessageId,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
@@ -1157,6 +1165,7 @@ class AgentClient extends BaseClient {
           {
             model,
             balance,
+            specName,
             context: 'reasoning',
             messageId: this.responseMessageId,
             conversationId: this.conversationId,

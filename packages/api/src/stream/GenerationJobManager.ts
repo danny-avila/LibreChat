@@ -1022,6 +1022,9 @@ class GenerationJobManagerClass {
     if (metadata.promptTokens !== undefined) {
       updates.promptTokens = metadata.promptTokens;
     }
+    if (metadata.spec) {
+      updates.spec = metadata.spec;
+    }
     await this.jobStore.updateJob(streamId, updates);
   }
 

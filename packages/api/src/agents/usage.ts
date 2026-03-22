@@ -39,6 +39,8 @@ export interface RecordUsageParams {
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
   endpointTokenConfig?: EndpointTokenConfig;
+  /** Active modelSpec name — when set, debits the per-spec bucket instead of global credits */
+  specName?: string;
 }
 
 export interface RecordUsageResult {
@@ -66,6 +68,7 @@ export async function recordCollectedUsage(
     conversationId,
     collectedUsage,
     endpointTokenConfig,
+    specName,
     context = 'message',
   } = params;
 
@@ -112,6 +115,7 @@ export async function recordCollectedUsage(
       transactions,
       conversationId,
       endpointTokenConfig,
+      specName,
       model: usage.model ?? model,
     };
 

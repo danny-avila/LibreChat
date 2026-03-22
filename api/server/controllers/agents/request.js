@@ -562,6 +562,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
       iconURL: endpointOption.iconURL,
       model: endpointOption.modelOptions?.model || endpointOption.model_parameters?.model,
       sender: client?.sender,
+      spec: endpointOption.spec,
     });
 
     // Store content parts reference for abort

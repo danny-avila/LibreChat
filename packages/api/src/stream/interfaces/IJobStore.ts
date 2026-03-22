@@ -43,6 +43,8 @@ export interface SerializableJobData {
   iconURL?: string;
   model?: string;
   promptTokens?: number;
+  /** Active modelSpec name for per-spec balance spend on abort */
+  spec?: string;
 }
 
 /**
