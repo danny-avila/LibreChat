@@ -47,4 +47,25 @@ async function modelController(req, res) {
   }
 }
 
-module.exports = { modelController, loadModels, getModelsConfig };
+async function refreshModelsController(req, res) {
+  try {
+    const configStore = getLogStores(CacheKeys.CONFIG_STORE);
+    const modelQueriesStore = getLogStores(CacheKeys.MODEL_QUERIES);
+
+    await configStore.delete(CacheKeys.MODELS_CONFIG);
+    await modelQueriesStore.clear();
+
+    const modelConfig = await loadModels(req);
+
+    logger.info('[refreshModelsController] Model cache refreshed by admin', {
+      user: req.user.id,
+    });
+
+    res.json(modelConfig);
+  } catch (error) {
+    logger.error('[refreshModelsController] Error refreshing models:', error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+module.exports = { modelController, loadModels, getModelsConfig, refreshModelsController };
