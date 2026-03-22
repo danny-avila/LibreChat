@@ -1,7 +1,7 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
-const { Constants, CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
+const { Constants, CacheKeys, defaultSocialLogins, paramEndpoints } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
@@ -30,6 +30,27 @@ router.get('/', async function (req, res) {
     return;
   }
 
+  const getEndpointsDropParamsMap = (endpoints) => {
+    const result = {};
+    Object.keys(endpoints)
+      .filter((endpointName) => paramEndpoints.has(endpointName) && endpointName !== 'agents')
+      .forEach((endpointName) => {
+        const endpointConfig = endpoints[endpointName];
+        if (Array.isArray(endpointConfig)) {
+          endpointConfig.forEach((endpoint) => {
+            let dropParams = [];
+            if (endpoint && Array.isArray(endpoint.dropParams)) {
+              dropParams.push(...endpoint.dropParams);
+              if (dropParams.length > 0) {
+                result[endpoint.name] = dropParams;
+              }
+            }
+          });
+        }
+      });
+    return result;
+  };
+  
   const isBirthday = () => {
     const today = new Date();
     return today.getMonth() === 1 && today.getDate() === 11;
@@ -41,6 +62,8 @@ router.get('/', async function (req, res) {
 
   try {
     const appConfig = await getAppConfig({ role: req.user?.role });
+
+    const endpointsDropParamsMap = getEndpointsDropParamsMap(appConfig.endpoints);
 
     const isOpenIdEnabled =
       !!process.env.OPENID_CLIENT_ID &&
@@ -59,6 +82,7 @@ router.get('/', async function (req, res) {
     /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
+      endpointsDropParamsMap: endpointsDropParamsMap,
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:
