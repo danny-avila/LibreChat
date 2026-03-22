@@ -14,6 +14,8 @@ export * from './generate';
 export * from './models';
 /* mcp */
 export * from './mcp';
+/* api registry */
+export * from './api-registry-hooks';
 /* RBAC */
 export * from './permissions';
 export * from './roles';
@@ -23,6 +25,7 @@ export * from './types/agents';
 export * from './types/assistants';
 export * from './types/files';
 export * from './types/mcpServers';
+export * from './types/apiRegistry';
 export * from './types/mutations';
 export * from './types/queries';
 export * from './types/runs';
