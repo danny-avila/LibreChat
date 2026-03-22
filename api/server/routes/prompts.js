@@ -1,5 +1,6 @@
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { ObjectId } = require('mongodb');
+const { logger, isValidObjectIdString } = require('@librechat/data-schemas');
 const {
   generateCheckAccess,
   markPublicPromptGroups,
@@ -20,6 +21,8 @@ const {
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   getListPromptGroupsByAccess,
+  getOwnedPromptGroupIds,
+  incrementPromptGroupUsage,
   makePromptProduction,
   updatePromptGroup,
   deletePromptGroup,
@@ -34,6 +37,7 @@ const {
 const {
   canAccessPromptGroupResource,
   canAccessPromptViaGroup,
+  promptUsageLimiter,
   requireJwtAuth,
 } = require('~/server/middleware');
 const {
@@ -59,6 +63,12 @@ const checkPromptCreate = generateCheckAccess({
 
 router.use(requireJwtAuth);
 router.use(checkPromptAccess);
+
+const checkGlobalPromptShare = generateCheckAccess({
+  permissionType: PermissionTypes.PROMPTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
 
 /**
  * Route to get single prompt group by its ID
@@ -94,11 +104,10 @@ router.get(
 router.get('/all', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, category, ...otherFilters } = req.query;
+    const { name, category } = req.query;
     const { filter, searchShared, searchSharedOnly } = buildPromptGroupFilter({
       name,
       category,
-      ...otherFilters,
     });
 
     let accessibleIds = await findAccessibleResources({
@@ -108,16 +117,20 @@ router.get('/all', async (req, res) => {
       requiredPermissions: PermissionBits.VIEW,
     });
 
-    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
-      resourceType: ResourceType.PROMPTGROUP,
-      requiredPermissions: PermissionBits.VIEW,
-    });
+    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+      findPubliclyAccessibleResources({
+        resourceType: ResourceType.PROMPTGROUP,
+        requiredPermissions: PermissionBits.VIEW,
+      }),
+      getOwnedPromptGroupIds(userId),
+    ]);
 
     const filteredAccessibleIds = await filterAccessibleIdsBySharedLogic({
       accessibleIds,
       searchShared,
       searchSharedOnly,
       publicPromptGroupIds: publiclyAccessibleIds,
+      ownedPromptGroupIds,
     });
 
     const result = await getListPromptGroupsByAccess({
@@ -149,12 +162,11 @@ router.get('/all', async (req, res) => {
 router.get('/groups', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { pageSize, limit, cursor, name, category, ...otherFilters } = req.query;
+    const { pageSize, limit, cursor, name, category } = req.query;
 
     const { filter, searchShared, searchSharedOnly } = buildPromptGroupFilter({
       name,
       category,
-      ...otherFilters,
     });
 
     let actualLimit = limit;
@@ -178,16 +190,20 @@ router.get('/groups', async (req, res) => {
       requiredPermissions: PermissionBits.VIEW,
     });
 
-    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
-      resourceType: ResourceType.PROMPTGROUP,
-      requiredPermissions: PermissionBits.VIEW,
-    });
+    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+      findPubliclyAccessibleResources({
+        resourceType: ResourceType.PROMPTGROUP,
+        requiredPermissions: PermissionBits.VIEW,
+      }),
+      getOwnedPromptGroupIds(userId),
+    ]);
 
     const filteredAccessibleIds = await filterAccessibleIdsBySharedLogic({
       accessibleIds,
       searchShared,
       searchSharedOnly,
       publicPromptGroupIds: publiclyAccessibleIds,
+      ownedPromptGroupIds,
     });
 
     // Cursor-based pagination only
@@ -291,6 +307,16 @@ const addPromptToGroup = async (req, res) => {
       return res.status(400).send({ error: 'Prompt is required' });
     }
 
+    if (typeof prompt.prompt !== 'string' || !prompt.prompt.trim()) {
+      return res
+        .status(400)
+        .send({ error: 'Prompt text is required and must be a non-empty string' });
+    }
+
+    if (prompt.type !== 'text' && prompt.type !== 'chat') {
+      return res.status(400).send({ error: 'Prompt type must be "text" or "chat"' });
+    }
+
     // Ensure the prompt is associated with the correct group
     prompt.groupId = groupId;
 
@@ -322,6 +348,37 @@ router.post(
 );
 
 /**
+ * Records a prompt group usage (increments numberOfGenerations)
+ * POST /groups/:groupId/use
+ */
+router.post(
+  '/groups/:groupId/use',
+  promptUsageLimiter,
+  canAccessPromptGroupResource({
+    requiredPermission: PermissionBits.VIEW,
+  }),
+  async (req, res) => {
+    try {
+      const { groupId } = req.params;
+      if (!isValidObjectIdString(groupId)) {
+        return res.status(400).send({ error: 'Invalid groupId' });
+      }
+      const result = await incrementPromptGroupUsage(groupId);
+      res.status(200).send(result);
+    } catch (error) {
+      logger.error('[recordPromptUsage]', error);
+      if (error.message === 'Invalid groupId') {
+        return res.status(400).send({ error: 'Invalid groupId' });
+      }
+      if (error.message === 'Prompt group not found') {
+        return res.status(404).send({ error: 'Prompt group not found' });
+      }
+      res.status(500).send({ error: 'Error recording prompt usage' });
+    }
+  },
+);
+
+/**
  * Updates a prompt group
  * @param {object} req
  * @param {object} req.params - The request parameters
@@ -332,18 +389,8 @@ router.post(
 const patchPromptGroup = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const author = req.user.id;
-    const filter = { _id: groupId, author };
-    let canManagePrompts = false;
-    try {
-      canManagePrompts = await hasCapability(req.user, SystemCapabilities.MANAGE_PROMPTS);
-    } catch (err) {
-      logger.warn(`[patchPromptGroup] capability check failed, denying bypass: ${err.message}`);
-    }
-    if (canManagePrompts) {
-      logger.debug(`[patchPromptGroup] MANAGE_PROMPTS bypass for user ${req.user.id}`);
-      delete filter.author;
-    }
+    // Don't pass author - permissions are now checked by middleware
+    const filter = { _id: groupId };
 
     const validationResult = safeValidatePromptGroupUpdate(req.body);
     if (!validationResult.success) {
@@ -363,7 +410,7 @@ const patchPromptGroup = async (req, res) => {
 
 router.patch(
   '/groups/:groupId',
-  checkPromptCreate,
+  checkGlobalPromptShare,
   canAccessPromptGroupResource({
     requiredPermission: PermissionBits.EDIT,
   }),
@@ -409,6 +456,10 @@ router.get('/', async (req, res) => {
 
     // If requesting prompts for a specific group, check permissions
     if (groupId) {
+      if (!isValidObjectIdString(groupId)) {
+        return res.status(400).send({ error: 'Invalid groupId' });
+      }
+
       const permissions = await getEffectivePermissions({
         userId: req.user.id,
         role: req.user.role,
@@ -423,7 +474,7 @@ router.get('/', async (req, res) => {
       }
 
       // If user has access, fetch all prompts in the group (not just their own)
-      const prompts = await getPrompts({ groupId });
+      const prompts = await getPrompts({ groupId: new ObjectId(groupId) });
       return res.status(200).send(prompts);
     }
 
@@ -460,6 +511,9 @@ const deletePromptController = async (req, res) => {
   try {
     const { promptId } = req.params;
     const { groupId } = req.query;
+    if (!groupId || !isValidObjectIdString(groupId)) {
+      return res.status(400).send({ error: 'Invalid or missing groupId' });
+    }
     const query = { promptId, groupId };
     const result = await deletePrompt(query);
     res.status(200).send(result);
