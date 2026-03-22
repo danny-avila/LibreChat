@@ -1,5 +1,10 @@
-import type { PrincipalType, PrincipalModel, TCustomConfig } from 'librechat-data-provider';
-import type { z, configSchema } from 'librechat-data-provider';
+import type {
+  PrincipalType,
+  PrincipalModel,
+  TCustomConfig,
+  z,
+  configSchema,
+} from 'librechat-data-provider';
 
 /* ── Capability types ───────────────────────────────────────────────── */
 

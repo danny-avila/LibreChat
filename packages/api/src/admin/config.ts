@@ -1,9 +1,8 @@
-import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
-import type { ConfigSection } from '@librechat/data-schemas';
-import type { Response } from 'express';
+import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
+import type { ConfigSection, IConfig } from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
-import type { IConfig } from '@librechat/data-schemas';
+import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
 // ── Dot-path helpers (no lodash dependency) ──────────────────────────

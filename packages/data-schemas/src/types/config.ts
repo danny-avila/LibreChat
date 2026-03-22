@@ -1,6 +1,6 @@
-import type { Document, Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
+import type { Document, Types } from 'mongoose';
 
 /**
  * Configuration override for a principal (user, group, or role).
