@@ -34,32 +34,3 @@ export type IConfig = Config &
   Document & {
     _id: Types.ObjectId;
   };
-
-/* ── JSON-serializable API response types ───────────────────────────── */
-
-/** Config document as returned by the API (no Mongoose internals). */
-export type AdminConfig = {
-  _id: string;
-  principalType: PrincipalType;
-  principalId: string;
-  principalModel: PrincipalModel;
-  priority: number;
-  overrides: Partial<TCustomConfig>;
-  isActive: boolean;
-  configVersion: number;
-  tenantId?: string;
-  createdAt?: string;
-  updatedAt?: string;
-};
-
-export type AdminConfigListResponse = {
-  configs: AdminConfig[];
-};
-
-export type AdminConfigResponse = {
-  config: AdminConfig;
-};
-
-export type AdminConfigDeleteResponse = {
-  success: boolean;
-};
