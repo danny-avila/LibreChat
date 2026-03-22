@@ -4,9 +4,10 @@ import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useMessagesOperations } from '~/Providers';
 import UIResourceCarousel from './UIResourceCarousel';
 import { OutputRenderer } from './ToolOutput';
-import { cn } from '~/utils';
+import { handleUIAction, cn } from '~/utils';
 
 function isSimpleObject(obj: unknown): obj is Record<string, string | number | boolean | null> {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
@@ -96,6 +97,7 @@ export default function ToolCallInfo({
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
+  const { ask } = useMessagesOperations();
   const [showParams, setShowParams] = useState(false);
   const { style: paramsExpandStyle, ref: paramsExpandRef } = useExpandCollapse(showParams);
 
@@ -159,7 +161,7 @@ export default function ToolCallInfo({
           {uiResources.length === 1 && (
             <UIResourceRenderer
               resource={uiResources[0]}
-              onUIAction={async (_result) => {}}
+              onUIAction={async (result) => handleUIAction(result, ask)}
               htmlProps={{
                 autoResizeIframe: { width: true, height: true },
               }}
