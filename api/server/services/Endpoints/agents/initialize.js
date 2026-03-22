@@ -24,6 +24,7 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
+  loadCodeApiKey,
   provisionToCodeEnv,
   provisionToVectorDB,
   checkSessionsAlive,
@@ -224,6 +225,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       provisionToCodeEnv,
       provisionToVectorDB,
       checkSessionsAlive,
+      loadCodeApiKey,
+      updateFile: db.updateFile,
     },
   );
 
@@ -308,6 +311,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         provisionToCodeEnv,
         provisionToVectorDB,
         checkSessionsAlive,
+        loadCodeApiKey,
+        updateFile: db.updateFile,
       },
     );
 
