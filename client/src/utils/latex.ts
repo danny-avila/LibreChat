@@ -6,6 +6,15 @@ const MHCHEM_PU_ESCAPED_REGEX = /\$\\\\pu\{[^}]*\}\$/g;
 const CURRENCY_REGEX =
   /(?<![\\$])\$(?!\$)(?=\d+(?:,\d{3})*(?:\.\d+)?(?:[KMBkmb])?(?:\s|$|[^a-zA-Z\d]))/g;
 const SINGLE_DOLLAR_REGEX = /(?<!\\)\$(?!\$)((?:[^$\n]|\\[$])+?)(?<!\\)(?<!`)\$(?!\$)/g;
+const LATEX_COMMAND_REGEX = /\\[a-zA-Z]+/;
+const LATEX_OPERATOR_REGEX = /[\^_]/;
+const NUMERIC_ARITHMETIC_REGEX = /\d\s*[+\-*/×xX]\s*\d/;
+const VARIABLE_ARITHMETIC_REGEX = /[a-zA-Z]\s*[+\-*/=]|[+\-*/=]\s*[a-zA-Z]/;
+const NUMERIC_SYMBOL_TERM_REGEX = /^\d+\s*[a-zA-Z][a-zA-Z0-9_]*$/;
+const LEADING_NUMBER_REGEX = /^(\d+(?:,\d{3})*(?:\.\d+)?)(.*)$/;
+const CURRENCY_ABBREVIATION_REGEX = /^[kmb]$/i;
+const NUMERIC_OPERATOR_TAIL_REGEX = /^[+\-*/×xX^_]\s*(?:\d|[a-zA-Z]|\\|{)/;
+const NUMERIC_COMMAND_TAIL_REGEX = /^\\[a-zA-Z]+/;
 
 /**
  * Escapes mhchem package notation in LaTeX by converting single dollar delimiters to double dollars
@@ -96,6 +105,55 @@ function isInCodeBlock(position: number, codeRegions: Array<[number, number]>): 
 }
 
 /**
+ * Heuristically identifies if the inner text between dollar delimiters looks like math.
+ */
+function looksLikeMathExpression(inner: string): boolean {
+  const text = inner.trim();
+  if (!text) {
+    return false;
+  }
+
+  const leadingNumberMatch = text.match(LEADING_NUMBER_REGEX);
+  if (leadingNumberMatch) {
+    // Numeric-leading symbolic terms like 2n or 3x are common math snippets.
+    if (NUMERIC_SYMBOL_TERM_REGEX.test(text)) {
+      const symbolPart = text.replace(/^\d+\s*/, '');
+      if (!CURRENCY_ABBREVIATION_REGEX.test(symbolPart)) {
+        return true;
+      }
+    }
+
+    // For numeric-leading content, only treat as math when the number is followed
+    // by an explicit math operator/command, not by prose or closing braces.
+    const tail = leadingNumberMatch[2].trimStart();
+    return NUMERIC_OPERATOR_TAIL_REGEX.test(tail) || NUMERIC_COMMAND_TAIL_REGEX.test(tail);
+  }
+
+  return (
+    LATEX_COMMAND_REGEX.test(text) ||
+    LATEX_OPERATOR_REGEX.test(text) ||
+    NUMERIC_ARITHMETIC_REGEX.test(text) ||
+    VARIABLE_ARITHMETIC_REGEX.test(text)
+  );
+}
+
+/**
+ * Builds a cache of single-dollar opening delimiters and whether each pair looks like math.
+ * This avoids repeated linear scans for each currency-like match.
+ */
+function buildMathOpeningCache(content: string): Map<number, boolean> {
+  const mathOpeningCache = new Map<number, boolean>();
+  SINGLE_DOLLAR_REGEX.lastIndex = 0;
+
+  let match: RegExpExecArray | null;
+  while ((match = SINGLE_DOLLAR_REGEX.exec(content)) !== null) {
+    mathOpeningCache.set(match.index, looksLikeMathExpression(match[1]));
+  }
+
+  return mathOpeningCache;
+}
+
+/**
  * Preprocesses LaTeX content by escaping currency indicators and converting single dollar math delimiters.
  * Optimized for high-frequency execution.
  * @param content The input string containing LaTeX expressions.
@@ -113,6 +171,7 @@ export function preprocessLaTeX(content: string): string {
 
   // Find all code block regions once
   const codeRegions = findCodeBlockRegions(processed);
+  const mathOpeningCache = buildMathOpeningCache(processed);
 
   // First pass: escape currency dollar signs
   const parts: string[] = [];
@@ -123,7 +182,7 @@ export function preprocessLaTeX(content: string): string {
 
   let match: RegExpExecArray | null;
   while ((match = CURRENCY_REGEX.exec(processed)) !== null) {
-    if (!isInCodeBlock(match.index, codeRegions)) {
+    if (!isInCodeBlock(match.index, codeRegions) && !mathOpeningCache.get(match.index)) {
       parts.push(processed.substring(lastIndex, match.index));
       parts.push('\\$');
       lastIndex = match.index + 1;

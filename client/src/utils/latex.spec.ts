@@ -202,6 +202,18 @@ y$ which spans lines`;
     expect(preprocessLaTeX(content)).toBe(expected);
   });
 
+  test('does not treat numeric-leading LaTeX as currency', () => {
+    const content = 'Multiply: $65 \\times 44$';
+    const expected = 'Multiply: $$65 \\times 44$$';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('does not treat numeric-leading arithmetic LaTeX as currency', () => {
+    const content = 'Compute $65 + 44 = 109$';
+    const expected = 'Compute $$65 + 44 = 109$$';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
   test('handles LaTeX with special characters and currency', () => {
     const content = 'Set $\\{x | x > \\$0\\}$ for positive prices';
     const expected = 'Set $$\\{x | x > \\$0\\}$$ for positive prices';
@@ -249,6 +261,24 @@ y$ which spans lines`;
   test('handles various abbreviated currency formats', () => {
     const content = 'Revenue: $5M to $10M, funding: $1.5B, price: $5K';
     const expected = 'Revenue: \\$5M to \\$10M, funding: \\$1.5B, price: \\$5K';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('treats numeric currency followed by letter as plain currency, not LaTeX', () => {
+    const content = 'He earned $100k last year';
+    const expected = 'He earned \\$100k last year';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('treats simple numeric-leading symbol expressions as LaTeX math, not currency', () => {
+    const content = 'Solve $2n$ and $3x$ for n and x';
+    const expected = 'Solve $$2n$$ and $$3x$$ for n and x';
+    expect(preprocessLaTeX(content)).toBe(expected);
+  });
+
+  test('handles currency before math on the same line', () => {
+    const content = 'Costs $50. Formula: $x + 1$';
+    const expected = 'Costs \\$50. Formula: $$x + 1$$';
     expect(preprocessLaTeX(content)).toBe(expected);
   });
 });
