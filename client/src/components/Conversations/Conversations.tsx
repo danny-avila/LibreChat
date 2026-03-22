@@ -48,7 +48,7 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
       {({ registerChild }) => (
-        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style}>
+        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} className="px-3">
           {children}
         </div>
       )}
@@ -386,7 +386,7 @@ const Conversations: FC<ConversationsProps> = ({
                 aria-label="Conversations"
                 onRowsRendered={handleRowsRendered}
                 tabIndex={-1}
-                style={{ outline: 'none', scrollbarGutter: 'stable' }}
+                style={{ outline: 'none' }}
                 containerRole="rowgroup"
               />
             )}

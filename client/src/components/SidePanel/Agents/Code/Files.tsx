@@ -77,7 +77,7 @@ function Files({
           <button
             type="button"
             disabled={isEphemeralAgent(agent_id) || codeChecked === false}
-            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
             onClick={handleButtonClick}
           >
             <div className="flex w-full items-center justify-center gap-1">

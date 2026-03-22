@@ -20,7 +20,7 @@ export default function CodeForm({
       <div className="mb-1.5 flex items-center gap-2">
         <div className="flex flex-row items-center gap-1">
           <div className="flex items-center gap-1">
-            <span className="text-token-text-primary block font-medium">
+            <span className="text-token-text-primary block text-sm font-medium">
               {localize('com_agents_code_interpreter_title')}
             </span>
             <span className="text-xs text-text-secondary">

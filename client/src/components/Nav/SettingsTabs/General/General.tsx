@@ -23,13 +23,6 @@ const toggleSwitchConfigs = [
     key: 'autoScroll',
   },
   {
-    stateAtom: store.hideSidePanel,
-    localizationKey: 'com_nav_hide_panel',
-    switchId: 'hideSidePanel',
-    hoverCardText: undefined,
-    key: 'hideSidePanel',
-  },
-  {
     stateAtom: store.keepScreenAwake,
     localizationKey: 'com_nav_keep_screen_awake',
     switchId: 'keepScreenAwake',

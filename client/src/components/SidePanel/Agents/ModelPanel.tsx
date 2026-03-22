@@ -97,7 +97,7 @@ export default function ModelPanel({
   };
 
   return (
-    <div className="mx-1 mb-1 flex h-full min-h-[50vh] w-full flex-col gap-2 text-sm">
+    <div className="mb-1 flex h-full min-h-[50vh] w-full flex-col gap-2 text-sm">
       <div className="model-panel relative flex flex-col items-center px-16 py-4 text-center">
         <div className="absolute left-0 top-4">
           <button
@@ -116,12 +116,12 @@ export default function ModelPanel({
 
         <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_model_parameters')}</div>
       </div>
-      <div className="p-2">
+      <div>
         {/* Endpoint aka Provider for Agents */}
         <div className="mb-4">
           <label
             id="provider-label"
-            className="text-token-text-primary model-panel-label mb-2 block font-medium"
+            className="text-token-text-primary model-panel-label mb-2 block text-sm font-medium"
             htmlFor="provider"
           >
             {localize('com_ui_provider')} <span className="text-red-500">*</span>
@@ -172,7 +172,7 @@ export default function ModelPanel({
           <label
             id="model-label"
             className={cn(
-              'text-token-text-primary model-panel-label mb-2 block font-medium',
+              'text-token-text-primary model-panel-label mb-2 block text-sm font-medium',
               !provider && 'text-gray-500 dark:text-gray-400',
             )}
             htmlFor="model"
@@ -218,7 +218,7 @@ export default function ModelPanel({
       </div>
       {/* Model Parameters */}
       {parameters && (
-        <div className="h-auto max-w-full overflow-x-hidden p-2">
+        <div className="h-auto max-w-full">
           <div className="grid grid-cols-2 gap-4">
             {/* This is the parent element containing all settings */}
             {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}

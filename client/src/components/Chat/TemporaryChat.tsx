@@ -37,13 +37,13 @@ export function TemporaryChat() {
             aria-label={localize('com_ui_temporary')}
             aria-pressed={isTemporary}
             className={cn(
-              'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-primary transition-all ease-in-out',
+              'inline-flex size-9 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-primary transition-all ease-in-out',
               isTemporary
                 ? 'bg-surface-active'
                 : 'bg-presentation shadow-sm hover:bg-surface-active-alt',
             )}
           >
-            <MessageCircleDashed className="icon-lg" aria-hidden="true" />
+            <MessageCircleDashed className="icon-md" aria-hidden="true" />
           </button>
         }
       />
