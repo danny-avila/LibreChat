@@ -11,7 +11,7 @@ export default function PromptsAccordion() {
         className="h-auto space-y-2 md:mr-0 md:min-w-0 lg:w-full xl:w-full"
         {...groupsNav}
       >
-        <FilterPrompts className="items-stretch" />
+        <FilterPrompts />
         <div className="flex w-full flex-row items-center justify-end">
           <AutoSendPrompt className="text-xs dark:text-white" />
         </div>

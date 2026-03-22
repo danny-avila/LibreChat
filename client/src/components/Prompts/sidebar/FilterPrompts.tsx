@@ -95,7 +95,7 @@ export default function FilterPrompts({
   }, [debouncedSearchTerm, resultCount, localize]);
 
   return (
-    <div role="search" className={cn('flex w-full gap-2 text-text-primary', className)}>
+    <div role="search" className={cn('flex items-center gap-2', className)}>
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {searchResultsAnnouncement}
       </div>
