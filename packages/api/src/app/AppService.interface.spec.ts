@@ -154,4 +154,55 @@ describe('AppService interface configuration', () => {
     // Verify that peoplePicker is undefined when not provided
     expect(result.interfaceConfig?.peoplePicker).toBeUndefined();
   });
+
+  it('should set attachFiles to true when config specifies attachFiles as true', async () => {
+    const config = {
+      interface: {
+        attachFiles: true,
+      },
+    };
+
+    const result = await AppService({ config });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          attachFiles: true,
+        }),
+      }),
+    );
+  });
+
+  it('should set attachFiles to false when config specifies attachFiles as false', async () => {
+    const config = {
+      interface: {
+        attachFiles: false,
+      },
+    };
+
+    const result = await AppService({ config });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.objectContaining({
+          attachFiles: false,
+        }),
+      }),
+    );
+  });
+
+  it('should not set attachFiles when not provided in config', async () => {
+    const config = {};
+
+    const result = await AppService({ config });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        interfaceConfig: expect.anything(),
+      }),
+    );
+
+    // Verify that attachFiles is undefined when not provided
+    expect(result.interfaceConfig?.attachFiles).toBeUndefined();
+  });
 });

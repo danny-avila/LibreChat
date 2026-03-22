@@ -43,6 +43,7 @@ export async function loadDefaultInterface({
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
 
     // Permissions - only include if explicitly configured
+    attachFiles: interfaceConfig?.attachFiles,
     bookmarks: interfaceConfig?.bookmarks,
     memories: shouldDisableMemories ? false : interfaceConfig?.memories,
     prompts: interfaceConfig?.prompts,

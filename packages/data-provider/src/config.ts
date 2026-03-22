@@ -623,6 +623,7 @@ export const interfaceSchema = z
     bookmarks: z.boolean().optional(),
     memories: z.boolean().optional(),
     presets: z.boolean().optional(),
+    attachFiles: z.boolean().optional(),
     prompts: z
       .union([
         z.boolean(),
@@ -681,6 +682,7 @@ export const interfaceSchema = z
     multiConvo: true,
     bookmarks: true,
     memories: true,
+    attachFiles: true,
     prompts: {
       use: true,
       create: true,
