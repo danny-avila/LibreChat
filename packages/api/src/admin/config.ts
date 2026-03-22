@@ -7,7 +7,7 @@ import type { ServerRequest } from '~/types/http';
 
 // ── Dot-path helpers (no lodash dependency) ──────────────────────────
 
-const UNSAFE_SEGMENTS = /(?:^|\.)(__|constructor|prototype)(?:\.|$)/;
+const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 
 function isValidFieldPath(path: string): boolean {
   return typeof path === 'string' && path.length > 0 && !UNSAFE_SEGMENTS.test(path);
@@ -79,15 +79,12 @@ interface CapabilityUser {
 }
 
 export interface AdminConfigDeps {
+  listAllConfigs: (session?: ClientSession) => Promise<IConfig[]>;
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
-  getApplicableConfigs: (
-    principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
-    session?: ClientSession,
-  ) => Promise<IConfig[]>;
   upsertConfig: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -151,8 +148,8 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
 
 export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   const {
+    listAllConfigs,
     findConfigByPrincipal,
-    getApplicableConfigs,
     upsertConfig,
     deleteConfig,
     toggleConfigActive,
@@ -184,7 +181,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const configs = await getApplicableConfigs();
+      const configs = await listAllConfigs();
       return res.status(200).json({ configs });
     } catch (error) {
       logger.error('[adminConfig] listConfigs error:', error);
