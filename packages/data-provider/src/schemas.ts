@@ -757,6 +757,14 @@ export const tConversationSchema = z.object({
   verbosity: eVerbositySchema.optional().nullable(),
   /* OpenAI: use Responses API */
   useResponsesApi: z.boolean().optional(),
+  /**
+   * OpenAI Playground stored prompt ID (e.g. "pmpt_...").
+   * When set, LibreChat forwards `prompt: { id }` in the Responses API request,
+   * routing the call through a pre-configured Playground prompt that can carry
+   * its own system instructions, file-search vector store, and tool definitions.
+   * Implicitly enables `useResponsesApi`.
+   */
+  stored_prompt_id: z.string().optional(),
   /* Anthropic: Effort control */
   effort: eAnthropicEffortSchema.optional().nullable(),
   /* OpenAI Responses API / Anthropic API / Google API */
@@ -867,6 +875,8 @@ export const tQueryParamsSchema = tConversationSchema
     verbosity: true,
     /** @endpoints openAI, custom, azureOpenAI */
     useResponsesApi: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    stored_prompt_id: true,
     /** @endpoints openAI, anthropic, google */
     web_search: true,
     /** @endpoints openAI, custom, azureOpenAI */
@@ -1141,6 +1151,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   reasoning_summary: true,
   verbosity: true,
   useResponsesApi: true,
+  stored_prompt_id: true,
   web_search: true,
   disableStreaming: true,
   fileTokenLimit: true,
