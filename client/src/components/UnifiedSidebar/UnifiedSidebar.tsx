@@ -63,6 +63,7 @@ function UnifiedSidebar() {
 
   const handleResizeStart = useCallback(() => {
     setIsResizing(true);
+    document.body.style.userSelect = 'none';
     const maxWidth = window.innerWidth * 0.4;
     let rafId: number | null = null;
 
@@ -82,6 +83,7 @@ function UnifiedSidebar() {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
+      document.body.style.userSelect = '';
       setIsResizing(false);
       resizeHandlers.current = null;
       setSidebarWidth((w) => {
