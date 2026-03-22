@@ -837,6 +837,7 @@ export enum SearchProviders {
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
+  CRAWL4AI = 'crawl4ai',
 }
 
 export enum RerankerTypes {
@@ -857,6 +858,8 @@ export const webSearchSchema = z.object({
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
+  crawl4aiApiKey: z.string().optional().default('${CRAWL4AI_API_KEY}'),
+  crawl4aiApiUrl: z.string().optional().default('${CRAWL4AI_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
@@ -896,6 +899,14 @@ export const webSearchSchema = z.object({
           tag: z.string().nullable().optional(),
         })
         .optional(),
+    })
+    .optional(),
+  crawl4aiOptions: z
+    .object({
+      extractionStrategy: z.string().optional(),
+      chunkingStrategy: z.string().optional(),
+      timeout: z.number().optional(),
+      fitStrategy: z.string().optional()
     })
     .optional(),
 });

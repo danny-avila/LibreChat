@@ -91,6 +91,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -312,6 +314,8 @@ describe('web.ts', () => {
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
 
@@ -363,6 +367,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         // Specify which services to use
@@ -457,6 +463,8 @@ describe('web.ts', () => {
         jinaApiKey: '${CUSTOM_JINA_KEY}',
         jinaApiUrl: '${CUSTOM_JINA_URL}',
         cohereApiKey: '${CUSTOM_COHERE_KEY}',
+        crawl4aiApiUrl: '${CUSTOM_CRAWL4AI_URL}',
+        crawl4aiApiKey: '${CUSTOM_CRAWL4AI_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         // Specify which services to use
         searchProvider: 'serper' as SearchProviders,
@@ -527,6 +535,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -589,6 +599,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -699,6 +711,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         searchProvider: 'serper' as SearchProviders,
@@ -740,6 +754,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         scraperProvider: 'firecrawl' as ScraperProviders,
@@ -781,6 +797,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: 'jina' as RerankerTypes,
@@ -828,6 +846,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         searchProvider: 'invalid-provider' as SearchProviders,
@@ -863,6 +883,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: 'jina' as RerankerTypes,
@@ -914,6 +936,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -955,6 +979,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
@@ -1015,6 +1041,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         scraperTimeout: 15000, // This should take priority
         firecrawlOptions: {
@@ -1057,6 +1085,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           includeTags: ['p'],
@@ -1096,6 +1126,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           timeout: 12000, // Only timeout provided
@@ -1133,6 +1165,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           formats: ['html', 'markdown'], // Only formats provided
@@ -1170,6 +1204,8 @@ describe('web.ts', () => {
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        crawl4aiApiUrl: '${CRAWL4AI_API_URL}',
+        crawl4aiApiKey: '${CRAWL4AI_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           timeout: 8000,
