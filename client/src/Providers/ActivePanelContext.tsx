@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 interface ActivePanelContextType {
   active: string | undefined;
@@ -20,6 +20,20 @@ export function ActivePanelProvider({
     localStorage.setItem('side:active-panel', id);
     _setActive(id);
   };
+
+  // Listen for custom event to activate panel from external components
+  useEffect(() => {
+    const handleActivatePanel = (event: CustomEvent<{ panelId: string }>) => {
+      if (event.detail?.panelId) {
+        setActive(event.detail.panelId);
+      }
+    };
+
+    window.addEventListener('sidepanel:activate' as any, handleActivatePanel as EventListener);
+    return () => {
+      window.removeEventListener('sidepanel:activate' as any, handleActivatePanel as EventListener);
+    };
+  }, []);
 
   return (
     <ActivePanelContext.Provider value={{ active, setActive }}>
