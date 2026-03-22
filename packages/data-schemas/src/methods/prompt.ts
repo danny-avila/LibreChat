@@ -498,15 +498,59 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
   }
 
   /**
-   * Get a single prompt group by filter.
+   * Get a single prompt group by filter, with productionPrompt populated via $lookup.
    */
   async function getPromptGroup(filter: Record<string, unknown>) {
     try {
       const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
-      return await PromptGroup.findOne(filter).lean();
+      // Cast string _id to ObjectId for aggregation (findOne auto-casts, aggregate does not)
+      const matchFilter = { ...filter };
+      if (typeof matchFilter._id === 'string') {
+        matchFilter._id = new Types.ObjectId(matchFilter._id);
+      }
+      const result = await PromptGroup.aggregate([
+        { $match: matchFilter },
+        {
+          $lookup: {
+            from: 'prompts',
+            localField: 'productionId',
+            foreignField: '_id',
+            as: 'productionPrompt',
+          },
+        },
+        { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
+      ]);
+      const group = result[0] || null;
+      if (group?.author) {
+        group.author = group.author.toString();
+      }
+      return group;
     } catch (error) {
       logger.error('Error getting prompt group', error);
-      return { message: 'Error getting prompt group' };
+      return null;
+    }
+  }
+
+  /**
+   * Returns the _id values of all prompt groups authored by the given user.
+   * Used by the "Shared Prompts" and "My Prompts" filters to distinguish
+   * owned prompts from prompts shared with the user.
+   */
+  async function getOwnedPromptGroupIds(author: string) {
+    try {
+      const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
+      if (!author || !Types.ObjectId.isValid(author)) {
+        logger.warn('getOwnedPromptGroupIds called with invalid author', { author });
+        return [];
+      }
+      const groups = await PromptGroup.find(
+        { author: new Types.ObjectId(author) },
+        { _id: 1 },
+      ).lean();
+      return groups.map((g) => g._id);
+    } catch (error) {
+      logger.error('Error getting owned prompt group IDs', error);
+      return [];
     }
   }
 
@@ -708,6 +752,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
     getRandomPromptGroups,
     getPromptGroupsWithPrompts,
     getPromptGroup,
+    getOwnedPromptGroupIds,
     deletePrompt,
     deleteUserPrompts,
     updatePromptGroup,

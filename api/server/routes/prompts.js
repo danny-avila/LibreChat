@@ -21,6 +21,7 @@ const {
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   getListPromptGroupsByAccess,
+  getOwnedPromptGroupIds,
   incrementPromptGroupUsage,
   makePromptProduction,
   updatePromptGroup,
@@ -119,16 +120,20 @@ router.get('/all', async (req, res) => {
       requiredPermissions: PermissionBits.VIEW,
     });
 
-    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
-      resourceType: ResourceType.PROMPTGROUP,
-      requiredPermissions: PermissionBits.VIEW,
-    });
+    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+      findPubliclyAccessibleResources({
+        resourceType: ResourceType.PROMPTGROUP,
+        requiredPermissions: PermissionBits.VIEW,
+      }),
+      getOwnedPromptGroupIds(userId),
+    ]);
 
     const filteredAccessibleIds = await filterAccessibleIdsBySharedLogic({
       accessibleIds,
       searchShared,
       searchSharedOnly,
       publicPromptGroupIds: publiclyAccessibleIds,
+      ownedPromptGroupIds,
     });
 
     const result = await getListPromptGroupsByAccess({
@@ -188,16 +193,20 @@ router.get('/groups', async (req, res) => {
       requiredPermissions: PermissionBits.VIEW,
     });
 
-    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
-      resourceType: ResourceType.PROMPTGROUP,
-      requiredPermissions: PermissionBits.VIEW,
-    });
+    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+      findPubliclyAccessibleResources({
+        resourceType: ResourceType.PROMPTGROUP,
+        requiredPermissions: PermissionBits.VIEW,
+      }),
+      getOwnedPromptGroupIds(userId),
+    ]);
 
     const filteredAccessibleIds = await filterAccessibleIdsBySharedLogic({
       accessibleIds,
       searchShared,
       searchSharedOnly,
       publicPromptGroupIds: publiclyAccessibleIds,
+      ownedPromptGroupIds,
     });
 
     // Cursor-based pagination only
