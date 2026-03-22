@@ -145,7 +145,6 @@ helm/**/.values.yaml
 /.codeium
 *.local.md
 
-
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
 
@@ -177,3 +176,4 @@ claude-flow
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
 CLAUDE.md
+.gsd
