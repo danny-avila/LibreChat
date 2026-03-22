@@ -3,3 +3,4 @@ export * from './useMCPSelect';
 export * from './useVisibleTools';
 export * from './useMCPServerManager';
 export { useRemoveMCPTool } from './useRemoveMCPTool';
+export { default as useMCPDeepLink } from './useMCPDeepLink';
