@@ -127,14 +127,17 @@ export async function fetchModels({
   }
 
   try {
+    const resolvedCustomHeaders = resolveHeaders({
+      headers: headers ?? undefined,
+      user: userObject,
+    });
+
     const options: {
       headers: Record<string, string>;
       timeout: number;
       httpsAgent?: HttpsProxyAgent<string>;
     } = {
-      headers: {
-        ...(headers ?? {}),
-      },
+      headers: {},
       timeout: 5000,
     };
 
@@ -146,6 +149,10 @@ export async function fetchModels({
     } else {
       options.headers.Authorization = `Bearer ${apiKey}`;
     }
+
+    // Merge resolved custom headers after defaults so config headers
+    // (e.g. authorization with {{LIBRECHAT_OPENID_ACCESS_TOKEN}}) take precedence
+    Object.assign(options.headers, resolvedCustomHeaders);
 
     if (process.env.PROXY) {
       options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
