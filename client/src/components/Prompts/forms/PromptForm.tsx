@@ -142,12 +142,13 @@ VersionsPanel.displayName = 'VersionsPanel';
 interface HeaderActionsProps {
   group: TPromptGroup;
   canEdit: boolean;
+  canDelete: boolean;
   selectedPromptId?: string;
   onCategoryChange?: (value: string) => void;
 }
 
 const HeaderActions = React.memo(
-  ({ group, canEdit, selectedPromptId, onCategoryChange }: HeaderActionsProps) => {
+  ({ group, canEdit, canDelete, selectedPromptId, onCategoryChange }: HeaderActionsProps) => {
     const hasShareAccess = useHasAccess({
       permissionType: PermissionTypes.PROMPTS,
       permission: Permissions.SHARE,
@@ -164,12 +165,14 @@ const HeaderActions = React.memo(
           onValueChange={canEdit ? onCategoryChange : undefined}
         />
         {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
-        <DeletePrompt
-          promptId={selectedPromptId}
-          groupId={groupId}
-          promptName={group?.name || ''}
-          disabled={isLoadingGroup}
-        />
+        {canDelete && (
+          <DeletePrompt
+            promptId={selectedPromptId}
+            groupId={groupId}
+            promptName={group?.name || ''}
+            disabled={isLoadingGroup}
+          />
+        )}
       </div>
     );
   },
@@ -216,6 +219,7 @@ const PromptForm = () => {
   );
 
   const canEdit = hasPermission(PermissionBits.EDIT);
+  const canDelete = hasPermission(PermissionBits.DELETE);
   const canView = hasPermission(PermissionBits.VIEW);
 
   const methods = useForm({
@@ -498,6 +502,7 @@ const PromptForm = () => {
                         <HeaderActions
                           group={group}
                           canEdit={canEdit}
+                          canDelete={canDelete}
                           selectedPromptId={selectedPromptId}
                           onCategoryChange={handleCategoryChange}
                         />

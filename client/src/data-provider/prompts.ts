@@ -364,12 +364,19 @@ export const useRecordPromptUsage = (): UseMutationResult<
   unknown
 > => {
   const queryClient = useQueryClient();
+  const name = useRecoilValue(store.promptsName);
+  const category = useRecoilValue(store.promptsCategory);
+  const pageSize = useRecoilValue(store.promptsPageSize);
 
   return useMutation({
     mutationFn: (groupId: string) => dataService.recordPromptGroupUsage(groupId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [QueryKeys.promptGroups] });
-      queryClient.invalidateQueries({ queryKey: [QueryKeys.allPromptGroups] });
+    onSuccess: (data, groupId) => {
+      const update = { _id: groupId, numberOfGenerations: data.numberOfGenerations };
+      queryClient.setQueryData<t.PromptGroupListData>(
+        [QueryKeys.promptGroups, name, category, pageSize],
+        (old) => (old ? updateGroupFieldsInPlace(old, update) : old),
+      );
+      updateGroupInAll(queryClient, update);
     },
   });
 };

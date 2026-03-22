@@ -114,13 +114,24 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
     return extractUniqueVariables(promptText || '');
   }, [promptText]);
 
-  const parsedVariables = useMemo(() => {
-    return variables.map(parseVariable);
+  const { dropdownVariables, specialVars, simpleVariables } = useMemo(() => {
+    const result = {
+      dropdownVariables: [] as ParsedVariable[],
+      specialVars: [] as ParsedVariable[],
+      simpleVariables: [] as ParsedVariable[],
+    };
+    for (const v of variables) {
+      const parsed = parseVariable(v);
+      if (parsed.isDropdown) {
+        result.dropdownVariables.push(parsed);
+      } else if (parsed.isSpecial) {
+        result.specialVars.push(parsed);
+      } else {
+        result.simpleVariables.push(parsed);
+      }
+    }
+    return result;
   }, [variables]);
-
-  const dropdownVariables = parsedVariables.filter((v) => v.isDropdown);
-  const specialVars = parsedVariables.filter((v) => v.isSpecial);
-  const simpleVariables = parsedVariables.filter((v) => !v.isDropdown && !v.isSpecial);
 
   if (variables.length === 0) {
     return null;

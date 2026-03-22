@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { memo, useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { EarthIcon, Pencil, Trash2, User } from 'lucide-react';
 import { PermissionBits, ResourceType, type TPromptGroup } from 'librechat-data-provider';
@@ -14,6 +14,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import { useLocalize, useAuthContext, useResourcePermissions } from '~/hooks';
+import { useLiveAnnouncer } from '~/Providers';
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
 import CategoryIcon from '../utils/CategoryIcon';
 import { cn } from '~/utils';
@@ -32,6 +33,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const isSharedPrompt = group.author !== user?.id && Boolean(group.authorName);
 
   const { showToast } = useToastContext();
+  const { announcePolite } = useLiveAnnouncer();
   const [nameInputValue, setNameInputValue] = useState(group.name);
   const [renameOpen, setRenameOpen] = useState(false);
 
@@ -45,15 +47,13 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
   const canEdit = hasPermission(PermissionBits.EDIT);
   const canDelete = hasPermission(PermissionBits.DELETE);
 
-  const isGlobalGroup = useMemo(
-    () => instanceProjectId && group.projectIds?.includes(instanceProjectId),
-    [group.projectIds, instanceProjectId],
-  );
+  const isGlobalGroup = group.isPublic === true;
 
   const updateGroup = useUpdatePromptGroup({
     onSuccess: () => {
       setRenameOpen(false);
       showToast({ status: 'success', message: localize('com_ui_prompt_renamed') });
+      announcePolite({ message: localize('com_ui_prompt_renamed'), isStatus: true });
     },
     onError: () => {
       showToast({ status: 'error', message: localize('com_ui_prompt_update_error') });
@@ -62,6 +62,10 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
 
   const deleteGroup = useDeletePromptGroup({
     onSuccess: (_response, variables) => {
+      announcePolite({
+        message: localize('com_ui_prompt_deleted_group', { 0: group.name }),
+        isStatus: true,
+      });
       if (variables.id === group._id) {
         navigate('/d/prompts');
       }

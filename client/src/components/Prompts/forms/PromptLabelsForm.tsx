@@ -5,7 +5,7 @@ import type { TPrompt } from 'librechat-data-provider';
 import { useUpdatePromptLabels } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
-const PromptForm = ({ selectedPrompt }: { selectedPrompt?: TPrompt }) => {
+const PromptLabelsForm = ({ selectedPrompt }: { selectedPrompt?: TPrompt }) => {
   const localize = useLocalize();
   const [labelInput, setLabelInput] = useState<string>('');
   const [labels, setLabels] = useState<string[]>([]);
@@ -74,4 +74,4 @@ const PromptForm = ({ selectedPrompt }: { selectedPrompt?: TPrompt }) => {
   );
 };
 
-export default PromptForm;
+export default PromptLabelsForm;

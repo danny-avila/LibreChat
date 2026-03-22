@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, useRef } from 'react';
+import { useState, memo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, TooltipAnchor } from '@librechat/client';
 import { Eye, Pencil, EarthIcon, User } from 'lucide-react';
@@ -28,10 +28,7 @@ function ChatGroupItem({
   const [isPreviewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [isVariableDialogOpen, setVariableDialogOpen] = useState(false);
 
-  const groupIsGlobal = useMemo(
-    () => instanceProjectId != null && group.projectIds?.includes(instanceProjectId),
-    [group, instanceProjectId],
-  );
+  const groupIsGlobal = group.isPublic === true;
 
   // Check permissions for the promptGroup
   const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');

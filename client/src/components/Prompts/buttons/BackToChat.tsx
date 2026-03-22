@@ -1,22 +1,29 @@
+import { useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { buttonVariants } from '@librechat/client';
-import { useLocalize } from '~/hooks';
+import { useDashboardContext } from '~/Providers';
+import { useLocalize, useCustomLink } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function BackToChat({ className }: { className?: string }) {
-  const navigate = useNavigate();
   const localize = useLocalize();
-  const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (event.button === 0 && !(event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      navigate('/c/new');
+  const { prevLocationPath } = useDashboardContext();
+
+  const conversationId = useMemo(() => {
+    if (!prevLocationPath || prevLocationPath.includes('/d/')) {
+      return 'new';
     }
-  };
+    const parts = prevLocationPath.split('/');
+    return parts[parts.length - 1];
+  }, [prevLocationPath]);
+
+  const href = `/c/${conversationId}`;
+  const clickHandler = useCustomLink(href);
+
   return (
     <a
       className={cn(buttonVariants({ variant: 'outline' }), className)}
-      href="/c/new"
+      href={href}
       onClick={clickHandler}
     >
       <ArrowLeft className="icon-xs mr-2" aria-hidden="true" />

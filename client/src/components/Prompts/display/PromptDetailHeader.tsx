@@ -1,9 +1,7 @@
-import { useMemo } from 'react';
 import { format } from 'date-fns';
 import { TooltipAnchor } from '@librechat/client';
 import { User, Calendar, EarthIcon, BarChart3 } from 'lucide-react';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
 import CategoryIcon from '../utils/CategoryIcon';
 
@@ -14,16 +12,10 @@ interface PromptDetailHeaderProps {
 const PromptDetailHeader = ({ group }: PromptDetailHeaderProps) => {
   const localize = useLocalize();
   const { user } = useAuthContext();
-  const { data: startupConfig } = useGetStartupConfig();
   const formattedDate = group.createdAt ? format(new Date(group.createdAt), 'MMM d, yyyy') : null;
   const isSharedPrompt = group.author !== user?.id && Boolean(group.authorName);
 
-  const isGlobalGroup = useMemo(
-    () =>
-      startupConfig?.instanceProjectId != null &&
-      group.projectIds?.includes(startupConfig.instanceProjectId),
-    [group.projectIds, startupConfig?.instanceProjectId],
-  );
+  const isGlobalGroup = group.isPublic === true;
 
   return (
     <div className="flex flex-col gap-3 py-2 sm:flex-row sm:items-center sm:gap-4">
