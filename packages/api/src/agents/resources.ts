@@ -48,6 +48,18 @@ export type TCheckSessionsAlive = (params: {
 /** Loads CODE_API_KEY for a user. Call once per request. */
 export type TLoadCodeApiKey = (userId: string) => Promise<string>;
 
+/** State computed during primeResources for lazy provisioning at tool invocation time */
+export type ProvisionState = {
+  /** Files that need uploading to the code execution environment */
+  codeEnvFiles: TFile[];
+  /** Files that need embedding into the vector DB for file_search */
+  vectorDBFiles: TFile[];
+  /** Pre-loaded CODE_API_KEY to avoid redundant credential fetches */
+  codeApiKey?: string;
+  /** Set of file_ids confirmed alive in code env (from staleness check) */
+  aliveFileIds: Set<string>;
+};
+
 /**
  * Function type for retrieving files from the database
  * @param filter - MongoDB filter query for files
@@ -82,7 +94,7 @@ export type TFilterFilesByAgentAccess = (params: {
  * @param params.tool_resources - The agent's tool resources object to update
  * @param params.processedResourceFiles - Set tracking processed files per resource type
  */
-const addFileToResource = ({
+export const addFileToResource = ({
   file,
   resourceType,
   tool_resources,
@@ -206,11 +218,8 @@ export const primeResources = async ({
   tool_resources: _tool_resources,
   agentId,
   enabledToolResources,
-  provisionToCodeEnv,
-  provisionToVectorDB,
   checkSessionsAlive,
   loadCodeApiKey,
-  updateFile,
 }: {
   req: ServerRequest & { user?: IUser };
   appConfig?: AppConfig;
@@ -222,19 +231,14 @@ export const primeResources = async ({
   agentId?: string;
   /** Set of tool resource types the agent has enabled (e.g., execute_code, file_search) */
   enabledToolResources?: Set<EToolResources>;
-  /** Optional callback to provision a file to the code execution environment */
-  provisionToCodeEnv?: TProvisionToCodeEnv;
-  /** Optional callback to provision a file to the vector DB for file_search */
-  provisionToVectorDB?: TProvisionToVectorDB;
   /** Optional callback to batch-check code env file liveness by session */
   checkSessionsAlive?: TCheckSessionsAlive;
   /** Optional callback to load CODE_API_KEY once per request */
   loadCodeApiKey?: TLoadCodeApiKey;
-  /** Optional callback to persist file metadata updates after provisioning */
-  updateFile?: (data: TFileUpdate) => Promise<unknown>;
 }): Promise<{
   attachments: Array<TFile | undefined>;
   tool_resources: AgentToolResources | undefined;
+  provisionState?: ProvisionState;
   warnings: string[];
 }> => {
   try {
@@ -371,20 +375,18 @@ export const primeResources = async ({
     }
 
     /**
-     * Lazy provisioning: for deferred files that haven't been provisioned to the
-     * agent's enabled tool resources, provision them now (at chat-request start).
-     * This handles files uploaded via the unified upload flow (no tool_resource chosen at upload time).
+     * Lazy provisioning: instead of provisioning files now, compute which files
+     * need provisioning and return that state. Actual provisioning happens at
+     * tool invocation time via the ON_TOOL_EXECUTE handler.
      */
     const warnings: string[] = [];
+    let provisionState: ProvisionState | undefined;
 
     if (enabledToolResources && enabledToolResources.size > 0 && attachments.length > 0) {
-      const needsCodeEnv =
-        enabledToolResources.has(EToolResources.execute_code) && provisionToCodeEnv != null;
-      const needsVectorDB =
-        enabledToolResources.has(EToolResources.file_search) && provisionToVectorDB != null;
+      const needsCodeEnv = enabledToolResources.has(EToolResources.execute_code);
+      const needsVectorDB = enabledToolResources.has(EToolResources.file_search);
 
       if (needsCodeEnv || needsVectorDB) {
-        // Load CODE_API_KEY once for all code env operations
         let codeApiKey: string | undefined;
         if (needsCodeEnv && loadCodeApiKey && req.user?.id) {
           try {
@@ -395,7 +397,7 @@ export const primeResources = async ({
           }
         }
 
-        // Batch staleness check: verify code env files are still alive
+        // Batch staleness check: identify which code env files are still alive
         let aliveFileIds: Set<string> = new Set();
         if (needsCodeEnv && codeApiKey && checkSessionsAlive) {
           const filesWithIdentifiers = attachments.filter(
@@ -409,117 +411,60 @@ export const primeResources = async ({
           }
         }
 
-        // Collect deferred DB updates from provisioning
-        const pendingUpdates: TFileUpdate[] = [];
+        // Compute which files need provisioning (don't actually provision yet)
+        const codeEnvFiles: TFile[] = [];
+        const vectorDBFiles: TFile[] = [];
 
-        // Provision files in parallel
-        const provisionResults = await Promise.allSettled(
-          attachments.map(async (file) => {
-            if (!file?.file_id) {
-              return;
-            }
+        for (const file of attachments) {
+          if (!file?.file_id) {
+            continue;
+          }
 
-            const isImage = file.type?.startsWith('image') ?? false;
-            const typedReq = req as ServerRequest & { user?: IUser };
+          if (
+            needsCodeEnv &&
+            codeApiKey &&
+            !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
+          ) {
+            const hasFileIdentifier = !!file.metadata?.fileIdentifier;
+            const isStale = hasFileIdentifier && !aliveFileIds.has(file.file_id);
 
-            // Code env provisioning (with staleness check)
-            if (
-              needsCodeEnv &&
-              codeApiKey &&
-              !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
-            ) {
-              const hasFileIdentifier = !!file.metadata?.fileIdentifier;
-              const isStale = hasFileIdentifier && !aliveFileIds.has(file.file_id);
-              const needsProvision = !hasFileIdentifier || isStale;
-
-              if (needsProvision) {
-                if (isStale) {
-                  logger.info(
-                    `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), re-provisioning`,
-                  );
-                  file.metadata = { ...file.metadata, fileIdentifier: undefined };
-                }
-
-                try {
-                  const { fileIdentifier, fileUpdate } = await provisionToCodeEnv({
-                    req: typedReq,
-                    file,
-                    entity_id: agentId,
-                    apiKey: codeApiKey,
-                  });
-                  file.metadata = { ...file.metadata, fileIdentifier };
-                  pendingUpdates.push(fileUpdate);
-                  addFileToResource({
-                    file,
-                    resourceType: EToolResources.execute_code,
-                    tool_resources,
-                    processedResourceFiles,
-                  });
-                } catch (error) {
-                  const msg = `Failed to provision "${file.filename}" to code env`;
-                  logger.error(`[primeResources] ${msg}`, error);
-                  warnings.push(msg);
-                }
-              } else {
-                // File is alive, ensure it's categorized
-                addFileToResource({
-                  file,
-                  resourceType: EToolResources.execute_code,
-                  tool_resources,
-                  processedResourceFiles,
-                });
+            if (!hasFileIdentifier || isStale) {
+              if (isStale) {
+                logger.info(
+                  `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,
+                );
+                file.metadata = { ...file.metadata, fileIdentifier: undefined };
               }
+              codeEnvFiles.push(file);
+            } else {
+              // File is alive, categorize it now
+              addFileToResource({
+                file,
+                resourceType: EToolResources.execute_code,
+                tool_resources,
+                processedResourceFiles,
+              });
             }
+          }
 
-            // Vector DB provisioning
-            if (
-              needsVectorDB &&
-              !isImage &&
-              file.embedded !== true &&
-              !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
-            ) {
-              try {
-                const result = await provisionToVectorDB({
-                  req: typedReq,
-                  file,
-                  entity_id: agentId,
-                });
-                if (result.embedded) {
-                  file.embedded = true;
-                  if (result.fileUpdate) {
-                    pendingUpdates.push(result.fileUpdate);
-                  }
-                  addFileToResource({
-                    file,
-                    resourceType: EToolResources.file_search,
-                    tool_resources,
-                    processedResourceFiles,
-                  });
-                }
-              } catch (error) {
-                const msg = `Failed to provision "${file.filename}" to vector DB`;
-                logger.error(`[primeResources] ${msg}`, error);
-                warnings.push(msg);
-              }
-            }
-          }),
-        );
-
-        // Log any unexpected rejections from Promise.allSettled
-        for (const result of provisionResults) {
-          if (result.status === 'rejected') {
-            logger.error('[primeResources] Unexpected provisioning rejection', result.reason);
+          const isImage = file.type?.startsWith('image') ?? false;
+          if (
+            needsVectorDB &&
+            !isImage &&
+            file.embedded !== true &&
+            !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
+          ) {
+            vectorDBFiles.push(file);
           }
         }
 
-        // Batch DB updates after all provisioning completes
-        if (pendingUpdates.length > 0 && updateFile) {
-          await Promise.allSettled(pendingUpdates.map((update) => updateFile(update)));
+        if (codeEnvFiles.length > 0 || vectorDBFiles.length > 0) {
+          provisionState = { codeEnvFiles, vectorDBFiles, codeApiKey, aliveFileIds };
         }
       }
     }
 
-    return { attachments, tool_resources, warnings };
+    return { attachments, tool_resources, provisionState, warnings };
   } catch (error) {
     logger.error('Error priming resources', error);
 
@@ -539,6 +484,7 @@ export const primeResources = async ({
     return {
       attachments: safeAttachments,
       tool_resources: _tool_resources,
+      provisionState: undefined,
       warnings: [],
     };
   }
