@@ -1,55 +1,41 @@
-import { useState, memo } from 'react';
-import { useDefaultLayout } from 'react-resizable-panels';
+import { useState, memo, useCallback } from 'react';
 import { ResizablePanel, ResizablePanelGroup, useMediaQuery } from '@librechat/client';
 import ArtifactsPanel from './ArtifactsPanel';
 
-const PANEL_IDS_SINGLE = ['messages-view'];
-const PANEL_IDS_SPLIT = ['messages-view', 'artifacts-panel'];
+const SidePanelGroup = memo(
+  ({ artifacts, children }: { artifacts?: React.ReactNode; children: React.ReactNode }) => {
+    const [shouldRenderArtifacts, setShouldRenderArtifacts] = useState(artifacts != null);
+    const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
-interface SidePanelProps {
-  artifacts?: React.ReactNode;
-  children: React.ReactNode;
-}
+    const minSizeMain = artifacts != null ? 15 : 30;
 
-const SidePanelGroup = memo(({ artifacts, children }: SidePanelProps) => {
-  const [shouldRenderArtifacts, setShouldRenderArtifacts] = useState(artifacts != null);
-  const isSmallScreen = useMediaQuery('(max-width: 767px)');
+    return (
+      <>
+        <ResizablePanelGroup
+          direction="horizontal"
+          autoSaveId="side-panel-layout"
+          className="relative flex-1 bg-presentation"
+        >
+          <ResizablePanel defaultSize={50} minSize={minSizeMain} id="messages-view">
+            {children}
+          </ResizablePanel>
 
-  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: 'side-panel-layout',
-    panelIds: artifacts != null ? PANEL_IDS_SPLIT : PANEL_IDS_SINGLE,
-    storage: localStorage,
-  });
-
-  const minSizeMain = artifacts != null ? '15' : '30';
-
-  return (
-    <>
-      <ResizablePanelGroup
-        orientation="horizontal"
-        defaultLayout={defaultLayout}
-        onLayoutChanged={onLayoutChanged}
-        className="relative flex-1 bg-presentation"
-      >
-        <ResizablePanel defaultSize="50" minSize={minSizeMain} id="messages-view">
-          {children}
-        </ResizablePanel>
-
-        {!isSmallScreen && (
-          <ArtifactsPanel
-            artifacts={artifacts}
-            minSizeMain={minSizeMain}
-            shouldRender={shouldRenderArtifacts}
-            onRenderChange={setShouldRenderArtifacts}
-          />
+          {!isSmallScreen && (
+            <ArtifactsPanel
+              artifacts={artifacts}
+              minSizeMain={String(minSizeMain)}
+              shouldRender={shouldRenderArtifacts}
+              onRenderChange={setShouldRenderArtifacts}
+            />
+          )}
+        </ResizablePanelGroup>
+        {artifacts != null && isSmallScreen && (
+          <div className="fixed inset-0 z-[100]">{artifacts}</div>
         )}
-      </ResizablePanelGroup>
-      {artifacts != null && isSmallScreen && (
-        <div className="fixed inset-0 z-[100]">{artifacts}</div>
-      )}
-    </>
-  );
-});
+      </>
+    );
+  },
+);
 
 SidePanelGroup.displayName = 'SidePanelGroup';
 

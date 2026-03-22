@@ -1,6 +1,6 @@
-import { useEffect, memo } from 'react';
-import { usePanelRef } from 'react-resizable-panels';
+import { useEffect, useRef, memo } from 'react';
 import { ResizableHandleAlt, ResizablePanel } from '@librechat/client';
+import type { ImperativePanelHandle } from 'react-resizable-panels';
 
 interface ArtifactsPanelProps {
   artifacts: React.ReactNode | null;
@@ -15,7 +15,7 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
   shouldRender,
   onRenderChange,
 }: ArtifactsPanelProps) {
-  const artifactsPanelRef = usePanelRef();
+  const artifactsPanelRef = useRef<ImperativePanelHandle>(null);
 
   useEffect(() => {
     if (artifacts != null) {
@@ -28,7 +28,7 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
     } else if (shouldRender) {
       onRenderChange(false);
     }
-  }, [artifacts, shouldRender, onRenderChange, artifactsPanelRef]);
+  }, [artifacts, shouldRender, onRenderChange]);
 
   if (!shouldRender) {
     return null;
@@ -40,12 +40,12 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
         <ResizableHandleAlt withHandle className="bg-border-medium text-text-primary" />
       )}
       <ResizablePanel
-        defaultSize="50"
-        maxSize="70"
-        collapsedSize="0"
+        defaultSize={50}
+        maxSize={70}
+        collapsedSize={0}
         collapsible={true}
-        minSize={minSizeMain}
-        panelRef={artifactsPanelRef}
+        minSize={Number(minSizeMain)}
+        ref={artifactsPanelRef}
         id="artifacts-panel"
       >
         <div className="h-full min-w-[400px] overflow-hidden">{artifacts}</div>
