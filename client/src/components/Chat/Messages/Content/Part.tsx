@@ -7,22 +7,8 @@ import {
   isImageVisionTool,
 } from 'librechat-data-provider';
 import { memo } from 'react';
-import type {
-  TMessageContentParts,
-  TAttachment,
-  FunctionToolCall,
-  CodeToolCall,
-  Agents,
-} from 'librechat-data-provider';
-import {
-  ImageGen,
-  ExecuteCode,
-  AgentUpdate,
-  EmptyText,
-  Reasoning,
-  Summary,
-  Text,
-} from './Parts';
+import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
+import { ImageGen, ExecuteCode, AgentUpdate, EmptyText, Reasoning, Summary, Text } from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
 import { getCachedPreview } from '~/utils';
@@ -185,12 +171,7 @@ const Part = memo(function Part({
         />
       );
     } else if (isToolCall && toolCall.name?.startsWith(Constants.LC_TRANSFER_TO_)) {
-      return (
-        <AgentHandoff
-          args={toolCall.args ?? ''}
-          name={toolCall.name || ''}
-        />
-      );
+      return <AgentHandoff args={toolCall.args ?? ''} name={toolCall.name || ''} />;
     } else if (isToolCall) {
       return (
         <ToolCall
@@ -250,24 +231,6 @@ const Part = memo(function Part({
         }
         return null;
       }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
       return (
         <ToolCall

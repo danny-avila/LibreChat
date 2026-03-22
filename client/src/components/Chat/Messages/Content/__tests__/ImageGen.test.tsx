@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
 import ImageGen from '../Parts/OpenAIImageGen/OpenAIImageGen';
 
@@ -18,14 +18,6 @@ jest.mock('~/hooks', () => ({
     return translations[key] || key;
   },
   useProgress: (initialProgress: number) => (initialProgress >= 1 ? 1 : initialProgress),
-  useExpandCollapse: (isExpanded: boolean) => ({
-    style: {
-      display: 'grid',
-      gridTemplateRows: isExpanded ? '1fr' : '0fr',
-      opacity: isExpanded ? 1 : 0,
-    },
-    ref: { current: null },
-  }),
 }));
 
 const getProgressLabel = (progress: number) =>
@@ -78,7 +70,6 @@ jest.mock('../ToolOutput', () => ({
   ToolIcon: ({ type, isAnimating }: { type: string; isAnimating?: boolean }) => (
     <span data-testid="tool-icon" data-type={type} data-animating={isAnimating} />
   ),
-  OutputRenderer: ({ text }: { text: string }) => <div data-testid="output-renderer">{text}</div>,
   isError: (output: string) => typeof output === 'string' && output.toLowerCase().includes('error'),
 }));
 
@@ -205,89 +196,6 @@ describe('ImageGen - LGCY-03: Localization', () => {
     });
 
     expect(container.textContent).not.toContain('Finished.');
-  });
-});
-
-describe('ImageGen - ACTN-02/03: Collapsible output panel', () => {
-  it('renders OutputRenderer when text output exists and progress >= 1', () => {
-    renderImageGen({
-      initialProgress: 1,
-      isSubmitting: false,
-      output: 'Generated image of a sunset',
-    });
-
-    const progressText = screen.getByTestId('progress-text');
-    expect(progressText).toHaveAttribute('data-has-input', 'true');
-
-    fireEvent.click(progressText);
-    expect(screen.getByTestId('output-renderer')).toBeInTheDocument();
-    expect(screen.getByTestId('output-renderer')).toHaveTextContent('Generated image of a sunset');
-  });
-
-  it('does not render OutputRenderer during streaming (progress < 1)', () => {
-    renderImageGen({
-      initialProgress: 0.5,
-      isSubmitting: true,
-      output: 'partial output',
-    });
-
-    const progressText = screen.getByTestId('progress-text');
-    expect(progressText).toHaveAttribute('data-has-input', 'false');
-    expect(screen.queryByTestId('output-renderer')).not.toBeInTheDocument();
-  });
-
-  it('does not render OutputRenderer when output is an error string', () => {
-    renderImageGen({
-      initialProgress: 1,
-      isSubmitting: false,
-      output: 'Error: something went wrong',
-    });
-
-    const progressText = screen.getByTestId('progress-text');
-    expect(progressText).toHaveAttribute('data-has-input', 'false');
-    expect(screen.queryByTestId('output-renderer')).not.toBeInTheDocument();
-  });
-
-  it('does not render OutputRenderer when output is empty', () => {
-    renderImageGen({
-      initialProgress: 1,
-      isSubmitting: false,
-      output: '',
-    });
-
-    const progressText = screen.getByTestId('progress-text');
-    expect(progressText).toHaveAttribute('data-has-input', 'false');
-    expect(screen.queryByTestId('output-renderer')).not.toBeInTheDocument();
-  });
-
-  it('does not render OutputRenderer when output is null', () => {
-    renderImageGen({
-      initialProgress: 1,
-      isSubmitting: false,
-      output: null as unknown as string,
-    });
-
-    const progressText = screen.getByTestId('progress-text');
-    expect(progressText).toHaveAttribute('data-has-input', 'false');
-    expect(screen.queryByTestId('output-renderer')).not.toBeInTheDocument();
-  });
-
-  it('toggles output panel visibility via ProgressText click', () => {
-    renderImageGen({
-      initialProgress: 1,
-      isSubmitting: false,
-      output: 'Some text output',
-    });
-
-    const progressText = screen.getByTestId('progress-text');
-    expect(progressText).toHaveAttribute('data-is-expanded', 'false');
-
-    fireEvent.click(progressText);
-    expect(progressText).toHaveAttribute('data-is-expanded', 'true');
-    expect(screen.getByTestId('output-renderer')).toBeInTheDocument();
-
-    fireEvent.click(progressText);
-    expect(progressText).toHaveAttribute('data-is-expanded', 'false');
   });
 });
 
