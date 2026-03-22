@@ -145,6 +145,13 @@ export function readConfigCapability(section: ConfigSection): `read:configs:${Co
   return `read:configs:${section}`;
 }
 
+// ---------------------------------------------------------------------------
+// Reserved principal IDs
+// ---------------------------------------------------------------------------
+
+/** Reserved principalId for the DB base config (overrides YAML defaults). */
+export const BASE_CONFIG_PRINCIPAL_ID = '__base__';
+
 /** Pre-defined UI categories for grouping capabilities in the admin panel. */
 export const CAPABILITY_CATEGORIES: CapabilityCategory[] = [
   {
