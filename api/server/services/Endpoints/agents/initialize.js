@@ -154,7 +154,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         return;
       }
 
-      const { provisionState, tool_resources } = ctx;
+      const { provisionState } = ctx;
       const needsCode =
         toolNames.includes(Constants.EXECUTE_CODE) ||
         toolNames.includes(Constants.PROGRAMMATIC_TOOL_CALLING);
