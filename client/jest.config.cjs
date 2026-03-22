@@ -41,7 +41,9 @@ module.exports = {
     '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$':
       'jest-file-loader',
   },
-  transformIgnorePatterns: ['node_modules/?!@zattoo/use-double-click'],
+  transformIgnorePatterns: [
+    'node_modules/(?!(@zattoo/use-double-click|@icons-pack/react-simple-icons)/)',
+  ],
   setupFilesAfterEnv: ['@testing-library/jest-dom/extend-expect', '<rootDir>/test/setupTests.js'],
   clearMocks: true,
 };

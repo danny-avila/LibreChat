@@ -16,8 +16,8 @@ export default function CodeAnalyze({
 }) {
   const localize = useLocalize();
   const progress = useProgress(initialProgress);
-  const showAnalysisCode = useRecoilValue(store.showCode);
-  const [showCode, setShowCode] = useState(showAnalysisCode);
+  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const [showCode, setShowCode] = useState(autoExpand);
 
   const logs = outputs.reduce((acc, output) => {
     if (output['logs']) {
@@ -28,7 +28,10 @@ export default function CodeAnalyze({
 
   return (
     <>
-      <div className="my-2.5 flex items-center gap-2.5">
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {progress < 1 ? localize('com_ui_analyzing') : localize('com_ui_analyzing_finished')}
+      </span>
+      <div className="my-1 flex items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={() => setShowCode((prev) => !prev)}

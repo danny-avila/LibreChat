@@ -1,7 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
 import { Tools } from 'librechat-data-provider';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ToolCall from '../ToolCall';
 
 // Mock dependencies
@@ -21,6 +21,18 @@ jest.mock('~/hooks', () => ({
     return translations[key] || key;
   },
   useProgress: (initialProgress: number) => (initialProgress >= 1 ? 1 : initialProgress),
+  useExpandCollapse: (isExpanded: boolean) => ({
+    style: {
+      display: 'grid',
+      gridTemplateRows: isExpanded ? '1fr' : '0fr',
+      opacity: isExpanded ? 1 : 0,
+    },
+    ref: { current: null },
+  }),
+}));
+
+jest.mock('~/hooks/MCP', () => ({
+  useMCPIconMap: () => ({}),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
@@ -40,7 +52,9 @@ jest.mock('../ToolCallInfo', () => ({
 jest.mock('../ProgressText', () => ({
   __esModule: true,
   default: ({ onClick, inProgressText, finishedText, _error, _hasInput, _isExpanded }: any) => (
-    <div onClick={onClick}>{finishedText || inProgressText}</div>
+    <div data-testid="progress-text" onClick={onClick}>
+      {finishedText || inProgressText}
+    </div>
   ),
 }));
 
@@ -104,7 +118,7 @@ describe('ToolCall', () => {
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={attachments} />);
 
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       expect(toolCallInfo).toBeInTheDocument();
@@ -116,7 +130,7 @@ describe('ToolCall', () => {
     it('should pass empty array when no attachments', () => {
       renderWithRecoil(<ToolCall {...mockProps} />);
 
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const attachmentsData = toolCallInfo.getAttribute('data-attachments');
@@ -147,7 +161,7 @@ describe('ToolCall', () => {
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={attachments} />);
 
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const attachmentsData = toolCallInfo.getAttribute('data-attachments');
@@ -197,11 +211,11 @@ describe('ToolCall', () => {
       expect(screen.queryByTestId('tool-call-info')).not.toBeInTheDocument();
 
       // Click to open
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
       expect(screen.getByTestId('tool-call-info')).toBeInTheDocument();
 
       // Click to close
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
       expect(screen.queryByTestId('tool-call-info')).not.toBeInTheDocument();
     });
 
@@ -227,7 +241,7 @@ describe('ToolCall', () => {
 
       renderWithRecoil(<ToolCall {...propsWithDomain} />);
 
-      fireEvent.click(screen.getByText('Completed action on test.domain.com'));
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -278,7 +292,7 @@ describe('ToolCall', () => {
         />,
       );
 
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -318,7 +332,7 @@ describe('ToolCall', () => {
     it('should handle undefined args', () => {
       renderWithRecoil(<ToolCall {...mockProps} args={undefined} />);
 
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -328,7 +342,7 @@ describe('ToolCall', () => {
     it('should handle null output', () => {
       renderWithRecoil(<ToolCall {...mockProps} output={null} />);
 
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -338,7 +352,7 @@ describe('ToolCall', () => {
     it('should handle missing domain', () => {
       renderWithRecoil(<ToolCall {...mockProps} domain={undefined} authDomain={undefined} />);
 
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -369,7 +383,7 @@ describe('ToolCall', () => {
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={complexAttachments} />);
 
-      fireEvent.click(screen.getByText('Completed testFunction'));
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const attachmentsData = toolCallInfo.getAttribute('data-attachments');
@@ -377,6 +391,24 @@ describe('ToolCall', () => {
 
       const attachmentGroup = screen.getByTestId('attachment-group');
       expect(JSON.parse(attachmentGroup.textContent!)).toEqual(complexAttachments);
+    });
+  });
+
+  describe('A11Y-04: screen reader status announcements', () => {
+    it('includes sr-only aria-live region for status announcements', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          initialProgress={1}
+          isSubmitting={false}
+          name="test_func"
+          output="result"
+        />,
+      );
+
+      const liveRegion = document.querySelector('[aria-live="polite"]');
+      expect(liveRegion).not.toBeNull();
+      expect(liveRegion!.className).toContain('sr-only');
     });
   });
 });
