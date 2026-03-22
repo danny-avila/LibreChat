@@ -67,9 +67,6 @@ router.use(checkPromptAccess);
 const checkGlobalPromptShare = generateCheckAccess({
   permissionType: PermissionTypes.PROMPTS,
   permissions: [Permissions.USE, Permissions.CREATE],
-  bodyProps: {
-    [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-  },
   getRoleByName,
 });
 

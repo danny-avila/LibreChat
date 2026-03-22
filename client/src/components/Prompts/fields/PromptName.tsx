@@ -36,6 +36,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
     if (savedName && savedName !== name) {
       onSave(savedName);
     } else {
+      setNewName(name);
       setIsEditing(false);
     }
   }, [newName, name, onSave, isLoading]);
