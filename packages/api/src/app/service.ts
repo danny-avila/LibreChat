@@ -46,7 +46,7 @@ function overrideCacheKey(role?: string, userId?: string): string {
   if (role) {
     return `_OVERRIDE_:${role}`;
   }
-  return '';
+  return '_OVERRIDE_:__base__';
 }
 
 // ── Service factory ──────────────────────────────────────────────────
@@ -111,18 +111,13 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       await cache.set(BASE_CONFIG_KEY, baseConfig);
     }
 
-    // 2. If no role/userId, return base config (startup, auth strategies, scripts)
-    if (!role && !userId) {
-      return baseConfig;
-    }
-
-    // 3. Check if any DB configs exist (feature flag — zero cost when unused)
+    // 2. Check if any DB configs exist (feature flag — zero cost when unused)
     const hasDbConfigs = await cache.get(HAS_DB_CONFIGS_KEY);
     if (hasDbConfigs === false) {
       return baseConfig;
     }
 
-    // 4. Check override cache (short TTL)
+    // 3. Check override cache (short TTL)
     const cacheKey = overrideCacheKey(role, userId);
     if (cacheKey && !refresh) {
       const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
@@ -131,13 +126,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       }
     }
 
-    // 5. Query DB for applicable configs and merge
+    // 4. Query DB for applicable configs (always includes __base__ doc) and merge
     try {
       const principals = await buildPrincipals(role, userId);
-      if (principals.length === 0) {
-        return baseConfig;
-      }
-
       const configs = await getApplicableConfigs(principals);
 
       // Update the feature flag: if no configs found and flag wasn't set, cache false

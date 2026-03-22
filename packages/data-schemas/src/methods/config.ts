@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
+import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import type { Model, ClientSession } from 'mongoose';
 import type { IConfig } from '~/types';
 
@@ -25,21 +26,24 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     session?: ClientSession,
   ): Promise<IConfig[]> {
-    if (!principals || principals.length === 0) {
-      return [];
-    }
-
     const Config = mongoose.models.Config as Model<IConfig>;
 
-    const principalsQuery = principals
-      .map((p) => ({
-        principalType: p.principalType,
-        principalId: p.principalId,
-      }))
-      .filter((p) => p.principalId !== undefined);
+    const basePrincipal = {
+      principalType: PrincipalType.ROLE as string,
+      principalId: BASE_CONFIG_PRINCIPAL_ID,
+    };
 
-    if (principalsQuery.length === 0) {
-      return [];
+    const principalsQuery = [basePrincipal];
+
+    if (principals && principals.length > 0) {
+      for (const p of principals) {
+        if (p.principalId !== undefined) {
+          principalsQuery.push({
+            principalType: p.principalType,
+            principalId: p.principalId as string,
+          });
+        }
+      }
     }
 
     const configQuery = Config.find({
