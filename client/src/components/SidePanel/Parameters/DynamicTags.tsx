@@ -165,7 +165,7 @@ function DynamicTags({
                     ? (localize(placeholder as TranslationKeys) ?? placeholder)
                     : placeholder
                 }
-                className={cn('flex h-10 max-h-10 border-none bg-surface-secondary px-3 py-2')}
+                className={cn('flex h-9 max-h-9 border-none bg-surface-secondary px-3 py-2')}
               />
             </div>
           </div>

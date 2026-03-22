@@ -95,6 +95,7 @@ function DynamicDropdown({
             setValue={handleChange}
             availableValues={options}
             containerClassName="w-full"
+            className="py-1.5"
             id={`${settingKey}-dynamic-dropdown`}
             placeholder={
               placeholderCode

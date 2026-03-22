@@ -142,7 +142,7 @@ export default function MemoryPanel() {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="shrink-0 bg-transparent"
+                      className="size-9 shrink-0 bg-transparent"
                       aria-label={localize('com_ui_create_memory')}
                       onClick={() => setCreateDialogOpen(true)}
                     >

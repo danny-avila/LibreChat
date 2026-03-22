@@ -82,7 +82,7 @@ function DynamicInput({
             onChange={handleInputChange}
             placeholder={placeholderText}
             className={cn(
-              'flex h-10 max-h-10 w-full resize-none rounded-lg border border-border-light bg-surface-secondary px-3 py-2',
+              'flex h-9 max-h-9 w-full resize-none rounded-lg border border-border-light bg-surface-secondary px-3 py-2',
             )}
           />
         </HoverCardTrigger>

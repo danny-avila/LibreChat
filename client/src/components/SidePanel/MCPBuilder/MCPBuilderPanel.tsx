@@ -62,7 +62,7 @@ export default function MCPBuilderPanel() {
                       ref={addButtonRef}
                       variant="outline"
                       size="icon"
-                      className="shrink-0 bg-transparent"
+                      className="size-9 shrink-0 bg-transparent"
                       onClick={() => setShowDialog(true)}
                       aria-label={localize('com_ui_add_mcp')}
                     >
