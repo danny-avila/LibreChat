@@ -1,3 +1,112 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - meilisearch
+      - vectordb
+      - rag_api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ..:/workspaces:cached
+      - node_modules:/workspaces/node_modules
+      - api_node_modules:/workspaces/api/node_modules
+      - client_node_modules:/workspaces/client/node_modules
+      - packages_api_node_modules:/workspaces/packages/api/node_modules
+      - packages_client_node_modules:/workspaces/packages/client/node_modules
+      - packages_data_provider_node_modules:/workspaces/packages/data-provider/node_modules
+      - packages_data_schemas_node_modules:/workspaces/packages/data-schemas/node_modules
+    environment:
+      - HOST=0.0.0.0
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MEILI_HOST=http://meilisearch:7700
+      - RAG_API_URL=http://rag_api:8000
+    user: vscode
+    command: /bin/sh -c "while sleep 1000; do :; done"
+    networks:
+      - librechat-network
+
+  mongodb:
+    container_name: chat-mongodb
+    image: mongo:latest
+    restart: unless-stopped
+    expose:
+      - 27017
+    volumes:
+      - ./data-node:/data/db
+    command: mongod --noauth
+    networks:
+      - librechat-network
+
+  meilisearch:
+    container_name: chat-meilisearch
+    image: getmeili/meilisearch:v1.12.3
+    restart: unless-stopped
+    expose:
+      - 7700
+    environment:
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-dev-meili-key}
+    volumes:
+      - ./meili_data_v1.12:/meili_data
+    networks:
+      - librechat-network
+
+  vectordb:
+    container_name: vectordb
+    image: pgvector/pgvector:0.8.0-pg15-trixie
+    restart: unless-stopped
+    expose:
+      - 5432
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - librechat-network
+
+  rag_api:
+    container_name: rag_api
+    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+    restart: unless-stopped
+    expose:
+      - 8000
+    environment:
+      - DB_HOST=vectordb
+      - RAG_PORT=8000
+      - POSTGRES_DB=mydatabase
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+    depends_on:
+      - vectordb
+    networks:
+      - librechat-network
+    env_file:
+      - ../.env
+
+volumes:
+  pgdata:
+  node_modules:
+  api_node_modules:
+  client_node_modules:
+  packages_api_node_modules:
+  packages_client_node_modules:
+  packages_data_provider_node_modules:
+  packages_data_schemas_node_modules:
+
+networks:
+  librechat-network:
+    driver: bridge
 services:
   app:
     build:
