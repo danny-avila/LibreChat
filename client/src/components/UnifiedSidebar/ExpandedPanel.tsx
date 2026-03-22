@@ -142,6 +142,7 @@ function ExpandedPanel({
         }
       />
       <NewChatButton />
+      <div className="mx-auto w-5 border-b border-border-light" />
       <div className="flex flex-col gap-1 overflow-y-auto">
         {links.map((link) => (
           <NavIconButton
