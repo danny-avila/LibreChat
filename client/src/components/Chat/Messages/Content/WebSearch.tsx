@@ -1,12 +1,12 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Globe, ChevronDown } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
+import { Globe, ChevronDown } from 'lucide-react';
 import type { TAttachment, ValidSource, SearchResultData } from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { StackedFavicons } from '~/components/Web/Sources';
-import { useSearchContext } from '~/Providers';
 import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useSearchContext } from '~/Providers';
 import cn from '~/utils/cn';
 import store from '~/store';
 

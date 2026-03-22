@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
-import { Tools } from 'librechat-data-provider';
 import { ChevronDown } from 'lucide-react';
+import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
-import { OutputRenderer } from './ToolOutput';
 import UIResourceCarousel from './UIResourceCarousel';
+import { OutputRenderer } from './ToolOutput';
 import { cn } from '~/utils';
 
 function isSimpleObject(obj: unknown): obj is Record<string, string | number | boolean | null> {

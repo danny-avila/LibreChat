@@ -10,8 +10,8 @@ import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
-import { useLocalize } from '~/hooks';
 import ArtifactTabs from './ArtifactTabs';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 

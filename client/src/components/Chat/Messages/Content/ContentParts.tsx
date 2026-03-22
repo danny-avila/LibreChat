@@ -6,9 +6,9 @@ import type {
   TAttachment,
   Agents,
 } from 'librechat-data-provider';
-import { MessageContext, SearchContext } from '~/Providers';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { mapAttachments, groupSequentialToolCalls } from '~/utils';
+import { MessageContext, SearchContext } from '~/Providers';
 import { EditTextPart, EmptyText } from './Parts';
 import MemoryArtifacts from './MemoryArtifacts';
 import ToolCallGroup from './ToolCallGroup';

@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
+import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
-import { useLocalize, useExpandCollapse } from '~/hooks';
-import { useMCPIconMap } from '~/hooks/MCP';
 import type { PartWithIndex } from './ParallelContent';
 import { StackedToolIcons, getMCPServerName } from './ToolOutput';
+import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useMCPIconMap } from '~/hooks/MCP';
 import { cn } from '~/utils';
 import store from '~/store';
 
