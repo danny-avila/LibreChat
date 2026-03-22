@@ -506,7 +506,7 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       // Cast string _id to ObjectId for aggregation (findOne auto-casts, aggregate does not)
       const matchFilter = { ...filter };
       if (typeof matchFilter._id === 'string') {
-        matchFilter._id = new Types.ObjectId(matchFilter._id);
+        matchFilter._id = new ObjectId(matchFilter._id);
       }
       const result = await PromptGroup.aggregate([
         { $match: matchFilter },
@@ -539,14 +539,11 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
   async function getOwnedPromptGroupIds(author: string) {
     try {
       const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
-      if (!author || !Types.ObjectId.isValid(author)) {
+      if (!author || !ObjectId.isValid(author)) {
         logger.warn('getOwnedPromptGroupIds called with invalid author', { author });
         return [];
       }
-      const groups = await PromptGroup.find(
-        { author: new Types.ObjectId(author) },
-        { _id: 1 },
-      ).lean();
+      const groups = await PromptGroup.find({ author: new ObjectId(author) }, { _id: 1 }).lean();
       return groups.map((g) => g._id);
     } catch (error) {
       logger.error('Error getting owned prompt group IDs', error);
