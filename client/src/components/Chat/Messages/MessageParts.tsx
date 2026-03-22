@@ -40,7 +40,10 @@ export default function Message(props: TMessageProps) {
 
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const userChatDirection = useRecoilValue(store.userChatDirection);
   const { children, messageId = null, isCreatedByUser } = message ?? {};
+  const isUserMessageRightAligned =
+    isCreatedByUser === true && userChatDirection?.toLowerCase() === 'ltr';
 
   const name = useMemo(() => {
     let result = '';
@@ -95,6 +98,15 @@ export default function Message(props: TMessageProps) {
     common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu',
     chat: getChatWidthClass(),
   };
+  const userMessageWidthClass = maximizeChatSpace
+    ? 'w-fit max-w-[85%] sm:max-w-[min(64vw,56rem)]'
+    : 'w-fit max-w-[85%] sm:max-w-[min(65%,42rem)]';
+  let messageWidthClass = 'w-11/12';
+  if (hasParallelContent) {
+    messageWidthClass = 'w-full';
+  } else if (isUserMessageRightAligned) {
+    messageWidthClass = userMessageWidthClass;
+  }
 
   return (
     <>
@@ -107,7 +119,12 @@ export default function Message(props: TMessageProps) {
           <div
             id={messageId ?? ''}
             aria-label={getMessageAriaLabel(message, localize)}
-            className={cn(baseClasses.common, baseClasses.chat, 'message-render')}
+            className={cn(
+              baseClasses.common,
+              baseClasses.chat,
+              isUserMessageRightAligned && 'justify-end',
+              'message-render',
+            )}
           >
             {!hasParallelContent && (
               <div className="relative flex flex-shrink-0 flex-col items-center">
@@ -119,7 +136,7 @@ export default function Message(props: TMessageProps) {
             <div
               className={cn(
                 'relative flex flex-col',
-                hasParallelContent ? 'w-full' : 'w-11/12',
+                messageWidthClass,
                 isCreatedByUser ? 'user-turn' : 'agent-turn',
               )}
             >

@@ -58,6 +58,7 @@ const ContentRender = memo(function ContentRender({
   });
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const userChatDirection = useRecoilValue(store.userChatDirection);
 
   const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
   const isLast = useMemo(
@@ -94,6 +95,18 @@ const ContentRender = memo(function ContentRender({
     return null;
   }
 
+  const isUserMessageRightAligned =
+    msg.isCreatedByUser === true && userChatDirection?.toLowerCase() === 'ltr';
+  const userMessageWidthClass = maximizeChatSpace
+    ? 'w-fit max-w-[85%] sm:max-w-[min(64vw,56rem)]'
+    : 'w-fit max-w-[85%] sm:max-w-[min(65%,42rem)]';
+  let messageWidthClass = 'w-11/12';
+  if (hasParallelContent) {
+    messageWidthClass = 'w-full';
+  } else if (isUserMessageRightAligned) {
+    messageWidthClass = userMessageWidthClass;
+  }
+
   const getChatWidthClass = () => {
     if (maximizeChatSpace) {
       return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
@@ -121,6 +134,7 @@ const ContentRender = memo(function ContentRender({
         baseClasses.common,
         baseClasses.chat,
         conditionalClasses.focus,
+        isUserMessageRightAligned && 'justify-end',
         'message-render',
       )}
     >
@@ -135,7 +149,7 @@ const ContentRender = memo(function ContentRender({
       <div
         className={cn(
           'relative flex flex-col',
-          hasParallelContent ? 'w-full' : 'w-11/12',
+          messageWidthClass,
           msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
         )}
       >
