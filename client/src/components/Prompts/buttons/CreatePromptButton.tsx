@@ -20,7 +20,13 @@ export default function CreatePromptButton() {
       description={localize('com_ui_create_prompt')}
       side="bottom"
       render={
-        <Button asChild size="icon" variant="outline" aria-label={localize('com_ui_create_prompt')}>
+        <Button
+          asChild
+          variant="outline"
+          size="icon"
+          className="size-9 shrink-0 bg-transparent"
+          aria-label={localize('com_ui_create_prompt')}
+        >
           <Link to="/d/prompts/new">
             <Plus className="size-4" aria-hidden="true" />
           </Link>

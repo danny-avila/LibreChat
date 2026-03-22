@@ -103,7 +103,7 @@ export default function FilterPrompts({
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
         options={filterOptions}
-        className={cn('rounded-lg bg-transparent', dropdownClassName)}
+        className={cn('shrink-0 rounded-lg bg-transparent [&>button]:size-9', dropdownClassName)}
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
         ariaLabel={localize('com_ui_filter_prompts')}
