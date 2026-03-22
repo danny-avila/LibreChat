@@ -9,6 +9,7 @@ import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { useSetFilesToDelete } from '~/hooks';
 import store from '~/store';
+import { Banner } from '../Banners';
 
 export default function Presentation({ children }: { children: React.ReactNode }) {
   const artifacts = useRecoilValue(store.artifactsState);
@@ -84,6 +85,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
           artifacts={artifactsElement}
         >
           <main className="flex h-full flex-col overflow-y-auto" role="main">
+            <Banner />
             {children}
           </main>
         </SidePanelGroup>
