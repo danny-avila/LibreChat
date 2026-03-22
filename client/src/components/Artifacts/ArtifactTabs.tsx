@@ -7,7 +7,8 @@ import { useCodeState } from '~/Providers/EditorContext';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
 import { useGetStartupConfig } from '~/data-provider';
-import { ArtifactPreview } from './ArtifactPreview';
+import { ArtifactPreview, ArtifactPreviewHandle } from './ArtifactRenderer'; 
+import { cn } from '~/utils';
 
 export default function ArtifactTabs({
   artifact,
@@ -15,8 +16,9 @@ export default function ArtifactTabs({
   isSharedConvo,
 }: {
   artifact: Artifact;
-  previewRef: React.MutableRefObject<SandpackPreviewRef>;
   isSharedConvo?: boolean;
+  // editorRef: React.MutableRefObject<CodeEditorRef>;
+  previewRef: React.MutableRefObject<ArtifactPreviewHandle | null>;
 }) {
   const { currentCode, setCurrentCode } = useCodeState();
   const { data: startupConfig } = useGetStartupConfig();
