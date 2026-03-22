@@ -11,13 +11,7 @@ import PreviewPrompt from '../dialogs/PreviewPrompt';
 import { detectVariables } from '~/utils';
 import ListCard from './ListCard';
 
-function ChatGroupItem({
-  group,
-  instanceProjectId,
-}: {
-  group: TPromptGroup;
-  instanceProjectId?: string;
-}) {
+function ChatGroupItem({ group }: { group: TPromptGroup }) {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { user } = useAuthContext();

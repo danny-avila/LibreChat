@@ -517,6 +517,7 @@ const PromptForm = () => {
                     <HeaderActions
                       group={group}
                       canEdit={canEdit}
+                      canDelete={canDelete}
                       selectedPromptId={selectedPromptId}
                       onCategoryChange={handleCategoryChange}
                     />

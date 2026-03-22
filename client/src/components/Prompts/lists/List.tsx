@@ -1,7 +1,6 @@
 import { FileText } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
-import type { TPromptGroup, TStartupConfig } from 'librechat-data-provider';
-import { useGetStartupConfig } from '~/data-provider';
+import type { TPromptGroup } from 'librechat-data-provider';
 import DashGroupItem from './DashGroupItem';
 import ChatGroupItem from './ChatGroupItem';
 import { useLocalize } from '~/hooks';
@@ -17,8 +16,6 @@ export default function List({
   isLoading: boolean;
 }) {
   const localize = useLocalize();
-  const { data: startupConfig = {} as Partial<TStartupConfig> } = useGetStartupConfig();
-  const { instanceProjectId } = startupConfig;
 
   return (
     <div className="flex h-full flex-col">
@@ -53,17 +50,11 @@ export default function List({
             </div>
           )}
           {isChatRoute ? (
-            groups.map((group) => (
-              <ChatGroupItem key={group._id} group={group} instanceProjectId={instanceProjectId} />
-            ))
+            groups.map((group) => <ChatGroupItem key={group._id} group={group} />)
           ) : (
             <div className="space-y-2 px-0 md:px-2">
               {groups.map((group) => (
-                <DashGroupItem
-                  key={group._id}
-                  group={group}
-                  instanceProjectId={instanceProjectId}
-                />
+                <DashGroupItem key={group._id} group={group} />
               ))}
             </div>
           )}

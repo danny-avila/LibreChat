@@ -19,12 +19,7 @@ import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
 import CategoryIcon from '../utils/CategoryIcon';
 import { cn } from '~/utils';
 
-interface DashGroupItemProps {
-  group: TPromptGroup;
-  instanceProjectId?: string;
-}
-
-function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps) {
+function DashGroupItemComponent({ group }: { group: TPromptGroup }) {
   const params = useParams();
   const navigate = useNavigate();
   const localize = useLocalize();
