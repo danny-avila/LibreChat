@@ -1,37 +1,14 @@
 import type { z } from 'zod';
 import type { configSchema } from 'librechat-data-provider';
-import { ResourceType } from 'librechat-data-provider';
+import { ResourceType, SystemCapabilities, CapabilityImplications } from 'librechat-data-provider';
+import type { BaseSystemCapability, ConfigAssignTarget } from 'librechat-data-provider';
 
-export const SystemCapabilities = {
-  ACCESS_ADMIN: 'access:admin',
-  READ_USERS: 'read:users',
-  MANAGE_USERS: 'manage:users',
-  READ_GROUPS: 'read:groups',
-  MANAGE_GROUPS: 'manage:groups',
-  READ_ROLES: 'read:roles',
-  MANAGE_ROLES: 'manage:roles',
-  READ_CONFIGS: 'read:configs',
-  MANAGE_CONFIGS: 'manage:configs',
-  ASSIGN_CONFIGS: 'assign:configs',
-  READ_USAGE: 'read:usage',
-  READ_AGENTS: 'read:agents',
-  MANAGE_AGENTS: 'manage:agents',
-  MANAGE_MCP_SERVERS: 'manage:mcpservers',
-  READ_PROMPTS: 'read:prompts',
-  MANAGE_PROMPTS: 'manage:prompts',
-  /** Reserved — not yet enforced by any middleware. Grant has no effect until assistant listing is gated. */
-  READ_ASSISTANTS: 'read:assistants',
-  MANAGE_ASSISTANTS: 'manage:assistants',
-} as const;
+// Re-export base types from data-provider so existing consumers don't break
+export { SystemCapabilities, CapabilityImplications };
+export type { BaseSystemCapability, ConfigAssignTarget };
 
 /** Top-level keys of the configSchema from librechat.yaml. */
 export type ConfigSection = keyof z.infer<typeof configSchema>;
-
-/** Principal types that can receive config overrides. */
-export type ConfigAssignTarget = 'user' | 'group' | 'role';
-
-/** Base capabilities defined in the SystemCapabilities object. */
-type BaseSystemCapability = (typeof SystemCapabilities)[keyof typeof SystemCapabilities];
 
 /** Section-level config capabilities derived from configSchema keys. */
 type ConfigSectionCapability = `manage:configs:${ConfigSection}` | `read:configs:${ConfigSection}`;
@@ -49,26 +26,6 @@ export type SystemCapability =
   | BaseSystemCapability
   | ConfigSectionCapability
   | ConfigAssignCapability;
-
-/**
- * Capabilities that are implied by holding a broader capability.
- * When `hasCapability` checks for an implied capability, it first expands
- * the principal's grant set — so granting `MANAGE_USERS` automatically
- * satisfies a `READ_USERS` check without a separate grant.
- *
- * Implication is one-directional: `MANAGE_USERS` implies `READ_USERS`,
- * but `READ_USERS` does NOT imply `MANAGE_USERS`.
- */
-export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSystemCapability[]>> =
-  {
-    [SystemCapabilities.MANAGE_USERS]: [SystemCapabilities.READ_USERS],
-    [SystemCapabilities.MANAGE_GROUPS]: [SystemCapabilities.READ_GROUPS],
-    [SystemCapabilities.MANAGE_ROLES]: [SystemCapabilities.READ_ROLES],
-    [SystemCapabilities.MANAGE_CONFIGS]: [SystemCapabilities.READ_CONFIGS],
-    [SystemCapabilities.MANAGE_AGENTS]: [SystemCapabilities.READ_AGENTS],
-    [SystemCapabilities.MANAGE_PROMPTS]: [SystemCapabilities.READ_PROMPTS],
-    [SystemCapabilities.MANAGE_ASSISTANTS]: [SystemCapabilities.READ_ASSISTANTS],
-  };
 
 /**
  * Maps each ACL ResourceType to the SystemCapability that grants
