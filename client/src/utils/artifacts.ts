@@ -189,6 +189,14 @@ export const sharedFiles = {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Document</title>
         <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+        <style>
+          ::-webkit-scrollbar{height:.1em;width:.5rem}
+          ::-webkit-scrollbar-thumb{background-color:rgba(0,0,0,.1);border-radius:9999px}
+          ::-webkit-scrollbar-track{background-color:transparent;border-radius:9999px}
+          @media(prefers-color-scheme:dark){::-webkit-scrollbar-thumb{background-color:hsla(0,0%,100%,.1)}}
+          *{scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.1) transparent}
+          @media(prefers-color-scheme:dark){*{scrollbar-color:hsla(0,0%,100%,.1) transparent}}
+        </style>
       </head>
       <body>
         <div id="root"></div>

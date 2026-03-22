@@ -216,7 +216,7 @@ export default function Artifacts() {
           {/* Header */}
           <div
             className={cn(
-              'flex flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt px-3 py-2 transition-all duration-300',
+              'flex h-[52px] flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt p-2 transition-all duration-300',
               isMobile ? 'justify-center' : 'overflow-hidden',
             )}
           >
@@ -234,6 +234,7 @@ export default function Artifacts() {
                   value={activeTab}
                   onChange={setActiveTab}
                   disabled={isMutating && activeTab !== 'code'}
+                  buttonClassName="h-9 px-3 gap-1.5"
                 />
               </div>
             )}
@@ -249,6 +250,7 @@ export default function Artifacts() {
                 <Button
                   size="icon"
                   variant="ghost"
+                  className="h-9 w-9"
                   onClick={handleRefresh}
                   disabled={isRefreshing}
                   aria-label={localize('com_ui_refresh')}
@@ -284,6 +286,7 @@ export default function Artifacts() {
               <Button
                 size="icon"
                 variant="ghost"
+                className="h-9 w-9"
                 onClick={closeArtifacts}
                 aria-label={localize('com_ui_close')}
               >
