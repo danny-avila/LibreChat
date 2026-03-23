@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
@@ -14,6 +14,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const clearAllSubmissions = store.useClearSubmissionState();
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [filesLoading, setFilesLoading] = useState(false);
+  const [mcpAppModelContext, setMcpAppModelContext] = useState<Record<string, unknown> | null>(null);
 
   const queryClient = useQueryClient();
   const abortMutation = useAbortStreamMutation();
@@ -22,6 +23,10 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
   const { conversationId, endpoint, endpointType } = conversation ?? {};
+
+  useEffect(() => {
+    setMcpAppModelContext(null);
+  }, [conversationId]);
 
   /** Use paramId (from URL) as primary source for query key - this must match what ChatView uses
   Falling back to conversationId (Recoil) only if paramId is not available */
@@ -86,6 +91,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     latestMessage,
     setSubmission,
     setLatestMessage,
+    mcpAppModelContext,
   });
 
   const askRef = useRef(_ask);
@@ -208,6 +214,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       getMessages,
       setMessages,
       setSiblingIdx,
+      latestMessage,
       latestMessageId,
       latestMessageDepth,
       setLatestMessage,
@@ -231,6 +238,8 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       setFiles,
       filesLoading,
       setFilesLoading,
+      mcpAppModelContext,
+      setMcpAppModelContext,
     }),
     [
       newConversation,
@@ -241,6 +250,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       getMessages,
       setMessages,
       setSiblingIdx,
+      latestMessage,
       latestMessageId,
       latestMessageDepth,
       setLatestMessage,
@@ -264,6 +274,8 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       setFiles,
       filesLoading,
       setFilesLoading,
+      mcpAppModelContext,
+      setMcpAppModelContext,
     ],
   );
 }

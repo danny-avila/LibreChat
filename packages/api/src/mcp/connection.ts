@@ -16,6 +16,12 @@ import type {
   RequestInfo as UndiciRequestInfo,
   Response as UndiciResponse,
 } from 'undici';
+import {
+  LIBRECHAT_MCP_CLIENT_NAME,
+  LIBRECHAT_MCP_CLIENT_VERSION,
+  MCP_APP_MIME_TYPE,
+  MCP_UI_EXTENSION_ID,
+} from 'librechat-data-provider';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
@@ -71,6 +77,10 @@ const FIVE_MINUTES = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
+const MCP_UI_EXTENSION = MCP_UI_EXTENSION_ID ?? 'io.modelcontextprotocol/ui';
+const MCP_APP_MIME = MCP_APP_MIME_TYPE ?? 'text/html;profile=mcp-app';
+const MCP_CLIENT_NAME = LIBRECHAT_MCP_CLIENT_NAME ?? '@librechat/api-client';
+const MCP_CLIENT_VERSION = LIBRECHAT_MCP_CLIENT_VERSION ?? '1.2.3';
 const DEFAULT_INIT_TIMEOUT = 30000;
 
 interface CircuitBreakerState {
@@ -81,7 +91,6 @@ interface CircuitBreakerState {
   failedWindowStart: number;
   failedBackoffUntil: number;
 }
-
 /** Default body timeout for Streamable HTTP GET SSE streams that idle between server pushes */
 const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
 
@@ -252,6 +261,7 @@ interface MCPConnectionParams {
   userId?: string;
   oauthTokens?: MCPOAuthTokens | null;
   useSSRFProtection?: boolean;
+  enableApps?: boolean;
 }
 
 export class MCPConnection extends EventEmitter {
@@ -397,13 +407,28 @@ export class MCPConnection extends EventEmitter {
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
+    const enableApps = params.enableApps !== false; // default true
+    const appUiCapability = {
+      mimeTypes: [MCP_APP_MIME],
+    };
     this.client = new Client(
       {
-        name: '@librechat/api-client',
-        version: '1.2.3',
+        name: MCP_CLIENT_NAME,
+        version: MCP_CLIENT_VERSION,
       },
       {
-        capabilities: {},
+        capabilities: enableApps
+          ? {
+              // Preferred stable shape used by ext-apps helpers.
+              // Keep `experimental` for backward compatibility with older servers.
+              extensions: {
+                [MCP_UI_EXTENSION]: appUiCapability,
+              },
+              experimental: {
+                [MCP_UI_EXTENSION]: appUiCapability,
+              },
+            }
+          : ({} as Record<string, never>),
       },
     );
 

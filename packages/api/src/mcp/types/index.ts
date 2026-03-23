@@ -16,7 +16,12 @@ import type {
   TextContent,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
+import type {
+  SearchResultData,
+  UIResource,
+  MCPAppArtifact,
+  TPlugin,
+} from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
 import type { FlowStateManager } from '~/flow/manager';
@@ -47,6 +52,13 @@ export interface MCPResource {
 export interface LCFunctionTool {
   type: 'function';
   ['function']: LCTool;
+  _meta?: {
+    ui?: {
+      resourceUri?: string;
+      visibility?: Array<'model' | 'app'>;
+    };
+    [key: string]: unknown;
+  };
 }
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;
@@ -132,6 +144,7 @@ export type Artifacts =
         fileCitations?: boolean;
       };
       [Tools.web_search]?: SearchResultData;
+      [Tools.mcp_app]?: MCPAppArtifact;
       files?: Array<{ id: string; name: string }>;
       session_id?: string;
       file_ids?: string[];
@@ -172,6 +185,7 @@ export interface BasicConnectionOptions {
   allowedDomains?: string[] | null;
   /** When true, only resolve customUserVars in processMCPEnv (for DB-stored servers) */
   dbSourced?: boolean;
+  enableApps?: boolean;
 }
 
 /** User context for placeholder resolution in MCP connections (non-OAuth and OAuth alike) */

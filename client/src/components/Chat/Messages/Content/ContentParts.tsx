@@ -113,12 +113,34 @@ const ContentParts = memo(function ContentParts({
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
+  const getPartKey = useCallback(
+    (part: TMessageContentParts, idx: number) => {
+      if (part.type === ContentTypes.TOOL_CALL) {
+        const toolCallId = (part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id;
+        if (toolCallId != null && toolCallId.length > 0) {
+          return `part-${messageId}-tool-${toolCallId}-${idx}`;
+        }
+      }
+
+      if (
+        part.type === ContentTypes.TEXT &&
+        part.tool_call_ids != null &&
+        part.tool_call_ids.length > 0
+      ) {
+        return `part-${messageId}-tool-links-${part.tool_call_ids.join(',')}-${idx}`;
+      }
+
+      return `part-${messageId}-${idx}`;
+    },
+    [messageId],
+  );
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+      const partKey = getPartKey(part, idx);
       const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
       return (
         <PartWithContext
-          key={`provider-${messageId}-${idx}`}
+          key={partKey}
           idx={idx}
           part={part}
           isLast={isLast}
@@ -138,6 +160,7 @@ const ContentParts = memo(function ContentParts({
       content,
       conversationId,
       effectiveIsSubmitting,
+      getPartKey,
       isCreatedByUser,
       isLast,
       isLatestMessage,

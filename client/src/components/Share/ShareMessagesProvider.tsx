@@ -25,6 +25,8 @@ export function ShareMessagesProvider({ messages, children }: ShareMessagesProvi
       ask: () => Promise.resolve(),
       regenerate: () => {},
       handleContinue: () => {},
+      mcpAppModelContext: null,
+      setMcpAppModelContext: () => {},
       latestMessageId: messages[messages.length - 1]?.messageId,
       latestMessageDepth: messages[messages.length - 1]?.depth,
       isSubmitting: false,

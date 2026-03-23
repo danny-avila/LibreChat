@@ -17,6 +17,7 @@ import { mcpConfig } from './mcpConfig';
 export abstract class UserConnectionManager {
   // Connections shared by all users.
   public appConnections: ConnectionsRepository | null = null;
+  protected enableApps = true;
   // Connections per userId -> serverName -> connection
   protected userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   /** Last activity timestamp for users (not per server) */
@@ -156,11 +157,12 @@ export abstract class UserConnectionManager {
       const registry = MCPServersRegistry.getInstance();
       connection = await MCPConnectionFactory.create(
         {
-          serverConfig: config,
           serverName: serverName,
+          serverConfig: config,
           dbSourced: !!config.dbId,
           useSSRFProtection: registry.shouldEnableSSRFProtection(),
           allowedDomains: registry.getAllowedDomains(),
+          enableApps: this.enableApps,
         },
         {
           useOAuth: true,
