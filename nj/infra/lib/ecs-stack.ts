@@ -21,7 +21,10 @@ export interface EcsServicesProps extends cdk.StackProps {
   envVars: EnvVars,
   mongoImage: string;
   postgresImage: string;
-  certificateArn: string; 
+  certificateArn: string;
+  redisEndpoint: string;
+  redisPort: string;
+  redisSecurityGroup: ec2.ISecurityGroup;
 }
 
 export class EcsStack extends cdk.Stack {
@@ -29,6 +32,8 @@ export class EcsStack extends cdk.Stack {
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
   public readonly service: ecsPatterns.ApplicationLoadBalancedFargateService;
   public readonly s3Bucket: s3.Bucket;
+
+  private static readonly REDIS_PORT = 6379;
 
   constructor(scope: Construct, id: string, props: EcsServicesProps) {
     super(scope, id, props);
@@ -135,6 +140,8 @@ export class EcsStack extends cdk.Stack {
     const librechatTag = isProd ? ssm.StringParameter.valueForStringParameter(this, '/ai-assistant/prod-image-tag') : "latest";
     const librechatImage = `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/librechat:${librechatTag}`;
 
+    const redisUri = `rediss://${props.redisEndpoint}:${props.redisPort}`;
+
     const librechatTaskDef = new ecs.FargateTaskDefinition(this, "LibreChatTaskDef", {
       executionRole: commonExecRole,
       taskRole: commonExecRole,
@@ -155,6 +162,11 @@ export class EcsStack extends cdk.Stack {
       // Apply empty custom footer in ECS definition (instead of .env file)
       // Can move back to .env if resolved: https://github.com/aws/containers-roadmap/issues/1354
       CUSTOM_FOOTER: "",
+
+      // Redis configuration
+      USE_REDIS: "true",
+      REDIS_URI: redisUri,
+      REDIS_USE_ALTERNATIVE_DNS_LOOKUP: "true",
 
       ...(!isProd ? { MONGO_URI: "mongodb://mongodb.internal:27017/LibreChat" } : {}),
     };
@@ -206,6 +218,9 @@ export class EcsStack extends cdk.Stack {
     scalableTarget.scaleOnMemoryUtilization('MemoryScaling', {
       targetUtilizationPercent: 50,
     });
+
+    // Allow LibreChat service to connect to Redis
+    librechatService.service.connections.allowTo(props.redisSecurityGroup, ec2.Port.tcp(EcsStack.REDIS_PORT), "LibreChat to Redis");
 
     new cdk.CfnOutput(this, "LibrechatImageUri", { value: librechatImage });
     return librechatService;

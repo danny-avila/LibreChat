@@ -23,12 +23,6 @@ jobs:
     environment:
       name: ${{ github.event.inputs.environment }}
     steps:
-      - name: Fail if branch is not newjersey
-        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/newjersey'
-        run: |
-          echo "This workflow should not be triggered with workflow_dispatch on a branch other than newjersey"
-          exit 1
-
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -53,6 +47,11 @@ jobs:
       name: ${{ github.event.inputs.environment }}-deploy
     needs: cdk-diff
     steps:
+      - name: Fail if branch is not newjersey
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/newjersey'
+        run: |
+          echo "This workflow should not be triggered with workflow_dispatch on a branch other than newjersey"
+          exit 1
       - name: Checkout
         uses: actions/checkout@v6
 

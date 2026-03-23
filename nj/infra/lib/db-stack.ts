@@ -13,10 +13,13 @@ export type EnvVars = {
 
 export interface DatabaseStackProps extends cdk.StackProps {
     envVars: EnvVars,
-    deployPG: boolean,
 }
 
 export class DatabaseStack extends cdk.Stack {
+    public readonly redisEndpoint: string;
+    public readonly redisPort: string;
+    public readonly redisSecurityGroup: ec2.ISecurityGroup;
+
     constructor(scope: Construct, id: string, props: DatabaseStackProps) {
         super(scope, id, props);
 
@@ -26,61 +29,18 @@ export class DatabaseStack extends cdk.Stack {
             }
         });
 
-        if (props.deployPG) {
-            this.CreatePostgresRDSInstance(vpc);
+        const isProd = props.envVars.isProd;
+
+        // DocumentDB only in prod
+        if (isProd) {
+            this.CreateDocumentDBInstance(vpc);
         }
-        this.CreateDocumentDBInstance(vpc);
-    }
 
-    private CreatePostgresRDSInstance(vpc: ec2.IVpc) {
-        const rdsSecurityGroup = new ec2.SecurityGroup(this, "RDSSg", { vpc });
-        rdsSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(5432));
-        
-        const instance = new rds.DatabaseInstance(this, 'VectorDBInstance', {
-            engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_17_6 }),
-            vpc,
-            storageType: rds.StorageType.GP3,
-            databaseName: "librechat",
-            iamAuthentication: true,
-            credentials: rds.Credentials.fromGeneratedSecret("librechat"),
-            instanceIdentifier: "ai-assistant-prod-db",
-            maxAllocatedStorage: 1000,
-            multiAz: true,
-            vpcSubnets: {
-                subnets: vpc.privateSubnets,
-            },
-            securityGroups: [rdsSecurityGroup]
-        });
-        
-        const secret = instance.secret;
-        if (!secret) throw new Error("Expected RDS secret");
-
-        new cdk.CfnOutput(this, "VectorDBArn", {
-            value: instance.instanceArn,
-            exportName: "VectorDBArn"
-        });    
-        
-        new cdk.CfnOutput(this, "RdsEndpointHostExport", {
-            value: instance.dbInstanceEndpointAddress,
-            exportName: `${this.stackName}:RdsEndpointHost`,
-        });
-
-        new cdk.CfnOutput(this, "RdsEndpointPortExport", {
-            value: instance.dbInstanceEndpointPort,
-            exportName: `${this.stackName}:RdsEndpointPort`,
-        });
-
-        new cdk.CfnOutput(this, "RdsSecretArnExport", {
-            value: secret.secretArn,
-            exportName: `${this.stackName}:RdsSecretArn`,
-        });
-
-        new cdk.CfnOutput(this, "RdsSecurityGroupIdExport", {
-            value: rdsSecurityGroup.securityGroupId,
-            exportName: `${this.stackName}:RdsSecurityGroupId`,
-        });
-
-        return instance.instanceArn;
+        // Redis in both dev and prod
+        const redis = this.CreateElastiCacheRedis(vpc);
+        this.redisEndpoint = redis.endpoint;
+        this.redisPort = redis.port;
+        this.redisSecurityGroup = redis.securityGroup;
     }
 
     private CreateDocumentDBInstance(vpc: ec2.IVpc){
@@ -123,5 +83,53 @@ export class DatabaseStack extends cdk.Stack {
             exportName: `${this.stackName}:DocDbSecurityGroupId`,
         });
 
+    }
+
+    private CreateElastiCacheRedis(vpc: ec2.IVpc): { endpoint: string; port: string; securityGroup: ec2.ISecurityGroup } {
+        const REDIS_PORT = 6379;
+        const redisSecurityGroup = new ec2.SecurityGroup(this, "RedisSg", { vpc });
+        redisSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(REDIS_PORT));
+
+        const subnetGroup = new cdk.aws_elasticache.CfnSubnetGroup(this, "RedisSubnetGroup", {
+            description: "Subnet group for ElastiCache Redis",
+            subnetIds: vpc.privateSubnets.map((subnet: ec2.ISubnet) => subnet.subnetId),
+            cacheSubnetGroupName: "nj-ai-assistant-cache-subnet-group",
+        });
+
+        const cache = new cdk.aws_elasticache.CfnServerlessCache(this, "RedisCache", {
+            engine: "redis",
+            serverlessCacheName: "nj-ai-assistant-cache",
+            cacheUsageLimits: {
+                dataStorage: {
+                    maximum: 10,
+                    unit: "GB",
+                },
+                ecpuPerSecond: {
+                    maximum: 5000,
+                },
+            },
+            securityGroupIds: [redisSecurityGroup.securityGroupId],
+            subnetIds: vpc.privateSubnets.map((subnet: ec2.ISubnet) => subnet.subnetId),
+        });
+
+        cache.addDependency(subnetGroup);
+
+        new cdk.CfnOutput(this, "RedisEndpointExport", {
+            value: cache.attrEndpointAddress,
+        });
+
+        new cdk.CfnOutput(this, "RedisPortExport", {
+            value: cache.attrEndpointPort,
+        });
+
+        new cdk.CfnOutput(this, "RedisSecurityGroupIdExport", {
+            value: redisSecurityGroup.securityGroupId,
+        });
+
+        return {
+            endpoint: cache.attrEndpointAddress,
+            port: cache.attrEndpointPort,
+            securityGroup: redisSecurityGroup,
+        };
     }
 }

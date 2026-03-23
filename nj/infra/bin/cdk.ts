@@ -79,22 +79,20 @@ function applyTags(stack: cdk.Stack) {
   });
 }
 
-if (isProd) {
-  const databaseStack = new DatabaseStack(app, "DatabaseStack", {
-    env: env,
-    envVars: envVars,
-    deployPG: false
-  });
-
-  applyTags(databaseStack);
-}
+const databaseStack = new DatabaseStack(app, "DatabaseStack", {
+  env: env,
+  envVars: envVars,
+});
 
 const ecsStack = new EcsStack(app, "EcsStack", {
   env: env,
   envVars: envVars,
   mongoImage: `${env.account}.dkr.ecr.${env.region}.amazonaws.com/newjersey/mongo:latest`,
   postgresImage: `${env.account}.dkr.ecr.${env.region}.amazonaws.com/newjersey/pgvector:0.8.0-pg15-trixie`,
-  certificateArn: `arn:aws:acm:${env.region}:${env.account}:certificate/${process.env.ACM_CERTIFICATE_ID}`
+  certificateArn: `arn:aws:acm:${env.region}:${env.account}:certificate/${process.env.ACM_CERTIFICATE_ID}`,
+  redisEndpoint: databaseStack.redisEndpoint,
+  redisPort: databaseStack.redisPort,
+  redisSecurityGroup: databaseStack.redisSecurityGroup,
 });
 
 const cognitoStack = new CognitoStack(app, "CognitoStack", {
@@ -109,6 +107,7 @@ const monitoringStack = new MonitoringStack(app, "MonitoringStack", {
   service: ecsStack.service,
 });
 
+applyTags(databaseStack);
 applyTags(ecsStack);
 applyTags(cognitoStack);
 applyTags(monitoringStack);
