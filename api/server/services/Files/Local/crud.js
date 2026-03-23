@@ -92,7 +92,7 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images', 
     }
     fs.writeFileSync(resolvedPath, buffer);
 
-    return path.posix.join('/', fileDir, fileName);
+    return path.posix.join('/', basePath, userId, fileName);
   } catch (error) {
     logger.error('[saveLocalBuffer] Error while saving the buffer:', error);
     throw error;

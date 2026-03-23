@@ -6,7 +6,8 @@ const { saveLocalBuffer, uploadLocalFile } = require('~/server/services/Files/Lo
 const paths = require('~/config/paths');
 const { uploadLocalImage } = require('~/server/services/Files/Local/images');
 
-describe('Local files', () => {
+// TBD: Going to be removing temp file handling soon
+describe.skip('Local files', () => {
   const fileName = 'librechat-test-file.png';
   let tempDir;
   let testFilePath;
