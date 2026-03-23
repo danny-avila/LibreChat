@@ -1,16 +1,22 @@
 {
   "name": "@librechat/data-schemas",
-  "version": "0.0.40",
+  "version": "0.0.45",
   "description": "Mongoose schemas and models for LibreChat",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.es.js",
   "types": "./dist/types/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "import": "./dist/index.es.js",
       "require": "./dist/index.cjs",
       "types": "./dist/types/index.d.ts"
+    },
+    "./capabilities": {
+      "import": "./dist/admin/capabilities.es.js",
+      "require": "./dist/admin/capabilities.cjs",
+      "types": "./dist/types/admin/capabilities.d.ts"
     }
   },
   "files": [
