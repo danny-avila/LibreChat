@@ -125,7 +125,7 @@ const CreatePromptForm = ({
                     {...field}
                     id="prompt-name"
                     type="text"
-                    className="peer mr-2 w-full border border-border-light p-2 text-2xl text-text-primary"
+                    className="peer mr-2 w-full border border-border-medium p-2 text-2xl text-text-primary"
                     placeholder=" "
                     tabIndex={0}
                     aria-label={localize('com_ui_prompt_name')}
@@ -133,7 +133,7 @@ const CreatePromptForm = ({
                   />
                   <label
                     htmlFor="prompt-name"
-                    className="pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded bg-surface-primary px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
+                    className="pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded bg-presentation px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
                   >
                     {localize('com_ui_prompt_name')}*
                   </label>
@@ -153,7 +153,7 @@ const CreatePromptForm = ({
         </div>
         <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">
           <div className="flex flex-col">
-            <header className="flex items-center justify-between rounded-t-xl border border-border-light bg-transparent p-2">
+            <header className="flex items-center justify-between rounded-t-xl border border-border-medium bg-transparent p-2">
               <div className="ml-1 flex items-center gap-2">
                 <FileText className="size-4 text-text-secondary" aria-hidden="true" />
                 <h2 className="text-sm font-semibold text-text-primary">
@@ -164,7 +164,7 @@ const CreatePromptForm = ({
                 <VariablesDropdown fieldName="prompt" />
               </div>
             </header>
-            <div className="min-h-32 rounded-b-xl border border-t-0 border-border-light p-3 sm:p-4">
+            <div className="min-h-32 rounded-b-xl border border-t-0 border-border-medium p-3 sm:p-4">
               <Controller
                 name="prompt"
                 control={control}

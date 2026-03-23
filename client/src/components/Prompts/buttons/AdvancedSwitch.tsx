@@ -44,7 +44,7 @@ const AdvancedSwitch = () => {
       options={options}
       value={mode}
       onChange={handleChange}
-      className="border border-border-light"
+      className="border border-border-medium"
     />
   );
 };

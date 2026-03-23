@@ -28,6 +28,7 @@ import PromptDetails from '../display/PromptDetails';
 import DeletePrompt from '../dialogs/DeletePrompt';
 import NoPromptGroup from '../lists/NoPromptGroup';
 import PromptEditor from '../editor/PromptEditor';
+import AdvancedSwitch from '../buttons/AdvancedSwitch';
 import SkeletonForm from '../utils/SkeletonForm';
 import Description from '../fields/Description';
 import SharePrompt from '../dialogs/SharePrompt';
@@ -66,11 +67,14 @@ const VersionsPanel = React.memo(
 
     return (
       <div
-        className="flex h-full w-full flex-col overflow-hidden bg-surface-primary"
+        className="flex h-full w-full flex-col overflow-hidden"
         style={{ maxHeight: 'calc(100vh - 100px)' }}
       >
+        <div className="shrink-0 px-4 py-3">
+          <AdvancedSwitch />
+        </div>
         {canEdit && (
-          <div className="shrink-0 border-b border-border-light px-4 py-3">
+          <div className="shrink-0 border-b border-border-medium px-4 py-3">
             <Button
               variant="submit"
               size="sm"
@@ -548,7 +552,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
 
               {/* Versions Sidebar - Advanced Mode Only */}
               {editorMode === PromptsEditorMode.ADVANCED && (
-                <div className="hidden w-72 shrink-0 border-l border-border-light lg:block xl:w-80">
+                <div className="hidden w-72 shrink-0 border-l border-border-medium lg:block xl:w-80">
                   <VersionsPanel
                     group={group}
                     prompts={prompts}
@@ -588,8 +592,8 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
             aria-modal="true"
             aria-label={localize('com_ui_versions')}
           >
-            <div className="h-full bg-surface-primary shadow-xl">
-              <div className="flex items-center justify-between border-b border-border-light px-4 py-3">
+            <div className="h-full shadow-xl">
+              <div className="flex items-center justify-between border-b border-border-medium px-4 py-3">
                 <h2 className="text-lg font-semibold text-text-primary">
                   {localize('com_ui_versions')}
                 </h2>

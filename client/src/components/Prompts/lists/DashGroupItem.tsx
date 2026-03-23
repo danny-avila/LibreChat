@@ -99,7 +99,7 @@ function DashGroupItemComponent({ group }: { group: TPromptGroup }) {
   return (
     <article
       className={cn(
-        'group/card relative flex w-full items-center overflow-hidden rounded-lg border border-border-light bg-transparent text-left hover:bg-surface-secondary',
+        'group/card relative flex w-full items-center overflow-hidden rounded-lg border border-border-medium bg-transparent text-left hover:bg-surface-secondary',
         params.promptId === group._id && 'bg-surface-hover',
       )}
     >

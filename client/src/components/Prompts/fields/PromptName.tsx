@@ -97,7 +97,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
             onKeyDown={handleKeyDown}
             ref={inputRef}
             disabled={isLoading}
-            className="h-10 min-w-0 flex-1 rounded-lg border border-border-medium bg-surface-primary px-3 text-xl font-semibold text-text-primary transition-colors focus:border-border-heavy disabled:opacity-60 sm:text-2xl"
+            className="h-10 min-w-0 flex-1 rounded-lg border border-border-medium bg-transparent px-3 text-xl font-semibold text-text-primary transition-colors focus:border-border-heavy disabled:opacity-60 sm:text-2xl"
             aria-label={localize('com_ui_name')}
           />
           <div className="flex shrink-0 items-center gap-1">

@@ -34,7 +34,7 @@ export default function List({
           {!isLoading && groups.length === 0 && (
             <div
               className={cn(
-                'flex flex-col items-center justify-center rounded-lg border border-border-light bg-transparent p-6 text-center',
+                'flex flex-col items-center justify-center rounded-lg border border-border-medium bg-transparent p-6 text-center',
                 isChatRoute ? 'my-2' : 'mx-2 my-4',
               )}
             >

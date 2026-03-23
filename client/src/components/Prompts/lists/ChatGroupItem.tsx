@@ -48,7 +48,7 @@ function ChatGroupItem({ group }: { group: TPromptGroup }) {
 
   return (
     <>
-      <div className="mb-2 rounded-xl border border-border-light bg-transparent px-1 hover:bg-surface-secondary">
+      <div className="mb-2 rounded-xl border border-border-medium bg-transparent px-1 hover:bg-surface-secondary">
         <ListCard
           name={group.name}
           category={group.category ?? ''}
