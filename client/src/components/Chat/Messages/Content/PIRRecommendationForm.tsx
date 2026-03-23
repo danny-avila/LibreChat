@@ -350,7 +350,7 @@ const PIRRecommendationForm: React.FC<PIRRecommendationFormProps> = ({
         citationOptimizationTargets: filteredCitationTargets,
       };
 
-      const toolId = `prod_int_create_recommendations_mcp_${serverName}`;
+      const toolId = `create_pir_recommendations_mcp_${serverName}`;
 
       const response = await fetch(`/api/agents/tools/${encodeURIComponent(toolId)}/call`, {
         method: 'POST',

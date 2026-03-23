@@ -191,7 +191,7 @@ const PIRStatusUpdateForm: React.FC<PIRStatusUpdateFormProps> = ({
         return { recommendationId, status, completedAt };
       });
 
-      const toolId = `prod_int_bulk_update_recommendation_status_mcp_${serverName}`;
+      const toolId = `bulk_update_pir_recommendation_status_mcp_${serverName}`;
 
       const response = await fetch(`/api/agents/tools/${encodeURIComponent(toolId)}/call`, {
         method: 'POST',

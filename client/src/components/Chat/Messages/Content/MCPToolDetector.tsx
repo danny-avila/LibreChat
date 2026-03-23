@@ -85,7 +85,7 @@ const MCP_TOOL_CONFIGS = {
       }
     },
   },
-  render_add_crawl_config_form: {
+  render_crawl_config_form: {
     triggerForm: true,
     formType: 'add_crawl_config',
     extractOptions: (output: string) => {
@@ -216,7 +216,7 @@ const MCP_TOOL_CONFIGS = {
       }
     },
   },
-  render_outreach_generate_form: {
+  render_outreach_form: {
     triggerForm: true,
     formType: 'outreach',
     extractOptions: (output: string) => {
@@ -676,7 +676,7 @@ const MCP_TOOL_CONFIGS = {
       }
     },
   },
-  render_prod_int_create_reco_form: {
+  render_pir_recommendation_form: {
     triggerForm: true,
     formType: 'pir_recommendation',
     extractOptions: (output: string) => {
@@ -725,7 +725,7 @@ const MCP_TOOL_CONFIGS = {
       }
     },
   },
-  render_pir_update_status_form: {
+  render_pir_status_form: {
     triggerForm: true,
     formType: 'pir_status_update',
     extractOptions: (output: string) => {
@@ -810,8 +810,8 @@ export const MCPToolDetector: React.FC<MCPToolDetectorProps> = ({ toolCall, outp
 
     // Also try to extract form_id from JSON output (for PIR form tools)
     if (
-      function_name === 'render_prod_int_create_reco_form' ||
-      function_name === 'render_pir_update_status_form'
+      function_name === 'render_pir_recommendation_form' ||
+      function_name === 'render_pir_status_form'
     ) {
       try {
         let parsed = JSON.parse(output);
