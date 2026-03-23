@@ -185,6 +185,7 @@ function ConvoOptions({
 
   const dropdownItems = useMemo(
     () => [
+      /* NJ: Hide some elements of the dropdown
       {
         label: localize('com_ui_share'),
         onClick: shareHandler,
@@ -193,15 +194,18 @@ function ConvoOptions({
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'share-conversation-dialog',
         /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
+      /* NJ: Hide some elements of the dropdown
         hideOnClick: false,
         ref: shareButtonRef,
         render: (props) => <button {...props} />,
       },
+      */
       {
         label: localize('com_ui_rename'),
         onClick: renameHandler,
         icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
       },
+      /* NJ: Hide some elements of the dropdown
       {
         label: localize('com_ui_duplicate'),
         onClick: handleDuplicateClick,
@@ -229,10 +233,12 @@ function ConvoOptions({
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'delete-conversation-dialog',
         /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
+      /* NJ: Hide some elements of the dropdown
         hideOnClick: false,
         ref: deleteButtonRef,
         render: (props) => <button {...props} />,
       },
+      */
     ],
     [
       localize,
@@ -254,7 +260,9 @@ function ConvoOptions({
       : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
   );
 
-  if (isShiftHeld && isActiveConvo && !isPopoverActive && !showShareDialog && !showDeleteDialog) {
+  // NJ: We don't want to show archive/delete on holding shift (it makes a11y bad & is confusing)
+  // eslint-disable-next-line no-constant-condition
+  if (false) {
     return (
       <div className="flex items-center gap-0.5">
         <button
