@@ -1,4 +1,4 @@
-import { useState, memo, useRef } from 'react';
+import { useState, memo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, TooltipAnchor } from '@librechat/client';
 import { Eye, Pencil, EarthIcon, User } from 'lucide-react';
@@ -24,13 +24,12 @@ function ChatGroupItem({ group }: { group: TPromptGroup }) {
 
   const groupIsGlobal = group.isPublic === true;
 
-  // Check permissions for the promptGroup
   const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');
   const canEdit = hasPermission(PermissionBits.EDIT);
 
   const previewButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const onCardClick = () => {
+  const onCardClick = useCallback(() => {
     const text = group.productionPrompt?.prompt;
     if (!text?.trim()) {
       return;
@@ -45,7 +44,7 @@ function ChatGroupItem({ group }: { group: TPromptGroup }) {
     if (group._id) {
       recordUsage.mutate(group._id);
     }
-  };
+  }, [group, submitPrompt, recordUsage]);
 
   return (
     <>
@@ -120,7 +119,7 @@ function ChatGroupItem({ group }: { group: TPromptGroup }) {
                     aria-label={localize('com_ui_edit')}
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigate(`/d/prompts/${group._id}`);
+                      navigate(`/prompts/${group._id}`);
                     }}
                   >
                     <Pencil className="size-4 text-text-primary" aria-hidden="true" />

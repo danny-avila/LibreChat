@@ -112,6 +112,20 @@ export const router = createBrowserRouter(
               element: <Search />,
             },
             {
+              path: 'prompts/new',
+              lazy: () =>
+                import('~/components/Prompts/layouts/InlinePromptsView').then((m) => ({
+                  Component: m.default,
+                })),
+            },
+            {
+              path: 'prompts/:promptId',
+              lazy: () =>
+                import('~/components/Prompts/layouts/InlinePromptsView').then((m) => ({
+                  Component: m.default,
+                })),
+            },
+            {
               path: 'agents',
               element: (
                 <MarketplaceProvider>

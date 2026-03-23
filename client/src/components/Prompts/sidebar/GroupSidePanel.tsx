@@ -5,7 +5,6 @@ import { useLocation } from 'react-router-dom';
 import { Button, Sidebar, TooltipAnchor } from '@librechat/client';
 import { usePromptGroupsContext, useDashboardContext } from '~/Providers';
 import { useLocalize, useCustomLink } from '~/hooks';
-import ManagePrompts from '../buttons/ManagePrompts';
 import PanelNavigation from './PanelNavigation';
 import List from '../lists/List';
 import { cn } from '~/utils';
@@ -16,15 +15,17 @@ export default function GroupSidePanel({
   className = '',
   closePanelRef,
   onClose,
+  isChatRoute: isChatRouteProp,
 }: {
   children?: React.ReactNode;
   className?: string;
   closePanelRef?: React.RefObject<HTMLButtonElement>;
   onClose?: () => void;
+  isChatRoute?: boolean;
 }) {
   const location = useLocation();
   const localize = useLocalize();
-  const isChatRoute = useMemo(() => location.pathname?.startsWith('/c/'), [location.pathname]);
+  const isChatRoute = isChatRouteProp ?? location.pathname?.startsWith('/c/') ?? false;
 
   const { prevLocationPath } = useDashboardContext();
   const setPromptsName = useSetRecoilState(store.promptsName);
@@ -110,9 +111,7 @@ export default function GroupSidePanel({
           hasPreviousPage={hasPreviousPage}
           isLoading={groupsQuery.isFetching}
           isChatRoute={isChatRoute}
-        >
-          {isChatRoute && <ManagePrompts className="select-none" />}
-        </PanelNavigation>
+        />
       </div>
     </div>
   );

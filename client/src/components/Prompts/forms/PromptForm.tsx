@@ -180,13 +180,13 @@ const HeaderActions = React.memo(
 
 HeaderActions.displayName = 'HeaderActions';
 
-const PromptForm = () => {
+const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { hasAccess } = usePromptGroupsContext();
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
-  const promptId = params.promptId || '';
+  const promptId = promptIdProp || params.promptId || '';
 
   const editorMode = useRecoilValue(store.promptsEditorMode);
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
@@ -335,7 +335,7 @@ const PromptForm = () => {
 
   useEffect(() => {
     handleLoadingComplete();
-  }, [params.promptId, editorMode, group?.productionId, prompts, handleLoadingComplete]);
+  }, [promptId, editorMode, group?.productionId, prompts, handleLoadingComplete]);
 
   useEffect(() => {
     setValue('prompt', selectedPrompt ? selectedPrompt.prompt : '', { shouldDirty: false });
@@ -436,10 +436,7 @@ const PromptForm = () => {
 
   // Show read-only view if user doesn't have edit permission
   if (!canEdit && !permissionsLoading && groupsQuery.data) {
-    const fetchedPrompt = findPromptGroup(
-      groupsQuery.data,
-      (group) => group._id === params.promptId,
-    );
+    const fetchedPrompt = findPromptGroup(groupsQuery.data, (group) => group._id === promptId);
     if (!fetchedPrompt && !canView) {
       return <NoPromptGroup />;
     }

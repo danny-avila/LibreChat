@@ -34,8 +34,10 @@ const defaultPrompt: CreateFormValues = {
 
 const CreatePromptForm = ({
   defaultValues = defaultPrompt,
+  onSuccess,
 }: {
   defaultValues?: CreateFormValues;
+  onSuccess?: (groupId: string) => void;
 }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -48,7 +50,7 @@ const CreatePromptForm = ({
 
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout>;
-    if (!hasAccess) {
+    if (!hasAccess && !onSuccess) {
       timeoutId = setTimeout(() => {
         navigate('/c/new');
       }, 1000);
@@ -56,7 +58,7 @@ const CreatePromptForm = ({
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [hasAccess, navigate]);
+  }, [hasAccess, navigate, onSuccess]);
 
   const methods = useForm({
     defaultValues: {
@@ -74,7 +76,12 @@ const CreatePromptForm = ({
 
   const createPromptMutation = useCreatePrompt({
     onSuccess: (response) => {
-      navigate(`/d/prompts/${response.prompt.groupId}`, { replace: true });
+      const groupId = response.prompt.groupId;
+      if (onSuccess && groupId) {
+        onSuccess(groupId);
+      } else {
+        navigate(`/d/prompts/${groupId}`, { replace: true });
+      }
     },
   });
 
