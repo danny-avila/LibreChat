@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, fireEvent, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import { ActivePanelProvider, useActivePanel } from '~/Providers/ActivePanelContext';
+import { ActivePanelProvider, useActivePanel, resolveActivePanel } from '~/Providers/ActivePanelContext';
 
 const STORAGE_KEY = 'side:active-panel';
 
@@ -56,5 +56,25 @@ describe('ActivePanelContext', () => {
       'useActivePanel must be used within an ActivePanelProvider',
     );
     spy.mockRestore();
+  });
+});
+
+describe('resolveActivePanel', () => {
+  const links = [{ id: 'conversations' }, { id: 'prompts' }, { id: 'files' }];
+
+  it('returns active when it matches a link', () => {
+    expect(resolveActivePanel('prompts', links)).toBe('prompts');
+  });
+
+  it('falls back to first link when active does not match', () => {
+    expect(resolveActivePanel('hide-panel', links)).toBe('conversations');
+  });
+
+  it('returns active unchanged when links is empty', () => {
+    expect(resolveActivePanel('agents', [])).toBe('agents');
+  });
+
+  it('falls back to the only link when active is stale', () => {
+    expect(resolveActivePanel('agents', [{ id: 'conversations' }])).toBe('conversations');
   });
 });
