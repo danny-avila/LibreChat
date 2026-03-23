@@ -1,7 +1,11 @@
 import React from 'react';
 import { render, fireEvent, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import { ActivePanelProvider, useActivePanel, resolveActivePanel } from '~/Providers/ActivePanelContext';
+import {
+  ActivePanelProvider,
+  resolveActivePanel,
+  useActivePanel,
+} from '~/Providers/ActivePanelContext';
 
 const STORAGE_KEY = 'side:active-panel';
 
