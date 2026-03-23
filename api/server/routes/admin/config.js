@@ -2,11 +2,11 @@ const express = require('express');
 const { createAdminConfigHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
-  requireCapability,
   hasConfigCapability,
+  requireCapability,
 } = require('~/server/middleware/roles/capabilities');
-const { requireJwtAuth } = require('~/server/middleware');
 const { signalConfigChange, getAppConfig } = require('~/server/services/Config/app');
+const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
 const router = express.Router();
