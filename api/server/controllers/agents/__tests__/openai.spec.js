@@ -77,42 +77,25 @@ jest.mock('~/server/services/ToolService', () => ({
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/spendTokens', () => ({
-  spendTokens: mockSpendTokens,
-  spendStructuredTokens: mockSpendStructuredTokens,
-}));
-
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
 const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
-jest.mock('~/models/tx', () => ({
-  getMultiplier: mockGetMultiplier,
-  getCacheMultiplier: mockGetCacheMultiplier,
-}));
 
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+  buildSummarizationHandlers: jest.fn().mockReturnValue({}),
+  markSummarizationUsage: jest.fn().mockImplementation((usage) => usage),
+  agentLogHandlerObj: { handle: jest.fn() },
 }));
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/Conversation', () => ({
-  getConvoFiles: jest.fn().mockResolvedValue([]),
-}));
-
-jest.mock('~/models/Agent', () => ({
-  getAgent: jest.fn().mockResolvedValue({
-    id: 'agent-123',
-    provider: 'openAI',
-    model_parameters: { model: 'gpt-4' },
-  }),
-  getAgents: jest.fn().mockResolvedValue([]),
-}));
-
 const mockUpdateBalance = jest.fn().mockResolvedValue({});
 const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
+
 jest.mock('~/models', () => ({
+  getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn(),
@@ -123,6 +106,12 @@ jest.mock('~/models', () => ({
   getCodeGeneratedFiles: jest.fn(),
   updateBalance: mockUpdateBalance,
   bulkInsertTransactions: mockBulkInsertTransactions,
+  spendTokens: mockSpendTokens,
+  spendStructuredTokens: mockSpendStructuredTokens,
+  getMultiplier: mockGetMultiplier,
+  getCacheMultiplier: mockGetCacheMultiplier,
+  getConvoFiles: jest.fn().mockResolvedValue([]),
+  getConvo: jest.fn().mockResolvedValue(null),
 }));
 
 describe('OpenAIChatCompletionController', () => {
@@ -158,6 +147,77 @@ describe('OpenAIChatCompletionController', () => {
       end: jest.fn(),
       write: jest.fn(),
     };
+  });
+
+  describe('conversation ownership validation', () => {
+    it('should skip ownership check when conversation_id is not provided', async () => {
+      const { getConvo } = require('~/models');
+      await OpenAIChatCompletionController(req, res);
+      expect(getConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when conversation_id is not a string', async () => {
+      const { validateRequest } = require('@librechat/api');
+      validateRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', messages: [], stream: false, conversation_id: { $gt: '' } },
+      });
+
+      await OpenAIChatCompletionController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('should return 404 when conversation is not owned by user', async () => {
+      const { validateRequest } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: false,
+          conversation_id: 'convo-abc',
+        },
+      });
+      getConvo.mockResolvedValueOnce(null);
+
+      await OpenAIChatCompletionController(req, res);
+      expect(getConvo).toHaveBeenCalledWith('user-123', 'convo-abc');
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('should proceed when conversation is owned by user', async () => {
+      const { validateRequest } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: false,
+          conversation_id: 'convo-abc',
+        },
+      });
+      getConvo.mockResolvedValueOnce({ conversationId: 'convo-abc', user: 'user-123' });
+
+      await OpenAIChatCompletionController(req, res);
+      expect(getConvo).toHaveBeenCalledWith('user-123', 'convo-abc');
+      expect(res.status).not.toHaveBeenCalledWith(404);
+    });
+
+    it('should return 500 when getConvo throws a DB error', async () => {
+      const { validateRequest } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: false,
+          conversation_id: 'convo-abc',
+        },
+      });
+      getConvo.mockRejectedValueOnce(new Error('DB connection failed'));
+
+      await OpenAIChatCompletionController(req, res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
   });
 
   describe('token usage recording', () => {

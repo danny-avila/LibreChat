@@ -11,14 +11,14 @@ export default function AgentPanelSkeleton() {
         </div>
         {/* Name */}
         <Skeleton className="mb-2 h-5 w-1/5 rounded-lg" />
-        <Skeleton className="mb-1 h-[40px] w-full rounded-lg" />
+        <Skeleton className="mb-1 h-9 w-full rounded-lg" />
         <Skeleton className="h-3 w-1/4 rounded-lg" />
       </div>
 
       {/* Description */}
       <div className="mb-4">
         <Skeleton className="mb-2 h-5 w-1/4 rounded-lg" />
-        <Skeleton className="h-[40px] w-full rounded-lg" />
+        <Skeleton className="h-9 w-full rounded-lg" />
       </div>
 
       {/* Instructions */}
@@ -30,7 +30,7 @@ export default function AgentPanelSkeleton() {
       {/* Model and Provider */}
       <div className="mb-6">
         <Skeleton className="mb-2 h-5 w-1/4 rounded-lg" />
-        <Skeleton className="h-[40px] w-full rounded-lg" />
+        <Skeleton className="h-9 w-full rounded-lg" />
       </div>
 
       {/* Capabilities */}

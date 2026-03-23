@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { checkAccess, generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
-const { getRoleByName } = require('~/models/Role');
+const { getRoleByName } = require('~/models');
 const { Role } = require('~/db/models');
 
 // Mock the logger from @librechat/data-schemas

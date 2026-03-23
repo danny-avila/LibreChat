@@ -17,13 +17,14 @@ const {
 const { verify2FAWithTempToken } = require('~/server/controllers/auth/TwoFactorAuthController');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
+const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const middleware = require('~/server/middleware');
-const { Balance } = require('~/db/models');
 
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
-  Balance,
+  findBalanceByUser,
+  upsertBalanceFields,
 });
 
 const router = express.Router();
@@ -63,7 +64,7 @@ router.post(
   resetPasswordController,
 );
 
-router.get('/2fa/enable', middleware.requireJwtAuth, enable2FA);
+router.post('/2fa/enable', middleware.requireJwtAuth, enable2FA);
 router.post('/2fa/verify', middleware.requireJwtAuth, verify2FA);
 router.post('/2fa/verify-temp', middleware.checkBan, verify2FAWithTempToken);
 router.post('/2fa/confirm', middleware.requireJwtAuth, confirm2FA);

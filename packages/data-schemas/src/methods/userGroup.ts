@@ -215,7 +215,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     const userIdOnTheSource = user.idOnTheSource || userId.toString();
     const updatedGroup = await Group.findByIdAndUpdate(
       groupId,
-      { $pull: { memberIds: userIdOnTheSource } },
+      { $pullAll: { memberIds: [userIdOnTheSource] } },
       options,
     ).lean();
 
@@ -243,6 +243,13 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @param params.role - Optional user role (if not provided, will query from DB)
    * @param session - Optional MongoDB session for transactions
    * @returns Array of principal objects with type and id
+   */
+  /**
+   * TODO(#12091): This method has no tenantId parameter — it returns ALL group
+   * memberships for a user regardless of tenant. In multi-tenant mode, group
+   * principals from other tenants will be included in capability checks, which
+   * could grant cross-tenant capabilities. Add tenantId filtering here when
+   * tenant isolation is activated.
    */
   async function getUserPrincipals(
     params: {
@@ -589,6 +596,61 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     return combined;
   }
 
+  /**
+   * Removes a user from all groups they belong to.
+   * @param userId - The user ID (or ObjectId) of the member to remove
+   */
+  async function removeUserFromAllGroups(userId: string | Types.ObjectId): Promise<void> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    await Group.updateMany({ memberIds: userId }, { $pullAll: { memberIds: [userId] } });
+  }
+
+  /**
+   * Finds a single group matching the given filter.
+   * @param filter - MongoDB filter query
+   */
+  async function findGroupByQuery(
+    filter: Record<string, unknown>,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = Group.findOne(filter);
+    if (session) {
+      query.session(session);
+    }
+    return query.lean();
+  }
+
+  /**
+   * Updates a group by its ID.
+   * @param groupId - The group's ObjectId
+   * @param data - Fields to set via $set
+   */
+  async function updateGroupById(
+    groupId: string | Types.ObjectId,
+    data: Record<string, unknown>,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const options = { new: true, ...(session ? { session } : {}) };
+    return Group.findByIdAndUpdate(groupId, { $set: data }, options).lean();
+  }
+
+  /**
+   * Bulk-updates groups matching a filter.
+   * @param filter - MongoDB filter query
+   * @param update - Update operations
+   * @param options - Optional query options (e.g., { session })
+   */
+  async function bulkUpdateGroups(
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>,
+    options?: { session?: ClientSession },
+  ) {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    return Group.updateMany(filter, update, options || {});
+  }
+
   return {
     findGroupById,
     findGroupByExternalId,
@@ -598,6 +660,10 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     upsertGroupByExternalId,
     addUserToGroup,
     removeUserFromGroup,
+    removeUserFromAllGroups,
+    findGroupByQuery,
+    updateGroupById,
+    bulkUpdateGroups,
     getUserGroups,
     getUserPrincipals,
     syncUserEntraGroups,

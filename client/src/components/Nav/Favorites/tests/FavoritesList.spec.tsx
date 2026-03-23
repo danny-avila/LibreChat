@@ -56,6 +56,7 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useShowMarketplace: () => false,
   useNewConvo: () => ({ newConversation: jest.fn() }),
+  useGetConversation: () => () => null,
 }));
 
 jest.mock('~/Providers', () => ({
@@ -186,6 +187,87 @@ describe('FavoritesList', () => {
 
       // No favorite items should be rendered (deleted agent is filtered out)
       expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+    });
+
+    it('should treat 403 the same as 404 — agent not rendered', async () => {
+      const validAgent: t.Agent = {
+        id: 'valid-agent',
+        name: 'Valid Agent',
+        author: 'test-author',
+      } as t.Agent;
+
+      mockFavorites.push({ agentId: 'valid-agent' }, { agentId: 'revoked-agent' });
+
+      (dataService.getAgentById as jest.Mock).mockImplementation(
+        ({ agent_id }: { agent_id: string }) => {
+          if (agent_id === 'valid-agent') {
+            return Promise.resolve(validAgent);
+          }
+          if (agent_id === 'revoked-agent') {
+            return Promise.reject({ response: { status: 403 } });
+          }
+          return Promise.reject(new Error('Unknown agent'));
+        },
+      );
+
+      const { findAllByTestId } = renderWithProviders(<FavoritesList />);
+
+      const favoriteItems = await findAllByTestId('favorite-item');
+      expect(favoriteItems).toHaveLength(1);
+      expect(favoriteItems[0]).toHaveTextContent('Valid Agent');
+    });
+
+    it('should call reorderFavorites to persist removal of stale agents', async () => {
+      const mockReorderFavorites = jest.fn().mockResolvedValue(undefined);
+      mockUseFavorites.mockReturnValue({
+        favorites: [{ agentId: 'revoked-agent' }],
+        reorderFavorites: mockReorderFavorites,
+        isLoading: false,
+      });
+
+      (dataService.getAgentById as jest.Mock).mockRejectedValue({ response: { status: 403 } });
+
+      renderWithProviders(<FavoritesList />);
+
+      await waitFor(() => {
+        expect(mockReorderFavorites).toHaveBeenCalledWith([], true);
+      });
+    });
+
+    it('should only attempt cleanup once even when favorites revert to stale state', async () => {
+      const mockReorderFavorites = jest.fn().mockResolvedValue(undefined);
+
+      mockUseFavorites.mockReturnValue({
+        favorites: [{ agentId: 'revoked-agent' }],
+        reorderFavorites: mockReorderFavorites,
+        isLoading: false,
+      });
+
+      (dataService.getAgentById as jest.Mock).mockRejectedValue({ response: { status: 403 } });
+
+      const { rerender } = renderWithProviders(<FavoritesList />);
+
+      await waitFor(() => {
+        expect(mockReorderFavorites).toHaveBeenCalledWith([], true);
+      });
+
+      expect(mockReorderFavorites).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <QueryClientProvider client={createTestQueryClient()}>
+          <RecoilRoot>
+            <BrowserRouter>
+              <DndProvider backend={HTML5Backend}>
+                <FavoritesList />
+              </DndProvider>
+            </BrowserRouter>
+          </RecoilRoot>
+        </QueryClientProvider>,
+      );
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(mockReorderFavorites).toHaveBeenCalledTimes(1);
     });
   });
 });

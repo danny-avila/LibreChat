@@ -100,17 +100,25 @@ export class MCPManager extends UserConnectionManager {
 
     const useOAuth = Boolean(serverConfig.requiresOAuth || serverConfig.oauthMetadata);
 
-    const useSSRFProtection = MCPServersRegistry.getInstance().shouldEnableSSRFProtection();
+    const registry = MCPServersRegistry.getInstance();
+    const useSSRFProtection = registry.shouldEnableSSRFProtection();
+    const allowedDomains = registry.getAllowedDomains();
     const dbSourced = !!serverConfig.dbId;
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
       serverConfig,
       useSSRFProtection,
+      allowedDomains,
     };
 
     if (!useOAuth) {
-      const result = await MCPConnectionFactory.discoverTools(basic);
+      const result = await MCPConnectionFactory.discoverTools(basic, {
+        user: args.user,
+        customUserVars: args.customUserVars,
+        requestBody: args.requestBody,
+        connectionTimeout: args.connectionTimeout,
+      });
       return {
         tools: result.tools,
         oauthRequired: result.oauthRequired,

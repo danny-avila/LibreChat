@@ -7,6 +7,7 @@ const {
 } = require('@librechat/agents');
 const {
   checkAccess,
+  toolkitParent,
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
@@ -44,7 +45,7 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
-const { getRoleByName } = require('~/models/Role');
+const { getRoleByName } = require('~/models');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -369,8 +370,16 @@ const loadTools = async ({
       continue;
     }
 
-    if (customConstructors[tool]) {
-      requestedTools[tool] = async () => customConstructors[tool](toolContextMap);
+    const toolKey = customConstructors[tool] ? tool : toolkitParent[tool];
+    if (toolKey && customConstructors[toolKey]) {
+      if (!requestedTools[toolKey]) {
+        let cached;
+        requestedTools[toolKey] = async () => {
+          cached ??= customConstructors[toolKey](toolContextMap);
+          return cached;
+        };
+      }
+      requestedTools[tool] = requestedTools[toolKey];
       continue;
     }
 

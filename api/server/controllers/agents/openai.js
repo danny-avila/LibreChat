@@ -21,13 +21,14 @@ const {
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
+const {
+  buildSummarizationHandlers,
+  markSummarizationUsage,
+  createToolEndCallback,
+  agentLogHandlerObj,
+} = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
-const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
-const { getConvoFiles } = require('~/models/Conversation');
-const { getAgent, getAgents } = require('~/models/Agent');
 const db = require('~/models');
 
 /**
@@ -139,7 +140,7 @@ const OpenAIChatCompletionController = async (req, res) => {
   const agentId = request.model;
 
   // Look up the agent
-  const agent = await getAgent({ id: agentId });
+  const agent = await db.getAgent({ id: agentId });
   if (!agent) {
     return sendErrorResponse(
       res,
@@ -151,8 +152,6 @@ const OpenAIChatCompletionController = async (req, res) => {
   }
 
   const responseId = `chatcmpl-${nanoid()}`;
-  const conversationId = request.conversation_id ?? nanoid();
-  const parentMessageId = request.parent_message_id ?? null;
   const created = Math.floor(Date.now() / 1000);
 
   /** @type {import('@librechat/api').OpenAIResponseContext} — key must be `requestId` to match the type used by createChunk/buildNonStreamingResponse */
@@ -178,6 +177,23 @@ const OpenAIChatCompletionController = async (req, res) => {
   });
 
   try {
+    if (request.conversation_id != null) {
+      if (typeof request.conversation_id !== 'string') {
+        return sendErrorResponse(
+          res,
+          400,
+          'conversation_id must be a string',
+          'invalid_request_error',
+        );
+      }
+      if (!(await db.getConvo(req.user?.id, request.conversation_id))) {
+        return sendErrorResponse(res, 404, 'Conversation not found', 'invalid_request_error');
+      }
+    }
+
+    const conversationId = request.conversation_id ?? nanoid();
+    const parentMessageId = request.parent_message_id ?? null;
+
     // Build allowed providers set
     const allowedProviders = new Set(
       appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
@@ -206,7 +222,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         isInitialAgent: true,
       },
       {
-        getConvoFiles,
+        getConvoFiles: db.getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
@@ -265,19 +281,22 @@ const OpenAIChatCompletionController = async (req, res) => {
           toolRegistry: primaryConfig.toolRegistry,
           userMCPAuthMap: primaryConfig.userMCPAuthMap,
           tool_resources: primaryConfig.tool_resources,
+          actionsEnabled: primaryConfig.actionsEnabled,
         });
       },
       toolEndCallback,
     };
 
+    const summarizationConfig = appConfig?.summarization;
+
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    const { messages: formattedMessages, indexTokenCountMap } = formatAgentMessages(
-      openaiMessages,
-      {},
-      toolSet,
-    );
+    const {
+      messages: formattedMessages,
+      indexTokenCountMap,
+      summary: initialSummary,
+    } = formatAgentMessages(openaiMessages, {}, toolSet);
 
     /**
      * Create a simple handler that processes data
@@ -420,24 +439,30 @@ const OpenAIChatCompletionController = async (req, res) => {
       }),
 
       // Usage tracking
-      on_chat_model_end: createHandler((data) => {
-        const usage = data?.output?.usage_metadata;
-        if (usage) {
-          collectedUsage.push(usage);
-          const target = isStreaming ? tracker : aggregator;
-          target.usage.promptTokens += usage.input_tokens ?? 0;
-          target.usage.completionTokens += usage.output_tokens ?? 0;
-        }
-      }),
+      on_chat_model_end: {
+        handle: (_event, data, metadata) => {
+          const usage = data?.output?.usage_metadata;
+          if (usage) {
+            const taggedUsage = markSummarizationUsage(usage, metadata);
+            collectedUsage.push(taggedUsage);
+            const target = isStreaming ? tracker : aggregator;
+            target.usage.promptTokens += taggedUsage.input_tokens ?? 0;
+            target.usage.completionTokens += taggedUsage.output_tokens ?? 0;
+          }
+        },
+      },
       on_run_step_completed: createHandler(),
       // Use proper ToolEndHandler for processing artifacts (images, file citations, code output)
       on_tool_end: new ToolEndHandler(toolEndCallback, logger),
       on_chain_stream: createHandler(),
       on_chain_end: createHandler(),
       on_agent_update: createHandler(),
+      on_agent_log: agentLogHandlerObj,
       on_custom_event: createHandler(),
-      // Event-driven tool execution handler
       on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+      ...(summarizationConfig?.enabled !== false
+        ? buildSummarizationHandlers({ isStreaming, res })
+        : {}),
     };
 
     // Create and run the agent
@@ -450,7 +475,9 @@ const OpenAIChatCompletionController = async (req, res) => {
       agents: [primaryConfig],
       messages: formattedMessages,
       indexTokenCountMap,
+      initialSummary,
       runId: responseId,
+      summarizationConfig,
       signal: abortController.signal,
       customHandlers: handlers,
       requestBody: {
@@ -495,9 +522,9 @@ const OpenAIChatCompletionController = async (req, res) => {
     const transactionsConfig = getTransactionsConfig(appConfig);
     recordCollectedUsage(
       {
-        spendTokens,
-        spendStructuredTokens,
-        pricing: { getMultiplier, getCacheMultiplier },
+        spendTokens: db.spendTokens,
+        spendStructuredTokens: db.spendStructuredTokens,
+        pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
         bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
       },
       {
@@ -611,7 +638,7 @@ const ListModelsController = async (req, res) => {
     // Get the accessible agents
     let agents = [];
     if (accessibleAgentIds.length > 0) {
-      agents = await getAgents({ _id: { $in: accessibleAgentIds } });
+      agents = await db.getAgents({ _id: { $in: accessibleAgentIds } });
     }
 
     const models = agents.map((agent) => ({
@@ -654,7 +681,7 @@ const GetModelController = async (req, res) => {
       return sendErrorResponse(res, 401, 'Authentication required', 'auth_error');
     }
 
-    const agent = await getAgent({ id: model });
+    const agent = await db.getAgent({ id: model });
 
     if (!agent) {
       return sendErrorResponse(

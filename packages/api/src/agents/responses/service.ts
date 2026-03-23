@@ -84,6 +84,13 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
     }
   }
 
+  if (
+    request.previous_response_id !== undefined &&
+    typeof request.previous_response_id !== 'string'
+  ) {
+    return { valid: false, error: 'previous_response_id must be a string' };
+  }
+
   return { valid: true, request: request as unknown as ResponseRequest };
 }
 

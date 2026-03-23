@@ -1,7 +1,13 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Constants, EnvVar, GraphEvents, ToolEndHandler } = require('@librechat/agents');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+const {
+  EnvVar,
+  Constants,
+  GraphEvents,
+  GraphNodeKeys,
+  ToolEndHandler,
+} = require('@librechat/agents');
 const {
   sendEvent,
   GenerationJobManager,
@@ -71,7 +77,9 @@ class ModelEndHandler {
         usage.model = modelName;
       }
 
-      this.collectedUsage.push(usage);
+      const taggedUsage = markSummarizationUsage(usage, metadata);
+
+      this.collectedUsage.push(taggedUsage);
     } catch (error) {
       logger.error('Error handling model end event:', error);
       return this.finalize(errorMessage);
@@ -133,6 +141,7 @@ function getDefaultHandlers({
   collectedUsage,
   streamId = null,
   toolExecuteOptions = null,
+  summarizationOptions = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -244,6 +253,37 @@ function getDefaultHandlers({
   if (toolExecuteOptions) {
     handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
   }
+
+  if (summarizationOptions?.enabled !== false) {
+    handlers[GraphEvents.ON_SUMMARIZE_START] = {
+      handle: async (_event, data) => {
+        await emitEvent(res, streamId, {
+          event: GraphEvents.ON_SUMMARIZE_START,
+          data,
+        });
+      },
+    };
+    handlers[GraphEvents.ON_SUMMARIZE_DELTA] = {
+      handle: async (_event, data) => {
+        aggregateContent({ event: GraphEvents.ON_SUMMARIZE_DELTA, data });
+        await emitEvent(res, streamId, {
+          event: GraphEvents.ON_SUMMARIZE_DELTA,
+          data,
+        });
+      },
+    };
+    handlers[GraphEvents.ON_SUMMARIZE_COMPLETE] = {
+      handle: async (_event, data) => {
+        aggregateContent({ event: GraphEvents.ON_SUMMARIZE_COMPLETE, data });
+        await emitEvent(res, streamId, {
+          event: GraphEvents.ON_SUMMARIZE_COMPLETE,
+          data,
+        });
+      },
+    };
+  }
+
+  handlers[GraphEvents.ON_AGENT_LOG] = { handle: agentLogHandler };
 
   return handlers;
 }
@@ -668,8 +708,62 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
   };
 }
 
+const ALLOWED_LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
+
+function agentLogHandler(_event, data) {
+  if (!data) {
+    return;
+  }
+  const logFn = ALLOWED_LOG_LEVELS.has(data.level) ? logger[data.level] : logger.debug;
+  const meta = typeof data.data === 'object' && data.data != null ? data.data : {};
+  logFn(`[agents:${data.scope ?? 'unknown'}] ${data.message ?? ''}`, {
+    ...meta,
+    runId: data.runId,
+    agentId: data.agentId,
+  });
+}
+
+function markSummarizationUsage(usage, metadata) {
+  const node = metadata?.langgraph_node;
+  if (typeof node === 'string' && node.startsWith(GraphNodeKeys.SUMMARIZE)) {
+    return { ...usage, usage_type: 'summarization' };
+  }
+  return usage;
+}
+
+const agentLogHandlerObj = { handle: agentLogHandler };
+
+/**
+ * Builds the three summarization SSE event handlers.
+ * In streaming mode, each event is forwarded to the client via `res.write`.
+ * In non-streaming mode, the handlers are no-ops.
+ * @param {{ isStreaming: boolean, res: import('express').Response }} opts
+ */
+function buildSummarizationHandlers({ isStreaming, res }) {
+  if (!isStreaming) {
+    const noop = { handle: () => {} };
+    return { on_summarize_start: noop, on_summarize_delta: noop, on_summarize_complete: noop };
+  }
+  const writeEvent = (name) => ({
+    handle: async (_event, data) => {
+      if (!res.writableEnded) {
+        res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+      }
+    },
+  });
+  return {
+    on_summarize_start: writeEvent('on_summarize_start'),
+    on_summarize_delta: writeEvent('on_summarize_delta'),
+    on_summarize_complete: writeEvent('on_summarize_complete'),
+  };
+}
+
 module.exports = {
+  agentLogHandler,
+  agentLogHandlerObj,
   getDefaultHandlers,
   createToolEndCallback,
+  markSummarizationUsage,
+  buildSummarizationHandlers,
   createResponsesToolEndCallback,
 };
