@@ -7,11 +7,10 @@ import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import { SidePanelGroup } from '~/components/SidePanel';
-import { NewChat } from '~/components/Nav';
-import { cn } from '~/utils';
 import CategoryTabs from './CategoryTabs';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
+import { cn } from '~/utils';
 
 interface AgentMarketplaceProps {
   className?: string;
@@ -202,12 +201,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
             ref={scrollContainerRef}
             className="scrollbar-gutter-stable relative flex h-full flex-col overflow-y-auto overflow-x-hidden"
           >
-            {/* Simplified header for agents marketplace - only show nav controls when needed */}
-            {!isSmallScreen && (
-              <div className="sticky top-0 z-20 flex items-center justify-between bg-surface-secondary p-2 font-semibold text-text-primary md:h-14">
-                <NewChat className="border border-border-light bg-surface-secondary p-2" />
-              </div>
-            )}
             {/* Hero Section - scrolls away */}
             {!isSmallScreen && (
               <div className="container mx-auto max-w-4xl">
@@ -222,9 +215,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
               </div>
             )}
             {/* Sticky wrapper for search bar and categories */}
-            <div
-              className={cn('sticky z-10 bg-presentation pb-4', isSmallScreen ? 'top-0' : 'top-14')}
-            >
+            <div className="sticky top-0 z-10 bg-presentation pb-4">
               <div className="container mx-auto max-w-4xl px-4">
                 {/* Search bar */}
                 <div className="mx-auto flex max-w-2xl gap-2 pb-6">
