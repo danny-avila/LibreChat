@@ -19,11 +19,11 @@ const NewChatButton = memo(function NewChatButton() {
   const conversation = useRecoilValue(store.conversationByIndex(0));
 
   const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLAnchorElement>) => {
+    (e: React.MouseEvent<HTMLButtonElement>) => {
       if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
+        window.open('/c/new', '_blank');
         return;
       }
-      e.preventDefault();
       clearMessagesCache(queryClient, conversation?.conversationId);
       queryClient.invalidateQueries([QueryKeys.messages]);
       newConversation();
@@ -36,17 +36,16 @@ const NewChatButton = memo(function NewChatButton() {
       side="right"
       description={localize('com_ui_new_chat')}
       render={
-        <a
-          href="/c/new"
+        <Button
           data-testid="new-chat-button"
+          size="icon"
+          variant="ghost"
           aria-label={localize('com_ui_new_chat')}
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
+          className="h-9 w-9 rounded-lg"
           onClick={handleClick}
         >
-          <div className="flex size-6 items-center justify-center rounded-full bg-text-primary">
-            <NewChatIcon className="size-3.5 text-white dark:text-black" />
-          </div>
-        </a>
+          <NewChatIcon className="h-5 w-5 text-text-primary" />
+        </Button>
       }
     />
   );
@@ -99,7 +98,7 @@ const NavIconButton = memo(function NavIconButton({
           )}
           onClick={handleClick}
         >
-          <link.icon className="h-4 w-4" aria-hidden="true" />
+          <link.icon className="h-5 w-5" aria-hidden="true" />
         </Button>
       }
     />
@@ -144,6 +143,7 @@ function ExpandedPanel({
         }
       />
       <NewChatButton />
+      <div className="mx-2 border-b border-border-light" />
       <div className="flex flex-col gap-1 overflow-y-auto">
         {links.map((link) => (
           <NavIconButton
