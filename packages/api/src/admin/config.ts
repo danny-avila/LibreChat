@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
-import type { ConfigSection, IConfig } from '@librechat/data-schemas';
+import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -110,6 +110,8 @@ export interface AdminConfigDeps {
     verb?: 'manage' | 'read',
   ) => Promise<boolean>;
   signalConfigChange?: () => Promise<void>;
+  /** Return the raw AppConfig (YAML base, no scoped overrides). */
+  getAppConfig?: (options?: { role?: string; userId?: string }) => Promise<AppConfig>;
 }
 
 // ── Validation helpers ───────────────────────────────────────────────
@@ -155,6 +157,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
     toggleConfigActive,
     hasConfigCapability,
     signalConfigChange,
+    getAppConfig,
   } = deps;
 
   /** Notify the config cache that DB overrides have changed. */
@@ -186,6 +189,33 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
     } catch (error) {
       logger.error('[adminConfig] listConfigs error:', error);
       return res.status(500).json({ error: 'Failed to list configs' });
+    }
+  }
+
+  /**
+   * GET /base — Return the raw AppConfig (YAML + DB base merged).
+   * This is the full config structure admins can edit, NOT the startup payload.
+   */
+  async function getBaseConfig(req: ServerRequest, res: Response) {
+    try {
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      if (!(await hasConfigCapability(user, '' as ConfigSection, 'read'))) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      if (!getAppConfig) {
+        return res.status(501).json({ error: 'Base config endpoint not configured' });
+      }
+
+      const appConfig = await getAppConfig();
+      return res.status(200).json({ config: appConfig });
+    } catch (error) {
+      logger.error('[adminConfig] getBaseConfig error:', error);
+      return res.status(500).json({ error: 'Failed to get base config' });
     }
   }
 
@@ -509,6 +539,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
 
   return {
     listConfigs,
+    getBaseConfig,
     getConfig,
     upsertConfigOverrides,
     patchConfigField,
