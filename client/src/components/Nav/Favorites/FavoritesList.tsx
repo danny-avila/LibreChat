@@ -118,12 +118,9 @@ const DraggableFavoriteItem = ({
 export default function FavoritesList({
   isSmallScreen,
   toggleNav,
-  onHeightChange,
 }: {
   isSmallScreen?: boolean;
   toggleNav?: () => void;
-  /** Callback when the list height might have changed (e.g., agents finished loading) */
-  onHeightChange?: () => void;
 }) {
   const navigate = useNavigate();
   const localize = useLocalize();
@@ -266,12 +263,6 @@ export default function FavoritesList({
   const isAgentsLoading =
     (allAgentIds.length > 0 && agentsMap === undefined) ||
     (missingAgentIds.length > 0 && missingAgentQueries.some((q) => q.isLoading));
-
-  useEffect(() => {
-    if (!isAgentsLoading && onHeightChange) {
-      onHeightChange();
-    }
-  }, [isAgentsLoading, onHeightChange]);
 
   const draggedFavoritesRef = useRef(safeFavorites);
 
