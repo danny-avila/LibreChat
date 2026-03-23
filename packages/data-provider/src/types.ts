@@ -331,6 +331,7 @@ export type TTagConversationResponse = string[];
 
 export type TDuplicateConvoRequest = {
   conversationId?: string;
+  title?: string;
 };
 
 export type TDuplicateConvoResponse = {
