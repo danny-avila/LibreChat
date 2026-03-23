@@ -44,6 +44,7 @@ const {
   isEphemeralAgentId,
   removeNullishValues,
 } = require('librechat-data-provider');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { updateBalance, bulkInsertTransactions } = require('~/models');
@@ -479,6 +480,7 @@ class AgentClient extends BaseClient {
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        filterFilesByAgentAccess,
       },
     );
 

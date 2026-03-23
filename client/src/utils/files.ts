@@ -258,7 +258,7 @@ export const validateFiles = ({
 
   if (fileLimit && fileList.length + files.size > fileLimit) {
     logFileCountError(fileList.length + files.size);
-    setError(`You can only upload up to ${fileLimit} files at a time.`);
+    setError(`File limit reached: ${fileLimit} files`);
     return false;
   }
 
@@ -289,22 +289,21 @@ export const validateFiles = ({
     }
 
     if (!checkType(originalFile.type, mimeTypesToCheck)) {
-      console.log(originalFile);
       logFileTypeError(originalFile);
-      setError('Currently, unsupported file type: ' + originalFile.type);
+      setError(`Unsupported file type: ${originalFile.type}`);
       return false;
     }
 
     if (fileSizeLimit && originalFile.size >= fileSizeLimit) {
       logFileSizeError(originalFile);
-      setError(`File size exceeds ${fileSizeLimit / megabyte} MB.`);
+      setError(`File size limit exceeded: ${fileSizeLimit / megabyte} MB`);
       return false;
     }
   }
 
   if (totalSizeLimit && currentTotalSize + incomingTotalSize > totalSizeLimit) {
     logCombinedFileSizeError(existingFiles, fileList);
-    setError(`The total size of the files cannot exceed ${totalSizeLimit / megabyte} MB.`);
+    setError(`Total file size limit exceeded: ${totalSizeLimit / megabyte} MB`);
     return false;
   }
 

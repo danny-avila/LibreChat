@@ -2,12 +2,12 @@ const fs = require('fs').promises;
 const express = require('express');
 const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
+const { verifyAgentUploadPermission, resolveUploadErrorMessage } = require('@librechat/api');
 const {
   Time,
   isUUID,
   CacheKeys,
   FileSources,
-  SystemRoles,
   ResourceType,
   EModelEndpoint,
   PermissionBits,
@@ -382,67 +382,21 @@ router.post('/', async (req, res) => {
       return await processFileUpload({ req, res, metadata });
     }
 
-    /**
-     * Check agent permissions for permanent agent file uploads (not message attachments).
-     * Message attachments (message_file=true) are temporary files for a single conversation
-     * and should be allowed for users who can chat with the agent.
-     * Permanent file uploads to tool_resources require EDIT permission.
-     */
-    const isMessageAttachment = metadata.message_file === true || metadata.message_file === 'true';
-    if (metadata.agent_id && metadata.tool_resource && !isMessageAttachment) {
-      const userId = req.user.id;
-
-      /** Admin users bypass permission checks */
-      if (req.user.role !== SystemRoles.ADMIN) {
-        const agent = await getAgent({ id: metadata.agent_id });
-
-        if (!agent) {
-          return res.status(404).json({
-            error: 'Not Found',
-            message: 'Agent not found',
-          });
-        }
-
-        /** Check if user is the author or has edit permission */
-        if (agent.author.toString() !== userId) {
-          const hasEditPermission = await checkPermission({
-            userId,
-            role: req.user.role,
-            resourceType: ResourceType.AGENT,
-            resourceId: agent._id,
-            requiredPermission: PermissionBits.EDIT,
-          });
-
-          if (!hasEditPermission) {
-            logger.warn(
-              `[/files] User ${userId} denied upload to agent ${metadata.agent_id} (insufficient permissions)`,
-            );
-            return res.status(403).json({
-              error: 'Forbidden',
-              message: 'Insufficient permissions to upload files to this agent',
-            });
-          }
-        }
-      }
+    const denied = await verifyAgentUploadPermission({
+      req,
+      res,
+      metadata,
+      getAgent,
+      checkPermission,
+    });
+    if (denied) {
+      return;
     }
 
     return await processAgentFileUpload({ req, res, metadata });
   } catch (error) {
-    let message = 'Error processing file';
+    const message = resolveUploadErrorMessage(error);
     logger.error('[/files] Error processing file:', error);
-
-    if (error.message?.includes('file_ids')) {
-      message += ': ' + error.message;
-    }
-
-    if (
-      error.message?.includes('Invalid file format') ||
-      error.message?.includes('No OCR result') ||
-      error.message?.includes('exceeds token limit') ||
-      error.message?.includes('Unable to extract text from')
-    ) {
-      message = error.message;
-    }
 
     try {
       await fs.unlink(req.file.path);

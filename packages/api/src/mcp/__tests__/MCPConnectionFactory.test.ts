@@ -269,6 +269,7 @@ describe('MCPConnectionFactory', () => {
         'user123',
         {},
         undefined,
+        undefined,
       );
 
       // initFlow must be awaited BEFORE the redirect to guarantee state is stored
@@ -761,6 +762,39 @@ describe('MCPConnectionFactory', () => {
       expect(result.oauthRequired).toBe(false);
       expect(result.oauthUrl).toBeNull();
       expect(result.connection).toBe(mockConnectionInstance);
+    });
+
+    it('should forward user context to processMCPEnv for non-OAuth discovery', async () => {
+      const serverConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://my-mcp.server.com?key={{MY_CUSTOM_KEY}}',
+      } as t.MCPOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig,
+      };
+
+      const userContext = {
+        user: mockUser,
+        customUserVars: { MY_CUSTOM_KEY: 'c527bd0abc123' },
+        connectionTimeout: 10000,
+      };
+
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      mockConnectionInstance.fetchTools = jest.fn().mockResolvedValue(mockTools);
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions, userContext);
+
+      expect(result.tools).toEqual(mockTools);
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: mockUser,
+          options: serverConfig,
+          customUserVars: { MY_CUSTOM_KEY: 'c527bd0abc123' },
+        }),
+      );
     });
 
     it('should detect OAuth required without generating URL in discovery mode', async () => {

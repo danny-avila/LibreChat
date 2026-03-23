@@ -91,7 +91,7 @@ function AttachFileChat({
 
   if (isAssistants && endpointSupportsFiles && !isUploadDisabled) {
     return <AttachFile disabled={disableInputs} />;
-  } else if (isAgents || (endpointSupportsFiles && !isUploadDisabled)) {
+  } else if ((isAgents || endpointSupportsFiles) && !isUploadDisabled) {
     return (
       <AttachFileMenu
         endpoint={endpoint}

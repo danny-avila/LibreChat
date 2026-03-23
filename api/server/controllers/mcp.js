@@ -7,9 +7,11 @@
  */
 const { logger } = require('@librechat/data-schemas');
 const {
+  MCPErrorCodes,
+  redactServerSecrets,
+  redactAllServerSecrets,
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
-  MCPErrorCodes,
 } = require('@librechat/api');
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
@@ -181,10 +183,8 @@ const getMCPServersList = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    // 2. Get all server configs from registry (YAML + DB)
     const serverConfigs = await getMCPServersRegistry().getAllServerConfigs(userId);
-
-    return res.json(serverConfigs);
+    return res.json(redactAllServerSecrets(serverConfigs));
   } catch (error) {
     logger.error('[getMCPServersList]', error);
     res.status(500).json({ error: error.message });
@@ -215,7 +215,7 @@ const createMCPServerController = async (req, res) => {
     );
     res.status(201).json({
       serverName: result.serverName,
-      ...result.config,
+      ...redactServerSecrets(result.config),
     });
   } catch (error) {
     logger.error('[createMCPServer]', error);
@@ -243,7 +243,7 @@ const getMCPServerById = async (req, res) => {
       return res.status(404).json({ message: 'MCP server not found' });
     }
 
-    res.status(200).json(parsedConfig);
+    res.status(200).json(redactServerSecrets(parsedConfig));
   } catch (error) {
     logger.error('[getMCPServerById]', error);
     res.status(500).json({ message: error.message });
@@ -274,7 +274,7 @@ const updateMCPServerController = async (req, res) => {
       userId,
     );
 
-    res.status(200).json(parsedConfig);
+    res.status(200).json(redactServerSecrets(parsedConfig));
   } catch (error) {
     logger.error('[updateMCPServer]', error);
     const mcpErrorResponse = handleMCPError(error, res);
