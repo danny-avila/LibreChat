@@ -206,7 +206,6 @@ function ConvoOptions({
         onClick: renameHandler,
         icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
       },
-      /* NJ: Hide some elements of the dropdown
       {
         label: localize('com_ui_duplicate'),
         onClick: handleDuplicateClick,
