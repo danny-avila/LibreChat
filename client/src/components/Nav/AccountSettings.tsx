@@ -19,6 +19,8 @@ function AccountSettings() {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
+  const privacyPolicy = startupConfig?.interface?.privacyPolicy;
+  const termsOfService = startupConfig?.interface?.termsOfService;
 
   return (
     <Select.SelectProvider>
@@ -86,6 +88,36 @@ function AccountSettings() {
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Select.SelectItem>
+        {privacyPolicy?.externalUrl != null && (
+          <Select.SelectItem
+            value=""
+            onClick={() =>
+              window.open(
+                privacyPolicy.externalUrl,
+                privacyPolicy.openNewTab === true ? '_blank' : '_self',
+              )
+            }
+            className="select-item text-sm"
+          >
+            <LinkIcon aria-hidden="true" />
+            {localize('com_ui_privacy_policy')}
+          </Select.SelectItem>
+        )}
+        {termsOfService?.externalUrl != null && (
+          <Select.SelectItem
+            value=""
+            onClick={() =>
+              window.open(
+                termsOfService.externalUrl,
+                termsOfService.openNewTab === true ? '_blank' : '_self',
+              )
+            }
+            className="select-item text-sm"
+          >
+            <LinkIcon aria-hidden="true" />
+            {localize('com_ui_terms_of_service')}
+          </Select.SelectItem>
+        )}
         <DropdownMenuSeparator />
         <Select.SelectItem
           aria-selected={true}

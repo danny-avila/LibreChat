@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Minus, Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.js?url';
@@ -26,6 +27,17 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
     setPageNumber(initialPage);
   }, [initialPage]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose?.();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const canGoPrev = useMemo(() => pageNumber > 1, [pageNumber]);
   const canGoNext = useMemo(
     () => (numPages ? pageNumber < numPages : false),
@@ -47,14 +59,26 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
   const goPrev = () => canGoPrev && setPageNumber((prev) => prev - 1);
   const goNext = () => canGoNext && setPageNumber((prev) => prev + 1);
 
-  return (
+  const viewer = (
     <div
       className="fixed inset-0 z-[9999] flex flex-col bg-black/90"
       role="dialog"
       aria-modal="true"
+      onClick={() => onClose?.()}
     >
-      <header className="flex items-center justify-between border-b border-white/20 px-4 py-2 text-white">
+      <header
+        className="flex items-center justify-between border-b border-white/20 px-4 py-2 text-white"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-center gap-3 text-sm">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-2 transition hover:bg-white/10"
+            aria-label="Close PDF viewer"
+          >
+            <X size={16} />
+          </button>
           {numPages ? (
             <span className="text-white/70">
               {pageNumber}/{numPages}
@@ -99,18 +123,13 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
           >
             <Plus size={14} />
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-3 rounded p-2 transition hover:bg-white/10"
-            aria-label="Close PDF viewer"
-          >
-            <X size={16} />
-          </button>
         </div>
       </header>
 
-      <div className="flex flex-1 items-start justify-center overflow-auto bg-neutral-900 py-6">
+      <div
+        className="flex flex-1 items-start justify-center overflow-auto bg-neutral-900 py-6"
+        onClick={(event) => event.stopPropagation()}
+      >
         <Document
           file={fileUrl}
           onLoadSuccess={handleDocumentLoad}
@@ -139,4 +158,10 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') {
+    return viewer;
+  }
+
+  return createPortal(viewer, document.body);
 }

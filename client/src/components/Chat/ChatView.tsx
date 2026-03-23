@@ -14,7 +14,6 @@ import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
-import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
 import { ASSISTANT_DISPLAY_NAME } from '~/constants/branding';
@@ -86,9 +85,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                 <div
                   className={cn(
                     'flex flex-1 flex-col overflow-hidden',
-                    isLandingPage
-                      ? 'items-center justify-end sm:justify-center'
-                      : 'min-h-0',
+                    isLandingPage ? 'items-center justify-end sm:justify-center' : 'min-h-0',
                   )}
                 >
                   <div
@@ -105,12 +102,11 @@ function ChatView({ index = 0 }: { index?: number }) {
                 </div>
                 <div
                   className={cn(
-                    'ios-dock fixed inset-x-0 bottom-0 z-40 w-full shrink-0 border-t border-border-light bg-surface-primary-alt/90 px-4 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 backdrop-blur-md dark:bg-gray-900/80 md:static md:z-auto',
+                    'ios-dock sticky bottom-0 z-40 flex w-full shrink-0 justify-center border-t border-border-light bg-black/90 px-4 py-4 md:py-4 md:pb-4 pb-[calc(env(safe-area-inset-bottom)+16px)] backdrop-blur-md',
                     isSmallScreen && navVisible && 'hidden',
                   )}
                 >
                   <ChatForm index={index} />
-                  {!isLandingPage && <Footer />}
                 </div>
               </>
             </div>

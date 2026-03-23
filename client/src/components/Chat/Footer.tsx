@@ -8,8 +8,7 @@ import { ASSISTANT_DISPLAY_NAME } from '~/constants/branding';
 export default function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
   const localize = useLocalize();
-  const disclaimer =
-    'CodeCan AI is for general building code information only, not professional advice. Always verify requirements with qualified professionals or the authority having jurisdiction.';
+  const disclaimer = 'General building code information only. Not professional advice.';
 
   const privacyPolicy = config?.interface?.privacyPolicy;
   const termsOfService = config?.interface?.termsOfService;
@@ -83,15 +82,15 @@ export default function Footer({ className }: { className?: string }) {
   ].filter(Boolean);
 
   return (
-    <div className="relative w-full">
+    <div className="w-full">
       <div
         className={
           className ??
-          'absolute bottom-0 left-0 right-0 hidden flex-col items-center justify-center gap-1 px-2 py-2 text-center text-xs text-text-primary sm:flex md:px-[60px]'
+          'hidden flex-col items-center justify-center gap-1 px-2 pt-3 text-center text-xs text-text-primary sm:flex'
         }
         role="contentinfo"
       >
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
           {footerElements.map((contentRender, index) => {
             const isLastElement = index === footerElements.length - 1;
             return (
@@ -107,7 +106,7 @@ export default function Footer({ className }: { className?: string }) {
             );
           })}
         </div>
-        <p className="max-w-4xl text-[11px] leading-4 text-text-secondary">{disclaimer}</p>
+        <p className="max-w-2xl text-[11px] leading-4 text-text-secondary">{disclaimer}</p>
       </div>
     </div>
   );

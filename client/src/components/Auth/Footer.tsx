@@ -3,8 +3,7 @@ import { TStartupConfig } from 'librechat-data-provider';
 
 function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | undefined }) {
   const localize = useLocalize();
-  const disclaimer =
-    'CodeCan AI is for general building code information only, not professional advice. Always verify requirements with qualified professionals or the authority having jurisdiction.';
+  const disclaimer = 'General building code information only. Not professional advice.';
   if (!startupConfig) {
     return null;
   }
@@ -48,7 +47,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
 
   return (
     <div className="align-end m-4 flex flex-col items-center gap-2" role="contentinfo">
-      <div className="flex justify-center gap-2">
+      <div className="flex flex-wrap justify-center gap-x-2 gap-y-1">
         {footerElements.map((contentRender, index) => {
           const isLastElement = index === footerElements.length - 1;
           return (
@@ -61,7 +60,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
           );
         })}
       </div>
-      <p className="max-w-4xl text-center text-xs text-gray-500 dark:text-gray-400">{disclaimer}</p>
+      <p className="max-w-2xl text-center text-xs text-gray-500 dark:text-gray-400">{disclaimer}</p>
     </div>
   );
 }

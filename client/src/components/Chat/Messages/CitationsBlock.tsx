@@ -127,14 +127,11 @@ const CitationsBlock: React.FC<CitationsBlockProps> = ({ citations, className })
         })}
       </ul>
       {activePdf ? (
-        <div className="fixed inset-0 z-[9999] bg-black">
-          <PdfViewer
-            fileUrl={activePdf.url}
-            initialPage={activePdf.page}
-            onClose={() => setActivePdf(null)}
-            className="h-full w-full"
-          />
-        </div>
+        <PdfViewer
+          fileUrl={activePdf.url}
+          initialPage={activePdf.page}
+          onClose={() => setActivePdf(null)}
+        />
       ) : null}
     </div>
   );

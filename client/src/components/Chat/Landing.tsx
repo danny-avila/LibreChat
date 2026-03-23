@@ -48,7 +48,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const name = entity?.name ?? '';
   const description =
     (entity?.description || conversation?.greeting) ??
-    'Get Canadian building code answers with page-cited references.';
+    'General building code information only. Not professional advice.';
 
   const handleLineCountChange = useCallback((count: number) => {
     setTextHasMultipleLines(count > 1);
