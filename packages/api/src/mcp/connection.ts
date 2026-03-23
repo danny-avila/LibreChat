@@ -11,7 +11,6 @@ import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/webso
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type {
   RequestInit as UndiciRequestInit,
   RequestInfo as UndiciRequestInfo,
@@ -24,10 +23,11 @@ import {
   MCP_UI_EXTENSION_ID,
 } from 'librechat-data-provider';
 import type { MCPOAuthTokens } from './oauth/types';
-import { withTimeout } from '~/utils/promise';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
+import { runOutsideTracing } from '~/utils/tracing';
 import { sanitizeUrlForLogging } from './utils';
+import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
@@ -81,6 +81,16 @@ const MCP_UI_EXTENSION = MCP_UI_EXTENSION_ID ?? 'io.modelcontextprotocol/ui';
 const MCP_APP_MIME = MCP_APP_MIME_TYPE ?? 'text/html;profile=mcp-app';
 const MCP_CLIENT_NAME = LIBRECHAT_MCP_CLIENT_NAME ?? '@librechat/api-client';
 const MCP_CLIENT_VERSION = LIBRECHAT_MCP_CLIENT_VERSION ?? '1.2.3';
+const DEFAULT_INIT_TIMEOUT = 30000;
+
+interface CircuitBreakerState {
+  cycleCount: number;
+  cycleWindowStart: number;
+  cooldownUntil: number;
+  failedRounds: number;
+  failedWindowStart: number;
+  failedBackoffUntil: number;
+}
 /** Default body timeout for Streamable HTTP GET SSE streams that idle between server pushes */
 const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
 
@@ -273,6 +283,7 @@ export class MCPConnection extends EventEmitter {
   private oauthTokens?: MCPOAuthTokens | null;
   private requestHeaders?: Record<string, string> | null;
   private oauthRequired = false;
+  private oauthRecovery = false;
   private readonly useSSRFProtection: boolean;
   iconPath?: string;
   timeout?: number;
@@ -284,6 +295,88 @@ export class MCPConnection extends EventEmitter {
    * Used to detect if connection is stale compared to updated config.
    */
   public readonly createdAt: number;
+
+  private static circuitBreakers: Map<string, CircuitBreakerState> = new Map();
+
+  public static clearCooldown(serverName: string): void {
+    MCPConnection.circuitBreakers.delete(serverName);
+    logger.debug(`[MCP][${serverName}] Circuit breaker state cleared`);
+  }
+
+  private getCircuitBreaker(): CircuitBreakerState {
+    let cb = MCPConnection.circuitBreakers.get(this.serverName);
+    if (!cb) {
+      cb = {
+        cycleCount: 0,
+        cycleWindowStart: Date.now(),
+        cooldownUntil: 0,
+        failedRounds: 0,
+        failedWindowStart: Date.now(),
+        failedBackoffUntil: 0,
+      };
+      MCPConnection.circuitBreakers.set(this.serverName, cb);
+    }
+    return cb;
+  }
+
+  private isCircuitOpen(): boolean {
+    const cb = this.getCircuitBreaker();
+    const now = Date.now();
+    return now < cb.cooldownUntil || now < cb.failedBackoffUntil;
+  }
+
+  private recordCycle(): void {
+    const cb = this.getCircuitBreaker();
+    const now = Date.now();
+    if (now - cb.cycleWindowStart > mcpConfig.CB_CYCLE_WINDOW_MS) {
+      cb.cycleCount = 0;
+      cb.cycleWindowStart = now;
+    }
+    cb.cycleCount++;
+    if (cb.cycleCount >= mcpConfig.CB_MAX_CYCLES) {
+      cb.cooldownUntil = now + mcpConfig.CB_CYCLE_COOLDOWN_MS;
+      cb.cycleCount = 0;
+      cb.cycleWindowStart = now;
+      logger.warn(
+        `${this.getLogPrefix()} Circuit breaker: too many cycles, cooling down for ${mcpConfig.CB_CYCLE_COOLDOWN_MS}ms`,
+      );
+    }
+  }
+
+  private recordFailedRound(): void {
+    const cb = this.getCircuitBreaker();
+    const now = Date.now();
+    if (now - cb.failedWindowStart > mcpConfig.CB_FAILED_WINDOW_MS) {
+      cb.failedRounds = 0;
+      cb.failedWindowStart = now;
+    }
+    cb.failedRounds++;
+    if (cb.failedRounds >= mcpConfig.CB_MAX_FAILED_ROUNDS) {
+      const backoff = Math.min(
+        mcpConfig.CB_BASE_BACKOFF_MS *
+          Math.pow(2, cb.failedRounds - mcpConfig.CB_MAX_FAILED_ROUNDS),
+        mcpConfig.CB_MAX_BACKOFF_MS,
+      );
+      cb.failedBackoffUntil = now + backoff;
+      logger.warn(
+        `${this.getLogPrefix()} Circuit breaker: too many failures, backing off for ${backoff}ms`,
+      );
+    }
+  }
+
+  private resetFailedRounds(): void {
+    const cb = this.getCircuitBreaker();
+    cb.failedRounds = 0;
+    cb.failedWindowStart = Date.now();
+    cb.failedBackoffUntil = 0;
+  }
+
+  public static decrementCycleCount(serverName: string): void {
+    const cb = MCPConnection.circuitBreakers.get(serverName);
+    if (cb && cb.cycleCount > 0) {
+      cb.cycleCount--;
+    }
+  }
 
   setRequestHeaders(headers: Record<string, string> | null): void {
     if (!headers) {
@@ -390,7 +483,7 @@ export class MCPConnection extends EventEmitter {
 
       const requestHeaders = getHeaders();
       if (!requestHeaders) {
-        return undiciFetch(input, { ...init, dispatcher });
+        return undiciFetch(input, { ...init, redirect: 'manual', dispatcher });
       }
 
       let initHeaders: Record<string, string> = {};
@@ -406,6 +499,7 @@ export class MCPConnection extends EventEmitter {
 
       return undiciFetch(input, {
         ...init,
+        redirect: 'manual',
         headers: {
           ...initHeaders,
           ...requestHeaders,
@@ -451,21 +545,29 @@ export class MCPConnection extends EventEmitter {
             env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },
           });
 
-        case 'websocket':
+        case 'websocket': {
           if (!isWebSocketOptions(options)) {
             throw new Error('Invalid options for websocket transport.');
           }
           this.url = options.url;
-          if (this.useSSRFProtection) {
-            const wsHostname = new URL(options.url).hostname;
-            const isSSRF = await resolveHostnameSSRF(wsHostname);
-            if (isSSRF) {
-              throw new Error(
-                `SSRF protection: WebSocket host "${wsHostname}" resolved to a private/reserved IP address`,
-              );
-            }
+          /**
+           * SSRF pre-check: always validate resolved IPs for WebSocket, regardless
+           * of allowlist configuration. Allowlisting a domain grants trust to that
+           * name, not to whatever IP it resolves to at runtime (DNS rebinding).
+           *
+           * Note: WebSocketClientTransport does its own DNS resolution, creating a
+           * small TOCTOU window. This is an SDK limitation — the transport accepts
+           * only a URL with no custom DNS lookup hook.
+           */
+          const wsHostname = new URL(options.url).hostname;
+          const isSSRF = await resolveHostnameSSRF(wsHostname);
+          if (isSSRF) {
+            throw new Error(
+              `SSRF protection: WebSocket host "${wsHostname}" resolved to a private/reserved IP address`,
+            );
           }
           return new WebSocketClientTransport(new URL(options.url));
+        }
 
         case 'sse': {
           if (!isSSEOptions(options)) {
@@ -512,6 +614,7 @@ export class MCPConnection extends EventEmitter {
                 );
                 return undiciFetch(url, {
                   ...init,
+                  redirect: 'manual',
                   dispatcher: sseAgent,
                   headers: fetchHeaders,
                 });
@@ -526,10 +629,6 @@ export class MCPConnection extends EventEmitter {
           transport.onclose = () => {
             logger.info(`${this.getLogPrefix()} SSE transport closed`);
             this.emit('connectionChange', 'disconnected');
-          };
-
-          transport.onmessage = (message) => {
-            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
 
           this.setupTransportErrorHandlers(transport);
@@ -568,10 +667,6 @@ export class MCPConnection extends EventEmitter {
           transport.onclose = () => {
             logger.info(`${this.getLogPrefix()} Streamable-http transport closed`);
             this.emit('connectionChange', 'disconnected');
-          };
-
-          transport.onmessage = (message: JSONRPCMessage) => {
-            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
 
           this.setupTransportErrorHandlers(transport);
@@ -710,6 +805,12 @@ export class MCPConnection extends EventEmitter {
       return;
     }
 
+    if (this.isCircuitOpen()) {
+      this.connectionState = 'error';
+      this.emit('connectionChange', 'error');
+      throw new Error(`${this.getLogPrefix()} Circuit breaker is open, connection attempt blocked`);
+    }
+
     this.emit('connectionChange', 'connecting');
 
     this.connectPromise = (async () => {
@@ -724,19 +825,30 @@ export class MCPConnection extends EventEmitter {
           await this.closeAgents();
         }
 
-        this.transport = await this.constructTransport(this.options);
-        this.setupTransportDebugHandlers();
+        this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
+        this.patchTransportSend();
 
-        const connectTimeout = this.options.initTimeout ?? 120000;
-        await withTimeout(
-          this.client.connect(this.transport),
-          connectTimeout,
-          `Connection timeout after ${connectTimeout}ms`,
+        const connectTimeout = this.options.initTimeout ?? DEFAULT_INIT_TIMEOUT;
+        await runOutsideTracing(() =>
+          withTimeout(
+            this.client.connect(this.transport!),
+            connectTimeout,
+            `Connection timeout after ${connectTimeout}ms`,
+          ),
         );
 
+        this.setupTransportOnMessageHandler();
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
+        this.resetFailedRounds();
+        if (this.oauthRecovery) {
+          MCPConnection.decrementCycleCount(this.serverName);
+          this.oauthRecovery = false;
+          logger.debug(
+            `${this.getLogPrefix()} OAuth recovery: decremented cycle count after successful reconnect`,
+          );
+        }
       } catch (error) {
         // Check if it's a rate limit error - stop immediately to avoid making it worse
         if (this.isRateLimitError(error)) {
@@ -820,9 +932,8 @@ export class MCPConnection extends EventEmitter {
           try {
             // Wait for OAuth to be handled
             await oauthHandledPromise;
-            // Reset the oauthRequired flag
             this.oauthRequired = false;
-            // Don't throw the error - just return so connection can be retried
+            this.oauthRecovery = true;
             logger.info(
               `${this.getLogPrefix()} OAuth handled successfully, connection will be retried`,
             );
@@ -838,6 +949,7 @@ export class MCPConnection extends EventEmitter {
 
         this.connectionState = 'error';
         this.emit('connectionChange', 'error');
+        this.recordFailedRound();
         throw error;
       } finally {
         this.connectPromise = null;
@@ -847,14 +959,10 @@ export class MCPConnection extends EventEmitter {
     return this.connectPromise;
   }
 
-  private setupTransportDebugHandlers(): void {
+  private patchTransportSend(): void {
     if (!this.transport) {
       return;
     }
-
-    this.transport.onmessage = (msg) => {
-      logger.debug(`${this.getLogPrefix()} Transport received: ${JSON.stringify(msg)}`);
-    };
 
     const originalSend = this.transport.send.bind(this.transport);
     this.transport.send = async (msg) => {
@@ -864,14 +972,35 @@ export class MCPConnection extends EventEmitter {
         }
         this.lastPingTime = Date.now();
       }
-      logger.debug(`${this.getLogPrefix()} Transport sending: ${JSON.stringify(msg)}`);
+      const method = 'method' in msg ? msg.method : undefined;
+      const id = 'id' in msg ? (msg as { id: string | number | null }).id : undefined;
+      logger.debug(
+        `${this.getLogPrefix()} Transport sending: method=${method ?? 'response'} id=${id ?? 'none'}`,
+      );
       return originalSend(msg);
+    };
+  }
+
+  private setupTransportOnMessageHandler(): void {
+    if (!this.transport?.onmessage) {
+      return;
+    }
+
+    const sdkHandler = this.transport.onmessage;
+    this.transport.onmessage = (msg) => {
+      const method = 'method' in msg ? msg.method : undefined;
+      const id = 'id' in msg ? (msg as { id: string | number | null }).id : undefined;
+      logger.debug(
+        `${this.getLogPrefix()} Transport received: method=${method ?? 'response'} id=${id ?? 'none'}`,
+      );
+      sdkHandler(msg);
     };
   }
 
   async connect(): Promise<void> {
     try {
-      await this.disconnect();
+      // preserve cycle tracking across reconnects so the circuit breaker can detect rapid cycling
+      await this.disconnect(false);
       await this.connectClient();
       if (!(await this.isConnected())) {
         throw new Error('Connection not established');
@@ -911,7 +1040,7 @@ export class MCPConnection extends EventEmitter {
         isTransient,
       } = extractSSEErrorMessage(error);
 
-      if (errorCode === 404) {
+      if (errorCode === 400 || errorCode === 404 || errorCode === 405) {
         const hasSession =
           'sessionId' in transport &&
           (transport as { sessionId?: string }).sessionId != null &&
@@ -919,14 +1048,14 @@ export class MCPConnection extends EventEmitter {
 
         if (!hasSession && errorMessage.toLowerCase().includes('failed to open sse stream')) {
           logger.warn(
-            `${this.getLogPrefix()} SSE stream not available (404), no session. Ignoring.`,
+            `${this.getLogPrefix()} SSE stream not available (${errorCode}), no session. Ignoring.`,
           );
           return;
         }
 
         if (hasSession) {
           logger.warn(
-            `${this.getLogPrefix()} 404 with active session — session lost, triggering reconnection.`,
+            `${this.getLogPrefix()} ${errorCode} with active session — session lost, triggering reconnection.`,
           );
         }
       }
@@ -997,7 +1126,7 @@ export class MCPConnection extends EventEmitter {
     await Promise.all(closing);
   }
 
-  public async disconnect(): Promise<void> {
+  public async disconnect(resetCycleTracking = true): Promise<void> {
     try {
       if (this.transport) {
         await this.client.close();
@@ -1011,6 +1140,9 @@ export class MCPConnection extends EventEmitter {
       this.emit('connectionChange', 'disconnected');
     } finally {
       this.connectPromise = null;
+      if (!resetCycleTracking) {
+        this.recordCycle();
+      }
     }
   }
 

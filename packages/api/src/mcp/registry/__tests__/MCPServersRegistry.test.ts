@@ -1,4 +1,4 @@
-import * as t from '~/mcp/types';
+import type * as t from '~/mcp/types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 
@@ -190,6 +190,22 @@ describe('MCPServersRegistry', () => {
           'The provided storage location "S3" is not supported',
         );
       });
+    });
+  });
+
+  describe('reinspectServer', () => {
+    it('should throw when called on a healthy (non-stub) server', async () => {
+      await registry.addServer('healthy_server', testParsedConfig, 'CACHE');
+
+      await expect(registry.reinspectServer('healthy_server', 'CACHE')).rejects.toThrow(
+        'is not in a failed state',
+      );
+    });
+
+    it('should throw when the server does not exist', async () => {
+      await expect(registry.reinspectServer('ghost_server', 'CACHE')).rejects.toThrow(
+        'not found in CACHE',
+      );
     });
   });
 

@@ -3,23 +3,23 @@ const passport = require('passport');
 const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const {
-  requireAdmin,
-  getAdminPanelUrl,
-  exchangeAdminCode,
-  createSetBalanceConfig,
-} = require('@librechat/api');
+const { SystemCapabilities } = require('@librechat/data-schemas');
+const { getAdminPanelUrl, exchangeAdminCode, createSetBalanceConfig } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
+const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
+const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 const { getOpenIdConfig } = require('~/strategies');
 const middleware = require('~/server/middleware');
-const { Balance } = require('~/db/models');
+
+const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
-  Balance,
+  findBalanceByUser,
+  upsertBalanceFields,
 });
 
 const router = express.Router();
@@ -30,12 +30,12 @@ router.post(
   middleware.loginLimiter,
   middleware.checkBan,
   middleware.requireLocalAuth,
-  requireAdmin,
+  requireAdminAccess,
   setBalanceConfig,
   loginController,
 );
 
-router.get('/verify', middleware.requireJwtAuth, requireAdmin, (req, res) => {
+router.get('/verify', middleware.requireJwtAuth, requireAdminAccess, (req, res) => {
   const { password: _p, totpSecret: _t, __v, ...user } = req.user;
   user.id = user._id.toString();
   res.status(200).json({ user });
@@ -66,7 +66,7 @@ router.get(
     failureMessage: true,
     session: false,
   }),
-  requireAdmin,
+  requireAdminAccess,
   setBalanceConfig,
   middleware.checkDomainAllowed,
   createOAuthHandler(`${getAdminPanelUrl()}/auth/openid/callback`),

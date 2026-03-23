@@ -61,6 +61,10 @@ export const fullMimeTypesList = [
   'application/xml',
   'application/zip',
   'application/x-parquet',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/vnd.oasis.opendocument.graphics',
   'image/svg',
   'image/svg+xml',
   // Video formats
@@ -179,7 +183,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -190,10 +194,21 @@ export const videoMimeTypes = /^video\/(mp4|avi|mov|wmv|flv|webm|mkv|m4v|3gp|ogv
 
 export const defaultOCRMimeTypes = [
   imageMimeTypes,
+  excelMimeTypes,
   /^application\/pdf$/,
-  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)$/,
-  /^application\/vnd\.ms-(word|powerpoint|excel)$/,
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)$/,
+  /^application\/vnd\.ms-(word|powerpoint)$/,
   /^application\/epub\+zip$/,
+  /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
+];
+
+/** MIME types handled by the built-in document parser (pdf, docx, excel variants, ods/odt) */
+export const documentParserMimeTypes = [
+  excelMimeTypes,
+  /^application\/pdf$/,
+  /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
+  /^application\/vnd\.oasis\.opendocument\.spreadsheet$/,
+  /^application\/vnd\.oasis\.opendocument\.text$/,
 ];
 
 export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.-]+$/];
@@ -228,6 +243,7 @@ export const codeTypeMapping: { [key: string]: string } = {
   py: 'text/x-python', // .py - Python source
   rb: 'text/x-ruby', // .rb - Ruby source
   tex: 'text/x-tex', // .tex - LaTeX source
+  java: 'text/x-java', // .java - Java source
   js: 'text/javascript', // .js - JavaScript source
   sh: 'application/x-sh', // .sh - Shell script
   ts: 'application/typescript', // .ts - TypeScript source
@@ -331,6 +347,10 @@ export const codeTypeMapping: { [key: string]: string } = {
   tcl: 'text/plain', // .tcl - Tcl source
   awk: 'text/plain', // .awk - AWK script
   sed: 'text/plain', // .sed - Sed script
+  odt: 'application/vnd.oasis.opendocument.text', // .odt - OpenDocument Text
+  ods: 'application/vnd.oasis.opendocument.spreadsheet', // .ods - OpenDocument Spreadsheet
+  odp: 'application/vnd.oasis.opendocument.presentation', // .odp - OpenDocument Presentation
+  odg: 'application/vnd.oasis.opendocument.graphics', // .odg - OpenDocument Graphics
 };
 
 /** Maps image extensions to MIME types for formats browsers may not recognize */
@@ -339,15 +359,21 @@ export const imageTypeMapping: { [key: string]: string } = {
   heif: 'image/heif',
 };
 
+/** Normalizes non-standard MIME types that browsers may report to their canonical forms */
+export const mimeTypeAliases: Readonly<Record<string, string>> = {
+  'text/x-python-script': 'text/x-python',
+};
+
 /**
- * Infers the MIME type from a file's extension when the browser doesn't recognize it
- * @param fileName - The name of the file including extension
- * @param currentType - The current MIME type reported by the browser (may be empty)
- * @returns The inferred MIME type if browser didn't provide one, otherwise the original type
+ * Infers the MIME type from a file's extension when the browser doesn't recognize it,
+ * and normalizes known non-standard MIME type aliases to their canonical forms.
+ * @param fileName - The file name including its extension
+ * @param currentType - The MIME type reported by the browser (may be empty string)
+ * @returns The normalized or inferred MIME type; empty string if unresolvable
  */
 export function inferMimeType(fileName: string, currentType: string): string {
   if (currentType) {
-    return currentType;
+    return mimeTypeAliases[currentType] ?? currentType;
   }
 
   const extension = fileName.split('.').pop()?.toLowerCase() ?? '';

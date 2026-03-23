@@ -18,7 +18,7 @@ const {
   findUser,
 } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
-const { getOpenIdConfig } = require('~/strategies');
+const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const registrationController = async (req, res) => {
   try {
@@ -87,7 +87,7 @@ const refreshController = async (req, res) => {
       const claims = tokenset.claims();
       const { user, error, migration } = await findOpenIDUser({
         findUser,
-        email: claims.email,
+        email: getOpenIdEmail(claims),
         openidId: claims.sub,
         idOnTheSource: claims.oid,
         strategyName: 'refreshController',
@@ -119,14 +119,8 @@ const refreshController = async (req, res) => {
 
       const token = setOpenIDAuthTokens(tokenset, req, res, user._id.toString(), refreshToken);
 
-      user.federatedTokens = {
-        access_token: tokenset.access_token,
-        id_token: tokenset.id_token,
-        refresh_token: refreshToken,
-        expires_at: claims.exp,
-      };
-
-      return res.status(200).send({ token, user });
+      const { password: _pw, __v: _v, totpSecret: _ts, backupCodes: _bc, ...safeUser } = user;
+      return res.status(200).send({ token, user: safeUser });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);
       return res.status(403).send('Invalid OpenID refresh token');

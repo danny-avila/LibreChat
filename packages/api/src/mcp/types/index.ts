@@ -151,7 +151,7 @@ export type Artifacts =
     }
   | undefined;
 
-export type FormattedContentResult = [string | FormattedContent[], undefined | Artifacts];
+export type FormattedContentResult = [string, Artifacts | undefined];
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 
@@ -169,6 +169,8 @@ export type ParsedServerConfig = MCPOptions & {
   dbId?: string;
   /** True if access is only via agent (not directly shared with user) */
   consumeOnly?: boolean;
+  /** True when inspection failed at startup; the server is known but not fully initialized */
+  inspectionFailed?: boolean;
 };
 
 export type AddServerResult = {
@@ -180,21 +182,28 @@ export interface BasicConnectionOptions {
   serverName: string;
   serverConfig: MCPOptions;
   useSSRFProtection?: boolean;
+  allowedDomains?: string[] | null;
+  /** When true, only resolve customUserVars in processMCPEnv (for DB-stored servers) */
+  dbSourced?: boolean;
   enableApps?: boolean;
 }
 
-export interface OAuthConnectionOptions {
+/** User context for placeholder resolution in MCP connections (non-OAuth and OAuth alike) */
+export interface UserConnectionContext {
   user?: IUser;
-  useOAuth: true;
-  requestBody?: RequestBody;
   customUserVars?: Record<string, string>;
+  requestBody?: RequestBody;
+  connectionTimeout?: number;
+}
+
+export interface OAuthConnectionOptions extends UserConnectionContext {
+  useOAuth: true;
   flowManager: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
   oauthStart?: (authURL: string) => Promise<void>;
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
-  connectionTimeout?: number;
 }
 
 export interface ToolDiscoveryOptions {

@@ -1,6 +1,6 @@
 import { EarthIcon } from 'lucide-react';
 import { ControlCombobox } from '@librechat/client';
-import { useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
@@ -12,7 +12,7 @@ import { useListAgentsQuery } from '~/data-provider';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
-export default function AgentSelect({
+function AgentSelect({
   agentQuery,
   selectedAgentId = null,
   setCurrentAgentId,
@@ -215,7 +215,7 @@ export default function AgentSelect({
             ]
           }
           className={cn(
-            'z-50 flex h-[40px] w-full flex-none items-center justify-center truncate rounded-md bg-transparent font-bold',
+            'z-50 flex h-9 w-full flex-none items-center justify-center truncate rounded-md bg-transparent font-bold',
           )}
           ariaLabel={localize('com_ui_agent')}
           isCollapsed={false}
@@ -225,3 +225,16 @@ export default function AgentSelect({
     />
   );
 }
+
+const MemoizedAgentSelect = memo(
+  AgentSelect,
+  (prevProps, nextProps) =>
+    prevProps.selectedAgentId === nextProps.selectedAgentId &&
+    prevProps.agentQuery.data === nextProps.agentQuery.data &&
+    prevProps.agentQuery.isSuccess === nextProps.agentQuery.isSuccess &&
+    prevProps.createMutation.data?.id === nextProps.createMutation.data?.id &&
+    prevProps.createMutation.isLoading === nextProps.createMutation.isLoading,
+);
+MemoizedAgentSelect.displayName = 'AgentSelect';
+
+export default MemoizedAgentSelect;

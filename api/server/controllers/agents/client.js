@@ -3,26 +3,30 @@ const { logger } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const {
   createRun,
-  Tokenizer,
+  isEnabled,
   checkAccess,
   buildToolSet,
-  sanitizeTitle,
   logToolError,
+  sanitizeTitle,
   payloadParser,
   resolveHeaders,
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
-  getProviderConfig,
   omitTitleOptions,
+  getProviderConfig,
   memoryInstructions,
-  applyContextToAgent,
   createTokenCounter,
+  applyContextToAgent,
+  recordCollectedUsage,
   GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
+  loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
+  countFormattedMessageTokens,
+  hydrateMissingIndexTokenCounts,
 } = require('@librechat/api');
 const {
   Callback,
@@ -43,13 +47,11 @@ const {
   isEphemeralAgentId,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { getConvoFiles } = require('~/models/Conversation');
+const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
-const { getRoleByName } = require('~/models/Role');
-const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
@@ -114,15 +116,13 @@ function formatMCPAppModelContext(rawContext) {
 
   return ['# MCP App Model Context (Latest Snapshot)', ...lines].join('\n');
 }
+const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 class AgentClient extends BaseClient {
   constructor(options = {}) {
     super(null, options);
     /** The current client class
      * @type {string} */
     this.clientName = EModelEndpoint.agents;
-
-    /** @type {'discard' | 'summarize'} */
-    this.contextStrategy = 'discard';
 
     /** @deprecated @type {true} - Is a Chat Completion Request */
     this.isChatCompletion = true;
@@ -275,7 +275,6 @@ class AgentClient extends BaseClient {
           }))
         : []),
     ];
-
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
@@ -302,6 +301,11 @@ class AgentClient extends BaseClient {
       );
     }
 
+    /** @type {Record<number, number>} */
+    const canonicalTokenCountMap = {};
+    /** @type {Record<string, number>} */
+    const tokenCountMap = {};
+    let promptTokenTotal = 0;
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
         message,
@@ -321,12 +325,14 @@ class AgentClient extends BaseClient {
         }
       }
 
-      const needsTokenCount =
-        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.fileContext;
+      const dbTokenCount = orderedMessages[i].tokenCount;
+      const needsTokenCount = !dbTokenCount || message.fileContext;
 
-      /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
-        orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
+        orderedMessages[i].tokenCount = countFormattedMessageTokens(
+          formattedMessage,
+          this.getEncoding(),
+        );
       }
 
       /* If message has files, calculate image token cost */
@@ -340,16 +346,36 @@ class AgentClient extends BaseClient {
           if (file.metadata?.fileIdentifier) {
             continue;
           }
-          // orderedMessages[i].tokenCount += this.calculateImageTokenCost({
-          //   width: file.width,
-          //   height: file.height,
-          //   detail: this.options.imageDetail ?? ImageDetail.auto,
-          // });
         }
+      }
+
+      const tokenCount = Number(orderedMessages[i].tokenCount);
+      const normalizedTokenCount = Number.isFinite(tokenCount) && tokenCount > 0 ? tokenCount : 0;
+      canonicalTokenCountMap[i] = normalizedTokenCount;
+      promptTokenTotal += normalizedTokenCount;
+
+      if (message.messageId) {
+        tokenCountMap[message.messageId] = normalizedTokenCount;
+      }
+
+      if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
+        const role = message.isCreatedByUser ? 'user' : 'assistant';
+        const hasSummary =
+          Array.isArray(message.content) && message.content.some((p) => p && p.type === 'summary');
+        const suffix = hasSummary ? '[S]' : '';
+        const id = (message.messageId ?? message.id ?? '').slice(-8);
+        const recalced = needsTokenCount ? orderedMessages[i].tokenCount : null;
+        logger.debug(
+          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsTokenCount} recalced=${recalced} tokens=${normalizedTokenCount}`,
+        );
       }
 
       return formattedMessage;
     });
+
+    payload = formattedMessages;
+    messages = orderedMessages;
+    promptTokens = promptTokenTotal;
 
     /**
      * Build shared run context - applies to ALL agents in the run.
@@ -386,23 +412,20 @@ class AgentClient extends BaseClient {
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
 
-    /** @type {Record<string, number> | undefined} */
-    let tokenCountMap;
+    /** Preserve canonical pre-format token counts for all history entering graph formatting */
+    this.indexTokenCountMap = canonicalTokenCountMap;
 
-    if (this.contextStrategy) {
-      ({ payload, promptTokens, tokenCountMap, messages } = await this.handleContextStrategy({
-        orderedMessages,
-        formattedMessages,
-      }));
-    }
-
-    for (let i = 0; i < messages.length; i++) {
-      this.indexTokenCountMap[i] = messages[i].tokenCount;
+    /** Extract contextMeta from the parent response (second-to-last in ordered chain;
+     *  last is the current user message). Seeds the pruner's calibration EMA for this run. */
+    const parentResponse =
+      orderedMessages.length >= 2 ? orderedMessages[orderedMessages.length - 2] : undefined;
+    if (parentResponse?.contextMeta && !parentResponse.isCreatedByUser) {
+      this.contextMeta = parentResponse.contextMeta;
     }
 
     const result = {
-      tokenCountMap,
       prompt: payload,
+      tokenCountMap,
       promptTokens,
       messages,
     };
@@ -476,7 +499,7 @@ class AgentClient extends BaseClient {
       user,
       permissionType: PermissionTypes.MEMORIES,
       permissions: [Permissions.USE],
-      getRoleByName,
+      getRoleByName: db.getRoleByName,
     });
 
     if (!hasAccess) {
@@ -536,13 +559,14 @@ class AgentClient extends BaseClient {
         },
       },
       {
-        getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
+        getConvoFiles: db.getConvoFiles,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        filterFilesByAgentAccess,
       },
     );
 
@@ -691,82 +715,29 @@ class AgentClient extends BaseClient {
     context = 'message',
     collectedUsage = this.collectedUsage,
   }) {
-    if (!collectedUsage || !collectedUsage.length) {
-      return;
-    }
-    // Use first entry's input_tokens as the base input (represents initial user message context)
-    // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
-    const firstUsage = collectedUsage[0];
-    const input_tokens =
-      (firstUsage?.input_tokens || 0) +
-      (Number(firstUsage?.input_token_details?.cache_creation) ||
-        Number(firstUsage?.cache_creation_input_tokens) ||
-        0) +
-      (Number(firstUsage?.input_token_details?.cache_read) ||
-        Number(firstUsage?.cache_read_input_tokens) ||
-        0);
-
-    // Sum output_tokens directly from all entries - works for both sequential and parallel execution
-    // This avoids the incremental calculation that produced negative values for parallel agents
-    let total_output_tokens = 0;
-
-    for (const usage of collectedUsage) {
-      if (!usage) {
-        continue;
-      }
-
-      // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
-      const cache_creation =
-        Number(usage.input_token_details?.cache_creation) ||
-        Number(usage.cache_creation_input_tokens) ||
-        0;
-      const cache_read =
-        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
-
-      // Accumulate output tokens for the usage summary
-      total_output_tokens += Number(usage.output_tokens) || 0;
-
-      const txMetadata = {
+    const result = await recordCollectedUsage(
+      {
+        spendTokens: db.spendTokens,
+        spendStructuredTokens: db.spendStructuredTokens,
+        pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+        bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+      },
+      {
+        user: this.user ?? this.options.req.user?.id,
+        conversationId: this.conversationId,
+        collectedUsage,
+        model: model ?? this.model ?? this.options.agent.model_parameters.model,
         context,
+        messageId: this.responseMessageId,
         balance,
         transactions,
-        conversationId: this.conversationId,
-        user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
-        model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
-      };
+      },
+    );
 
-      if (cache_creation > 0 || cache_read > 0) {
-        spendStructuredTokens(txMetadata, {
-          promptTokens: {
-            input: usage.input_tokens,
-            write: cache_creation,
-            read: cache_read,
-          },
-          completionTokens: usage.output_tokens,
-        }).catch((err) => {
-          logger.error(
-            '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending structured tokens',
-            err,
-          );
-        });
-        continue;
-      }
-      spendTokens(txMetadata, {
-        promptTokens: usage.input_tokens,
-        completionTokens: usage.output_tokens,
-      }).catch((err) => {
-        logger.error(
-          '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending tokens',
-          err,
-        );
-      });
+    if (result) {
+      this.usage = result;
     }
-
-    this.usage = {
-      input_tokens,
-      output_tokens: total_output_tokens,
-    };
   }
 
   /**
@@ -782,39 +753,7 @@ class AgentClient extends BaseClient {
    * @returns {number}
    */
   getTokenCountForResponse({ content }) {
-    return this.getTokenCountForMessage({
-      role: 'assistant',
-      content,
-    });
-  }
-
-  /**
-   * Calculates the correct token count for the current user message based on the token count map and API usage.
-   * Edge case: If the calculation results in a negative value, it returns the original estimate.
-   * If revisiting a conversation with a chat history entirely composed of token estimates,
-   * the cumulative token count going forward should become more accurate as the conversation progresses.
-   * @param {Object} params - The parameters for the calculation.
-   * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
-   * @param {string} params.currentMessageId - The ID of the current message to calculate.
-   * @param {OpenAIUsageMetadata} params.usage - The usage object returned by the API.
-   * @returns {number} The correct token count for the current user message.
-   */
-  calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
-    const originalEstimate = tokenCountMap[currentMessageId] || 0;
-
-    if (!usage || typeof usage[this.inputTokensKey] !== 'number') {
-      return originalEstimate;
-    }
-
-    tokenCountMap[currentMessageId] = 0;
-    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => {
-      const numCount = Number(count);
-      return sum + (isNaN(numCount) ? 0 : numCount);
-    }, 0);
-    const totalInputTokens = usage[this.inputTokensKey] ?? 0;
-
-    const currentMessageTokens = totalInputTokens - totalTokensFromMap;
-    return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
+    return countFormattedMessageTokens({ role: 'assistant', content }, this.getEncoding());
   }
 
   /**
@@ -862,11 +801,34 @@ class AgentClient extends BaseClient {
       };
 
       const toolSet = buildToolSet(this.options.agent);
-      let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
-        payload,
-        this.indexTokenCountMap,
-        toolSet,
-      );
+      const tokenCounter = createTokenCounter(this.getEncoding());
+      let {
+        messages: initialMessages,
+        indexTokenCountMap,
+        summary: initialSummary,
+        boundaryTokenAdjustment,
+      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet);
+      if (boundaryTokenAdjustment) {
+        logger.debug(
+          `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
+        );
+      }
+      if (indexTokenCountMap && isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
+        const entries = Object.entries(indexTokenCountMap);
+        const perMsg = entries.map(([idx, count]) => {
+          const msg = initialMessages[Number(idx)];
+          const type = msg ? msg._getType() : '?';
+          return `${idx}:${type}=${count}`;
+        });
+        logger.debug(
+          `[AgentClient] Token map after format: [${perMsg.join(', ')}] (payload=${payload.length}, formatted=${initialMessages.length})`,
+        );
+      }
+      indexTokenCountMap = hydrateMissingIndexTokenCounts({
+        messages: initialMessages,
+        indexTokenCountMap,
+        tokenCounter,
+      });
 
       /**
        * @param {BaseMessage[]} messages
@@ -920,16 +882,32 @@ class AgentClient extends BaseClient {
 
         memoryPromise = this.runMemory(messages);
 
+        /** Seed calibration state from previous run if encoding matches */
+        const currentEncoding = this.getEncoding();
+        const prevMeta = this.contextMeta;
+        const encodingMatch = prevMeta?.encoding === currentEncoding;
+        const calibrationRatio =
+          encodingMatch && prevMeta?.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
+
+        if (prevMeta) {
+          logger.debug(
+            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}`,
+          );
+        }
+
         run = await createRun({
           agents,
           messages,
           indexTokenCountMap,
+          initialSummary,
+          calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
-          tokenCounter: createTokenCounter(this.getEncoding()),
+          summarizationConfig: appConfig?.summarization,
+          tokenCounter,
         });
 
         if (!run) {
@@ -958,9 +936,11 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
+      const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
+
       /** @deprecated Agent Chain */
-      if (config.configurable.hide_sequential_outputs) {
+      if (hideSequentialOutputs) {
         this.contentParts = this.contentParts.filter((part, index) => {
           // Include parts that are either:
           // 1. At or after the finalContentStart index
@@ -989,6 +969,18 @@ class AgentClient extends BaseClient {
         });
       }
     } finally {
+      /** Capture calibration state from the run for persistence on the response message.
+       *  Runs in finally so values are captured even on abort. */
+      const ratio = this.run?.getCalibrationRatio() ?? 0;
+      if (ratio > 0 && ratio !== 1) {
+        this.contextMeta = {
+          calibrationRatio: Math.round(ratio * 1000) / 1000,
+          encoding: this.getEncoding(),
+        };
+      } else {
+        this.contextMeta = undefined;
+      }
+
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
         if (attachments && attachments.length > 0) {
@@ -1174,6 +1166,7 @@ class AgentClient extends BaseClient {
         titlePrompt: endpointConfig?.titlePrompt,
         titlePromptTemplate: endpointConfig?.titlePromptTemplate,
         chainOptions: {
+          runName: 'TitleRun',
           signal: abortController.signal,
           callbacks: [
             {
@@ -1214,6 +1207,7 @@ class AgentClient extends BaseClient {
         model: clientOptions.model,
         balance: balanceConfig,
         transactions: transactionsConfig,
+        messageId: this.responseMessageId,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
@@ -1247,11 +1241,12 @@ class AgentClient extends BaseClient {
     context = 'message',
   }) {
     try {
-      await spendTokens(
+      await db.spendTokens(
         {
           model,
           context,
           balance,
+          messageId: this.responseMessageId,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
@@ -1265,11 +1260,12 @@ class AgentClient extends BaseClient {
         'reasoning_tokens' in usage &&
         typeof usage.reasoning_tokens === 'number'
       ) {
-        await spendTokens(
+        await db.spendTokens(
           {
             model,
             balance,
             context: 'reasoning',
+            messageId: this.responseMessageId,
             conversationId: this.conversationId,
             user: this.user ?? this.options.req.user?.id,
             endpointTokenConfig: this.options.endpointTokenConfig,
@@ -1285,18 +1281,12 @@ class AgentClient extends BaseClient {
     }
   }
 
+  /** Anthropic Claude models use a distinct BPE tokenizer; all others default to o200k_base. */
   getEncoding() {
+    if (this.model && this.model.toLowerCase().includes('claude')) {
+      return 'claude';
+    }
     return 'o200k_base';
-  }
-
-  /**
-   * Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
-   * @param {string} text - The text to get the token count for.
-   * @returns {number} The token count of the given text.
-   */
-  getTokenCount(text) {
-    const encoding = this.getEncoding();
-    return Tokenizer.getTokenCount(text, encoding);
   }
 }
 

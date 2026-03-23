@@ -15,6 +15,61 @@ import Sources from '~/components/Web/Sources';
 import Container from './Container';
 import Part from './Part';
 
+type PartWithContextProps = {
+  part: TMessageContentParts;
+  idx: number;
+  isLastPart: boolean;
+  messageId: string;
+  conversationId?: string | null;
+  nextType?: string;
+  isSubmitting: boolean;
+  isLatestMessage?: boolean;
+  isCreatedByUser: boolean;
+  isLast: boolean;
+  partAttachments: TAttachment[] | undefined;
+};
+
+const PartWithContext = memo(function PartWithContext({
+  part,
+  idx,
+  isLastPart,
+  messageId,
+  conversationId,
+  nextType,
+  isSubmitting,
+  isLatestMessage,
+  isCreatedByUser,
+  isLast,
+  partAttachments,
+}: PartWithContextProps) {
+  const contextValue = useMemo(
+    () => ({
+      messageId,
+      isExpanded: true as const,
+      conversationId,
+      partIndex: idx,
+      nextType,
+      isSubmitting,
+      isLatestMessage,
+    }),
+    [messageId, conversationId, idx, nextType, isSubmitting, isLatestMessage],
+  );
+
+  return (
+    <MessageContext.Provider value={contextValue}>
+      <Part
+        part={part}
+        attachments={partAttachments}
+        isSubmitting={isSubmitting}
+        key={`part-${messageId}-${idx}`}
+        isCreatedByUser={isCreatedByUser}
+        isLast={isLastPart}
+        showCursor={isLastPart && isLast}
+      />
+    </MessageContext.Provider>
+  );
+});
+
 type ContentPartsProps = {
   content: Array<TMessageContentParts | undefined> | undefined;
   messageId: string;
@@ -79,38 +134,25 @@ const ContentParts = memo(function ContentParts({
     },
     [messageId],
   );
-
-  /**
-   * Render a single content part with proper context.
-   */
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
       const partKey = getPartKey(part, idx);
       const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-      const partAttachments = attachmentMap[toolCallId];
-
       return (
-        <MessageContext.Provider
+        <PartWithContext
           key={partKey}
-          value={{
-            messageId,
-            isExpanded: true,
-            conversationId,
-            partIndex: idx,
-            nextType: content?.[idx + 1]?.type,
-            isSubmitting: effectiveIsSubmitting,
-            isLatestMessage,
-          }}
-        >
-          <Part
-            part={part}
-            attachments={partAttachments}
-            isSubmitting={effectiveIsSubmitting}
-            isCreatedByUser={isCreatedByUser}
-            isLast={isLastPart}
-            showCursor={isLastPart && isLast}
-          />
-        </MessageContext.Provider>
+          idx={idx}
+          part={part}
+          isLast={isLast}
+          messageId={messageId}
+          isLastPart={isLastPart}
+          conversationId={conversationId}
+          isLatestMessage={isLatestMessage}
+          isCreatedByUser={isCreatedByUser}
+          nextType={content?.[idx + 1]?.type}
+          isSubmitting={effectiveIsSubmitting}
+          partAttachments={attachmentMap[toolCallId]}
+        />
       );
     },
     [

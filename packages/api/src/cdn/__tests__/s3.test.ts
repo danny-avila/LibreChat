@@ -101,6 +101,14 @@ describe('initializeS3', () => {
     );
   });
 
+  it('should throw when AWS_BUCKET_NAME is not set', async () => {
+    delete process.env.AWS_BUCKET_NAME;
+    const { initializeS3 } = await load();
+    expect(() => initializeS3()).toThrow(
+      '[S3] AWS_BUCKET_NAME environment variable is required for S3 operations.',
+    );
+  });
+
   it('should return the same instance on subsequent calls', async () => {
     const { MockS3Client, initializeS3 } = await load();
     const first = initializeS3();

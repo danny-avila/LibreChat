@@ -100,30 +100,38 @@ export class MCPManager extends UserConnectionManager {
       logger.debug(`${logPrefix} [Discovery] App connection not available, trying discovery mode`);
     }
 
-    const serverConfig = (await MCPServersRegistry.getInstance().getServerConfig(
+    const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
       serverName,
       user?.id,
-    )) as t.MCPOptions | null;
+    );
 
     if (!serverConfig) {
       logger.warn(`${logPrefix} [Discovery] Server config not found`);
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
-    const useOAuth = Boolean(
-      serverConfig.requiresOAuth || (serverConfig as t.ParsedServerConfig).oauthMetadata,
-    );
+    const useOAuth = Boolean(serverConfig.requiresOAuth || serverConfig.oauthMetadata);
 
-    const useSSRFProtection = MCPServersRegistry.getInstance().shouldEnableSSRFProtection();
+    const registry = MCPServersRegistry.getInstance();
+    const useSSRFProtection = registry.shouldEnableSSRFProtection();
+    const allowedDomains = registry.getAllowedDomains();
+    const dbSourced = !!serverConfig.dbId;
     const basic: t.BasicConnectionOptions = {
+      dbSourced,
       serverName,
       serverConfig,
       useSSRFProtection,
+      allowedDomains,
       enableApps: this.enableApps,
     };
 
     if (!useOAuth) {
-      const result = await MCPConnectionFactory.discoverTools(basic);
+      const result = await MCPConnectionFactory.discoverTools(basic, {
+        user: args.user,
+        customUserVars: args.customUserVars,
+        requestBody: args.requestBody,
+        connectionTimeout: args.connectionTimeout,
+      });
       return {
         tools: result.tools,
         oauthRequired: result.oauthRequired,
@@ -466,18 +474,22 @@ Please follow these instructions when using tools from the respective MCP server
         serverName,
         userId,
       )) as t.ParsedServerConfig;
+      const isDbSourced = !!rawConfig?.dbId;
 
-      // Pre-process Graph token placeholders (async) before sync processMCPEnv
-      const graphProcessedConfig = await preProcessGraphTokens(rawConfig, {
-        user,
-        graphTokenResolver,
-        scopes: process.env.GRAPH_API_SCOPES,
-      });
+      /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
+      const graphProcessedConfig = isDbSourced
+        ? (rawConfig as t.MCPOptions)
+        : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+            user,
+            graphTokenResolver,
+            scopes: process.env.GRAPH_API_SCOPES,
+          });
       const currentOptions = processMCPEnv({
         user,
-        options: graphProcessedConfig,
-        customUserVars: customUserVars,
         body: requestBody,
+        dbSourced: isDbSourced,
+        options: graphProcessedConfig,
+        customUserVars,
       });
       if ('headers' in currentOptions) {
         connection.setRequestHeaders(currentOptions.headers || {});

@@ -1,10 +1,161 @@
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  documentParserMimeTypes,
   getEndpointFileConfig,
+  applicationMimeTypes,
+  defaultOCRMimeTypes,
+  supportedMimeTypes,
   mergeFileConfig,
+  inferMimeType,
+  textMimeTypes,
 } from './file-config';
 import { EModelEndpoint } from './schemas';
+
+describe('inferMimeType', () => {
+  it('should normalize text/x-python-script to text/x-python', () => {
+    expect(inferMimeType('test.py', 'text/x-python-script')).toBe('text/x-python');
+  });
+
+  it('should return a type that matches textMimeTypes after normalization', () => {
+    const normalized = inferMimeType('test.py', 'text/x-python-script');
+    expect(textMimeTypes.test(normalized)).toBe(true);
+  });
+
+  it('should pass through standard browser types unchanged', () => {
+    expect(inferMimeType('test.py', 'text/x-python')).toBe('text/x-python');
+    expect(inferMimeType('doc.pdf', 'application/pdf')).toBe('application/pdf');
+  });
+
+  it('should infer from extension when browser type is empty', () => {
+    expect(inferMimeType('test.py', '')).toBe('text/x-python');
+    expect(inferMimeType('code.js', '')).toBe('text/javascript');
+    expect(inferMimeType('photo.heic', '')).toBe('image/heic');
+    expect(inferMimeType('Main.java', '')).toBe('text/x-java');
+  });
+
+  it('should return empty string for unknown extension with no browser type', () => {
+    expect(inferMimeType('file.xyz', '')).toBe('');
+  });
+
+  it('should produce a type accepted by checkType after normalizing text/x-python-script', () => {
+    const normalized = inferMimeType('test.py', 'text/x-python-script');
+    expect(baseFileConfig.checkType(normalized)).toBe(true);
+  });
+
+  it('should reject raw text/x-python-script without normalization', () => {
+    expect(baseFileConfig.checkType('text/x-python-script')).toBe(false);
+  });
+});
+
+describe('applicationMimeTypes', () => {
+  const odfTypes = [
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.oasis.opendocument.graphics',
+  ];
+
+  it.each(odfTypes)('matches ODF type: %s', (mimeType) => {
+    expect(applicationMimeTypes.test(mimeType)).toBe(true);
+  });
+
+  const existingTypes = [
+    'application/pdf',
+    'application/json',
+    'application/csv',
+    'application/msword',
+    'application/xml',
+    'application/zip',
+    'application/epub+zip',
+    'application/x-tar',
+    'application/x-sh',
+    'application/typescript',
+    'application/sql',
+    'application/yaml',
+    'application/x-parquet',
+    'application/vnd.apache.parquet',
+    'application/vnd.coffeescript',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ];
+
+  it.each(existingTypes)('matches existing type: %s', (mimeType) => {
+    expect(applicationMimeTypes.test(mimeType)).toBe(true);
+  });
+
+  const invalidTypes = [
+    'application/vnd.oasis.opendocument.text-template',
+    'application/vnd.oasis.opendocument.texts',
+    'application/vnd.oasis.opendocument.chart',
+    'application/vnd.oasis.opendocument.formula',
+    'application/vnd.oasis.opendocument.image',
+    'application/vnd.oasis.opendocument.text-master',
+    'text/plain',
+    'image/png',
+  ];
+
+  it.each(invalidTypes)('does not match invalid type: %s', (mimeType) => {
+    expect(applicationMimeTypes.test(mimeType)).toBe(false);
+  });
+});
+
+describe('defaultOCRMimeTypes', () => {
+  const checkOCRType = (mimeType: string): boolean =>
+    defaultOCRMimeTypes.some((regex) => regex.test(mimeType));
+
+  it.each([
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.oasis.opendocument.graphics',
+  ])('matches ODF type for OCR: %s', (mimeType) => {
+    expect(checkOCRType(mimeType)).toBe(true);
+  });
+});
+
+describe('supportedMimeTypes', () => {
+  const checkSupported = (mimeType: string): boolean =>
+    supportedMimeTypes.some((regex) => regex.test(mimeType));
+
+  it.each([
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.oasis.opendocument.graphics',
+  ])('ODF type flows through supportedMimeTypes: %s', (mimeType) => {
+    expect(checkSupported(mimeType)).toBe(true);
+  });
+});
+
+describe('documentParserMimeTypes', () => {
+  const check = (mimeType: string): boolean =>
+    documentParserMimeTypes.some((regex) => regex.test(mimeType));
+
+  it.each([
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'application/msexcel',
+    'application/x-msexcel',
+    'application/x-ms-excel',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.text',
+  ])('matches natively parseable type: %s', (mimeType) => {
+    expect(check(mimeType)).toBe(true);
+  });
+
+  it.each([
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.oasis.opendocument.graphics',
+    'text/plain',
+    'image/png',
+  ])('does not match OCR-only or unsupported type: %s', (mimeType) => {
+    expect(check(mimeType)).toBe(false);
+  });
+});
 
 describe('getEndpointFileConfig', () => {
   describe('custom endpoint lookup', () => {

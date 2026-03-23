@@ -1,12 +1,16 @@
 const { logger } = require('@librechat/data-schemas');
-const { initializeAgent, validateAgentModel } = require('@librechat/api');
-const { loadAddedAgent, setGetAgent, ADDED_AGENT_ID } = require('~/models/loadAddedAgent');
-const { getConvoFiles } = require('~/models/Conversation');
-const { getAgent } = require('~/models/Agent');
+const {
+  ADDED_AGENT_ID,
+  initializeAgent,
+  validateAgentModel,
+  loadAddedAgent: loadAddedAgentFn,
+} = require('@librechat/api');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { getMCPServerTools } = require('~/server/services/Config');
 const db = require('~/models');
 
-// Initialize the getAgent dependency
-setGetAgent(getAgent);
+const loadAddedAgent = (params) =>
+  loadAddedAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 /**
  * Process addedConvo for parallel agent execution.
@@ -55,15 +59,15 @@ const processAddedConvo = async ({
   userMCPAuthMap,
 }) => {
   const addedConvo = endpointOption.addedConvo;
-  logger.debug('[processAddedConvo] Called with addedConvo:', {
-    hasAddedConvo: addedConvo != null,
-    addedConvoEndpoint: addedConvo?.endpoint,
-    addedConvoModel: addedConvo?.model,
-    addedConvoAgentId: addedConvo?.agent_id,
-  });
   if (addedConvo == null) {
     return { userMCPAuthMap };
   }
+
+  logger.debug('[processAddedConvo] Processing added conversation', {
+    model: addedConvo.model,
+    agentId: addedConvo.agent_id,
+    endpoint: addedConvo.endpoint,
+  });
 
   try {
     const addedAgent = await loadAddedAgent({ req, conversation: addedConvo, primaryAgent });
@@ -99,15 +103,16 @@ const processAddedConvo = async ({
         allowedProviders,
       },
       {
-        getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
+        getConvoFiles: db.getConvoFiles,
         updateFilesUsage: db.updateFilesUsage,
         getUserCodeFiles: db.getUserCodeFiles,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        filterFilesByAgentAccess,
       },
     );
 
