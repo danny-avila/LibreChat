@@ -155,6 +155,7 @@ describe('Conversations – favorites CellMeasurerCache key invalidation', () =>
   });
 
   it('should invalidate the cached favorites height when marketplace visibility changes', () => {
+    mockFavoritesState.favorites = [{ model: 'gpt-4', endpoint: 'openAI' }];
     const { rerender } = render(<Wrapper />);
     const cache = mockCapturedCache!;
 
@@ -162,7 +163,6 @@ describe('Conversations – favorites CellMeasurerCache key invalidation', () =>
     expect(cache.has(0, 0)).toBe(true);
 
     mockShowMarketplace = false;
-    mockFavoritesState.favorites = [{ model: 'gpt-4', endpoint: 'openAI' }];
     rerender(<Wrapper />);
 
     expect(cache.has(0, 0)).toBe(false);

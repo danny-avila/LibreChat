@@ -21,6 +21,7 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
+/** Height intentionally matches FavoriteItem (px-3 py-2 + h-5 icon) to keep the CellMeasurerCache valid across the isAgentsLoading transition. */
 const FavoriteItemSkeleton = () => (
   <div className="flex w-full items-center rounded-lg px-3 py-2">
     <Skeleton className="mr-2 h-5 w-5 rounded-full" />

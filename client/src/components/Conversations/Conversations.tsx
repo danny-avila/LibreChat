@@ -264,7 +264,7 @@ const Conversations: FC<ConversationsProps> = ({
       clearFavoritesCache();
     });
     return () => cancelAnimationFrame(frameId);
-  }, [favorites.length, isFavoritesLoading, clearFavoritesCache]);
+  }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
