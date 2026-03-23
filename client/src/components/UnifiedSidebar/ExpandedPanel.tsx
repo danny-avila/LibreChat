@@ -20,13 +20,12 @@ const NewChatButton = memo(function NewChatButton() {
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>) => {
-      if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
-        return;
+      if (e.button === 0 && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        clearMessagesCache(queryClient, conversation?.conversationId);
+        queryClient.invalidateQueries([QueryKeys.messages]);
+        newConversation();
       }
-      e.preventDefault();
-      clearMessagesCache(queryClient, conversation?.conversationId);
-      queryClient.invalidateQueries([QueryKeys.messages]);
-      newConversation();
     },
     [queryClient, conversation?.conversationId, newConversation],
   );
@@ -43,9 +42,7 @@ const NewChatButton = memo(function NewChatButton() {
           className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
           onClick={handleClick}
         >
-          <div className="flex size-6 items-center justify-center rounded-full bg-text-primary">
-            <NewChatIcon className="size-3.5 text-white dark:text-black" />
-          </div>
+          <NewChatIcon className="h-5 w-5 text-text-primary" />
         </a>
       }
     />
@@ -99,7 +96,7 @@ const NavIconButton = memo(function NavIconButton({
           )}
           onClick={handleClick}
         >
-          <link.icon className="h-4 w-4" aria-hidden="true" />
+          <link.icon className="h-5 w-5" aria-hidden="true" />
         </Button>
       }
     />
@@ -145,6 +142,7 @@ function ExpandedPanel({
         }
       />
       <NewChatButton />
+      <div className="mx-2 border-b border-border-light" />
       <div className="flex flex-col gap-1 overflow-y-auto">
         {links.map((link) => (
           <NavIconButton
