@@ -173,11 +173,21 @@ mcpServers:
   #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
 
     
+# speech:
+#   stt:
+#     openai:
+#       url: 'http://100.100.108.43:5020/v1/audio/transcriptions'
+#       apiKey: ''
+#       model: 'whisper-1'
+#   speechTab:
+#     speechToText:
+#       engineSTT: 'external'
+
 speech:
   stt:
     openai:
-      url: 'http://100.100.108.43:5020/v1/audio/transcriptions'
-      apiKey: ''
+      url: 'http://100.100.108.43:8000/v1/audio/transcriptions'
+      apiKey: 'sk_t4ua3ce1_N4tW6DA6Mroro32ZW7UJkLHy'
       model: 'whisper-1'
   speechTab:
     speechToText:
@@ -269,6 +279,10 @@ modelSpecs:
 
           3. **Identify the crop and state.**
              - If either is unknown, ask the user politely before proceeding.
+             -If question is soil related then while calling any MCP tool:
+                    Always pass:
+                    crop = "all"
+                    state = "all"
 
           4. **Use MCP tools to fetch data:**
              4.1. Check the **Reviewer dataset** first, if not found then check the **Golden Dataset** (fetch available states → crops → data).  
