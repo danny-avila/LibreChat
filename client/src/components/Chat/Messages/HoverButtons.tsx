@@ -55,6 +55,7 @@ const extractMessageContent = (message: TMessage): string => {
         if ('text' in part) {
           return part.text || '';
         }
+        /* NJ: We don't want to speak the thinking part out loud
         if ('think' in part) {
           const think = part.think;
           if (typeof think === 'string') {
@@ -62,6 +63,7 @@ const extractMessageContent = (message: TMessage): string => {
           }
           return think && 'text' in think ? think.text || '' : '';
         }
+        */
         return '';
       })
       .join('');
