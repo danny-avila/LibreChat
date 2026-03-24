@@ -83,7 +83,7 @@ describe('redactServerSecrets', () => {
     expect(redacted.oauth?.client_id).toBe('cid');
   });
 
-  it('should exclude headers from SSE configs', () => {
+  it('should exclude headers from YAML/non-UI configs (secretHeaderKeys undefined)', () => {
     const config: ParsedServerConfig = {
       type: 'sse',
       url: 'https://example.com/mcp',
@@ -96,6 +96,75 @@ describe('redactServerSecrets', () => {
     const redacted = redactServerSecrets(config);
     expect((redacted as Record<string, unknown>).headers).toBeUndefined();
     expect(redacted.title).toBe('SSE Server');
+  });
+
+  it('should expose non-secret headers for UI-created servers (secretHeaderKeys defined)', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      title: 'SSE Server',
+      dbId: '507f1f77bcf86cd799439011',
+      secretHeaderKeys: [],
+    };
+    (config as ParsedServerConfig & { headers: Record<string, string> }).headers = {
+      'X-Index-Name': 'my-index',
+      'X-Top': '{{INDEX_TOP}}',
+    };
+    const redacted = redactServerSecrets(config);
+    expect(
+      (redacted as Record<string, unknown> & { headers: Record<string, string> }).headers,
+    ).toEqual({ 'X-Index-Name': 'my-index', 'X-Top': '{{INDEX_TOP}}' });
+    expect(redacted.secretHeaderKeys).toEqual([]);
+  });
+
+  it('should mask secret header values as empty string and expose non-secret values', () => {
+    const config: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://example.com/mcp',
+      dbId: '507f1f77bcf86cd799439012',
+      secretHeaderKeys: ['X-Secret-Token'],
+    };
+    (config as ParsedServerConfig & { headers: Record<string, string> }).headers = {
+      'X-Secret-Token': 'super-secret-value',
+      'X-Public-Header': 'public-value',
+    };
+    const redacted = redactServerSecrets(config);
+    const headers = (redacted as Record<string, unknown> & { headers: Record<string, string> })
+      .headers;
+    expect(headers['X-Secret-Token']).toBe('');
+    expect(headers['X-Public-Header']).toBe('public-value');
+    expect(redacted.secretHeaderKeys).toEqual(['X-Secret-Token']);
+  });
+
+  it('should expose secretHeaderKeys: [] for UI servers with all non-secret headers', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      dbId: '507f1f77bcf86cd799439013',
+      secretHeaderKeys: [],
+    };
+    (config as ParsedServerConfig & { headers: Record<string, string> }).headers = {
+      'X-Custom': 'value',
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.secretHeaderKeys).toEqual([]);
+  });
+
+  it('should exclude headers from YAML configs even with secretHeaderKeys present', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      title: 'YAML Server',
+      secretHeaderKeys: ['X-Api-Key'],
+    };
+    (config as ParsedServerConfig & { headers: Record<string, string> }).headers = {
+      'X-Api-Key': '${API_KEY_ENV}',
+      'X-Index': '${INDEX_NAME}',
+    };
+    const redacted = redactServerSecrets(config);
+    expect((redacted as Record<string, unknown>).headers).toBeUndefined();
+    expect((redacted as Record<string, unknown>).secretHeaderKeys).toBeUndefined();
+    expect(redacted.title).toBe('YAML Server');
   });
 
   it('should exclude env from stdio configs', () => {
@@ -174,6 +243,56 @@ describe('redactServerSecrets', () => {
     expect(redacted.consumeOnly).toBe(false);
     expect(redacted.inspectionFailed).toBe(false);
     expect(redacted.customUserVars).toEqual(config.customUserVars);
+  });
+
+  it('should preserve serverInstructions: true', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      serverInstructions: true,
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.serverInstructions).toBe(true);
+  });
+
+  it('should preserve serverInstructions as a custom string', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      serverInstructions: 'Always respond concisely.',
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.serverInstructions).toBe('Always respond concisely.');
+  });
+
+  it('should omit serverInstructions when not set', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.serverInstructions).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(redacted, 'serverInstructions')).toBe(false);
+  });
+
+  it('should preserve chatMenu: false', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      chatMenu: false,
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.chatMenu).toBe(false);
+  });
+
+  it('should omit chatMenu when not set', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.chatMenu).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(redacted, 'chatMenu')).toBe(false);
   });
 
   it('should pass URLs through unchanged', () => {

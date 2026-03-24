@@ -9,6 +9,7 @@ import {
 import { useToastContext } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { extractServerNameFromUrl, isValidUrl, normalizeUrl } from '../utils/urlUtils';
+import { buildHeaders, buildCustomUserVars } from '../utils/formHelpers';
 import type { MCPServerDefinition } from '~/hooks';
 
 // Auth type enum
@@ -40,6 +41,20 @@ export interface AuthConfig {
   server_id?: string;
 }
 
+export interface HeaderEntry {
+  key: string;
+  value: string;
+  isSecret: boolean;
+}
+
+export interface CustomUserVarEntry {
+  key: string;
+  title: string;
+  description: string;
+}
+
+export type ServerInstructionsMode = 'none' | 'server' | 'custom';
+
 // Form data interface
 export interface MCPServerFormData {
   title: string;
@@ -49,6 +64,11 @@ export interface MCPServerFormData {
   type: 'streamable-http' | 'sse';
   auth: AuthConfig;
   trust: boolean;
+  headers: HeaderEntry[];
+  customUserVars: CustomUserVarEntry[];
+  chatMenu: boolean;
+  serverInstructionsMode: ServerInstructionsMode;
+  serverInstructionsCustom: string;
 }
 
 interface UseMCPServerFormProps {
@@ -85,6 +105,29 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
 
       const apiKeyConfig = 'apiKey' in server.config ? server.config.apiKey : undefined;
 
+      const headersConfig =
+        'headers' in server.config && server.config.headers ? server.config.headers : {};
+      const customUserVarsConfig = server.config.customUserVars ?? {};
+      const rawSecretHeaderKeys =
+        'secretHeaderKeys' in server.config ? server.config.secretHeaderKeys : undefined;
+      const secretHeaderKeysSet = new Set(rawSecretHeaderKeys ?? []);
+
+      const si = server.config.serverInstructions;
+      let serverInstructionsMode: ServerInstructionsMode = 'none';
+      if (typeof si === 'string') {
+        // Normalize case-insensitive "true"/"false" strings from YAML configs
+        const normalized = si.toLowerCase().trim();
+        if (normalized === 'true') {
+          serverInstructionsMode = 'server';
+        } else if (normalized === 'false' || normalized === '') {
+          serverInstructionsMode = 'none';
+        } else {
+          serverInstructionsMode = 'custom';
+        }
+      } else if (si === true) {
+        serverInstructionsMode = 'server';
+      }
+
       return {
         title: server.config.title || '',
         description: server.config.description || '',
@@ -107,6 +150,20 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
           server_id: server.serverName,
         },
         trust: true, // Pre-checked for existing servers
+        headers: Object.entries(headersConfig).map(([key, value]) => ({
+          key,
+          value,
+          isSecret: secretHeaderKeysSet.has(key),
+        })),
+        customUserVars: Object.entries(customUserVarsConfig).map(([key, cfg]) => ({
+          key,
+          title: cfg.title,
+          description: cfg.description,
+        })),
+        chatMenu: server.config.chatMenu !== false,
+        serverInstructionsMode,
+        serverInstructionsCustom:
+          serverInstructionsMode === 'custom' && typeof si === 'string' ? si : '',
       };
     }
 
@@ -129,6 +186,11 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
         oauth_scope: '',
       },
       trust: false,
+      headers: [],
+      customUserVars: [],
+      chatMenu: true,
+      serverInstructionsMode: 'none' as ServerInstructionsMode,
+      serverInstructionsCustom: '',
     };
   }, [server]);
 
@@ -142,7 +204,6 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
 
   // Watch URL for auto-fill
   const watchedUrl = watch('url');
-  const watchedTitle = watch('title');
 
   // Auto-fill title from URL when title is empty
   const handleUrlChange = useCallback(
@@ -181,7 +242,26 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
         title: formData.title,
         ...(formData.description && { description: formData.description }),
         ...(formData.icon && { iconPath: formData.icon }),
+        ...(!formData.chatMenu && { chatMenu: false }),
+        ...(formData.serverInstructionsMode === 'server' && { serverInstructions: true }),
+        ...(formData.serverInstructionsMode === 'custom' &&
+          formData.serverInstructionsCustom.trim() && {
+            serverInstructions: formData.serverInstructionsCustom.trim(),
+          }),
       };
+
+      // Add HTTP headers using extracted helper
+      const headersResult = buildHeaders(formData.headers, isEditMode);
+      if (headersResult.headers) {
+        config.headers = headersResult.headers;
+        config.secretHeaderKeys = headersResult.secretHeaderKeys;
+      }
+
+      // Add custom user variable definitions using extracted helper
+      const customUserVarsMap = buildCustomUserVars(formData.customUserVars);
+      if (customUserVarsMap) {
+        config.customUserVars = customUserVarsMap;
+      }
 
       // Add OAuth configuration
       if (

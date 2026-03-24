@@ -158,6 +158,12 @@ export type ParsedServerConfig = MCPOptions & {
   consumeOnly?: boolean;
   /** True when inspection failed at startup; the server is known but not fully initialized */
   inspectionFailed?: boolean;
+  /**
+   * Keys in `headers` whose values are encrypted at rest for DB-stored server configs
+   * (and masked in API responses); YAML-defined configs remain plaintext on disk and
+   * are not exposed via API responses.
+   */
+  secretHeaderKeys?: string[];
 };
 
 export type AddServerResult = {
