@@ -1,6 +1,6 @@
 import { useState, memo, useRef, useCallback, useId, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Ellipsis, Eye, SquarePen, Trash, EarthIcon, User } from 'lucide-react';
 import { PermissionBits, ResourceType } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
@@ -19,11 +19,18 @@ import { useLiveAnnouncer } from '~/Providers';
 import VariableDialog from '../dialogs/VariableDialog';
 import PreviewPrompt from '../dialogs/PreviewPrompt';
 import CategoryIcon from '../utils/CategoryIcon';
-import { detectVariables } from '~/utils';
+import { detectVariables, cn } from '~/utils';
 
-function ChatGroupItem({ group }: { group: TPromptGroup }) {
+function ChatGroupItem({
+  group,
+  isChatRoute = true,
+}: {
+  group: TPromptGroup;
+  isChatRoute?: boolean;
+}) {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const params = useParams();
   const { user } = useAuthContext();
   const { submitPrompt } = useSubmitMessage();
   const recordUsage = useRecordPromptUsage();
@@ -58,6 +65,11 @@ function ChatGroupItem({ group }: { group: TPromptGroup }) {
   }, [group._id, deleteGroup]);
 
   const onCardClick = useCallback(() => {
+    if (!isChatRoute) {
+      navigate(`/prompts/${group._id}`, { replace: true });
+      return;
+    }
+
     const text = group.productionPrompt?.prompt;
     if (!text?.trim()) {
       return;
@@ -72,7 +84,7 @@ function ChatGroupItem({ group }: { group: TPromptGroup }) {
     if (group._id) {
       recordUsage.mutate(group._id);
     }
-  }, [group, submitPrompt, recordUsage]);
+  }, [group, submitPrompt, recordUsage, isChatRoute, navigate]);
 
   const snippet =
     typeof group.oneliner === 'string' && group.oneliner.length > 0
@@ -110,7 +122,12 @@ function ChatGroupItem({ group }: { group: TPromptGroup }) {
 
   return (
     <>
-      <div className="group/prompt relative mb-1.5 rounded-xl border border-border-light bg-transparent transition-colors hover:bg-surface-secondary">
+      <div
+        className={cn(
+          'group/prompt relative mb-1.5 rounded-xl border border-border-light bg-transparent transition-colors hover:bg-surface-secondary',
+          !isChatRoute && params.promptId === group._id && 'bg-surface-hover',
+        )}
+      >
         {/* Clickable overlay for card */}
         <button
           type="button"
@@ -166,28 +183,35 @@ function ChatGroupItem({ group }: { group: TPromptGroup }) {
               {snippet}
             </p>
           </div>
-          {/* Dropdown menu */}
-          <div className="relative z-10 shrink-0">
-            <DropdownPopup
-              portal={true}
-              menuId={menuId}
-              focusLoop={true}
-              className="z-[125]"
-              unmountOnHide={true}
-              isOpen={menuOpen}
-              setIsOpen={setMenuOpen}
-              trigger={
-                <Ariakit.MenuButton
-                  aria-label={localize('com_nav_convo_menu_options')}
-                  className="flex size-7 items-center justify-center rounded-md text-text-secondary opacity-0 transition-opacity hover:bg-surface-hover focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary group-hover/prompt:opacity-100 data-[open]:opacity-100"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Ellipsis className="size-4" aria-hidden="true" />
-                </Ariakit.MenuButton>
-              }
-              items={dropdownItems}
-            />
-          </div>
+          {/* Dropdown menu — hidden on the prompts dashboard since actions are in the detail view */}
+          {isChatRoute && (
+            <div className="relative z-10 shrink-0">
+              <DropdownPopup
+                portal={true}
+                menuId={menuId}
+                focusLoop={true}
+                className="z-[125]"
+                unmountOnHide={true}
+                isOpen={menuOpen}
+                setIsOpen={setMenuOpen}
+                trigger={
+                  <Ariakit.MenuButton
+                    aria-label={localize('com_nav_convo_menu_options')}
+                    className={cn(
+                      'flex size-7 items-center justify-center rounded-md text-text-secondary transition-opacity hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                      menuOpen
+                        ? 'opacity-100'
+                        : 'opacity-0 focus-visible:opacity-100 group-hover/prompt:opacity-100',
+                    )}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Ellipsis className="size-4" aria-hidden="true" />
+                  </Ariakit.MenuButton>
+                }
+                items={dropdownItems}
+              />
+            </div>
+          )}
         </div>
       </div>
       <PreviewPrompt

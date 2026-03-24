@@ -80,7 +80,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
   }, []);
 
   return (
-    <div className="group/title relative flex h-9 min-w-0 flex-1 items-center">
+    <div className="group/title relative mr-2 flex h-9 min-w-0 flex-1 items-center">
       {isEditing ? (
         <input
           ref={inputRef}
@@ -90,7 +90,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
           onKeyDown={handleKeyDown}
           onBlur={saveName}
           disabled={isLoading}
-          className="h-9 min-w-0 flex-1 border-none bg-transparent px-0 text-lg font-semibold text-text-primary outline-none disabled:opacity-60"
+          className="h-9 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-0 text-lg font-semibold text-text-primary outline-none focus:border-border-medium focus:outline-none disabled:opacity-60"
           aria-label={localize('com_ui_name')}
         />
       ) : (
@@ -122,7 +122,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
         )}
         {saveStatus === 'idle' && !isEditing && (
           <Pencil
-            className="size-3.5 text-text-tertiary opacity-0 transition-opacity group-hover/title:opacity-100"
+            className="size-3.5 text-text-secondary opacity-0 transition-opacity group-hover/title:opacity-100"
             aria-hidden="true"
           />
         )}

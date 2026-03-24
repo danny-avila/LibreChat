@@ -403,6 +403,8 @@
   "com_info_heic_converting": "Converting HEIC image to JPEG...",
   "com_nav_2fa": "Two-Factor Authentication (2FA)",
   "com_nav_account_settings": "Account Settings",
+  "com_nav_advanced_prompts": "Advanced prompts editor",
+  "com_nav_advanced_prompts_desc": "Enable versioning and production control for prompts",
   "com_nav_always_make_prod": "Always make new prompt versions production",
   "com_nav_archive_created_at": "Date Archived",
   "com_nav_archive_name": "Name",

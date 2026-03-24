@@ -7,9 +7,11 @@ import { useLocalize } from '~/hooks';
 export default function List({
   groups = [],
   isLoading,
+  isChatRoute,
 }: {
   groups?: TPromptGroup[];
   isLoading: boolean;
+  isChatRoute?: boolean;
 }) {
   const localize = useLocalize();
 
@@ -34,7 +36,7 @@ export default function List({
             </div>
           )}
           {groups.map((group) => (
-            <ChatGroupItem key={group._id} group={group} />
+            <ChatGroupItem key={group._id} group={group} isChatRoute={isChatRoute} />
           ))}
         </div>
       </section>

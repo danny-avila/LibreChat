@@ -74,7 +74,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
       <div
         className={cn(
           'relative w-full flex-1 overflow-auto rounded-b-xl border border-t-0 border-border-medium p-3 text-left transition-all duration-200 sm:p-4',
-          isEditing ? '' : 'cursor-pointer hover:bg-surface-secondary',
+          isEditing ? '' : 'cursor-pointer hover:bg-surface-tertiary',
         )}
       >
         {!isEditing && (
@@ -133,9 +133,9 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                   </ReactMarkdown>
                 )}
                 <div className="pointer-events-none sticky bottom-1/2 z-10 flex translate-y-1/2 items-center justify-center opacity-0 transition-all duration-200 group-hover/preview:opacity-100">
-                  <div className="flex items-center gap-2 rounded-lg bg-surface-primary px-3 py-1.5 shadow-md">
+                  <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-3 py-1.5 shadow-md">
                     <EditIcon className="size-4 text-text-secondary" aria-hidden="true" />
-                    <span className="text-sm font-medium text-text-secondary">
+                    <span className="text-sm font-medium text-text-primary">
                       {localize('com_ui_click_to_edit')}
                     </span>
                   </div>
