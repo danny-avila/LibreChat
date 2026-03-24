@@ -83,14 +83,9 @@ export function ShareArtifactsContainer({
 
   const normalizedArtifactSize = Math.min(60, Math.max(20, artifactPanelSize));
 
-  /**
-   * Handles artifact panel resize and persists size to localStorage
-   */
-  const handleLayoutChange = (sizes: number[]) => {
-    if (sizes.length < 2) {
-      return;
-    }
-    const newSize = sizes[1];
+  const handleLayoutChanged = (layout: Record<string, number | string>) => {
+    const raw = layout['share-artifacts'];
+    const newSize = typeof raw === 'string' ? parseFloat(raw) : raw;
     if (!Number.isFinite(newSize)) {
       return;
     }
@@ -115,24 +110,22 @@ export function ShareArtifactsContainer({
 
   return (
     <ResizablePanelGroup
-      direction="horizontal"
-      className="flex h-full w-full"
-      onLayout={handleLayoutChange}
+      orientation="horizontal"
+      className="h-full w-full"
+      onLayoutChanged={handleLayoutChanged}
     >
       <ResizablePanel
-        defaultSize={100 - normalizedArtifactSize}
-        minSize={35}
-        order={1}
+        defaultSize={`${100 - normalizedArtifactSize}`}
+        minSize="35"
         id="share-content"
       >
         {mainContent}
       </ResizablePanel>
       <ResizableHandleAlt withHandle className="bg-border-medium text-text-primary" />
       <ResizablePanel
-        defaultSize={normalizedArtifactSize}
-        minSize={20}
-        maxSize={60}
-        order={2}
+        defaultSize={`${normalizedArtifactSize}`}
+        minSize="20"
+        maxSize="60"
         id="share-artifacts"
       >
         <ShareArtifactsPanel contextValue={artifactsContextValue} />

@@ -26,6 +26,7 @@ export type { TranslationKeys } from './useLocalize';
 export { default as useTimeout } from './useTimeout';
 export { default as useNewConvo } from './useNewConvo';
 export { default as useLocalize } from './useLocalize';
+export { default as useFocusTrap } from './useFocusTrap';
 export { default as useFavorites } from './useFavorites';
 export { default as useChatBadges } from './useChatBadges';
 export { default as useScrollToRef } from './useScrollToRef';

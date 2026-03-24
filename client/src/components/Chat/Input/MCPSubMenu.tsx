@@ -35,7 +35,6 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
       placement: 'right',
     });
 
-    // Don't render if no MCP servers are configured
     if (!selectableServers || selectableServers.length === 0) {
       return null;
     }

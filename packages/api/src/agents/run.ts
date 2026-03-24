@@ -7,7 +7,9 @@ import {
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 import type {
+  SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
+  ContextPruningConfig,
   OpenAIClientOptions,
   StandardGraphConfig,
   LCToolRegistry,
@@ -17,8 +19,9 @@ import type {
   IState,
   LCTool,
 } from '@librechat/agents';
+import type { Agent, SummarizationConfig } from 'librechat-data-provider';
+import type { BaseMessage } from '@langchain/core/messages';
 import type { IUser } from '@librechat/data-schemas';
-import type { Agent } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 
@@ -212,6 +215,8 @@ function determineVisionCapability(
 type RunAgent = Omit<Agent, 'tools'> & {
   tools?: GenericTool[];
   maxContextTokens?: number;
+  /** Pre-ratio context budget from initializeAgent. */
+  baseContextTokens?: number;
   useLegacyContent?: boolean;
   toolContextMap?: Record<string, string>;
   toolRegistry?: LCToolRegistry;
@@ -219,7 +224,64 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /** Optional per-agent summarization overrides */
+  summarization?: SummarizationConfig;
+  /**
+   * Maximum characters allowed in a single tool result before truncation.
+   * Overrides the default computed from maxContextTokens.
+   */
+  maxToolResultChars?: number;
 };
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** Shapes a SummarizationConfig into the format expected by AgentInputs. */
+function shapeSummarizationConfig(
+  config: SummarizationConfig | undefined,
+  fallbackProvider: string,
+  fallbackModel: string | undefined,
+) {
+  const provider = config?.provider ?? fallbackProvider;
+  const model = config?.model ?? fallbackModel;
+  const trigger =
+    config?.trigger?.type && config?.trigger?.value
+      ? { type: config.trigger.type, value: config.trigger.value }
+      : undefined;
+
+  return {
+    enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
+    config: {
+      trigger,
+      provider,
+      model,
+      parameters: config?.parameters,
+      prompt: config?.prompt,
+      updatePrompt: config?.updatePrompt,
+      reserveRatio: config?.reserveRatio,
+      maxSummaryTokens: config?.maxSummaryTokens,
+    } satisfies AgentSummarizationConfig,
+    contextPruning: config?.contextPruning as ContextPruningConfig | undefined,
+    reserveRatio: config?.reserveRatio,
+  };
+}
+
+/**
+ * Applies `reserveRatio` against the pre-ratio base context budget, falling
+ * back to the pre-computed `maxContextTokens` from initializeAgent.
+ */
+function computeEffectiveMaxContextTokens(
+  reserveRatio: number | undefined,
+  baseContextTokens: number | undefined,
+  maxContextTokens: number | undefined,
+): number | undefined {
+  if (reserveRatio == null || reserveRatio <= 0 || reserveRatio >= 1 || baseContextTokens == null) {
+    return maxContextTokens;
+  }
+  const ratioComputed = Math.max(1024, Math.round(baseContextTokens * (1 - reserveRatio)));
+  return Math.min(maxContextTokens ?? ratioComputed, ratioComputed);
+}
 
 /**
  * Creates a new Run instance with custom handlers and configuration.
@@ -248,6 +310,9 @@ export async function createRun({
   indexTokenCountMap,
   modelSpecs,
   availableModels,
+  summarizationConfig,
+  initialSummary,
+  calibrationRatio,
   streaming = true,
   streamUsage = true,
 }: {
@@ -262,6 +327,11 @@ export async function createRun({
   availableModels?: string[];
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
+  summarizationConfig?: SummarizationConfig;
+  /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
+  initialSummary?: { text: string; tokenCount: number };
+  /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
+  calibrationRatio?: number;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -286,6 +356,13 @@ export async function createRun({
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
       ] as unknown as Providers) ?? agent.provider;
+    const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
+
+    const summarization = shapeSummarizationConfig(
+      agent.summarization ?? summarizationConfig,
+      provider as string,
+      selfModel,
+    );
 
     const llmConfig: t.RunLLMConfig = Object.assign(
       {
@@ -373,6 +450,12 @@ export async function createRun({
       }
     }
 
+    const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
+      summarization.reserveRatio,
+      agent.baseContextTokens,
+      agent.maxContextTokens,
+    );
+
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const visionCapability = determineVisionCapability(agent, modelSpecs, availableModels);
 
@@ -386,10 +469,15 @@ export async function createRun({
       instructions: systemContent,
       name: agent.name ?? undefined,
       toolRegistry: agent.toolRegistry,
-      maxContextTokens: agent.maxContextTokens,
+      maxContextTokens: effectiveMaxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
       vision: visionCapability,
       discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
+      summarizationEnabled: summarization.enabled,
+      summarizationConfig: summarization.config,
+      initialSummary,
+      contextPruningConfig: summarization.contextPruning,
+      maxToolResultChars: agent.maxToolResultChars,
     };
     
     agentInputs.push(agentInput);
@@ -417,5 +505,6 @@ export async function createRun({
     tokenCounter,
     customHandlers,
     indexTokenCountMap,
+    calibrationRatio,
   });
 }

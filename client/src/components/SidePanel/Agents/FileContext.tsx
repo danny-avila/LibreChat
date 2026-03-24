@@ -1,12 +1,7 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
-import {
-  EModelEndpoint,
-  EToolResources,
-  mergeFileConfig,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
 import {
   HoverCard,
   DropdownPopup,
@@ -18,13 +13,13 @@ import {
   HoverCardTrigger,
 } from '@librechat/client';
 import type { ExtendedFile } from '~/common';
-import { useLocalize, useLazyEffect } from '~/hooks';
-import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
-import { SharePointPickerDialog } from '~/components/SharePoint';
-import FileRow from '~/components/Chat/Input/Files/FileRow';
-import { ESide, isEphemeralAgent } from '~/common';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
+import { SharePointPickerDialog } from '~/components/SharePoint';
+import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useGetStartupConfig } from '~/data-provider';
+import { ESide, isEphemeralAgent } from '~/common';
 
 function FileContext({
   agent_id,
@@ -41,15 +36,14 @@ function FileContext({
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
-
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue || EModelEndpoint.agents;
 
   const { handleFileChange } = useFileHandlingNoChatContext(
     {
       additionalMetadata: { agent_id, tool_resource: EToolResources.context },
-      endpointOverride: EModelEndpoint.agents,
+      endpointOverride,
+      endpointTypeOverride: endpointType,
       fileSetter: setFiles,
     },
     fileHandlingState,
@@ -58,7 +52,8 @@ function FileContext({
     useSharePointFileHandlingNoChatContext(
       {
         additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-        endpointOverride: EModelEndpoint.agents,
+        endpointOverride,
+        endpointTypeOverride: endpointType,
         fileSetter: setFiles,
       },
       fileHandlingState,
@@ -72,12 +67,6 @@ function FileContext({
     [_files],
     750,
   );
-
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: EModelEndpoint.agents,
-    endpointType: EModelEndpoint.agents,
-  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
     try {
@@ -111,7 +100,7 @@ function FileContext({
     },
   ];
   const menuTrigger = (
-    <Ariakit.MenuButton className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium">
+    <Ariakit.MenuButton className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium">
       <div className="flex w-full items-center justify-center gap-1">
         <AttachmentIcon className="text-token-text-primary h-4 w-4" />
         {localize('com_ui_upload_file_context')}
@@ -124,7 +113,7 @@ function FileContext({
         <div className="mb-2 flex items-center gap-2">
           <HoverCardTrigger asChild>
             <span className="flex items-center gap-2">
-              <label className="text-token-text-primary block font-medium">
+              <label className="text-token-text-primary block text-sm font-medium">
                 {localize('com_agents_file_context_label')}
               </label>
               <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
@@ -168,7 +157,7 @@ function FileContext({
             <button
               type="button"
               disabled={isEphemeralAgent(agent_id)}
-              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
               onClick={handleLocalFileClick}
             >
               <div className="flex w-full items-center justify-center gap-1">

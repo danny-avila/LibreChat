@@ -3,8 +3,8 @@ const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, ViolationTypes, ContentTypes } = require('librechat-data-provider');
 const { recordUsage, checkMessageGaps } = require('~/server/services/Threads');
 const { sendResponse } = require('~/server/middleware/error');
-const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
+const { getConvo } = require('~/models');
 
 /**
  * @typedef {Object} ErrorHandlerContext

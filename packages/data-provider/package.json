@@ -1,10 +1,11 @@
 {
   "name": "librechat-data-provider",
-  "version": "0.8.301",
+  "version": "0.8.401",
   "description": "data services for librechat apps",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "./dist/types/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "import": "./dist/index.es.js",

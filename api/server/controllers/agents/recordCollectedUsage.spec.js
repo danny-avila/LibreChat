@@ -18,17 +18,11 @@ const mockRecordCollectedUsage = jest
   .fn()
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 
-jest.mock('~/models/spendTokens', () => ({
+jest.mock('~/models', () => ({
   spendTokens: (...args) => mockSpendTokens(...args),
   spendStructuredTokens: (...args) => mockSpendStructuredTokens(...args),
-}));
-
-jest.mock('~/models/tx', () => ({
   getMultiplier: mockGetMultiplier,
   getCacheMultiplier: mockGetCacheMultiplier,
-}));
-
-jest.mock('~/models', () => ({
   updateBalance: mockUpdateBalance,
   bulkInsertTransactions: mockBulkInsertTransactions,
 }));

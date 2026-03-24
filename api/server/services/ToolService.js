@@ -16,7 +16,6 @@ const {
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
-  isBase64ImageUrl,
   buildWebSearchContext,
   buildImageToolContext,
   buildToolClassification,
@@ -40,13 +39,10 @@ const {
   actionDomainSeparator,
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
-  validateVisionModel,
 } = require('librechat-data-provider');
-const { v4 } = require('uuid');
-const { saveBase64Image } = require('~/server/services/Files/process');
-const { FileContext } = require('librechat-data-provider');
 const {
   createActionTool,
+  legacyDomainEncode,
   decryptMetadata,
   loadActionSets,
   domainParser,
@@ -70,116 +66,25 @@ const { findPluginAuthsByKeys } = require('~/models');
 const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
-/**
- * Determines if the current model supports vision capabilities.
- * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
- * @returns {boolean} true if the model supports vision, false otherwise
- */
-function getVisionCapability(client) {
-  const model = client.req.body.model ?? 'gpt-4o-mini';
-  const modelSpecs = client.req.config?.modelSpecs;
-  return validateVisionModel({ model, modelSpecs });
-}
+const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
 /**
- * Processes MCP tool artifacts for Assistants endpoint.
- *
- * Behavior:
- * - Base64 images: Always saved to files (visible in UI), included in contentParts only if vision enabled
- * - HTTP image URLs: Included in contentParts only if vision enabled  
- * - Non-image content: Always included
- *
- * This allows image generation tools to work with non-vision models without API errors.
- *
- * @param {Object} params - Processing parameters
- * @param {Object} params.artifacts - Artifacts from MCP tool
- * @param {boolean} params.isVisionModel - Whether the model supports vision
- * @param {Object} params.req - Express request object
- * @param {string} params.thread_id - Thread ID
- * @param {string} params.conversationId - Conversation ID
- * @returns {Promise<{fileIds: string[], contentParts: Array}>} Processed artifacts
+ * Resolves the set of enabled agent capabilities from endpoints config,
+ * falling back to app-level or default capabilities for ephemeral agents.
+ * @param {ServerRequest} req
+ * @param {Object} appConfig
+ * @param {string} agentId
+ * @returns {Promise<Set<string>>}
  */
-async function processArtifactsForAssistants({
-  artifacts,
-  isVisionModel,
-  req,
-  thread_id,
-  conversationId,
-}) {
-  if (!artifacts?.content) {
-    return { fileIds: [], contentParts: [] };
+async function resolveAgentCapabilities(req, appConfig, agentId) {
+  const endpointsConfig = await getEndpointsConfig(req);
+  let capabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
+  if (capabilities.size === 0 && isEphemeralAgentId(agentId)) {
+    capabilities = new Set(
+      appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+    );
   }
-
-  // Ensure content is an array and filter out null/undefined items
-  if (!Array.isArray(artifacts.content)) {
-    return { fileIds: [], contentParts: [] };
-  }
-
-  if (typeof isVisionModel !== 'boolean') {
-    logger.warn('[processArtifactsForAssistants] Invalid isVisionModel value, defaulting to false', {
-      isVisionModel,
-      model: req.body.model,
-      endpoint: req.body.endpoint,
-    });
-    isVisionModel = false;
-  }
-
-  const fileIds = [];
-  const contentParts = [];
-
-  for (const item of artifacts.content) {
-    // Skip null or undefined items to prevent "Cannot read properties of null" errors
-    if (!item || typeof item !== 'object') {
-      continue;
-    }
-
-    if (item.type === 'image_url') {
-      // Validate image_url structure before processing
-      if (!item.image_url) {
-        logger.warn('[processArtifactsForAssistants] Skipping image_url item with missing image_url property');
-        continue;
-      }
-
-      const isBase64 = isBase64ImageUrl(item);
-
-      if (isBase64) {
-        const imageUrl = typeof item.image_url === 'string' 
-          ? item.image_url 
-          : item.image_url?.url;
-        
-        if (!imageUrl) {
-          logger.warn('[processArtifactsForAssistants] Skipping base64 image with missing URL');
-          continue;
-        }
-
-        try {
-          const file = await saveBase64Image(imageUrl, {
-            req,
-            filename: `artifact_img_${v4()}`,
-            endpoint: req.body.endpoint,
-            context: FileContext.image_generation,
-          });
-          if (file?.file_id) {
-            fileIds.push(file.file_id);
-            if (isVisionModel) {
-              contentParts.push({
-                type: ContentTypes.IMAGE_FILE,
-                [ContentTypes.IMAGE_FILE]: { file_id: file.file_id },
-              });
-            }
-          }
-        } catch (error) {
-          logger.error('[processArtifactsForAssistants] Error saving base64 image:', error);
-        }
-      } else if (isVisionModel) {
-        contentParts.push(item);
-      }
-    } else {
-      contentParts.push(item);
-    }
-  }
-
-  return { fileIds, contentParts };
+  return capabilities;
 }
 
 /**
@@ -270,8 +175,7 @@ async function processRequiredActions(client, requiredActions) {
 
   const promises = [];
 
-  /** @type {Action[]} */
-  let actionSets = [];
+  let actionSetsData = null;
   let isActionTool = false;
   const ActionToolMap = {};
   const ActionBuildersMap = {};
@@ -367,9 +271,9 @@ async function processRequiredActions(client, requiredActions) {
     if (!tool) {
       // throw new Error(`Tool ${currentAction.tool} not found.`);
 
-      // Load all action sets once if not already loaded
-      if (!actionSets.length) {
-        actionSets =
+      if (!actionSetsData) {
+        /** @type {Action[]} */
+        const actionSets =
           (await loadActionSets({
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
@@ -377,11 +281,16 @@ async function processRequiredActions(client, requiredActions) {
         // Process all action sets once
         // Map domains to their processed action sets
         const processedDomains = new Map();
-        const domainMap = new Map();
+        const domainLookupMap = new Map();
 
         for (const action of actionSets) {
           const domain = await domainParser(action.metadata.domain, true);
-          domainMap.set(domain, action);
+          domainLookupMap.set(domain, domain);
+
+          const legacyDomain = legacyDomainEncode(action.metadata.domain);
+          if (legacyDomain !== domain) {
+            domainLookupMap.set(legacyDomain, domain);
+          }
 
           const isDomainAllowed = await isActionDomainAllowed(
             action.metadata.domain,
@@ -436,27 +345,26 @@ async function processRequiredActions(client, requiredActions) {
           ActionBuildersMap[action.metadata.domain] = requestBuilders;
         }
 
-        // Update actionSets reference to use the domain map
-        actionSets = { domainMap, processedDomains };
+        actionSetsData = { domainLookupMap, processedDomains };
       }
 
-      // Find the matching domain for this tool
       let currentDomain = '';
-      for (const domain of actionSets.domainMap.keys()) {
-        if (currentAction.tool.includes(domain)) {
-          currentDomain = domain;
+      let matchedKey = '';
+      for (const [key, canonical] of actionSetsData.domainLookupMap.entries()) {
+        if (currentAction.tool.includes(key)) {
+          currentDomain = canonical;
+          matchedKey = key;
           break;
         }
       }
 
-      if (!currentDomain || !actionSets.processedDomains.has(currentDomain)) {
-        // TODO: try `function` if no action set is found
-        // throw new Error(`Tool ${currentAction.tool} not found.`);
+      if (!currentDomain || !actionSetsData.processedDomains.has(currentDomain)) {
         continue;
       }
 
-      const { action, requestBuilders, encrypted } = actionSets.processedDomains.get(currentDomain);
-      const functionName = currentAction.tool.replace(`${actionDelimiter}${currentDomain}`, '');
+      const { action, requestBuilders, encrypted } =
+        actionSetsData.processedDomains.get(currentDomain);
+      const functionName = currentAction.tool.replace(`${actionDelimiter}${matchedKey}`, '');
       const requestBuilder = requestBuilders[functionName];
 
       if (!requestBuilder) {
@@ -620,17 +528,11 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   }
 
   const appConfig = req.config;
-  const endpointsConfig = await getEndpointsConfig(req);
-  let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
-
-  if (enabledCapabilities.size === 0 && isEphemeralAgentId(agent.id)) {
-    enabledCapabilities = new Set(
-      appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
-    );
-  }
+  const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent.id);
 
   const checkCapability = (capability) => enabledCapabilities.has(capability);
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
+  const actionsEnabled = checkCapability(AgentCapabilities.actions);
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
 
   const filteredTools = agent.tools?.filter((tool) => {
@@ -643,7 +545,10 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     if (tool === Tools.web_search) {
       return checkCapability(AgentCapabilities.web_search);
     }
-    if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
+    if (tool.includes(actionDelimiter)) {
+      return actionsEnabled;
+    }
+    if (!areToolsEnabled) {
       return false;
     }
     return true;
@@ -744,11 +649,16 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const definitions = [];
     const allowedDomains = appConfig?.actions?.allowedDomains;
-    const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
+    const normalizedToolNames = new Set(
+      actionToolNames.map((n) => n.replace(domainSeparatorRegex, '_')),
+    );
 
     for (const action of actionSets) {
       const domain = await domainParser(action.metadata.domain, true);
       const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+
+      const legacyDomain = legacyDomainEncode(action.metadata.domain);
+      const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
 
       const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
       if (!isDomainAllowed) {
@@ -769,7 +679,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
       for (const sig of functionSignatures) {
         const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
-        if (!actionToolNames.some((name) => name.replace(domainSeparatorRegex, '_') === toolName)) {
+        const legacyToolName = `${sig.name}${actionDelimiter}${legacyNormalized}`;
+        if (!normalizedToolNames.has(toolName) && !normalizedToolNames.has(legacyToolName)) {
           continue;
         }
 
@@ -940,6 +851,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     toolContextMap,
     toolDefinitions,
     hasDeferredTools,
+    actionsEnabled,
   };
 }
 
@@ -983,14 +895,7 @@ async function loadAgentTools({
   }
 
   const appConfig = req.config;
-  const endpointsConfig = await getEndpointsConfig(req);
-  let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
-  /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
-  if (enabledCapabilities.size === 0 && isEphemeralAgentId(agent.id)) {
-    enabledCapabilities = new Set(
-      appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
-    );
-  }
+  const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent.id);
   const checkCapability = (capability) => {
     const enabled = enabledCapabilities.has(capability);
     if (!enabled) {
@@ -1007,6 +912,7 @@ async function loadAgentTools({
     return enabled;
   };
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
+  const actionsEnabled = checkCapability(AgentCapabilities.actions);
 
   let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
@@ -1017,7 +923,9 @@ async function loadAgentTools({
     } else if (tool === Tools.web_search) {
       includesWebSearch = checkCapability(AgentCapabilities.web_search);
       return includesWebSearch;
-    } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
+    } else if (tool.includes(actionDelimiter)) {
+      return actionsEnabled;
+    } else if (!areToolsEnabled) {
       return false;
     }
     return true;
@@ -1122,13 +1030,15 @@ async function loadAgentTools({
 
   agentTools.push(...additionalTools);
 
-  if (!checkCapability(AgentCapabilities.actions)) {
+  const hasActionTools = _agentTools.some((t) => t.includes(actionDelimiter));
+  if (!hasActionTools) {
     return {
       toolRegistry,
       userMCPAuthMap,
       toolContextMap,
       toolDefinitions,
       hasDeferredTools,
+      actionsEnabled,
       tools: agentTools,
     };
   }
@@ -1144,19 +1054,22 @@ async function loadAgentTools({
       toolContextMap,
       toolDefinitions,
       hasDeferredTools,
+      actionsEnabled,
       tools: agentTools,
     };
   }
 
-  // Process each action set once (validate spec, decrypt metadata)
   const processedActionSets = new Map();
-  const domainMap = new Map();
+  const domainLookupMap = new Map();
 
   for (const action of actionSets) {
     const domain = await domainParser(action.metadata.domain, true);
-    domainMap.set(domain, action);
+    domainLookupMap.set(domain, domain);
 
-    // Check if domain is allowed (do this once per action set)
+    const legacyDomain = legacyDomainEncode(action.metadata.domain);
+    if (legacyDomain !== domain) {
+      domainLookupMap.set(legacyDomain, domain);
+    }
     const isDomainAllowed = await isActionDomainAllowed(
       action.metadata.domain,
       appConfig?.actions?.allowedDomains,
@@ -1218,11 +1131,12 @@ async function loadAgentTools({
       continue;
     }
 
-    // Find the matching domain for this tool
     let currentDomain = '';
-    for (const domain of domainMap.keys()) {
-      if (toolName.includes(domain)) {
-        currentDomain = domain;
+    let matchedKey = '';
+    for (const [key, canonical] of domainLookupMap.entries()) {
+      if (toolName.includes(key)) {
+        currentDomain = canonical;
+        matchedKey = key;
         break;
       }
     }
@@ -1233,7 +1147,7 @@ async function loadAgentTools({
 
     const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
       processedActionSets.get(currentDomain);
-    const functionName = toolName.replace(`${actionDelimiter}${currentDomain}`, '');
+    const functionName = toolName.replace(`${actionDelimiter}${matchedKey}`, '');
     const functionSig = functionSignatures.find((sig) => sig.name === functionName);
     const requestBuilder = requestBuilders[functionName];
     const zodSchema = zodSchemas[functionName];
@@ -1276,6 +1190,7 @@ async function loadAgentTools({
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    actionsEnabled,
     tools: agentTools,
   };
 }
@@ -1293,9 +1208,11 @@ async function loadAgentTools({
  * @param {AbortSignal} [params.signal] - Abort signal
  * @param {Object} params.agent - The agent object
  * @param {string[]} params.toolNames - Names of tools to load
+ * @param {Map} [params.toolRegistry] - Tool registry
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap] - User MCP auth map
  * @param {Object} [params.tool_resources] - Tool resources
  * @param {string|null} [params.streamId] - Stream ID for web search callbacks
+ * @param {boolean} [params.actionsEnabled] - Whether the actions capability is enabled
  * @returns {Promise<{ loadedTools: Array, configurable: Object }>}
  */
 async function loadToolsForExecution({
@@ -1308,10 +1225,16 @@ async function loadToolsForExecution({
   userMCPAuthMap,
   tool_resources,
   streamId = null,
+  actionsEnabled,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
   const configurable = { userMCPAuthMap };
+
+  if (actionsEnabled === undefined) {
+    const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent?.id);
+    actionsEnabled = enabledCapabilities.has(AgentCapabilities.actions);
+  }
 
   const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
   const isPTC = toolNames.includes(AgentConstants.PROGRAMMATIC_TOOL_CALLING);
@@ -1369,7 +1292,6 @@ async function loadToolsForExecution({
   const actionToolNames = allToolNamesToLoad.filter((name) => name.includes(actionDelimiter));
   const regularToolNames = allToolNamesToLoad.filter((name) => !name.includes(actionDelimiter));
 
-  /** @type {Record<string, unknown>} */
   if (regularToolNames.length > 0) {
     const includesWebSearch = regularToolNames.includes(Tools.web_search);
     const webSearchCallbacks = includesWebSearch ? createOnSearchResults(res, streamId) : undefined;
@@ -1400,7 +1322,7 @@ async function loadToolsForExecution({
     }
   }
 
-  if (actionToolNames.length > 0 && agent) {
+  if (actionToolNames.length > 0 && agent && actionsEnabled) {
     const actionTools = await loadActionToolsForExecution({
       req,
       res,
@@ -1410,6 +1332,11 @@ async function loadToolsForExecution({
       actionToolNames,
     });
     allLoadedTools.push(...actionTools);
+  } else if (actionToolNames.length > 0 && agent && !actionsEnabled) {
+    logger.warn(
+      `[loadToolsForExecution] Capability "${AgentCapabilities.actions}" disabled. ` +
+        `Skipping action tool execution. User: ${req.user.id} | Agent: ${agent.id} | Tools: ${actionToolNames.join(', ')}`,
+    );
   }
 
   if (isPTC && allLoadedTools.length > 0) {
@@ -1455,12 +1382,20 @@ async function loadActionToolsForExecution({
   }
 
   const processedActionSets = new Map();
-  const domainMap = new Map();
+  /** Maps both new and legacy normalized domains to their canonical (new) domain key */
+  const normalizedToDomain = new Map();
   const allowedDomains = appConfig?.actions?.allowedDomains;
 
   for (const action of actionSets) {
     const domain = await domainParser(action.metadata.domain, true);
-    domainMap.set(domain, action);
+    const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+    normalizedToDomain.set(normalizedDomain, domain);
+
+    const legacyDomain = legacyDomainEncode(action.metadata.domain);
+    const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
+    if (legacyNormalized !== normalizedDomain) {
+      normalizedToDomain.set(legacyNormalized, domain);
+    }
 
     const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
     if (!isDomainAllowed) {
@@ -1509,16 +1444,15 @@ async function loadActionToolsForExecution({
       functionSignatures,
       zodSchemas,
       encrypted,
+      legacyNormalized,
     });
   }
 
-  const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
   for (const toolName of actionToolNames) {
     let currentDomain = '';
-    for (const domain of domainMap.keys()) {
-      const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+    for (const [normalizedDomain, canonicalDomain] of normalizedToDomain.entries()) {
       if (toolName.includes(normalizedDomain)) {
-        currentDomain = domain;
+        currentDomain = canonicalDomain;
         break;
       }
     }
@@ -1527,7 +1461,7 @@ async function loadActionToolsForExecution({
       continue;
     }
 
-    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
+    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures, legacyNormalized } =
       processedActionSets.get(currentDomain);
     const normalizedDomain = currentDomain.replace(domainSeparatorRegex, '_');
     const functionName = toolName.replace(`${actionDelimiter}${normalizedDomain}`, '');
@@ -1536,6 +1470,25 @@ async function loadActionToolsForExecution({
     const zodSchema = zodSchemas[functionName];
 
     if (!requestBuilder) {
+      const legacyFnName = toolName.replace(`${actionDelimiter}${legacyNormalized}`, '');
+      if (legacyFnName !== toolName && requestBuilders[legacyFnName]) {
+        const legacyTool = await createActionTool({
+          userId: req.user.id,
+          res,
+          action,
+          streamId,
+          encrypted,
+          requestBuilder: requestBuilders[legacyFnName],
+          zodSchema: zodSchemas[legacyFnName],
+          name: toolName,
+          description:
+            functionSignatures.find((sig) => sig.name === legacyFnName)?.description ?? '',
+          useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+        });
+        if (legacyTool) {
+          loadedActionTools.push(legacyTool);
+        }
+      }
       continue;
     }
 
@@ -1570,5 +1523,5 @@ module.exports = {
   loadAgentTools,
   loadToolsForExecution,
   processRequiredActions,
-  getVisionCapability,
+  resolveAgentCapabilities,
 };

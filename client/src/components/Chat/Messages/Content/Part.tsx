@@ -8,9 +8,18 @@ import {
 } from 'librechat-data-provider';
 import { memo } from 'react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
-import { OpenAIImageGen, EmptyText, Reasoning, ExecuteCode, AgentUpdate, Text } from './Parts';
+import {
+  OpenAIImageGen,
+  ExecuteCode,
+  AgentUpdate,
+  EmptyText,
+  Reasoning,
+  Summary,
+  Text,
+} from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
+import { getCachedPreview } from '~/utils';
 import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
@@ -99,6 +108,16 @@ const Part = memo(function Part({
       return null;
     }
     return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
+  } else if (part.type === ContentTypes.SUMMARY) {
+    return (
+      <Summary
+        content={part.content}
+        model={part.model}
+        provider={part.provider}
+        tokenCount={part.tokenCount}
+        summarizing={part.summarizing}
+      />
+    );
   } else if (part.type === ContentTypes.TOOL_CALL) {
     const toolCall = part[ContentTypes.TOOL_CALL];
 
@@ -222,18 +241,13 @@ const Part = memo(function Part({
     }
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
-    const height = imageFile.height ?? 1920;
-    const width = imageFile.width ?? 1080;
+    const cached = imageFile.file_id ? getCachedPreview(imageFile.file_id) : undefined;
     return (
       <Image
-        imagePath={imageFile.filepath}
-        height={height}
-        width={width}
+        imagePath={cached ?? imageFile.filepath}
         altText={imageFile.filename ?? 'Uploaded Image'}
-        placeholderDimensions={{
-          height: height + 'px',
-          width: width + 'px',
-        }}
+        width={imageFile.width}
+        height={imageFile.height}
       />
     );
   }

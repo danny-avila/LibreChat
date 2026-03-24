@@ -15,6 +15,8 @@ export * from './mcp/errors';
 /* Utilities */
 export * from './mcp/utils';
 export * from './utils';
+export { default as Tokenizer, countTokens } from './utils/tokenizer';
+export type { EncodingName } from './utils/tokenizer';
 export * from './db/utils';
 /* OAuth */
 export * from './oauth';
@@ -35,6 +37,8 @@ export * from './prompts';
 export * from './endpoints';
 /* Files */
 export * from './files';
+/* Storage */
+export * from './storage';
 /* Tools */
 export * from './tools';
 /* web search */
