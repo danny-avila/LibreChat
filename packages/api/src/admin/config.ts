@@ -17,59 +17,6 @@ function getTopLevelSection(fieldPath: string): string {
   return fieldPath.split('.')[0];
 }
 
-function deepGet(obj: Record<string, unknown>, path: string): unknown {
-  const keys = path.split('.');
-  let current: unknown = obj;
-  for (const key of keys) {
-    if (current == null || typeof current !== 'object') {
-      return undefined;
-    }
-    current = (current as Record<string, unknown>)[key];
-  }
-  return current;
-}
-
-function deepSet(obj: Record<string, unknown>, path: string, value: unknown): void {
-  const keys = path.split('.');
-  let current: Record<string, unknown> = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i];
-    if (current[key] == null || typeof current[key] !== 'object') {
-      current[key] = {};
-    }
-    current = current[key] as Record<string, unknown>;
-  }
-  current[keys[keys.length - 1]] = value;
-}
-
-function deepUnset(obj: Record<string, unknown>, path: string): void {
-  const keys = path.split('.');
-  if (keys.length === 1) {
-    delete obj[keys[0]];
-    return;
-  }
-  const parents: Array<{ obj: Record<string, unknown>; key: string }> = [];
-  let current: Record<string, unknown> = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i];
-    if (current[key] == null || typeof current[key] !== 'object') {
-      return;
-    }
-    parents.push({ obj: current, key });
-    current = current[key] as Record<string, unknown>;
-  }
-  delete current[keys[keys.length - 1]];
-  // Clean up empty parent objects
-  for (let i = parents.length - 1; i >= 0; i--) {
-    const { obj: parentObj, key } = parents[i];
-    if (Object.keys(parentObj[key] as Record<string, unknown>).length === 0) {
-      delete parentObj[key];
-    } else {
-      break;
-    }
-  }
-}
-
 // ── Types ────────────────────────────────────────────────────────────
 
 interface CapabilityUser {
@@ -77,6 +24,12 @@ interface CapabilityUser {
   role: string;
   tenantId?: string;
 }
+
+/**
+ * Sentinel for broad config access checks (not section-specific).
+ * Used when an operation applies to the entire config (list, delete, toggle).
+ */
+const BROAD_CONFIG_ACCESS = BROAD_CONFIG_ACCESS;
 
 export interface AdminConfigDeps {
   listAllConfigs: (session?: ClientSession) => Promise<IConfig[]>;
@@ -91,6 +44,20 @@ export interface AdminConfigDeps {
     principalModel: PrincipalModel,
     overrides: Record<string, unknown>,
     priority: number,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+  patchConfigFields: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    principalModel: PrincipalModel,
+    fields: Record<string, unknown>,
+    priority: number,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+  unsetConfigField: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    fieldPath: string,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   deleteConfig: (
@@ -110,7 +77,6 @@ export interface AdminConfigDeps {
     verb?: 'manage' | 'read',
   ) => Promise<boolean>;
   signalConfigChange?: () => Promise<void>;
-  /** Return the raw AppConfig (YAML base, no scoped overrides). */
   getAppConfig?: (options?: { role?: string; userId?: string }) => Promise<AppConfig>;
 }
 
@@ -153,6 +119,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
     listAllConfigs,
     findConfigByPrincipal,
     upsertConfig,
+    patchConfigFields,
+    unsetConfigField,
     deleteConfig,
     toggleConfigActive,
     hasConfigCapability,
@@ -180,7 +148,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       // Listing requires broad read:configs
-      if (!(await hasConfigCapability(user, '' as ConfigSection, 'read'))) {
+      if (!(await hasConfigCapability(user, BROAD_CONFIG_ACCESS, 'read'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
@@ -203,7 +171,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, '' as ConfigSection, 'read'))) {
+      if (!(await hasConfigCapability(user, BROAD_CONFIG_ACCESS, 'read'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
@@ -243,12 +211,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(404).json({ error: 'Config not found' });
       }
 
-      // Check read access for each top-level section in overrides
       const overrides = (config.overrides ?? {}) as Record<string, unknown>;
-      for (const section of Object.keys(overrides)) {
-        if (!(await hasConfigCapability(user, section as ConfigSection, 'read'))) {
+      const overrideSections = Object.keys(overrides);
+      if (overrideSections.length > 0) {
+        const allowed = await Promise.all(
+          overrideSections.map((s) => hasConfigCapability(user, s as ConfigSection, 'read')),
+        );
+        const denied = overrideSections.find((_, i) => !allowed[i]);
+        if (denied) {
           return res.status(403).json({
-            error: `Insufficient permissions for config section: ${section}`,
+            error: `Insufficient permissions for config section: ${denied}`,
           });
         }
       }
@@ -292,11 +264,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      // Check manage access for each top-level section
-      for (const section of Object.keys(overrides)) {
-        if (!(await hasConfigCapability(user, section as ConfigSection, 'manage'))) {
+      const overrideSections = Object.keys(overrides);
+      if (overrideSections.length > 0) {
+        const allowed = await Promise.all(
+          overrideSections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
+        );
+        const denied = overrideSections.find((_, i) => !allowed[i]);
+        if (denied) {
           return res.status(403).json({
-            error: `Insufficient permissions for config section: ${section}`,
+            error: `Insufficient permissions for config section: ${denied}`,
           });
         }
       }
@@ -354,32 +330,30 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      // Check manage access for each entry's section
       const sections = [...new Set(entries.map((e) => getTopLevelSection(e.fieldPath)))];
-      for (const section of sections) {
-        if (!(await hasConfigCapability(user, section as ConfigSection, 'manage'))) {
-          return res.status(403).json({
-            error: `Insufficient permissions for config section: ${section}`,
-          });
-        }
+      const allowed = await Promise.all(
+        sections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
+      );
+      const denied = sections.find((_, i) => !allowed[i]);
+      if (denied) {
+        return res.status(403).json({
+          error: `Insufficient permissions for config section: ${denied}`,
+        });
       }
 
-      // Fetch existing config to merge into
-      const existing = await findConfigByPrincipal(principalType, principalId);
-      const overrides: Record<string, unknown> = existing
-        ? JSON.parse(JSON.stringify(existing.overrides ?? {}))
-        : {};
-
-      // Apply field updates
+      const fields: Record<string, unknown> = {};
       for (const entry of entries) {
-        deepSet(overrides, entry.fieldPath, entry.value);
+        fields[entry.fieldPath] = entry.value;
       }
 
-      const config = await upsertConfig(
+      const existing =
+        priority == null ? await findConfigByPrincipal(principalType, principalId) : null;
+
+      const config = await patchConfigFields(
         principalType,
         principalId,
         principalModel(principalType),
-        overrides,
+        fields,
         priority ?? existing?.priority ?? 10,
       );
 
@@ -427,28 +401,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         });
       }
 
-      const existing = await findConfigByPrincipal(principalType, principalId);
-      if (!existing) {
+      const config = await unsetConfigField(principalType, principalId, fieldPath);
+      if (!config) {
         return res.status(404).json({ error: 'Config not found' });
       }
-
-      const overrides: Record<string, unknown> = JSON.parse(
-        JSON.stringify(existing.overrides ?? {}),
-      );
-
-      if (deepGet(overrides, fieldPath) === undefined) {
-        return res.status(404).json({ error: `Field not found: ${fieldPath}` });
-      }
-
-      deepUnset(overrides, fieldPath);
-
-      const config = await upsertConfig(
-        principalType,
-        principalId,
-        principalModel(principalType),
-        overrides,
-        existing.priority,
-      );
 
       await notifyChange();
       return res.status(200).json({ config });
@@ -478,7 +434,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       // Deleting an entire override requires broad manage:configs
-      if (!(await hasConfigCapability(user, '' as ConfigSection, 'manage'))) {
+      if (!(await hasConfigCapability(user, BROAD_CONFIG_ACCESS, 'manage'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
@@ -520,7 +476,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       // Toggling requires broad manage:configs
-      if (!(await hasConfigCapability(user, '' as ConfigSection, 'manage'))) {
+      if (!(await hasConfigCapability(user, BROAD_CONFIG_ACCESS, 'manage'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 

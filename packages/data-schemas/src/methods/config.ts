@@ -58,7 +58,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     const configQuery = Config.find({
       $or: principalsQuery,
       isActive: true,
-    });
+    }).sort({ priority: 1 });
 
     if (session) {
       configQuery.session(session);
@@ -100,6 +100,60 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     };
 
     return await Config.findOneAndUpdate(query, update, options);
+  }
+
+  async function patchConfigFields(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    principalModel: PrincipalModel,
+    fields: Record<string, unknown>,
+    priority: number,
+    session?: ClientSession,
+  ): Promise<IConfig | null> {
+    const Config = mongoose.models.Config as Model<IConfig>;
+
+    const setPayload: Record<string, unknown> = {
+      principalModel,
+      priority,
+      isActive: true,
+    };
+
+    for (const [path, value] of Object.entries(fields)) {
+      setPayload[`overrides.${path}`] = value;
+    }
+
+    const options = {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      ...(session ? { session } : {}),
+    };
+
+    return await Config.findOneAndUpdate(
+      { principalType, principalId: principalId.toString() },
+      { $set: setPayload, $inc: { configVersion: 1 } },
+      options,
+    );
+  }
+
+  async function unsetConfigField(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    fieldPath: string,
+    session?: ClientSession,
+  ): Promise<IConfig | null> {
+    const Config = mongoose.models.Config as Model<IConfig>;
+
+    const options = {
+      new: true,
+      ...(session ? { session } : {}),
+    };
+
+    return await Config.findOneAndUpdate(
+      { principalType, principalId: principalId.toString(), isActive: true },
+      { $unset: { [`overrides.${fieldPath}`]: '' }, $inc: { configVersion: 1 } },
+      options,
+    );
   }
 
   async function deleteConfig(
@@ -147,6 +201,8 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     findConfigByPrincipal,
     getApplicableConfigs,
     upsertConfig,
+    patchConfigFields,
+    unsetConfigField,
     deleteConfig,
     toggleConfigActive,
   };

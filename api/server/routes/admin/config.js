@@ -17,6 +17,8 @@ const handlers = createAdminConfigHandlers({
   listAllConfigs: db.listAllConfigs,
   findConfigByPrincipal: db.findConfigByPrincipal,
   upsertConfig: db.upsertConfig,
+  patchConfigFields: db.patchConfigFields,
+  unsetConfigField: db.unsetConfigField,
   deleteConfig: db.deleteConfig,
   toggleConfigActive: db.toggleConfigActive,
   hasConfigCapability,

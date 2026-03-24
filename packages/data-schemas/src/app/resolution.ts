@@ -1,5 +1,4 @@
-import type { AppConfig } from '~/types';
-import type { IConfig } from '~/types';
+import type { AppConfig, IConfig } from '~/types';
 
 /**
  * Deep merge source into target, returning a new object.

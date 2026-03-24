@@ -94,7 +94,6 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
 
     const cache = getCache(cacheKeys.APP_CONFIG);
 
-    // 1. Get or initialize the base config (from YAML, cached indefinitely)
     let baseConfig = (await cache.get(BASE_CONFIG_KEY)) as AppConfig | undefined;
     if (!baseConfig || refresh) {
       logger.info('[getAppConfig] Loading base configuration from YAML...');
@@ -111,39 +110,33 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       await cache.set(BASE_CONFIG_KEY, baseConfig);
     }
 
-    // 2. Check if any DB configs exist (feature flag — zero cost when unused)
     const hasDbConfigs = await cache.get(HAS_DB_CONFIGS_KEY);
     if (hasDbConfigs === false) {
       return baseConfig;
     }
 
-    // 3. Check override cache (short TTL)
     const cacheKey = overrideCacheKey(role, userId);
-    if (cacheKey && !refresh) {
+    if (!refresh) {
       const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
       if (cachedMerged) {
         return cachedMerged;
       }
     }
 
-    // 4. Query DB for applicable configs (always includes __base__ doc) and merge
     try {
       const principals = await buildPrincipals(role, userId);
       const configs = await getApplicableConfigs(principals);
 
-      // Update the feature flag: if no configs found and flag wasn't set, cache false
       if (configs.length === 0) {
-        if (hasDbConfigs === undefined) {
+        if (hasDbConfigs == null) {
           await cache.set(HAS_DB_CONFIGS_KEY, false);
         }
         return baseConfig;
       }
 
-      // Merge and cache with TTL
+      await cache.set(HAS_DB_CONFIGS_KEY, true);
       const merged = mergeConfigOverrides(baseConfig, configs);
-      if (cacheKey) {
-        await cache.set(cacheKey, merged, OVERRIDE_CACHE_TTL);
-      }
+      await cache.set(cacheKey, merged, OVERRIDE_CACHE_TTL);
       return merged;
     } catch (error) {
       logger.error('[getAppConfig] Error resolving config overrides, falling back to base:', error);
@@ -160,12 +153,10 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
     await cache.set(HAS_DB_CONFIGS_KEY, true);
   }
 
-  /**
-   * Clear the app configuration cache.
-   */
-  async function clearAppConfigCache(): Promise<boolean> {
-    const cache = getCache(cacheKeys.CONFIG_STORE);
-    return cache.delete(cacheKeys.APP_CONFIG);
+  async function clearAppConfigCache(): Promise<void> {
+    const cache = getCache(cacheKeys.APP_CONFIG);
+    await cache.delete(BASE_CONFIG_KEY);
+    await cache.delete(HAS_DB_CONFIGS_KEY);
   }
 
   return {

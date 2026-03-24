@@ -52,11 +52,4 @@ configSchema.index({ principalType: 1, principalId: 1, tenantId: 1 }, { unique: 
 configSchema.index({ principalType: 1, principalId: 1, isActive: 1, tenantId: 1 });
 configSchema.index({ priority: 1, isActive: 1, tenantId: 1 });
 
-configSchema.pre('save', function (next) {
-  if (!this.isNew && this.isModified('overrides')) {
-    this.configVersion = (this.configVersion || 0) + 1;
-  }
-  next();
-});
-
 export default configSchema;

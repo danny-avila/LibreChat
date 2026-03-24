@@ -60,13 +60,13 @@ export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSy
 // ---------------------------------------------------------------------------
 
 /** Reverse map: for a given read capability, which manage capabilities imply it? */
-const _impliedBy: Record<string, string[]> = {};
+const impliedByMap: Record<string, string[]> = {};
 for (const [manage, reads] of Object.entries(CapabilityImplications)) {
   for (const read of reads as string[]) {
-    if (!_impliedBy[read]) {
-      _impliedBy[read] = [];
+    if (!impliedByMap[read]) {
+      impliedByMap[read] = [];
     }
-    _impliedBy[read].push(manage);
+    impliedByMap[read].push(manage);
   }
 }
 
@@ -78,7 +78,7 @@ export function hasImpliedCapability(held: string[], required: string): boolean 
   if (held.includes(required)) {
     return true;
   }
-  const impliers = _impliedBy[required];
+  const impliers = impliedByMap[required];
   if (impliers) {
     for (const cap of impliers) {
       if (held.includes(cap)) {
