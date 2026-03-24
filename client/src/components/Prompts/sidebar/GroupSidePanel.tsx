@@ -96,11 +96,7 @@ export default function GroupSidePanel({
       <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
         {children}
         <div className={cn('relative flex h-full flex-col', isChatRoute ? '' : 'px-2 md:px-0')}>
-          <List
-            groups={promptGroups}
-            isChatRoute={isChatRoute}
-            isLoading={!!groupsQuery.isLoading}
-          />
+          <List groups={promptGroups} isLoading={!!groupsQuery.isLoading} />
         </div>
       </div>
       <div className={cn(isChatRoute ? '' : 'px-2 pb-3 pt-2 md:px-0')}>

@@ -11,13 +11,7 @@ export {
   FilterPrompts,
   PanelNavigation,
 } from './sidebar';
-export {
-  List as PromptGroupsList,
-  DashGroupItem,
-  ChatGroupItem,
-  ListCard,
-  NoPromptGroup,
-} from './lists';
+export { List as PromptGroupsList, ChatGroupItem, ListCard, NoPromptGroup } from './lists';
 export {
   CreatePromptButton,
   AdminSettings,
