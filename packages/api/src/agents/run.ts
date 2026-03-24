@@ -18,6 +18,7 @@ import type { BaseMessage } from '@langchain/core/messages';
 import type { IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+import { getOrComputeToolTokens } from './toolTokens';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -296,7 +297,7 @@ export async function createRun({
       : new Set<string>();
 
   const agentInputs: AgentInputs[] = [];
-  const buildAgentContext = (agent: RunAgent) => {
+  const buildAgentContext = async (agent: RunAgent): Promise<AgentInputs> => {
     const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
@@ -381,11 +382,24 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
+    /** Resolve cached or computed tool schema tokens */
+    let toolSchemaTokens: number | undefined;
+    if (tokenCounter) {
+      toolSchemaTokens = await getOrComputeToolTokens({
+        tools: agent.tools,
+        toolDefinitions,
+        provider,
+        clientOptions: llmConfig,
+        tokenCounter,
+      });
+    }
+
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const agentInput: AgentInputs = {
       provider,
       reasoningKey,
       toolDefinitions,
+      toolSchemaTokens,
       agentId: agent.id,
       tools: agent.tools,
       clientOptions: llmConfig,
@@ -401,12 +415,11 @@ export async function createRun({
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
-    agentInputs.push(agentInput);
+    return agentInput;
   };
 
-  for (const agent of agents) {
-    buildAgentContext(agent);
-  }
+  const resolvedInputs = await Promise.all(agents.map(buildAgentContext));
+  agentInputs.push(...resolvedInputs);
 
   const graphConfig: RunConfig['graphConfig'] = {
     signal,
