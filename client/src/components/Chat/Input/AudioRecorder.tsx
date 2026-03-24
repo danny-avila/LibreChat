@@ -1,5 +1,4 @@
 import { useCallback, useRef } from 'react';
-import { MicOff } from 'lucide-react';
 import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
 import { useChatFormContext } from '~/Providers';
@@ -95,15 +94,13 @@ export default function AudioRecorder({
   };
 
   const renderIcon = () => {
-    const iconClassName = 'sm:w-5 sm:h-5 w-8 h-8';
-
     if (isListening === true) {
-      return <MicOff className={cn('stroke-red-500', iconClassName)} />;
+      return <ListeningIcon className="stroke-green-500" style={{ width: 24, height: 24 }} />;
     }
     if (isLoading === true) {
-      return <Spinner className={cn('stroke-text-secondary', iconClassName)} />;
+      return <Spinner className="stroke-text-secondary" size={24} />;
     }
-    return <ListeningIcon className={cn('stroke-text-secondary', iconClassName)} />;
+    return <ListeningIcon className="stroke-text-secondary" style={{ width: 24, height: 24 }} />;
   };
 
   return (
@@ -117,13 +114,14 @@ export default function AudioRecorder({
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
           disabled={disabled}
           className={cn(
-            'flex size-9 sm:size-9 items-center justify-center rounded-full p-1 transition-all duration-200 hover:bg-surface-hover',
-            isListening && 'animate-pulse bg-red-500/10 hover:bg-red-500/20',
-            'active:scale-95'
+            'relative flex size-7 items-center justify-center self-center rounded-full p-1 transition-colors hover:bg-surface-hover mr-1',
           )}
           title={localize('com_ui_use_micrphone')}
           aria-pressed={isListening}
         >
+          {isListening === true && (
+            <span className="absolute inset-0 animate-pulse rounded-full bg-green-500/25 [animation-duration:0.20s]" />
+          )}
           {renderIcon()}
         </button>
       }
