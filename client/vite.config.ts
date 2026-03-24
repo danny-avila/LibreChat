@@ -139,17 +139,14 @@ export default defineConfig(({ command }) => ({
               return 'security-ui';
             }
 
-            if (normalizedId.includes('@codemirror/view')) {
-              return 'codemirror-view';
-            }
-            if (normalizedId.includes('@codemirror/state')) {
-              return 'codemirror-state';
-            }
-            if (normalizedId.includes('@codemirror/language')) {
-              return 'codemirror-language';
-            }
-            if (normalizedId.includes('@codemirror')) {
-              return 'codemirror-core';
+            // Keep the CodeMirror stack together to avoid TDZ issues between
+            // view/state/language/style-mod when Rollup initializes split chunks.
+            if (
+              normalizedId.includes('@codemirror') ||
+              normalizedId.includes('style-mod') ||
+              normalizedId.includes('@lezer')
+            ) {
+              return 'codemirror';
             }
 
             if (
