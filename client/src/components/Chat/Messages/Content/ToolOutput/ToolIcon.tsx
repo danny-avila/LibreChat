@@ -1,14 +1,5 @@
 import { Constants, actionDelimiter } from 'librechat-data-provider';
-import {
-  Plug,
-  Terminal,
-  Globe,
-  ImageIcon,
-  ArrowRightLeft,
-  FileSearch,
-  Zap,
-  Wrench,
-} from 'lucide-react';
+import { Terminal, Globe, ImageIcon, ArrowRightLeft, FileSearch, Zap, Wrench } from 'lucide-react';
 import { cn } from '~/utils';
 
 export type ToolIconType =
@@ -22,7 +13,7 @@ export type ToolIconType =
   | 'generic';
 
 const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>> = {
-  mcp: Plug,
+  mcp: Wrench,
   execute_code: Terminal,
   web_search: Globe,
   image_gen: ImageIcon,
