@@ -786,7 +786,9 @@ async function setupOpenId() {
 
     if (clientSecret) {
       clientMetadata.client_secret = clientSecret;
-      clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+      if (shouldGenerateNonce) {
+        clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+      }
     } else if (usePKCE) {
       clientMetadata.token_endpoint_auth_method = 'none';
     }
