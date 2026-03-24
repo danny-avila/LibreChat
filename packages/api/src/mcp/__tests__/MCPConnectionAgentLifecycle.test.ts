@@ -207,6 +207,7 @@ describe('MCPConnection Agent lifecycle – streamable-http', () => {
   });
 
   afterEach(async () => {
+    MCPConnection.clearCooldown('test');
     await safeDisconnect(conn);
     conn = null;
     jest.restoreAllMocks();
@@ -366,6 +367,7 @@ describe('MCPConnection Agent lifecycle – SSE', () => {
   });
 
   afterEach(async () => {
+    MCPConnection.clearCooldown('test-sse');
     await safeDisconnect(conn);
     conn = null;
     jest.restoreAllMocks();
@@ -453,6 +455,7 @@ describe('Regression: old per-request Agent pattern leaks agents', () => {
   });
 
   afterEach(async () => {
+    MCPConnection.clearCooldown('test-regression');
     await safeDisconnect(conn);
     conn = null;
     jest.restoreAllMocks();
@@ -675,6 +678,7 @@ describe('MCPConnection SSE GET stream recovery – integration', () => {
   });
 
   afterEach(async () => {
+    MCPConnection.clearCooldown('test-sse-recovery');
     await safeDisconnect(conn);
     conn = null;
     jest.restoreAllMocks();

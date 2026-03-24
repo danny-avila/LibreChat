@@ -9,4 +9,16 @@ export interface IBalance extends Document {
   refillIntervalUnit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
   lastRefill: Date;
   refillAmount: number;
+  tenantId?: string;
+}
+
+/** Plain data fields for creating or updating a balance record (no Mongoose Document methods) */
+export interface IBalanceUpdate {
+  user?: string;
+  tokenCredits?: number;
+  autoRefillEnabled?: boolean;
+  refillIntervalValue?: number;
+  refillIntervalUnit?: string;
+  refillAmount?: number;
+  lastRefill?: Date;
 }

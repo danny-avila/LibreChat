@@ -1,6 +1,6 @@
 {
   "name": "@librechat/client",
-  "version": "0.4.53",
+  "version": "0.4.56",
   "description": "React components for LibreChat",
   "repository": {
     "type": "git",
@@ -31,8 +31,8 @@
   "peerDependencies": {
     "@ariakit/react": "^0.4.16",
     "@ariakit/react-core": "^0.4.17",
-    "@dicebear/collection": "^9.2.2",
-    "@dicebear/core": "^9.2.2",
+    "@dicebear/collection": "^9.4.1",
+    "@dicebear/core": "^9.4.1",
     "@headlessui/react": "^2.1.2",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "1.0.2",
@@ -71,7 +71,7 @@
     "react-dom": "^18.2.0 || ^19.1.0",
     "react-hook-form": "^7.56.4",
     "react-i18next": "^15.4.0 || ^15.6.0",
-    "react-resizable-panels": "^3.0.6",
+    "react-resizable-panels": "^4.7.4",
     "react-textarea-autosize": "^8.4.0",
     "tailwind-merge": "^1.9.1"
   },

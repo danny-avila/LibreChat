@@ -311,6 +311,30 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
   };
 }
 
+/** Fields set by a model spec that should be cleared when switching to a non-spec conversation. */
+export const specDisplayFieldReset = {
+  spec: null as string | null,
+  iconURL: null as string | null,
+  modelLabel: null as string | null,
+  greeting: undefined as string | undefined,
+};
+
+/**
+ * Merges a spec preset base with URL query settings, clearing spec display fields
+ * when the query doesn't explicitly set a spec. Prevents spec contamination on
+ * agent/assistant share links.
+ */
+export function mergeQuerySettingsWithSpec(
+  specPreset: t.TPreset | undefined,
+  querySettings: t.TPreset,
+): t.TPreset {
+  return {
+    ...specPreset,
+    ...querySettings,
+    ...(specPreset != null && querySettings.spec == null ? specDisplayFieldReset : {}),
+  };
+}
+
 /** Gets the default spec iconURL by order or definition.
  *
  * First, the admin defined default, then last selected spec, followed by first spec

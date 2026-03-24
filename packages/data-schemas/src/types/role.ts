@@ -66,6 +66,7 @@ export interface IRole extends Document {
       [Permissions.SHARE_PUBLIC]?: boolean;
     };
   };
+  tenantId?: string;
 }
 
 export type RolePermissions = IRole['permissions'];

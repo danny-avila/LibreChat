@@ -25,10 +25,6 @@ const RECOGNIZED_PROVIDERS = new Set([
   // are automatically recognized if they're not in NON_OPENAI_PROVIDERS
 ]);
 
-// Known providers that use content array format (structured content blocks)
-// These are the standard OpenAI-compatible providers plus Google and Anthropic
-const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'azureopenai', 'openai']);
-
 /**
  * Check if a provider should receive structured content formatting for MCP tool responses.
  *
@@ -42,34 +38,6 @@ const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'azureopenai', '
 function isRecognizedProvider(provider: t.Provider): boolean {
   if (RECOGNIZED_PROVIDERS.has(provider)) {
     return true;
-  }
-
-  if (!NON_OPENAI_PROVIDERS.has(provider)) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Check if a provider uses content array format (structured content blocks).
- *
- * Uses array format:
- * - Standard OpenAI-compatible providers (openai, azureopenai)
- * - Google and Anthropic (native array format)
- * - New unknown custom endpoints (assumed OpenAI-compatible, so use array format)
- *
- * Uses string format:
- * - Known custom providers with special handling (openrouter, xai, deepseek)
- * - Other non-OpenAI providers (ollama, bedrock)
- */
-function usesContentArrayFormat(provider: t.Provider): boolean {
-  if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
-    return true;
-  }
-
-  if (['openrouter', 'xai', 'deepseek'].includes(provider)) {
-    return false;
   }
 
   if (!NON_OPENAI_PROVIDERS.has(provider)) {
@@ -140,17 +108,13 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 }
 
 /**
- * Formats MCP tool call response content for different provider types.
+ * Converts MCPToolCallResponse content into a plain-text string plus optional artifacts
+ * (images, UI resources). All providers receive string content; images are separated into
+ * artifacts and merged back by the agents package via formatArtifactPayload / formatAnthropicArtifactContent.
  *
- * Handles provider-specific formatting:
- * - OpenAI-compatible providers: Uses content array format with artifacts
- * - Non-OpenAI providers: Uses string format
- *
- * Automatically detects custom OpenAI-compatible endpoints (not in NON_OPENAI_PROVIDERS).
- *
- * @param result - MCP tool call response with content array
- * @param provider - Provider identifier (e.g., 'openai', 'scaleway', 'anthropic')
- * @returns Tuple of [formattedContent, artifacts] where artifacts contain image URLs
+ * @param provider - Used only to distinguish recognized vs. unrecognized providers.
+ * All recognized providers currently produce identical string output;
+ * provider-specific artifact merging is delegated to the agents package.
  */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
@@ -162,13 +126,12 @@ export function formatToolContent(
 
   const content = result?.content ?? [];
   if (!content.length) {
-    return [[{ type: 'text', text: '(No response)' }], undefined];
+    return ['(No response)', undefined];
   }
 
-  const formattedContent: t.FormattedContent[] = [];
   const imageUrls: t.FormattedContent[] = [];
-  let currentTextBlock = '';
   const uiResources: UIResource[] = [];
+  let currentTextBlock = '';
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -185,17 +148,11 @@ export function formatToolContent(
       if (!isImageContent(item)) {
         return;
       }
-      if (usesContentArrayFormat(provider) && currentTextBlock) {
-        formattedContent.push({ type: 'text', text: currentTextBlock });
-        currentTextBlock = '';
-      }
       const formatter = imageFormatters.default as t.ImageFormatter;
       const formattedImage = formatter(item);
 
       if (formattedImage.type === 'image_url') {
         imageUrls.push(formattedImage);
-      } else {
-        formattedContent.push(formattedImage);
       }
     },
 
@@ -258,23 +215,17 @@ UI Resource Markers Available:
     currentTextBlock += uiInstructions;
   }
 
-  if (usesContentArrayFormat(provider) && currentTextBlock) {
-    formattedContent.push({ type: 'text', text: currentTextBlock });
-  }
-
   let artifacts: t.Artifacts = undefined;
-  if (imageUrls.length) {
+  if (imageUrls.length > 0) {
     artifacts = { content: imageUrls };
   }
 
-  if (uiResources.length) {
+  if (uiResources.length > 0) {
     artifacts = {
       ...artifacts,
       [Tools.ui_resources]: { data: uiResources },
     };
   }
 
-  return usesContentArrayFormat(provider)
-    ? [formattedContent, artifacts]
-    : [currentTextBlock, artifacts];
+  return [currentTextBlock || (artifacts !== undefined ? '' : '(No response)'), artifacts];
 }

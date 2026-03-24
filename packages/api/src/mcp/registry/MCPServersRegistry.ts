@@ -144,6 +144,24 @@ export class MCPServersRegistry {
     return result;
   }
 
+  /**
+   * Stores a minimal config stub so the server remains "known" to the registry
+   * even when inspection fails at startup. This enables reinitialize to recover.
+   */
+  public async addServerStub(
+    serverName: string,
+    config: t.MCPOptions,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.AddServerResult> {
+    const configRepo = this.getConfigRepository(storageLocation);
+    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true };
+    const result = await configRepo.add(serverName, stubConfig, userId);
+    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId));
+    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName));
+    return result;
+  }
+
   public async addServer(
     serverName: string,
     config: t.MCPOptions,
@@ -168,6 +186,52 @@ export class MCPServersRegistry {
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
     return await configRepo.add(serverName, parsedConfig, userId);
+  }
+
+  /**
+   * Re-inspects a server that previously failed initialization.
+   * Uses the stored stub config to attempt a full inspection and replaces the stub on success.
+   */
+  public async reinspectServer(
+    serverName: string,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.AddServerResult> {
+    const configRepo = this.getConfigRepository(storageLocation);
+    const existing = await configRepo.get(serverName, userId);
+    if (!existing) {
+      throw new Error(`Server "${serverName}" not found in ${storageLocation} for reinspection.`);
+    }
+    if (!existing.inspectionFailed) {
+      throw new Error(
+        `Server "${serverName}" is not in a failed state. Use updateServer() instead.`,
+      );
+    }
+
+    const { inspectionFailed: _, ...configForInspection } = existing;
+    let parsedConfig: t.ParsedServerConfig;
+    try {
+      parsedConfig = await MCPServerInspector.inspect(
+        serverName,
+        configForInspection,
+        undefined,
+        this.allowedDomains,
+      );
+    } catch (error) {
+      logger.error(`[MCPServersRegistry] Reinspection failed for server "${serverName}":`, error);
+      if (isMCPDomainNotAllowedError(error)) {
+        throw error;
+      }
+      throw new MCPInspectionFailedError(serverName, error as Error);
+    }
+
+    const updatedConfig = { ...parsedConfig, updatedAt: Date.now() };
+    await configRepo.update(serverName, updatedConfig, userId);
+    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId));
+    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName));
+    // Full clear required: getAllServerConfigs is keyed by userId with no reverse index to enumerate cached keys
+    await this.readThroughCacheAll.clear();
+    return { serverName, config: updatedConfig };
   }
 
   public async updateServer(
