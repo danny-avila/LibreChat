@@ -1,4 +1,9 @@
-import { Capacitor } from '@capacitor/core';
+type CapacitorRuntime = {
+  isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
+};
 
-export const isNativeIOS = () =>
-  (Capacitor.isNativePlatform?.() ?? false) && Capacitor.getPlatform?.() === 'ios';
+export const isNativeIOS = () => {
+  const capacitor = (globalThis as typeof globalThis & { Capacitor?: CapacitorRuntime }).Capacitor;
+  return (capacitor?.isNativePlatform?.() ?? false) && capacitor?.getPlatform?.() === 'ios';
+};
