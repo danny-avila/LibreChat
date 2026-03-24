@@ -95,12 +95,12 @@ export default function AudioRecorder({
 
   const renderIcon = () => {
     if (isListening === true) {
-      return <ListeningIcon className="stroke-green-500" style={{ width: 24, height: 24 }} />;
+      return <ListeningIcon className="size-full stroke-green-500" />;
     }
     if (isLoading === true) {
       return <Spinner className="stroke-text-secondary" size={24} />;
     }
-    return <ListeningIcon className="stroke-text-secondary" style={{ width: 24, height: 24 }} />;
+    return <ListeningIcon className="size-full stroke-text-secondary" />;
   };
 
   return (
@@ -114,13 +114,13 @@ export default function AudioRecorder({
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
           disabled={disabled}
           className={cn(
-            'relative flex size-7 items-center justify-center self-center rounded-full p-1 transition-colors hover:bg-surface-hover mr-1',
+            'relative flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
           )}
           title={localize('com_ui_use_micrphone')}
           aria-pressed={isListening}
         >
           {isListening === true && (
-            <span className="absolute inset-0 animate-pulse rounded-full bg-green-500/25 [animation-duration:0.20s]" />
+            <span className="absolute inset-0 animate-pulse rounded-full bg-green-500/25 [animation-duration:0.3s]" />
           )}
           {renderIcon()}
         </button>
