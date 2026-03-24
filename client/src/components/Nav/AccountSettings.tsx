@@ -6,6 +6,7 @@ import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/cl
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useSubscription } from '~/hooks/Subscription';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
@@ -13,6 +14,7 @@ import store from '~/store';
 function AccountSettings() {
   const localize = useLocalize();
   const { user, isAuthenticated, logout } = useAuthContext();
+  const { isPro } = useSubscription();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
@@ -39,6 +41,9 @@ function AccountSettings() {
           style={{ marginTop: '0', marginLeft: '0' }}
         >
           {user?.name ?? user?.username ?? localize('com_nav_user')}
+          <div className="text-xs text-text-secondary">
+            {isPro ? 'CodeCan AI Pro' : 'Free plan'}
+          </div>
         </div>
       </Select.Select>
       <Select.SelectPopover

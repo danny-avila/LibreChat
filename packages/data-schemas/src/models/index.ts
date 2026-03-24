@@ -25,6 +25,7 @@ import { createMemoryModel } from './memory';
 import { createAccessRoleModel } from './accessRole';
 import { createAclEntryModel } from './aclEntry';
 import { createGroupModel } from './group';
+import { createSubscriptionProfileModel } from './subscriptionProfile';
 
 /**
  * Creates all database models for all collections
@@ -53,6 +54,7 @@ export function createModels(mongoose: typeof import('mongoose')) {
     PromptGroup: createPromptGroupModel(mongoose),
     ConversationTag: createConversationTagModel(mongoose),
     SharedLink: createSharedLinkModel(mongoose),
+    SubscriptionProfile: createSubscriptionProfileModel(mongoose),
     ToolCall: createToolCallModel(mongoose),
     MemoryEntry: createMemoryModel(mongoose),
     AccessRole: createAccessRoleModel(mongoose),

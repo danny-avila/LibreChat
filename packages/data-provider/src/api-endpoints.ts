@@ -11,9 +11,7 @@ if (
     typeof globalThis !== 'undefined' &&
     typeof (globalThis as { __LIBRECHAT_API_BASE_URL__?: string }).__LIBRECHAT_API_BASE_URL__ ===
       'string'
-      ? (
-          globalThis as { __LIBRECHAT_API_BASE_URL__?: string }
-        ).__LIBRECHAT_API_BASE_URL__?.trim()
+      ? (globalThis as { __LIBRECHAT_API_BASE_URL__?: string }).__LIBRECHAT_API_BASE_URL__?.trim()
       : '';
   if (globalBaseUrl && !globalBaseUrl.includes('%VITE_')) {
     BASE_URL = globalBaseUrl;
@@ -54,6 +52,10 @@ const buildQuery = (params: Record<string, unknown>): string => {
 
 export const health = () => `${BASE_URL}/health`;
 export const user = () => `${BASE_URL}/api/user`;
+const subscriptionRoot = `${BASE_URL}/api/subscription`;
+export const subscription = () => `${subscriptionRoot}/me`;
+export const refreshSubscription = () => `${subscriptionRoot}/refresh`;
+export const subscriptionCheckoutLink = () => `${subscriptionRoot}/checkout-link`;
 
 export const balance = () => `${BASE_URL}/api/balance`;
 

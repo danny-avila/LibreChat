@@ -608,11 +608,21 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
+export type TSubscriptionStartupConfig = {
+  enabled: boolean;
+  entitlementId: string;
+  freeMessagesPerMonth: number;
+  resetPolicy: 'calendar_month';
+  webCheckoutEnabled: boolean;
+  publicSdkKeys?: Partial<Record<'ios' | 'android', string>>;
+};
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
+  subscription?: TSubscriptionStartupConfig;
   balance?: TBalanceConfig;
   transactions?: TTransactionsConfig;
   discordLoginEnabled: boolean;

@@ -46,8 +46,14 @@ function ensureCodeCanConfig() {
     CODECAN_OPENAI_NATIONAL_VECTOR_STORE_ID,
     CODECAN_OPENAI_VECTOR_STORE_ID,
   } = process.env;
-  const hasNationalVectorStore = !!(CODECAN_OPENAI_NATIONAL_VECTOR_STORE_ID || CODECAN_OPENAI_VECTOR_STORE_ID);
-  if (!CODECAN_OPENAI_FILE_ID && !CODECAN_OPENAI_ONTARIO_VECTOR_STORE_ID && !hasNationalVectorStore) {
+  const hasNationalVectorStore = !!(
+    CODECAN_OPENAI_NATIONAL_VECTOR_STORE_ID || CODECAN_OPENAI_VECTOR_STORE_ID
+  );
+  if (
+    !CODECAN_OPENAI_FILE_ID &&
+    !CODECAN_OPENAI_ONTARIO_VECTOR_STORE_ID &&
+    !hasNationalVectorStore
+  ) {
     logger.warn(
       'CodeCan configuration: no CodeCan file/vector store env vars are set; falling back to Ontario/National defaults',
     );
@@ -135,6 +141,8 @@ const startServer = async () => {
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
+  app.use('/api/subscription', routes.subscription);
+  app.use('/api/webhooks/revenuecat', routes.revenuecat);
   app.use('/api/search', routes.search);
   app.use('/api/edit', routes.edit);
   app.use('/api/messages', routes.messages);

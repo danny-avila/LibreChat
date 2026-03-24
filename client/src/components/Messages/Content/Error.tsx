@@ -73,6 +73,11 @@ const errorMessages = {
     return info;
   },
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
+  quota_exceeded: (json: { limit?: number }) => {
+    const limit = typeof json?.limit === 'number' && json.limit > 0 ? json.limit : 3;
+    return `You have used your ${limit} free message${limit === 1 ? '' : 's'} for this month. Upgrade to CodeCan AI Pro to continue.`;
+  },
+  subscription_required: 'A CodeCan AI Pro subscription is required to continue.',
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: (json: TGenericError, localize: LocalizeFunction) => {

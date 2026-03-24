@@ -29,11 +29,13 @@ import {
   removeConvoFromAllQueries,
   findConversationInInfinite,
 } from '~/utils';
+import { extractJson, isJson } from '~/utils/json';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import store, { useApplyNewAgentTemplate } from '~/store';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useSubscription } from '~/hooks/Subscription';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
 
@@ -180,6 +182,7 @@ export default function useEventHandlers({
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
   const { token } = useAuthContext();
+  const { openUpgradeFlow } = useSubscription();
 
   const contentHandler = useContentHandler({ setMessages, getMessages });
   const { stepHandler, clearStepMaps } = useStepHandler({
@@ -628,6 +631,35 @@ export default function useEventHandlers({
         return tMessageSchema.parse(errorMessage) as TMessage;
       };
 
+      const maybeStartUpgradeFlow = (payload?: TResData | Partial<TMessage>) => {
+        const text =
+          (payload?.['responseMessage'] as Partial<TMessage> | undefined)?.text ??
+          payload?.text ??
+          '';
+
+        if (typeof text !== 'string' || text.length === 0) {
+          return;
+        }
+
+        const jsonString = extractJson(text);
+        if (!isJson(jsonString)) {
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(jsonString);
+          const errorKey = parsed?.code ?? parsed?.type;
+          if (errorKey === 'quota_exceeded' || errorKey === 'subscription_required') {
+            queueMicrotask(() => {
+              void openUpgradeFlow();
+            });
+          }
+        } catch (error) {
+          logger.warn('Failed to parse subscription error payload');
+          logger.error(error);
+        }
+      };
+
       if (!data) {
         const convoId = conversationId || `_${v4()}`;
         const errorMetadata = parseErrorResponse({
@@ -656,6 +688,7 @@ export default function useEventHandlers({
         const convoId = `_${v4()}`;
         const errorResponse = parseErrorResponse(data);
         setErrorMessages(convoId, errorResponse);
+        maybeStartUpgradeFlow(data);
         if (newConversation) {
           newConversation({
             template: { conversationId: convoId },
@@ -667,6 +700,7 @@ export default function useEventHandlers({
       } else if (!receivedConvoId) {
         const errorResponse = parseErrorResponse(data);
         setErrorMessages(conversationId, errorResponse);
+        maybeStartUpgradeFlow(data);
         setIsSubmitting(false);
         return;
       }
@@ -678,6 +712,7 @@ export default function useEventHandlers({
       }) as TMessage;
 
       setErrorMessages(receivedConvoId, errorResponse);
+      maybeStartUpgradeFlow(data);
       if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {
         newConversation({
           template: { conversationId: receivedConvoId },
@@ -693,6 +728,7 @@ export default function useEventHandlers({
       setMessages,
       paramId,
       newConversation,
+      openUpgradeFlow,
       setIsSubmitting,
       getMessages,
       queryClient,

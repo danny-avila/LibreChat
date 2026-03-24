@@ -5,6 +5,7 @@ const {
   setHeaders,
   trace,
   moderateText,
+  enforceSubscriptionQuota,
   // validateModel,
   validateConvoAccess,
   buildEndpointOption,
@@ -35,6 +36,7 @@ router.use(checkAgentAccess);
 router.use(checkAgentResourceAccess);
 router.use(validateConvoAccess);
 router.use(buildEndpointOption);
+router.use(enforceSubscriptionQuota);
 router.use(setHeaders);
 
 const controller = async (req, res, next) => {

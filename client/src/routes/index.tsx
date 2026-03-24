@@ -12,6 +12,7 @@ import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import { SubscriptionProvider } from '~/hooks/Subscription';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
@@ -23,8 +24,10 @@ import Root from './Root';
 
 const AuthLayout = () => (
   <AuthContextProvider>
-    <Outlet />
-    <ApiErrorWatcher />
+    <SubscriptionProvider>
+      <Outlet />
+      <ApiErrorWatcher />
+    </SubscriptionProvider>
   </AuthContextProvider>
 );
 
