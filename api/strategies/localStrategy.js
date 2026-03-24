@@ -29,6 +29,15 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: 'Email does not exist.' });
     }
 
+    if (user.provider !== 'local') {
+      logError('Passport Local Strategy - User has non-local provider', {
+        email,
+        provider: user.provider,
+      });
+      logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
+      return done(null, false, { message: `This account uses ${user.provider} sign-in.` });
+    }
+
     if (!user.password) {
       logError('Passport Local Strategy - User has no password', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);

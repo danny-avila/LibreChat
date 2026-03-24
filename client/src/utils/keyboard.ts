@@ -1,11 +1,8 @@
-import { Capacitor } from '@capacitor/core';
 import { Keyboard } from '@capacitor/keyboard';
-
-const isIOSNative = () =>
-  (Capacitor.isNativePlatform?.() ?? false) && Capacitor.getPlatform?.() === 'ios';
+import { isNativeIOS } from './mobile/platform';
 
 export const hideAccessoryBar = async (): Promise<void> => {
-  if (!isIOSNative()) {
+  if (!isNativeIOS()) {
     return;
   }
   try {
@@ -16,7 +13,7 @@ export const hideAccessoryBar = async (): Promise<void> => {
 };
 
 export const showAccessoryBar = async (): Promise<void> => {
-  if (!isIOSNative()) {
+  if (!isNativeIOS()) {
     return;
   }
   try {

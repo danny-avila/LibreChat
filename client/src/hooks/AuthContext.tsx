@@ -131,6 +131,20 @@ const AuthContextProvider = ({
     loginUser.mutate(data);
   };
 
+  const completeAuth = useCallback(
+    (data: t.TLoginResponse, redirect = '/c/new') => {
+      const { user, token, twoFAPending, tempToken } = data;
+      if (twoFAPending) {
+        navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
+        return;
+      }
+
+      setError(undefined);
+      setUserContext({ token, isAuthenticated: true, user, redirect });
+    },
+    [navigate, setUserContext],
+  );
+
   const silentRefresh = useCallback(() => {
     if (authConfig?.test === true) {
       console.log('Test mode. Skipping silent refresh.');
@@ -210,6 +224,7 @@ const AuthContextProvider = ({
       token,
       error,
       login,
+      completeAuth,
       logout,
       setError,
       roles: {
@@ -219,7 +234,7 @@ const AuthContextProvider = ({
       isAuthenticated,
     }),
 
-    [user, error, isAuthenticated, token, userRole, adminRole],
+    [user, error, isAuthenticated, token, userRole, adminRole, completeAuth, logout],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;

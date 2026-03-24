@@ -396,6 +396,12 @@ export type TLoginResponse = {
   tempToken?: string;
 };
 
+export type TGoogleMobileLoginRequest = {
+  idToken: string;
+  accessToken?: string;
+  returnTo?: string;
+};
+
 export type TEnable2FAResponse = {
   otpauthUrl: string;
   backupCodes: string[];
