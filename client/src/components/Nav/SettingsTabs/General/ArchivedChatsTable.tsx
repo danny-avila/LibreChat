@@ -270,6 +270,7 @@ export default function ArchivedChatsTable({
                   </Button>
                 }
               />
+              {/* NJ: We don't allow deleting conversations
               <TooltipAnchor
                 description={localize('com_ui_delete_conversation_tooltip')}
                 render={
@@ -287,6 +288,7 @@ export default function ArchivedChatsTable({
                   </Button>
                 }
               />
+               */}
             </div>
           );
         },
