@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Check, X, Pencil } from 'lucide-react';
-import { Button, Input, Spinner, TooltipAnchor } from '@librechat/client';
+import { Pencil, Check, Loader2 } from 'lucide-react';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 type Props = {
   name?: string;
@@ -9,61 +9,46 @@ type Props = {
   onSave: (newName: string) => void;
 };
 
+type SaveStatus = 'idle' | 'saving' | 'saved';
+
 const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
   const localize = useLocalize();
   const inputRef = useRef<HTMLInputElement>(null);
   const wasLoadingRef = useRef(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(name);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setNewName(e.target.value);
   }, []);
 
-  const handleCancel = useCallback(() => {
-    if (isLoading) {
-      return;
-    }
-    setIsEditing(false);
-    setNewName(name);
-  }, [name, isLoading]);
-
   const saveName = useCallback(() => {
-    if (isLoading) {
-      return;
-    }
     const savedName = newName?.trim();
     if (savedName && savedName !== name) {
+      setSaveStatus('saving');
       onSave(savedName);
     } else {
       setNewName(name);
-      setIsEditing(false);
     }
-  }, [newName, name, onSave, isLoading]);
+    setIsEditing(false);
+  }, [newName, name, onSave]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Escape') {
-        handleCancel();
+        e.preventDefault();
+        setNewName(name);
+        setIsEditing(false);
       }
       if (e.key === 'Enter') {
         e.preventDefault();
         saveName();
       }
     },
-    [handleCancel, saveName],
+    [name, saveName],
   );
-
-  const handleTitleClick = useCallback(() => {
-    setIsEditing(true);
-  }, []);
-
-  const handleTitleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setIsEditing(true);
-    }
-  }, []);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -72,90 +57,76 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
     }
   }, [isEditing]);
 
-  // Track loading state for detecting save completion
   useEffect(() => {
+    if (isLoading) {
+      setSaveStatus('saving');
+    } else if (wasLoadingRef.current && !isLoading) {
+      setSaveStatus('saved');
+      savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+    }
     wasLoadingRef.current = isLoading;
   }, [isLoading]);
 
-  // Close editing when name updates after save (loading finished)
   useEffect(() => {
     setNewName(name);
-    if (wasLoadingRef.current) {
-      setIsEditing(false);
-      wasLoadingRef.current = false;
-    }
   }, [name]);
 
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current) {
+        clearTimeout(savedTimerRef.current);
+      }
+    };
+  }, []);
+
   return (
-    <div className="flex min-w-0 flex-1 items-center">
+    <div className="group/title relative flex h-9 min-w-0 flex-1 items-center">
       {isEditing ? (
-        <div className="mr-3 flex min-w-0 flex-1 items-center gap-2">
-          <Input
-            type="text"
-            value={newName ?? ''}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            ref={inputRef}
-            disabled={isLoading}
-            className="h-10 min-w-0 flex-1 rounded-lg border border-border-medium bg-transparent px-3 text-xl font-semibold text-text-primary transition-colors focus:border-border-heavy disabled:opacity-60 sm:text-2xl"
-            aria-label={localize('com_ui_name')}
-          />
-          <div className="flex shrink-0 items-center gap-1">
-            <TooltipAnchor
-              description={isLoading ? localize('com_ui_loading') : localize('com_ui_save')}
-              side="bottom"
-              render={
-                <Button
-                  type="button"
-                  onClick={saveName}
-                  variant="submit"
-                  size="icon"
-                  disabled={isLoading}
-                  aria-label={isLoading ? localize('com_ui_loading') : localize('com_ui_save')}
-                >
-                  {isLoading ? (
-                    <Spinner size={16} className="text-white" />
-                  ) : (
-                    <Check className="size-4" aria-hidden="true" />
-                  )}
-                </Button>
-              }
-            />
-            <TooltipAnchor
-              description={localize('com_ui_cancel')}
-              side="bottom"
-              render={
-                <Button
-                  type="button"
-                  onClick={handleCancel}
-                  variant="outline"
-                  size="icon"
-                  disabled={isLoading}
-                  aria-label={localize('com_ui_cancel')}
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </Button>
-              }
-            />
-          </div>
-        </div>
+        <input
+          ref={inputRef}
+          type="text"
+          value={newName ?? ''}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          onBlur={saveName}
+          disabled={isLoading}
+          className="h-9 min-w-0 flex-1 border-none bg-transparent px-0 text-lg font-semibold text-text-primary outline-none disabled:opacity-60"
+          aria-label={localize('com_ui_name')}
+        />
       ) : (
         <button
           type="button"
-          onClick={handleTitleClick}
-          onKeyDown={handleTitleKeyDown}
-          className="group mr-3 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={localize('com_ui_edit') + ' ' + localize('com_ui_name')}
+          onClick={() => setIsEditing(true)}
+          className="h-9 min-w-0 flex-1 cursor-text truncate text-left text-lg font-semibold text-text-primary transition-colors hover:text-text-secondary focus:outline-none"
+          title={newName}
+          aria-label={localize('com_ui_edit') + ': ' + (newName ?? '')}
         >
-          <span className="block truncate text-xl font-semibold text-text-primary sm:text-2xl">
-            {newName}
-          </span>
-          <Pencil
-            className="size-4 shrink-0 text-text-tertiary opacity-0 transition-opacity group-hover:opacity-100"
-            aria-hidden="true"
-          />
+          {newName}
         </button>
       )}
+      <div className="ml-1.5 flex shrink-0 items-center justify-center">
+        {saveStatus === 'saving' && (
+          <Loader2
+            className="size-4 animate-spin text-text-secondary"
+            aria-label={localize('com_ui_saving')}
+          />
+        )}
+        {saveStatus === 'saved' && (
+          <Check
+            className={cn(
+              'size-4 text-green-500 transition-opacity duration-300',
+              saveStatus === 'saved' ? 'opacity-100' : 'opacity-0',
+            )}
+            aria-label={localize('com_ui_saved')}
+          />
+        )}
+        {saveStatus === 'idle' && !isEditing && (
+          <Pencil
+            className="size-3.5 text-text-tertiary opacity-0 transition-opacity group-hover/title:opacity-100"
+            aria-hidden="true"
+          />
+        )}
+      </div>
     </div>
   );
 };

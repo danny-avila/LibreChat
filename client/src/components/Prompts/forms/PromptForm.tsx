@@ -467,7 +467,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
                 {/* Header: Title + Actions */}
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   {isLoadingGroup ? (
-                    <Skeleton className="h-10 w-48 font-bold sm:text-xl md:h-12 md:text-2xl" />
+                    <Skeleton className="h-9 w-48" />
                   ) : (
                     <>
                       <div className="flex min-w-0 flex-1 items-center gap-2">
