@@ -14,7 +14,6 @@ import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
 import NewJerseyLogo from '~/nj/components/NewJerseyLogo';
-import OldAssistantLink from '~/nj/components/OldAssistantLink';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -98,8 +97,6 @@ function Header() {
             {hasAccessToTemporaryChat === true && <TemporaryChat />}
           </div>
         )}
-
-        <OldAssistantLink />
       </div>
       {/* Empty div for spacing */}
       <div />
