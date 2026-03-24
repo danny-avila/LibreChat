@@ -185,7 +185,8 @@ export class EcsStack extends cdk.Stack {
       ],
       portMappings: [{ containerPort: 3080 }],
       command: ["npm", "run", "backend"],
-      ...(isProd ? { cpu: 2048, memoryLimitMiB: 8192 } : { cpu: 512, memoryLimitMiB: 1024 }),
+      cpu: (isProd ? 1024 : 512), 
+      memoryLimitMiB: (isProd ? 2048 : 1024),
     });
 
     // Re-enable when OIT does load balancer things
@@ -196,7 +197,7 @@ export class EcsStack extends cdk.Stack {
       "LibreChatFargateService",
       {
         cluster,
-        desiredCount: 1,
+        desiredCount: (isProd ? 2 : 1),
         minHealthyPercent: 50,
         taskDefinition: librechatTaskDef,
         enableExecuteCommand: true,
@@ -207,7 +208,7 @@ export class EcsStack extends cdk.Stack {
       }
     );
     const scalableTarget = librechatService.service.autoScaleTaskCount({
-      minCapacity: 1,
+      minCapacity: (isProd ? 2 : 1),
       maxCapacity: 20,
     });
 
