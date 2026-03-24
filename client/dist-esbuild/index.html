@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <base href="/" />
+    <meta name="theme-color" content="#171717" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta
+      name="description"
+      content="CodeCan AI - Building code guidance with page-cited references."
+    />
+    <title>CodeCan AI</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon-180x180.png" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+    </style>
+    <script>
+      window.__LIBRECHAT_API_BASE_URL__ = "http://localhost:3080";
+    </script>
+    <script>
+      const theme = localStorage.getItem('color-theme');
+      const loadingContainerStyle = document.createElement('style');
+      let backgroundColor;
+
+      if (theme === 'dark') {
+        backgroundColor = '#0d0d0d';
+      } else if (theme === 'light') {
+        backgroundColor = '#ffffff';
+      } else if (theme === 'system') {
+        const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        backgroundColor = prefersDarkScheme ? '#0d0d0d' : '#ffffff';
+      } else {
+        backgroundColor = '#ffffff';
+      }
+
+      loadingContainerStyle.innerHTML = `
+        #loading-container {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          background-color: ${backgroundColor};
+        }
+      `;
+      document.head.appendChild(loadingContainerStyle);
+    </script>
+    <script type="module" crossorigin src="./assets/react-interactions.Cw7rGz1Z.js"></script>
+    <script type="module" crossorigin src="./assets/markdown_highlight.Cj_heSZW.js"></script>
+    <script type="module" crossorigin src="./assets/validation.CXYwsuSc.js"></script>
+    <script type="module" crossorigin src="./assets/codemirror.BqPOSNyw.js"></script>
+    <script type="module" crossorigin src="./assets/sandpack.ba6ANhuo.js"></script>
+    <script type="module" crossorigin src="./assets/math-katex.D41sMH58.js"></script>
+    <script type="module" crossorigin src="./assets/vendor.CSn_ebf2.js"></script>
+    <script type="module" crossorigin src="./assets/i18n.BrPFHQjN.js"></script>
+    <script type="module" crossorigin src="./assets/locales.BE532a4u.js"></script>
+    <script type="module" crossorigin src="./assets/routing.Cduq-W4r.js"></script>
+    <script type="module" crossorigin src="./assets/radix-ui.CltXj-j5.js"></script>
+    <script type="module" crossorigin src="./assets/tanstack-vendor.CRCYG3CS.js"></script>
+    <script type="module" crossorigin src="./assets/avatars.DvCv--eM.js"></script>
+    <script type="module" crossorigin src="./assets/advanced-inputs.tA2lty-1.js"></script>
+    <script type="module" crossorigin src="./assets/animations.DFa27fiQ.js"></script>
+    <script type="module" crossorigin src="./assets/virtualization.BBcELzcj.js"></script>
+    <script type="module" crossorigin src="./assets/headlessui.BGFPg2tT.js"></script>
+    <script type="module" crossorigin src="./assets/framer-motion.C33RCup-.js"></script>
+    <script type="module" crossorigin src="./assets/http-client.1xJLxJnp.js"></script>
+    <script type="module" crossorigin src="./assets/utilities.DtPUlo8k.js"></script>
+    <script type="module" crossorigin src="./assets/date-utils.X8D4nCrw.js"></script>
+    <script type="module" crossorigin src="./assets/forms.cXqE-oMu.js"></script>
+    <script type="module" crossorigin src="./assets/security-ui.C_Q2qBZf.js"></script>
+    <script type="module" crossorigin src="./assets/markdown-processing.sngRSlAP.js"></script>
+    <script type="module" crossorigin src="./assets/heic-converter.BhQCFQ0l.js"></script>
+    <script type="module" crossorigin src="./assets/index.D7CztiQl.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/math-katex.sdXCKFqw.css">
+    <link rel="stylesheet" crossorigin href="./assets/index.BKJF0I3g.css">
+  <link rel="manifest" href="./manifest.webmanifest" crossorigin="use-credentials"><script id="vite-plugin-pwa:register-sw" src="./registerSW.js"></script></head>
+  <body>
+    <div id="root">
+      <div id="loading-container"></div>
+    </div>
+  </body>
+</html>
