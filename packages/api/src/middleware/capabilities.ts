@@ -48,7 +48,7 @@ export type RequireCapabilityFn = (
 
 export type HasConfigCapabilityFn = (
   user: CapabilityUser,
-  section: ConfigSection,
+  section: ConfigSection | null,
   verb?: 'manage' | 'read',
 ) => Promise<boolean>;
 
@@ -138,11 +138,14 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
    */
   async function hasConfigCapability(
     user: CapabilityUser,
-    section: ConfigSection,
+    section: ConfigSection | null,
     verb: 'manage' | 'read' = 'manage',
   ): Promise<boolean> {
     const broadCap =
       verb === 'manage' ? SystemCapabilities.MANAGE_CONFIGS : SystemCapabilities.READ_CONFIGS;
+    if (section == null) {
+      return hasCapability(user, broadCap);
+    }
     if (await hasCapability(user, broadCap)) {
       return true;
     }

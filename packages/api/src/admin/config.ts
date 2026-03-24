@@ -25,12 +25,6 @@ interface CapabilityUser {
   tenantId?: string;
 }
 
-/**
- * Sentinel for broad config access checks (not section-specific).
- * Used when an operation applies to the entire config (list, delete, toggle).
- */
-const BROAD_CONFIG_ACCESS = '' as ConfigSection;
-
 export interface AdminConfigDeps {
   listAllConfigs: (session?: ClientSession) => Promise<IConfig[]>;
   findConfigByPrincipal: (
@@ -73,7 +67,7 @@ export interface AdminConfigDeps {
   ) => Promise<IConfig | null>;
   hasConfigCapability: (
     user: CapabilityUser,
-    section: ConfigSection,
+    section: ConfigSection | null,
     verb?: 'manage' | 'read',
   ) => Promise<boolean>;
   signalConfigChange?: () => Promise<void>;
@@ -148,7 +142,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       // Listing requires broad read:configs
-      if (!(await hasConfigCapability(user, BROAD_CONFIG_ACCESS, 'read'))) {
+      if (!(await hasConfigCapability(user, null, 'read'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
@@ -171,7 +165,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, BROAD_CONFIG_ACCESS, 'read'))) {
+      if (!(await hasConfigCapability(user, null, 'read'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
@@ -434,7 +428,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       // Deleting an entire override requires broad manage:configs
-      if (!(await hasConfigCapability(user, BROAD_CONFIG_ACCESS, 'manage'))) {
+      if (!(await hasConfigCapability(user, null, 'manage'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
@@ -476,7 +470,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       // Toggling requires broad manage:configs
-      if (!(await hasConfigCapability(user, BROAD_CONFIG_ACCESS, 'manage'))) {
+      if (!(await hasConfigCapability(user, null, 'manage'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
