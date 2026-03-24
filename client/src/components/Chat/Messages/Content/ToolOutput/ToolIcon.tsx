@@ -63,12 +63,14 @@ export function getToolIconType(name: string): ToolIconType {
   return 'generic';
 }
 
+/** Extracts the MCP server name from a tool name with format `tool<delimiter>server`. */
 export function getMCPServerName(toolName: string): string {
-  if (!toolName.includes(Constants.mcp_delimiter)) {
+  const idx = toolName.indexOf(Constants.mcp_delimiter);
+  if (idx < 0) {
     return '';
   }
-  const [, server] = toolName.split(Constants.mcp_delimiter);
-  return server || '';
+  const afterDelimiter = toolName.slice(idx + Constants.mcp_delimiter.length);
+  return afterDelimiter || '';
 }
 
 interface ToolIconProps {

@@ -227,7 +227,7 @@ export default function WebSearch({
                   const domain = getCleanDomain(source.link);
                   return (
                     <a
-                      key={i}
+                      key={source.link}
                       href={source.link}
                       target="_blank"
                       rel="noopener noreferrer"

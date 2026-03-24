@@ -210,14 +210,16 @@ const ContentParts = memo(function ContentParts({
   }
 
   // Sequential content: render parts in order (90% of cases)
-  const sequentialParts: PartWithIndex[] = [];
-  content.forEach((part, idx) => {
-    if (part) {
-      sequentialParts.push({ part, idx });
-    }
-  });
-
-  const groupedParts = groupSequentialToolCalls(sequentialParts);
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const groupedParts = useMemo(() => {
+    const seq: PartWithIndex[] = [];
+    content.forEach((part, idx) => {
+      if (part) {
+        seq.push({ part, idx });
+      }
+    });
+    return groupSequentialToolCalls(seq);
+  }, [content]);
 
   return (
     <SearchContext.Provider value={{ searchResults }}>
@@ -234,7 +236,7 @@ const ContentParts = memo(function ContentParts({
         }
         return (
           <ToolCallGroup
-            key={`tool-group-${gIdx}`}
+            key={`tool-group-${group.parts[0].idx}`}
             parts={group.parts}
             isSubmitting={effectiveIsSubmitting}
             isLast={group.parts.some((p) => p.idx === lastContentIdx)}

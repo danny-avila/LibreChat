@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useLayoutEffect, useMemo } from 'react';
 import type { CSSProperties } from 'react';
 
 export const EXPAND_TRANSITION =
@@ -10,7 +10,7 @@ export default function useExpandCollapse(isExpanded: boolean): {
 } {
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) {
       return;
@@ -23,13 +23,15 @@ export default function useExpandCollapse(isExpanded: boolean): {
     }
   }, [isExpanded]);
 
-  return {
-    style: {
+  const style = useMemo<CSSProperties>(
+    () => ({
       display: 'grid',
       gridTemplateRows: isExpanded ? '1fr' : '0fr',
       transition: EXPAND_TRANSITION,
       opacity: isExpanded ? 1 : 0,
-    },
-    ref,
-  };
+    }),
+    [isExpanded],
+  );
+
+  return { style, ref };
 }

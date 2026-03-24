@@ -25,22 +25,23 @@ export const code: React.ElementType = memo(({ inline, className, children }: TC
   return <code className={`hljs language-${lang} !whitespace-pre`}>{children}</code>;
 });
 
+const rehypePlugins = [
+  [rehypeKatex],
+  [
+    rehypeHighlight,
+    {
+      detect: true,
+      ignoreMissing: true,
+      subset: langSubset,
+    },
+  ],
+];
+
 export const CodeMarkdown = memo(
   ({ content = '', isSubmitting }: { content: string; isSubmitting: boolean }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
     const [userScrolled, setUserScrolled] = useState(false);
     const currentContent = content;
-    const rehypePlugins = [
-      [rehypeKatex],
-      [
-        rehypeHighlight,
-        {
-          detect: true,
-          ignoreMissing: true,
-          subset: langSubset,
-        },
-      ],
-    ];
 
     useEffect(() => {
       const scrollContainer = scrollRef.current;

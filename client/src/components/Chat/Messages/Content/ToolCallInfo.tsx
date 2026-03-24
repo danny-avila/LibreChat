@@ -81,7 +81,8 @@ function InputRenderer({ input }: { input: string }) {
       return <ComplexInput data={parsed as Record<string, unknown>} />;
     }
   } catch {
-    // Not JSON
+    // Not JSON — render as plain text
+    return <pre className="whitespace-pre-wrap text-xs text-text-primary">{input}</pre>;
   }
 
   return null;

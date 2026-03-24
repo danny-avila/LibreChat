@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Terminal } from 'lucide-react';
 import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
 import MarkdownLite from './MarkdownLite';
+import { cn } from '~/utils';
 import store from '~/store';
 
 export default function CodeAnalyze({
@@ -39,6 +41,12 @@ export default function CodeAnalyze({
           finishedText={localize('com_ui_analyzing_finished')}
           hasInput={!!code.length}
           isExpanded={showCode}
+          icon={
+            <Terminal
+              className={cn('size-4 shrink-0 text-text-secondary', progress < 1 && 'animate-pulse')}
+              aria-hidden="true"
+            />
+          }
         />
       </div>
       {showCode && (
