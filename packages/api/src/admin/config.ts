@@ -29,7 +29,7 @@ interface CapabilityUser {
  * Sentinel for broad config access checks (not section-specific).
  * Used when an operation applies to the entire config (list, delete, toggle).
  */
-const BROAD_CONFIG_ACCESS = BROAD_CONFIG_ACCESS;
+const BROAD_CONFIG_ACCESS = '' as ConfigSection;
 
 export interface AdminConfigDeps {
   listAllConfigs: (session?: ClientSession) => Promise<IConfig[]>;
