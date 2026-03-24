@@ -182,6 +182,16 @@ export type ArchiveConversationOptions = MutationOptions<
   types.TArchiveConversationRequest
 >;
 
+export type BulkDeleteConversationsOptions = MutationOptions<
+  types.TBulkDeleteConversationsResponse,
+  types.TBulkDeleteConversationsRequest
+>;
+
+export type BulkArchiveConversationsOptions = MutationOptions<
+  types.TBulkArchiveConversationsResponse,
+  types.TBulkArchiveConversationsRequest
+>;
+
 export type DuplicateConvoOptions = MutationOptions<
   types.TDuplicateConvoResponse,
   types.TDuplicateConvoRequest

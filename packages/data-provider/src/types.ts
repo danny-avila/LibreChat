@@ -295,6 +295,28 @@ export type TArchiveConversationRequest = {
 
 export type TArchiveConversationResponse = TConversation;
 
+export type TBulkDeleteConversationsRequest = {
+  conversationIds: string[];
+};
+
+export type TBulkDeleteConversationsResponse = {
+  acknowledged: boolean;
+  deletedCount: number;
+  messages: {
+    acknowledged: boolean;
+    deletedCount: number;
+  };
+};
+
+export type TBulkArchiveConversationsRequest = {
+  conversationIds: string[];
+  isArchived: boolean;
+};
+
+export type TBulkArchiveConversationsResponse = {
+  modifiedCount: number;
+};
+
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
 };

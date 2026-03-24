@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
+import { ListChecks, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { useMediaQuery, NewChatIcon } from '@librechat/client';
+import { Button, TooltipAnchor, useMediaQuery, NewChatIcon } from '@librechat/client';
 import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
@@ -13,6 +14,7 @@ import {
   useAuthContext,
   useLocalStorage,
   useNavScrolling,
+  useBulkSelection,
 } from '~/hooks';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
@@ -108,6 +110,14 @@ const ConversationsSection = memo(() => {
     }
   }, [search.query, search.isTyping, isLoading, isFetching]);
 
+  const allConvoIds = useMemo(
+    () => conversations.map((c) => c.conversationId ?? '').filter(Boolean),
+    [conversations],
+  );
+
+  const { isSelectMode, enterSelectMode, exitSelectMode, toggleSelect, selectAll, deselectAll } =
+    useBulkSelection(allConvoIds);
+
   return (
     <div
       className="flex h-full min-h-0 flex-col overflow-hidden pb-3"
@@ -120,6 +130,33 @@ const ConversationsSection = memo(() => {
             <BookmarkNav tags={tags} setTags={setTags} />
           </Suspense>
         )}
+        <TooltipAnchor
+          side="bottom"
+          description={
+            isSelectMode
+              ? localize('com_ui_exit_select_mode')
+              : localize('com_ui_select_conversations')
+          }
+          render={
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={isSelectMode ? exitSelectMode : enterSelectMode}
+              aria-label={
+                isSelectMode
+                  ? localize('com_ui_exit_select_mode')
+                  : localize('com_ui_select_conversations')
+              }
+              className="h-8 w-8 flex-shrink-0"
+            >
+              {isSelectMode ? (
+                <X className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <ListChecks className="h-4 w-4" aria-hidden="true" />
+              )}
+            </Button>
+          }
+        />
         <SearchBar isSmallScreen={isSmallScreen} />
       </div>
       {isSmallScreen && (
@@ -159,6 +196,10 @@ const ConversationsSection = memo(() => {
           isSearchLoading={isSearchLoading}
           isChatsExpanded={isChatsExpanded}
           setIsChatsExpanded={setIsChatsExpanded}
+          onSelectAll={selectAll}
+          onDeselectAll={deselectAll}
+          onExitSelectMode={exitSelectMode}
+          onToggleSelect={toggleSelect}
         />
       </div>
     </div>
