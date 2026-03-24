@@ -210,16 +210,13 @@ const ContentParts = memo(function ContentParts({
   }
 
   // Sequential content: render parts in order (90% of cases)
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const groupedParts = useMemo(() => {
-    const seq: PartWithIndex[] = [];
-    content.forEach((part, idx) => {
-      if (part) {
-        seq.push({ part, idx });
-      }
-    });
-    return groupSequentialToolCalls(seq);
-  }, [content]);
+  const sequentialParts: PartWithIndex[] = [];
+  content.forEach((part, idx) => {
+    if (part) {
+      sequentialParts.push({ part, idx });
+    }
+  });
+  const groupedParts = groupSequentialToolCalls(sequentialParts);
 
   return (
     <SearchContext.Provider value={{ searchResults }}>
