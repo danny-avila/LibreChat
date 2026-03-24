@@ -33,6 +33,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { isUserProvided } from '~/utils/common';
+import { getOrComputeToolTokens } from './toolTokens';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -589,12 +590,12 @@ function anyAgentHasCodeEnv(agents: RunAgent[], visited: Set<string> = new Set()
  * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
  * array when subagents are disabled or no spawn targets are available.
  */
-function buildSubagentConfigs(
+async function buildSubagentConfigs(
   agent: RunAgent,
   agentInput: AgentInputs,
-  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => Promise<AgentInputs>,
   ancestors: Set<string> = new Set(),
-): SubagentConfig[] {
+): Promise<SubagentConfig[]> {
   if (!agent.subagents?.enabled) {
     return [];
   }
@@ -640,7 +641,7 @@ function buildSubagentConfigs(
      * skips both the field stamping and the registry mutation at the
      * source so children truly start fresh.
      */
-    const childInputs = toInput(child, { isSubagent: true });
+    const childInputs = await toInput(child, { isSubagent: true });
     /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
@@ -649,7 +650,7 @@ function buildSubagentConfigs(
      * `subagentConfigs`, and that only runs for the outer agents in
      * `agents[]`. Cycle-safe via `nextAncestors`.
      */
-    const grandchildConfigs = buildSubagentConfigs(child, childInputs, toInput, nextAncestors);
+    const grandchildConfigs = await buildSubagentConfigs(child, childInputs, toInput, nextAncestors);
     if (grandchildConfigs.length > 0) {
       childInputs.subagentConfigs = grandchildConfigs;
     }
@@ -737,7 +738,10 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
+  const buildAgentInput = async (
+    agent: RunAgent,
+    opts: { isSubagent?: boolean } = {},
+  ): Promise<AgentInputs> => {
     const isSubagent = opts.isSubagent === true;
     const provider =
       (providerEndpointMap[
@@ -859,11 +863,25 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
+    /** Resolve cached or computed tool schema tokens */
+    let toolSchemaTokens: number | undefined;
+    if (tokenCounter) {
+      toolSchemaTokens = await getOrComputeToolTokens({
+        tools: agent.tools,
+        toolDefinitions,
+        provider,
+        clientOptions: llmConfig,
+        tokenCounter,
+        tenantId: user?.tenantId,
+      });
+    }
+
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     return {
       provider,
       reasoningKey,
       toolDefinitions,
+      toolSchemaTokens,
       agentId: agent.id,
       tools: agent.tools,
       clientOptions: llmConfig,
@@ -883,14 +901,41 @@ export async function createRun({
     };
   };
 
-  const agentInputs: AgentInputs[] = [];
-  for (const agent of agents) {
-    const agentInput = buildAgentInput(agent);
-    const subagentConfigs = buildSubagentConfigs(agent, agentInput, buildAgentInput);
+  const buildRootAgentInput = async (agent: RunAgent): Promise<AgentInputs> => {
+    const agentInput = await buildAgentInput(agent);
+    const subagentConfigs = await buildSubagentConfigs(agent, agentInput, buildAgentInput);
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
     }
-    agentInputs.push(agentInput);
+    return agentInput;
+  };
+
+  const settled = await Promise.allSettled(agents.map(buildRootAgentInput));
+  const agentInputs: AgentInputs[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    if (result.status === 'fulfilled') {
+      agentInputs.push(result.value);
+    } else {
+      logger.error(`[createRun] buildAgentInput failed for agent ${agents[i].id}`, result.reason);
+    }
+  }
+
+  if (agentInputs.length === 0) {
+    throw new Error(
+      `[createRun] All ${agents.length} agent(s) failed to initialize; cannot create run`,
+    );
+  }
+
+  const hasEdges = (agents[0].edges?.length ?? 0) > 0;
+  if (agentInputs.length < agents.length && hasEdges) {
+    const failedIds = agents
+      .filter((_, i) => settled[i].status === 'rejected')
+      .map((agent) => agent.id)
+      .join(', ');
+    throw new Error(
+      `[createRun] Agent(s) [${failedIds}] failed in a routed multi-agent run; cannot proceed with partial graph`,
+    );
   }
 
   const graphConfig: RunConfig['graphConfig'] = {

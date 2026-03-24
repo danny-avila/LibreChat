@@ -56,6 +56,7 @@ const namespaces = {
     CacheKeys.ADMIN_OAUTH_EXCHANGE,
     Time.THIRTY_SECONDS,
   ),
+  [CacheKeys.TOOL_TOKENS]: standardCache(CacheKeys.TOOL_TOKENS, Time.THIRTY_MINUTES),
 };
 
 /**
