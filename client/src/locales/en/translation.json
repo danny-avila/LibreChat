@@ -1541,7 +1541,6 @@
   "com_ui_variables": "Variables",
   "com_ui_variable_with_options": "{{name}} variable with {{count}} options",
   "com_ui_via_server": "in {{0}}",
-  "com_ui_variables_info": "Use double braces in your text to create variables, e.g. `{{example variable}}`, to later fill when using the prompt.",
   "com_ui_verify": "Verify",
   "com_ui_version_var": "Version {{0}}",
   "com_ui_versions": "Versions",
