@@ -30,7 +30,11 @@ import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
-const AuthContext = createContext<TAuthContext | undefined>(undefined);
+const AuthContext = (import.meta.hot?.data?.__AuthContext ??
+  createContext<TAuthContext | undefined>(undefined)) as React.Context<TAuthContext | undefined>;
+if (import.meta.hot) {
+  import.meta.hot.data.__AuthContext = AuthContext;
+}
 
 const AuthContextProvider = ({
   authConfig,
