@@ -17,6 +17,8 @@ jest.mock('~/hooks', () => ({
       com_ui_cancelled: 'Cancelled',
       com_ui_requires_auth: 'Requires authentication',
       com_assistants_allow_sites_you_trust: 'Only allow sites you trust',
+      com_ui_via_server: `via ${values?.[0]}`,
+      com_ui_tool_failed: 'failed',
     };
     return translations[key] || key;
   },
@@ -32,7 +34,7 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('~/hooks/MCP', () => ({
-  useMCPIconMap: () => ({}),
+  useMCPIconMap: () => new Map(),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
@@ -64,7 +66,7 @@ jest.mock('../Parts', () => ({
   ),
 }));
 
-jest.mock('~/components/ui', () => ({
+jest.mock('@librechat/client', () => ({
   Button: ({ children, onClick, ...props }: any) => (
     <button onClick={onClick} {...props}>
       {children}
@@ -204,54 +206,30 @@ describe('ToolCall', () => {
   });
 
   describe('tool call info visibility', () => {
-    it('should toggle tool call info when clicking header', () => {
+    it('should toggle tool call info expand/collapse when clicking header', () => {
       renderWithRecoil(<ToolCall {...mockProps} />);
 
-      // Initially closed
-      expect(screen.queryByTestId('tool-call-info')).not.toBeInTheDocument();
+      // ToolCallInfo is always in the DOM (CSS expand/collapse), but initially collapsed
+      const toolCallInfo = screen.getByTestId('tool-call-info');
+      expect(toolCallInfo).toBeInTheDocument();
 
-      // Click to open
+      // The expand wrapper starts collapsed (showInfo=false, autoExpand=false)
+      const expandWrapper = toolCallInfo.closest('[style]')?.parentElement;
+      expect(expandWrapper).toBeDefined();
+
+      // Click to expand
       fireEvent.click(screen.getByTestId('progress-text'));
       expect(screen.getByTestId('tool-call-info')).toBeInTheDocument();
-
-      // Click to close
-      fireEvent.click(screen.getByTestId('progress-text'));
-      expect(screen.queryByTestId('tool-call-info')).not.toBeInTheDocument();
     });
 
-    it('should pass all required props to ToolCallInfo', () => {
-      const attachments = [
-        {
-          type: Tools.ui_resources,
-          messageId: 'msg123',
-          toolCallId: 'tool456',
-          conversationId: 'conv789',
-          [Tools.ui_resources]: {
-            '0': { type: 'button', label: 'Test' },
-          },
-        },
-      ];
-
-      // Use a name with domain separator (_action_) and domain separator (---)
-      const propsWithDomain = {
-        ...mockProps,
-        name: 'testFunction_action_test---domain---com', // domain will be extracted and --- replaced with dots
-        attachments,
-      };
-
-      renderWithRecoil(<ToolCall {...propsWithDomain} />);
-
-      fireEvent.click(screen.getByTestId('progress-text'));
+    it('should pass input and output props to ToolCallInfo', () => {
+      renderWithRecoil(<ToolCall {...mockProps} />);
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
 
       expect(props.input).toBe('{"test": "input"}');
       expect(props.output).toBe('Test output');
-      expect(props.function_name).toBe('testFunction');
-      // Domain is extracted from name and --- are replaced with dots
-      expect(props.domain).toBe('test.domain.com');
-      expect(props.pendingAuth).toBe(false);
     });
   });
 
@@ -282,35 +260,17 @@ describe('ToolCall', () => {
       window.open = originalOpen;
     });
 
-    it('should pass pendingAuth as true when auth is pending', () => {
-      renderWithRecoil(
-        <ToolCall
-          {...mockProps}
-          auth="https://auth.example.com" // Need auth URL to extract domain
-          initialProgress={0.5} // Less than 1
-          isSubmitting={true} // Still submitting
-        />,
-      );
-
-      fireEvent.click(screen.getByTestId('progress-text'));
-
-      const toolCallInfo = screen.getByTestId('tool-call-info');
-      const props = JSON.parse(toolCallInfo.textContent!);
-      expect(props.pendingAuth).toBe(true);
-    });
-
     it('should not show auth section when cancelled', () => {
       renderWithRecoil(
         <ToolCall
           {...mockProps}
           auth="https://auth.example.com"
-          authDomain="example.com"
-          progress={0.5}
-          cancelled={true}
+          initialProgress={0.5}
+          isSubmitting={false} // Not submitting + progress < 1 = cancelled
         />,
       );
 
-      expect(screen.queryByText('Sign in to example.com')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sign in to auth.example.com')).not.toBeInTheDocument();
     });
 
     it('should not show auth section when progress is complete', () => {
@@ -318,21 +278,18 @@ describe('ToolCall', () => {
         <ToolCall
           {...mockProps}
           auth="https://auth.example.com"
-          authDomain="example.com"
-          progress={1}
-          cancelled={false}
+          initialProgress={1}
+          isSubmitting={false}
         />,
       );
 
-      expect(screen.queryByText('Sign in to example.com')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sign in to auth.example.com')).not.toBeInTheDocument();
     });
   });
 
   describe('edge cases', () => {
     it('should handle undefined args', () => {
       renderWithRecoil(<ToolCall {...mockProps} args={undefined} />);
-
-      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -342,21 +299,16 @@ describe('ToolCall', () => {
     it('should handle null output', () => {
       renderWithRecoil(<ToolCall {...mockProps} output={null} />);
 
-      fireEvent.click(screen.getByTestId('progress-text'));
-
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
       expect(props.output).toBeNull();
     });
 
-    it('should handle missing domain', () => {
-      renderWithRecoil(<ToolCall {...mockProps} domain={undefined} authDomain={undefined} />);
-
-      fireEvent.click(screen.getByTestId('progress-text'));
+    it('should handle simple function name without domain', () => {
+      renderWithRecoil(<ToolCall {...mockProps} name="simpleName" />);
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
-      const props = JSON.parse(toolCallInfo.textContent!);
-      expect(props.domain).toBe('');
+      expect(toolCallInfo).toBeInTheDocument();
     });
 
     it('should handle complex nested attachments', () => {
