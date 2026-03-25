@@ -10,6 +10,8 @@ export function getClient() {
   /** @type {Anthropic.default.RequestOptions} */
   const options = {
     apiKey: process.env.ANTHROPIC_API_KEY,
+    timeout: 60_000,
+    maxRetries: 3,
   };
 
   return new Anthropic(options);

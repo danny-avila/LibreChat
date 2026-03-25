@@ -61,7 +61,7 @@ class DALLE3 extends Tool {
     }
 
     let apiKey = fields.DALLE3_API_KEY ?? fields.DALLE_API_KEY ?? this.getApiKey();
-    const config = { apiKey };
+    const config = { apiKey, timeout: 60_000, maxRetries: 3 };
     if (process.env.DALLE_REVERSE_PROXY) {
       config.baseURL = extractBaseURL(process.env.DALLE_REVERSE_PROXY);
     }

@@ -171,6 +171,8 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
   /** @type {OpenAIClient} */
   const openai = new OpenAI({
     apiKey,
+    timeout: 60_000,
+    maxRetries: 3,
     ...opts,
   });
 

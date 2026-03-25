@@ -76,7 +76,7 @@ function createOpenAIImageTools(fields = {}) {
   };
 
   let apiKey = fields.IMAGE_GEN_OAI_API_KEY ?? getApiKey();
-  const closureConfig = { apiKey };
+  const closureConfig = { apiKey, timeout: 60_000, maxRetries: 3 };
 
   const imageModel = process.env.IMAGE_GEN_OAI_MODEL || 'gpt-image-1';
 
