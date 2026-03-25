@@ -5,7 +5,7 @@ import {
   permissionsSchema,
   removeNullishValues,
 } from 'librechat-data-provider';
-import type { IRole } from '~/types';
+import type { IRole, IUser } from '~/types';
 import logger from '~/config/winston';
 
 export interface RoleDeps {
@@ -342,9 +342,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     }
   }
 
-  /**
-   * Create a new custom role. Rejects names that match system roles.
-   */
+  /** Rejects names that match system roles. */
   async function createRole(roleData: Partial<IRole>): Promise<IRole> {
     const { name } = roleData;
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -369,10 +367,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     return role.toObject() as IRole;
   }
 
-  /**
-   * Delete a role by name. Guards against deleting system roles.
-   * Reassigns all users with the deleted role back to USER.
-   */
+  /** Guards against deleting system roles. Reassigns affected users back to USER. */
   async function deleteRole(roleName: string): Promise<IRole | null> {
     if (SystemRoles[roleName as keyof typeof SystemRoles]) {
       throw new Error(`Cannot delete system role: ${roleName}`);
@@ -390,6 +385,13 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     return deleted as IRole | null;
   }
 
+  async function listUsersByRole(roleName: string): Promise<IUser[]> {
+    const User = mongoose.models.User;
+    return (await User.find({ role: roleName })
+      .select('_id name email avatar createdAt')
+      .lean()) as IUser[];
+  }
+
   return {
     listRoles,
     initializeRoles,
@@ -399,6 +401,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     migrateRoleSchema,
     createRole,
     deleteRole,
+    listUsersByRole,
   };
 }
 

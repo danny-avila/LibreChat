@@ -11,21 +11,6 @@ const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const requireReadRoles = requireCapability(SystemCapabilities.READ_ROLES);
 const requireManageRoles = requireCapability(SystemCapabilities.MANAGE_ROLES);
 
-async function listUsersByRole(roleName) {
-  const mongoose = require('mongoose');
-  const User = mongoose.models.User;
-  const users = await User.find({ role: roleName })
-    .select('_id name email avatar createdAt')
-    .lean();
-  return users.map((u) => ({
-    userId: String(u._id),
-    name: u.name ?? String(u._id),
-    email: u.email ?? '',
-    avatarUrl: u.avatar,
-    joinedAt: u.createdAt ? u.createdAt.toISOString() : new Date().toISOString(),
-  }));
-}
-
 const handlers = createAdminRolesHandlers({
   listRoles: db.listRoles,
   getRoleByName: db.getRoleByName,
@@ -35,8 +20,7 @@ const handlers = createAdminRolesHandlers({
   deleteRole: db.deleteRole,
   findUser: db.findUser,
   updateUser: db.updateUser,
-  countUsers: db.countUsers,
-  listUsersByRole,
+  listUsersByRole: db.listUsersByRole,
 });
 
 router.use(requireJwtAuth, requireAdminAccess);
