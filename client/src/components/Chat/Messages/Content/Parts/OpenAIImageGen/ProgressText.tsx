@@ -1,7 +1,6 @@
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-
-const AGENT_STYLE_TOOLS = new Set(['image_gen_oai', 'image_edit_oai', 'gemini_image_gen']);
+import { AGENT_STYLE_TOOLS } from '.';
 
 export default function ProgressText({
   progress,

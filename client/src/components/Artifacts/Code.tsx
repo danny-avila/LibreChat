@@ -41,7 +41,6 @@ export const CodeMarkdown = memo(
   ({ content = '', isSubmitting }: { content: string; isSubmitting: boolean }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
     const [userScrolled, setUserScrolled] = useState(false);
-    const currentContent = content;
 
     useEffect(() => {
       const scrollContainer = scrollRef.current;
@@ -79,7 +78,7 @@ export const CodeMarkdown = memo(
     return (
       <div ref={scrollRef} className="max-h-full overflow-y-auto">
         <ReactMarkdown
-          /* @ts-ignore */
+          /* @ts-expect-error — rehypePlugins type mismatch between react-markdown and unified PluggableList */
           rehypePlugins={rehypePlugins}
           components={
             { code } as {
@@ -87,7 +86,7 @@ export const CodeMarkdown = memo(
             }
           }
         >
-          {currentContent}
+          {content}
         </ReactMarkdown>
       </div>
     );

@@ -6,6 +6,7 @@ import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { logger, sortPagesByRelevance } from '~/utils';
 import store from '~/store';
 
 interface FilePreviewDialogProps {
@@ -121,13 +122,6 @@ function getDisplayType(fileType?: string, fileName?: string): string {
   return ext ? ext.toUpperCase() : 'File';
 }
 
-function sortPagesByRelevance(pages: number[], pageRelevance: Record<number, number>): number[] {
-  if (!pageRelevance || Object.keys(pageRelevance).length === 0) {
-    return pages;
-  }
-  return [...pages].sort((a, b) => (pageRelevance[b] || 0) - (pageRelevance[a] || 0));
-}
-
 export default function FilePreviewDialog({
   open,
   onOpenChange,
@@ -200,8 +194,8 @@ export default function FilePreviewDialog({
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(result.data), 1000);
-    } catch {
-      // silent
+    } catch (err) {
+      logger.error('[FilePreviewDialog] Download failed:', err);
     }
   }, [downloadFile, fileId, fileName]);
 

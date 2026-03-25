@@ -80,19 +80,12 @@ export default function ToolCallGroup({
   const mcpIconMap = useMCPIconMap();
   const count = parts.length;
 
-  const allCompleted = useMemo(() => {
-    return parts.every((p) => {
-      const meta = getToolMeta(p.part);
-      return meta?.hasOutput === true;
-    });
-  }, [parts]);
-
-  const toolNames = useMemo(() => {
-    return parts.map((p) => {
-      const meta = getToolMeta(p.part);
-      return meta?.name ?? '';
-    });
-  }, [parts]);
+  const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
+  const allCompleted = useMemo(
+    () => toolMetadata.every((m) => m?.hasOutput === true),
+    [toolMetadata],
+  );
+  const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
 
   const toolNameSummary = useMemo(() => {
     const seen = new Set<string>();
@@ -132,15 +125,10 @@ export default function ToolCallGroup({
     setIsExpanded((prev) => !prev);
   }, []);
 
-  const hasActiveToolCall = useMemo(() => {
-    if (!isSubmitting) {
-      return false;
-    }
-    return parts.some((p) => {
-      const meta = getToolMeta(p.part);
-      return meta && !meta.hasOutput;
-    });
-  }, [parts, isSubmitting]);
+  const hasActiveToolCall = useMemo(
+    () => isSubmitting && toolMetadata.some((m) => m && !m.hasOutput),
+    [toolMetadata, isSubmitting],
+  );
 
   useEffect(() => {
     if (hasActiveToolCall) {

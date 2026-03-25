@@ -199,7 +199,7 @@ export default function WebSearch({
           aria-expanded={hasSourceData ? showSourceList : undefined}
           aria-label={
             hasSourceData
-              ? `${completedText} - ${sourceCount} ${sourceCount === 1 ? 'source' : 'sources'}`
+              ? `${completedText} - ${localize('com_ui_web_search_sources', { count: String(sourceCount) })}`
               : completedText
           }
         >

@@ -6,8 +6,7 @@ import { ToolIcon, isError } from '../../ToolOutput';
 import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
 import { scaleImage } from '~/utils';
-
-const AGENT_STYLE_TOOLS = new Set(['image_gen_oai', 'image_edit_oai', 'gemini_image_gen']);
+import { AGENT_STYLE_TOOLS } from '.';
 
 export default function OpenAIImageGen({
   initialProgress = 0.1,

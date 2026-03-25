@@ -10,6 +10,7 @@ import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
 import FilePreviewDialog from './FilePreviewDialog';
 import ProgressText from './ProgressText';
 import store from '~/store';
+import { sortPagesByRelevance } from '~/utils';
 import cn from '~/utils/cn';
 
 interface FileSource {
@@ -261,13 +262,6 @@ function getFileIcon(mimeType?: string): React.ComponentType<{ className?: strin
     return FileText;
   }
   return File;
-}
-
-function sortPagesByRelevance(pages: number[], pageRelevance: Record<number, number>): number[] {
-  if (!pageRelevance || Object.keys(pageRelevance).length === 0) {
-    return pages;
-  }
-  return [...pages].sort((a, b) => (pageRelevance[b] || 0) - (pageRelevance[a] || 0));
 }
 
 function FileHeader({

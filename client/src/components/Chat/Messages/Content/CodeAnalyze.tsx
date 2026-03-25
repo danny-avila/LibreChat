@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Terminal } from 'lucide-react';
 import { useProgress, useLocalize } from '~/hooks';
@@ -20,6 +20,12 @@ export default function CodeAnalyze({
   const progress = useProgress(initialProgress);
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const [showCode, setShowCode] = useState(autoExpand);
+
+  useEffect(() => {
+    if (autoExpand) {
+      setShowCode(true);
+    }
+  }, [autoExpand]);
 
   const logs = outputs.reduce((acc, output) => {
     if (output['logs']) {
