@@ -72,7 +72,11 @@ export interface AdminConfigDeps {
     section: ConfigSection | null,
     verb?: 'manage' | 'read',
   ) => Promise<boolean>;
-  getAppConfig?: (options?: { role?: string; userId?: string }) => Promise<AppConfig>;
+  getAppConfig?: (options?: {
+    role?: string;
+    userId?: string;
+    tenantId?: string;
+  }) => Promise<AppConfig>;
 }
 
 // ── Validation helpers ───────────────────────────────────────────────
@@ -95,8 +99,13 @@ function principalModel(type: PrincipalType): PrincipalModel {
       return PrincipalModel.GROUP;
     case PrincipalType.ROLE:
       return PrincipalModel.ROLE;
-    default:
+    case PrincipalType.PUBLIC:
       return PrincipalModel.ROLE;
+    default: {
+      const _exhaustive: never = type;
+      logger.warn(`[adminConfig] Unmapped PrincipalType: ${String(_exhaustive)}`);
+      return PrincipalModel.ROLE;
+    }
   }
 }
 

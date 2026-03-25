@@ -77,6 +77,16 @@ describe('createAppConfigService', () => {
       expect(deps.getApplicableConfigs).toHaveBeenCalled();
     });
 
+    it('caches empty result — does not re-query DB on second call', async () => {
+      const deps = createDeps({ getApplicableConfigs: jest.fn().mockResolvedValue([]) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig({ role: 'USER' });
+      await getAppConfig({ role: 'USER' });
+
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
+    });
+
     it('merges DB configs when found', async () => {
       const deps = createDeps({
         getApplicableConfigs: jest

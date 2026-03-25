@@ -196,8 +196,8 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     return await Config.findOneAndUpdate(
       { principalType, principalId: principalId.toString() },
       { $set: { isActive } },
-      { new: true },
-    ).session(session ?? null);
+      { new: true, ...(session ? { session } : {}) },
+    );
   }
 
   return {
