@@ -3,6 +3,7 @@ import { PrincipalType } from 'librechat-data-provider';
 import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
 import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { IGroup, IRole, IUser } from '~/types';
+import { escapeRegExp } from '~/utils/string';
 
 export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -663,7 +664,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     }
 
     if (filter.search) {
-      const regex = new RegExp(filter.search, 'i');
+      const regex = new RegExp(escapeRegExp(filter.search), 'i');
       query.$or = [{ name: regex }, { email: regex }, { description: regex }];
     }
 
