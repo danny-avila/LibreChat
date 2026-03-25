@@ -81,6 +81,7 @@ function canPreviewByExt(filename: string): 'pdf' | 'text' | false {
   return textExts.has(ext) ? 'text' : false;
 }
 
+/** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
 function formatBytes(bytes: number): string {
   if (bytes >= 1048576) {
     return `${(bytes / 1048576).toFixed(1)} MB`;
