@@ -1,9 +1,16 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { SystemRoles, Permissions, roleDefaults, PermissionTypes } from 'librechat-data-provider';
-import type { IRole, RolePermissions } from '..';
+import type { IRole, IUser, RolePermissions } from '..';
 import { createRoleMethods } from './role';
 import { createModels } from '../models';
+
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+}));
 
 const mockCache = {
   get: jest.fn(),
@@ -14,9 +21,13 @@ const mockCache = {
 const mockGetCache = jest.fn().mockReturnValue(mockCache);
 
 let Role: mongoose.Model<IRole>;
+let User: mongoose.Model<IUser>;
 let getRoleByName: ReturnType<typeof createRoleMethods>['getRoleByName'];
 let updateAccessPermissions: ReturnType<typeof createRoleMethods>['updateAccessPermissions'];
 let initializeRoles: ReturnType<typeof createRoleMethods>['initializeRoles'];
+let createRoleByName: ReturnType<typeof createRoleMethods>['createRoleByName'];
+let deleteRoleByName: ReturnType<typeof createRoleMethods>['deleteRoleByName'];
+let listUsersByRole: ReturnType<typeof createRoleMethods>['listUsersByRole'];
 let mongoServer: MongoMemoryServer;
 
 beforeAll(async () => {
@@ -25,10 +36,14 @@ beforeAll(async () => {
   await mongoose.connect(mongoUri);
   createModels(mongoose);
   Role = mongoose.models.Role;
+  User = mongoose.models.User as mongoose.Model<IUser>;
   const methods = createRoleMethods(mongoose, { getCache: mockGetCache });
   getRoleByName = methods.getRoleByName;
   updateAccessPermissions = methods.updateAccessPermissions;
   initializeRoles = methods.initializeRoles;
+  createRoleByName = methods.createRoleByName;
+  deleteRoleByName = methods.deleteRoleByName;
+  listUsersByRole = methods.listUsersByRole;
 });
 
 afterAll(async () => {
@@ -38,6 +53,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await Role.deleteMany({});
+  await User.deleteMany({});
   mockGetCache.mockClear();
   mockCache.get.mockClear();
   mockCache.set.mockClear();
@@ -513,5 +529,144 @@ describe('initializeRoles', () => {
     const userRole = await getRoleByName(SystemRoles.USER);
     expect(userRole.permissions[PermissionTypes.MULTI_CONVO]).toBeDefined();
     expect(userRole.permissions[PermissionTypes.MULTI_CONVO]?.USE).toBeDefined();
+  });
+});
+
+describe('createRoleByName', () => {
+  it('creates a custom role and caches it', async () => {
+    const role = await createRoleByName({ name: 'editor', description: 'Can edit' });
+
+    expect(role.name).toBe('editor');
+    expect(role.description).toBe('Can edit');
+    expect(mockCache.set).toHaveBeenCalledWith(
+      'editor',
+      expect.objectContaining({ name: 'editor' }),
+    );
+
+    const persisted = await Role.findOne({ name: 'editor' }).lean();
+    expect(persisted).toBeTruthy();
+  });
+
+  it('trims whitespace from role name', async () => {
+    const role = await createRoleByName({ name: '  editor  ' });
+
+    expect(role.name).toBe('editor');
+  });
+
+  it('throws when name is empty', async () => {
+    await expect(createRoleByName({ name: '' })).rejects.toThrow('Role name is required');
+  });
+
+  it('throws when name is whitespace-only', async () => {
+    await expect(createRoleByName({ name: '   ' })).rejects.toThrow('Role name is required');
+  });
+
+  it('throws when name is undefined', async () => {
+    await expect(createRoleByName({})).rejects.toThrow('Role name is required');
+  });
+
+  it('throws for reserved system role names', async () => {
+    await expect(createRoleByName({ name: SystemRoles.ADMIN })).rejects.toThrow(
+      /reserved system name/,
+    );
+    await expect(createRoleByName({ name: SystemRoles.USER })).rejects.toThrow(
+      /reserved system name/,
+    );
+  });
+
+  it('throws when role already exists', async () => {
+    await createRoleByName({ name: 'editor' });
+
+    await expect(createRoleByName({ name: 'editor' })).rejects.toThrow(/already exists/);
+  });
+});
+
+describe('deleteRoleByName', () => {
+  it('deletes a custom role and reassigns users to USER', async () => {
+    await createRoleByName({ name: 'editor' });
+    await User.create([
+      { name: 'Alice', email: 'alice@test.com', role: 'editor', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'editor', username: 'bob' },
+      { name: 'Carol', email: 'carol@test.com', role: SystemRoles.USER, username: 'carol' },
+    ]);
+
+    const deleted = await deleteRoleByName('editor');
+
+    expect(deleted).toBeTruthy();
+    expect(deleted!.name).toBe('editor');
+
+    const alice = await User.findOne({ email: 'alice@test.com' }).lean();
+    const bob = await User.findOne({ email: 'bob@test.com' }).lean();
+    const carol = await User.findOne({ email: 'carol@test.com' }).lean();
+    expect(alice!.role).toBe(SystemRoles.USER);
+    expect(bob!.role).toBe(SystemRoles.USER);
+    expect(carol!.role).toBe(SystemRoles.USER);
+  });
+
+  it('returns null when role does not exist', async () => {
+    const result = await deleteRoleByName('nonexistent');
+    expect(result).toBeNull();
+  });
+
+  it('throws for system roles', async () => {
+    await expect(deleteRoleByName(SystemRoles.ADMIN)).rejects.toThrow(/Cannot delete system role/);
+    await expect(deleteRoleByName(SystemRoles.USER)).rejects.toThrow(/Cannot delete system role/);
+  });
+
+  it('sets cache entry to null after deletion', async () => {
+    await createRoleByName({ name: 'editor' });
+    mockCache.set.mockClear();
+
+    await deleteRoleByName('editor');
+
+    expect(mockCache.set).toHaveBeenCalledWith('editor', null);
+  });
+
+  it('does not touch cache when role does not exist', async () => {
+    mockCache.set.mockClear();
+
+    await deleteRoleByName('nonexistent');
+
+    expect(mockCache.set).not.toHaveBeenCalled();
+  });
+});
+
+describe('listUsersByRole', () => {
+  it('returns users matching the role', async () => {
+    await User.create([
+      { name: 'Alice', email: 'alice@test.com', role: 'editor', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'editor', username: 'bob' },
+      { name: 'Carol', email: 'carol@test.com', role: SystemRoles.USER, username: 'carol' },
+    ]);
+
+    const users = await listUsersByRole('editor');
+
+    expect(users).toHaveLength(2);
+    const names = users.map((u) => u.name).sort();
+    expect(names).toEqual(['Alice', 'Bob']);
+  });
+
+  it('returns empty array when no users have the role', async () => {
+    const users = await listUsersByRole('nonexistent');
+    expect(users).toEqual([]);
+  });
+
+  it('selects only expected fields', async () => {
+    await User.create({
+      name: 'Alice',
+      email: 'alice@test.com',
+      role: 'editor',
+      username: 'alice',
+      password: 'secret123',
+    });
+
+    const users = await listUsersByRole('editor');
+
+    expect(users).toHaveLength(1);
+    expect(users[0].name).toBe('Alice');
+    expect(users[0].email).toBe('alice@test.com');
+    expect(users[0]._id).toBeDefined();
+    expect('password' in users[0]).toBe(false);
+    expect('username' in users[0]).toBe(false);
   });
 });
