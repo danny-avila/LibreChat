@@ -5,25 +5,34 @@ import type {
   CreateGroupRequest,
   UpdateGroupRequest,
 } from '@librechat/data-schemas';
-import type { FilterQuery } from 'mongoose';
-import type { Types, ClientSession } from 'mongoose';
-import type { Response } from 'express';
+import type { FilterQuery, Types, ClientSession } from 'mongoose';
 import type { ServerRequest } from '~/types/http';
+import type { Response } from 'express';
+
+interface GroupListFilter {
+  source?: 'local' | 'entra';
+  search?: string;
+}
+
+interface GroupIdParams {
+  id: string;
+}
+
+interface GroupMemberParams extends GroupIdParams {
+  userId: string;
+}
 
 export interface AdminGroupsDeps {
-  listGroups: (
-    filter?: { source?: 'local' | 'entra'; search?: string },
-    session?: ClientSession,
-  ) => Promise<IGroup[]>;
+  listGroups: (filter?: GroupListFilter, session?: ClientSession) => Promise<IGroup[]>;
   findGroupById: (
     groupId: string | Types.ObjectId,
-    projection?: Record<string, unknown>,
+    projection?: Record<string, 0 | 1>,
     session?: ClientSession,
   ) => Promise<IGroup | null>;
   createGroup: (groupData: Partial<IGroup>, session?: ClientSession) => Promise<IGroup>;
   updateGroupById: (
     groupId: string | Types.ObjectId,
-    data: Record<string, unknown>,
+    data: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>>,
     session?: ClientSession,
   ) => Promise<IGroup | null>;
   deleteGroup: (
@@ -34,12 +43,12 @@ export interface AdminGroupsDeps {
     userId: string | Types.ObjectId,
     groupId: string | Types.ObjectId,
     session?: ClientSession,
-  ) => Promise<{ user: unknown; group: IGroup | null }>;
+  ) => Promise<{ user: IUser; group: IGroup | null }>;
   removeUserFromGroup: (
     userId: string | Types.ObjectId,
     groupId: string | Types.ObjectId,
     session?: ClientSession,
-  ) => Promise<{ user: unknown; group: IGroup | null }>;
+  ) => Promise<{ user: IUser; group: IGroup | null }>;
   findGroupsByMemberId: (
     userId: string | Types.ObjectId,
     session?: ClientSession,
@@ -65,7 +74,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
   async function listGroupsHandler(req: ServerRequest, res: Response) {
     try {
       const { search, source } = req.query as { search?: string; source?: string };
-      const filter: { source?: 'local' | 'entra'; search?: string } = {};
+      const filter: GroupListFilter = {};
       if (source === 'local' || source === 'entra') {
         filter.source = source;
       }
@@ -82,7 +91,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
 
   async function getGroupHandler(req: ServerRequest, res: Response) {
     try {
-      const { id } = req.params as { id: string };
+      const { id } = req.params as GroupIdParams;
       const group = await findGroupById(id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
@@ -117,7 +126,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
 
   async function updateGroupHandler(req: ServerRequest, res: Response) {
     try {
-      const { id } = req.params as { id: string };
+      const { id } = req.params as GroupIdParams;
       const body = req.body as UpdateGroupRequest;
 
       const existing = await findGroupById(id);
@@ -125,7 +134,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         return res.status(404).json({ error: 'Group not found' });
       }
 
-      const updateData: Record<string, unknown> = {};
+      const updateData: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>> = {};
       if (body.name !== undefined) {
         updateData.name = body.name;
       }
@@ -149,7 +158,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
 
   async function deleteGroupHandler(req: ServerRequest, res: Response) {
     try {
-      const { id } = req.params as { id: string };
+      const { id } = req.params as GroupIdParams;
       const existing = await findGroupById(id);
       if (!existing) {
         return res.status(404).json({ error: 'Group not found' });
@@ -164,7 +173,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
 
   async function getGroupMembersHandler(req: ServerRequest, res: Response) {
     try {
-      const { id } = req.params as { id: string };
+      const { id } = req.params as GroupIdParams;
       const group = await findGroupById(id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
@@ -196,7 +205,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
 
   async function addGroupMemberHandler(req: ServerRequest, res: Response) {
     try {
-      const { id } = req.params as { id: string };
+      const { id } = req.params as GroupIdParams;
       const { userId } = req.body as { userId: string };
 
       if (!userId || typeof userId !== 'string') {
@@ -217,7 +226,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
 
   async function removeGroupMemberHandler(req: ServerRequest, res: Response) {
     try {
-      const { id, userId } = req.params as { id: string; userId: string };
+      const { id, userId } = req.params as GroupMemberParams;
       const { group } = await removeUserFromGroup(userId, id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });

@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
 import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
-import type { Model, ClientSession } from 'mongoose';
+import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { IGroup, IRole, IUser } from '~/types';
 
 export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
@@ -651,18 +651,12 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     return Group.updateMany(filter, update, options || {});
   }
 
-  /**
-   * List all groups, optionally filtered by source or name search.
-   * @param filter - Optional filter with source and search fields
-   * @param session - Optional MongoDB session for transactions
-   * @returns Array of group documents
-   */
   async function listGroups(
     filter: { source?: 'local' | 'entra'; search?: string } = {},
     session?: ClientSession,
   ): Promise<IGroup[]> {
     const Group = mongoose.models.Group as Model<IGroup>;
-    const query: Record<string, unknown> = {};
+    const query: FilterQuery<IGroup> = {};
 
     if (filter.source) {
       query.source = filter.source;
@@ -680,12 +674,6 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     return await dbQuery.lean();
   }
 
-  /**
-   * Delete a group by its ID and clean up member references.
-   * @param groupId - The group ID to delete
-   * @param session - Optional MongoDB session for transactions
-   * @returns The deleted group document or null
-   */
   async function deleteGroup(
     groupId: string | Types.ObjectId,
     session?: ClientSession,
