@@ -53,6 +53,7 @@ export class KitchenSinkStack extends cdk.Stack {
     meiliService.connections.allowFrom(ragApiService, ec2.Port.tcp(7700), "RAG API to MeiliSearch");
     ragApiService.connections.allowFrom(librechatService, ec2.Port.tcp(8000), "LibreChat to RAG API");
     librechatService.connections.allowFrom(lbSecurityGroup, ec2.Port.tcp(3080), "ALB to LibreChat");
+    librechatService.connections.allowFrom(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(3080), "Health checks to LibreChat");
   }
 
   private createCluster(vpc: ec2.IVpc): ecs.Cluster {
