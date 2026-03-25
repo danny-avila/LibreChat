@@ -7,12 +7,18 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   sync-upstream:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: 3185872
+          private-key: ${{ secrets.AI_ASSISTANT_APP }}
+
       - name: Checkout newjersey
         uses: actions/checkout@v6
         with:
@@ -69,7 +75,7 @@ jobs:
       - name: Create PR
         if: steps.check.outputs.count != '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           BODY="Automated sync of upstream [\`danny-avila/LibreChat\`](https://github.com/danny-avila/LibreChat) \`main\` into \`newjersey\`.
           
@@ -79,6 +85,7 @@ jobs:
           - [ ] Smoke test this branch locally (pull down, run, verify it's okay).
           - [ ] Merge PR w/ a merge commit (NOT squash or rebase).
           "
+
           if [ "${{ steps.merge.outputs.conflicted }}" = "true" ]; then
             BODY="⚠️ **This merge has conflicts.** Check out the branch, resolve the conflict markers, then push to update this PR.
 
