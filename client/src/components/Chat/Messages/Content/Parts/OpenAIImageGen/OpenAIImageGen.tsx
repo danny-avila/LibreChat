@@ -32,15 +32,18 @@ export default function OpenAIImageGen({
 
   const hasError = typeof output === 'string' && isError(output);
 
-  const cancelled = (() => {
-    if (isSubmitting !== undefined) {
-      return (!isSubmitting && initialProgress < 1) || hasError;
-    }
-    if (initialProgress < 1 && initialProgress > 0) {
-      return false;
-    }
-    return hasError;
-  })();
+  /**
+   * Determines if the image generation was cancelled.
+   * - Agent path (isSubmitting defined): cancelled if not submitting + incomplete, or on error.
+   * - Legacy path (isSubmitting undefined): in-progress (0 < progress < 1) is never cancelled
+   *   because legacy image gen lacks a submitting signal — only errors cancel.
+   */
+  const cancelled =
+    isSubmitting !== undefined
+      ? (!isSubmitting && initialProgress < 1) || hasError
+      : initialProgress < 1 && initialProgress > 0
+        ? false
+        : hasError;
 
   let width: number | undefined;
   let height: number | undefined;

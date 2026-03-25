@@ -100,11 +100,17 @@ function useLazyHighlight(code: string | undefined, lang: string): React.ReactNo
     }
 
     let cancelled = false;
-    loadLowlight().then((mod) => {
-      if (!cancelled) {
-        setHighlighted(highlightCode(mod, code, lang));
-      }
-    });
+    loadLowlight()
+      .then((mod) => {
+        if (!cancelled) {
+          setHighlighted(highlightCode(mod, code, lang));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHighlighted([code]);
+        }
+      });
     return () => {
       cancelled = true;
     };
