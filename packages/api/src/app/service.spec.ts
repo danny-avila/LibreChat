@@ -172,7 +172,7 @@ describe('createAppConfigService', () => {
       mockGetConfigs.mockResolvedValueOnce([
         { priority: 10, overrides: { restricted: true }, isActive: true },
       ]);
-      deps._cache._store.delete('_OVERRIDE_:ADMIN');
+      deps._cache._store.delete('_OVERRIDE_:_:ADMIN');
       const config = await getAppConfig({ role: 'ADMIN' });
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);
@@ -190,7 +190,7 @@ describe('createAppConfigService', () => {
       mockGetConfigs.mockResolvedValueOnce([
         { priority: 10, overrides: { x: 'admin-only' }, isActive: true },
       ]);
-      deps._cache._store.delete('_OVERRIDE_:ADMIN');
+      deps._cache._store.delete('_OVERRIDE_:_:ADMIN');
       const config = await getAppConfig({ role: 'ADMIN' });
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);
