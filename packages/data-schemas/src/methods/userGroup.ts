@@ -651,6 +651,50 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     return Group.updateMany(filter, update, options || {});
   }
 
+  /**
+   * List all groups, optionally filtered by source or name search.
+   * @param filter - Optional filter with source and search fields
+   * @param session - Optional MongoDB session for transactions
+   * @returns Array of group documents
+   */
+  async function listGroups(
+    filter: { source?: 'local' | 'entra'; search?: string } = {},
+    session?: ClientSession,
+  ): Promise<IGroup[]> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query: Record<string, unknown> = {};
+
+    if (filter.source) {
+      query.source = filter.source;
+    }
+
+    if (filter.search) {
+      const regex = new RegExp(filter.search, 'i');
+      query.$or = [{ name: regex }, { email: regex }, { description: regex }];
+    }
+
+    const dbQuery = Group.find(query);
+    if (session) {
+      dbQuery.session(session);
+    }
+    return await dbQuery.lean();
+  }
+
+  /**
+   * Delete a group by its ID and clean up member references.
+   * @param groupId - The group ID to delete
+   * @param session - Optional MongoDB session for transactions
+   * @returns The deleted group document or null
+   */
+  async function deleteGroup(
+    groupId: string | Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const options = session ? { session } : {};
+    return await Group.findByIdAndDelete(groupId, options).lean();
+  }
+
   return {
     findGroupById,
     findGroupByExternalId,
@@ -670,6 +714,8 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     searchPrincipals,
     calculateRelevanceScore,
     sortPrincipalsByRelevance,
+    listGroups,
+    deleteGroup,
   };
 }
 
