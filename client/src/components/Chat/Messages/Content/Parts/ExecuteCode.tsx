@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
+import { SquareTerminal } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
-import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
-import { useProgress, useLocalize } from '~/hooks';
+import { useProgress, useLocalize, useExpandCollapse } from '~/hooks';
+import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
@@ -14,8 +15,115 @@ interface ParsedArgs {
   code?: string;
 }
 
-export function useParseArgs(args?: string): ParsedArgs | null {
+interface HastText {
+  type: 'text';
+  value: string;
+}
+
+interface HastElement {
+  type: 'element';
+  tagName: string;
+  properties?: { className?: string[] };
+  children?: HastNode[];
+}
+
+type HastNode = HastText | HastElement;
+
+function hastToReact(nodes: HastNode[]): React.ReactNode[] {
+  return nodes.map((node, i) => {
+    if (node.type === 'text') {
+      return node.value;
+    }
+    return React.createElement(
+      node.tagName,
+      { key: i, className: node.properties?.className?.join(' ') },
+      node.children ? hastToReact(node.children) : undefined,
+    );
+  });
+}
+
+type LowlightModule = typeof import('lowlight');
+
+/** Lazy-loaded lowlight singleton — only fetched when syntax highlighting is first needed. */
+let lowlightPromise: Promise<LowlightModule> | null = null;
+let lowlightModule: LowlightModule | null = null;
+
+function loadLowlight(): Promise<LowlightModule> {
+  if (lowlightModule) {
+    return Promise.resolve(lowlightModule);
+  }
+  if (!lowlightPromise) {
+    lowlightPromise = import('lowlight').then((mod) => {
+      lowlightModule = mod;
+      return mod;
+    });
+  }
+  return lowlightPromise;
+}
+
+function highlightCode(mod: LowlightModule, code: string, lang: string): React.ReactNode[] {
+  try {
+    const tree = mod.lowlight.registered(lang)
+      ? mod.lowlight.highlight(lang, code)
+      : mod.lowlight.highlightAuto(code);
+    return hastToReact(tree.children as HastNode[]);
+  } catch {
+    return [code];
+  }
+}
+
+/** Hook that lazily loads lowlight and returns highlighted nodes once ready. */
+function useLazyHighlight(code: string | undefined, lang: string): React.ReactNode[] | null {
+  const [highlighted, setHighlighted] = useState<React.ReactNode[] | null>(() => {
+    if (!code || !lowlightModule) {
+      return null;
+    }
+    return highlightCode(lowlightModule, code, lang);
+  });
+  const prevKey = useRef('');
+
+  useEffect(() => {
+    const key = `${lang}\0${code ?? ''}`;
+    if (key === prevKey.current) {
+      return;
+    }
+    prevKey.current = key;
+
+    if (!code) {
+      setHighlighted(null);
+      return;
+    }
+
+    if (lowlightModule) {
+      setHighlighted(highlightCode(lowlightModule, code, lang));
+      return;
+    }
+
+    let cancelled = false;
+    loadLowlight()
+      .then((mod) => {
+        if (!cancelled) {
+          setHighlighted(highlightCode(mod, code, lang));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHighlighted([code]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, lang]);
+
+  return highlighted;
+}
+
+export function useParseArgs(args?: string | Record<string, unknown>): ParsedArgs | null {
   return useMemo(() => {
+    if (typeof args === 'object' && args !== null) {
+      return { lang: String(args.lang ?? ''), code: String(args.code ?? '') };
+    }
     let parsedArgs: ParsedArgs | string | undefined | null = args;
     try {
       parsedArgs = JSON.parse(args || '');
@@ -44,6 +152,8 @@ export function useParseArgs(args?: string): ParsedArgs | null {
   }, [args]);
 }
 
+const ERROR_PATTERNS = /^(Traceback|Error:|Exception:|.*Error:)/m;
+
 export default function ExecuteCode({
   isSubmitting,
   initialProgress = 0.1,
@@ -53,170 +163,88 @@ export default function ExecuteCode({
 }: {
   initialProgress: number;
   isSubmitting: boolean;
-  args?: string;
+  args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
   const hasOutput = output.length > 0;
-  const outputRef = useRef<string>(output);
-  const codeContentRef = useRef<HTMLDivElement>(null);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const showAnalysisCode = useRecoilValue(store.showCode);
-  const [showCode, setShowCode] = useState(showAnalysisCode);
-  const [contentHeight, setContentHeight] = useState<number | undefined>(0);
+  const autoExpand = useRecoilValue(store.autoExpandTools);
 
-  const prevShowCodeRef = useRef<boolean>(showCode);
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
+  const hasContent = !!code || hasOutput;
+  const [showCode, setShowCode] = useState(() => autoExpand && hasContent);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showCode);
+
+  useEffect(() => {
+    if (autoExpand && hasContent) {
+      setShowCode(true);
+    }
+  }, [autoExpand, hasContent]);
   const progress = useProgress(initialProgress);
 
-  useEffect(() => {
-    if (output !== outputRef.current) {
-      outputRef.current = output;
+  const highlighted = useLazyHighlight(code, lang);
 
-      if (showCode && codeContentRef.current) {
-        setTimeout(() => {
-          if (codeContentRef.current) {
-            const newHeight = codeContentRef.current.scrollHeight;
-            setContentHeight(newHeight);
-          }
-        }, 10);
-      }
-    }
-  }, [output, showCode]);
+  const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
 
-  useEffect(() => {
-    if (showCode !== prevShowCodeRef.current) {
-      prevShowCodeRef.current = showCode;
-
-      if (showCode && codeContentRef.current) {
-        setIsAnimating(true);
-        requestAnimationFrame(() => {
-          if (codeContentRef.current) {
-            const height = codeContentRef.current.scrollHeight;
-            setContentHeight(height);
-          }
-
-          const timer = setTimeout(() => {
-            setIsAnimating(false);
-          }, 500);
-
-          return () => clearTimeout(timer);
-        });
-      } else if (!showCode) {
-        setIsAnimating(true);
-        setContentHeight(0);
-
-        const timer = setTimeout(() => {
-          setIsAnimating(false);
-        }, 500);
-
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [showCode]);
-
-  useEffect(() => {
-    if (!codeContentRef.current) {
-      return;
-    }
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      if (showCode && !isAnimating) {
-        for (const entry of entries) {
-          if (entry.target === codeContentRef.current) {
-            setContentHeight(entry.contentRect.height);
-          }
-        }
-      }
-    });
-
-    resizeObserver.observe(codeContentRef.current);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [showCode, isAnimating]);
+  const toggleCode = useCallback(() => setShowCode((prev) => !prev), [setShowCode]);
 
   const cancelled = !isSubmitting && progress < 1;
 
   return (
     <>
-      <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
-          onClick={() => setShowCode((prev) => !prev)}
+          onClick={toggleCode}
           inProgressText={localize('com_ui_analyzing')}
           finishedText={
             cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
+          }
+          icon={
+            <SquareTerminal
+              className={cn(
+                'size-4 shrink-0 text-text-secondary',
+                progress < 1 && !cancelled && 'animate-pulse',
+              )}
+              aria-hidden="true"
+            />
           }
           hasInput={!!code?.length}
           isExpanded={showCode}
           error={cancelled}
         />
       </div>
-      <div
-        className="relative mb-2"
-        style={{
-          height: showCode ? contentHeight : 0,
-          overflow: 'hidden',
-          transition:
-            'height 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          opacity: showCode ? 1 : 0,
-          transformOrigin: 'top',
-          willChange: 'height, opacity',
-          perspective: '1000px',
-          backfaceVisibility: 'hidden',
-          WebkitFontSmoothing: 'subpixel-antialiased',
-        }}
-      >
-        <div
-          className={cn(
-            'code-analyze-block mt-0.5 overflow-hidden rounded-xl bg-surface-primary',
-            showCode && 'shadow-lg',
-          )}
-          ref={codeContentRef}
-          style={{
-            transform: showCode ? 'translateY(0) scale(1)' : 'translateY(-8px) scale(0.98)',
-            opacity: showCode ? 1 : 0,
-            transition:
-              'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          {showCode && (
-            <div
-              style={{
-                transform: showCode ? 'translateY(0)' : 'translateY(-4px)',
-                opacity: showCode ? 1 : 0,
-                transition:
-                  'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-              }}
-            >
-              <MarkdownLite
-                content={code ? `\`\`\`${lang}\n${code}\n\`\`\`` : ''}
-                codeExecution={false}
-              />
-            </div>
-          )}
-          {hasOutput && (
-            <div
-              className={cn(
-                'bg-surface-tertiary p-4 text-xs',
-                showCode ? 'border-t border-surface-primary-contrast' : '',
-              )}
-              style={{
-                transform: showCode ? 'translateY(0)' : 'translateY(-6px)',
-                opacity: showCode ? 1 : 0,
-                transition:
-                  'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s, opacity 0.45s cubic-bezier(0.19, 1, 0.22, 1) 0.05s',
-                boxShadow: showCode ? '0 -1px 0 rgba(0,0,0,0.05)' : 'none',
-              }}
-            >
-              <div className="prose flex flex-col-reverse">
-                <Stdout output={output} />
+      <div style={expandStyle}>
+        <div className="overflow-hidden" ref={expandRef}>
+          <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+            {code && <CodeWindowHeader language={lang} code={code} />}
+            {code && (
+              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+                <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
+              </pre>
+            )}
+            {hasOutput && (
+              <div
+                className={cn(
+                  'bg-surface-primary-alt p-4 text-xs dark:bg-transparent',
+                  code && 'border-t border-border-light',
+                )}
+              >
+                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                  {localize('com_ui_output')}
+                </div>
+                <div
+                  className={cn(
+                    'max-h-[200px] overflow-auto',
+                    outputHasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                  )}
+                >
+                  <Stdout output={output} />
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
       {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
