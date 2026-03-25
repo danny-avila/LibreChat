@@ -9,8 +9,8 @@ import { MCPConnection } from '~/mcp/connection';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { createOAuthMCPServer } from './helpers/oauthTestServer';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
-import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type { StreamableHTTPOptions } from '~/mcp/types';
+import type { MCPOAuthTokens } from '~/mcp/oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
