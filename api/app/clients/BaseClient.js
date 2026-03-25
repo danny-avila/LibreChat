@@ -727,6 +727,11 @@ class BaseClient {
    * @param {string | null} user
    */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
+    if (!this.options) {
+      logger.warn('[BaseClient] saveMessageToDatabase called after client disposal, skipping save');
+      return {};
+    }
+
     if (this.user && user !== this.user) {
       throw new Error('User mismatch.');
     }
