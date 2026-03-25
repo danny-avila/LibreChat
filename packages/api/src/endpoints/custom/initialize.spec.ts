@@ -1,4 +1,4 @@
-import { AuthType } from 'librechat-data-provider';
+import { AuthType, ErrorTypes } from 'librechat-data-provider';
 import type { BaseInitializeParams } from '~/types';
 
 const mockValidateEndpointURL = jest.fn();
@@ -132,8 +132,8 @@ describe('initializeCustom – Agents API user key resolution', () => {
 
   it('should throw EXPIRED_USER_KEY when expiresAt is expired', async () => {
     const { checkUserKeyExpiry } = jest.requireMock('~/utils');
-    checkUserKeyExpiry.mockImplementation(() => {
-      throw new Error(JSON.stringify({ type: 'expired_user_key' }));
+    checkUserKeyExpiry.mockImplementationOnce(() => {
+      throw new Error(JSON.stringify({ type: ErrorTypes.EXPIRED_USER_KEY }));
     });
 
     const params = createParams({
@@ -143,7 +143,18 @@ describe('initializeCustom – Agents API user key resolution', () => {
       expiresAt: '2020-01-01',
     });
 
-    await expect(initializeCustom(params)).rejects.toThrow('expired_user_key');
+    await expect(initializeCustom(params)).rejects.toThrow(ErrorTypes.EXPIRED_USER_KEY);
+    expect(params.db.getUserKeyValues).not.toHaveBeenCalled();
+  });
+
+  it('should NOT call getUserKeyValues when key and URL are system-defined', async () => {
+    const params = createParams({
+      apiKey: 'sk-system-key',
+      baseURL: 'https://api.provider.com/v1',
+    });
+
+    await initializeCustom(params);
+
     expect(params.db.getUserKeyValues).not.toHaveBeenCalled();
   });
 });
