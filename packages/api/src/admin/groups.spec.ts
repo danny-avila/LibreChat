@@ -1,9 +1,16 @@
 import { Types } from 'mongoose';
-import { createAdminGroupsHandlers } from './groups';
-import type { AdminGroupsDeps } from './groups';
 import type { IGroup, IUser } from '@librechat/data-schemas';
-import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import type { AdminGroupsDeps } from './groups';
+import type { Response } from 'express';
+import { createAdminGroupsHandlers } from './groups';
+
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: {
+    error: jest.fn(),
+  },
+}));
 
 const validId = new Types.ObjectId().toString();
 const validUserId = new Types.ObjectId().toString();
@@ -31,7 +38,11 @@ function mockUser(overrides: Partial<IUser> = {}): IUser {
 }
 
 function createReqRes(
-  overrides: { params?: Record<string, string>; query?: Record<string, string>; body?: Record<string, unknown> } = {},
+  overrides: {
+    params?: Record<string, string>;
+    query?: Record<string, string>;
+    body?: Record<string, unknown>;
+  } = {},
 ) {
   const req = {
     params: overrides.params ?? {},
