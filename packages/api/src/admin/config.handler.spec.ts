@@ -270,6 +270,146 @@ describe('createAdminConfigHandlers', () => {
     });
   });
 
+  describe('upsertConfigOverrides — Bug 2 regression', () => {
+    it('returns 403 for empty overrides when user lacks MANAGE_CONFIGS', async () => {
+      const { handlers } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {} },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+    });
+  });
+
+  // ── Invariant tests: rules that must hold across ALL handlers ──────
+
+  const MUTATION_HANDLERS: Array<{
+    name: string;
+    reqOverrides: Record<string, unknown>;
+  }> = [
+    {
+      name: 'upsertConfigOverrides',
+      reqOverrides: {
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: { interface: { endpointsMenu: false } } },
+      },
+    },
+    {
+      name: 'patchConfigField',
+      reqOverrides: {
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { entries: [{ fieldPath: 'interface.endpointsMenu', value: false }] },
+      },
+    },
+    {
+      name: 'deleteConfigField',
+      reqOverrides: {
+        params: { principalType: 'role', principalId: 'admin' },
+        query: { fieldPath: 'interface.endpointsMenu' },
+      },
+    },
+    {
+      name: 'deleteConfigOverrides',
+      reqOverrides: {
+        params: { principalType: 'role', principalId: 'admin' },
+      },
+    },
+    {
+      name: 'toggleConfig',
+      reqOverrides: {
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { isActive: false },
+      },
+    },
+  ];
+
+  describe('invariant: all mutation handlers call markConfigsDirty', () => {
+    for (const { name, reqOverrides } of MUTATION_HANDLERS) {
+      it(`${name} calls markConfigsDirty on success`, async () => {
+        const { handlers, deps } = createHandlers();
+        const req = mockReq(reqOverrides);
+        const res = mockRes();
+
+        await (handlers as Record<string, (...args: unknown[]) => Promise<unknown>>)[name](
+          req,
+          res,
+        );
+
+        expect(deps.markConfigsDirty).toHaveBeenCalled();
+      });
+    }
+  });
+
+  describe('invariant: all mutation handlers return 401 without auth', () => {
+    for (const { name, reqOverrides } of MUTATION_HANDLERS) {
+      it(`${name} returns 401 when user is missing`, async () => {
+        const { handlers } = createHandlers();
+        const req = mockReq({ ...reqOverrides, user: undefined });
+        const res = mockRes();
+
+        await (handlers as Record<string, (...args: unknown[]) => Promise<unknown>>)[name](
+          req,
+          res,
+        );
+
+        expect(res.statusCode).toBe(401);
+      });
+    }
+  });
+
+  describe('invariant: all mutation handlers return 403 without capability', () => {
+    for (const { name, reqOverrides } of MUTATION_HANDLERS) {
+      it(`${name} returns 403 when user lacks capability`, async () => {
+        const { handlers } = createHandlers({
+          hasConfigCapability: jest.fn().mockResolvedValue(false),
+        });
+        const req = mockReq(reqOverrides);
+        const res = mockRes();
+
+        await (handlers as Record<string, (...args: unknown[]) => Promise<unknown>>)[name](
+          req,
+          res,
+        );
+
+        expect(res.statusCode).toBe(403);
+      });
+    }
+  });
+
+  describe('invariant: all read handlers return 403 without capability', () => {
+    const READ_HANDLERS: Array<{ name: string; reqOverrides: Record<string, unknown> }> = [
+      { name: 'listConfigs', reqOverrides: {} },
+      { name: 'getBaseConfig', reqOverrides: {} },
+      {
+        name: 'getConfig',
+        reqOverrides: { params: { principalType: 'role', principalId: 'admin' } },
+      },
+    ];
+
+    for (const { name, reqOverrides } of READ_HANDLERS) {
+      it(`${name} returns 403 when user lacks capability`, async () => {
+        const { handlers } = createHandlers({
+          hasConfigCapability: jest.fn().mockResolvedValue(false),
+        });
+        const req = mockReq(reqOverrides);
+        const res = mockRes();
+
+        await (handlers as Record<string, (...args: unknown[]) => Promise<unknown>>)[name](
+          req,
+          res,
+        );
+
+        expect(res.statusCode).toBe(403);
+      });
+    }
+  });
+
   describe('getBaseConfig', () => {
     it('returns 403 when user lacks READ_CONFIGS', async () => {
       const { handlers } = createHandlers({

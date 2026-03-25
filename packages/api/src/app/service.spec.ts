@@ -158,6 +158,24 @@ describe('createAppConfigService', () => {
       expect(overrideKey).toBe('_OVERRIDE_:uid1');
     });
 
+    it('does not short-circuit other users when one user has no overrides (Bug 1 regression)', async () => {
+      const mockGetConfigs = jest.fn().mockResolvedValue([]);
+      const deps = createDeps({ getApplicableConfigs: mockGetConfigs });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig({ role: 'USER' });
+      expect(mockGetConfigs).toHaveBeenCalledTimes(1);
+
+      mockGetConfigs.mockResolvedValueOnce([
+        { priority: 10, overrides: { x: 'admin-only' }, isActive: true },
+      ]);
+      deps._cache._store.delete('_OVERRIDE_:ADMIN');
+      const config = await getAppConfig({ role: 'ADMIN' });
+
+      expect(mockGetConfigs).toHaveBeenCalledTimes(2);
+      expect((config as Record<string, unknown>).x).toBe('admin-only');
+    });
+
     it('falls back to base config on getApplicableConfigs error', async () => {
       const deps = createDeps({
         getApplicableConfigs: jest.fn().mockRejectedValue(new Error('DB down')),
