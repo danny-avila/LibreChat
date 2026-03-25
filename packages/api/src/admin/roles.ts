@@ -111,7 +111,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       ) {
         return res.status(400).json({ error: 'name must be a non-empty string' });
       }
-      if (body.name && SystemRoles[body.name.trim() as keyof typeof SystemRoles]) {
+      if (
+        body.name &&
+        body.name.trim() !== name &&
+        SystemRoles[body.name.trim() as keyof typeof SystemRoles]
+      ) {
         return res.status(409).json({ error: 'Cannot rename to a reserved system role name' });
       }
 
