@@ -1,9 +1,9 @@
-import { SystemRoles } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
+import { SystemRoles } from 'librechat-data-provider';
 import type { IRole, IUser } from '@librechat/data-schemas';
+import type { ServerRequest } from '~/types/http';
 import type { FilterQuery } from 'mongoose';
 import type { Response } from 'express';
-import type { ServerRequest } from '~/types/http';
 
 interface RoleNameParams {
   name: string;
@@ -23,10 +23,7 @@ interface AdminMember {
 
 export interface AdminRolesDeps {
   listRoles: () => Promise<IRole[]>;
-  getRoleByName: (
-    name: string,
-    fields?: string | string[] | null,
-  ) => Promise<IRole | null>;
+  getRoleByName: (name: string, fields?: string | string[] | null) => Promise<IRole | null>;
   createRole: (roleData: Partial<IRole>) => Promise<IRole>;
   updateRoleByName: (name: string, updates: Partial<IRole>) => Promise<IRole | null>;
   updateAccessPermissions: (
@@ -40,8 +37,7 @@ export interface AdminRolesDeps {
     fields?: string | string[] | null,
   ) => Promise<IUser | null>;
   updateUser: (userId: string, data: Partial<IUser>) => Promise<IUser | null>;
-  countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
-  listUsersByRole: (roleName: string) => Promise<AdminMember[]>;
+  listUsersByRole: (roleName: string) => Promise<IUser[]>;
 }
 
 export function createAdminRolesHandlers(deps: AdminRolesDeps) {
@@ -54,7 +50,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     deleteRole,
     findUser,
     updateUser,
-    countUsers,
+    listUsersByRole,
   } = deps;
 
   async function listRolesHandler(_req: ServerRequest, res: Response) {
@@ -83,7 +79,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function createRoleHandler(req: ServerRequest, res: Response) {
     try {
-      const { name, permissions } = req.body as { name?: string; permissions?: IRole['permissions'] };
+      const { name, permissions } = req.body as {
+        name?: string;
+        permissions?: IRole['permissions'];
+      };
       if (!name || typeof name !== 'string' || !name.trim()) {
         return res.status(400).json({ error: 'name is required' });
       }
@@ -176,7 +175,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
-      const members = await deps.listUsersByRole(name);
+      const users = await listUsersByRole(name);
+      const members: AdminMember[] = users.map((u) => ({
+        userId: u._id?.toString() ?? '',
+        name: u.name ?? u._id?.toString() ?? '',
+        email: u.email ?? '',
+        avatarUrl: u.avatar,
+        joinedAt: u.createdAt ? u.createdAt.toISOString() : new Date().toISOString(),
+      }));
       return res.status(200).json({ members });
     } catch (error) {
       logger.error('[adminRoles] getRoleMembers error:', error);
