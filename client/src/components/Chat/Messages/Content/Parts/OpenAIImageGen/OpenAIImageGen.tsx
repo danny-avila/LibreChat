@@ -8,6 +8,22 @@ import ProgressText from './ProgressText';
 import { AGENT_STYLE_TOOLS } from '.';
 import { scaleImage } from '~/utils';
 
+function computeCancelled(
+  isSubmitting: boolean | undefined,
+  initialProgress: number,
+  hasError: boolean,
+): boolean {
+  if (isSubmitting !== undefined) {
+    return (!isSubmitting && initialProgress < 1) || hasError;
+  }
+  // Legacy path: in-progress (0 < progress < 1) is never cancelled
+  // because legacy image gen lacks a submitting signal.
+  if (initialProgress < 1 && initialProgress > 0) {
+    return false;
+  }
+  return hasError;
+}
+
 export default function OpenAIImageGen({
   initialProgress = 0.1,
   isSubmitting,
@@ -38,12 +54,7 @@ export default function OpenAIImageGen({
    * - Legacy path (isSubmitting undefined): in-progress (0 < progress < 1) is never cancelled
    *   because legacy image gen lacks a submitting signal — only errors cancel.
    */
-  const cancelled =
-    isSubmitting !== undefined
-      ? (!isSubmitting && initialProgress < 1) || hasError
-      : initialProgress < 1 && initialProgress > 0
-        ? false
-        : hasError;
+  const cancelled = computeCancelled(isSubmitting, initialProgress, hasError);
 
   let width: number | undefined;
   let height: number | undefined;
