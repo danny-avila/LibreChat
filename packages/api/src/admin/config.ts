@@ -4,11 +4,11 @@ import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
+import type { CapabilityUser } from '~/middleware/capabilities';
 import type { ServerRequest } from '~/types/http';
 
-// ── Dot-path helpers (no lodash dependency) ──────────────────────────
-
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
+const MAX_PATCH_ENTRIES = 100;
 
 export function isValidFieldPath(path: string): boolean {
   return typeof path === 'string' && path.length > 0 && !UNSAFE_SEGMENTS.test(path);
@@ -16,14 +16,6 @@ export function isValidFieldPath(path: string): boolean {
 
 export function getTopLevelSection(fieldPath: string): string {
   return fieldPath.split('.')[0];
-}
-
-// ── Types ────────────────────────────────────────────────────────────
-
-interface CapabilityUser {
-  id: string;
-  role: string;
-  tenantId?: string;
 }
 
 export interface AdminConfigDeps {
@@ -108,7 +100,7 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   return {
     id: req.user.id ?? req.user._id?.toString() ?? '',
     role: req.user.role ?? '',
-    tenantId: (req.user as unknown as CapabilityUser).tenantId,
+    tenantId: (req.user as { tenantId?: string }).tenantId,
   };
 }
 
@@ -240,8 +232,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         priority?: number;
       };
 
-      if (!overrides || typeof overrides !== 'object') {
-        return res.status(400).json({ error: 'overrides object is required' });
+      if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) {
+        return res.status(400).json({ error: 'overrides must be a plain object' });
       }
 
       if (priority != null && (typeof priority !== 'number' || priority < 0)) {
@@ -270,7 +262,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         }
       }
 
-      const existing = await findConfigByPrincipal(principalType, principalId);
       const config = await upsertConfig(
         principalType,
         principalId,
@@ -280,7 +271,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       );
 
       await notifyChange();
-      return res.status(existing ? 200 : 201).json({ config });
+      return res.status(config?.configVersion === 1 ? 201 : 200).json({ config });
     } catch (error) {
       logger.error('[adminConfig] upsertConfigOverrides error:', error);
       return res.status(500).json({ error: 'Failed to upsert config' });
@@ -308,6 +299,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
 
       if (!Array.isArray(entries) || entries.length === 0) {
         return res.status(400).json({ error: 'entries array is required and must not be empty' });
+      }
+
+      if (entries.length > MAX_PATCH_ENTRIES) {
+        return res
+          .status(400)
+          .json({ error: `entries array exceeds maximum of ${MAX_PATCH_ENTRIES}` });
       }
 
       for (const entry of entries) {
@@ -367,14 +364,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         principalType: string;
         principalId: string;
       };
+      if (!validatePrincipalType(principalType)) {
+        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+      }
+
       const fieldPath = req.query.fieldPath as string | undefined;
 
       if (!fieldPath || typeof fieldPath !== 'string') {
         return res.status(400).json({ error: 'fieldPath query parameter is required' });
-      }
-
-      if (!validatePrincipalType(principalType)) {
-        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
       if (!isValidFieldPath(fieldPath)) {

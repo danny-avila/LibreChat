@@ -88,6 +88,15 @@ describe('createAppConfigService', () => {
       expect(deps.getApplicableConfigs).toHaveBeenCalled();
     });
 
+    it('sets HAS_DB_CONFIGS false only for base-only query (no role/userId)', async () => {
+      const deps = createDeps();
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig();
+
+      expect(deps._cache._store.get('_HAS_DB_CONFIGS_')).toBe(false);
+    });
+
     it('does not set HAS_DB_CONFIGS false from scoped query (avoids global flag corruption)', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);

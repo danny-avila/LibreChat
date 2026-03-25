@@ -117,7 +117,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     const setPayload: Record<string, unknown> = {
       principalModel,
       priority,
-      isActive: true,
     };
 
     for (const [path, value] of Object.entries(fields)) {

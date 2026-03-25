@@ -1,5 +1,5 @@
 import { PrincipalType } from 'librechat-data-provider';
-import { logger, mergeConfigOverrides } from '@librechat/data-schemas';
+import { logger, mergeConfigOverrides, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { AppConfig, IConfig } from '@librechat/data-schemas';
 
@@ -50,7 +50,7 @@ function overrideCacheKey(role?: string, userId?: string): string {
   if (role) {
     return `_OVERRIDE_:${role}`;
   }
-  return '_OVERRIDE_:__base__';
+  return `_OVERRIDE_:${BASE_CONFIG_PRINCIPAL_ID}`;
 }
 
 // ── Service factory ──────────────────────────────────────────────────
@@ -65,6 +65,8 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
     getUserPrincipals,
     overrideCacheTtl = DEFAULT_OVERRIDE_CACHE_TTL,
   } = deps;
+
+  const cache = getCache(cacheKeys.APP_CONFIG);
 
   /**
    * Build a principals array from role and/or userId.
@@ -97,11 +99,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
   ): Promise<AppConfig> {
     const { role, userId, refresh } = options;
 
-    const cache = getCache(cacheKeys.APP_CONFIG);
-
     let baseConfig = (await cache.get(BASE_CONFIG_KEY)) as AppConfig | undefined;
     if (!baseConfig || refresh) {
-      logger.info('[getAppConfig] Loading base configuration from YAML...');
+      logger.info('[getAppConfig] Loading base configuration...');
       baseConfig = await loadBaseConfig();
 
       if (!baseConfig) {
@@ -133,6 +133,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       const configs = await getApplicableConfigs(principals);
 
       if (configs.length === 0) {
+        if (!role && !userId && hasDbConfigs == null) {
+          await cache.set(HAS_DB_CONFIGS_KEY, false);
+        }
         return baseConfig;
       }
 
@@ -155,12 +158,16 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
    * `overrideCacheTtl` ms to propagate to all users.
    */
   async function markConfigsDirty(): Promise<void> {
-    const cache = getCache(cacheKeys.APP_CONFIG);
     await cache.set(HAS_DB_CONFIGS_KEY, true);
   }
 
+  /**
+   * Clear the base config and feature flag. Per-user/role override caches (`_OVERRIDE_:*`)
+   * are NOT flushed — they expire naturally via `overrideCacheTtl`. After calling this,
+   * the base config will be reloaded from YAML on the next `getAppConfig` call, but
+   * users with cached overrides may see stale merged configs for up to `overrideCacheTtl` ms.
+   */
   async function clearAppConfigCache(): Promise<void> {
-    const cache = getCache(cacheKeys.APP_CONFIG);
     await cache.delete(BASE_CONFIG_KEY);
     await cache.delete(HAS_DB_CONFIGS_KEY);
   }

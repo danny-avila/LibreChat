@@ -11,7 +11,7 @@ const configSchema = new Schema<IConfig>(
       index: true,
     },
     principalId: {
-      type: Schema.Types.Mixed,
+      type: String,
       refPath: 'principalModel',
       required: true,
       index: true,

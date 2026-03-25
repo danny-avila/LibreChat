@@ -108,9 +108,9 @@ describe('createAdminConfigHandlers', () => {
   });
 
   describe('upsertConfigOverrides', () => {
-    it('returns 201 when creating a new config', async () => {
+    it('returns 201 when creating a new config (configVersion === 1)', async () => {
       const { handlers } = createHandlers({
-        findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+        upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -123,9 +123,9 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(201);
     });
 
-    it('returns 200 when updating an existing config', async () => {
+    it('returns 200 when updating an existing config (configVersion > 1)', async () => {
       const { handlers } = createHandlers({
-        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'existing' }),
+        upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 5 }),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -238,6 +238,19 @@ describe('createAdminConfigHandlers', () => {
       await handlers.patchConfigField(req, res);
 
       expect(res.statusCode).toBe(403);
+    });
+
+    it('rejects entries with unsafe field paths (prototype pollution)', async () => {
+      const { handlers } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { entries: [{ fieldPath: '__proto__.polluted', value: true }] },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
     });
   });
 

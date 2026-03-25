@@ -26,7 +26,7 @@ interface CapabilityDeps {
   }) => Promise<boolean>;
 }
 
-interface CapabilityUser {
+export interface CapabilityUser {
   id: string;
   role: string;
   tenantId?: string;
