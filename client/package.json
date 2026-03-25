@@ -35,7 +35,6 @@
     "@dicebear/collection": "^9.4.1",
     "@dicebear/core": "^9.4.1",
     "@headlessui/react": "^2.1.2",
-    "@icons-pack/react-simple-icons": "^13.12.0",
     "@librechat/client": "*",
     "@marsidev/react-turnstile": "^1.1.0",
     "@mcp-ui/client": "^5.7.0",
