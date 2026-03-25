@@ -1,5 +1,5 @@
 export * from './app';
-export * from './systemCapabilities';
+export * from './admin';
 export * from './common';
 export * from './crypto';
 export * from './schema';

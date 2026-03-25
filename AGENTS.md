@@ -29,6 +29,12 @@ The source code for `@librechat/agents` (major backend dependency, same team) is
 
 ## Code Style
 
+### Naming and File Organization
+
+- **Single-word file names** whenever possible (e.g., `permissions.ts`, `capabilities.ts`, `service.ts`).
+- When multiple words are needed, prefer grouping related modules under a **single-word directory** rather than using multi-word file names (e.g., `admin/capabilities.ts` not `adminCapabilities.ts`).
+- The directory already provides context — `app/service.ts` not `app/appConfigService.ts`.
+
 ### Structure and Clarity
 
 - **Never-nesting**: early returns, flat code, minimal indentation. Break complex operations into well-named helpers.
