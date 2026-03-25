@@ -317,3 +317,13 @@ export const validateFiles = ({
 
   return true;
 };
+
+export function sortPagesByRelevance(
+  pages: number[],
+  pageRelevance: Record<number, number>,
+): number[] {
+  if (!pageRelevance || Object.keys(pageRelevance).length === 0) {
+    return pages;
+  }
+  return [...pages].sort((a, b) => (pageRelevance[b] || 0) - (pageRelevance[a] || 0));
+}

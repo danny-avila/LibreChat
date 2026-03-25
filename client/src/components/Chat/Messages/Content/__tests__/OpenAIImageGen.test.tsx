@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import OpenAIImageGen from '../Parts/OpenAIImageGen/OpenAIImageGen';
 
 jest.mock('~/utils', () => ({
+  scaleImage: () => ({ width: '512px', height: '512px' }),
   cn: (...classes: (string | boolean | undefined | null)[]) =>
     classes
       .flat(Infinity)
@@ -12,25 +13,13 @@ jest.mock('~/utils', () => ({
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
+  useProgress: (initialProgress: number) => (initialProgress >= 1 ? 1 : initialProgress),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/Image', () => ({
   __esModule: true,
-  default: ({
-    altText,
-    imagePath,
-    className,
-  }: {
-    altText: string;
-    imagePath: string;
-    className?: string;
-  }) => (
-    <div
-      data-testid="image-component"
-      data-alt={altText}
-      data-src={imagePath}
-      className={className}
-    />
+  default: ({ altText, imagePath }: { altText: string; imagePath: string }) => (
+    <div data-testid="image-component" data-alt={altText} data-src={imagePath} />
   ),
 }));
 
@@ -38,6 +27,13 @@ jest.mock('@librechat/client', () => ({
   PixelCard: ({ progress }: { progress: number }) => (
     <div data-testid="pixel-card" data-progress={progress} />
   ),
+}));
+
+jest.mock('../ToolOutput', () => ({
+  ToolIcon: ({ type, isAnimating }: { type: string; isAnimating?: boolean }) => (
+    <span data-testid="tool-icon" data-type={type} data-animating={isAnimating} />
+  ),
+  isError: (output: string) => typeof output === 'string' && output.toLowerCase().includes('error'),
 }));
 
 jest.mock('../Parts/OpenAIImageGen/ProgressText', () => ({
@@ -72,14 +68,7 @@ describe('OpenAIImageGen', () => {
       expect(screen.getByTestId('image-component')).toBeInTheDocument();
     });
 
-    it('hides Image with invisible absolute while progress < 1', () => {
-      render(<OpenAIImageGen {...defaultProps} initialProgress={0.5} />);
-      const image = screen.getByTestId('image-component');
-      expect(image.className).toContain('invisible');
-      expect(image.className).toContain('absolute');
-    });
-
-    it('shows Image without hiding classes when progress >= 1', () => {
+    it('shows Image when progress >= 1', () => {
       render(
         <OpenAIImageGen
           {...defaultProps}
@@ -94,9 +83,7 @@ describe('OpenAIImageGen', () => {
           ]}
         />,
       );
-      const image = screen.getByTestId('image-component');
-      expect(image.className).not.toContain('invisible');
-      expect(image.className).not.toContain('absolute');
+      expect(screen.getByTestId('image-component')).toBeInTheDocument();
     });
   });
 
@@ -112,26 +99,23 @@ describe('OpenAIImageGen', () => {
     });
   });
 
-  describe('layout classes', () => {
-    it('applies max-h-[45vh] to the outer container', () => {
-      const { container } = render(<OpenAIImageGen {...defaultProps} />);
-      const outerDiv = container.querySelector('[class*="max-h-"]');
-      expect(outerDiv?.className).toContain('max-h-[45vh]');
+  describe('ToolIcon', () => {
+    it('renders ToolIcon with type="image_gen"', () => {
+      render(<OpenAIImageGen {...defaultProps} />);
+      const icon = screen.getByTestId('tool-icon');
+      expect(icon).toHaveAttribute('data-type', 'image_gen');
     });
 
-    it('applies h-[45vh] w-full to inner container during loading', () => {
-      const { container } = render(<OpenAIImageGen {...defaultProps} initialProgress={0.5} />);
-      const innerDiv = container.querySelector('[class*="h-[45vh]"]');
-      expect(innerDiv).not.toBeNull();
-      expect(innerDiv?.className).toContain('w-full');
+    it('sets isAnimating when in progress', () => {
+      render(<OpenAIImageGen {...defaultProps} initialProgress={0.5} />);
+      const icon = screen.getByTestId('tool-icon');
+      expect(icon).toHaveAttribute('data-animating', 'true');
     });
 
-    it('applies w-auto to inner container when complete', () => {
-      const { container } = render(
-        <OpenAIImageGen {...defaultProps} initialProgress={1} isSubmitting={false} />,
-      );
-      const overflowDiv = container.querySelector('[class*="overflow-hidden"]');
-      expect(overflowDiv?.className).toContain('w-auto');
+    it('sets isAnimating=false when complete', () => {
+      render(<OpenAIImageGen {...defaultProps} initialProgress={1} isSubmitting={false} />);
+      const icon = screen.getByTestId('tool-icon');
+      expect(icon).toHaveAttribute('data-animating', 'false');
     });
   });
 
@@ -142,10 +126,8 @@ describe('OpenAIImageGen', () => {
     });
 
     it('handles invalid JSON args gracefully', () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       render(<OpenAIImageGen {...defaultProps} args="invalid json" />);
       expect(screen.getByTestId('image-component')).toBeInTheDocument();
-      consoleSpy.mockRestore();
     });
 
     it('handles object args', () => {

@@ -10,21 +10,21 @@ import store from '~/store';
 const toggleSwitchConfigs = [
   {
     stateAtom: store.enableUserMsgMarkdown,
-    localizationKey: 'com_nav_user_msg_markdown',
+    localizationKey: 'com_nav_user_msg_markdown' as const,
     switchId: 'enableUserMsgMarkdown',
     hoverCardText: undefined,
     key: 'enableUserMsgMarkdown',
   },
   {
     stateAtom: store.autoScroll,
-    localizationKey: 'com_nav_auto_scroll',
+    localizationKey: 'com_nav_auto_scroll' as const,
     switchId: 'autoScroll',
     hoverCardText: undefined,
     key: 'autoScroll',
   },
   {
     stateAtom: store.keepScreenAwake,
-    localizationKey: 'com_nav_keep_screen_awake',
+    localizationKey: 'com_nav_keep_screen_awake' as const,
     switchId: 'keepScreenAwake',
     hoverCardText: undefined,
     key: 'keepScreenAwake',
