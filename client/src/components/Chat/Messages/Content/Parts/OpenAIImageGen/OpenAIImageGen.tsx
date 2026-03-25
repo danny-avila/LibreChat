@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { PixelCard } from '@librechat/client';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
+import { ToolIcon, isError } from '~/components/Chat/Messages/Content/ToolOutput';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { ToolIcon, isError } from '../../ToolOutput';
 import { useProgress, useLocalize } from '~/hooks';
 import ProgressText from './ProgressText';
-import { scaleImage } from '~/utils';
 import { AGENT_STYLE_TOOLS } from '.';
+import { scaleImage } from '~/utils';
 
 export default function OpenAIImageGen({
   initialProgress = 0.1,

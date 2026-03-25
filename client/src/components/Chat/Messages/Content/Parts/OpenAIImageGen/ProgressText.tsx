@@ -1,6 +1,6 @@
+import { AGENT_STYLE_TOOLS } from '.';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import { AGENT_STYLE_TOOLS } from '.';
 
 export default function ProgressText({
   progress,
