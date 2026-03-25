@@ -71,7 +71,7 @@ export interface AdminConfigDeps {
     section: ConfigSection | null,
     verb?: 'manage' | 'read',
   ) => Promise<boolean>;
-  signalConfigChange?: () => Promise<void>;
+  markConfigsDirty?: () => Promise<void>;
   getAppConfig?: (options?: { role?: string; userId?: string }) => Promise<AppConfig>;
 }
 
@@ -124,14 +124,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
     deleteConfig,
     toggleConfigActive,
     hasConfigCapability,
-    signalConfigChange,
+    markConfigsDirty,
     getAppConfig,
   } = deps;
 
   /** Notify the config cache that DB overrides have changed. */
   const notifyChange = async () => {
     try {
-      await signalConfigChange?.();
+      await markConfigsDirty?.();
     } catch (err) {
       logger.warn('[adminConfig] Failed to signal config change:', err);
     }

@@ -6,7 +6,7 @@ import type { AppConfig, IConfig } from '@librechat/data-schemas';
 const BASE_CONFIG_KEY = '_BASE_';
 const HAS_DB_CONFIGS_KEY = '_HAS_DB_CONFIGS_';
 
-const DEFAULT_overrideCacheTtl = 60_000;
+const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
     cacheKeys,
     getApplicableConfigs,
     getUserPrincipals,
-    overrideCacheTtl = DEFAULT_overrideCacheTtl,
+    overrideCacheTtl = DEFAULT_OVERRIDE_CACHE_TTL,
   } = deps;
 
   /**
@@ -150,10 +150,14 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
   }
 
   /**
-   * Signal that DB configs exist (called by admin config API after creating/upserting a config).
-   * Clears the HAS_DB_CONFIGS_KEY=false flag so getAppConfig will query the DB.
+   * Mark the config system as dirty after any admin mutation (create, update, delete, toggle).
+   *
+   * Sets the HAS_DB_CONFIGS_KEY flag to `true` so getAppConfig will query the DB on next
+   * cache miss. Per-user/role override caches are NOT invalidated — they expire naturally
+   * via `overrideCacheTtl` (default 60s). This means config changes may take up to
+   * `overrideCacheTtl` ms to propagate to all users.
    */
-  async function signalConfigChange(): Promise<void> {
+  async function markConfigsDirty(): Promise<void> {
     const cache = getCache(cacheKeys.APP_CONFIG);
     await cache.set(HAS_DB_CONFIGS_KEY, true);
   }
@@ -166,7 +170,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
 
   return {
     getAppConfig,
-    signalConfigChange,
+    markConfigsDirty,
     clearAppConfigCache,
   };
 }

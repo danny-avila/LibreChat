@@ -20,7 +20,7 @@ const loadBaseConfig = async () => {
   return AppService({ config, paths, systemTools });
 };
 
-const { getAppConfig, signalConfigChange, clearAppConfigCache } = createAppConfigService({
+const { getAppConfig, markConfigsDirty, clearAppConfigCache } = createAppConfigService({
   loadBaseConfig,
   setCachedTools,
   getCache: getLogStores,
@@ -31,6 +31,6 @@ const { getAppConfig, signalConfigChange, clearAppConfigCache } = createAppConfi
 
 module.exports = {
   getAppConfig,
-  signalConfigChange,
+  markConfigsDirty,
   clearAppConfigCache,
 };
