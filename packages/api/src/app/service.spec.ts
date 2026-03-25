@@ -145,7 +145,7 @@ describe('createAppConfigService', () => {
 
       const cachedKeys = [...deps._cache._store.keys()];
       const overrideKey = cachedKeys.find((k) => k.startsWith('_OVERRIDE_:'));
-      expect(overrideKey).toBe('_OVERRIDE_:_:uid1');
+      expect(overrideKey).toBe('_OVERRIDE_:__default__:uid1');
     });
 
     it('tenantId is included in cache key to prevent cross-tenant contamination', async () => {
@@ -172,7 +172,6 @@ describe('createAppConfigService', () => {
       mockGetConfigs.mockResolvedValueOnce([
         { priority: 10, overrides: { restricted: true }, isActive: true },
       ]);
-      deps._cache._store.delete('_OVERRIDE_:_:ADMIN');
       const config = await getAppConfig({ role: 'ADMIN' });
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);
@@ -190,7 +189,6 @@ describe('createAppConfigService', () => {
       mockGetConfigs.mockResolvedValueOnce([
         { priority: 10, overrides: { x: 'admin-only' }, isActive: true },
       ]);
-      deps._cache._store.delete('_OVERRIDE_:_:ADMIN');
       const config = await getAppConfig({ role: 'ADMIN' });
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);

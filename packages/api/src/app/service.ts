@@ -23,7 +23,7 @@ export interface AppConfigServiceDeps {
   /** Get a cache store by key. */
   getCache: (key: string) => CacheStore;
   /** The CacheKeys constants from librechat-data-provider. */
-  cacheKeys: { APP_CONFIG: string; CONFIG_STORE: string };
+  cacheKeys: { APP_CONFIG: string };
   /** Fetch applicable DB config overrides for a set of principals. */
   getApplicableConfigs: (
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
@@ -40,7 +40,7 @@ export interface AppConfigServiceDeps {
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function overrideCacheKey(role?: string, userId?: string, tenantId?: string): string {
-  const tenant = tenantId || '_';
+  const tenant = tenantId || '__default__';
   if (userId && role) {
     return `_OVERRIDE_:${tenant}:${role}:${userId}`;
   }
