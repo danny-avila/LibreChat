@@ -50,7 +50,7 @@ jobs:
 
           export DEBUG=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)
           export CONFIG_PATH=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "nj/kitchensink-librechat.yaml" || echo "nj/nj-librechat.yaml")
-          export DOMAIN=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "kitchensink.ai-assistant.nj.gov" || echo "${{ secrets.DOMAIN }}")
+          export DOMAIN=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "https://kitchensink.ai-assistant.nj.gov" || echo "${{ secrets.DOMAIN }}")
           export ALLOW_SOCIAL_LOGIN=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "false" || echo "true") # disable social login for kitchensink
           export ALLOW_EMAIL_LOGIN=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "true" || echo "false") # enable email login for kitchensink 
           export AWS_REGION="${{ secrets.AWS_REGION }}"
