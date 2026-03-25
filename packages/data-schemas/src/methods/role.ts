@@ -49,7 +49,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
    */
   async function listRoles() {
     const Role = mongoose.models.Role;
-    return await Role.find({}).select('name permissions').lean();
+    return await Role.find({}).select('name description permissions').lean();
   }
 
   /**
