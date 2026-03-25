@@ -75,6 +75,25 @@ describe('mergeConfigOverrides', () => {
     expect(result).toEqual(baseConfig);
   });
 
+  it('strips __proto__, constructor, and prototype keys from overrides', () => {
+    const configs = [
+      fakeConfig(
+        {
+          __proto__: { polluted: true },
+          constructor: { bad: true },
+          prototype: { evil: true },
+          safe: 'ok',
+        },
+        10,
+      ),
+    ];
+    const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
+    expect(result.safe).toBe('ok');
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(result, 'constructor')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(result, 'prototype')).toBe(false);
+  });
+
   it('merges three priority levels in order', () => {
     const configs = [
       fakeConfig({ interface: { endpointsMenu: false } }, 0),

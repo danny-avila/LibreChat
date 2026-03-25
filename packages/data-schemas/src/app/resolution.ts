@@ -3,10 +3,14 @@ import type { AppConfig, IConfig } from '~/types';
 type AnyObject = { [key: string]: unknown };
 
 const MAX_MERGE_DEPTH = 10;
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0): T {
   const result = { ...target } as AnyObject;
   for (const key of Object.keys(source)) {
+    if (UNSAFE_KEYS.has(key)) {
+      continue;
+    }
     const sourceVal = source[key];
     const targetVal = result[key];
     if (
