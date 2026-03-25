@@ -342,6 +342,54 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     }
   }
 
+  /**
+   * Create a new custom role. Rejects names that match system roles.
+   */
+  async function createRole(roleData: Partial<IRole>): Promise<IRole> {
+    const { name } = roleData;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      throw new Error('Role name is required');
+    }
+    if (SystemRoles[name.trim() as keyof typeof SystemRoles]) {
+      throw new Error(`Cannot create role with reserved system name: ${name}`);
+    }
+    const Role = mongoose.models.Role;
+    const existing = await Role.findOne({ name: name.trim() }).lean();
+    if (existing) {
+      throw new Error(`Role "${name}" already exists`);
+    }
+    const role = await new Role({
+      ...roleData,
+      name: name.trim(),
+    }).save();
+    const cache = deps.getCache?.(CacheKeys.ROLES);
+    if (cache) {
+      await cache.set(role.name, role.toObject());
+    }
+    return role.toObject() as IRole;
+  }
+
+  /**
+   * Delete a role by name. Guards against deleting system roles.
+   * Reassigns all users with the deleted role back to USER.
+   */
+  async function deleteRole(roleName: string): Promise<IRole | null> {
+    if (SystemRoles[roleName as keyof typeof SystemRoles]) {
+      throw new Error(`Cannot delete system role: ${roleName}`);
+    }
+    const Role = mongoose.models.Role;
+    const User = mongoose.models.User;
+    const deleted = await Role.findOneAndDelete({ name: roleName }).lean();
+    if (deleted) {
+      await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
+      const cache = deps.getCache?.(CacheKeys.ROLES);
+      if (cache) {
+        await cache.set(roleName, null);
+      }
+    }
+    return deleted as IRole | null;
+  }
+
   return {
     listRoles,
     initializeRoles,
@@ -349,6 +397,8 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     updateRoleByName,
     updateAccessPermissions,
     migrateRoleSchema,
+    createRole,
+    deleteRole,
   };
 }
 
