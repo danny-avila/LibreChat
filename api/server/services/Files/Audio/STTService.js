@@ -207,6 +207,10 @@ class STTService {
       data.language = validLanguage;
     }
 
+    if (sttSchema?.extraParams) {
+      Object.assign(data, sttSchema.extraParams);
+    }
+
     const headers = {
       'Content-Type': 'multipart/form-data',
       ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
@@ -345,7 +349,7 @@ class STTService {
 
     try {
       const [provider, sttSchema] = await this.getProviderSchema(req);
-      const language = req.body?.language || '';
+      const language = req.body?.language || sttSchema?.language || '';
       const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile, language });
       res.json({ text });
     } catch (error) {
