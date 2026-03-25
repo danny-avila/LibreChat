@@ -226,7 +226,7 @@ const ContentParts = memo(function ContentParts({
           <EmptyText />
         </Container>
       )}
-      {groupedParts.map((group, gIdx) => {
+      {groupedParts.map((group) => {
         if (group.type === 'single') {
           const { part, idx } = group.part;
           return renderPart(part, idx, idx === lastContentIdx);
