@@ -347,9 +347,13 @@ export default function RetrievalCall({
     () => (hasOutput && output ? parseRetrievalOutput(output) : []),
     [hasOutput, output],
   );
+  const fileIds = useMemo(
+    () => new Set(fileSources.map((s) => s.fileId).filter(Boolean)),
+    [fileSources],
+  );
   const { data: availableFiles = [] } = useGetFiles<TFile[]>({
-    enabled: hasOutput && parsedResults.length > 0,
-    select: (files) => files,
+    enabled: hasOutput && parsedResults.length > 0 && fileIds.size > 0,
+    select: (files) => files.filter((f) => fileIds.has(f.file_id)),
   });
   const displayResults = useMemo(
     () => mergeRetrievalResults(fileSources, parsedResults, availableFiles),

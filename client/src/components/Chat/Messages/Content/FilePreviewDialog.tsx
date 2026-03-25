@@ -147,23 +147,32 @@ export default function FilePreviewDialog({
 
   const previewKind = canPreviewByMime(fileType) || canPreviewByExt(fileName);
 
+  const cancelledRef = useRef(false);
+
   const loadPreview = useCallback(async () => {
     if (!fileId || !previewKind || loadingRef.current) {
       return;
     }
     loadingRef.current = true;
+    cancelledRef.current = false;
     setLoading(true);
     setPreviewError(false);
 
     try {
       const result = await downloadFile();
-      if (!result.data) {
-        setPreviewError(true);
+      if (cancelledRef.current || !result.data) {
+        if (!cancelledRef.current) {
+          setPreviewError(true);
+        }
         return;
       }
 
       const resp = await fetch(result.data);
       const blob = await resp.blob();
+
+      if (cancelledRef.current) {
+        return;
+      }
 
       if (previewKind === 'text') {
         setFileContent(await blob.text());
@@ -172,10 +181,14 @@ export default function FilePreviewDialog({
         setFileBlobUrl(URL.createObjectURL(typed));
       }
     } catch {
-      setPreviewError(true);
+      if (!cancelledRef.current) {
+        setPreviewError(true);
+      }
     } finally {
       loadingRef.current = false;
-      setLoading(false);
+      if (!cancelledRef.current) {
+        setLoading(false);
+      }
     }
   }, [fileId, previewKind, downloadFile]);
 
@@ -216,6 +229,7 @@ export default function FilePreviewDialog({
 
   useEffect(() => {
     if (!open) {
+      cancelledRef.current = true;
       setFileContent(null);
       setFileBlobUrl(null);
       setPreviewError(false);
