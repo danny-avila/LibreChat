@@ -288,12 +288,16 @@ export class KitchenSinkStack extends cdk.Stack {
 
     const targetGroup = new elbv2.ApplicationTargetGroup(this, "KitchenSinkTg", {
       vpc,
-      port: 3080,
+      port: 80,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targetType: elbv2.TargetType.IP,
+      deregistrationDelay: cdk.Duration.seconds(30),
       healthCheck: {
         path: "/",
         interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(10),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
         healthyHttpCodes: "200-399",
       },
     });
