@@ -103,24 +103,39 @@ Be sure to smoke test before merging!
 
 Prod release happens in two steps:
 
-1. Create a tag in Github, and wait for it to build and push
-2. Run the infra deploy workflow on the prod environment.
+1. Create a [release](https://github.com/newjersey/LibreChat/releases) in Github, and wait for it to build and push
+2. [OPTIONAL] If environment variables have changed, run the [render-env workflow](./.github/workflows/render-env.yml) 
+3. Run the [infra deploy workflow](./.github/workflows/nj-infra-deploy.yml) on the prod environment.
 
 ### Create a new release
 
 Go to [releases](https://github.com/newjersey/LibreChat/releases) and click "Draft new release."
 
-For tag, create a new tag formatted like `release-YYYYMMDD.X`. (The `.X` is an optional increment in case multiple tags are cut per day.)
+In the Select Tag dropdown, press Create New Tag. Format the new tag like `release-YYYYMMDD.X`. (The `.X` is an optional increment in case multiple tags are cut per day.)
 
 Target the `newjersey` branch.
 
-Click "generate release notes" to automatically generate some decent notes.
+The Release Title should be the same as the new tag.
+
+The auto-select previous tag is fairly reliable, but you can manually set to the last tag if needed. Click "generate release notes" to automatically generate some decent notes.
+
+Keep "Set as the latest release" selected.
 
 Then click "Publish release."
 
 The new release & tag will initiate the tag build and update the `ai-assistant/prod-image-tag` SSM parameter.
 
-### Manually set release tag for prod
+### Updating Environment Files
+Environment files are rendered and uploaded by [this workflow](./.github/workflows/render-env.yml). It takes [the nj template](./nj/nj.env.template) and performs `envsubst`, pulling in values from Github environment secrets. TechOps support will likely be needed to update those environment secrets, but Josh can do it for right now.
+
+If either the template or the secret values have been updated, you can update the env vars by:
+
+1. Navigate to the Actions tab in the repo
+2. Select "Render and upload env file"
+3. Select "Run Workflow" and select your target environment
+4. The workflow will get the environment-specific values from secrets, perform `envsubst`, upload the file to S3, and redeploy the service. 
+
+#### Manually set release tag for prod (Rollback Strategy, DANGER)
 In the event that we need to set prod to a specific release tag, we can run the `Set prod release tag` workflow in Github Actions. This takes a text input for the release tag, and includes a verification step to ensure we're not setting a non-existent tag. The infra deploy workflow will still need to be ran to deploy the new tag.
 
 ### Run the infra deploy workflow
@@ -132,17 +147,6 @@ In the event that we need to set prod to a specific release tag, we can run the 
 - Wait for the cdk-diff job to complete
 - REVIEW THE OUTPUT. When you approve the cdk-deploy job, you are responsible for the changes that roll out.
 - Approve and wait for the fireworks. You can watch the deployment from the Cloudformation console if so desired.
-
-## Updating Environment Files
-Environment files are rendered and uploaded by [this workflow](./.github/workflows/render-env.yml). It takes [the nj template](./nj/nj.env.template) and performs `envsubst`, pulling in values from Github environment secrets. TechOps support will likely be needed to update those environment secrets, but Josh can do it for right now.
-
-If either the template or the secret values have been updated, you can update the env vars by:
-
-1. Navigate to the Actions tab in the repo
-2. Select "Render and upload env file"
-3. Select "Run Workflow" and select your target environment
-4. The workflow will get the environment-specific values from secrets, perform `envsubst`, upload the file to S3, and redeploy the service. 
-
 
 ## ClickOps Components
 
