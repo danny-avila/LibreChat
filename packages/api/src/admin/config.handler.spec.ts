@@ -105,6 +105,16 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(400);
     });
+
+    it('rejects public principalType — not usable for config overrides', async () => {
+      const { handlers } = createHandlers();
+      const req = mockReq({ params: { principalType: 'public', principalId: 'x' } });
+      const res = mockRes();
+
+      await handlers.getConfig(req, res);
+
+      expect(res.statusCode).toBe(400);
+    });
   });
 
   describe('upsertConfigOverrides', () => {

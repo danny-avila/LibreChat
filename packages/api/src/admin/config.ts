@@ -68,10 +68,14 @@ export interface AdminConfigDeps {
 
 // ── Validation helpers ───────────────────────────────────────────────
 
-const VALID_PRINCIPAL_TYPES = new Set(Object.values(PrincipalType));
+const CONFIG_PRINCIPAL_TYPES = new Set([
+  PrincipalType.USER,
+  PrincipalType.GROUP,
+  PrincipalType.ROLE,
+]);
 
 function validatePrincipalType(value: string): value is PrincipalType {
-  return VALID_PRINCIPAL_TYPES.has(value as PrincipalType);
+  return CONFIG_PRINCIPAL_TYPES.has(value as PrincipalType);
 }
 
 function principalModel(type: PrincipalType): PrincipalModel {
@@ -82,13 +86,8 @@ function principalModel(type: PrincipalType): PrincipalModel {
       return PrincipalModel.GROUP;
     case PrincipalType.ROLE:
       return PrincipalModel.ROLE;
-    case PrincipalType.PUBLIC:
+    default:
       return PrincipalModel.ROLE;
-    default: {
-      const _exhaustive: never = type;
-      logger.warn(`[adminConfig] Unmapped PrincipalType: ${_exhaustive}`);
-      return PrincipalModel.ROLE;
-    }
   }
 }
 

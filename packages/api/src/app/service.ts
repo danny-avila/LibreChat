@@ -39,17 +39,18 @@ export interface AppConfigServiceDeps {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function overrideCacheKey(role?: string, userId?: string): string {
+function overrideCacheKey(role?: string, userId?: string, tenantId?: string): string {
+  const tenant = tenantId || '_';
   if (userId && role) {
-    return `_OVERRIDE_:${role}:${userId}`;
+    return `_OVERRIDE_:${tenant}:${role}:${userId}`;
   }
   if (userId) {
-    return `_OVERRIDE_:${userId}`;
+    return `_OVERRIDE_:${tenant}:${userId}`;
   }
   if (role) {
-    return `_OVERRIDE_:${role}`;
+    return `_OVERRIDE_:${tenant}:${role}`;
   }
-  return `_OVERRIDE_:${BASE_CONFIG_PRINCIPAL_ID}`;
+  return `_OVERRIDE_:${tenant}:${BASE_CONFIG_PRINCIPAL_ID}`;
 }
 
 // ── Service factory ──────────────────────────────────────────────────
@@ -89,9 +90,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
    * `getApplicableConfigs` queries the DB for matching overrides and merges them by priority.
    */
   async function getAppConfig(
-    options: { role?: string; userId?: string; refresh?: boolean } = {},
+    options: { role?: string; userId?: string; tenantId?: string; refresh?: boolean } = {},
   ): Promise<AppConfig> {
-    const { role, userId, refresh } = options;
+    const { role, userId, tenantId, refresh } = options;
 
     let baseConfig = (await cache.get(BASE_CONFIG_KEY)) as AppConfig | undefined;
     if (!baseConfig || refresh) {
@@ -109,7 +110,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       await cache.set(BASE_CONFIG_KEY, baseConfig);
     }
 
-    const cacheKey = overrideCacheKey(role, userId);
+    const cacheKey = overrideCacheKey(role, userId, tenantId);
     if (!refresh) {
       const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
       if (cachedMerged) {

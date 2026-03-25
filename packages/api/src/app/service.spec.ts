@@ -135,7 +135,21 @@ describe('createAppConfigService', () => {
 
       const cachedKeys = [...deps._cache._store.keys()];
       const overrideKey = cachedKeys.find((k) => k.startsWith('_OVERRIDE_:'));
-      expect(overrideKey).toBe('_OVERRIDE_:uid1');
+      expect(overrideKey).toBe('_OVERRIDE_:_:uid1');
+    });
+
+    it('tenantId is included in cache key to prevent cross-tenant contamination', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-b' });
+
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
     });
 
     it('base-only empty result does not block subsequent scoped queries with results', async () => {

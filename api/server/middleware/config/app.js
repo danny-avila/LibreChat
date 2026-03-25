@@ -5,7 +5,8 @@ const configMiddleware = async (req, res, next) => {
   try {
     const userRole = req.user?.role;
     const userId = req.user?.id;
-    req.config = await getAppConfig({ role: userRole, userId });
+    const tenantId = req.user?.tenantId;
+    req.config = await getAppConfig({ role: userRole, userId, tenantId });
 
     next();
   } catch (error) {
