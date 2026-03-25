@@ -304,6 +304,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         priority?: number;
       };
 
+      if (priority != null && (typeof priority !== 'number' || priority < 0)) {
+        return res.status(400).json({ error: 'priority must be a non-negative number' });
+      }
+
       if (!Array.isArray(entries) || entries.length === 0) {
         return res.status(400).json({ error: 'entries array is required and must not be empty' });
       }
