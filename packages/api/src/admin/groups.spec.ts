@@ -1,0 +1,674 @@
+import { Types } from 'mongoose';
+import { createAdminGroupsHandlers } from './groups';
+import type { AdminGroupsDeps } from './groups';
+import type { IGroup, IUser } from '@librechat/data-schemas';
+import type { Response } from 'express';
+import type { ServerRequest } from '~/types/http';
+
+const validId = new Types.ObjectId().toString();
+const validUserId = new Types.ObjectId().toString();
+
+function mockGroup(overrides: Partial<IGroup> = {}): IGroup {
+  return {
+    _id: new Types.ObjectId(validId),
+    name: 'Test Group',
+    source: 'local',
+    memberIds: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  } as IGroup;
+}
+
+function mockUser(overrides: Partial<IUser> = {}): IUser {
+  return {
+    _id: new Types.ObjectId(validUserId),
+    name: 'Test User',
+    email: 'test@example.com',
+    avatar: 'https://example.com/avatar.png',
+    ...overrides,
+  } as IUser;
+}
+
+function createReqRes(
+  overrides: { params?: Record<string, string>; query?: Record<string, string>; body?: Record<string, unknown> } = {},
+) {
+  const req = {
+    params: overrides.params ?? {},
+    query: overrides.query ?? {},
+    body: overrides.body ?? {},
+  } as unknown as ServerRequest;
+
+  const json = jest.fn();
+  const status = jest.fn().mockReturnValue({ json });
+  const res = { status, json } as unknown as Response;
+
+  return { req, res, status, json };
+}
+
+function createDeps(overrides: Partial<AdminGroupsDeps> = {}): AdminGroupsDeps {
+  return {
+    listGroups: jest.fn().mockResolvedValue([]),
+    findGroupById: jest.fn().mockResolvedValue(null),
+    createGroup: jest.fn().mockResolvedValue(mockGroup()),
+    updateGroupById: jest.fn().mockResolvedValue(mockGroup()),
+    deleteGroup: jest.fn().mockResolvedValue(mockGroup()),
+    addUserToGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: mockGroup() }),
+    removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: mockGroup() }),
+    findUsers: jest.fn().mockResolvedValue([]),
+    ...overrides,
+  };
+}
+
+describe('createAdminGroupsHandlers', () => {
+  describe('listGroups', () => {
+    it('returns groups with 200', async () => {
+      const groups = [mockGroup()];
+      const deps = createDeps({ listGroups: jest.fn().mockResolvedValue(groups) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ query: {} });
+
+      await handlers.listGroups(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ groups });
+    });
+
+    it('passes source and search filters', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = createReqRes({ query: { source: 'entra', search: 'engineering' } });
+
+      await handlers.listGroups(req, res);
+
+      expect(deps.listGroups).toHaveBeenCalledWith({ source: 'entra', search: 'engineering' });
+    });
+
+    it('ignores invalid source values', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = createReqRes({ query: { source: 'invalid' } });
+
+      await handlers.listGroups(req, res);
+
+      expect(deps.listGroups).toHaveBeenCalledWith({});
+    });
+
+    it('returns 500 on error', async () => {
+      const deps = createDeps({ listGroups: jest.fn().mockRejectedValue(new Error('db down')) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+
+      await handlers.listGroups(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to list groups' });
+    });
+  });
+
+  describe('getGroup', () => {
+    it('returns group with 200', async () => {
+      const group = mockGroup();
+      const deps = createDeps({ findGroupById: jest.fn().mockResolvedValue(group) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.getGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ group });
+    });
+
+    it('returns 400 for invalid ID', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: 'not-an-id' } });
+
+      await handlers.getGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid group ID format' });
+      expect(deps.findGroupById).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when group not found', async () => {
+      const deps = createDeps({ findGroupById: jest.fn().mockResolvedValue(null) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.getGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+  });
+
+  describe('createGroup', () => {
+    it('creates group and returns 201', async () => {
+      const group = mockGroup();
+      const deps = createDeps({ createGroup: jest.fn().mockResolvedValue(group) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'New Group', description: 'A group' },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+      expect(json).toHaveBeenCalledWith({ group });
+      expect(deps.createGroup).toHaveBeenCalledWith({
+        name: 'New Group',
+        description: 'A group',
+        email: undefined,
+        avatar: undefined,
+        source: 'local',
+        memberIds: [],
+      });
+    });
+
+    it('returns 400 when name is missing', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: {} });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'name is required' });
+      expect(deps.createGroup).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when name is whitespace-only', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: { name: '   ' } });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'name is required' });
+    });
+
+    it('returns 400 on ValidationError', async () => {
+      const validationError = new Error('source must be local or entra');
+      validationError.name = 'ValidationError';
+      const deps = createDeps({ createGroup: jest.fn().mockRejectedValue(validationError) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: { name: 'Test' } });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'source must be local or entra' });
+    });
+
+    it('returns 500 on unexpected error', async () => {
+      const deps = createDeps({ createGroup: jest.fn().mockRejectedValue(new Error('db crash')) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: { name: 'Test' } });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to create group' });
+    });
+  });
+
+  describe('updateGroup', () => {
+    it('updates group and returns 200', async () => {
+      const group = mockGroup({ name: 'Updated' });
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(mockGroup()),
+        updateGroupById: jest.fn().mockResolvedValue(group),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { name: 'Updated' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ group });
+    });
+
+    it('returns 400 for invalid ID', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: 'bad' },
+        body: { name: 'Updated' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid group ID format' });
+    });
+
+    it('returns 400 when name is empty string', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { name: '' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'name must be a non-empty string' });
+    });
+
+    it('returns 400 when name is whitespace-only', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { name: '   ' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'name must be a non-empty string' });
+    });
+
+    it('returns 404 when group not found before update', async () => {
+      const deps = createDeps({ findGroupById: jest.fn().mockResolvedValue(null) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { description: 'new desc' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
+    it('returns 404 when updateGroupById returns null (race condition)', async () => {
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(mockGroup()),
+        updateGroupById: jest.fn().mockResolvedValue(null),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { name: 'Updated' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
+    it('returns 400 on ValidationError', async () => {
+      const validationError = new Error('invalid field');
+      validationError.name = 'ValidationError';
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(mockGroup()),
+        updateGroupById: jest.fn().mockRejectedValue(validationError),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { name: 'Updated' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'invalid field' });
+    });
+  });
+
+  describe('deleteGroup', () => {
+    it('deletes group and returns 200', async () => {
+      const deps = createDeps({ findGroupById: jest.fn().mockResolvedValue(mockGroup()) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.deleteGroup(req, res);
+
+      expect(deps.deleteGroup).toHaveBeenCalledWith(validId);
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('returns 400 for invalid ID', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: 'bad-id' } });
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid group ID format' });
+    });
+
+    it('returns 404 when group not found', async () => {
+      const deps = createDeps({ findGroupById: jest.fn().mockResolvedValue(null) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+  });
+
+  describe('getGroupMembers', () => {
+    it('returns empty members for group with no memberIds', async () => {
+      const group = mockGroup({ memberIds: [] });
+      const deps = createDeps({ findGroupById: jest.fn().mockResolvedValue(group) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.getGroupMembers(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ members: [] });
+      expect(deps.findUsers).not.toHaveBeenCalled();
+    });
+
+    it('batches member lookup with $or query', async () => {
+      const user = mockUser({ idOnTheSource: 'ext-123' });
+      const group = mockGroup({ memberIds: [validUserId, 'ext-123'] });
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(group),
+        findUsers: jest.fn().mockResolvedValue([user]),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.getGroupMembers(req, res);
+
+      expect(deps.findUsers).toHaveBeenCalledWith(
+        {
+          $or: [
+            { idOnTheSource: { $in: [validUserId, 'ext-123'] } },
+            { _id: { $in: [validUserId] } },
+          ],
+        },
+        'name email avatar idOnTheSource',
+      );
+      expect(status).toHaveBeenCalledWith(200);
+      const members = json.mock.calls[0][0].members;
+      expect(members).toHaveLength(2);
+    });
+
+    it('skips _id condition when no valid ObjectIds in memberIds', async () => {
+      const group = mockGroup({ memberIds: ['ext-1', 'ext-2'] });
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(group),
+        findUsers: jest.fn().mockResolvedValue([]),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = createReqRes({ params: { id: validId } });
+
+      await handlers.getGroupMembers(req, res);
+
+      expect(deps.findUsers).toHaveBeenCalledWith(
+        { $or: [{ idOnTheSource: { $in: ['ext-1', 'ext-2'] } }] },
+        'name email avatar idOnTheSource',
+      );
+    });
+
+    it('falls back to memberId when user not found', async () => {
+      const group = mockGroup({ memberIds: ['unknown-member'] });
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(group),
+        findUsers: jest.fn().mockResolvedValue([]),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.getGroupMembers(req, res);
+
+      expect(json.mock.calls[0][0].members).toEqual([
+        { userId: 'unknown-member', name: 'unknown-member', email: '', avatarUrl: undefined },
+      ]);
+    });
+
+    it('returns 400 for invalid group ID', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: 'nope' } });
+
+      await handlers.getGroupMembers(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid group ID format' });
+    });
+
+    it('returns 404 when group not found', async () => {
+      const deps = createDeps({ findGroupById: jest.fn().mockResolvedValue(null) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.getGroupMembers(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+  });
+
+  describe('addGroupMember', () => {
+    it('adds member and returns 200', async () => {
+      const group = mockGroup();
+      const deps = createDeps({
+        addUserToGroup: jest.fn().mockResolvedValue({ user: mockUser(), group }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addGroupMember(req, res);
+
+      expect(deps.addUserToGroup).toHaveBeenCalledWith(validUserId, validId);
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ group });
+    });
+
+    it('returns 400 for invalid group ID', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: 'bad' },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid group ID format' });
+    });
+
+    it('returns 400 when userId is missing', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: {},
+      });
+
+      await handlers.addGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'userId is required' });
+    });
+
+    it('returns 400 for invalid user ID', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { userId: 'not-valid' },
+      });
+
+      await handlers.addGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid user ID format' });
+    });
+
+    it('returns 404 when addUserToGroup returns null group', async () => {
+      const deps = createDeps({
+        addUserToGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: null }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
+    it('returns 404 for "User not found" error', async () => {
+      const deps = createDeps({
+        addUserToGroup: jest.fn().mockRejectedValue(new Error('User not found')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'User not found' });
+    });
+
+    it('returns 500 for unrelated errors', async () => {
+      const deps = createDeps({
+        addUserToGroup: jest.fn().mockRejectedValue(new Error('connection lost')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'connection lost' });
+    });
+
+    it('does not misclassify errors containing "not found" substring', async () => {
+      const deps = createDeps({
+        addUserToGroup: jest.fn().mockRejectedValue(new Error('Permission not found in config')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { id: validId },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('removeGroupMember', () => {
+    it('removes member and returns 200', async () => {
+      const deps = createDeps({
+        removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: mockGroup() }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId, userId: validUserId },
+      });
+
+      await handlers.removeGroupMember(req, res);
+
+      expect(deps.removeUserFromGroup).toHaveBeenCalledWith(validUserId, validId);
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('returns 400 for invalid group ID', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: 'bad', userId: validUserId },
+      });
+
+      await handlers.removeGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid group ID format' });
+    });
+
+    it('returns 400 for invalid user ID', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId, userId: 'bad' },
+      });
+
+      await handlers.removeGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid user ID format' });
+    });
+
+    it('returns 404 when removeUserFromGroup returns null group', async () => {
+      const deps = createDeps({
+        removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: null }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId, userId: validUserId },
+      });
+
+      await handlers.removeGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
+    it('returns 404 for "User not found" error', async () => {
+      const deps = createDeps({
+        removeUserFromGroup: jest.fn().mockRejectedValue(new Error('User not found')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId, userId: validUserId },
+      });
+
+      await handlers.removeGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'User not found' });
+    });
+
+    it('returns 500 for unrelated errors', async () => {
+      const deps = createDeps({
+        removeUserFromGroup: jest.fn().mockRejectedValue(new Error('timeout')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId, userId: validUserId },
+      });
+
+      await handlers.removeGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'timeout' });
+    });
+  });
+});
