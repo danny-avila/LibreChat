@@ -79,8 +79,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function createRoleHandler(req: ServerRequest, res: Response) {
     try {
-      const { name, permissions } = req.body as {
+      const { name, description, permissions } = req.body as {
         name?: string;
+        description?: string;
         permissions?: IRole['permissions'];
       };
       if (!name || typeof name !== 'string' || !name.trim()) {
@@ -88,6 +89,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
       const role = await createRoleByName({
         name: name.trim(),
+        description: description ?? '',
         permissions: permissions || {},
       });
       return res.status(201).json({ role });
@@ -112,6 +114,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       const updates: Partial<IRole> = {};
       if (body.name !== undefined) {
         updates.name = body.name;
+      }
+      if (body.description !== undefined) {
+        updates.description = body.description;
       }
 
       const role = await updateRoleByName(name, updates);
