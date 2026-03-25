@@ -5,7 +5,7 @@ const {
   hasConfigCapability,
   requireCapability,
 } = require('~/server/middleware/roles/capabilities');
-const { markConfigsDirty, getAppConfig } = require('~/server/services/Config/app');
+const { getAppConfig } = require('~/server/services/Config/app');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -22,7 +22,6 @@ const handlers = createAdminConfigHandlers({
   deleteConfig: db.deleteConfig,
   toggleConfigActive: db.toggleConfigActive,
   hasConfigCapability,
-  markConfigsDirty,
   getAppConfig,
 });
 

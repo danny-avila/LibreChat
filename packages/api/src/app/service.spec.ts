@@ -38,7 +38,7 @@ function createDeps(overrides = {}) {
 
 describe('createAppConfigService', () => {
   describe('getAppConfig', () => {
-    it('loads base config from YAML on first call', async () => {
+    it('loads base config on first call', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);
 
@@ -68,51 +68,13 @@ describe('createAppConfigService', () => {
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
     });
 
-    it('short-circuits when HAS_DB_CONFIGS is false', async () => {
-      const deps = createDeps();
-      const { getAppConfig } = createAppConfigService(deps);
-
-      deps._cache.set('_HAS_DB_CONFIGS_', false);
-
-      await getAppConfig({ role: 'ADMIN' });
-
-      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
-    });
-
-    it('queries DB when HAS_DB_CONFIGS is not set', async () => {
+    it('queries DB for applicable configs', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);
 
       await getAppConfig({ role: 'ADMIN' });
 
       expect(deps.getApplicableConfigs).toHaveBeenCalled();
-    });
-
-    it('never sets HAS_DB_CONFIGS false — getApplicableConfigs does not query all configs', async () => {
-      const deps = createDeps();
-      const { getAppConfig } = createAppConfigService(deps);
-
-      await getAppConfig();
-      await getAppConfig({ role: 'ADMIN' });
-
-      expect(deps._cache._store.has('_HAS_DB_CONFIGS_')).toBe(false);
-    });
-
-    it('base-only empty result does not block subsequent scoped queries with results', async () => {
-      const mockGetConfigs = jest.fn().mockResolvedValue([]);
-      const deps = createDeps({ getApplicableConfigs: mockGetConfigs });
-      const { getAppConfig } = createAppConfigService(deps);
-
-      await getAppConfig();
-
-      mockGetConfigs.mockResolvedValueOnce([
-        { priority: 10, overrides: { restricted: true }, isActive: true },
-      ]);
-      deps._cache._store.delete('_OVERRIDE_:ADMIN');
-      const config = await getAppConfig({ role: 'ADMIN' });
-
-      expect(mockGetConfigs).toHaveBeenCalledTimes(2);
-      expect((config as Record<string, unknown>).restricted).toBe(true);
     });
 
     it('merges DB configs when found', async () => {
@@ -176,7 +138,24 @@ describe('createAppConfigService', () => {
       expect(overrideKey).toBe('_OVERRIDE_:uid1');
     });
 
-    it('does not short-circuit other users when one user has no overrides (Bug 1 regression)', async () => {
+    it('base-only empty result does not block subsequent scoped queries with results', async () => {
+      const mockGetConfigs = jest.fn().mockResolvedValue([]);
+      const deps = createDeps({ getApplicableConfigs: mockGetConfigs });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig();
+
+      mockGetConfigs.mockResolvedValueOnce([
+        { priority: 10, overrides: { restricted: true }, isActive: true },
+      ]);
+      deps._cache._store.delete('_OVERRIDE_:ADMIN');
+      const config = await getAppConfig({ role: 'ADMIN' });
+
+      expect(mockGetConfigs).toHaveBeenCalledTimes(2);
+      expect((config as Record<string, unknown>).restricted).toBe(true);
+    });
+
+    it('does not short-circuit other users when one user has no overrides', async () => {
       const mockGetConfigs = jest.fn().mockResolvedValue([]);
       const deps = createDeps({ getApplicableConfigs: mockGetConfigs });
       const { getAppConfig } = createAppConfigService(deps);
@@ -227,24 +206,8 @@ describe('createAppConfigService', () => {
     });
   });
 
-  describe('markConfigsDirty', () => {
-    it('sets HAS_DB_CONFIGS to true so next call queries DB', async () => {
-      const deps = createDeps();
-      const { getAppConfig, markConfigsDirty } = createAppConfigService(deps);
-
-      deps._cache.set('_HAS_DB_CONFIGS_', false);
-      await getAppConfig({ role: 'ADMIN' });
-      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
-
-      await markConfigsDirty();
-      deps._cache._store.delete('_OVERRIDE_:ADMIN');
-      await getAppConfig({ role: 'ADMIN' });
-      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
-    });
-  });
-
   describe('clearAppConfigCache', () => {
-    it('clears base config and feature flag', async () => {
+    it('clears base config so it reloads on next call', async () => {
       const deps = createDeps();
       const { getAppConfig, clearAppConfigCache } = createAppConfigService(deps);
 

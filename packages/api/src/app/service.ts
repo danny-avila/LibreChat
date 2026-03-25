@@ -4,7 +4,6 @@ import type { Types } from 'mongoose';
 import type { AppConfig, IConfig } from '@librechat/data-schemas';
 
 const BASE_CONFIG_KEY = '_BASE_';
-const HAS_DB_CONFIGS_KEY = '_HAS_DB_CONFIGS_';
 
 const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
 
@@ -68,11 +67,6 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
 
   const cache = getCache(cacheKeys.APP_CONFIG);
 
-  /**
-   * Build a principals array from role and/or userId.
-   * When only role is provided (common hot path), builds inline — no DB query.
-   * When userId is provided, calls getUserPrincipals for full resolution (groups too).
-   */
   async function buildPrincipals(
     role?: string,
     userId?: string,
@@ -88,11 +82,11 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
   }
 
   /**
-   * Get the app configuration based on user context.
+   * Get the app configuration, optionally merged with DB overrides for the given principal.
    *
-   * When role or userId is provided, DB config overrides for the applicable
-   * principals (role, groups, user) are queried and deep-merged into the
-   * base config. Merged results are cached with a short TTL.
+   * The base config (from YAML + AppService) is cached indefinitely. Per-principal merged
+   * configs are cached with a short TTL (`overrideCacheTtl`, default 60s). On cache miss,
+   * `getApplicableConfigs` queries the DB for matching overrides and merges them by priority.
    */
   async function getAppConfig(
     options: { role?: string; userId?: string; refresh?: boolean } = {},
@@ -115,11 +109,6 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       await cache.set(BASE_CONFIG_KEY, baseConfig);
     }
 
-    const hasDbConfigs = await cache.get(HAS_DB_CONFIGS_KEY);
-    if (hasDbConfigs === false) {
-      return baseConfig;
-    }
-
     const cacheKey = overrideCacheKey(role, userId);
     if (!refresh) {
       const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
@@ -136,7 +125,6 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
         return baseConfig;
       }
 
-      await cache.set(HAS_DB_CONFIGS_KEY, true);
       const merged = mergeConfigOverrides(baseConfig, configs);
       await cache.set(cacheKey, merged, overrideCacheTtl);
       return merged;
@@ -147,35 +135,17 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
   }
 
   /**
-   * Mark the config system as dirty after any admin mutation (create, update, delete, toggle).
-   *
-   * Sets the HAS_DB_CONFIGS_KEY flag to `true` so getAppConfig will query the DB on next
-   * cache miss. Per-user/role override caches are NOT invalidated — they expire naturally
-   * via `overrideCacheTtl` (default 60s). This means config changes may take up to
-   * `overrideCacheTtl` ms to propagate to all users.
-   *
-   * Note: if all config documents are subsequently deleted, this flag remains `true`
-   * and DB queries continue on each cache miss until `clearAppConfigCache` is called
-   * or the process restarts.
-   */
-  async function markConfigsDirty(): Promise<void> {
-    await cache.set(HAS_DB_CONFIGS_KEY, true);
-  }
-
-  /**
-   * Clear the base config and feature flag. Per-user/role override caches (`_OVERRIDE_:*`)
+   * Clear the base config cache. Per-user/role override caches (`_OVERRIDE_:*`)
    * are NOT flushed — they expire naturally via `overrideCacheTtl`. After calling this,
    * the base config will be reloaded from YAML on the next `getAppConfig` call, but
    * users with cached overrides may see stale merged configs for up to `overrideCacheTtl` ms.
    */
   async function clearAppConfigCache(): Promise<void> {
     await cache.delete(BASE_CONFIG_KEY);
-    await cache.delete(HAS_DB_CONFIGS_KEY);
   }
 
   return {
     getAppConfig,
-    markConfigsDirty,
     clearAppConfigCache,
   };
 }

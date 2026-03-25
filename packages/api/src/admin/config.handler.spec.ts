@@ -44,7 +44,7 @@ function createHandlers(overrides = {}) {
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
     toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
-    markConfigsDirty: jest.fn().mockResolvedValue(undefined),
+
     getAppConfig: jest.fn().mockResolvedValue({ interface: { endpointsMenu: true } }),
     ...overrides,
   };
@@ -138,19 +138,6 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    it('calls markConfigsDirty after upsert', async () => {
-      const { handlers, deps } = createHandlers();
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { overrides: { x: 1 } },
-      });
-      const res = mockRes();
-
-      await handlers.upsertConfigOverrides(req, res);
-
-      expect(deps.markConfigsDirty).toHaveBeenCalled();
-    });
-
     it('returns 400 when overrides is missing', async () => {
       const { handlers } = createHandlers();
       const req = mockReq({
@@ -212,19 +199,6 @@ describe('createAdminConfigHandlers', () => {
   });
 
   describe('patchConfigField', () => {
-    it('calls markConfigsDirty after patch', async () => {
-      const { handlers, deps } = createHandlers();
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { entries: [{ fieldPath: 'interface.endpointsMenu', value: false }] },
-      });
-      const res = mockRes();
-
-      await handlers.patchConfigField(req, res);
-
-      expect(deps.markConfigsDirty).toHaveBeenCalled();
-    });
-
     it('returns 403 when user lacks capability for section', async () => {
       const { handlers } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
@@ -251,35 +225,6 @@ describe('createAdminConfigHandlers', () => {
       await handlers.patchConfigField(req, res);
 
       expect(res.statusCode).toBe(400);
-    });
-  });
-
-  describe('deleteConfigOverrides', () => {
-    it('calls markConfigsDirty after delete', async () => {
-      const { handlers, deps } = createHandlers();
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-      });
-      const res = mockRes();
-
-      await handlers.deleteConfigOverrides(req, res);
-
-      expect(deps.markConfigsDirty).toHaveBeenCalled();
-    });
-  });
-
-  describe('toggleConfig', () => {
-    it('calls markConfigsDirty after toggle', async () => {
-      const { handlers, deps } = createHandlers();
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { isActive: false },
-      });
-      const res = mockRes();
-
-      await handlers.toggleConfig(req, res);
-
-      expect(deps.markConfigsDirty).toHaveBeenCalled();
     });
   });
 
@@ -341,23 +286,6 @@ describe('createAdminConfigHandlers', () => {
       },
     },
   ];
-
-  describe('invariant: all mutation handlers call markConfigsDirty', () => {
-    for (const { name, reqOverrides } of MUTATION_HANDLERS) {
-      it(`${name} calls markConfigsDirty on success`, async () => {
-        const { handlers, deps } = createHandlers();
-        const req = mockReq(reqOverrides);
-        const res = mockRes();
-
-        await (handlers as Record<string, (...args: unknown[]) => Promise<unknown>>)[name](
-          req,
-          res,
-        );
-
-        expect(deps.markConfigsDirty).toHaveBeenCalled();
-      });
-    }
-  });
 
   describe('invariant: all mutation handlers return 401 without auth', () => {
     for (const { name, reqOverrides } of MUTATION_HANDLERS) {
