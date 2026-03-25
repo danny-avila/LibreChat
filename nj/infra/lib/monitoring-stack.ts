@@ -34,7 +34,7 @@ export class MonitoringStack extends cdk.Stack {
 
     private createAlarms(topic: sns.Topic, loadBalancer: elbv2.IApplicationLoadBalancer, targetGroup: elbv2.IApplicationTargetGroup) {
         const unhealthyHostsAlarm = new cloudwatch.Alarm(this, 'TgUnhealthyHosts', {
-            alarmName: `${cdk.Stack.of(this).stackName}-tg-unhealthy-hosts`,
+            alarmName: `ai-assistant-tg-unhealthy-hosts`,
             metric: targetGroup.metrics.unhealthyHostCount({
                 period: Duration.minutes(1),
                 statistic: 'Sum',
@@ -48,7 +48,7 @@ export class MonitoringStack extends cdk.Stack {
         unhealthyHostsAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
 
         const elb5xxAlarm = new cloudwatch.Alarm(this, 'AlbElb5xx', {
-            alarmName: `${cdk.Stack.of(this).stackName}-alb-elb-5xx`,
+            alarmName: `ai-assistant-alb-elb-5xx`,
             metric: new cloudwatch.Metric({
                 namespace: 'AWS/ApplicationELB',
                 metricName: 'HTTPCode_ELB_5XX_Count',
@@ -68,7 +68,7 @@ export class MonitoringStack extends cdk.Stack {
         elb5xxAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
 
         const target5xxAlarm = new cloudwatch.Alarm(this, 'AlbTarget5xx', {
-            alarmName: `${cdk.Stack.of(this).stackName}-alb-target-5xx`,
+            alarmName: `ai-assistant-alb-target-5xx`,
             metric: new cloudwatch.Metric({
                 namespace: 'AWS/ApplicationELB',
                 metricName: 'HTTPCode_Target_5XX_Count',
