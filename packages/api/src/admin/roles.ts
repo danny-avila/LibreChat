@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, isValidObjectIdString } from '@librechat/data-schemas';
 import { SystemRoles } from 'librechat-data-provider';
 import type { IRole, IUser } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types/http';
@@ -18,7 +18,6 @@ interface AdminMember {
   name: string;
   email: string;
   avatarUrl?: string;
-  joinedAt: string;
 }
 
 export interface AdminRolesDeps {
@@ -106,6 +105,16 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       const { name } = req.params as RoleNameParams;
       const body = req.body as Partial<IRole>;
 
+      if (
+        body.name !== undefined &&
+        (!body.name || typeof body.name !== 'string' || !body.name.trim())
+      ) {
+        return res.status(400).json({ error: 'name must be a non-empty string' });
+      }
+      if (body.name && SystemRoles[body.name.trim() as keyof typeof SystemRoles]) {
+        return res.status(409).json({ error: 'Cannot rename to a reserved system role name' });
+      }
+
       const existing = await getRoleByName(name);
       if (!existing) {
         return res.status(404).json({ error: 'Role not found' });
@@ -186,7 +195,6 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         name: u.name ?? u._id?.toString() ?? '',
         email: u.email ?? '',
         avatarUrl: u.avatar,
-        joinedAt: u.createdAt ? u.createdAt.toISOString() : new Date().toISOString(),
       }));
       return res.status(200).json({ members });
     } catch (error) {
@@ -202,6 +210,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
       if (!userId || typeof userId !== 'string') {
         return res.status(400).json({ error: 'userId is required' });
+      }
+      if (!isValidObjectIdString(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID format' });
       }
 
       const existing = await getRoleByName(name);
@@ -225,6 +236,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   async function removeRoleMemberHandler(req: ServerRequest, res: Response) {
     try {
       const { name, userId } = req.params as RoleMemberParams;
+      if (!isValidObjectIdString(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID format' });
+      }
 
       const user = await findUser({ _id: userId });
       if (!user) {
