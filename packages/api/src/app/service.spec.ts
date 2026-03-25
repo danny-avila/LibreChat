@@ -88,22 +88,31 @@ describe('createAppConfigService', () => {
       expect(deps.getApplicableConfigs).toHaveBeenCalled();
     });
 
-    it('sets HAS_DB_CONFIGS false only for base-only query (no role/userId)', async () => {
+    it('never sets HAS_DB_CONFIGS false — getApplicableConfigs does not query all configs', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);
 
       await getAppConfig();
-
-      expect(deps._cache._store.get('_HAS_DB_CONFIGS_')).toBe(false);
-    });
-
-    it('does not set HAS_DB_CONFIGS false from scoped query (avoids global flag corruption)', async () => {
-      const deps = createDeps();
-      const { getAppConfig } = createAppConfigService(deps);
-
       await getAppConfig({ role: 'ADMIN' });
 
       expect(deps._cache._store.has('_HAS_DB_CONFIGS_')).toBe(false);
+    });
+
+    it('base-only empty result does not block subsequent scoped queries with results', async () => {
+      const mockGetConfigs = jest.fn().mockResolvedValue([]);
+      const deps = createDeps({ getApplicableConfigs: mockGetConfigs });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig();
+
+      mockGetConfigs.mockResolvedValueOnce([
+        { priority: 10, overrides: { restricted: true }, isActive: true },
+      ]);
+      deps._cache._store.delete('_OVERRIDE_:ADMIN');
+      const config = await getAppConfig({ role: 'ADMIN' });
+
+      expect(mockGetConfigs).toHaveBeenCalledTimes(2);
+      expect((config as Record<string, unknown>).restricted).toBe(true);
     });
 
     it('merges DB configs when found', async () => {

@@ -133,9 +133,6 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       const configs = await getApplicableConfigs(principals);
 
       if (configs.length === 0) {
-        if (!role && !userId && hasDbConfigs == null) {
-          await cache.set(HAS_DB_CONFIGS_KEY, false);
-        }
         return baseConfig;
       }
 
