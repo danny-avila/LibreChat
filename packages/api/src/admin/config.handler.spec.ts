@@ -423,6 +423,32 @@ describe('createAdminConfigHandlers', () => {
     }
   });
 
+  describe('invariant: all read handlers return 401 without auth', () => {
+    const READ_HANDLERS: Array<{ name: string; reqOverrides: Record<string, unknown> }> = [
+      { name: 'listConfigs', reqOverrides: {} },
+      { name: 'getBaseConfig', reqOverrides: {} },
+      {
+        name: 'getConfig',
+        reqOverrides: { params: { principalType: 'role', principalId: 'admin' } },
+      },
+    ];
+
+    for (const { name, reqOverrides } of READ_HANDLERS) {
+      it(`${name} returns 401 when user is missing`, async () => {
+        const { handlers } = createHandlers();
+        const req = mockReq({ ...reqOverrides, user: undefined });
+        const res = mockRes();
+
+        await (handlers as Record<string, (...args: unknown[]) => Promise<unknown>>)[name](
+          req,
+          res,
+        );
+
+        expect(res.statusCode).toBe(401);
+      });
+    }
+  });
+
   describe('getBaseConfig', () => {
     it('returns 403 when user lacks READ_CONFIGS', async () => {
       const { handlers } = createHandlers({

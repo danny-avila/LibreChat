@@ -156,6 +156,10 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
    * cache miss. Per-user/role override caches are NOT invalidated — they expire naturally
    * via `overrideCacheTtl` (default 60s). This means config changes may take up to
    * `overrideCacheTtl` ms to propagate to all users.
+   *
+   * Note: if all config documents are subsequently deleted, this flag remains `true`
+   * and DB queries continue on each cache miss until `clearAppConfigCache` is called
+   * or the process restarts.
    */
   async function markConfigsDirty(): Promise<void> {
     await cache.set(HAS_DB_CONFIGS_KEY, true);
