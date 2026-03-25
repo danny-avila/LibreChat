@@ -356,6 +356,11 @@ async function indexSync() {
         try {
           const Message = mongoose.models.Message;
           const Conversation = mongoose.models.Conversation;
+          if (!Message || !Conversation) {
+            throw new Error(
+              '[indexSync] Models not registered. Ensure createModels() has been called before indexSync.',
+            );
+          }
           await Message.syncWithMeili();
           await Conversation.syncWithMeili();
         } catch (err) {

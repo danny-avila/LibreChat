@@ -1,31 +1,26 @@
-jest.mock('./connect', () => ({
-  connectDb: jest.fn(),
-}));
-
-jest.mock('./indexSync', () => jest.fn());
-
-jest.mock('@librechat/data-schemas', () => ({
-  createModels: jest.fn((mongooseInstance) => {
-    // Simulate what createModels does: register models on mongoose
-    if (!mongooseInstance.models.Message) {
-      mongooseInstance.models.Message = { name: 'Message' };
-    }
-    if (!mongooseInstance.models.Conversation) {
-      mongooseInstance.models.Conversation = { name: 'Conversation' };
-    }
-  }),
-}));
-
 describe('api/db/index.js', () => {
-  test('models are registered before indexSync is loaded', () => {
-    const mongoose = require('mongoose');
-    delete mongoose.models.Message;
-    delete mongoose.models.Conversation;
+  test('createModels is called before indexSync is loaded', () => {
+    jest.resetModules();
 
-    // This is the contract: requiring the db index should produce valid models
+    const callOrder = [];
+
+    jest.mock('@librechat/data-schemas', () => ({
+      createModels: jest.fn((m) => {
+        callOrder.push('createModels');
+        m.models.Message = { name: 'Message' };
+        m.models.Conversation = { name: 'Conversation' };
+      }),
+    }));
+
+    jest.mock('./indexSync', () => {
+      callOrder.push('indexSync');
+      return jest.fn();
+    });
+
+    jest.mock('./connect', () => ({ connectDb: jest.fn() }));
+
     require('./index');
 
-    expect(mongoose.models.Message).toBeDefined();
-    expect(mongoose.models.Conversation).toBeDefined();
+    expect(callOrder).toEqual(['createModels', 'indexSync']);
   });
 });
