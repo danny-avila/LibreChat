@@ -80,12 +80,16 @@ function InputRenderer({ input }: { input: string }) {
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       return <ComplexInput data={parsed as Record<string, unknown>} />;
     }
+    // Valid JSON but not a plain object (array, string, number, boolean) — render formatted
+    return (
+      <pre className="whitespace-pre-wrap text-xs text-text-primary">
+        {typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2)}
+      </pre>
+    );
   } catch {
     // Not JSON — render as plain text
     return <pre className="whitespace-pre-wrap text-xs text-text-primary">{input}</pre>;
   }
-
-  return null;
 }
 
 export default function ToolCallInfo({
