@@ -105,14 +105,21 @@ export async function loadAddedAgent(
       '';
     const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender, index: 1 });
 
-    return {
+    const added: Record<string, unknown> = {
       id: ephemeralId,
       instructions: promptPrefix || '',
       provider: endpoint,
       model_parameters: {},
       model,
       tools: [...primaryAgent.tools],
-    } as unknown as Agent;
+    };
+    if (modelSpec?.vision !== undefined) {
+      added.vision = modelSpec.vision;
+    }
+    if (spec != null && spec !== '') {
+      added.spec = spec;
+    }
+    return added as unknown as Agent;
   }
 
   const ephemeralAgent = rest.ephemeralAgent as
@@ -224,6 +231,13 @@ export async function loadAddedAgent(
 
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
+  }
+
+  if (modelSpec?.vision !== undefined) {
+    result.vision = modelSpec.vision;
+  }
+  if (spec != null && spec !== '') {
+    result.spec = spec;
   }
 
   return result as unknown as Agent;

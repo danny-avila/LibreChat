@@ -37,6 +37,7 @@ import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
+import { useVisionModel } from '~/hooks';
 
 type FileUploadType =
   | 'image'
@@ -80,6 +81,7 @@ const AttachFileMenu = ({
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
+  const isVisionModel = useVisionModel();
 
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
@@ -89,10 +91,9 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
-    agentId,
-    ephemeralAgent,
-  );
+  const { fileSearchAllowedByAgent, codeAllowedByAgent, visionEnabledByAgent, provider } =
+    useAgentToolPermissions(agentId, ephemeralAgent);
+  const isVisionAvailable = isVisionModel || visionEnabledByAgent;
 
   const handleUploadClick = (fileType?: FileUploadType) => {
     if (!inputRef.current) {
@@ -135,32 +136,39 @@ const AttachFileMenu = ({
         isDocumentSupportedProvider(currentProvider) ||
         isAzureWithResponsesApi
       ) {
-        items.push({
-          label: localize('com_ui_upload_provider'),
-          onClick: () => {
-            setToolResource(undefined);
-            let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
-            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
-              fileType = 'image_document_video_audio';
-            } else if (
-              currentProvider === Providers.BEDROCK ||
-              endpointType === EModelEndpoint.bedrock
-            ) {
-              fileType = 'image_document_extended';
-            }
-            onAction(fileType);
-          },
-          icon: <FileImageIcon className="icon-md" />,
-        });
+        if (isVisionAvailable) {
+          items.push({
+            label: localize('com_ui_upload_provider'),
+            onClick: () => {
+              setToolResource(undefined);
+              let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
+              if (
+                currentProvider === Providers.GOOGLE ||
+                currentProvider === Providers.OPENROUTER
+              ) {
+                fileType = 'image_document_video_audio';
+              } else if (
+                currentProvider === Providers.BEDROCK ||
+                endpointType === EModelEndpoint.bedrock
+              ) {
+                fileType = 'image_document_extended';
+              }
+              onAction(fileType);
+            },
+            icon: <FileImageIcon className="icon-md" />,
+          });
+        }
       } else {
-        items.push({
-          label: localize('com_ui_upload_image_input'),
-          onClick: () => {
-            setToolResource(undefined);
-            onAction('image');
-          },
-          icon: <ImageUpIcon className="icon-md" />,
-        });
+        if (isVisionAvailable) {
+          items.push({
+            label: localize('com_ui_upload_image_input'),
+            onClick: () => {
+              setToolResource(undefined);
+              onAction('image');
+            },
+            icon: <ImageUpIcon className="icon-md" />,
+          });
+        }
       }
 
       if (capabilities.contextEnabled) {
@@ -237,6 +245,7 @@ const AttachFileMenu = ({
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
+    isVisionAvailable,
   ]);
 
   const menuTrigger = (

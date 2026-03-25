@@ -189,14 +189,20 @@ async function processRequiredActions(client, requiredActions) {
     let tool = ToolMap[currentAction.tool] ?? ActionToolMap[currentAction.tool];
 
     const handleToolOutput = async (output) => {
+      // For MCP tools, output is [content, artifact] array
+      // Store the full array in requiredActions[i].output for artifact processing
+      // For tool output to OpenAI, we'll extract just the content
       requiredActions[i].output = output;
+
+      // Extract content for tool call display (first element of array if array, otherwise output itself)
+      const outputContent = Array.isArray(output) && output.length >= 1 ? output[0] : output;
 
       /** @type {FunctionToolCall & PartMetadata} */
       const toolCall = {
         function: {
           name: currentAction.tool,
           arguments: JSON.stringify(currentAction.toolInput),
-          output,
+          output: outputContent,
         },
         id: currentAction.toolCallId,
         type: 'function',
@@ -207,7 +213,7 @@ async function processRequiredActions(client, requiredActions) {
       const toolCallIndex = client.mappedOrder.get(toolCall.id);
 
       if (imageGenTools.has(currentAction.tool)) {
-        const imageOutput = output;
+        const imageOutput = outputContent;
         toolCall.function.output = `${currentAction.tool} displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.`;
 
         // Streams the "Finished" state of the tool call in the UI
@@ -252,9 +258,13 @@ async function processRequiredActions(client, requiredActions) {
         // result: tool.result,
       });
 
+      // For MCP tools with artifacts, return the content string for OpenAI tool output
+      // The full array [content, artifact] is stored in requiredActions[i].output for artifact processing
+      const finalOutput = outputContent;
+
       return {
         tool_call_id: currentAction.toolCallId,
-        output,
+        output: finalOutput,
       };
     };
 
@@ -410,8 +420,55 @@ async function processRequiredActions(client, requiredActions) {
     }
   }
 
+  const tool_outputs = await Promise.all(promises);
+
+  // Process artifacts from MCP tools and prepare for next user message
+  const allArtifacts = [];
+  for (let i = 0; i < requiredActions.length; i++) {
+    const action = requiredActions[i];
+    // MCP tools return [content, artifact] format
+    // For OpenRouter (string format): [string, artifacts]
+    // For OpenAI-compatible (array format): [[contentArray], artifacts]
+    if (
+      action.output &&
+      Array.isArray(action.output) &&
+      action.output.length === 2 &&
+      action.output[1]?.content
+    ) {
+      allArtifacts.push({
+        artifacts: action.output[1],
+        toolName: action.tool,
+      });
+    }
+  }
+
+  if (allArtifacts.length > 0) {
+    const isVisionModel = getVisionCapability(client);
+    const artifactFileIds = [];
+    const artifactContent = [];
+
+    for (const { artifacts, toolName } of allArtifacts) {
+      const processed = await processArtifactsForAssistants({
+        artifacts,
+        isVisionModel,
+        req: client.req,
+        thread_id: requiredActions[0].thread_id,
+        conversationId:
+          (client.responseMessage ?? client.finalMessage)?.conversationId,
+      });
+
+      artifactFileIds.push(...processed.fileIds);
+      artifactContent.push(...processed.contentParts);
+    }
+
+    if (artifactContent.length > 0 || artifactFileIds.length > 0) {
+      client.pendingArtifactContent = artifactContent;
+      client.pendingArtifactFileIds = artifactFileIds;
+    }
+  }
+
   return {
-    tool_outputs: await Promise.all(promises),
+    tool_outputs,
   };
 }
 

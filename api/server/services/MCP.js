@@ -545,6 +545,7 @@ function createToolInstance({
       derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
+      const endpoint = config?.metadata?.endpoint;
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
       const flowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
@@ -574,6 +575,9 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
+      // mcpManager.callTool returns FormattedContentResult: [content, artifacts]
+      // This tuple format is already handled by formatToolContent in @librechat/api
+      // and is compatible with responseFormat: CONTENT_AND_ARTIFACT
       const result = await mcpManager.callTool({
         serverName,
         toolName,

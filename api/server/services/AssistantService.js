@@ -437,6 +437,27 @@ async function runAssistant({
   });
 
   const tool_outputs = await processRequiredActions(openai, actions);
+
+  // Add artifact content as user message to thread if artifacts were processed
+  if (openai.pendingArtifactContent?.length) {
+    const willAttachFileIds =
+      openai.pendingArtifactFileIds?.length &&
+      openai.pendingArtifactContent.some((item) => item?.type === ContentTypes.IMAGE_FILE);
+
+    const artifactMessage = {
+      role: 'user',
+      content: openai.pendingArtifactContent,
+    };
+    if (willAttachFileIds) {
+      artifactMessage.file_ids = openai.pendingArtifactFileIds;
+    }
+    await openai.beta.threads.messages.create(thread_id, artifactMessage);
+
+    // Clear after use
+    delete openai.pendingArtifactContent;
+    delete openai.pendingArtifactFileIds;
+  }
+
   const toolRun = await openai.beta.threads.runs.submitToolOutputs(run.id, {
     thread_id: run.thread_id,
     tool_outputs,

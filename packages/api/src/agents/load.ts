@@ -130,6 +130,14 @@ export async function loadEphemeralAgent(
   if (ephemeralAgent?.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
   }
+
+  if (modelSpec?.vision !== undefined) {
+    result.vision = modelSpec.vision;
+  }
+  if (spec != null && spec !== '') {
+    result.spec = spec;
+  }
+
   return result as Agent;
 }
 
