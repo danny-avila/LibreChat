@@ -478,6 +478,8 @@ const sttOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
   model: z.string(),
+  language: z.string().optional(),
+  extraParams: z.record(z.unknown()).optional(),
 });
 
 const sttAzureOpenAISchema = z.object({
