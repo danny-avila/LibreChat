@@ -118,7 +118,7 @@ describe('ToolCall', () => {
         },
       ];
 
-      renderWithRecoil(<ToolCall {...mockProps} attachments={attachments} />);
+      renderWithRecoil(<ToolCall {...mockProps} attachments={attachments as any} />);
 
       fireEvent.click(screen.getByTestId('progress-text'));
 
@@ -161,7 +161,7 @@ describe('ToolCall', () => {
         },
       ];
 
-      renderWithRecoil(<ToolCall {...mockProps} attachments={attachments} />);
+      renderWithRecoil(<ToolCall {...mockProps} attachments={attachments as any} />);
 
       fireEvent.click(screen.getByTestId('progress-text'));
 
@@ -185,7 +185,7 @@ describe('ToolCall', () => {
         },
       ];
 
-      renderWithRecoil(<ToolCall {...mockProps} attachments={attachments} />);
+      renderWithRecoil(<ToolCall {...mockProps} attachments={attachments as any} />);
 
       const attachmentGroup = screen.getByTestId('attachment-group');
       expect(attachmentGroup).toBeInTheDocument();
@@ -289,7 +289,7 @@ describe('ToolCall', () => {
 
   describe('edge cases', () => {
     it('should handle undefined args', () => {
-      renderWithRecoil(<ToolCall {...mockProps} args={undefined} />);
+      renderWithRecoil(<ToolCall {...mockProps} args={undefined as any} />);
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -333,7 +333,7 @@ describe('ToolCall', () => {
         },
       ];
 
-      renderWithRecoil(<ToolCall {...mockProps} attachments={complexAttachments} />);
+      renderWithRecoil(<ToolCall {...mockProps} attachments={complexAttachments as any} />);
 
       fireEvent.click(screen.getByTestId('progress-text'));
 

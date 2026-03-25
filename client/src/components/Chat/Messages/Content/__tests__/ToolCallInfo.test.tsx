@@ -74,7 +74,7 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [uiResource],
+          [Tools.ui_resources]: [uiResource] as any,
         },
       ];
 
@@ -107,7 +107,7 @@ describe('ToolCallInfo', () => {
             { type: 'text', data: 'Resource 1' },
             { type: 'text', data: 'Resource 2' },
             { type: 'text', data: 'Resource 3' },
-          ],
+          ] as any,
         },
       ];
 
@@ -200,7 +200,7 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'text', data: 'Test' }],
+          [Tools.ui_resources]: [{ type: 'text', data: 'Test' }] as any,
         },
       ];
 
@@ -241,7 +241,7 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'attachment', data: 'From attachments' }],
+          [Tools.ui_resources]: [{ type: 'attachment', data: 'From attachments' }] as any,
         },
       ];
 

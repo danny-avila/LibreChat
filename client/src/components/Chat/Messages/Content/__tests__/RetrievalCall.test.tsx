@@ -264,7 +264,7 @@ describe('RetrievalCall - file preview resolution', () => {
             ],
           },
         },
-      ],
+      ] as any,
     });
 
     fireEvent.click(screen.getByTestId('progress-text'));

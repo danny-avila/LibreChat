@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import type { SearchResultData } from 'librechat-data-provider';
 import { Citation, CompositeCitation } from '~/components/Web/Citation';
 import { CitationContext } from '~/components/Web/Context';
 import { SearchContext } from '~/Providers';
@@ -44,7 +45,10 @@ jest.mock('@librechat/client', () => ({
   ),
 }));
 
-function renderWithProviders(children: React.ReactNode, searchResults: Record<string, unknown>) {
+function renderWithProviders(
+  children: React.ReactNode,
+  searchResults: Record<string, SearchResultData>,
+) {
   return render(
     <SearchContext.Provider value={{ searchResults }}>
       <CitationContext.Provider
@@ -92,7 +96,7 @@ describe('Citation', () => {
           },
         }}
       />,
-      searchResults,
+      searchResults as any,
     );
 
     const fileButton = screen.getByRole('button', { name: 'Tutorial Imazing.pdf' });
@@ -130,7 +134,7 @@ describe('Citation', () => {
           },
         }}
       />,
-      searchResults,
+      searchResults as any,
     );
 
     expect(screen.getByRole('link', { name: 'example.com' })).toHaveAttribute(
