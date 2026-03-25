@@ -23,10 +23,10 @@ export default function ResponsibleInfoAlert() {
         </div>
       </div>
       <p className="mb-6">
-        AI tools can generate responses that can sound confident but are incorrect or incomplete —
-        these are often referred to as “hallucinations”. As a state employee, it is important to
-        review the AI’s output for accuracy, bias, completeness, accessibility, and style before
-        using it in your work.
+        AI tools can generate responses that sound confident but are incorrect or incomplete — these
+        are often referred to as “hallucinations”. As a state employee, it is important to review
+        the AI’s output for accuracy, bias, completeness, accessibility, and style before using it
+        in your work.
       </p>
       <p className="mb-6">
         You can reduce hallucinations by providing clear context, uploading source materials, asking

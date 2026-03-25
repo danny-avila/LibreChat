@@ -40,7 +40,7 @@ export default function AiLearning() {
           icon="launch"
         />
         <InfoLink
-          text=" GenAI How-To Guides - (includes how to build tools and improve call center menus with GenAI)"
+          text=" GenAI How-To Guides - (includes how to build genAI tools and improve call center menus with GenAI)"
           link="https://innovation.nj.gov/skills/ai-how-tos/"
           aria-label="GenAI How-To Guides (opens in new window)"
           icon="launch"

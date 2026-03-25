@@ -14,7 +14,7 @@ const usingAIFAQs = [
           reorganize information through back-and-forth conversation.
         </p>
         <p className="mb-3">
-          You can think of it as having a thinking partner or collaborator. You provide it with
+          You can think of it as having a thought partner or collaborator. You provide it with
           instructions about what you need, and it responds with new text. This makes it very useful
           for things like:
         </p>
@@ -53,16 +53,16 @@ const usingAIFAQs = [
             independently.
           </li>
           <li className="mb-2">
-            <span className="font-bold">Executing code:</span> If you&#39;re using the AI Assistant
-            for coding tasks, keep in mind that it can generate code but{' '}
-            <span className="font-bold">cannot execute it</span>. Occasionally, it may simulate what
-            running the code would look like—these outputs are fabricated and should be ignored. To
-            avoid this, be explicit in your prompt that you only want the code, not example results.
+            <strong>Executing code:</strong> If you&#39;re using the AI Assistant for coding tasks,
+            keep in mind that it can generate code but <strong>cannot execute it</strong>.
+            Occasionally, it may simulate what running the code would look like—these outputs are
+            fabricated and should be ignored. To avoid this, be explicit in your prompt that you
+            only want the code, not example results.
           </li>
           <li className="mb-2">
             <strong>Analysis without source material:</strong> The NJ AI Assistant doesn’t have
             access to external databases, state systems, or real-time information. A broad question
-            like “What areas of NJ are the most likely to be impacted by extreme weather?” won’t get
+            like “what areas of NJ are the most likely to be impacted by extreme weather?” won’t get
             a reliable answer on its own. Instead, give it something to work with: upload relevant
             reports, provide context, be specific about how you’d like it to approach its analysis,
             and ask it to show its reasoning so you can spot errors.
@@ -79,7 +79,7 @@ const usingAIFAQs = [
         <ul className="mb-6 list-outside list-disc pl-8">
           <li className="mb-2">Files: pdf, csv, xls/xlsx, docx, .txt, .md</li>
           <li className="mb-2">Code types: python, java, js, (and others)</li>
-          <li className="mb-2">Images file types: jpeg, jpg, png, gif, webp, heic, heif</li>
+          <li className="mb-2">Image file types: jpeg, jpg, png, gif, webp, heic, heif</li>
           <li className="mb-2">
             Maximum number of files: 10 files per prompt (whether images or text)
           </li>
@@ -134,8 +134,8 @@ const usingAIFAQs = [
         </p>
         <p className="mb-3">
           Chat history, similar to other state work-related documents, is retained in accordance
-          with state records retention policies and may be subject to the open records request
-          (OPRA). Consult with your agency’s records custodians for more information.
+          with state records retention policies and may be subject to open records requests (OPRA).
+          Consult with your agency’s records custodians for more information.
         </p>
         <p className="mb-3">
           For maintenance purposes, the Platform team and OIT can access the information stored in
