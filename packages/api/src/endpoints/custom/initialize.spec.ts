@@ -68,6 +68,50 @@ function createParams(overrides: {
   };
 }
 
+describe('initializeCustom – Agents API user key resolution', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should fetch user key even when expiresAt is not in request body (Agents API flow)', async () => {
+    const params = createParams({
+      apiKey: AuthType.USER_PROVIDED,
+      baseURL: 'https://api.example.com/v1',
+      userApiKey: 'sk-user-key',
+      expiresAt: undefined as unknown as string,
+    });
+    // Simulate Agents API request body (no `key` field)
+    params.req.body = { model: 'agent_123', messages: [] };
+
+    await initializeCustom(params);
+
+    expect(params.db.getUserKeyValues).toHaveBeenCalledWith({
+      userId: 'user-1',
+      name: 'test-custom',
+    });
+    expect(mockGetOpenAIConfig).toHaveBeenCalledWith(
+      'sk-user-key',
+      expect.any(Object),
+      'test-custom',
+    );
+  });
+
+  it('should still check key expiry when expiresAt is provided (UI flow)', async () => {
+    const { checkUserKeyExpiry } = jest.requireMock('~/utils');
+    const params = createParams({
+      apiKey: AuthType.USER_PROVIDED,
+      baseURL: 'https://api.example.com/v1',
+      userApiKey: 'sk-user-key',
+      expiresAt: '2099-01-01',
+    });
+
+    await initializeCustom(params);
+
+    expect(checkUserKeyExpiry).toHaveBeenCalledWith('2099-01-01', 'test-custom');
+    expect(params.db.getUserKeyValues).toHaveBeenCalled();
+  });
+});
+
 describe('initializeCustom – SSRF guard wiring', () => {
   beforeEach(() => {
     jest.clearAllMocks();

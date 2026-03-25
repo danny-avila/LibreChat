@@ -92,8 +92,10 @@ export async function initializeCustom({
   const userProvidesURL = isUserProvided(CUSTOM_BASE_URL);
 
   let userValues = null;
-  if (expiresAt && (userProvidesKey || userProvidesURL)) {
-    checkUserKeyExpiry(expiresAt, endpoint);
+  if (userProvidesKey || userProvidesURL) {
+    if (expiresAt) {
+      checkUserKeyExpiry(expiresAt, endpoint);
+    }
     userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 
