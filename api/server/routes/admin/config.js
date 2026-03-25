@@ -5,7 +5,7 @@ const {
   hasConfigCapability,
   requireCapability,
 } = require('~/server/middleware/roles/capabilities');
-const { getAppConfig } = require('~/server/services/Config/app');
+const { getAppConfig } = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 

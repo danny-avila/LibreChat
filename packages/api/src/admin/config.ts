@@ -9,9 +9,17 @@ import type { ServerRequest } from '~/types/http';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
+const DEFAULT_PRIORITY = 10;
 
 export function isValidFieldPath(path: string): boolean {
-  return typeof path === 'string' && path.length > 0 && !UNSAFE_SEGMENTS.test(path);
+  return (
+    typeof path === 'string' &&
+    path.length > 0 &&
+    !path.startsWith('.') &&
+    !path.endsWith('.') &&
+    !path.includes('..') &&
+    !UNSAFE_SEGMENTS.test(path)
+  );
 }
 
 export function getTopLevelSection(fieldPath: string): string {
@@ -23,6 +31,7 @@ export interface AdminConfigDeps {
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
+    options?: { includeInactive?: boolean },
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   upsertConfig: (
@@ -189,7 +198,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const config = await findConfigByPrincipal(principalType, principalId);
+      const config = await findConfigByPrincipal(principalType, principalId, {
+        includeInactive: true,
+      });
       if (!config) {
         return res.status(404).json({ error: 'Config not found' });
       }
@@ -255,7 +266,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         principalId,
         principalModel(principalType),
         overrides,
-        priority ?? 10,
+        priority ?? DEFAULT_PRIORITY,
       );
 
       return res.status(config?.configVersion === 1 ? 201 : 200).json({ config });
@@ -307,31 +318,40 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      const sections = [...new Set(entries.map((e) => getTopLevelSection(e.fieldPath)))];
-      const allowed = await Promise.all(
-        sections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
-      );
-      const denied = sections.find((_, i) => !allowed[i]);
-      if (denied) {
-        return res.status(403).json({
-          error: `Insufficient permissions for config section: ${denied}`,
-        });
+      if (!(await hasConfigCapability(user, null, 'manage'))) {
+        const sections = [...new Set(entries.map((e) => getTopLevelSection(e.fieldPath)))];
+        const allowed = await Promise.all(
+          sections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
+        );
+        const denied = sections.find((_, i) => !allowed[i]);
+        if (denied) {
+          return res.status(403).json({
+            error: `Insufficient permissions for config section: ${denied}`,
+          });
+        }
       }
 
+      const seen = new Set<string>();
       const fields: Record<string, unknown> = {};
       for (const entry of entries) {
+        if (seen.has(entry.fieldPath)) {
+          return res.status(400).json({ error: `Duplicate fieldPath: ${entry.fieldPath}` });
+        }
+        seen.add(entry.fieldPath);
         fields[entry.fieldPath] = entry.value;
       }
 
       const existing =
-        priority == null ? await findConfigByPrincipal(principalType, principalId) : null;
+        priority == null
+          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+          : null;
 
       const config = await patchConfigFields(
         principalType,
         principalId,
         principalModel(principalType),
         fields,
-        priority ?? existing?.priority ?? 10,
+        priority ?? existing?.priority ?? DEFAULT_PRIORITY,
       );
 
       return res.status(200).json({ config });

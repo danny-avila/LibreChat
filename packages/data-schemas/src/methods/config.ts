@@ -9,14 +9,18 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
   async function findConfigByPrincipal(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
+    options?: { includeInactive?: boolean },
     session?: ClientSession,
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
-    return await Config.findOne({
+    const filter: { principalType: PrincipalType; principalId: string; isActive?: boolean } = {
       principalType,
       principalId: principalId.toString(),
-      isActive: true,
-    })
+    };
+    if (!options?.includeInactive) {
+      filter.isActive = true;
+    }
+    return await Config.findOne(filter)
       .session(session ?? null)
       .lean();
   }
@@ -26,7 +30,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     session?: ClientSession,
   ): Promise<IConfig[]> {
     const Config = mongoose.models.Config as Model<IConfig>;
-    const where: Record<string, unknown> = {};
+    const where: { isActive?: boolean } = {};
     if (filter?.isActive !== undefined) {
       where.isActive = filter.isActive;
     }
@@ -101,7 +105,18 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       ...(session ? { session } : {}),
     };
 
-    return await Config.findOneAndUpdate(query, update, options);
+    try {
+      return await Config.findOneAndUpdate(query, update, options);
+    } catch (err: unknown) {
+      if ((err as { code?: number }).code === 11000) {
+        return await Config.findOneAndUpdate(
+          query,
+          { $set: update.$set, $inc: update.$inc },
+          { new: true, ...(session ? { session } : {}) },
+        );
+      }
+      throw err;
+    }
   }
 
   async function patchConfigFields(
@@ -114,10 +129,11 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
 
-    const setPayload: Record<string, unknown> = {
-      principalModel,
-      priority,
-    };
+    const setPayload: { principalModel: PrincipalModel; priority: number; [key: string]: unknown } =
+      {
+        principalModel,
+        priority,
+      };
 
     for (const [path, value] of Object.entries(fields)) {
       setPayload[`overrides.${path}`] = value;
@@ -151,7 +167,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     };
 
     return await Config.findOneAndUpdate(
-      { principalType, principalId: principalId.toString(), isActive: true },
+      { principalType, principalId: principalId.toString() },
       { $unset: { [`overrides.${fieldPath}`]: '' }, $inc: { configVersion: 1 } },
       options,
     );

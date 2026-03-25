@@ -2,16 +2,15 @@ import type { AppConfig, IConfig } from '~/types';
 
 type AnyObject = { [key: string]: unknown };
 
-/**
- * Deep merge source into target, returning a new object.
- * Arrays are replaced (not concatenated). Primitives from source override target.
- */
-function deepMerge<T extends AnyObject>(target: T, source: AnyObject): T {
+const MAX_MERGE_DEPTH = 10;
+
+function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0): T {
   const result = { ...target } as AnyObject;
   for (const key of Object.keys(source)) {
     const sourceVal = source[key];
     const targetVal = result[key];
     if (
+      depth < MAX_MERGE_DEPTH &&
       sourceVal != null &&
       typeof sourceVal === 'object' &&
       !Array.isArray(sourceVal) &&
@@ -19,7 +18,7 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject): T {
       typeof targetVal === 'object' &&
       !Array.isArray(targetVal)
     ) {
-      result[key] = deepMerge(targetVal as AnyObject, sourceVal as AnyObject);
+      result[key] = deepMerge(targetVal as AnyObject, sourceVal as AnyObject, depth + 1);
     } else {
       result[key] = sourceVal;
     }
