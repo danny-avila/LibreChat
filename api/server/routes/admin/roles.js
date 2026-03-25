@@ -14,10 +14,10 @@ const requireManageRoles = requireCapability(SystemCapabilities.MANAGE_ROLES);
 const handlers = createAdminRolesHandlers({
   listRoles: db.listRoles,
   getRoleByName: db.getRoleByName,
-  createRole: db.createRole,
+  createRoleByName: db.createRoleByName,
   updateRoleByName: db.updateRoleByName,
   updateAccessPermissions: db.updateAccessPermissions,
-  deleteRole: db.deleteRole,
+  deleteRoleByName: db.deleteRoleByName,
   findUser: db.findUser,
   updateUser: db.updateUser,
   listUsersByRole: db.listUsersByRole,
