@@ -17,7 +17,6 @@ const {
 const { verify2FAWithTempToken } = require('~/server/controllers/auth/TwoFactorAuthController');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
-const { googleMobileController } = require('~/server/controllers/auth/GoogleMobileController');
 const { getAppConfig } = require('~/server/services/Config');
 const middleware = require('~/server/middleware');
 const { Balance } = require('~/db/models');
@@ -42,14 +41,6 @@ router.post(
   loginController,
 );
 router.post('/refresh', refreshController);
-router.post(
-  '/google/mobile',
-  middleware.logHeaders,
-  middleware.loginLimiter,
-  middleware.checkBan,
-  setBalanceConfig,
-  googleMobileController,
-);
 router.post(
   '/register',
   middleware.registerLimiter,

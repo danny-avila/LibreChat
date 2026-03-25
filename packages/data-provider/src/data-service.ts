@@ -123,12 +123,6 @@ export const getLoginGoogle = () => {
   return request.get(endpoints.loginGoogle());
 };
 
-export const loginGoogleMobile = (
-  payload: t.TGoogleMobileLoginRequest,
-): Promise<t.TLoginResponse> => {
-  return request.post(endpoints.loginGoogleMobile(), payload);
-};
-
 export const requestPasswordReset = (
   payload: t.TRequestPasswordReset,
 ): Promise<t.TRequestPasswordResetResponse> => {

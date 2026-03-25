@@ -11,7 +11,9 @@ if (
     typeof globalThis !== 'undefined' &&
     typeof (globalThis as { __LIBRECHAT_API_BASE_URL__?: string }).__LIBRECHAT_API_BASE_URL__ ===
       'string'
-      ? (globalThis as { __LIBRECHAT_API_BASE_URL__?: string }).__LIBRECHAT_API_BASE_URL__?.trim()
+      ? (
+          globalThis as { __LIBRECHAT_API_BASE_URL__?: string }
+        ).__LIBRECHAT_API_BASE_URL__?.trim()
       : '';
   if (globalBaseUrl && !globalBaseUrl.includes('%VITE_')) {
     BASE_URL = globalBaseUrl;
@@ -152,7 +154,6 @@ export const register = () => `${BASE_URL}/api/auth/register`;
 export const loginFacebook = () => `${BASE_URL}/api/auth/facebook`;
 
 export const loginGoogle = () => `${BASE_URL}/api/auth/google`;
-export const loginGoogleMobile = () => `${BASE_URL}/api/auth/google/mobile`;
 
 export const refreshToken = (retry?: boolean) =>
   `${BASE_URL}/api/auth/refresh${retry === true ? '?retry=true' : ''}`;
