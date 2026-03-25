@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import type { TCustomConfig } from 'librechat-data-provider';
 import type { Model, ClientSession } from 'mongoose';
 import type { IConfig } from '~/types';
 
@@ -72,7 +73,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     principalModel: PrincipalModel,
-    overrides: Record<string, unknown>,
+    overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
   ): Promise<IConfig | null> {

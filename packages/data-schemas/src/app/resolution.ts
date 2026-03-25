@@ -1,14 +1,13 @@
 import type { AppConfig, IConfig } from '~/types';
 
+type AnyObject = { [key: string]: unknown };
+
 /**
  * Deep merge source into target, returning a new object.
  * Arrays are replaced (not concatenated). Primitives from source override target.
  */
-function deepMerge(
-  target: Record<string, unknown>,
-  source: Record<string, unknown>,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = { ...target };
+function deepMerge<T extends AnyObject>(target: T, source: AnyObject): T {
+  const result = { ...target } as AnyObject;
   for (const key of Object.keys(source)) {
     const sourceVal = source[key];
     const targetVal = result[key];
@@ -20,15 +19,12 @@ function deepMerge(
       typeof targetVal === 'object' &&
       !Array.isArray(targetVal)
     ) {
-      result[key] = deepMerge(
-        targetVal as Record<string, unknown>,
-        sourceVal as Record<string, unknown>,
-      );
+      result[key] = deepMerge(targetVal as AnyObject, sourceVal as AnyObject);
     } else {
       result[key] = sourceVal;
     }
   }
-  return result;
+  return result as T;
 }
 
 /**
@@ -36,10 +32,6 @@ function deepMerge(
  *
  * Configs are sorted by priority ascending (lowest first, highest wins).
  * Each config's `overrides` is deep-merged into the base config in order.
- *
- * @param baseConfig - The base AppConfig from AppService (YAML-derived, cached)
- * @param configs - Array of Config documents from the DB
- * @returns Merged AppConfig with overrides applied
  */
 export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]): AppConfig {
   if (!configs || configs.length === 0) {
@@ -48,12 +40,12 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
 
   const sorted = [...configs].sort((a, b) => a.priority - b.priority);
 
-  let merged: Record<string, unknown> = { ...baseConfig } as unknown as Record<string, unknown>;
+  let merged = { ...baseConfig };
   for (const config of sorted) {
     if (config.overrides && typeof config.overrides === 'object') {
-      merged = deepMerge(merged, config.overrides as unknown as Record<string, unknown>);
+      merged = deepMerge(merged, config.overrides as AnyObject);
     }
   }
 
-  return merged as unknown as AppConfig;
+  return merged;
 }

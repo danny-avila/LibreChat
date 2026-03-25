@@ -6,8 +6,7 @@ import type { AppConfig, IConfig } from '@librechat/data-schemas';
 const BASE_CONFIG_KEY = '_BASE_';
 const HAS_DB_CONFIGS_KEY = '_HAS_DB_CONFIGS_';
 
-/** TTL for cached merged configs (ms). Override results expire after 60 seconds. */
-const OVERRIDE_CACHE_TTL = 60_000;
+const DEFAULT_overrideCacheTtl = 60_000;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -35,6 +34,8 @@ export interface AppConfigServiceDeps {
     userId: string | Types.ObjectId;
     role?: string | null;
   }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
+  /** TTL in ms for per-user/role merged config caches. Defaults to 60 000. */
+  overrideCacheTtl?: number;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -42,6 +43,9 @@ export interface AppConfigServiceDeps {
 function overrideCacheKey(role?: string, userId?: string): string {
   if (userId && role) {
     return `_OVERRIDE_:${role}:${userId}`;
+  }
+  if (userId) {
+    return `_OVERRIDE_:${userId}`;
   }
   if (role) {
     return `_OVERRIDE_:${role}`;
@@ -59,6 +63,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
     cacheKeys,
     getApplicableConfigs,
     getUserPrincipals,
+    overrideCacheTtl = DEFAULT_overrideCacheTtl,
   } = deps;
 
   /**
@@ -136,7 +141,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
 
       await cache.set(HAS_DB_CONFIGS_KEY, true);
       const merged = mergeConfigOverrides(baseConfig, configs);
-      await cache.set(cacheKey, merged, OVERRIDE_CACHE_TTL);
+      await cache.set(cacheKey, merged, overrideCacheTtl);
       return merged;
     } catch (error) {
       logger.error('[getAppConfig] Error resolving config overrides, falling back to base:', error);

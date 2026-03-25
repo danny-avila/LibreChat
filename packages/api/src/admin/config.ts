@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
+import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
@@ -36,7 +37,7 @@ export interface AdminConfigDeps {
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     principalModel: PrincipalModel,
-    overrides: Record<string, unknown>,
+    overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
@@ -90,8 +91,13 @@ function principalModel(type: PrincipalType): PrincipalModel {
       return PrincipalModel.GROUP;
     case PrincipalType.ROLE:
       return PrincipalModel.ROLE;
-    default:
+    case PrincipalType.PUBLIC:
       return PrincipalModel.ROLE;
+    default: {
+      const _exhaustive: never = type;
+      logger.warn(`[adminConfig] Unmapped PrincipalType: ${_exhaustive}`);
+      return PrincipalModel.ROLE;
+    }
   }
 }
 
@@ -141,7 +147,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      // Listing requires broad read:configs
       if (!(await hasConfigCapability(user, null, 'read'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
@@ -200,23 +205,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
+      if (!(await hasConfigCapability(user, null, 'read'))) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
       const config = await findConfigByPrincipal(principalType, principalId);
       if (!config) {
         return res.status(404).json({ error: 'Config not found' });
-      }
-
-      const overrides = (config.overrides ?? {}) as Record<string, unknown>;
-      const overrideSections = Object.keys(overrides);
-      if (overrideSections.length > 0) {
-        const allowed = await Promise.all(
-          overrideSections.map((s) => hasConfigCapability(user, s as ConfigSection, 'read')),
-        );
-        const denied = overrideSections.find((_, i) => !allowed[i]);
-        if (denied) {
-          return res.status(403).json({
-            error: `Insufficient permissions for config section: ${denied}`,
-          });
-        }
       }
 
       return res.status(200).json({ config });
@@ -241,7 +236,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       const { overrides, priority } = req.body as {
-        overrides?: Record<string, unknown>;
+        overrides?: Partial<TCustomConfig>;
         priority?: number;
       };
 
@@ -271,6 +266,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         }
       }
 
+      const existing = await findConfigByPrincipal(principalType, principalId);
       const config = await upsertConfig(
         principalType,
         principalId,
@@ -280,7 +276,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       );
 
       await notifyChange();
-      return res.status(200).json({ config });
+      return res.status(existing ? 200 : 201).json({ config });
     } catch (error) {
       logger.error('[adminConfig] upsertConfigOverrides error:', error);
       return res.status(500).json({ error: 'Failed to upsert config' });
@@ -310,7 +306,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(400).json({ error: 'entries array is required and must not be empty' });
       }
 
-      // Validate all field paths
       for (const entry of entries) {
         if (!isValidFieldPath(entry.fieldPath)) {
           return res
@@ -360,8 +355,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   }
 
   /**
-   * DELETE /:principalType/:principalId/fields — Remove a field from overrides.
-   * Field path is sent in the request body as { fieldPath: "dotted.path" }.
+   * DELETE /:principalType/:principalId/fields?fieldPath=dotted.path
    */
   async function deleteConfigField(req: ServerRequest, res: Response) {
     try {
@@ -369,10 +363,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         principalType: string;
         principalId: string;
       };
-      const { fieldPath } = req.body as { fieldPath?: string };
+      const fieldPath = req.query.fieldPath as string | undefined;
 
       if (!fieldPath || typeof fieldPath !== 'string') {
-        return res.status(400).json({ error: 'fieldPath is required in request body' });
+        return res.status(400).json({ error: 'fieldPath query parameter is required' });
       }
 
       if (!validatePrincipalType(principalType)) {
@@ -427,7 +421,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      // Deleting an entire override requires broad manage:configs
       if (!(await hasConfigCapability(user, null, 'manage'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
@@ -469,7 +462,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      // Toggling requires broad manage:configs
       if (!(await hasConfigCapability(user, null, 'manage'))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }

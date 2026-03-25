@@ -5,29 +5,12 @@ import type {
   z,
   configSchema,
 } from 'librechat-data-provider';
+import type { SystemCapabilities } from '~/admin/capabilities';
 
 /* ── Capability types ───────────────────────────────────────────────── */
 
-/** Base capabilities defined in the SystemCapabilities object. */
-export type BaseSystemCapability =
-  | 'access:admin'
-  | 'read:users'
-  | 'manage:users'
-  | 'read:groups'
-  | 'manage:groups'
-  | 'read:roles'
-  | 'manage:roles'
-  | 'read:configs'
-  | 'manage:configs'
-  | 'assign:configs'
-  | 'read:usage'
-  | 'read:agents'
-  | 'manage:agents'
-  | 'manage:mcpservers'
-  | 'read:prompts'
-  | 'manage:prompts'
-  | 'read:assistants'
-  | 'manage:assistants';
+/** Base capabilities derived from the SystemCapabilities constant. */
+export type BaseSystemCapability = (typeof SystemCapabilities)[keyof typeof SystemCapabilities];
 
 /** Principal types that can receive config overrides. */
 export type ConfigAssignTarget = 'user' | 'group' | 'role';
