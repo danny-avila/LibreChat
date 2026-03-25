@@ -4,9 +4,9 @@ import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import CopyButton from '~/components/Messages/Content/CopyButton';
+import { logger, sortPagesByRelevance } from '~/utils';
 import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-import { logger, sortPagesByRelevance } from '~/utils';
 import store from '~/store';
 
 interface FilePreviewDialogProps {

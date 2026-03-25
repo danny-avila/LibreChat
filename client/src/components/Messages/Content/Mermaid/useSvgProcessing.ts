@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { useDebouncedMermaid } from '~/hooks';
 import { fixSubgraphTitleContrast } from '~/utils/mermaid';
+import { useDebouncedMermaid } from '~/hooks';
 
 const MIN_CONTAINER_HEIGHT = 200;
 const MAX_CONTAINER_HEIGHT = 500;

@@ -1,9 +1,9 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { Citation, CompositeCitation } from '~/components/Web/Citation';
+import { CitationContext } from '~/components/Web/Context';
 import { SearchContext } from '~/Providers';
-import { CitationContext } from '../Context';
-import { Citation, CompositeCitation } from '../Citation';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: { label?: string; pages?: string }) => {

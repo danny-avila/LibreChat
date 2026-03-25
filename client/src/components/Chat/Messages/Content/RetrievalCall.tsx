@@ -1,17 +1,16 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { FileText, FileSpreadsheet, FileCode, FileImage, File } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
 import { TooltipAnchor } from '@librechat/client';
+import { FileText, FileSpreadsheet, FileCode, FileImage, File } from 'lucide-react';
 import type { TAttachment, TFile } from 'librechat-data-provider';
-import { useGetFiles } from '~/data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
 import FilePreviewDialog from './FilePreviewDialog';
+import { sortPagesByRelevance, cn } from '~/utils';
+import { useGetFiles } from '~/data-provider';
 import ProgressText from './ProgressText';
 import store from '~/store';
-import { sortPagesByRelevance } from '~/utils';
-import cn from '~/utils/cn';
 
 interface FileSource {
   fileId: string;

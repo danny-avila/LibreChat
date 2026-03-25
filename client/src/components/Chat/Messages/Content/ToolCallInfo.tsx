@@ -4,8 +4,8 @@ import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
-import { useMessagesOperations } from '~/Providers';
 import UIResourceCarousel from './UIResourceCarousel';
+import { useMessagesOperations } from '~/Providers';
 import { OutputRenderer } from './ToolOutput';
 import { handleUIAction, cn } from '~/utils';
 

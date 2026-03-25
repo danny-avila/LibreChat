@@ -3,9 +3,9 @@ import copy from 'copy-to-clipboard';
 import { X, ChevronUp, ChevronDown } from 'lucide-react';
 import {
   Button,
+  OGDialog,
   Clipboard,
   CheckMark,
-  OGDialog,
   OGDialogClose,
   OGDialogTitle,
   OGDialogContent,
