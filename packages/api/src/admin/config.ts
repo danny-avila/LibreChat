@@ -9,11 +9,11 @@ import type { ServerRequest } from '~/types/http';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 
-function isValidFieldPath(path: string): boolean {
+export function isValidFieldPath(path: string): boolean {
   return typeof path === 'string' && path.length > 0 && !UNSAFE_SEGMENTS.test(path);
 }
 
-function getTopLevelSection(fieldPath: string): string {
+export function getTopLevelSection(fieldPath: string): string {
   return fieldPath.split('.')[0];
 }
 
@@ -26,7 +26,7 @@ interface CapabilityUser {
 }
 
 export interface AdminConfigDeps {
-  listAllConfigs: (session?: ClientSession) => Promise<IConfig[]>;
+  listAllConfigs: (filter?: { isActive?: boolean }, session?: ClientSession) => Promise<IConfig[]>;
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,

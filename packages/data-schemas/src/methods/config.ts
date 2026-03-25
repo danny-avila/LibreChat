@@ -11,24 +11,28 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     session?: ClientSession,
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
-    const query = Config.findOne({
+    return await Config.findOne({
       principalType,
       principalId: principalId.toString(),
       isActive: true,
-    });
-    if (session) {
-      query.session(session);
-    }
-    return await query.lean();
+    })
+      .session(session ?? null)
+      .lean();
   }
 
-  async function listAllConfigs(session?: ClientSession): Promise<IConfig[]> {
+  async function listAllConfigs(
+    filter?: { isActive?: boolean },
+    session?: ClientSession,
+  ): Promise<IConfig[]> {
     const Config = mongoose.models.Config as Model<IConfig>;
-    const query = Config.find({ isActive: true }).sort({ priority: 1 });
-    if (session) {
-      query.session(session);
+    const where: Record<string, unknown> = {};
+    if (filter?.isActive !== undefined) {
+      where.isActive = filter.isActive;
     }
-    return await query.lean();
+    return await Config.find(where)
+      .sort({ priority: 1 })
+      .session(session ?? null)
+      .lean();
   }
 
   async function getApplicableConfigs(
@@ -55,16 +59,13 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       }
     }
 
-    const configQuery = Config.find({
+    return await Config.find({
       $or: principalsQuery,
       isActive: true,
-    }).sort({ priority: 1 });
-
-    if (session) {
-      configQuery.session(session);
-    }
-
-    return await configQuery.lean();
+    })
+      .sort({ priority: 1 })
+      .session(session ?? null)
+      .lean();
   }
 
   async function upsertConfig(
@@ -163,16 +164,10 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
 
-    const query = Config.findOneAndDelete({
+    return await Config.findOneAndDelete({
       principalType,
       principalId: principalId.toString(),
-    });
-
-    if (session) {
-      query.session(session);
-    }
-
-    return await query;
+    }).session(session ?? null);
   }
 
   async function toggleConfigActive(
@@ -182,18 +177,11 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     session?: ClientSession,
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
-
-    const query = Config.findOneAndUpdate(
+    return await Config.findOneAndUpdate(
       { principalType, principalId: principalId.toString() },
       { $set: { isActive } },
       { new: true },
-    );
-
-    if (session) {
-      query.session(session);
-    }
-
-    return await query;
+    ).session(session ?? null);
   }
 
   return {
