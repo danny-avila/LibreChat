@@ -487,7 +487,12 @@ class BaseClient {
         }
         delete userMessage.image_urls;
       }
-      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
+        (err) => {
+          logger.error('[BaseClient] Failed to save user message:', err);
+          return {};
+        },
+      );
       this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
@@ -727,8 +732,12 @@ class BaseClient {
    * @param {string | null} user
    */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    if (!this.options) {
-      logger.warn('[BaseClient] saveMessageToDatabase called after client disposal, skipping save');
+    // Snapshot options before any await; disposeClient may set client.options = null
+    // while this method is suspended at an I/O boundary, but the local reference
+    // remains valid (disposeClient nulls the property, not the object itself).
+    const options = this.options;
+    if (!options) {
+      logger.error('[BaseClient] saveMessageToDatabase: client disposed before save, skipping');
       return {};
     }
 
@@ -736,17 +745,17 @@ class BaseClient {
       throw new Error('User mismatch.');
     }
 
-    const hasAddedConvo = this.options?.req?.body?.addedConvo != null;
+    const hasAddedConvo = options?.req?.body?.addedConvo != null;
     const reqCtx = {
-      userId: this.options?.req?.user?.id,
-      isTemporary: this.options?.req?.body?.isTemporary,
-      interfaceConfig: this.options?.req?.config?.interfaceConfig,
+      userId: options?.req?.user?.id,
+      isTemporary: options?.req?.body?.isTemporary,
+      interfaceConfig: options?.req?.config?.interfaceConfig,
     };
     const savedMessage = await db.saveMessage(
       reqCtx,
       {
         ...message,
-        endpoint: this.options.endpoint,
+        endpoint: options.endpoint,
         unfinished: false,
         user,
         ...(hasAddedConvo && { addedConvo: true }),
@@ -760,20 +769,20 @@ class BaseClient {
 
     const fieldsToKeep = {
       conversationId: message.conversationId,
-      endpoint: this.options.endpoint,
-      endpointType: this.options.endpointType,
+      endpoint: options.endpoint,
+      endpointType: options.endpointType,
       ...endpointOptions,
     };
 
     const existingConvo =
       this.fetchedConvo === true
         ? null
-        : await db.getConvo(this.options?.req?.user?.id, message.conversationId);
+        : await db.getConvo(options?.req?.user?.id, message.conversationId);
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
     const hasNonEphemeralAgent =
-      isAgentsEndpoint(this.options.endpoint) &&
+      isAgentsEndpoint(options.endpoint) &&
       endpointOptions?.agent_id &&
       !isEphemeralAgentId(endpointOptions.agent_id);
     if (hasNonEphemeralAgent) {
