@@ -253,6 +253,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
+      if (!(await hasConfigCapability(user, null, 'manage'))) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
       const overrideSections = Object.keys(overrides);
       if (overrideSections.length > 0) {
         const allowed = await Promise.all(

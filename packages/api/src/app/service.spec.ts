@@ -88,13 +88,13 @@ describe('createAppConfigService', () => {
       expect(deps.getApplicableConfigs).toHaveBeenCalled();
     });
 
-    it('sets HAS_DB_CONFIGS to false when no configs found', async () => {
+    it('does not set HAS_DB_CONFIGS false from scoped query (avoids global flag corruption)', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);
 
       await getAppConfig({ role: 'ADMIN' });
 
-      expect(deps._cache._store.get('_HAS_DB_CONFIGS_')).toBe(false);
+      expect(deps._cache._store.has('_HAS_DB_CONFIGS_')).toBe(false);
     });
 
     it('merges DB configs when found', async () => {
