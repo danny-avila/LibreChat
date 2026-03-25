@@ -8,14 +8,20 @@ export default {
   input: 'src/index.ts',
   output: [
     {
-      file: 'dist/index.es.js',
+      dir: 'dist',
       format: 'es',
       sourcemap: true,
+      preserveModules: true,
+      preserveModulesRoot: 'src',
+      entryFileNames: '[name].es.js',
     },
     {
-      file: 'dist/index.cjs',
+      dir: 'dist',
       format: 'cjs',
       sourcemap: true,
+      preserveModules: true,
+      preserveModulesRoot: 'src',
+      entryFileNames: '[name].cjs',
     },
   ],
   plugins: [

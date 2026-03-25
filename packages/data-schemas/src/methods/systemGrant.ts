@@ -1,8 +1,8 @@
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type { Types, Model, ClientSession } from 'mongoose';
-import type { SystemCapability } from '~/systemCapabilities';
+import type { SystemCapability } from '~/types/admin';
 import type { ISystemGrant } from '~/types';
-import { SystemCapabilities, CapabilityImplications } from '~/systemCapabilities';
+import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
 import { normalizePrincipalId } from '~/utils/principal';
 import logger from '~/config/winston';
 
