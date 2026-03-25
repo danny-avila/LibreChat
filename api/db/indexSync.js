@@ -6,9 +6,6 @@ const { isEnabled, FlowStateManager } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
 const { batchResetMeiliFlags } = require('./utils');
 
-const Conversation = mongoose.models.Conversation;
-const Message = mongoose.models.Message;
-
 const searchEnabled = isEnabled(process.env.SEARCH);
 const indexingDisabled = isEnabled(process.env.MEILI_NO_SYNC);
 let currentTimeout = null;
@@ -200,6 +197,14 @@ async function performSync(flowManager, flowId, flowType) {
       return { messagesSync: false, convosSync: false };
     }
 
+    const Message = mongoose.models.Message;
+    const Conversation = mongoose.models.Conversation;
+    if (!Message || !Conversation) {
+      throw new Error(
+        '[indexSync] Models not registered. Ensure createModels() has been called before indexSync.',
+      );
+    }
+
     const client = MeiliSearchClient.getInstance();
 
     const { status } = await client.health();
@@ -349,6 +354,13 @@ async function indexSync() {
       logger.debug('[indexSync] Creating indices...');
       currentTimeout = setTimeout(async () => {
         try {
+          const Message = mongoose.models.Message;
+          const Conversation = mongoose.models.Conversation;
+          if (!Message || !Conversation) {
+            throw new Error(
+              '[indexSync] Models not registered. Ensure createModels() has been called before indexSync.',
+            );
+          }
           await Message.syncWithMeili();
           await Conversation.syncWithMeili();
         } catch (err) {
