@@ -81,7 +81,7 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
     });
 
-    const oauthHandler = async () => {
+    const oauthHandler = () => {
       logger.info(
         `${this.logPrefix} [Discovery] OAuth required; skipping URL generation in discovery mode`,
       );
@@ -89,9 +89,9 @@ export class MCPConnectionFactory {
       connection.emit('oauthFailed', new Error('OAuth required during tool discovery'));
     };
 
-    if (this.useOAuth) {
-      connection.on('oauthRequired', oauthHandler);
-    }
+    // Register unconditionally: non-OAuth servers that return 401 also emit 'oauthRequired',
+    // and without this listener, connectClient()'s oauthHandledPromise hangs for 30s+.
+    connection.once('oauthRequired', oauthHandler);
 
     try {
       const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
@@ -103,9 +103,7 @@ export class MCPConnectionFactory {
 
       if (await connection.isConnected()) {
         const tools = await connection.fetchTools();
-        if (this.useOAuth) {
-          connection.removeListener('oauthRequired', oauthHandler);
-        }
+        connection.removeListener('oauthRequired', oauthHandler);
         return { tools, connection, oauthRequired: false, oauthUrl: null };
       }
     } catch {
@@ -117,9 +115,7 @@ export class MCPConnectionFactory {
 
     try {
       const tools = await this.attemptUnauthenticatedToolListing();
-      if (this.useOAuth) {
-        connection.removeListener('oauthRequired', oauthHandler);
-      }
+      connection.removeListener('oauthRequired', oauthHandler);
       if (tools && tools.length > 0) {
         logger.info(
           `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
@@ -137,9 +133,7 @@ export class MCPConnectionFactory {
       logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed:`, listError);
     }
 
-    if (this.useOAuth) {
-      connection.removeListener('oauthRequired', oauthHandler);
-    }
+    connection.removeListener('oauthRequired', oauthHandler);
 
     try {
       await connection.disconnect();
