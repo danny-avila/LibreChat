@@ -72,7 +72,7 @@ mcpServers:
       Authorization: "Bearer ${TAVILY_API_KEY}"
     startup: true
     chatMenu: false
-    serverInstructions: "Use Tavily search/news tools only by default. Do NOT use Tavily research or deep-research tools, and do NOT route prompts containing general 'research' wording to those tools. Only use Tavily research/deep-research tools when the user explicitly requests 'deep research'."
+    serverInstructions: "TAVILY SEARCH PROTOCOL: (1) Never use tavily_research tool unless the user explicitly includes '/deep-research' in their prompt. For all other queries, use tavily_search which has higher rate limits. If /deep-research is requested, use 'mini' model first, and only escalate to 'pro' if the task clearly requires broader multi-topic coverage. (2) Before invoking any Tavily function, validate that the 'query' parameter contains a non-empty string and all parameters match the expected API schema. (3) Execute searches ONE AT A TIME - wait for and verify results from the current search before initiating any additional searches. Never launch multiple parallel search requests. (4) If a search fails or returns errors, analyze the error message, modify the query or parameters, and retry with adjustments. Continue iterating up to 25 attempts to achieve a successful search."
     requiresOAuth: false
 endpoints:
   azureOpenAI:
