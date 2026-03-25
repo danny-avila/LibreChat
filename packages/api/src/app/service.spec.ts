@@ -24,7 +24,7 @@ function createDeps(overrides = {}) {
     loadBaseConfig: jest.fn().mockResolvedValue(baseConfig),
     setCachedTools: jest.fn().mockResolvedValue(undefined),
     getCache: jest.fn().mockReturnValue(cache),
-    cacheKeys: { APP_CONFIG: 'app_config', CONFIG_STORE: 'config_store' },
+    cacheKeys: { APP_CONFIG: 'app_config' },
     getApplicableConfigs: jest.fn().mockResolvedValue([]),
     getUserPrincipals: jest.fn().mockResolvedValue([
       { principalType: 'role', principalId: 'USER' },
