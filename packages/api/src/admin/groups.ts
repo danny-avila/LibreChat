@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, isValidObjectIdString } from '@librechat/data-schemas';
 import type {
   IGroup,
   IUser,
@@ -6,6 +6,7 @@ import type {
   UpdateGroupRequest,
 } from '@librechat/data-schemas';
 import type { FilterQuery, Types, ClientSession } from 'mongoose';
+import type { ValidationError } from '~/types/error';
 import type { ServerRequest } from '~/types/http';
 import type { Response } from 'express';
 
@@ -49,14 +50,10 @@ export interface AdminGroupsDeps {
     groupId: string | Types.ObjectId,
     session?: ClientSession,
   ) => Promise<{ user: IUser; group: IGroup | null }>;
-  findGroupsByMemberId: (
-    userId: string | Types.ObjectId,
-    session?: ClientSession,
-  ) => Promise<IGroup[]>;
-  findUser: (
+  findUsers: (
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
-  ) => Promise<IUser | null>;
+  ) => Promise<IUser[]>;
 }
 
 export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
@@ -68,7 +65,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
     deleteGroup,
     addUserToGroup,
     removeUserFromGroup,
-    findUser,
+    findUsers,
   } = deps;
 
   async function listGroupsHandler(req: ServerRequest, res: Response) {
@@ -92,6 +89,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
   async function getGroupHandler(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as GroupIdParams;
+      if (!isValidObjectIdString(id)) {
+        return res.status(400).json({ error: 'Invalid group ID format' });
+      }
       const group = await findGroupById(id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
@@ -119,6 +119,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       });
       return res.status(201).json({ group });
     } catch (error) {
+      if ((error as ValidationError).name === 'ValidationError') {
+        return res.status(400).json({ error: (error as ValidationError).message });
+      }
       logger.error('[adminGroups] createGroup error:', error);
       return res.status(500).json({ error: 'Failed to create group' });
     }
@@ -127,7 +130,17 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
   async function updateGroupHandler(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as GroupIdParams;
+      if (!isValidObjectIdString(id)) {
+        return res.status(400).json({ error: 'Invalid group ID format' });
+      }
       const body = req.body as UpdateGroupRequest;
+
+      if (
+        body.name !== undefined &&
+        (!body.name || typeof body.name !== 'string' || !body.name.trim())
+      ) {
+        return res.status(400).json({ error: 'name must be a non-empty string' });
+      }
 
       const existing = await findGroupById(id);
       if (!existing) {
@@ -149,8 +162,14 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       }
 
       const group = await updateGroupById(id, updateData);
+      if (!group) {
+        return res.status(404).json({ error: 'Group not found' });
+      }
       return res.status(200).json({ group });
     } catch (error) {
+      if ((error as ValidationError).name === 'ValidationError') {
+        return res.status(400).json({ error: (error as ValidationError).message });
+      }
       logger.error('[adminGroups] updateGroup error:', error);
       return res.status(500).json({ error: 'Failed to update group' });
     }
@@ -159,6 +178,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
   async function deleteGroupHandler(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as GroupIdParams;
+      if (!isValidObjectIdString(id)) {
+        return res.status(400).json({ error: 'Invalid group ID format' });
+      }
       const existing = await findGroupById(id);
       if (!existing) {
         return res.status(404).json({ error: 'Group not found' });
@@ -174,27 +196,45 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
   async function getGroupMembersHandler(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as GroupIdParams;
+      if (!isValidObjectIdString(id)) {
+        return res.status(400).json({ error: 'Invalid group ID format' });
+      }
       const group = await findGroupById(id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
 
       const memberIds = group.memberIds || [];
-      const members = await Promise.all(
-        memberIds.map(async (memberId) => {
-          const user = await findUser(
-            { $or: [{ idOnTheSource: memberId }, { _id: memberId }] },
-            'name email avatar',
-          );
-          return {
-            userId: user?._id?.toString() ?? memberId,
-            name: user?.name ?? memberId,
-            email: user?.email ?? '',
-            avatarUrl: user?.avatar,
-            joinedAt: group.updatedAt?.toISOString() ?? new Date().toISOString(),
-          };
-        }),
-      );
+      if (memberIds.length === 0) {
+        return res.status(200).json({ members: [] });
+      }
+
+      const validObjectIds = memberIds.filter(isValidObjectIdString);
+      const conditions: FilterQuery<IUser>[] = [{ idOnTheSource: { $in: memberIds } }];
+      if (validObjectIds.length > 0) {
+        conditions.push({ _id: { $in: validObjectIds } });
+      }
+      const users = await findUsers({ $or: conditions }, 'name email avatar idOnTheSource');
+
+      const userMap = new Map<string, IUser>();
+      for (const user of users) {
+        if (user.idOnTheSource) {
+          userMap.set(user.idOnTheSource, user);
+        }
+        if (user._id) {
+          userMap.set(user._id.toString(), user);
+        }
+      }
+
+      const members = memberIds.map((memberId) => {
+        const user = userMap.get(memberId);
+        return {
+          userId: user?._id?.toString() ?? memberId,
+          name: user?.name ?? memberId,
+          email: user?.email ?? '',
+          avatarUrl: user?.avatar,
+        };
+      });
 
       return res.status(200).json({ members });
     } catch (error) {
@@ -206,10 +246,15 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
   async function addGroupMemberHandler(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as GroupIdParams;
+      if (!isValidObjectIdString(id)) {
+        return res.status(400).json({ error: 'Invalid group ID format' });
+      }
       const { userId } = req.body as { userId: string };
-
       if (!userId || typeof userId !== 'string') {
         return res.status(400).json({ error: 'userId is required' });
+      }
+      if (!isValidObjectIdString(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID format' });
       }
 
       const { group } = await addUserToGroup(userId, id);
@@ -219,14 +264,21 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       return res.status(200).json({ group });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to add member';
+      const isNotFound = message === 'User not found' || message.startsWith('User not found:');
       logger.error('[adminGroups] addGroupMember error:', error);
-      return res.status(message.includes('not found') ? 404 : 500).json({ error: message });
+      return res.status(isNotFound ? 404 : 500).json({ error: message });
     }
   }
 
   async function removeGroupMemberHandler(req: ServerRequest, res: Response) {
     try {
       const { id, userId } = req.params as GroupMemberParams;
+      if (!isValidObjectIdString(id)) {
+        return res.status(400).json({ error: 'Invalid group ID format' });
+      }
+      if (!isValidObjectIdString(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID format' });
+      }
       const { group } = await removeUserFromGroup(userId, id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
@@ -234,8 +286,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       return res.status(200).json({ success: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to remove member';
+      const isNotFound = message === 'User not found' || message.startsWith('User not found:');
       logger.error('[adminGroups] removeGroupMember error:', error);
-      return res.status(message.includes('not found') ? 404 : 500).json({ error: message });
+      return res.status(isNotFound ? 404 : 500).json({ error: message });
     }
   }
 
