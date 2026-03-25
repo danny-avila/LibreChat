@@ -24,14 +24,14 @@ interface AdminMember {
 export interface AdminRolesDeps {
   listRoles: () => Promise<IRole[]>;
   getRoleByName: (name: string, fields?: string | string[] | null) => Promise<IRole | null>;
-  createRole: (roleData: Partial<IRole>) => Promise<IRole>;
+  createRoleByName: (roleData: Partial<IRole>) => Promise<IRole>;
   updateRoleByName: (name: string, updates: Partial<IRole>) => Promise<IRole | null>;
   updateAccessPermissions: (
     name: string,
     perms: Record<string, Record<string, boolean>>,
     roleData?: IRole,
   ) => Promise<void>;
-  deleteRole: (name: string) => Promise<IRole | null>;
+  deleteRoleByName: (name: string) => Promise<IRole | null>;
   findUser: (
     criteria: FilterQuery<IUser>,
     fields?: string | string[] | null,
@@ -44,10 +44,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   const {
     listRoles,
     getRoleByName,
-    createRole,
+    createRoleByName,
     updateRoleByName,
     updateAccessPermissions,
-    deleteRole,
+    deleteRoleByName,
     findUser,
     updateUser,
     listUsersByRole,
@@ -86,7 +86,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       if (!name || typeof name !== 'string' || !name.trim()) {
         return res.status(400).json({ error: 'name is required' });
       }
-      const role = await createRole({
+      const role = await createRoleByName({
         name: name.trim(),
         permissions: permissions || {},
       });
@@ -159,7 +159,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
-      await deleteRole(name);
+      await deleteRoleByName(name);
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] deleteRole error:', error);

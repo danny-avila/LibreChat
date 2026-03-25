@@ -343,7 +343,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   /** Rejects names that match system roles. */
-  async function createRole(roleData: Partial<IRole>): Promise<IRole> {
+  async function createRoleByName(roleData: Partial<IRole>): Promise<IRole> {
     const { name } = roleData;
     if (!name || typeof name !== 'string' || !name.trim()) {
       throw new Error('Role name is required');
@@ -368,7 +368,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   /** Guards against deleting system roles. Reassigns affected users back to USER. */
-  async function deleteRole(roleName: string): Promise<IRole | null> {
+  async function deleteRoleByName(roleName: string): Promise<IRole | null> {
     if (SystemRoles[roleName as keyof typeof SystemRoles]) {
       throw new Error(`Cannot delete system role: ${roleName}`);
     }
@@ -399,8 +399,8 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     updateRoleByName,
     updateAccessPermissions,
     migrateRoleSchema,
-    createRole,
-    deleteRole,
+    createRoleByName,
+    deleteRoleByName,
     listUsersByRole,
   };
 }
