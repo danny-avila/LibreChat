@@ -38,7 +38,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-const { getConvo, saveConvo } = require('~/models');
+const { getConvo, saveConvo, saveMessage } = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -904,6 +904,52 @@ describe('BaseClient', () => {
           conversationId: expect.any(String),
         }),
       );
+    });
+
+    test('saveMessageToDatabase returns early when this.options is null (client disposed)', async () => {
+      const savedOptions = TestClient.options;
+      TestClient.options = null;
+      saveMessage.mockClear();
+
+      const result = await TestClient.saveMessageToDatabase(
+        { messageId: 'msg-1', conversationId: 'conv-1', isCreatedByUser: true, text: 'hi' },
+        {},
+        null,
+      );
+
+      expect(result).toEqual({});
+      expect(saveMessage).not.toHaveBeenCalled();
+
+      TestClient.options = savedOptions;
+    });
+
+    test('saveMessageToDatabase uses snapshot of options, immune to mid-await disposal', async () => {
+      const savedOptions = TestClient.options;
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+
+      // Make db.saveMessage yield, simulating I/O suspension during which disposal occurs
+      saveMessage.mockImplementation(async (_reqCtx, msgData) => {
+        // Simulate disposeClient nullifying client.options while awaiting
+        TestClient.options = null;
+        return msgData;
+      });
+      saveConvo.mockResolvedValue({ conversationId: 'conv-1' });
+
+      const result = await TestClient.saveMessageToDatabase(
+        { messageId: 'msg-1', conversationId: 'conv-1', isCreatedByUser: true, text: 'hi' },
+        { endpoint: 'openAI' },
+        null,
+      );
+
+      // Should complete without TypeError, using the snapshotted options
+      expect(result).toHaveProperty('message');
+      expect(result).toHaveProperty('conversation');
+      expect(saveMessage).toHaveBeenCalled();
+
+      TestClient.options = savedOptions;
+      saveMessage.mockReset();
+      saveConvo.mockReset();
     });
 
     test('userMessagePromise is awaited before saving response message', async () => {
