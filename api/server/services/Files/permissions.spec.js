@@ -6,14 +6,14 @@ jest.mock('~/server/services/PermissionService', () => ({
   checkPermission: jest.fn(),
 }));
 
-jest.mock('~/models/Agent', () => ({
+jest.mock('~/models', () => ({
   getAgent: jest.fn(),
 }));
 
 const { logger } = require('@librechat/data-schemas');
 const { Constants, PermissionBits, ResourceType } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
-const { getAgent } = require('~/models/Agent');
+const { getAgent } = require('~/models');
 const { filterFilesByAgentAccess, hasAccessToFilesViaAgent } = require('./permissions');
 
 const AUTHOR_ID = 'author-user-id';

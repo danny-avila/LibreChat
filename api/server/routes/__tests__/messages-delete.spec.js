@@ -34,6 +34,9 @@ jest.mock('~/models', () => ({
   getMessages: jest.fn(),
   updateMessage: jest.fn(),
   deleteMessages: jest.fn(),
+  getConvosQueried: jest.fn(),
+  searchMessages: jest.fn(),
+  getMessagesByCursor: jest.fn(),
 }));
 
 jest.mock('~/server/services/Artifacts/update', () => ({
@@ -46,10 +49,6 @@ jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next()
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
   validateMessageReq: (req, res, next) => next(),
-}));
-
-jest.mock('~/models/Conversation', () => ({
-  getConvosQueried: jest.fn(),
 }));
 
 jest.mock('~/db/models', () => ({

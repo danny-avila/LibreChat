@@ -20,19 +20,20 @@ const {
   GenerationJobManager,
   createStreamServices,
   initializeFileStorage,
+  updateInterfacePermissions,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { getRoleByName, updateAccessPermissions, seedDatabase } = require('~/models');
+const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
-const { updateInterfacePermissions } = require('~/models/interface');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
-const { seedDatabase } = require('~/models');
 const routes = require('./routes');
 const { njContentSecurityPolicy } = require('~/nj/nj-helmet');
 
@@ -63,7 +64,7 @@ const startServer = async () => {
   const appConfig = await getAppConfig();
   initializeFileStorage(appConfig);
   await performStartupChecks(appConfig);
-  await updateInterfacePermissions(appConfig);
+  await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -134,6 +135,9 @@ const startServer = async () => {
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     await configureSocialLogins(app);
   }
+
+  /* Per-request capability cache — must be registered before any route that calls hasCapability */
+  app.use(capabilityContextMiddleware);
 
   app.use('/oauth', routes.oauth);
   /* API Endpoints */

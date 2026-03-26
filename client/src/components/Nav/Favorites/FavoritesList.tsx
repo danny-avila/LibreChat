@@ -21,6 +21,7 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
+/** Height intentionally matches FavoriteItem (px-3 py-2 + h-5 icon) to keep the CellMeasurerCache valid across the isAgentsLoading transition. */
 const FavoriteItemSkeleton = () => (
   <div className="flex w-full items-center rounded-lg px-3 py-2">
     <Skeleton className="mr-2 h-5 w-5 rounded-full" />
@@ -118,12 +119,9 @@ const DraggableFavoriteItem = ({
 export default function FavoritesList({
   isSmallScreen,
   toggleNav,
-  onHeightChange,
 }: {
   isSmallScreen?: boolean;
   toggleNav?: () => void;
-  /** Callback when the list height might have changed (e.g., agents finished loading) */
-  onHeightChange?: () => void;
 }) {
   const navigate = useNavigate();
   const localize = useLocalize();
@@ -137,7 +135,7 @@ export default function FavoritesList({
   const agentsMap = useAgentsMapContext();
   const { data: endpointsConfig = {} as t.TEndpointsConfig } = useGetEndpointsQuery();
 
-  const { onSelectEndpoint } = useSelectMention({
+  const { onSelectEndpoint: _onSelectEndpoint } = useSelectMention({
     modelSpecs: [],
     assistantsMap,
     endpointsConfig,
@@ -145,6 +143,16 @@ export default function FavoritesList({
     newConversation,
     returnHandlers: true,
   });
+
+  const onSelectEndpoint = useCallback(
+    (...args: Parameters<NonNullable<typeof _onSelectEndpoint>>) => {
+      _onSelectEndpoint?.(...args);
+      if (isSmallScreen && toggleNav) {
+        toggleNav();
+      }
+    },
+    [_onSelectEndpoint, isSmallScreen, toggleNav],
+  );
 
   const marketplaceRef = useRef<HTMLDivElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
@@ -256,12 +264,6 @@ export default function FavoritesList({
   const isAgentsLoading =
     (allAgentIds.length > 0 && agentsMap === undefined) ||
     (missingAgentIds.length > 0 && missingAgentQueries.some((q) => q.isLoading));
-
-  useEffect(() => {
-    if (!isAgentsLoading && onHeightChange) {
-      onHeightChange();
-    }
-  }, [isAgentsLoading, onHeightChange]);
 
   const draggedFavoritesRef = useRef(safeFavorites);
 

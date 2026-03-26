@@ -35,6 +35,8 @@ jest.mock('@librechat/api', () => ({
   MCPTokenStorage: {},
   normalizeHttpError: jest.fn(),
   extractWebSearchEnvVars: jest.fn(),
+  needsRefresh: jest.fn(),
+  getNewS3URL: jest.fn(),
 }));
 
 jest.mock('~/models', () => ({
@@ -51,20 +53,20 @@ jest.mock('~/models', () => ({
   updateUser: (...args) => mockUpdateUser(...args),
   findToken: (...args) => mockFindToken(...args),
   getFiles: (...args) => mockGetFiles(...args),
-}));
-
-jest.mock('~/db/models', () => ({
-  ConversationTag: { deleteMany: jest.fn() },
-  AgentApiKey: { deleteMany: jest.fn() },
-  Transaction: { deleteMany: jest.fn() },
-  MemoryEntry: { deleteMany: jest.fn() },
-  Assistant: { deleteMany: jest.fn() },
-  AclEntry: { deleteMany: jest.fn() },
-  Balance: { deleteMany: jest.fn() },
-  Action: { deleteMany: jest.fn() },
-  Group: { updateMany: jest.fn() },
-  Token: { deleteMany: jest.fn() },
-  User: {},
+  deleteToolCalls: (...args) => mockDeleteToolCalls(...args),
+  deleteUserAgents: (...args) => mockDeleteUserAgents(...args),
+  deleteUserPrompts: (...args) => mockDeleteUserPrompts(...args),
+  deleteTransactions: jest.fn(),
+  deleteBalances: jest.fn(),
+  deleteAllAgentApiKeys: jest.fn(),
+  deleteAssistants: jest.fn(),
+  deleteConversationTags: jest.fn(),
+  deleteAllUserMemories: jest.fn(),
+  deleteActions: jest.fn(),
+  deleteTokens: jest.fn(),
+  removeUserFromAllGroups: jest.fn(),
+  deleteAclEntries: jest.fn(),
+  getSoleOwnedResourceIds: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('~/server/services/PluginService', () => ({
@@ -91,33 +93,12 @@ jest.mock('~/server/services/Config/getCachedTools', () => ({
   invalidateCachedTools: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/S3/crud', () => ({
-  needsRefresh: jest.fn(),
-  getNewS3URL: jest.fn(),
-}));
-
 jest.mock('~/server/services/Files/process', () => ({
   processDeleteRequest: (...args) => mockProcessDeleteRequest(...args),
 }));
 
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
-}));
-
-jest.mock('~/server/services/PermissionService', () => ({
-  getSoleOwnedResourceIds: jest.fn().mockResolvedValue([]),
-}));
-
-jest.mock('~/models/ToolCall', () => ({
-  deleteToolCalls: (...args) => mockDeleteToolCalls(...args),
-}));
-
-jest.mock('~/models/Prompt', () => ({
-  deleteUserPrompts: (...args) => mockDeleteUserPrompts(...args),
-}));
-
-jest.mock('~/models/Agent', () => ({
-  deleteUserAgents: (...args) => mockDeleteUserAgents(...args),
 }));
 
 jest.mock('~/cache', () => ({

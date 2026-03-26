@@ -9,22 +9,17 @@ const { enrichRemoteAgentPrincipals, backfillRemoteAgentPermissions } = require(
 const {
   bulkUpdateResourcePermissions,
   ensureGroupPrincipalExists,
+  getResourcePermissionsMap,
+  findAccessibleResources,
   getEffectivePermissions,
   ensurePrincipalExists,
   getAvailableRoles,
-  findAccessibleResources,
-  getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
-const {
-  searchPrincipals: searchLocalPrincipals,
-  sortPrincipalsByRelevance,
-  calculateRelevanceScore,
-} = require('~/models');
 const {
   entraIdPrincipalFeatureEnabled,
   searchEntraIdPrincipals,
 } = require('~/server/services/GraphApiService');
-const { Agent, AclEntry, AccessRole, User } = require('~/db/models');
+const db = require('~/models');
 
 /**
  * Generic controller for resource permission endpoints
@@ -42,28 +37,6 @@ const validateResourceType = (resourceType) => {
     throw new Error(`Invalid resourceType: ${resourceType}. Valid types: ${validTypes.join(', ')}`);
   }
 };
-
-/**
- * Removes an agent from the favorites of specified users (fire-and-forget).
- * Both AGENT and REMOTE_AGENT resource types share the Agent collection.
- * @param {string} resourceId - The agent's MongoDB ObjectId hex string
- * @param {string[]} userIds - User ObjectId strings whose favorites should be cleaned
- */
-const removeRevokedAgentFromFavorites = (resourceId, userIds) =>
-  Agent.findOne({ _id: resourceId }, { id: 1 })
-    .lean()
-    .then((agent) => {
-      if (!agent) {
-        return;
-      }
-      return User.updateMany(
-        { _id: { $in: userIds }, 'favorites.agentId': agent.id },
-        { $pull: { favorites: { agentId: agent.id } } },
-      );
-    })
-    .catch((err) => {
-      logger.error('[removeRevokedAgentFromFavorites] Error cleaning up favorites', err);
-    });
 
 /**
  * Bulk update permissions for a resource (grant, update, remove)
@@ -184,7 +157,9 @@ const updateResourcePermissions = async (req, res) => {
       .map((p) => p.id);
 
     if (isAgentResource && revokedUserIds.length > 0) {
-      removeRevokedAgentFromFavorites(resourceId, revokedUserIds);
+      db.removeAgentFromUserFavorites(resourceId, revokedUserIds).catch((err) => {
+        logger.error('[removeRevokedAgentFromFavorites] Error cleaning up favorites', err);
+      });
     }
 
     /** @type {TUpdateResourcePermissionsResponse} */
@@ -217,8 +192,7 @@ const getResourcePermissions = async (req, res) => {
     const { resourceType, resourceId } = req.params;
     validateResourceType(resourceType);
 
-    // Use aggregation pipeline for efficient single-query data retrieval
-    const results = await AclEntry.aggregate([
+    const results = await db.aggregateAclEntries([
       // Match ACL entries for this resource
       {
         $match: {
@@ -314,7 +288,12 @@ const getResourcePermissions = async (req, res) => {
     }
 
     if (resourceType === ResourceType.REMOTE_AGENT) {
-      const enricherDeps = { AclEntry, AccessRole, logger };
+      const enricherDeps = {
+        aggregateAclEntries: db.aggregateAclEntries,
+        bulkWriteAclEntries: db.bulkWriteAclEntries,
+        findRoleByIdentifier: db.findRoleByIdentifier,
+        logger,
+      };
       const enrichResult = await enrichRemoteAgentPrincipals(enricherDeps, resourceId, principals);
       principals = enrichResult.principals;
       backfillRemoteAgentPermissions(enricherDeps, resourceId, enrichResult.entriesToBackfill);
@@ -431,7 +410,7 @@ const searchPrincipals = async (req, res) => {
       typeFilters = validTypes.length > 0 ? validTypes : null;
     }
 
-    const localResults = await searchLocalPrincipals(query.trim(), searchLimit, typeFilters);
+    const localResults = await db.searchPrincipals(query.trim(), searchLimit, typeFilters);
     let allPrincipals = [...localResults];
 
     const useEntraId = entraIdPrincipalFeatureEnabled(req.user);
@@ -487,10 +466,11 @@ const searchPrincipals = async (req, res) => {
     }
     const scoredResults = allPrincipals.map((item) => ({
       ...item,
-      _searchScore: calculateRelevanceScore(item, query.trim()),
+      _searchScore: db.calculateRelevanceScore(item, query.trim()),
     }));
 
-    const finalResults = sortPrincipalsByRelevance(scoredResults)
+    const finalResults = db
+      .sortPrincipalsByRelevance(scoredResults)
       .slice(0, searchLimit)
       .map((result) => {
         const { _searchScore, ...resultWithoutScore } = result;

@@ -211,6 +211,18 @@ const markdownCSS = `
     background-color: #21262d;
   }
 }
+
+/* Scrollbar */
+::-webkit-scrollbar { height: 0.1em; width: 0.5rem; }
+::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.1); border-radius: 9999px; }
+::-webkit-scrollbar-track { background-color: transparent; border-radius: 9999px; }
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-thumb { background-color: hsla(0,0%,100%,0.1); }
+}
+* { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.1) transparent; }
+@media (prefers-color-scheme: dark) {
+  * { scrollbar-color: hsla(0,0%,100%,0.1) transparent; }
+}
 `;
 
 /**
