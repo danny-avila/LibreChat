@@ -54,6 +54,16 @@ export class KitchenSinkStack extends cdk.Stack {
     ragApiService.connections.allowFrom(librechatService, ec2.Port.tcp(8000), "LibreChat to RAG API");
     librechatService.connections.allowFrom(lbSecurityGroup, ec2.Port.tcp(3080), "ALB to LibreChat");
     librechatService.connections.allowFrom(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(3080), "Health checks to LibreChat");
+
+    // Explicitly add egress rule to ALB security group (imported, so allowFrom doesn't add egress)
+    new ec2.CfnSecurityGroupEgress(this, "AlbToKitchenSinkEgress", {
+      groupId: lbSecurityGroup.securityGroupId,
+      ipProtocol: "tcp",
+      fromPort: 3080,
+      toPort: 3080,
+      destinationSecurityGroupId: librechatService.connections.securityGroups[0].securityGroupId,
+      description: "ALB to KitchenSink LibreChat",
+    });
   }
 
   private createCluster(vpc: ec2.IVpc): ecs.Cluster {
