@@ -29,12 +29,7 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
   getUserPrincipals: db.getUserPrincipals,
 });
 
-/**
- * Invalidate all config-related caches after an admin config mutation.
- * Clears the base config, per-principal override caches, tool caches,
- * and the endpoints config cache.
- * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
- */
+/** Deletes the ENDPOINT_CONFIG entry from CONFIG_STORE. Failures are non-critical and swallowed. */
 async function clearEndpointConfigCache() {
   try {
     const configStore = getLogStores(CacheKeys.CONFIG_STORE);
@@ -44,6 +39,12 @@ async function clearEndpointConfigCache() {
   }
 }
 
+/**
+ * Invalidate all config-related caches after an admin config mutation.
+ * Clears the base config, per-principal override caches, tool caches,
+ * and the endpoints config cache.
+ * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
+ */
 async function invalidateConfigCaches(tenantId) {
   await Promise.all([
     clearAppConfigCache(),
