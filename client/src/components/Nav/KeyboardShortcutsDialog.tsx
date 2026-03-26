@@ -13,7 +13,7 @@ type GroupedShortcuts = Record<string, Array<ShortcutDefinition & { id: string }
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="border-border-medium/80 inline-flex h-5 min-w-5 items-center justify-center rounded-md border bg-surface-secondary px-1.5 text-[11px] font-medium leading-none text-text-secondary shadow-[0_1px_0_0_rgba(0,0,0,0.06),inset_0_-0.5px_0_0_rgba(0,0,0,0.04)] dark:shadow-[0_1px_0_0_rgba(0,0,0,0.2),inset_0_-0.5px_0_0_rgba(255,255,255,0.04)]">
+    <kbd className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-md border border-border-medium bg-surface-tertiary px-1.5 text-[11px] font-medium leading-none text-text-secondary shadow-[0_1px_0_0_rgba(0,0,0,0.08)] dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-text-secondary dark:shadow-none">
       {children}
     </kbd>
   );
@@ -64,7 +64,7 @@ function KeyboardShortcutsDialog() {
     <OGDialog open={open} onOpenChange={setOpen}>
       <OGDialogContent
         showCloseButton={false}
-        className="w-[420px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border-light bg-surface-primary p-0 shadow-lg sm:w-[460px]"
+        className="w-[420px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border-light bg-surface-primary p-0 shadow-lg dark:border-white/[0.06] dark:shadow-2xl sm:w-[460px]"
       >
         <div className="flex items-center justify-between px-5 pb-0 pt-5">
           <OGDialogTitle className="text-[15px] font-semibold text-text-primary">
@@ -80,7 +80,10 @@ function KeyboardShortcutsDialog() {
           {groupEntries.map(([groupKey, shortcuts], groupIdx) => (
             <div
               key={groupKey}
-              className={cn(groupIdx > 0 && 'border-border-light/60 mt-3 border-t pt-3')}
+              className={cn(
+                groupIdx > 0 &&
+                  'border-border-light/60 mt-3 border-t pt-3 dark:border-white/[0.06]',
+              )}
             >
               <h3 className="mb-0.5 px-1 text-[11px] font-medium uppercase tracking-widest text-text-tertiary">
                 {localize(groupKey as TranslationKeys)}
@@ -96,7 +99,7 @@ function KeyboardShortcutsDialog() {
           ))}
         </div>
 
-        <div className="border-t border-border-light px-5 py-2.5">
+        <div className="border-t border-border-light px-5 py-2.5 dark:border-white/[0.06]">
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-text-tertiary">
               {localize('com_shortcut_show_shortcuts')}
