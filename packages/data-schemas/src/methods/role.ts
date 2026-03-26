@@ -5,6 +5,7 @@ import {
   permissionsSchema,
   removeNullishValues,
 } from 'librechat-data-provider';
+import type { Model } from 'mongoose';
 import type { IRole, IUser } from '~/types';
 import logger from '~/config/winston';
 
@@ -356,10 +357,18 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     if (existing) {
       throw new Error(`Role "${name}" already exists`);
     }
-    const role = await new Role({
-      ...roleData,
-      name: name.trim(),
-    }).save();
+    let role;
+    try {
+      role = await new Role({
+        ...roleData,
+        name: name.trim(),
+      }).save();
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
+        throw new Error(`Role "${name.trim()}" already exists`);
+      }
+      throw err;
+    }
     const cache = deps.getCache?.(CacheKeys.ROLES);
     if (cache) {
       await cache.set(role.name, role.toObject());
@@ -373,23 +382,38 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       throw new Error(`Cannot delete system role: ${roleName}`);
     }
     const Role = mongoose.models.Role;
-    const User = mongoose.models.User;
+    const User = mongoose.models.User as Model<IUser>;
+    await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
     const deleted = await Role.findOneAndDelete({ name: roleName }).lean();
-    if (deleted) {
-      await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
-      const cache = deps.getCache?.(CacheKeys.ROLES);
-      if (cache) {
-        await cache.set(roleName, null);
-      }
+    const cache = deps.getCache?.(CacheKeys.ROLES);
+    if (cache) {
+      await cache.set(roleName, null);
     }
     return deleted as IRole | null;
   }
 
-  async function listUsersByRole(roleName: string): Promise<IUser[]> {
-    const User = mongoose.models.User;
-    return (await User.find({ role: roleName })
-      .select('_id name email avatar createdAt')
-      .lean()) as IUser[];
+  async function updateUsersByRole(oldRole: string, newRole: string): Promise<void> {
+    const User = mongoose.models.User as Model<IUser>;
+    await User.updateMany({ role: oldRole }, { $set: { role: newRole } });
+  }
+
+  async function listUsersByRole(
+    roleName: string,
+    options?: { limit?: number; offset?: number },
+  ): Promise<IUser[]> {
+    const User = mongoose.models.User as Model<IUser>;
+    const limit = options?.limit ?? 50;
+    const offset = options?.offset ?? 0;
+    return await User.find({ role: roleName })
+      .select('_id name email avatar')
+      .skip(offset)
+      .limit(limit)
+      .lean();
+  }
+
+  async function countUsersByRole(roleName: string): Promise<number> {
+    const User = mongoose.models.User as Model<IUser>;
+    return User.countDocuments({ role: roleName });
   }
 
   return {
@@ -401,7 +425,9 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     migrateRoleSchema,
     createRoleByName,
     deleteRoleByName,
+    updateUsersByRole,
     listUsersByRole,
+    countUsersByRole,
   };
 }
 

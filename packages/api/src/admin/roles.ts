@@ -1,9 +1,11 @@
-import { logger, isValidObjectIdString } from '@librechat/data-schemas';
 import { SystemRoles } from 'librechat-data-provider';
+import { logger, isValidObjectIdString } from '@librechat/data-schemas';
 import type { IRole, IUser } from '@librechat/data-schemas';
-import type { ServerRequest } from '~/types/http';
 import type { FilterQuery } from 'mongoose';
 import type { Response } from 'express';
+import type { ServerRequest } from '~/types/http';
+
+const MAX_NAME_LENGTH = 500;
 
 interface RoleNameParams {
   name: string;
@@ -36,7 +38,12 @@ export interface AdminRolesDeps {
     fields?: string | string[] | null,
   ) => Promise<IUser | null>;
   updateUser: (userId: string, data: Partial<IUser>) => Promise<IUser | null>;
-  listUsersByRole: (roleName: string) => Promise<IUser[]>;
+  updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
+  listUsersByRole: (
+    roleName: string,
+    options?: { limit?: number; offset?: number },
+  ) => Promise<IUser[]>;
+  countUsersByRole: (roleName: string) => Promise<number>;
 }
 
 export function createAdminRolesHandlers(deps: AdminRolesDeps) {
@@ -49,7 +56,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     deleteRoleByName,
     findUser,
     updateUser,
+    updateUsersByRole,
     listUsersByRole,
+    countUsersByRole,
   } = deps;
 
   async function listRolesHandler(_req: ServerRequest, res: Response) {
@@ -86,17 +95,25 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       if (!name || typeof name !== 'string' || !name.trim()) {
         return res.status(400).json({ error: 'name is required' });
       }
+      if (name.trim().length > MAX_NAME_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
+      }
       const role = await createRoleByName({
         name: name.trim(),
         description: description ?? '',
-        permissions: permissions || {},
+        permissions: permissions ?? {},
       });
       return res.status(201).json({ role });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to create role';
       logger.error('[adminRoles] createRole error:', error);
-      const status = message.includes('already exists') || message.includes('reserved') ? 409 : 500;
-      return res.status(status).json({ error: message });
+      const is409 =
+        error instanceof Error &&
+        (error.message.startsWith('Role "') ||
+          error.message.startsWith('Cannot create role with reserved'));
+      return res.status(is409 ? 409 : 500).json({ error: message });
     }
   }
 
@@ -111,11 +128,19 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       ) {
         return res.status(400).json({ error: 'name must be a non-empty string' });
       }
-      if (
-        body.name &&
-        body.name.trim() !== name &&
-        SystemRoles[body.name.trim() as keyof typeof SystemRoles]
-      ) {
+      if (body.name !== undefined && body.name.trim().length > MAX_NAME_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
+      }
+
+      const trimmedName = body.name?.trim();
+      const isRename = trimmedName !== undefined && trimmedName !== name;
+
+      if (isRename && SystemRoles[name as keyof typeof SystemRoles]) {
+        return res.status(403).json({ error: 'Cannot rename system role' });
+      }
+      if (isRename && SystemRoles[trimmedName as keyof typeof SystemRoles]) {
         return res.status(409).json({ error: 'Cannot rename to a reserved system role name' });
       }
 
@@ -124,15 +149,30 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
+      if (isRename) {
+        const duplicate = await getRoleByName(trimmedName);
+        if (duplicate) {
+          return res.status(409).json({ error: `Role "${trimmedName}" already exists` });
+        }
+      }
+
       const updates: Partial<IRole> = {};
-      if (body.name !== undefined) {
-        updates.name = body.name;
+      if (trimmedName !== undefined) {
+        updates.name = trimmedName;
       }
       if (body.description !== undefined) {
         updates.description = body.description;
       }
 
       const role = await updateRoleByName(name, updates);
+      if (!role) {
+        return res.status(404).json({ error: 'Role not found' });
+      }
+
+      if (isRename) {
+        await updateUsersByRole(name, trimmedName);
+      }
+
       return res.status(200).json({ role });
     } catch (error) {
       logger.error('[adminRoles] updateRole error:', error);
@@ -147,7 +187,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         permissions: Record<string, Record<string, boolean>>;
       };
 
-      if (!permissions || typeof permissions !== 'object') {
+      if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) {
         return res.status(400).json({ error: 'permissions object is required' });
       }
 
@@ -193,14 +233,20 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
-      const users = await listUsersByRole(name);
+      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+      const [users, total] = await Promise.all([
+        listUsersByRole(name, { limit, offset }),
+        countUsersByRole(name),
+      ]);
       const members: AdminMember[] = users.map((u) => ({
         userId: u._id?.toString() ?? '',
         name: u.name ?? u._id?.toString() ?? '',
         email: u.email ?? '',
         avatarUrl: u.avatar,
       }));
-      return res.status(200).json({ members });
+      return res.status(200).json({ members, total, limit, offset });
     } catch (error) {
       logger.error('[adminRoles] getRoleMembers error:', error);
       return res.status(500).json({ error: 'Failed to get role members' });
@@ -242,6 +288,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       const { name, userId } = req.params as RoleMemberParams;
       if (!isValidObjectIdString(userId)) {
         return res.status(400).json({ error: 'Invalid user ID format' });
+      }
+
+      const existing = await getRoleByName(name);
+      if (!existing) {
+        return res.status(404).json({ error: 'Role not found' });
       }
 
       const user = await findUser({ _id: userId });
