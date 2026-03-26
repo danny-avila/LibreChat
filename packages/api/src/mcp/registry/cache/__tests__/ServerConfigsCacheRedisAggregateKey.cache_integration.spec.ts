@@ -245,17 +245,24 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
   });
 
   describe('local snapshot behavior', () => {
-    it('should return consistent results across rapid successive getAll calls', async () => {
+    it('should collapse repeated getAll calls into a single Redis GET within TTL', async () => {
       await cache.add('server1', mockConfig1);
       await cache.add('server2', mockConfig2);
 
-      const result1 = await cache.getAll();
-      const result2 = await cache.getAll();
-      const result3 = await cache.getAll();
+      // Prime the snapshot
+      await cache.getAll();
 
-      expect(result1).toEqual(result2);
-      expect(result2).toEqual(result3);
-      expect(Object.keys(result1).length).toBe(2);
+      // Spy on the underlying Keyv cache to count Redis calls
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cacheGetSpy = jest.spyOn((cache as any).cache, 'get');
+
+      await cache.getAll();
+      await cache.getAll();
+      await cache.getAll();
+
+      // Snapshot should be served; Redis should NOT have been called
+      expect(cacheGetSpy).not.toHaveBeenCalled();
+      cacheGetSpy.mockRestore();
     });
 
     it('should invalidate snapshot after add', async () => {
@@ -268,14 +275,15 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       expect(Object.keys(after).length).toBe(2);
     });
 
-    it('should invalidate snapshot after update', async () => {
+    it('should invalidate snapshot after update and preserve other entries', async () => {
       await cache.add('server1', mockConfig1);
-      const before = await cache.get('server1');
-      expect(before).toMatchObject(mockConfig1);
+      await cache.add('server2', mockConfig2);
+      expect((await cache.getAll()).server1).toMatchObject(mockConfig1);
 
-      await cache.update('server1', mockConfig2);
-      const after = await cache.get('server1');
-      expect(after).toMatchObject(mockConfig2);
+      await cache.update('server1', mockConfig3);
+      const after = await cache.getAll();
+      expect(after.server1).toMatchObject(mockConfig3);
+      expect(after.server2).toMatchObject(mockConfig2);
     });
 
     it('should invalidate snapshot after remove', async () => {
@@ -287,6 +295,7 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       const after = await cache.getAll();
       expect(Object.keys(after).length).toBe(1);
       expect(after.server1).toBeUndefined();
+      expect(after.server2).toMatchObject(mockConfig2);
     });
 
     it('should invalidate snapshot after reset', async () => {
@@ -295,6 +304,19 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
 
       await cache.reset();
       expect(Object.keys(await cache.getAll()).length).toBe(0);
+    });
+
+    it('should not expose uncommitted writes to concurrent readers', async () => {
+      await cache.add('server1', mockConfig1);
+
+      // Prime the snapshot
+      const snapshot = await cache.getAll();
+      expect(Object.keys(snapshot).length).toBe(1);
+
+      // Add a second server — the original snapshot reference should be unmodified
+      await cache.add('server2', mockConfig2);
+      expect(Object.keys(snapshot).length).toBe(1);
+      expect(snapshot.server2).toBeUndefined();
     });
   });
 });

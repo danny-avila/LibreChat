@@ -58,8 +58,19 @@ export class ServerConfigsCacheRedisAggregateKey
   }
 
   /**
+   * Populates the local snapshot with the committed state after a successful write.
+   * Avoids an unnecessary Redis GET on the next read by caching the known-good state.
+   */
+  private populateLocalSnapshot(data: Record<string, ParsedServerConfig>): void {
+    this.localSnapshot = data;
+    this.localSnapshotExpiry = Date.now() + ServerConfigsCacheRedisAggregateKey.LOCAL_TTL_MS;
+  }
+
+  /**
    * Serializes write operations to prevent concurrent read-modify-write races.
    * Reads (`get`, `getAll`) are not serialized — they can run concurrently.
+   * Always invalidates the local snapshot in `finally` to guarantee cleanup
+   * even when the write callback throws (e.g., Redis SET failure).
    */
   private async withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
     const previousLock = this.writeLock;
@@ -71,6 +82,7 @@ export class ServerConfigsCacheRedisAggregateKey
       await previousLock;
       return await fn();
     } finally {
+      this.invalidateLocalSnapshot();
       resolve();
     }
   }
@@ -86,7 +98,7 @@ export class ServerConfigsCacheRedisAggregateKey
       {};
 
     this.localSnapshot = result;
-    this.localSnapshotExpiry = now + ServerConfigsCacheRedisAggregateKey.LOCAL_TTL_MS;
+    this.localSnapshotExpiry = Date.now() + ServerConfigsCacheRedisAggregateKey.LOCAL_TTL_MS;
     return result;
   }
 
@@ -106,10 +118,10 @@ export class ServerConfigsCacheRedisAggregateKey
         );
       }
       const storedConfig = { ...config, updatedAt: Date.now() };
-      all[serverName] = storedConfig;
-      const success = await this.cache.set(AGGREGATE_KEY, all);
+      const newAll = { ...all, [serverName]: storedConfig };
+      const success = await this.cache.set(AGGREGATE_KEY, newAll);
       this.successCheck(`add App server "${serverName}"`, success);
-      this.invalidateLocalSnapshot();
+      this.populateLocalSnapshot(newAll);
       return { serverName, config: storedConfig };
     });
   }
@@ -124,10 +136,10 @@ export class ServerConfigsCacheRedisAggregateKey
           `Server "${serverName}" does not exist in cache. Use add() to create new configs.`,
         );
       }
-      all[serverName] = { ...config, updatedAt: Date.now() };
-      const success = await this.cache.set(AGGREGATE_KEY, all);
+      const newAll = { ...all, [serverName]: { ...config, updatedAt: Date.now() } };
+      const success = await this.cache.set(AGGREGATE_KEY, newAll);
       this.successCheck(`update App server "${serverName}"`, success);
-      this.invalidateLocalSnapshot();
+      this.populateLocalSnapshot(newAll);
     });
   }
 
@@ -139,10 +151,10 @@ export class ServerConfigsCacheRedisAggregateKey
       if (!all[serverName]) {
         throw new Error(`Failed to remove server "${serverName}" in cache.`);
       }
-      delete all[serverName];
-      const success = await this.cache.set(AGGREGATE_KEY, all);
+      const { [serverName]: _, ...newAll } = all;
+      const success = await this.cache.set(AGGREGATE_KEY, newAll);
       this.successCheck(`remove App server "${serverName}"`, success);
-      this.invalidateLocalSnapshot();
+      this.populateLocalSnapshot(newAll);
     });
   }
 
