@@ -92,7 +92,10 @@ export function createSetBalanceConfig({
   return async (req: ServerRequest, res: ServerResponse, next: NextFunction): Promise<void> => {
     try {
       const user = req.user as IUser & { _id: string | ObjectId };
-      const appConfig = await getAppConfig({ role: user?.role });
+      const appConfig = await getAppConfig({
+        role: user?.role,
+        tenantId: (user as IUser & { tenantId?: string })?.tenantId,
+      });
       const balanceConfig = getBalanceConfig(appConfig);
       if (!balanceConfig?.enabled) {
         return next();

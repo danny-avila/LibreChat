@@ -12,7 +12,7 @@ const { getAppConfig } = require('./app');
  * @param {ServerRequest} req - The Express request object.
  */
 async function loadConfigModels(req) {
-  const appConfig = await getAppConfig({ role: req.user?.role });
+  const appConfig = await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId });
   if (!appConfig) {
     return {};
   }

@@ -37,7 +37,7 @@ router.get('/', async function (req, res) {
   const ldap = getLdapConfig();
 
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId });
 
     const isOpenIdEnabled =
       !!process.env.OPENID_CLIENT_ID &&
