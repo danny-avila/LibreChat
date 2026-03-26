@@ -15,12 +15,18 @@ import { BaseRegistryCache } from './BaseRegistryCache';
  *
  * Trade-offs:
  * - `add/update/remove` use a serialized read-modify-write on the aggregate key via a
- *   promise-based mutex. This prevents concurrent writes from racing (e.g., during
- *   `Promise.allSettled` initialization of multiple servers).
+ *   promise-based mutex. This prevents concurrent writes from racing within a single
+ *   process (e.g., during `Promise.allSettled` initialization of multiple servers).
  * - The entire config map is serialized/deserialized on every operation. With typical MCP
  *   deployments (~5-50 servers), the JSON payload is small (10-50KB).
  * - Cross-instance visibility is preserved: all instances read/write the same Redis key,
  *   so reinspection results propagate automatically after readThroughCache TTL expiry.
+ *
+ * IMPORTANT: The promise-based writeLock serializes writes within a single Node.js process
+ * only. Concurrent writes from separate instances race at the Redis level (last-write-wins).
+ * This is acceptable because writes are performed exclusively by the leader during
+ * initialization via {@link MCPServersInitializer}. `reinspectServer` is manual and rare.
+ * Callers must enforce this single-writer invariant externally.
  */
 const AGGREGATE_KEY = '__all__';
 
@@ -42,7 +48,7 @@ export class ServerConfigsCacheRedisAggregateKey
    */
   private async withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
     const previousLock = this.writeLock;
-    let resolve: () => void;
+    let resolve!: () => void;
     this.writeLock = new Promise<void>((r) => {
       resolve = r;
     });
@@ -50,7 +56,7 @@ export class ServerConfigsCacheRedisAggregateKey
       await previousLock;
       return await fn();
     } finally {
-      resolve!();
+      resolve();
     }
   }
 
@@ -82,7 +88,8 @@ export class ServerConfigsCacheRedisAggregateKey
       }
       const storedConfig = { ...config, updatedAt: Date.now() };
       all[serverName] = storedConfig;
-      await this.cache.set(AGGREGATE_KEY, all);
+      const success = await this.cache.set(AGGREGATE_KEY, all);
+      this.successCheck(`add App server "${serverName}"`, success);
       return { serverName, config: storedConfig };
     });
   }
@@ -97,7 +104,8 @@ export class ServerConfigsCacheRedisAggregateKey
         );
       }
       all[serverName] = { ...config, updatedAt: Date.now() };
-      await this.cache.set(AGGREGATE_KEY, all);
+      const success = await this.cache.set(AGGREGATE_KEY, all);
+      this.successCheck(`update App server "${serverName}"`, success);
     });
   }
 
@@ -109,7 +117,20 @@ export class ServerConfigsCacheRedisAggregateKey
         throw new Error(`Failed to remove server "${serverName}" in cache.`);
       }
       delete all[serverName];
-      await this.cache.set(AGGREGATE_KEY, all);
+      const success = await this.cache.set(AGGREGATE_KEY, all);
+      this.successCheck(`remove App server "${serverName}"`, success);
     });
+  }
+
+  /**
+   * Resets the aggregate key directly instead of using SCAN-based `cache.clear()`.
+   * Only one key (`__all__`) ever exists in this namespace, so a targeted delete is
+   * more efficient and consistent with the PR's goal of eliminating SCAN operations.
+   */
+  public override async reset(): Promise<void> {
+    if (this.leaderOnly) {
+      await this.leaderCheck('reset App MCP servers cache');
+    }
+    await this.cache.delete(AGGREGATE_KEY);
   }
 }

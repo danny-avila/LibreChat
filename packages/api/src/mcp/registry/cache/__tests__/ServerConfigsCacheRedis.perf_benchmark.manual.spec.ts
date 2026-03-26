@@ -1,10 +1,7 @@
 /**
  * Performance benchmark for ServerConfigsCacheRedis.getAll()
  *
- * Requires a live Redis instance. Run with:
- *   npm run test:cache-integration:mcp
- *
- * Or directly:
+ * Requires a live Redis instance. Run manually (excluded from CI):
  *   npx jest --config packages/api/jest.config.mjs --testPathPatterns="perf_benchmark" --coverage=false
  *
  * Set env vars as needed:

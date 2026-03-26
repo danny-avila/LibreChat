@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { ParsedServerConfig } from '~/mcp/types';
+import type { ParsedServerConfig } from '~/mcp/types';
 
 describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
   let ServerConfigsCacheRedisAggregateKey: typeof import('../ServerConfigsCacheRedisAggregateKey').ServerConfigsCacheRedisAggregateKey;
@@ -199,7 +199,9 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
         } as ParsedServerConfig),
       );
 
-      await Promise.allSettled(promises);
+      const results = await Promise.allSettled(promises);
+      const failures = results.filter((r) => r.status === 'rejected');
+      expect(failures).toHaveLength(0);
 
       const result = await cache.getAll();
       expect(Object.keys(result).length).toBe(configCount);
