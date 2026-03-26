@@ -1,5 +1,5 @@
 const { CacheKeys } = require('librechat-data-provider');
-const { AppService } = require('@librechat/data-schemas');
+const { AppService, logger } = require('@librechat/data-schemas');
 const { createAppConfigService } = require('@librechat/api');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
 const loadCustomConfig = require('./loadCustomConfig');
@@ -46,12 +46,23 @@ async function clearEndpointConfigCache() {
  * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
  */
 async function invalidateConfigCaches(tenantId) {
-  await Promise.all([
+  const results = await Promise.allSettled([
     clearAppConfigCache(),
     clearOverrideCache(tenantId),
     invalidateCachedTools({ invalidateGlobal: true }),
     clearEndpointConfigCache(),
   ]);
+  const labels = [
+    'clearAppConfigCache',
+    'clearOverrideCache',
+    'invalidateCachedTools',
+    'clearEndpointConfigCache',
+  ];
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].status === 'rejected') {
+      logger.error(`[invalidateConfigCaches] ${labels[i]} failed:`, results[i].reason);
+    }
+  }
 }
 
 module.exports = {

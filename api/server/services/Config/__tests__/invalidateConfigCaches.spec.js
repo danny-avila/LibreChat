@@ -120,8 +120,18 @@ describe('invalidateConfigCaches', () => {
 
     await invalidateConfigCaches();
 
-    // All four should have been called (parallel execution via Promise.all)
+    // All four should have been called (parallel execution via Promise.allSettled)
     expect(order).toHaveLength(4);
     expect(new Set(order)).toEqual(new Set(['base', 'override', 'tools', 'endpoint']));
+  });
+
+  it('resolves even when clearAppConfigCache throws (partial failure)', async () => {
+    mockClearAppConfigCache.mockRejectedValueOnce(new Error('cache connection lost'));
+
+    await expect(invalidateConfigCaches()).resolves.not.toThrow();
+
+    // Other caches should still have been invalidated despite the failure
+    expect(mockClearOverrideCache).toHaveBeenCalledTimes(1);
+    expect(mockInvalidateCachedTools).toHaveBeenCalledWith({ invalidateGlobal: true });
   });
 });

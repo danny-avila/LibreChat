@@ -51,13 +51,17 @@ function isStrictOverrideMode(): boolean {
 }
 
 /** @internal Resets the cached strict-override flag. Exposed for test teardown only. */
+let _warnedNoTenantInStrictMode = false;
+
 export function _resetOverrideStrictCache(): void {
   _strictOverride = undefined;
+  _warnedNoTenantInStrictMode = false;
 }
 
 function overrideCacheKey(role?: string, userId?: string, tenantId?: string): string {
   const tenant = tenantId || '__default__';
-  if (!tenantId && isStrictOverrideMode()) {
+  if (!tenantId && isStrictOverrideMode() && !_warnedNoTenantInStrictMode) {
+    _warnedNoTenantInStrictMode = true;
     logger.warn(
       '[overrideCacheKey] No tenantId in strict mode — falling back to __default__. ' +
         'This likely indicates a code path that bypasses the tenant context middleware.',

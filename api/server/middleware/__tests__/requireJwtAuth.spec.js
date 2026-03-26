@@ -12,9 +12,14 @@ const { getTenantId } = require('@librechat/data-schemas');
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 
+let mockPassportError = null;
+
 jest.mock('passport', () => ({
   authenticate: jest.fn(() => {
     return (req, _res, done) => {
+      if (mockPassportError) {
+        return done(mockPassportError);
+      }
       if (req._mockUser) {
         req.user = req._mockUser;
       }
@@ -67,6 +72,22 @@ function runAuth(user) {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe('requireJwtAuth tenant context chaining', () => {
+  afterEach(() => {
+    mockPassportError = null;
+  });
+
+  it('forwards passport errors to next() without entering tenant middleware', async () => {
+    mockPassportError = new Error('JWT signature invalid');
+    const req = mockReq(undefined);
+    const res = mockRes();
+    const err = await new Promise((resolve) => {
+      requireJwtAuth(req, res, (e) => resolve(e));
+    });
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe('JWT signature invalid');
+    expect(getTenantId()).toBeUndefined();
+  });
+
   it('sets ALS tenant context after passport auth succeeds', async () => {
     const tenantId = await runAuth({ tenantId: 'tenant-abc', role: 'user' });
     expect(tenantId).toBe('tenant-abc');
