@@ -15,6 +15,8 @@ import type { ServerRequest } from '~/types/http';
 
 type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
 
+const VALID_GROUP_SOURCES: ReadonlySet<string> = new Set(['local', 'entra']);
+
 interface GroupIdParams {
   id: string;
 }
@@ -63,7 +65,10 @@ export interface AdminGroupsDeps {
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
   ) => Promise<IConfig | null>;
-  deleteAclEntries: (filter: Record<string, unknown>) => Promise<DeleteResult>;
+  deleteAclEntries: (filter: {
+    principalType: PrincipalType;
+    principalId: string;
+  }) => Promise<DeleteResult>;
   deleteGrantsForPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -90,8 +95,8 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
     try {
       const { search, source } = req.query as { search?: string; source?: string };
       const filter: GroupListFilter = {};
-      if (source === 'local' || source === 'entra') {
-        filter.source = source;
+      if (source && VALID_GROUP_SOURCES.has(source)) {
+        filter.source = source as IGroup['source'];
       }
       if (search) {
         filter.search = search;
@@ -137,6 +142,13 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         for (const user of users) {
           const uid = user._id?.toString() ?? '';
           idMap.set(uid, user.idOnTheSource || uid);
+        }
+        const unmapped = objectIds.filter((oid) => !idMap.has(oid));
+        if (unmapped.length > 0) {
+          logger.error(
+            '[adminGroups] createGroup: memberIds contain unknown user ObjectIds:',
+            unmapped,
+          );
         }
         memberIds = rawIds.map((id) => idMap.get(id) || id);
       }
@@ -217,11 +229,15 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (!deleted) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      await Promise.all([
-        deleteConfig(PrincipalType.GROUP, id),
-        deleteAclEntries({ principalType: PrincipalType.GROUP, principalId: id }),
-        deleteGrantsForPrincipal(PrincipalType.GROUP, id),
-      ]);
+      try {
+        await Promise.all([
+          deleteConfig(PrincipalType.GROUP, id),
+          deleteAclEntries({ principalType: PrincipalType.GROUP, principalId: id }),
+          deleteGrantsForPrincipal(PrincipalType.GROUP, id),
+        ]);
+      } catch (cleanupError) {
+        logger.error('[adminGroups] cascade cleanup failed for group:', id, cleanupError);
+      }
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminGroups] deleteGroup error:', error);
@@ -330,11 +346,23 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       }
 
       if (isValidObjectIdString(userId)) {
-        const { group } = await removeUserFromGroup(userId, id);
-        if (!group) {
-          return res.status(404).json({ error: 'Group not found' });
+        try {
+          const { group } = await removeUserFromGroup(userId, id);
+          if (!group) {
+            return res.status(404).json({ error: 'Group not found' });
+          }
+          return res.status(200).json({ success: true });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '';
+          if (msg === 'User not found' || msg.startsWith('User not found:')) {
+            const group = await removeMemberById(id, userId);
+            if (!group) {
+              return res.status(404).json({ error: 'Group not found' });
+            }
+            return res.status(200).json({ success: true });
+          }
+          throw err;
         }
-        return res.status(200).json({ success: true });
       }
 
       const group = await removeMemberById(id, userId);
@@ -343,11 +371,6 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       }
       return res.status(200).json({ success: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      const isNotFound = message === 'User not found' || message.startsWith('User not found:');
-      if (isNotFound) {
-        return res.status(404).json({ error: 'User not found' });
-      }
       logger.error('[adminGroups] removeGroupMember error:', error);
       return res.status(500).json({ error: 'Failed to remove member' });
     }

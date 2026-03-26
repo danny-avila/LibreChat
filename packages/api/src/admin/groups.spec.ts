@@ -230,6 +230,28 @@ describe('createAdminGroupsHandlers', () => {
       );
     });
 
+    it('logs warning when memberIds contain non-existent user ObjectIds', async () => {
+      const { logger } = jest.requireMock('@librechat/data-schemas');
+      const unknownId = new Types.ObjectId().toString();
+      const group = mockGroup();
+      const deps = createDeps({
+        createGroup: jest.fn().mockResolvedValue(group),
+        findUsers: jest.fn().mockResolvedValue([]),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = createReqRes({
+        body: { name: 'With Unknown', memberIds: [unknownId] },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+      expect(logger.error).toHaveBeenCalledWith(
+        '[adminGroups] createGroup: memberIds contain unknown user ObjectIds:',
+        [unknownId],
+      );
+    });
+
     it('passes idOnTheSource when provided', async () => {
       const group = mockGroup();
       const deps = createDeps({ createGroup: jest.fn().mockResolvedValue(group) });
@@ -467,6 +489,20 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith({ error: 'Failed to delete group' });
+    });
+
+    it('returns 200 even when cascade cleanup fails', async () => {
+      const deps = createDeps({
+        deleteGroup: jest.fn().mockResolvedValue(mockGroup()),
+        deleteAclEntries: jest.fn().mockRejectedValue(new Error('cleanup failed')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
     });
 
     it('cleans up Config, AclEntry, and SystemGrant on group delete', async () => {
@@ -860,6 +896,24 @@ describe('createAdminGroupsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
     });
 
+    it('falls back to removeMemberById when ObjectId userId not found as user', async () => {
+      const deps = createDeps({
+        removeUserFromGroup: jest.fn().mockRejectedValue(new Error('User not found')),
+        removeMemberById: jest.fn().mockResolvedValue(mockGroup()),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId, userId: validUserId },
+      });
+
+      await handlers.removeGroupMember(req, res);
+
+      expect(deps.removeUserFromGroup).toHaveBeenCalledWith(validUserId, validId);
+      expect(deps.removeMemberById).toHaveBeenCalledWith(validId, validUserId);
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
     it('returns 404 when removeUserFromGroup returns null group', async () => {
       const deps = createDeps({
         removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: null }),
@@ -875,9 +929,10 @@ describe('createAdminGroupsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
     });
 
-    it('returns 404 for "User not found" error', async () => {
+    it('returns 404 when fallback removeMemberById also returns null', async () => {
       const deps = createDeps({
         removeUserFromGroup: jest.fn().mockRejectedValue(new Error('User not found')),
+        removeMemberById: jest.fn().mockResolvedValue(null),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -887,7 +942,7 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.removeGroupMember(req, res);
 
       expect(status).toHaveBeenCalledWith(404);
-      expect(json).toHaveBeenCalledWith({ error: 'User not found' });
+      expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
     });
 
     it('returns 500 for unrelated errors', async () => {
