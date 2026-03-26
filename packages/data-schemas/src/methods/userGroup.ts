@@ -245,11 +245,13 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @returns Array of principal objects with type and id
    */
   /**
-   * TODO(#12091): This method has no tenantId parameter — it returns ALL group
-   * memberships for a user regardless of tenant. In multi-tenant mode, group
-   * principals from other tenants will be included in capability checks, which
-   * could grant cross-tenant capabilities. Add tenantId filtering here when
-   * tenant isolation is activated.
+   * Tenant filtering for group memberships is handled automatically by the
+   * `applyTenantIsolation` Mongoose plugin on the Group schema. When the
+   * `tenantContextMiddleware` sets the ALS context for the current request,
+   * `getUserGroups()` → `findGroupsByMemberId()` queries are scoped to the
+   * requesting tenant. No explicit tenantId parameter is needed here.
+   *
+   * Ref: #12091 (resolved by tenant context middleware)
    */
   async function getUserPrincipals(
     params: {
