@@ -2,7 +2,7 @@ import type Keyv from 'keyv';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { BaseRegistryCache } from './BaseRegistryCache';
-import { standardCache } from '~/cache';
+import { cacheConfig, standardCache } from '~/cache';
 
 /**
  * Redis-backed MCP server configs cache that stores all entries under a single aggregate key.
@@ -45,7 +45,6 @@ export class ServerConfigsCacheRedisAggregateKey
    */
   private localSnapshot: Record<string, ParsedServerConfig> | null = null;
   private localSnapshotExpiry = 0;
-  private static readonly LOCAL_TTL_MS = 5_000;
 
   constructor(namespace: string, leaderOnly: boolean) {
     super(leaderOnly);
@@ -79,17 +78,22 @@ export class ServerConfigsCacheRedisAggregateKey
   }
 
   public async getAll(): Promise<Record<string, ParsedServerConfig>> {
-    const now = Date.now();
-    if (this.localSnapshot !== null && now < this.localSnapshotExpiry) {
-      return this.localSnapshot;
+    const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
+    if (ttl > 0) {
+      const now = Date.now();
+      if (this.localSnapshot !== null && now < this.localSnapshotExpiry) {
+        return this.localSnapshot;
+      }
     }
 
     const result =
       ((await this.cache.get(AGGREGATE_KEY)) as Record<string, ParsedServerConfig> | undefined) ??
       {};
 
-    this.localSnapshot = result;
-    this.localSnapshotExpiry = Date.now() + ServerConfigsCacheRedisAggregateKey.LOCAL_TTL_MS;
+    if (ttl > 0) {
+      this.localSnapshot = result;
+      this.localSnapshotExpiry = Date.now() + ttl;
+    }
     return result;
   }
 
