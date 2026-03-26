@@ -13,6 +13,12 @@ interface CacheStore {
   get: (key: string) => Promise<unknown>;
   set: (key: string, value: unknown, ttl?: number) => Promise<unknown>;
   delete: (key: string) => Promise<boolean>;
+  /** Keyv options — used for key enumeration when clearing override caches. */
+  opts?: {
+    store?: {
+      keys?: () => IterableIterator<string>;
+    };
+  };
 }
 
 export interface AppConfigServiceDeps {
@@ -41,6 +47,12 @@ export interface AppConfigServiceDeps {
 
 function overrideCacheKey(role?: string, userId?: string, tenantId?: string): string {
   const tenant = tenantId || '__default__';
+  if (!tenantId && process.env.TENANT_ISOLATION_STRICT === 'true') {
+    logger.warn(
+      '[overrideCacheKey] No tenantId in strict mode — falling back to __default__. ' +
+        'This likely indicates a code path that bypasses the tenant context middleware.',
+    );
+  }
   if (userId && role) {
     return `_OVERRIDE_:${tenant}:${role}:${userId}`;
   }
@@ -146,9 +158,32 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
     await cache.delete(BASE_CONFIG_KEY);
   }
 
+  /**
+   * Clear per-principal override caches. When `tenantId` is provided, only caches
+   * matching `_OVERRIDE_:${tenantId}:*` are deleted. When omitted, ALL override
+   * caches are cleared.
+   */
+  async function clearOverrideCache(tenantId?: string): Promise<void> {
+    const store = (cache as CacheStore).opts?.store;
+    if (!store || typeof store.keys !== 'function') {
+      return;
+    }
+    const prefix = tenantId ? `_OVERRIDE_:${tenantId}:` : '_OVERRIDE_:';
+    const keys = Array.from(store.keys());
+    const toDelete = keys.filter((key) => key.includes(prefix));
+    if (toDelete.length > 0) {
+      await Promise.all(toDelete.map((key) => cache.delete(key)));
+      logger.info(
+        `[clearOverrideCache] Cleared ${toDelete.length} override cache entries` +
+          (tenantId ? ` for tenant ${tenantId}` : ''),
+      );
+    }
+  }
+
   return {
     getAppConfig,
     clearAppConfigCache,
+    clearOverrideCache,
   };
 }
 

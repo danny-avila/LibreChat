@@ -20,7 +20,9 @@ const loadBaseConfig = async () => {
   return AppService({ config, paths, systemTools });
 };
 
-const { getAppConfig, clearAppConfigCache } = createAppConfigService({
+const { invalidateCachedTools } = require('./getCachedTools');
+
+const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfigService({
   loadBaseConfig,
   setCachedTools,
   getCache: getLogStores,
@@ -29,7 +31,27 @@ const { getAppConfig, clearAppConfigCache } = createAppConfigService({
   getUserPrincipals: db.getUserPrincipals,
 });
 
+/**
+ * Invalidate all config-related caches after an admin config mutation.
+ * Clears the base config, per-principal override caches, tool caches,
+ * and the endpoints config cache.
+ * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
+ */
+async function invalidateConfigCaches(tenantId) {
+  await clearAppConfigCache();
+  await clearOverrideCache(tenantId);
+  await invalidateCachedTools({ invalidateGlobal: true });
+  try {
+    const configStore = getLogStores(CacheKeys.CONFIG_STORE);
+    await configStore.delete(CacheKeys.ENDPOINT_CONFIG);
+  } catch {
+    // CONFIG_STORE or ENDPOINT_CONFIG may not exist — not critical
+  }
+}
+
 module.exports = {
   getAppConfig,
   clearAppConfigCache,
+  clearOverrideCache,
+  invalidateConfigCaches,
 };

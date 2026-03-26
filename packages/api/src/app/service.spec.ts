@@ -12,6 +12,8 @@ function createMockCache() {
       store.delete(key);
       return Promise.resolve(true);
     }),
+    /** Mimic Keyv's opts.store structure for key enumeration in clearOverrideCache */
+    opts: { store: { keys: () => store.keys() } },
     _store: store,
   };
 }
@@ -239,6 +241,62 @@ describe('createAppConfigService', () => {
       await clearAppConfigCache();
       await getAppConfig();
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('clearOverrideCache', () => {
+    it('clears all override caches when no tenantId is provided', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+      });
+      const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
+
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-b' });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+
+      await clearOverrideCache();
+
+      // After clearing, both tenants should re-query DB
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-b' });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(4);
+    });
+
+    it('clears only specified tenant override caches', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+      });
+      const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
+
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-b' });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+
+      await clearOverrideCache('tenant-a');
+
+      // tenant-a should re-query, tenant-b should be cached
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-b' });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not clear base config', async () => {
+      const deps = createDeps();
+      const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
+
+      await getAppConfig();
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+
+      await clearOverrideCache();
+
+      await getAppConfig();
+      // Base config should still be cached
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
     });
   });
 });
