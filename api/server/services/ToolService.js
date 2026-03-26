@@ -19,6 +19,7 @@ const {
   buildWebSearchContext,
   buildImageToolContext,
   buildToolClassification,
+  buildOAuthToolCallName,
 } = require('@librechat/api');
 const {
   Time,
@@ -521,7 +522,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       const stepId = 'step_oauth_login_' + serverName;
       const toolCall = {
         id: flowId,
-        name: serverName,
+        name: buildOAuthToolCallName(serverName),
         type: 'tool_call_chunk',
       };
 
