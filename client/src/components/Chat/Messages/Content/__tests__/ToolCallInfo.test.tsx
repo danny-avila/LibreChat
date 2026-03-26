@@ -25,7 +25,7 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('~/Providers', () => ({
-  useOptionalMessagesOperations: () => ({
+  useMessagesOperations: () => ({
     ask: jest.fn(),
   }),
 }));

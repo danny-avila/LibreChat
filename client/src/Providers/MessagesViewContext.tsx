@@ -140,34 +140,42 @@ export function useMessagesOperations() {
   );
 }
 
-const noopAsync = () => Promise.resolve();
-const noopReturn = () => [];
-const noop = () => {
-  /* noop */
-};
+const noop = () => undefined;
 
-/** Hook for components that need message operations but may render outside MessagesViewProvider (e.g. search route) */
+/**
+ * Hook for components that need message operations but may render outside MessagesViewProvider
+ * (e.g. the /search route). Returns no-op stubs when the provider is absent — UI actions will
+ * be silently discarded rather than crashing.
+ */
 export function useOptionalMessagesOperations() {
   const context = useContext(MessagesViewContext);
+  const ask = context?.ask;
+  const regenerate = context?.regenerate;
+  const handleContinue = context?.handleContinue;
+  const getMessages = context?.getMessages;
+  const setMessages = context?.setMessages;
   return useMemo(
-    () =>
-      context
-        ? {
-            ask: context.ask,
-            regenerate: context.regenerate,
-            handleContinue: context.handleContinue,
-            getMessages: context.getMessages,
-            setMessages: context.setMessages,
-          }
-        : {
-            ask: noopAsync as MessagesViewContextValue['ask'],
-            regenerate: noopAsync as MessagesViewContextValue['regenerate'],
-            handleContinue: noopAsync as MessagesViewContextValue['handleContinue'],
-            getMessages: noopReturn as MessagesViewContextValue['getMessages'],
-            setMessages: noop as MessagesViewContextValue['setMessages'],
-          },
-    [context],
+    () => ({
+      ask: ask ?? (noop as unknown as MessagesViewContextValue['ask']),
+      regenerate: regenerate ?? (noop as unknown as MessagesViewContextValue['regenerate']),
+      handleContinue:
+        handleContinue ?? (noop as unknown as MessagesViewContextValue['handleContinue']),
+      getMessages: getMessages ?? (noop as unknown as MessagesViewContextValue['getMessages']),
+      setMessages: setMessages ?? (noop as unknown as MessagesViewContextValue['setMessages']),
+    }),
+    [ask, regenerate, handleContinue, getMessages, setMessages],
   );
+}
+
+/**
+ * Hook for components that need conversation data but may render outside MessagesViewProvider
+ * (e.g. the /search route). Returns `undefined` for both fields when the provider is absent.
+ */
+export function useOptionalMessagesConversation() {
+  const context = useContext(MessagesViewContext);
+  const conversation = context?.conversation;
+  const conversationId = context?.conversationId;
+  return useMemo(() => ({ conversation, conversationId }), [conversation, conversationId]);
 }
 
 /** Hook for components that only need message state */
