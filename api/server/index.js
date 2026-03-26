@@ -21,7 +21,6 @@ const {
   createStreamServices,
   initializeFileStorage,
   updateInterfacePermissions,
-  tenantContextMiddleware,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -137,9 +136,6 @@ const startServer = async () => {
 
   /* Per-request capability cache — must be registered before any route that calls hasCapability */
   app.use(capabilityContextMiddleware);
-
-  /* Per-request tenant context — propagates tenantId into AsyncLocalStorage for Mongoose isolation */
-  app.use(tenantContextMiddleware);
 
   app.use('/oauth', routes.oauth);
   /* API Endpoints */

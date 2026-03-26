@@ -246,12 +246,17 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    */
   /**
    * Tenant filtering for group memberships is handled automatically by the
-   * `applyTenantIsolation` Mongoose plugin on the Group schema. When the
-   * `tenantContextMiddleware` sets the ALS context for the current request,
-   * `getUserGroups()` → `findGroupsByMemberId()` queries are scoped to the
-   * requesting tenant. No explicit tenantId parameter is needed here.
+   * `applyTenantIsolation` Mongoose plugin on the Group schema. The
+   * `tenantContextMiddleware` (chained by `requireJwtAuth` after passport auth)
+   * sets the ALS context, so `getUserGroups()` → `findGroupsByMemberId()` queries
+   * are scoped to the requesting tenant. No explicit tenantId parameter is needed.
    *
-   * Ref: #12091 (resolved by tenant context middleware)
+   * IMPORTANT: This relies on the ALS tenant context being active. If this
+   * function is called outside a request context (e.g. startup, background jobs),
+   * group queries will be unscoped. In strict mode, the Mongoose plugin will
+   * reject such queries.
+   *
+   * Ref: #12091 (resolved by tenant context middleware in requireJwtAuth)
    */
   async function getUserPrincipals(
     params: {

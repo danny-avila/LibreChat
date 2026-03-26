@@ -1,4 +1,6 @@
 import { getTenantId } from '@librechat/data-schemas';
+// Import directly from source file — _resetTenantMiddlewareStrictCache is intentionally
+// excluded from the public barrel export (index.ts).
 import { tenantContextMiddleware, _resetTenantMiddlewareStrictCache } from '../tenant';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';

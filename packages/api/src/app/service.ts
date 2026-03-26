@@ -189,11 +189,19 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
   async function clearOverrideCache(tenantId?: string): Promise<void> {
     const store = (cache as CacheStore).opts?.store;
     if (!store || typeof store.keys !== 'function') {
+      logger.warn(
+        '[clearOverrideCache] Cache store does not support key enumeration (e.g. Redis). ' +
+          'Override caches will not be cleared — they will expire naturally via TTL.',
+      );
       return;
     }
     const prefix = tenantId ? `_OVERRIDE_:${tenantId}:` : '_OVERRIDE_:';
-    const keys = Array.from(store.keys());
-    const toDelete = keys.filter((key) => key.includes(prefix));
+    const toDelete: string[] = [];
+    for (const key of store.keys()) {
+      if (key.startsWith(prefix)) {
+        toDelete.push(key);
+      }
+    }
     if (toDelete.length > 0) {
       await Promise.all(toDelete.map((key) => cache.delete(key)));
       logger.info(
