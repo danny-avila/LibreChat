@@ -143,6 +143,7 @@ export default function useSideNavLinks({
       });
     }
 
+    /* NJ: Don't show the "attach files" UI, yet
     links.push({
       title: 'com_sidepanel_attach_files',
       label: '',
@@ -150,6 +151,7 @@ export default function useSideNavLinks({
       id: 'files',
       Component: FilesPanel,
     });
+    */
 
     if (hasAccessToBookmarks) {
       links.push({
