@@ -57,6 +57,11 @@ const isEditingBadges = atom<boolean>({
   default: false,
 });
 
+const showShortcutsDialog = atom<boolean>({
+  key: 'showShortcutsDialog',
+  default: false,
+});
+
 const chatBadges = atomWithLocalStorage<Pick<BadgeItem, 'id'>[]>('chatBadges', [
   // When adding new badges, make sure to add them to useChatBadges.ts as well and add them as last item
   // DO NOT CHANGE THE ORDER OF THE BADGES ALREADY IN THE ARRAY
@@ -70,5 +75,6 @@ export default {
   conversationAttachmentsSelector,
   queriesEnabled,
   isEditingBadges,
+  showShortcutsDialog,
   chatBadges,
 };
