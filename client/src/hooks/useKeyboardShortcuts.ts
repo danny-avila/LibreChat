@@ -1,7 +1,10 @@
 import { useEffect, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
+import { useArchiveConvoMutation, useDeleteConversationMutation } from '~/data-provider';
 import { mainTextareaId } from '~/common';
 import { clearMessagesCache } from '~/utils';
 import useNewConvo from './useNewConvo';
@@ -131,13 +134,22 @@ export const shortcutDefinitions: Record<string, ShortcutDefinition> = {
   },
 };
 
+function getMainScrollContainer(): Element | null {
+  return document.querySelector('main[role="main"]');
+}
+
 export default function useKeyboardShortcuts() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
+  const { conversationId: currentConvoId } = useParams();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const [sidebarExpanded, setSidebarExpanded] = useRecoilState(store.sidebarExpanded);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
-  const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
+  const setIsTemporary = useSetRecoilState(store.isTemporary);
+
+  const archiveMutation = useArchiveConvoMutation();
+  const deleteMutation = useDeleteConversationMutation();
 
   const handleNewChat = useCallback(() => {
     clearMessagesCache(queryClient, conversation?.conversationId);
@@ -154,29 +166,30 @@ export default function useKeyboardShortcuts() {
     setSidebarExpanded((prev) => !prev);
   }, [setSidebarExpanded]);
 
+  const handleToggleRightSidebar = useCallback(() => {
+    const btn = document.querySelector<HTMLButtonElement>('[data-testid="parameters-button"]');
+    btn?.click();
+  }, []);
+
   const handleOpenModelSelector = useCallback(() => {
-    const modelButton = document.querySelector<HTMLButtonElement>(
-      '[data-testid="model-selector-button"]',
-    );
-    if (modelButton) {
-      modelButton.click();
-    }
+    const btn = document.querySelector<HTMLButtonElement>('[data-testid="model-selector-button"]');
+    btn?.click();
   }, []);
 
   const handleFocusSearch = useCallback(() => {
     if (!sidebarExpanded) {
       setSidebarExpanded(true);
       setTimeout(() => {
-        const searchInput = document.querySelector<HTMLInputElement>(
+        const input = document.querySelector<HTMLInputElement>(
           'input[aria-label][placeholder*="earch"]',
         );
-        searchInput?.focus();
+        input?.focus();
       }, 350);
     } else {
-      const searchInput = document.querySelector<HTMLInputElement>(
+      const input = document.querySelector<HTMLInputElement>(
         'input[aria-label][placeholder*="earch"]',
       );
-      searchInput?.focus();
+      input?.focus();
     }
   }, [sidebarExpanded, setSidebarExpanded]);
 
@@ -185,11 +198,11 @@ export default function useKeyboardShortcuts() {
   }, [setShowShortcutsDialog]);
 
   const handleCopyLastResponse = useCallback(() => {
-    const agentTurns = document.querySelectorAll('.agent-turn');
-    if (agentTurns.length === 0) {
+    const turns = document.querySelectorAll('.agent-turn');
+    if (turns.length === 0) {
       return;
     }
-    const last = agentTurns[agentTurns.length - 1];
+    const last = turns[turns.length - 1];
     const markdown = last.querySelector('.markdown');
     const text = (markdown ?? last).textContent ?? '';
     if (text.trim()) {
@@ -197,15 +210,51 @@ export default function useKeyboardShortcuts() {
     }
   }, []);
 
-  const handleStopGenerating = useCallback(() => {
-    const stopButton = document.querySelector<HTMLButtonElement>('button[aria-label*="top"]');
-    if (stopButton) {
-      stopButton.click();
+  const handleCopyLastCode = useCallback(() => {
+    const blocks = document.querySelectorAll('.agent-turn pre code');
+    if (blocks.length === 0) {
+      return;
+    }
+    const last = blocks[blocks.length - 1];
+    const text = last.textContent ?? '';
+    if (text.trim()) {
+      navigator.clipboard.writeText(text.trim());
     }
   }, []);
 
+  const handleStopGenerating = useCallback(() => {
+    const btn = document.querySelector<HTMLButtonElement>('[data-testid="stop-generation-button"]');
+    btn?.click();
+  }, []);
+
+  const handleRegenerateResponse = useCallback(() => {
+    const btn = document.querySelector<HTMLButtonElement>(
+      '[data-testid="regenerate-generation-button"]',
+    );
+    btn?.click();
+  }, []);
+
+  const handleEditLastMessage = useCallback(() => {
+    const userTurns = document.querySelectorAll('.user-turn');
+    if (userTurns.length === 0) {
+      return;
+    }
+    const last = userTurns[userTurns.length - 1];
+    const editBtn = last.querySelector<HTMLButtonElement>('button[id^="edit-"]');
+    editBtn?.click();
+  }, []);
+
+  const handleScrollToTop = useCallback(() => {
+    const container = getMainScrollContainer();
+    if (container) {
+      container.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
   const handleScrollToBottom = useCallback(() => {
-    const container = document.querySelector('[class*="overflow-y-auto"][class*="flex-col"]');
+    const container = getMainScrollContainer();
     if (container) {
       container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
       return;
@@ -214,141 +263,216 @@ export default function useKeyboardShortcuts() {
   }, []);
 
   const handleOpenSettings = useCallback(() => {
-    const settingsButton = document.querySelector<HTMLElement>('[data-testid="nav-user"]');
-    if (settingsButton) {
-      settingsButton.click();
-      setTimeout(() => {
-        const settingsItem = document.querySelector<HTMLElement>(
-          '[role="menuitem"][class*="select-item"]',
-        );
-        const items = document.querySelectorAll<HTMLElement>('[role="menuitem"]');
-        for (const item of items) {
-          if (item.textContent?.includes('Settings') && !item.textContent?.includes('Keyboard')) {
-            item.click();
-            return;
-          }
-        }
-      }, 150);
+    const btn = document.querySelector<HTMLElement>('[data-testid="nav-user"]');
+    if (!btn) {
+      return;
     }
+    btn.click();
+    setTimeout(() => {
+      const items = document.querySelectorAll<HTMLElement>('[role="menuitem"]');
+      for (const item of items) {
+        if (item.textContent?.includes('Settings') && !item.textContent?.includes('Keyboard')) {
+          item.click();
+          return;
+        }
+      }
+    }, 150);
   }, []);
 
   const handleToggleTemporaryChat = useCallback(() => {
     setIsTemporary((prev) => !prev);
   }, [setIsTemporary]);
 
-  const handleCopyLastCode = useCallback(() => {
-    const codeBlocks = document.querySelectorAll('.agent-turn pre code');
-    if (codeBlocks.length === 0) {
+  const handleUploadFile = useCallback(() => {
+    const btn =
+      document.querySelector<HTMLButtonElement>('#attach-file-menu-button') ??
+      document.querySelector<HTMLButtonElement>('#attach-file');
+    btn?.click();
+  }, []);
+
+  const handleArchiveConversation = useCallback(() => {
+    const convoId = conversation?.conversationId;
+    if (!convoId || convoId === 'new') {
       return;
     }
-    const last = codeBlocks[codeBlocks.length - 1];
-    const text = last.textContent ?? '';
-    if (text.trim()) {
-      navigator.clipboard.writeText(text.trim());
+    archiveMutation.mutate(
+      { conversationId: convoId, isArchived: true },
+      {
+        onSuccess: () => {
+          if (currentConvoId === convoId || currentConvoId === 'new') {
+            newConversation();
+            navigate('/c/new', { replace: true });
+          }
+        },
+      },
+    );
+  }, [conversation?.conversationId, currentConvoId, archiveMutation, newConversation, navigate]);
+
+  const handleDeleteConversation = useCallback(() => {
+    const convoId = conversation?.conversationId;
+    if (!convoId || convoId === 'new') {
+      return;
     }
-  }, []);
+    const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, convoId]);
+    const lastMessage = messages?.[messages.length - 1];
+    deleteMutation.mutate(
+      {
+        conversationId: convoId,
+        thread_id: lastMessage?.thread_id,
+        endpoint: lastMessage?.endpoint,
+        source: 'keyboard',
+      },
+      {
+        onSuccess: () => {
+          if (currentConvoId === convoId || currentConvoId === 'new') {
+            newConversation();
+            navigate('/c/new', { replace: true });
+          }
+        },
+      },
+    );
+  }, [
+    conversation?.conversationId,
+    currentConvoId,
+    queryClient,
+    deleteMutation,
+    newConversation,
+    navigate,
+  ]);
 
   const handler = useCallback(
     (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      const isEditing =
+        tagName === 'INPUT' || tagName === 'TEXTAREA' || target?.isContentEditable === true;
+
       const mod = isMac ? e.metaKey : e.ctrlKey;
 
-      // Cmd/Ctrl + Shift + O → New Chat
-      if (mod && e.shiftKey && e.key === 'O') {
-        e.preventDefault();
-        handleNewChat();
-        return;
-      }
-
-      // Shift + Escape → Focus Chat Input
+      // Shift + Escape → Focus Chat Input (works anywhere)
       if (e.shiftKey && e.key === 'Escape') {
         e.preventDefault();
         handleFocusChatInput();
         return;
       }
 
-      // Cmd/Ctrl + Shift + S → Toggle Sidebar
-      if (mod && e.shiftKey && (e.key === 'S' || e.key === 's')) {
-        e.preventDefault();
-        handleToggleSidebar();
+      // All remaining shortcuts require mod key
+      if (!mod) {
         return;
       }
 
-      // Cmd/Ctrl + Shift + M → Open Model Selector
-      if (mod && e.shiftKey && e.key === 'M') {
-        e.preventDefault();
-        handleOpenModelSelector();
+      // Non-shift shortcuts
+      if (!e.shiftKey) {
+        // Cmd/Ctrl + / → Focus Search
+        if (e.key === '/') {
+          e.preventDefault();
+          handleFocusSearch();
+        }
         return;
       }
 
-      // Cmd/Ctrl + / → Focus Search
-      if (mod && !e.shiftKey && e.key === '/') {
-        e.preventDefault();
-        handleFocusSearch();
-        return;
-      }
-
-      // Cmd/Ctrl + Shift + ; → Copy Last Response
-      if (mod && e.shiftKey && (e.key === ':' || e.key === ';')) {
-        e.preventDefault();
-        handleCopyLastResponse();
-        return;
-      }
-
-      // Cmd/Ctrl + Shift + X → Stop Generating
-      if (mod && e.shiftKey && e.key === 'X') {
-        e.preventDefault();
-        handleStopGenerating();
-        return;
-      }
-
-      // Cmd/Ctrl + Shift + ↓ → Scroll to Bottom
-      if (mod && e.shiftKey && e.key === 'ArrowDown') {
-        e.preventDefault();
-        handleScrollToBottom();
-        return;
-      }
-
-      // Cmd/Ctrl + Shift + , → Open Settings
-      if (mod && e.shiftKey && (e.key === '<' || e.key === ',')) {
-        e.preventDefault();
-        handleOpenSettings();
-        return;
-      }
-
-      // Cmd/Ctrl + Shift + T → Toggle Temporary Chat
-      if (mod && e.shiftKey && e.key === 'T') {
-        e.preventDefault();
-        handleToggleTemporaryChat();
-        return;
-      }
-
-      // Cmd/Ctrl + Shift + K → Copy Last Code Block
-      if (mod && e.shiftKey && e.key === 'K') {
-        e.preventDefault();
-        handleCopyLastCode();
-        return;
-      }
-
-      // Cmd/Ctrl + Shift + / (Cmd/Ctrl + ?) → Show Keyboard Shortcuts
-      if (mod && e.shiftKey && e.key === '?') {
+      // Cmd/Ctrl + Shift + / (?) → Show Keyboard Shortcuts (works even when editing)
+      if (e.key === '?') {
         e.preventDefault();
         handleShowShortcuts();
         return;
+      }
+
+      // Remaining Cmd/Ctrl+Shift shortcuts should not fire when editing text
+      if (isEditing) {
+        return;
+      }
+
+      switch (e.key) {
+        case 'O':
+          e.preventDefault();
+          handleNewChat();
+          break;
+        case 'S':
+        case 's':
+          e.preventDefault();
+          handleToggleSidebar();
+          break;
+        case 'R':
+          e.preventDefault();
+          handleToggleRightSidebar();
+          break;
+        case 'M':
+          e.preventDefault();
+          handleOpenModelSelector();
+          break;
+        case ':':
+        case ';':
+          e.preventDefault();
+          handleCopyLastResponse();
+          break;
+        case 'U':
+          e.preventDefault();
+          handleUploadFile();
+          break;
+        case 'X':
+          e.preventDefault();
+          handleStopGenerating();
+          break;
+        case 'E':
+          e.preventDefault();
+          handleRegenerateResponse();
+          break;
+        case 'I':
+          e.preventDefault();
+          handleEditLastMessage();
+          break;
+        case 'K':
+          e.preventDefault();
+          handleCopyLastCode();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          handleScrollToTop();
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          handleScrollToBottom();
+          break;
+        case '<':
+        case ',':
+          e.preventDefault();
+          handleOpenSettings();
+          break;
+        case 'T':
+          e.preventDefault();
+          handleToggleTemporaryChat();
+          break;
+        case 'A':
+          e.preventDefault();
+          handleArchiveConversation();
+          break;
+        case 'Backspace':
+          e.preventDefault();
+          handleDeleteConversation();
+          break;
       }
     },
     [
       handleNewChat,
       handleFocusChatInput,
       handleToggleSidebar,
+      handleToggleRightSidebar,
       handleOpenModelSelector,
       handleFocusSearch,
       handleShowShortcuts,
       handleCopyLastResponse,
+      handleCopyLastCode,
+      handleUploadFile,
       handleStopGenerating,
+      handleRegenerateResponse,
+      handleEditLastMessage,
+      handleScrollToTop,
       handleScrollToBottom,
       handleOpenSettings,
       handleToggleTemporaryChat,
-      handleCopyLastCode,
+      handleArchiveConversation,
+      handleDeleteConversation,
     ],
   );
 
