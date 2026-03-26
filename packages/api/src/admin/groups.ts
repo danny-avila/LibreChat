@@ -20,6 +20,10 @@ const VALID_GROUP_SOURCES: ReadonlySet<string> = new Set(['local', 'entra']);
 const MAX_CREATE_MEMBER_IDS = 500;
 const MAX_SEARCH_LENGTH = 200;
 const MAX_NAME_LENGTH = 500;
+const MAX_DESCRIPTION_LENGTH = 2000;
+const MAX_EMAIL_LENGTH = 500;
+const MAX_AVATAR_LENGTH = 2000;
+const MAX_EXTERNAL_ID_LENGTH = 500;
 
 interface GroupIdParams {
   id: string;
@@ -159,6 +163,26 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (body.source && !VALID_GROUP_SOURCES.has(body.source)) {
         return res.status(400).json({ error: 'Invalid source value' });
       }
+      if (body.description && body.description.length > MAX_DESCRIPTION_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters` });
+      }
+      if (body.email && body.email.length > MAX_EMAIL_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `email must not exceed ${MAX_EMAIL_LENGTH} characters` });
+      }
+      if (body.avatar && body.avatar.length > MAX_AVATAR_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `avatar must not exceed ${MAX_AVATAR_LENGTH} characters` });
+      }
+      if (body.idOnTheSource && body.idOnTheSource.length > MAX_EXTERNAL_ID_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `idOnTheSource must not exceed ${MAX_EXTERNAL_ID_LENGTH} characters` });
+      }
 
       const rawIds = Array.isArray(body.memberIds) ? body.memberIds : [];
       if (rawIds.length > MAX_CREATE_MEMBER_IDS) {
@@ -177,7 +201,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         }
         const unmapped = objectIds.filter((oid) => !idMap.has(oid));
         if (unmapped.length > 0) {
-          logger.error(
+          logger.warn(
             '[adminGroups] createGroup: memberIds contain unknown user ObjectIds:',
             unmapped,
           );
@@ -222,6 +246,21 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         return res
           .status(400)
           .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
+      }
+      if (body.description !== undefined && body.description.length > MAX_DESCRIPTION_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters` });
+      }
+      if (body.email !== undefined && body.email.length > MAX_EMAIL_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `email must not exceed ${MAX_EMAIL_LENGTH} characters` });
+      }
+      if (body.avatar !== undefined && body.avatar.length > MAX_AVATAR_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `avatar must not exceed ${MAX_AVATAR_LENGTH} characters` });
       }
 
       const updateData: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>> = {};
@@ -391,6 +430,24 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
     }
   }
 
+  /**
+   * Attempt removal of an ObjectId-format member: first via removeUserFromGroup
+   * (which resolves the user), falling back to a raw $pull if the user record
+   * no longer exists. Returns null only when the group itself is not found.
+   */
+  async function removeObjectIdMember(groupId: string, userId: string): Promise<IGroup | null> {
+    try {
+      const { group } = await removeUserFromGroup(userId, groupId);
+      return group;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg === 'User not found' || msg.startsWith('User not found:')) {
+        return removeMemberById(groupId, userId);
+      }
+      throw err;
+    }
+  }
+
   async function removeGroupMemberHandler(req: ServerRequest, res: Response) {
     try {
       const { id, userId } = req.params as GroupMemberParams;
@@ -398,32 +455,10 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         return res.status(400).json({ error: 'Invalid group ID format' });
       }
 
-      if (isValidObjectIdString(userId)) {
-        try {
-          const { group } = await removeUserFromGroup(userId, id);
-          if (!group) {
-            return res.status(404).json({ error: 'Group not found' });
-          }
-          return res.status(200).json({ success: true });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : '';
-          if (msg === 'User not found' || msg.startsWith('User not found:')) {
-            /**
-             * Fallback: user record not found by _id. Attempt direct $pull by ObjectId string.
-             * If the group stored idOnTheSource (different from _id), this $pull won't match.
-             * In that case, use the non-ObjectId removal path with the idOnTheSource value.
-             */
-            const group = await removeMemberById(id, userId);
-            if (!group) {
-              return res.status(404).json({ error: 'Group not found' });
-            }
-            return res.status(200).json({ success: true });
-          }
-          throw err;
-        }
-      }
+      const group = isValidObjectIdString(userId)
+        ? await removeObjectIdMember(id, userId)
+        : await removeMemberById(id, userId);
 
-      const group = await removeMemberById(id, userId);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }

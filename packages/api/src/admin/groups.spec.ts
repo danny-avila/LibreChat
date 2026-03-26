@@ -1,14 +1,14 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
-import type { AdminGroupsDeps } from './groups';
 import type { IGroup, IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import type { AdminGroupsDeps } from './groups';
 import { createAdminGroupsHandlers } from './groups';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
-  logger: { error: jest.fn() },
+  logger: { error: jest.fn(), warn: jest.fn() },
 }));
 
 describe('createAdminGroupsHandlers', () => {
@@ -300,7 +300,7 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.createGroup(req, res);
 
       expect(status).toHaveBeenCalledWith(201);
-      expect(logger.error).toHaveBeenCalledWith(
+      expect(logger.warn).toHaveBeenCalledWith(
         '[adminGroups] createGroup: memberIds contain unknown user ObjectIds:',
         [unknownId],
       );
@@ -347,6 +347,66 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'name must not exceed 500 characters' });
+      expect(deps.createGroup).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when description exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'Valid', description: 'x'.repeat(2001) },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({
+        error: 'description must not exceed 2000 characters',
+      });
+      expect(deps.createGroup).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when email exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'Valid', email: 'x'.repeat(501) },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'email must not exceed 500 characters' });
+      expect(deps.createGroup).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when avatar exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'Valid', avatar: 'x'.repeat(2001) },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'avatar must not exceed 2000 characters' });
+      expect(deps.createGroup).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when idOnTheSource exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'Valid', idOnTheSource: 'x'.repeat(501) },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({
+        error: 'idOnTheSource must not exceed 500 characters',
+      });
       expect(deps.createGroup).not.toHaveBeenCalled();
     });
 
@@ -567,6 +627,53 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'name must not exceed 500 characters' });
+      expect(deps.updateGroupById).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when description exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { description: 'x'.repeat(2001) },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({
+        error: 'description must not exceed 2000 characters',
+      });
+      expect(deps.updateGroupById).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when email exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { email: 'x'.repeat(501) },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'email must not exceed 500 characters' });
+      expect(deps.updateGroupById).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when avatar exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { avatar: 'x'.repeat(2001) },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'avatar must not exceed 2000 characters' });
       expect(deps.updateGroupById).not.toHaveBeenCalled();
     });
 

@@ -736,7 +736,11 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
     const options = { new: true, ...(session ? { session } : {}) };
-    return Group.findByIdAndUpdate(groupId, { $pull: { memberIds: memberId } }, options).lean();
+    return await Group.findByIdAndUpdate(
+      groupId,
+      { $pull: { memberIds: memberId } },
+      options,
+    ).lean();
   }
 
   return {
