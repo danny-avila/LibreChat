@@ -404,7 +404,9 @@ describe('ToolCall', () => {
       expect(progressText.textContent).not.toContain('Completed oauth');
     });
 
-    it('should not override function_name when auth is absent even if func is "oauth"', () => {
+    it('should display server name even when auth is cleared (post-completion)', () => {
+      // After OAuth completes, createOAuthEnd re-emits the toolCall without auth.
+      // The display should still show the server name, not literal "oauth".
       renderWithRecoil(
         <ToolCall
           {...mockProps}
@@ -415,7 +417,8 @@ describe('ToolCall', () => {
         />,
       );
       const progressText = screen.getByTestId('progress-text');
-      expect(progressText.textContent).toContain('Completed oauth');
+      expect(progressText.textContent).toContain('Completed my-server');
+      expect(progressText.textContent).not.toContain('Completed oauth');
     });
 
     it('should fallback to auth URL redirect_uri when name lacks delimiter', () => {

@@ -68,7 +68,7 @@ export default function ToolCall({
       const parts = name.split(Constants.mcp_delimiter);
       const func = parts[0];
       const server = parts.slice(1).join(Constants.mcp_delimiter);
-      const displayName = func === 'oauth' && auth ? server : func;
+      const displayName = func === 'oauth' ? server : func;
       return {
         function_name: displayName || '',
         domain: server && (server.replaceAll(actionDomainSeparator, '.') || null),
@@ -99,7 +99,7 @@ export default function ToolCall({
       isMCPToolCall: false,
       mcpServerName: '',
     };
-  }, [name, auth, parsedAuthUrl]);
+  }, [name, parsedAuthUrl]);
 
   const toolIconType = useMemo(() => getToolIconType(name), [name]);
   const mcpIconMap = useMCPIconMap();
