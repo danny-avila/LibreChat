@@ -56,10 +56,14 @@ jobs:
         if: steps.check.outputs.count != '0'
         id: merge
         run: |
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+          echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
           if ! git merge upstream/main --no-edit; then
             echo "conflicted=true" >> "$GITHUB_OUTPUT"
+            CONFLICTED_FILES=$(git grep -l '^<<<<<<< ' | sed 's/^/  /')
             git add -A
-            git commit -m "chore: merge upstream main (conflicts need resolution)"
+            COMMIT_MSG=$(printf 'chore: merge upstream main (conflicts need resolution)\n\nConflicted files:\n%s' "$CONFLICTED_FILES")
+            git commit -m "$COMMIT_MSG"
           fi
 
       - name: Push merge branch
@@ -81,9 +85,8 @@ jobs:
           "
 
           if [ "${{ steps.merge.outputs.conflicted }}" = "true" ]; then
-            BODY="⚠️ **This merge has conflicts.** Check out the branch, resolve the conflict markers, then push to update this PR.
-
-          $BODY"
+            CONFLICT=$(printf '⚠️ **This merge has conflicts.** The branch was committed with conflict markers.\n\nTo restore mid-merge state and resolve conflicts interactively:\n```sh\ngit reset --hard HEAD^1 && git merge %s\n```' "${{ steps.merge.outputs.upstream_sha }}")
+            BODY="${CONFLICT}"$'\n\n'"${BODY}"
           fi
 
           gh pr create \
@@ -91,4 +94,5 @@ jobs:
             --base newjersey \
             --head "${{ steps.vars.outputs.branch }}" \
             --title "chore: sync upstream LibreChat main (${{ steps.vars.outputs.date }})" \
+            --label "pr-review" \
             --body "$BODY"
