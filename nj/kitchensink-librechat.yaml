@@ -19,30 +19,31 @@ interface:
   # Disable temporary chats (we need to retain data for OPRA)
   temporaryChat: false
 
-  # Since we only have limited endpoints, we disable the more elaborate model selector
-  # (Instead, we define the model selection using `modelSpecs` below)
-  modelSelect: false
-
   # We're purposefully disabling most LibreChat features (for now)
-  agents: true
-  bookmarks: true
   endpointsMenu: true
-  fileCitations: true
-  fileSearch: true
-  marketplace:
-    use: true
-  memories: true
-  multiConvo: true
+  modelSelect: true
   parameters: true
+  sidePanel: true
+  presets: true
+  prompts:
+    use: true
+    create: true
+    share: true
+    public: false
+  bookmarks: true
+  multiConvo: true
+  agents:
+    use: true
+    create: true
+    share: true
+    public: false
   peoplePicker:
     users: true
     groups: true
     roles: true
-  presets: true
-  prompts: true
-  runCode: true
-  sidePanel: true
-  webSearch: true
+  marketplace:
+    use: true
+  fileCitations: true
 
 endpoints:
   bedrock:
