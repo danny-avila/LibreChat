@@ -60,6 +60,23 @@ describe('createAppConfigService', () => {
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
     });
 
+    it('baseOnly returns YAML config without DB queries', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([
+            { priority: 10, overrides: { interface: { endpointsMenu: false } }, isActive: true },
+          ]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ baseOnly: true });
+
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+      expect(config).toEqual(deps._baseConfig);
+    });
+
     it('reloads base config when refresh is true', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);

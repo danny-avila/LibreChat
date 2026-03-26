@@ -8,7 +8,7 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -61,13 +61,10 @@ const startServer = async () => {
   app.set('trust proxy', trusted_proxy);
 
   await seedDatabase();
-  const appConfig = await runAsSystem(async () => {
-    const config = await getAppConfig();
-    initializeFileStorage(config);
-    await performStartupChecks(config);
-    await updateInterfacePermissions({ appConfig: config, getRoleByName, updateAccessPermissions });
-    return config;
-  });
+  const appConfig = await getAppConfig({ baseOnly: true });
+  initializeFileStorage(appConfig);
+  await performStartupChecks(appConfig);
+  await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -212,10 +209,8 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    await runAsSystem(async () => {
-      await initializeMCPs();
-      await initializeOAuthReconnectManager();
-    });
+    await initializeMCPs();
+    await initializeOAuthReconnectManager();
     await checkMigrations();
 
     // Configure stream services (auto-detects Redis from USE_REDIS env var)

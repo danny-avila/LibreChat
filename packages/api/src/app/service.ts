@@ -95,17 +95,10 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
   }
 
   /**
-   * Get the app configuration, optionally merged with DB overrides for the given principal.
-   *
-   * The base config (from YAML + AppService) is cached indefinitely. Per-principal merged
-   * configs are cached with a short TTL (`overrideCacheTtl`, default 60s). On cache miss,
-   * `getApplicableConfigs` queries the DB for matching overrides and merges them by priority.
+   * Ensure the YAML-derived base config is loaded and cached.
+   * Returns the `_BASE_` config (YAML + AppService). No DB queries.
    */
-  async function getAppConfig(
-    options: { role?: string; userId?: string; tenantId?: string; refresh?: boolean } = {},
-  ): Promise<AppConfig> {
-    const { role, userId, tenantId, refresh } = options;
-
+  async function ensureBaseConfig(refresh?: boolean): Promise<AppConfig> {
     let baseConfig = (await cache.get(BASE_CONFIG_KEY)) as AppConfig | undefined;
     if (!baseConfig || refresh) {
       logger.info('[getAppConfig] Loading base configuration...');
@@ -120,6 +113,36 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       }
 
       await cache.set(BASE_CONFIG_KEY, baseConfig);
+    }
+    return baseConfig;
+  }
+
+  /**
+   * Get the app configuration, optionally merged with DB overrides for the given principal.
+   *
+   * The base config (from YAML + AppService) is cached indefinitely. Per-principal merged
+   * configs are cached with a short TTL (`overrideCacheTtl`, default 60s). On cache miss,
+   * `getApplicableConfigs` queries the DB for matching overrides and merges them by priority.
+   *
+   * When `baseOnly` is true, returns the YAML-derived config without any DB queries.
+   * Use this for startup, auth strategies, and other pre-tenant code paths.
+   */
+  async function getAppConfig(
+    options: {
+      role?: string;
+      userId?: string;
+      tenantId?: string;
+      refresh?: boolean;
+      /** When true, return only the YAML-derived base config — no DB override queries. */
+      baseOnly?: boolean;
+    } = {},
+  ): Promise<AppConfig> {
+    const { role, userId, tenantId, refresh, baseOnly } = options;
+
+    const baseConfig = await ensureBaseConfig(refresh);
+
+    if (baseOnly) {
+      return baseConfig;
     }
 
     const cacheKey = overrideCacheKey(role, userId, tenantId);
