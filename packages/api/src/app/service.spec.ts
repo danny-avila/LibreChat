@@ -320,5 +320,15 @@ describe('createAppConfigService', () => {
       // Base config should still be cached
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
     });
+
+    it('does not throw when store.keys is unavailable (Redis fallback to TTL expiry)', async () => {
+      const deps = createDeps();
+      // Remove store.keys to simulate Redis-backed cache
+      deps._cache.opts = {};
+      const { clearOverrideCache } = createAppConfigService(deps);
+
+      // Should not throw — logs warning and relies on TTL expiry
+      await expect(clearOverrideCache()).resolves.toBeUndefined();
+    });
   });
 });

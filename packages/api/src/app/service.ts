@@ -198,34 +198,43 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
    * caches are cleared.
    */
   async function clearOverrideCache(tenantId?: string): Promise<void> {
-    const store = (cache as CacheStore).opts?.store;
-    if (!store || typeof store.keys !== 'function') {
-      logger.warn(
-        '[clearOverrideCache] Cache store does not support key enumeration (e.g. Redis). ' +
-          'Override caches will not be cleared — they will expire naturally via TTL.',
-      );
-      return;
-    }
-    // Keyv stores keys with a namespace prefix (e.g. "APP_CONFIG:_OVERRIDE_:...").
-    // We match on the namespaced key but delete using the un-namespaced key
-    // because Keyv.delete() auto-prepends the namespace.
     const namespace = cacheKeys.APP_CONFIG;
     const overrideSegment = tenantId ? `_OVERRIDE_:${tenantId}:` : '_OVERRIDE_:';
-    const namespacedPrefix = `${namespace}:${overrideSegment}`;
-    const toDelete: string[] = [];
-    for (const key of store.keys()) {
-      if (key.startsWith(namespacedPrefix)) {
-        // Strip namespace prefix for Keyv.delete() which re-adds it
-        toDelete.push(key.slice(namespace.length + 1));
+
+    // In-memory store — enumerate keys directly.
+    // APP_CONFIG defaults to FORCED_IN_MEMORY_CACHE_NAMESPACES, so this is the
+    // standard path. Redis SCAN is intentionally avoided here — it can cause 60s+
+    // stalls under concurrent load (see #12410). When APP_CONFIG is Redis-backed
+    // and store.keys() is unavailable, overrides expire naturally via TTL.
+    const store = (cache as CacheStore).opts?.store;
+    if (store && typeof store.keys === 'function') {
+      // Keyv stores keys with a namespace prefix (e.g. "APP_CONFIG:_OVERRIDE_:...").
+      // We match on the namespaced key but delete using the un-namespaced key
+      // because Keyv.delete() auto-prepends the namespace.
+      const namespacedPrefix = `${namespace}:${overrideSegment}`;
+      const toDelete: string[] = [];
+      for (const key of store.keys()) {
+        if (key.startsWith(namespacedPrefix)) {
+          toDelete.push(key.slice(namespace.length + 1));
+        }
       }
+      if (toDelete.length > 0) {
+        await Promise.all(toDelete.map((key) => cache.delete(key)));
+        logger.info(
+          `[clearOverrideCache] Cleared ${toDelete.length} override cache entries` +
+            (tenantId ? ` for tenant ${tenantId}` : ''),
+        );
+      }
+      return;
     }
-    if (toDelete.length > 0) {
-      await Promise.all(toDelete.map((key) => cache.delete(key)));
-      logger.info(
-        `[clearOverrideCache] Cleared ${toDelete.length} override cache entries` +
-          (tenantId ? ` for tenant ${tenantId}` : ''),
-      );
-    }
+
+    logger.warn(
+      '[clearOverrideCache] Cache store does not support key enumeration. ' +
+        'Override caches will expire naturally via TTL (%dms). ' +
+        'This is expected when APP_CONFIG is Redis-backed — Redis SCAN is avoided ' +
+        'for performance reasons (see #12410).',
+      overrideCacheTtl,
+    );
   }
 
   return {
