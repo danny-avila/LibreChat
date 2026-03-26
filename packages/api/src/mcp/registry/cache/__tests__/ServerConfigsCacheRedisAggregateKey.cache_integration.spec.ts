@@ -306,7 +306,7 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       expect(Object.keys(await cache.getAll()).length).toBe(0);
     });
 
-    it('should not expose uncommitted writes to concurrent readers', async () => {
+    it('should not retroactively modify previously returned snapshot references', async () => {
       await cache.add('server1', mockConfig1);
 
       // Prime the snapshot
@@ -317,6 +317,22 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       await cache.add('server2', mockConfig2);
       expect(Object.keys(snapshot).length).toBe(1);
       expect(snapshot.server2).toBeUndefined();
+    });
+
+    it('should hit Redis again after snapshot TTL expires', async () => {
+      await cache.add('server1', mockConfig1);
+      await cache.getAll(); // prime snapshot
+
+      // Force-expire the snapshot without sleeping
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (cache as any).localSnapshotExpiry = Date.now() - 1;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cacheGetSpy = jest.spyOn((cache as any).cache, 'get');
+      const result = await cache.getAll();
+      expect(cacheGetSpy).toHaveBeenCalledTimes(1);
+      expect(Object.keys(result).length).toBe(1);
+      cacheGetSpy.mockRestore();
     });
   });
 });
