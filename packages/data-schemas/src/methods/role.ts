@@ -382,6 +382,10 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       throw new Error(`Cannot delete system role: ${roleName}`);
     }
     const Role = mongoose.models.Role;
+    const exists = await Role.findOne({ name: roleName }).lean();
+    if (!exists) {
+      return null;
+    }
     const User = mongoose.models.User as Model<IUser>;
     await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
     const deleted = await Role.findOneAndDelete({ name: roleName }).lean();
@@ -406,6 +410,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     const offset = options?.offset ?? 0;
     return await User.find({ role: roleName })
       .select('_id name email avatar')
+      .sort({ _id: 1 })
       .skip(offset)
       .limit(limit)
       .lean();

@@ -27,7 +27,9 @@ let updateAccessPermissions: ReturnType<typeof createRoleMethods>['updateAccessP
 let initializeRoles: ReturnType<typeof createRoleMethods>['initializeRoles'];
 let createRoleByName: ReturnType<typeof createRoleMethods>['createRoleByName'];
 let deleteRoleByName: ReturnType<typeof createRoleMethods>['deleteRoleByName'];
+let updateUsersByRole: ReturnType<typeof createRoleMethods>['updateUsersByRole'];
 let listUsersByRole: ReturnType<typeof createRoleMethods>['listUsersByRole'];
+let countUsersByRole: ReturnType<typeof createRoleMethods>['countUsersByRole'];
 let mongoServer: MongoMemoryServer;
 
 beforeAll(async () => {
@@ -43,7 +45,9 @@ beforeAll(async () => {
   initializeRoles = methods.initializeRoles;
   createRoleByName = methods.createRoleByName;
   deleteRoleByName = methods.deleteRoleByName;
+  updateUsersByRole = methods.updateUsersByRole;
   listUsersByRole = methods.listUsersByRole;
+  countUsersByRole = methods.countUsersByRole;
 });
 
 afterAll(async () => {
@@ -668,5 +672,55 @@ describe('listUsersByRole', () => {
     expect(users[0]._id).toBeDefined();
     expect('password' in users[0]).toBe(false);
     expect('username' in users[0]).toBe(false);
+  });
+});
+
+describe('updateUsersByRole', () => {
+  it('migrates all users from one role to another', async () => {
+    await User.create([
+      { name: 'Alice', email: 'alice@test.com', role: 'editor', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'editor', username: 'bob' },
+      { name: 'Carol', email: 'carol@test.com', role: SystemRoles.USER, username: 'carol' },
+    ]);
+
+    await updateUsersByRole('editor', 'senior-editor');
+
+    const alice = await User.findOne({ email: 'alice@test.com' }).lean();
+    const bob = await User.findOne({ email: 'bob@test.com' }).lean();
+    const carol = await User.findOne({ email: 'carol@test.com' }).lean();
+    expect(alice!.role).toBe('senior-editor');
+    expect(bob!.role).toBe('senior-editor');
+    expect(carol!.role).toBe(SystemRoles.USER);
+  });
+
+  it('is a no-op when no users have the source role', async () => {
+    await User.create({
+      name: 'Alice',
+      email: 'alice@test.com',
+      role: SystemRoles.USER,
+      username: 'alice',
+    });
+
+    await updateUsersByRole('nonexistent', 'new-role');
+
+    const alice = await User.findOne({ email: 'alice@test.com' }).lean();
+    expect(alice!.role).toBe(SystemRoles.USER);
+  });
+});
+
+describe('countUsersByRole', () => {
+  it('returns the count of users with the given role', async () => {
+    await User.create([
+      { name: 'Alice', email: 'alice@test.com', role: 'editor', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'editor', username: 'bob' },
+      { name: 'Carol', email: 'carol@test.com', role: SystemRoles.USER, username: 'carol' },
+    ]);
+
+    expect(await countUsersByRole('editor')).toBe(2);
+    expect(await countUsersByRole(SystemRoles.USER)).toBe(1);
+  });
+
+  it('returns 0 when no users have the role', async () => {
+    expect(await countUsersByRole('nonexistent')).toBe(0);
   });
 });

@@ -1,6 +1,6 @@
 import { SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString } from '@librechat/data-schemas';
-import type { IRole, IUser } from '@librechat/data-schemas';
+import type { IRole, IUser, AdminMember } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -13,13 +13,6 @@ interface RoleNameParams {
 
 interface RoleMemberParams extends RoleNameParams {
   userId: string;
-}
-
-interface AdminMember {
-  userId: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
 }
 
 export interface AdminRolesDeps {
@@ -164,13 +157,13 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         updates.description = body.description;
       }
 
+      if (isRename) {
+        await updateUsersByRole(name, trimmedName);
+      }
+
       const role = await updateRoleByName(name, updates);
       if (!role) {
         return res.status(404).json({ error: 'Role not found' });
-      }
-
-      if (isRename) {
-        await updateUsersByRole(name, trimmedName);
       }
 
       return res.status(200).json({ role });
