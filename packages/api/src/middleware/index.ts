@@ -5,5 +5,6 @@ export * from './notFound';
 export * from './balance';
 export * from './json';
 export * from './capabilities';
+export * from './tenant';
 export * from './concurrency';
 export * from './checkBalance';
