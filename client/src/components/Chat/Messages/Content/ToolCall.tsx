@@ -49,19 +49,47 @@ export default function ToolCall({
     }
   }, [autoExpand, hasOutput]);
 
+  const parsedAuthUrl = useMemo(() => {
+    if (!auth) {
+      return null;
+    }
+    try {
+      return new URL(auth);
+    } catch {
+      return null;
+    }
+  }, [auth]);
+
   const { function_name, domain, isMCPToolCall, mcpServerName } = useMemo(() => {
     if (typeof name !== 'string') {
       return { function_name: '', domain: null, isMCPToolCall: false, mcpServerName: '' };
     }
     if (name.includes(Constants.mcp_delimiter)) {
-      const [func, server] = name.split(Constants.mcp_delimiter);
+      const parts = name.split(Constants.mcp_delimiter);
+      const func = parts[0];
+      const server = parts.slice(1).join(Constants.mcp_delimiter);
+      const displayName = func === 'oauth' && auth ? server : func;
       return {
-        function_name: func || '',
+        function_name: displayName || '',
         domain: server && (server.replaceAll(actionDomainSeparator, '.') || null),
         isMCPToolCall: true,
         mcpServerName: server || '',
       };
     }
+
+    if (parsedAuthUrl) {
+      const redirectUri = parsedAuthUrl.searchParams.get('redirect_uri') || '';
+      const mcpMatch = redirectUri.match(/\/api\/mcp\/([^/]+)\/oauth\/callback/);
+      if (mcpMatch?.[1]) {
+        return {
+          function_name: mcpMatch[1],
+          domain: null,
+          isMCPToolCall: true,
+          mcpServerName: mcpMatch[1],
+        };
+      }
+    }
+
     const [func, _domain] = name.includes(actionDelimiter)
       ? name.split(actionDelimiter)
       : [name, ''];
@@ -71,25 +99,20 @@ export default function ToolCall({
       isMCPToolCall: false,
       mcpServerName: '',
     };
-  }, [name]);
+  }, [name, auth, parsedAuthUrl]);
 
   const toolIconType = useMemo(() => getToolIconType(name), [name]);
   const mcpIconMap = useMCPIconMap();
   const mcpIconUrl = isMCPToolCall ? mcpIconMap.get(mcpServerName) : undefined;
 
   const actionId = useMemo(() => {
-    if (isMCPToolCall || !auth) {
+    if (isMCPToolCall || !parsedAuthUrl) {
       return '';
     }
-    try {
-      const url = new URL(auth);
-      const redirectUri = url.searchParams.get('redirect_uri') || '';
-      const match = redirectUri.match(/\/api\/actions\/([^/]+)\/oauth\/callback/);
-      return match?.[1] || '';
-    } catch {
-      return '';
-    }
-  }, [auth, isMCPToolCall]);
+    const redirectUri = parsedAuthUrl.searchParams.get('redirect_uri') || '';
+    const match = redirectUri.match(/\/api\/actions\/([^/]+)\/oauth\/callback/);
+    return match?.[1] || '';
+  }, [parsedAuthUrl, isMCPToolCall]);
 
   const handleOAuthClick = useCallback(async () => {
     if (!auth) {
@@ -132,21 +155,8 @@ export default function ToolCall({
   );
 
   const authDomain = useMemo(() => {
-    const authURL = auth ?? '';
-    if (!authURL) {
-      return '';
-    }
-    try {
-      const url = new URL(authURL);
-      return url.hostname;
-    } catch (e) {
-      logger.error(
-        'client/src/components/Chat/Messages/Content/ToolCall.tsx - Failed to parse auth URL',
-        e,
-      );
-      return '';
-    }
-  }, [auth]);
+    return parsedAuthUrl?.hostname ?? '';
+  }, [parsedAuthUrl]);
 
   const progress = useProgress(initialProgress);
   const showCancelled = cancelled || (errorState && !output);
