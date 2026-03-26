@@ -19,6 +19,7 @@ type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
 const VALID_GROUP_SOURCES: ReadonlySet<string> = new Set(['local', 'entra']);
 const MAX_CREATE_MEMBER_IDS = 500;
 const MAX_SEARCH_LENGTH = 200;
+const MAX_NAME_LENGTH = 500;
 
 interface GroupIdParams {
   id: string;
@@ -150,6 +151,14 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
         return res.status(400).json({ error: 'name is required' });
       }
+      if (body.name.trim().length > MAX_NAME_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
+      }
+      if (body.source && !VALID_GROUP_SOURCES.has(body.source)) {
+        return res.status(400).json({ error: 'Invalid source value' });
+      }
 
       const rawIds = Array.isArray(body.memberIds) ? body.memberIds : [];
       if (rawIds.length > MAX_CREATE_MEMBER_IDS) {
@@ -209,6 +218,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       ) {
         return res.status(400).json({ error: 'name must be a non-empty string' });
       }
+      if (body.name !== undefined && body.name.trim().length > MAX_NAME_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
+      }
 
       const updateData: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>> = {};
       if (body.name !== undefined) {
@@ -252,6 +266,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (!deleted) {
         return res.status(404).json({ error: 'Group not found' });
       }
+      /**
+       * deleteAclEntries is a raw deleteMany wrapper with no type casting.
+       * grantPermission stores group principalId as ObjectId, so we must
+       * cast here. deleteConfig and deleteGrantsForPrincipal normalize internally.
+       */
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.GROUP, id),
         deleteAclEntries({
@@ -283,6 +302,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         return res.status(404).json({ error: 'Group not found' });
       }
 
+      /**
+       * `total` counts unique raw memberId strings. After user resolution, two
+       * distinct strings may map to the same user, so `members.length` can be
+       * less than the page size. Write paths prevent this for well-formed data.
+       */
       const allMemberIds = [...new Set(group.memberIds || [])];
       const total = allMemberIds.length;
       const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);

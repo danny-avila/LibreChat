@@ -1,10 +1,10 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
-import { createAdminGroupsHandlers } from './groups';
 import type { AdminGroupsDeps } from './groups';
 import type { IGroup, IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import { createAdminGroupsHandlers } from './groups';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -322,6 +322,34 @@ describe('createAdminGroupsHandlers', () => {
       );
     });
 
+    it('returns 400 for invalid source value', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'Bad Source', source: 'azure' },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid source value' });
+      expect(deps.createGroup).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when name exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'a'.repeat(501) },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'name must not exceed 500 characters' });
+      expect(deps.createGroup).not.toHaveBeenCalled();
+    });
+
     it('returns 400 when memberIds exceeds cap', async () => {
       const deps = createDeps();
       const handlers = createAdminGroupsHandlers(deps);
@@ -419,6 +447,72 @@ describe('createAdminGroupsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ group });
     });
 
+    it('updates description only', async () => {
+      const group = mockGroup({ description: 'New desc' });
+      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { id: validId },
+        body: { description: 'New desc' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.updateGroupById).toHaveBeenCalledWith(validId, { description: 'New desc' });
+    });
+
+    it('updates email only', async () => {
+      const group = mockGroup({ email: 'team@co.com' });
+      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { id: validId },
+        body: { email: 'team@co.com' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.updateGroupById).toHaveBeenCalledWith(validId, { email: 'team@co.com' });
+    });
+
+    it('updates avatar only', async () => {
+      const group = mockGroup({ avatar: 'https://img.co/a.png' });
+      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { id: validId },
+        body: { avatar: 'https://img.co/a.png' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.updateGroupById).toHaveBeenCalledWith(validId, {
+        avatar: 'https://img.co/a.png',
+      });
+    });
+
+    it('updates multiple fields at once', async () => {
+      const group = mockGroup({ name: 'New', description: 'Desc', email: 'a@b.com' });
+      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { id: validId },
+        body: { name: ' New ', description: 'Desc', email: 'a@b.com' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.updateGroupById).toHaveBeenCalledWith(validId, {
+        name: 'New',
+        description: 'Desc',
+        email: 'a@b.com',
+      });
+    });
+
     it('returns 400 for invalid ID', async () => {
       const deps = createDeps();
       const handlers = createAdminGroupsHandlers(deps);
@@ -459,6 +553,21 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'name must be a non-empty string' });
+    });
+
+    it('returns 400 when name exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { name: 'a'.repeat(501) },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'name must not exceed 500 characters' });
+      expect(deps.updateGroupById).not.toHaveBeenCalled();
     });
 
     it('returns 400 when no valid fields provided', async () => {
