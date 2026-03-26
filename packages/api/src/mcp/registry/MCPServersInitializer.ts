@@ -43,7 +43,13 @@ export class MCPServersInitializer {
     // Set flag immediately so recursive calls (from followers) use Redis cache for coordination
     MCPServersInitializer.hasInitializedThisProcess = true;
 
-    if (!isFirstCallThisProcess && (await statusCache.isInitialized())) return;
+    if (!isFirstCallThisProcess && (await statusCache.isInitialized())) {
+      // App configs use in-memory storage (no Redis SCAN), so each process must
+      // populate its own cache. Followers reach here after the leader signals done
+      // but still need to initialize servers locally for their own in-memory cache.
+      await MCPServersInitializer.populateLocalCache(rawConfigs);
+      return;
+    }
 
     if (await isLeader()) {
       // Leader performs initialization - always reset on first call
@@ -66,6 +72,34 @@ export class MCPServersInitializer {
       await new Promise((resolve) => setTimeout(resolve, 3000));
       await this.initialize(rawConfigs);
     }
+  }
+
+  /**
+   * Ensures the local in-memory App cache is populated for this process.
+   * In cluster mode, the leader populates its cache during initialization. Followers
+   * skip initialization but still need their own local cache populated since App configs
+   * use in-memory storage (not Redis). This method is idempotent — if configs already
+   * exist (leader case), the duplicate `add()` calls throw and are silently caught.
+   */
+  private static async populateLocalCache(rawConfigs: t.MCPServers): Promise<void> {
+    const registry = MCPServersRegistry.getInstance();
+    const existing = await registry.getAllServerConfigs();
+    if (Object.keys(existing).length > 0) {
+      return;
+    }
+
+    logger.info('[MCP] Populating local App cache for this process');
+    const serverNames = Object.keys(rawConfigs);
+    await Promise.allSettled(
+      serverNames.map((serverName) =>
+        withTimeout(
+          MCPServersInitializer.initializeServer(serverName, rawConfigs[serverName]),
+          MCP_INIT_TIMEOUT_MS,
+          `${MCPServersInitializer.prefix(serverName)} Server initialization timed out`,
+          logger.error,
+        ),
+      ),
+    );
   }
 
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
