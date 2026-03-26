@@ -1,0 +1,3 @@
+openchat.eastus2.cloudapp.azure.com {
+    reverse_proxy api:3080
+}

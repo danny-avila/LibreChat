@@ -177,3 +177,6 @@ claude-flow
 hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
+id_rsa
+.gitignore
+id_rsa.pub
