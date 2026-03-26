@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
-import { Menu, Rocket } from 'lucide-react';
+import { Menu, Rocket, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useForm, FormProvider } from 'react-hook-form';
 import { Button, Skeleton, useToastContext } from '@librechat/client';
@@ -194,7 +194,6 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
   const [isEditing, setIsEditing] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [showSidePanel, setShowSidePanel] = useState(false);
-  const sidePanelWidth = '320px';
 
   // Reset selection when navigating to a different prompt group
   useEffect(() => {
@@ -561,56 +560,57 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
           </div>
 
           {/* Mobile Overlay */}
-          {showSidePanel && (
+          <div
+            className={cn(
+              'absolute inset-0 z-40 bg-black/20 transition-opacity duration-300',
+              showSidePanel ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
+            )}
+          >
             <button
               type="button"
-              className="absolute inset-0 z-40 cursor-default bg-black/20"
-              style={{ transition: 'opacity 0.3s ease-in-out' }}
+              className="h-full w-full cursor-default"
               onClick={() => setShowSidePanel(false)}
               aria-label={localize('com_ui_close_menu')}
+              tabIndex={showSidePanel ? 0 : -1}
             />
-          )}
+          </div>
 
           {/* Mobile Versions Panel */}
           <div
             ref={sidePanelRef}
-            className="absolute inset-y-0 right-0 z-50 lg:hidden"
-            style={{
-              width: sidePanelWidth,
-              transform: `translateX(${showSidePanel ? '0' : '100%'})`,
-              transition: 'transform 0.3s ease-in-out',
-              willChange: 'transform',
-            }}
+            className={cn(
+              'absolute inset-y-0 right-0 z-50 w-80 border-l border-border-medium bg-surface-primary-alt shadow-xl transition-transform duration-300 ease-in-out lg:hidden',
+              showSidePanel ? 'translate-x-0' : 'translate-x-full',
+            )}
             role="dialog"
             aria-modal="true"
             aria-label={localize('com_ui_versions')}
+            {...{ inert: !showSidePanel ? '' : undefined }}
           >
-            <div className="h-full shadow-xl">
-              <div className="flex items-center justify-between border-b border-border-medium px-4 py-2">
-                <h2 className="text-base font-semibold text-text-primary">
-                  {localize('com_ui_versions')}
-                </h2>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowSidePanel(false)}
-                  aria-label={localize('com_ui_close')}
-                >
-                  <span className="sr-only">{localize('com_ui_close')}</span>
-                  &times;
-                </Button>
-              </div>
-              <VersionsPanel
-                group={group}
-                prompts={prompts}
-                selectionIndex={selectionIndex}
-                selectedPrompt={selectedPrompt}
-                isLoadingPrompts={isLoadingPrompts}
-                canEdit={canEdit}
-                setSelectionIndex={setSelectionIndex}
-              />
+            <div className="flex items-center justify-between border-b border-border-medium px-4 py-2">
+              <h2 className="text-sm font-semibold text-text-primary">
+                {localize('com_ui_versions')}
+              </h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowSidePanel(false)}
+                aria-label={localize('com_ui_close')}
+                className="size-8"
+              >
+                <X className="size-4" aria-hidden="true" />
+              </Button>
             </div>
+            <VersionsPanel
+              group={group}
+              prompts={prompts}
+              selectionIndex={selectionIndex}
+              selectedPrompt={selectedPrompt}
+              isLoadingPrompts={isLoadingPrompts}
+              canEdit={canEdit}
+              setSelectionIndex={setSelectionIndex}
+            />
           </div>
         </div>
       </form>
