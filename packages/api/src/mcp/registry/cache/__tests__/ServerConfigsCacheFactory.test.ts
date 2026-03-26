@@ -20,50 +20,41 @@ describe('ServerConfigsCacheFactory', () => {
   });
 
   describe('create()', () => {
-    it('should return ServerConfigsCacheRedis when USE_REDIS is true', () => {
-      // Arrange
+    it('should return ServerConfigsCacheInMemory for App namespace even when USE_REDIS is true', () => {
       cacheConfig.USE_REDIS = true;
 
-      // Act
       const cache = ServerConfigsCacheFactory.create('App', true);
 
-      // Assert
-      expect(cache).toBeInstanceOf(ServerConfigsCacheRedis);
-      expect(ServerConfigsCacheRedis).toHaveBeenCalledWith('App', true);
+      expect(cache).toBeInstanceOf(ServerConfigsCacheInMemory);
+      expect(ServerConfigsCacheInMemory).toHaveBeenCalledWith();
+      expect(ServerConfigsCacheRedis).not.toHaveBeenCalled();
     });
 
-    it('should return ServerConfigsCacheInMemory when USE_REDIS is false', () => {
-      // Arrange
+    it('should return ServerConfigsCacheInMemory for App namespace when USE_REDIS is false', () => {
       cacheConfig.USE_REDIS = false;
 
-      // Act
       const cache = ServerConfigsCacheFactory.create('App', false);
 
-      // Assert
       expect(cache).toBeInstanceOf(ServerConfigsCacheInMemory);
-      expect(ServerConfigsCacheInMemory).toHaveBeenCalled();
+      expect(ServerConfigsCacheInMemory).toHaveBeenCalledWith();
+      expect(ServerConfigsCacheRedis).not.toHaveBeenCalled();
     });
 
-    it('should pass correct parameters to ServerConfigsCacheRedis', () => {
-      // Arrange
+    it('should return ServerConfigsCacheRedis for non-App namespaces when USE_REDIS is true', () => {
       cacheConfig.USE_REDIS = true;
 
-      // Act
-      ServerConfigsCacheFactory.create('CustomNamespace', true);
+      const cache = ServerConfigsCacheFactory.create('CustomNamespace', true);
 
-      // Assert
+      expect(cache).toBeInstanceOf(ServerConfigsCacheRedis);
       expect(ServerConfigsCacheRedis).toHaveBeenCalledWith('CustomNamespace', true);
     });
 
-    it('should create ServerConfigsCacheInMemory without parameters when USE_REDIS is false', () => {
-      // Arrange
+    it('should return ServerConfigsCacheInMemory for non-App namespaces when USE_REDIS is false', () => {
       cacheConfig.USE_REDIS = false;
 
-      // Act
-      ServerConfigsCacheFactory.create('App', false);
+      const cache = ServerConfigsCacheFactory.create('CustomNamespace', false);
 
-      // Assert
-      // In-memory cache doesn't use namespace/leaderOnly parameters
+      expect(cache).toBeInstanceOf(ServerConfigsCacheInMemory);
       expect(ServerConfigsCacheInMemory).toHaveBeenCalledWith();
     });
   });
