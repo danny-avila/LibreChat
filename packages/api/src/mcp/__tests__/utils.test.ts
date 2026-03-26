@@ -1,4 +1,9 @@
-import { normalizeServerName, redactServerSecrets, redactAllServerSecrets } from '~/mcp/utils';
+import {
+  normalizeServerName,
+  buildOAuthToolCallName,
+  redactServerSecrets,
+  redactAllServerSecrets,
+} from '~/mcp/utils';
 import type { ParsedServerConfig } from '~/mcp/types';
 
 describe('normalizeServerName', () => {
@@ -25,6 +30,49 @@ describe('normalizeServerName', () => {
     const result = normalizeServerName('!server-name!');
     expect(result).toBe('server-name');
     expect(result).toMatch(/^[a-zA-Z0-9_.-]+$/);
+  });
+});
+
+describe('buildOAuthToolCallName', () => {
+  it('should prefix a simple server name with oauth_mcp_', () => {
+    expect(buildOAuthToolCallName('my-server')).toBe('oauth_mcp_my-server');
+  });
+
+  it('should not double-wrap a name that already starts with oauth_mcp_', () => {
+    expect(buildOAuthToolCallName('oauth_mcp_my-server')).toBe('oauth_mcp_my-server');
+  });
+
+  it('should correctly handle server names containing _mcp_ substring', () => {
+    const result = buildOAuthToolCallName('my_mcp_server');
+    expect(result).toBe('oauth_mcp_my_mcp_server');
+  });
+
+  it('should normalize non-ASCII server names before prefixing', () => {
+    const result = buildOAuthToolCallName('我的服务');
+    expect(result).toMatch(/^oauth_mcp_server_\d+$/);
+  });
+
+  it('should normalize special characters before prefixing', () => {
+    expect(buildOAuthToolCallName('server@name!')).toBe('oauth_mcp_server_name');
+  });
+
+  it('should handle empty string server name gracefully', () => {
+    const result = buildOAuthToolCallName('');
+    expect(result).toMatch(/^oauth_mcp_server_\d+$/);
+  });
+
+  it('should treat a name already starting with oauth_mcp_ as pre-wrapped', () => {
+    // At the function level, a name starting with the oauth prefix is
+    // indistinguishable from a pre-wrapped name — guard prevents double-wrapping.
+    // Server names with this prefix should be blocked at registration time.
+    expect(buildOAuthToolCallName('oauth_mcp_github')).toBe('oauth_mcp_github');
+  });
+
+  it('should not treat special chars that normalize to oauth_mcp_* as pre-wrapped', () => {
+    // oauth@mcp@server does NOT start with 'oauth_mcp_' before normalization,
+    // so the guard correctly does not fire and the prefix is added.
+    const result = buildOAuthToolCallName('oauth@mcp@server');
+    expect(result).toBe('oauth_mcp_oauth_mcp_server');
   });
 });
 
