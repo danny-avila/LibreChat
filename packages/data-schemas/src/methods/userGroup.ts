@@ -652,6 +652,12 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     return Group.updateMany(filter, update, options || {});
   }
 
+  /**
+   * List groups with optional source and search filters.
+   * Results are sorted by name and capped at 500.
+   * @param filter - Optional filter with source and search fields
+   * @param session - Optional MongoDB session for transactions
+   */
   async function listGroups(
     filter: { source?: 'local' | 'entra'; search?: string } = {},
     session?: ClientSession,
@@ -668,13 +674,18 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       query.$or = [{ name: regex }, { email: regex }, { description: regex }];
     }
 
-    const dbQuery = Group.find(query);
+    const dbQuery = Group.find(query).sort({ name: 1 }).limit(500);
     if (session) {
       dbQuery.session(session);
     }
     return await dbQuery.lean();
   }
 
+  /**
+   * Delete a group by its ID.
+   * @param groupId - The group's ObjectId
+   * @param session - Optional MongoDB session for transactions
+   */
   async function deleteGroup(
     groupId: string | Types.ObjectId,
     session?: ClientSession,
@@ -682,6 +693,23 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     const Group = mongoose.models.Group as Model<IGroup>;
     const options = session ? { session } : {};
     return await Group.findByIdAndDelete(groupId, options).lean();
+  }
+
+  /**
+   * Remove a member from a group by raw memberId string ($pull from memberIds).
+   * Unlike removeUserFromGroup, this does not look up the user first.
+   * @param groupId - The group's ObjectId
+   * @param memberId - The raw memberId string to remove (ObjectId or idOnTheSource)
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function removeMemberById(
+    groupId: string | Types.ObjectId,
+    memberId: string,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const options = { new: true, ...(session ? { session } : {}) };
+    return Group.findByIdAndUpdate(groupId, { $pull: { memberIds: memberId } }, options).lean();
   }
 
   return {
@@ -705,6 +733,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     sortPrincipalsByRelevance,
     listGroups,
     deleteGroup,
+    removeMemberById,
   };
 }
 

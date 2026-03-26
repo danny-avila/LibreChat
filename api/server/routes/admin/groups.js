@@ -19,6 +19,7 @@ const handlers = createAdminGroupsHandlers({
   deleteGroup: db.deleteGroup,
   addUserToGroup: db.addUserToGroup,
   removeUserFromGroup: db.removeUserFromGroup,
+  removeMemberById: db.removeMemberById,
   findUsers: db.findUsers,
 });
 
