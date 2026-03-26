@@ -364,14 +364,24 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
         name: name.trim(),
       }).save();
     } catch (err) {
+      /**
+       * The compound unique index `{ name: 1, tenantId: 1 }` on the role schema
+       * (roleSchema.index in schema/role.ts) triggers error 11000 when a concurrent
+       * request races past the findOne check above. This catch converts it into
+       * the same user-facing message as the application-level duplicate check.
+       */
       if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
         throw new Error(`Role "${name.trim()}" already exists`);
       }
       throw err;
     }
-    const cache = deps.getCache?.(CacheKeys.ROLES);
-    if (cache) {
-      await cache.set(role.name, role.toObject());
+    try {
+      const cache = deps.getCache?.(CacheKeys.ROLES);
+      if (cache) {
+        await cache.set(role.name, role.toObject());
+      }
+    } catch (cacheError) {
+      logger.error(`[createRoleByName] cache set failed for "${role.name}":`, cacheError);
     }
     return role.toObject() as IRole;
   }

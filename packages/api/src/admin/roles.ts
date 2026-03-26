@@ -109,12 +109,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       });
       return res.status(201).json({ role });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create role';
       logger.error('[adminRoles] createRole error:', error);
       const is409 =
         error instanceof Error &&
         (error.message.startsWith('Role "') ||
           error.message.startsWith('Cannot create role with reserved'));
+      const message = is409 && error instanceof Error ? error.message : 'Failed to create role';
       return res.status(is409 ? 409 : 500).json({ error: message });
     }
   }
@@ -124,6 +124,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     const body = req.body as Partial<IRole>;
     let isRename = false;
     let trimmedName = '';
+    let migrationRan = false;
     try {
       if (
         body.name !== undefined &&
@@ -135,6 +136,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res
           .status(400)
           .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
+      }
+      if (body.description !== undefined && typeof body.description !== 'string') {
+        return res.status(400).json({ error: 'description must be a string' });
+      }
+      if (body.description && body.description.length > MAX_DESCRIPTION_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters` });
       }
 
       trimmedName = body.name?.trim() ?? '';
@@ -159,15 +168,6 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         }
       }
 
-      if (body.description !== undefined && typeof body.description !== 'string') {
-        return res.status(400).json({ error: 'description must be a string' });
-      }
-      if (body.description && body.description.length > MAX_DESCRIPTION_LENGTH) {
-        return res
-          .status(400)
-          .json({ error: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters` });
-      }
-
       const updates: Partial<IRole> = {};
       if (isRename) {
         updates.name = trimmedName;
@@ -176,13 +176,18 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         updates.description = body.description;
       }
 
+      if (Object.keys(updates).length === 0) {
+        return res.status(200).json({ role: existing });
+      }
+
       if (isRename) {
         await updateUsersByRole(name, trimmedName);
+        migrationRan = true;
       }
 
       const role = await updateRoleByName(name, updates);
       if (!role) {
-        if (isRename) {
+        if (migrationRan) {
           await updateUsersByRole(trimmedName, name);
         }
         return res.status(404).json({ error: 'Role not found' });
@@ -190,7 +195,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
       return res.status(200).json({ role });
     } catch (error) {
-      if (isRename) {
+      if (migrationRan) {
         try {
           await updateUsersByRole(trimmedName, name);
         } catch (rollbackError) {

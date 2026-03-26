@@ -655,6 +655,27 @@ describe('listUsersByRole', () => {
     expect(users).toEqual([]);
   });
 
+  it('respects limit and offset for pagination', async () => {
+    await User.create([
+      { name: 'Alice', email: 'a@test.com', role: 'editor', username: 'a' },
+      { name: 'Bob', email: 'b@test.com', role: 'editor', username: 'b' },
+      { name: 'Carol', email: 'c@test.com', role: 'editor', username: 'c' },
+      { name: 'Dave', email: 'd@test.com', role: 'editor', username: 'd' },
+      { name: 'Eve', email: 'e@test.com', role: 'editor', username: 'e' },
+    ]);
+
+    const page1 = await listUsersByRole('editor', { limit: 2, offset: 0 });
+    const page2 = await listUsersByRole('editor', { limit: 2, offset: 2 });
+    const page3 = await listUsersByRole('editor', { limit: 2, offset: 4 });
+
+    expect(page1).toHaveLength(2);
+    expect(page2).toHaveLength(2);
+    expect(page3).toHaveLength(1);
+
+    const allIds = [...page1, ...page2, ...page3].map((u) => u._id!.toString());
+    expect(new Set(allIds).size).toBe(5);
+  });
+
   it('selects only expected fields', async () => {
     await User.create({
       name: 'Alice',

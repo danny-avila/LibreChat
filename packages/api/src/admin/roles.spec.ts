@@ -247,7 +247,7 @@ describe('createAdminRolesHandlers', () => {
       await handlers.createRole(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
-      expect(json).toHaveBeenCalledWith({ error: 'db crash' });
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to create role' });
     });
 
     it('does not classify unrelated errors as 409', async () => {
@@ -556,6 +556,58 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith({ error: 'Failed to update role' });
+    });
+
+    it('does not roll back when error occurs before user migration', async () => {
+      const deps = createDeps({
+        getRoleByName: jest
+          .fn()
+          .mockResolvedValueOnce(mockRole())
+          .mockRejectedValueOnce(new Error('db crash')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        body: { name: 'new-name' },
+      });
+
+      await handlers.updateRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.updateUsersByRole).not.toHaveBeenCalled();
+    });
+
+    it('returns existing role early when update body has no changes', async () => {
+      const role = mockRole();
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValue(role),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: 'editor' },
+        body: {},
+      });
+
+      await handlers.updateRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ role });
+      expect(deps.updateRoleByName).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid description before making DB calls', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: 'editor' },
+        body: { description: 123 },
+      });
+
+      await handlers.updateRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'description must be a string' });
+      expect(deps.getRoleByName).not.toHaveBeenCalled();
     });
   });
 
