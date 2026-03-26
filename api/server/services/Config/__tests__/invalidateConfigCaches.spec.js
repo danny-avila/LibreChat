@@ -1,0 +1,133 @@
+// ── Mocks ──────────────────────────────────────────────────────────────
+
+const mockConfigStoreDelete = jest.fn().mockResolvedValue(true);
+const mockClearAppConfigCache = jest.fn().mockResolvedValue(undefined);
+const mockClearOverrideCache = jest.fn().mockResolvedValue(undefined);
+
+jest.mock('~/cache/getLogStores', () => {
+  return jest.fn(() => ({
+    delete: mockConfigStoreDelete,
+  }));
+});
+
+jest.mock('~/server/services/start/tools', () => ({
+  loadAndFormatTools: jest.fn(() => ({})),
+}));
+
+jest.mock('../loadCustomConfig', () => jest.fn().mockResolvedValue({}));
+
+jest.mock('@librechat/data-schemas', () => {
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return { ...actual, AppService: jest.fn(() => ({ availableTools: {} })) };
+});
+
+jest.mock('~/models', () => ({
+  getApplicableConfigs: jest.fn().mockResolvedValue([]),
+  getUserPrincipals: jest.fn().mockResolvedValue([]),
+}));
+
+const mockInvalidateCachedTools = jest.fn().mockResolvedValue(undefined);
+jest.mock('../getCachedTools', () => ({
+  setCachedTools: jest.fn().mockResolvedValue(undefined),
+  invalidateCachedTools: mockInvalidateCachedTools,
+}));
+
+jest.mock('@librechat/api', () => ({
+  createAppConfigService: jest.fn(() => ({
+    getAppConfig: jest.fn().mockResolvedValue({ availableTools: {} }),
+    clearAppConfigCache: mockClearAppConfigCache,
+    clearOverrideCache: mockClearOverrideCache,
+  })),
+}));
+
+// ── Tests ──────────────────────────────────────────────────────────────
+
+const { CacheKeys } = require('librechat-data-provider');
+const { invalidateConfigCaches } = require('../app');
+
+describe('invalidateConfigCaches', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('clears all four caches', async () => {
+    await invalidateConfigCaches();
+
+    expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
+    expect(mockClearOverrideCache).toHaveBeenCalledTimes(1);
+    expect(mockInvalidateCachedTools).toHaveBeenCalledWith({ invalidateGlobal: true });
+    expect(mockConfigStoreDelete).toHaveBeenCalledWith(CacheKeys.ENDPOINT_CONFIG);
+  });
+
+  it('passes tenantId through to clearOverrideCache', async () => {
+    await invalidateConfigCaches('tenant-a');
+
+    expect(mockClearOverrideCache).toHaveBeenCalledWith('tenant-a');
+    expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
+    expect(mockInvalidateCachedTools).toHaveBeenCalledWith({ invalidateGlobal: true });
+  });
+
+  it('does not throw when CONFIG_STORE.delete fails', async () => {
+    mockConfigStoreDelete.mockRejectedValueOnce(new Error('store not found'));
+
+    await expect(invalidateConfigCaches()).resolves.not.toThrow();
+
+    // Other caches should still have been invalidated
+    expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
+    expect(mockClearOverrideCache).toHaveBeenCalledTimes(1);
+    expect(mockInvalidateCachedTools).toHaveBeenCalledWith({ invalidateGlobal: true });
+  });
+
+  it('all operations run in parallel (not sequentially)', async () => {
+    const order = [];
+
+    mockClearAppConfigCache.mockImplementation(
+      () =>
+        new Promise((r) =>
+          setTimeout(() => {
+            order.push('base');
+            r();
+          }, 10),
+        ),
+    );
+    mockClearOverrideCache.mockImplementation(
+      () =>
+        new Promise((r) =>
+          setTimeout(() => {
+            order.push('override');
+            r();
+          }, 10),
+        ),
+    );
+    mockInvalidateCachedTools.mockImplementation(
+      () =>
+        new Promise((r) =>
+          setTimeout(() => {
+            order.push('tools');
+            r();
+          }, 10),
+        ),
+    );
+    mockConfigStoreDelete.mockImplementation(
+      () =>
+        new Promise((r) =>
+          setTimeout(() => {
+            order.push('endpoint');
+            r();
+          }, 10),
+        ),
+    );
+
+    const start = Date.now();
+    await invalidateConfigCaches();
+    const elapsed = Date.now() - start;
+
+    expect(order).toHaveLength(4);
+    expect(order).toContain('base');
+    expect(order).toContain('override');
+    expect(order).toContain('tools');
+    expect(order).toContain('endpoint');
+    // If sequential: ~40ms. Parallel: ~10ms. Use generous threshold.
+    expect(elapsed).toBeLessThan(35);
+  });
+});
