@@ -1,10 +1,10 @@
 import { memo, useMemo } from 'react';
-import { useRecoilState } from 'recoil';
 import { X } from 'lucide-react';
+import { useRecoilState } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogClose } from '@librechat/client';
+import type { ShortcutDefinition } from '~/hooks/useKeyboardShortcuts';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import { shortcutDefinitions, isMac } from '~/hooks/useKeyboardShortcuts';
-import type { ShortcutDefinition } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -13,7 +13,7 @@ type GroupedShortcuts = Record<string, Array<ShortcutDefinition & { id: string }
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-md border border-border-medium bg-surface-tertiary px-1.5 text-[11px] font-medium leading-none text-text-secondary shadow-[0_1px_0_0_rgba(0,0,0,0.08)] dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-text-secondary dark:shadow-none">
+    <kbd className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-md border border-border-light bg-surface-secondary px-1.5 text-[11px] font-medium leading-none text-text-secondary shadow-[0_1px_0_0_rgba(0,0,0,0.08)] dark:shadow-none">
       {children}
     </kbd>
   );
@@ -31,8 +31,8 @@ function KeyCombo({ keys }: { keys: string[] }) {
 
 function ShortcutRow({ label, keys }: { label: string; keys: string[] }) {
   return (
-    <div className="flex items-center justify-between px-1 py-[7px]">
-      <span className="text-[13px] text-text-primary">{label}</span>
+    <div className="flex items-center justify-between gap-3 py-[5px]">
+      <span className="truncate text-[13px] text-text-primary">{label}</span>
       <KeyCombo keys={keys} />
     </div>
   );
@@ -40,6 +40,32 @@ function ShortcutRow({ label, keys }: { label: string; keys: string[] }) {
 
 function parseKeys(display: string): string[] {
   return display.split(/([+\s]+)/).filter((k) => k.trim().length > 0 && k !== '+');
+}
+
+function ShortcutGroup({
+  groupKey,
+  shortcuts,
+  isFirst,
+}: {
+  groupKey: string;
+  shortcuts: Array<ShortcutDefinition & { id: string }>;
+  isFirst: boolean;
+}) {
+  const localize = useLocalize();
+  return (
+    <div className={cn(!isFirst && 'mt-2 border-t border-border-light pt-2')}>
+      <h3 className="mb-0.5 text-[11px] font-medium uppercase tracking-widest text-text-secondary">
+        {localize(groupKey as TranslationKeys)}
+      </h3>
+      {shortcuts.map((shortcut) => (
+        <ShortcutRow
+          key={shortcut.id}
+          label={localize(shortcut.labelKey as TranslationKeys)}
+          keys={parseKeys(isMac ? shortcut.displayMac : shortcut.displayOther)}
+        />
+      ))}
+    </div>
+  );
 }
 
 function KeyboardShortcutsDialog() {
@@ -60,48 +86,52 @@ function KeyboardShortcutsDialog() {
 
   const groupEntries = useMemo(() => Object.entries(grouped), [grouped]);
 
+  const leftColumn = useMemo(
+    () => groupEntries.filter(([key]) => key !== 'com_shortcut_group_chat'),
+    [groupEntries],
+  );
+  const rightColumn = useMemo(
+    () => groupEntries.filter(([key]) => key === 'com_shortcut_group_chat'),
+    [groupEntries],
+  );
+
   return (
     <OGDialog open={open} onOpenChange={setOpen}>
-      <OGDialogContent
-        showCloseButton={false}
-        className="w-[420px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border-light bg-surface-primary p-0 shadow-lg dark:border-white/[0.06] dark:shadow-2xl sm:w-[460px]"
-      >
-        <div className="flex items-center justify-between px-5 pb-0 pt-5">
-          <OGDialogTitle className="text-[15px] font-semibold text-text-primary">
-            {localize('com_shortcut_keyboard_shortcuts')}
-          </OGDialogTitle>
-          <OGDialogClose className="flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary">
+      <OGDialogContent showCloseButton={false} className="w-11/12 max-w-4xl overflow-hidden px-8">
+        <div className="flex items-center justify-between pb-0 pt-5">
+          <OGDialogTitle>{localize('com_shortcut_keyboard_shortcuts')}</OGDialogTitle>
+          <OGDialogClose>
             <X className="h-4 w-4" />
             <span className="sr-only">{localize('com_ui_close')}</span>
           </OGDialogClose>
         </div>
 
-        <div className="max-h-[min(70vh,560px)] overflow-y-auto px-4 pb-4 pt-2">
-          {groupEntries.map(([groupKey, shortcuts], groupIdx) => (
-            <div
-              key={groupKey}
-              className={cn(
-                groupIdx > 0 &&
-                  'border-border-light/60 mt-3 border-t pt-3 dark:border-white/[0.06]',
-              )}
-            >
-              <h3 className="mb-0.5 px-1 text-[11px] font-medium uppercase tracking-widest text-text-tertiary">
-                {localize(groupKey as TranslationKeys)}
-              </h3>
-              {shortcuts.map((shortcut) => (
-                <ShortcutRow
-                  key={shortcut.id}
-                  label={localize(shortcut.labelKey as TranslationKeys)}
-                  keys={parseKeys(isMac ? shortcut.displayMac : shortcut.displayOther)}
-                />
-              ))}
-            </div>
-          ))}
+        <div className="grid grid-cols-2 gap-x-6 overflow-y-auto pb-4 pt-2">
+          <div>
+            {leftColumn.map(([groupKey, shortcuts], idx) => (
+              <ShortcutGroup
+                key={groupKey}
+                groupKey={groupKey}
+                shortcuts={shortcuts}
+                isFirst={idx === 0}
+              />
+            ))}
+          </div>
+          <div>
+            {rightColumn.map(([groupKey, shortcuts], idx) => (
+              <ShortcutGroup
+                key={groupKey}
+                groupKey={groupKey}
+                shortcuts={shortcuts}
+                isFirst={idx === 0}
+              />
+            ))}
+          </div>
         </div>
 
-        <div className="border-t border-border-light px-5 py-2.5 dark:border-white/[0.06]">
+        <div className="border-t border-border-light py-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-text-tertiary">
+            <span className="text-xs text-text-secondary">
               {localize('com_shortcut_show_shortcuts')}
             </span>
             <KeyCombo keys={[isMac ? '⌘' : 'Ctrl', '⇧', '/']} />
