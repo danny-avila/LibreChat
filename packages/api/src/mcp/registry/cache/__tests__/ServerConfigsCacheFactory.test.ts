@@ -1,5 +1,5 @@
-import { ServerConfigsCacheInMemory } from '../ServerConfigsCacheInMemory';
 import { ServerConfigsCacheFactory, APP_CACHE_NAMESPACE } from '../ServerConfigsCacheFactory';
+import { ServerConfigsCacheInMemory } from '../ServerConfigsCacheInMemory';
 import { ServerConfigsCacheRedis } from '../ServerConfigsCacheRedis';
 import { cacheConfig } from '~/cache';
 
