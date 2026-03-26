@@ -180,7 +180,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       const appConfig = await getAppConfig({
-        role: user.role,
         tenantId: user.tenantId,
       });
       return res.status(200).json({ config: appConfig });

@@ -1,15 +1,20 @@
 import { createAppConfigService } from './service';
 
-function createMockCache() {
+/**
+ * Creates a mock cache that simulates Keyv's namespace behavior.
+ * Keyv stores keys internally as `namespace:key` but its API (get/set/delete)
+ * accepts un-namespaced keys and auto-prepends the namespace.
+ */
+function createMockCache(namespace = 'app_config') {
   const store = new Map();
   return {
-    get: jest.fn((key) => Promise.resolve(store.get(key))),
+    get: jest.fn((key) => Promise.resolve(store.get(`${namespace}:${key}`))),
     set: jest.fn((key, value) => {
-      store.set(key, value);
+      store.set(`${namespace}:${key}`, value);
       return Promise.resolve(undefined);
     }),
     delete: jest.fn((key) => {
-      store.delete(key);
+      store.delete(`${namespace}:${key}`);
       return Promise.resolve(true);
     }),
     /** Mimic Keyv's opts.store structure for key enumeration in clearOverrideCache */
@@ -163,8 +168,8 @@ describe('createAppConfigService', () => {
       await getAppConfig({ userId: 'uid1' });
 
       const cachedKeys = [...deps._cache._store.keys()];
-      const overrideKey = cachedKeys.find((k) => k.startsWith('_OVERRIDE_:'));
-      expect(overrideKey).toBe('_OVERRIDE_:__default__:uid1');
+      const overrideKey = cachedKeys.find((k) => k.includes('_OVERRIDE_:'));
+      expect(overrideKey).toBe('app_config:_OVERRIDE_:__default__:uid1');
     });
 
     it('tenantId is included in cache key to prevent cross-tenant contamination', async () => {

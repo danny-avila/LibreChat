@@ -196,11 +196,17 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       );
       return;
     }
-    const prefix = tenantId ? `_OVERRIDE_:${tenantId}:` : '_OVERRIDE_:';
+    // Keyv stores keys with a namespace prefix (e.g. "APP_CONFIG:_OVERRIDE_:...").
+    // We match on the namespaced key but delete using the un-namespaced key
+    // because Keyv.delete() auto-prepends the namespace.
+    const namespace = cacheKeys.APP_CONFIG;
+    const overrideSegment = tenantId ? `_OVERRIDE_:${tenantId}:` : '_OVERRIDE_:';
+    const namespacedPrefix = `${namespace}:${overrideSegment}`;
     const toDelete: string[] = [];
     for (const key of store.keys()) {
-      if (key.startsWith(prefix)) {
-        toDelete.push(key);
+      if (key.startsWith(namespacedPrefix)) {
+        // Strip namespace prefix for Keyv.delete() which re-adds it
+        toDelete.push(key.slice(namespace.length + 1));
       }
     }
     if (toDelete.length > 0) {

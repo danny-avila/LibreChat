@@ -59,7 +59,7 @@ export function tenantContextMiddleware(
     return;
   }
 
-  tenantStorage.run({ tenantId }, async () => {
+  return tenantStorage.run({ tenantId }, async () => {
     next();
   });
 }

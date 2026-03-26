@@ -17,7 +17,10 @@ const requireJwtAuth = (req, res, next) => {
   const strategy =
     tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS) ? 'openidJwt' : 'jwt';
 
-  passport.authenticate(strategy, { session: false })(req, res, () => {
+  passport.authenticate(strategy, { session: false })(req, res, (err) => {
+    if (err) {
+      return next(err);
+    }
     // req.user is now populated by passport — set up tenant ALS context
     tenantContextMiddleware(req, res, next);
   });
