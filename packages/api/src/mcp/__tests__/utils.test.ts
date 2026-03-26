@@ -1,8 +1,8 @@
 import {
-  normalizeServerName,
   buildOAuthToolCallName,
-  redactServerSecrets,
+  normalizeServerName,
   redactAllServerSecrets,
+  redactServerSecrets,
 } from '~/mcp/utils';
 import type { ParsedServerConfig } from '~/mcp/types';
 
