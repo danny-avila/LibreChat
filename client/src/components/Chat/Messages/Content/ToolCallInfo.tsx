@@ -5,7 +5,7 @@ import { UIResourceRenderer } from '@mcp-ui/client';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import UIResourceCarousel from './UIResourceCarousel';
-import { useMessagesOperations } from '~/Providers';
+import { useOptionalMessagesOperations } from '~/Providers';
 import { OutputRenderer } from './ToolOutput';
 import { handleUIAction, cn } from '~/utils';
 
@@ -102,7 +102,7 @@ export default function ToolCallInfo({
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
-  const { ask } = useMessagesOperations();
+  const { ask } = useOptionalMessagesOperations();
   const [showParams, setShowParams] = useState(false);
   const { style: paramsExpandStyle, ref: paramsExpandRef } = useExpandCollapse(showParams);
 
