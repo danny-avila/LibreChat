@@ -98,6 +98,22 @@ export function normalizeServerName(serverName: string): string {
 }
 
 /**
+ * Builds the synthetic tool-call name used during MCP OAuth flows.
+ * Format: `oauth<mcp_delimiter><normalizedServerName>`
+ *
+ * Guards against the caller passing a pre-wrapped name (one that already
+ * starts with the oauth prefix in its original, un-normalized form) to
+ * prevent double-wrapping.
+ */
+export function buildOAuthToolCallName(serverName: string): string {
+  const oauthPrefix = `oauth${Constants.mcp_delimiter}`;
+  if (serverName.startsWith(oauthPrefix)) {
+    return normalizeServerName(serverName);
+  }
+  return `${oauthPrefix}${normalizeServerName(serverName)}`;
+}
+
+/**
  * Sanitizes a URL by removing query parameters to prevent credential leakage in logs.
  * @param url - The URL to sanitize (string or URL object)
  * @returns The sanitized URL string without query parameters
