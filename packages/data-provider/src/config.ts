@@ -8,6 +8,11 @@ import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 
+export const defaultAppTitle = 'LibreChat';
+
+export const defaultAppDescription =
+  'LibreChat - An open source chat application with support for multiple AI models';
+
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
 export const defaultRetrievalModels = [
@@ -745,6 +750,7 @@ export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
 export type TStartupConfig = {
   appTitle: string;
+  appDescription: string;
   socialLogins?: string[];
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
@@ -1857,8 +1863,8 @@ export enum LocalStorageKeys {
   LAST_PROMPT_CATEGORY = 'lastPromptCategory',
   /** Key for rendering User Messages as Markdown */
   ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
-  /** Key for auto-expanding tool call details */
-  AUTO_EXPAND_TOOLS = 'autoExpandTools',
+  /** Key for displaying analysis tool code input */
+  SHOW_ANALYSIS_CODE = 'showAnalysisCode',
   /** Last selected MCP values per conversation ID */
   LAST_MCP_ = 'LAST_MCP_',
   /** Last checked toggle for Code Interpreter API per conversation ID */

@@ -47,10 +47,7 @@ async function processFileCitations({ user, appConfig, toolArtifact, toolCallId,
         logger.error(
           `[processFileCitations] Permission check failed for FILE_CITATIONS: ${error.message}`,
         );
-        logger.warn(
-          '[processFileCitations] Returning null citations due to permission check error — citations will not be shown for this message',
-        );
-        return null;
+        logger.debug(`[processFileCitations] Proceeding with citations due to permission error`);
       }
     }
 
@@ -148,8 +145,6 @@ async function enhanceSourcesWithMetadata(sources, appConfig) {
       metadata: {
         ...source.metadata,
         storageType: configuredStorageType,
-        fileType: fileRecord.type || undefined,
-        fileBytes: fileRecord.bytes || undefined,
       },
     };
   });

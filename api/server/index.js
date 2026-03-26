@@ -13,7 +13,10 @@ const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
   apiNotFound,
+  getAppMetadata,
   ErrorController,
+  transformManifest,
+  transformIndexHtml,
   memoryDiagnostics,
   performStartupChecks,
   handleJsonParseError,
@@ -81,6 +84,9 @@ const startServer = async () => {
     }
   }
 
+  const appMetadata = getAppMetadata();
+  indexHTML = transformIndexHtml(indexHTML, appMetadata);
+
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   /* Middleware */
@@ -110,6 +116,19 @@ const startServer = async () => {
     app.use(compression());
   } else {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
+  }
+
+  const manifestPath = path.join(appConfig.paths.dist, 'manifest.webmanifest');
+  if (fs.existsSync(manifestPath)) {
+    const manifestJSON = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const manifestContent = JSON.stringify(transformManifest(manifestJSON, appMetadata));
+    app.get('/manifest.webmanifest', (_req, res) => {
+      res.set({
+        'Content-Type': 'application/manifest+json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      });
+      res.send(manifestContent);
+    });
   }
 
   app.use(staticCache(appConfig.paths.dist));

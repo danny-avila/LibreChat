@@ -1,23 +1,24 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
+import { ChevronDown } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import MessageIcon from '~/components/Share/MessageIcon';
-import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useAgentsMapContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface AgentHandoffProps {
   name: string;
   args: string | Record<string, unknown>;
+  output?: string | null;
 }
 
 const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) => {
   const localize = useLocalize();
   const agentsMap = useAgentsMapContext();
   const [showInfo, setShowInfo] = useState(false);
-  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showInfo);
 
+  /** Extracted agent ID from tool name (e.g., "lc_transfer_to_agent_gUV0wMb7zHt3y3Xjz-8_4" -> "agent_gUV0wMb7zHt3y3Xjz-8_4") */
   const targetAgentId = useMemo(() => {
     if (typeof name !== 'string' || !name.startsWith(Constants.LC_TRANSFER_TO_)) {
       return null;
@@ -43,24 +44,19 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
     }
   }, [_args]) as string;
 
+  /** Requires more than 2 characters as can be an empty object: `{}` */
   const hasInfo = useMemo(() => (args?.trim()?.length ?? 0) > 2, [args]);
 
   return (
-    <div className="my-1">
-      <button
-        type="button"
+    <div className="my-3">
+      <div
         className={cn(
-          'tool-status-text flex appearance-none items-center gap-2.5 bg-transparent text-text-secondary',
-          hasInfo
-            ? 'transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
-            : 'pointer-events-none',
+          'flex items-center gap-2.5 text-sm text-text-secondary',
+          hasInfo && 'cursor-pointer transition-colors hover:text-text-primary',
         )}
-        disabled={!hasInfo}
-        onClick={hasInfo ? () => setShowInfo(!showInfo) : undefined}
-        aria-expanded={hasInfo ? showInfo : undefined}
-        aria-label={`${localize('com_ui_transferred_to')} ${targetAgent?.name || localize('com_ui_agent')}`}
+        onClick={() => hasInfo && setShowInfo(!showInfo)}
       >
-        <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full ring-1 ring-border-light">
+        <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
           <MessageIcon
             message={
               {
@@ -81,19 +77,15 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
             aria-hidden="true"
           />
         )}
-      </button>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          {hasInfo && (
-            <div className="ml-8 mt-2 rounded-lg border border-border-light bg-surface-secondary p-3 text-xs">
-              <div className="mb-1 font-medium text-text-secondary">
-                {localize('com_ui_handoff_instructions')}:
-              </div>
-              <pre className="overflow-x-auto whitespace-pre-wrap text-text-primary">{args}</pre>
-            </div>
-          )}
-        </div>
       </div>
+      {hasInfo && showInfo && (
+        <div className="ml-8 mt-2 rounded-md bg-surface-secondary p-3 text-xs">
+          <div className="mb-1 font-medium text-text-secondary">
+            {localize('com_ui_handoff_instructions')}:
+          </div>
+          <pre className="overflow-x-auto whitespace-pre-wrap text-text-primary">{args}</pre>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,7 +1,12 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
-const { CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
+const {
+  CacheKeys,
+  defaultAppTitle,
+  defaultSocialLogins,
+  defaultAppDescription,
+} = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { getLogStores } = require('~/cache');
@@ -55,7 +60,8 @@ router.get('/', async function (req, res) {
 
     /** @type {TStartupConfig} */
     const payload = {
-      appTitle: process.env.APP_TITLE || 'LibreChat',
+      appTitle: process.env.APP_TITLE || defaultAppTitle,
+      appDescription: process.env.APP_DESCRIPTION || defaultAppDescription,
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:

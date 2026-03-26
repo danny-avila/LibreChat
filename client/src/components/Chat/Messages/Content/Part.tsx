@@ -1,4 +1,3 @@
-import { memo } from 'react';
 import {
   Tools,
   Constants,
@@ -7,8 +6,17 @@ import {
   imageGenTools,
   isImageVisionTool,
 } from 'librechat-data-provider';
+import { memo } from 'react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
-import { ImageGen, ExecuteCode, AgentUpdate, EmptyText, Reasoning, Summary, Text } from './Parts';
+import {
+  OpenAIImageGen,
+  ExecuteCode,
+  AgentUpdate,
+  EmptyText,
+  Reasoning,
+  Summary,
+  Text,
+} from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
 import { getCachedPreview } from '~/utils';
@@ -17,6 +25,7 @@ import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
+import ImageGen from './ImageGen';
 import Image from './Image';
 
 type PartProps = {
@@ -129,7 +138,7 @@ const Part = memo(function Part({
           isSubmitting={isSubmitting}
           output={toolCall.output ?? ''}
           initialProgress={toolCall.progress ?? 0.1}
-          args={toolCall.args}
+          args={typeof toolCall.args === 'string' ? toolCall.args : ''}
         />
       );
     } else if (
@@ -139,7 +148,7 @@ const Part = memo(function Part({
         toolCall.name === 'gemini_image_gen')
     ) {
       return (
-        <ImageGen
+        <OpenAIImageGen
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           toolName={toolCall.name}
@@ -158,17 +167,14 @@ const Part = memo(function Part({
           isLast={isLast}
         />
       );
-    } else if (isToolCall && (toolCall.name === 'file_search' || toolCall.name === 'retrieval')) {
+    } else if (isToolCall && toolCall.name?.startsWith(Constants.LC_TRANSFER_TO_)) {
       return (
-        <RetrievalCall
-          initialProgress={toolCall.progress ?? 0.1}
-          isSubmitting={isSubmitting}
-          output={toolCall.output ?? undefined}
-          attachments={attachments}
+        <AgentHandoff
+          args={toolCall.args ?? ''}
+          name={toolCall.name || ''}
+          output={toolCall.output ?? ''}
         />
       );
-    } else if (isToolCall && toolCall.name?.startsWith(Constants.LC_TRANSFER_TO_)) {
-      return <AgentHandoff args={toolCall.args ?? ''} name={toolCall.name || ''} />;
     } else if (isToolCall) {
       return (
         <ToolCall
@@ -179,6 +185,7 @@ const Part = memo(function Part({
           isSubmitting={isSubmitting}
           attachments={attachments}
           auth={toolCall.auth}
+          expires_at={toolCall.expires_at}
           isLast={isLast}
         />
       );
@@ -196,12 +203,7 @@ const Part = memo(function Part({
       toolCall.type === ToolCallTypes.FILE_SEARCH
     ) {
       return (
-        <RetrievalCall
-          initialProgress={toolCall.progress ?? 0.1}
-          isSubmitting={isSubmitting}
-          output={(toolCall as { output?: string }).output}
-          attachments={attachments}
-        />
+        <RetrievalCall initialProgress={toolCall.progress ?? 0.1} isSubmitting={isSubmitting} />
       );
     } else if (
       toolCall.type === ToolCallTypes.FUNCTION &&
@@ -212,9 +214,6 @@ const Part = memo(function Part({
         <ImageGen
           initialProgress={toolCall.progress ?? 0.1}
           args={toolCall.function.arguments as string}
-          isSubmitting={isSubmitting}
-          toolName={toolCall.function.name}
-          output={toolCall.function.output ?? ''}
         />
       );
     } else if (toolCall.type === ToolCallTypes.FUNCTION && ToolCallTypes.FUNCTION in toolCall) {

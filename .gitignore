@@ -63,7 +63,6 @@ bower_components/
 .clineignore
 .cursor
 .aider*
-.bg-shell/
 
 # Floobits
 .floo
@@ -130,7 +129,6 @@ helm/**/charts/
 helm/**/.values.yaml
 
 !/client/src/@types/i18next.d.ts
-!/client/src/@types/react.d.ts
 
 # SAML Idp cert
 *.cert
@@ -144,6 +142,7 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 *.local.md
+
 
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
@@ -176,4 +175,3 @@ claude-flow
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
 CLAUDE.md
-.gsd

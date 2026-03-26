@@ -109,7 +109,11 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
             >
               <div className="flex h-full flex-col">
                 <UIResourceRenderer
-                  resource={uiResource}
+                  resource={{
+                    uri: uiResource.uri,
+                    mimeType: uiResource.mimeType,
+                    text: uiResource.text,
+                  }}
                   onUIAction={async (result) => handleUIAction(result, ask)}
                   htmlProps={{
                     autoResizeIframe: { width: true, height: true },

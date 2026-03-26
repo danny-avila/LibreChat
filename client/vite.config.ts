@@ -273,10 +273,6 @@ export default defineConfig(({ command }) => ({
               return 'headlessui';
             }
 
-            if (normalizedId.includes('@icons-pack/react-simple-icons/icons/')) {
-              return;
-            }
-
             // Everything else falls into a generic vendor chunk.
             return 'vendor';
           }

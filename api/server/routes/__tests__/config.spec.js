@@ -9,6 +9,7 @@ app.use('/api/config', configRoute);
 
 afterEach(() => {
   delete process.env.APP_TITLE;
+  delete process.env.APP_DESCRIPTION;
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.GOOGLE_CLIENT_SECRET;
   delete process.env.FACEBOOK_CLIENT_ID;
