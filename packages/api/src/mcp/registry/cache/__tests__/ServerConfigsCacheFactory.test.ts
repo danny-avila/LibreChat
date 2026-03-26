@@ -1,5 +1,5 @@
-import { ServerConfigsCacheFactory } from '../ServerConfigsCacheFactory';
 import { ServerConfigsCacheInMemory } from '../ServerConfigsCacheInMemory';
+import { ServerConfigsCacheFactory, APP_CACHE_NAMESPACE } from '../ServerConfigsCacheFactory';
 import { ServerConfigsCacheRedis } from '../ServerConfigsCacheRedis';
 import { cacheConfig } from '~/cache';
 
@@ -17,13 +17,14 @@ jest.mock('~/cache', () => ({
 describe('ServerConfigsCacheFactory', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    cacheConfig.USE_REDIS = false;
   });
 
   describe('create()', () => {
     it('should return ServerConfigsCacheInMemory for App namespace even when USE_REDIS is true', () => {
       cacheConfig.USE_REDIS = true;
 
-      const cache = ServerConfigsCacheFactory.create('App', true);
+      const cache = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, true);
 
       expect(cache).toBeInstanceOf(ServerConfigsCacheInMemory);
       expect(ServerConfigsCacheInMemory).toHaveBeenCalledWith();
@@ -33,7 +34,7 @@ describe('ServerConfigsCacheFactory', () => {
     it('should return ServerConfigsCacheInMemory for App namespace when USE_REDIS is false', () => {
       cacheConfig.USE_REDIS = false;
 
-      const cache = ServerConfigsCacheFactory.create('App', false);
+      const cache = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
 
       expect(cache).toBeInstanceOf(ServerConfigsCacheInMemory);
       expect(ServerConfigsCacheInMemory).toHaveBeenCalledWith();

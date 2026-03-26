@@ -3,7 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
-import { ServerConfigsCacheFactory } from './cache/ServerConfigsCacheFactory';
+import { ServerConfigsCacheFactory, APP_CACHE_NAMESPACE } from './cache/ServerConfigsCacheFactory';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache/cacheConfig';
@@ -33,7 +33,7 @@ export class MCPServersRegistry {
 
   constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
-    this.cacheConfigsRepo = ServerConfigsCacheFactory.create('App', false);
+    this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
     this.allowedDomains = allowedDomains;
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
