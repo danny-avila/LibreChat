@@ -189,7 +189,7 @@ const registerUser = async (user, additionalData = {}) => {
 
   let newUserId;
   try {
-    const appConfig = await getAppConfig();
+    const appConfig = await getAppConfig({ baseOnly: true });
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
@@ -260,7 +260,7 @@ const registerUser = async (user, additionalData = {}) => {
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
-  const appConfig = await getAppConfig();
+  const appConfig = await getAppConfig({ baseOnly: true });
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
     const error = new Error(ErrorTypes.AUTH_FAILED);
     error.code = ErrorTypes.AUTH_FAILED;

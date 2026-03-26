@@ -16,7 +16,8 @@ const { getAppConfig } = require('./app');
  */
 async function loadDefaultModels(req) {
   try {
-    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
+    const appConfig =
+      req.config ?? (await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId }));
     const vertexConfig = appConfig?.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig;
 
     const [openAI, anthropic, azureOpenAI, assistants, azureAssistants, google, bedrock] =

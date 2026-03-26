@@ -15,7 +15,7 @@ const getAvailablePluginsController = async (req, res) => {
       return;
     }
 
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId });
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
     const { filteredTools = [], includedTools = [] } = appConfig;
     /** @type {import('@librechat/api').LCManifestTool[]} */
@@ -66,7 +66,8 @@ const getAvailableTools = async (req, res) => {
     const cache = getLogStores(CacheKeys.TOOL_CACHE);
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
 
-    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
+    const appConfig =
+      req.config ?? (await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId }));
 
     // Return early if we have cached tools
     if (cachedToolsArray != null) {

@@ -468,7 +468,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     Object.assign(userinfo, providerUserinfo);
   }
 
-  const appConfig = await getAppConfig();
+  const appConfig = await getAppConfig({ baseOnly: true });
   const email = getOpenIdEmail(userinfo);
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
     logger.error(

@@ -26,7 +26,8 @@ async function getEndpointsConfig(req) {
     }
   }
 
-  const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
+  const appConfig =
+    req.config ?? (await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId }));
   const defaultEndpointsConfig = await loadDefaultEndpointsConfig(appConfig);
   const customEndpointsConfig = loadCustomEndpointsConfig(appConfig?.endpoints?.custom);
 

@@ -367,7 +367,7 @@ async function createMCPTools({
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
   if (serverConfig?.url) {
-    const appConfig = await getAppConfig({ role: user?.role });
+    const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
     if (!isDomainAllowed) {
@@ -449,7 +449,7 @@ async function createMCPTool({
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
   if (serverConfig?.url) {
-    const appConfig = await getAppConfig({ role: user?.role });
+    const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
     if (!isDomainAllowed) {

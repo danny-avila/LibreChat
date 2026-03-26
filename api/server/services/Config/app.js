@@ -1,9 +1,9 @@
 const { CacheKeys } = require('librechat-data-provider');
-const { AppService } = require('@librechat/data-schemas');
 const { createAppConfigService } = require('@librechat/api');
+const { AppService, logger } = require('@librechat/data-schemas');
+const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
 const loadCustomConfig = require('./loadCustomConfig');
-const { setCachedTools } = require('./getCachedTools');
 const getLogStores = require('~/cache/getLogStores');
 const paths = require('~/config/paths');
 const db = require('~/models');
@@ -20,7 +20,7 @@ const loadBaseConfig = async () => {
   return AppService({ config, paths, systemTools });
 };
 
-const { getAppConfig, clearAppConfigCache } = createAppConfigService({
+const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfigService({
   loadBaseConfig,
   setCachedTools,
   getCache: getLogStores,
@@ -29,7 +29,44 @@ const { getAppConfig, clearAppConfigCache } = createAppConfigService({
   getUserPrincipals: db.getUserPrincipals,
 });
 
+/** Deletes the ENDPOINT_CONFIG entry from CONFIG_STORE. Failures are non-critical and swallowed. */
+async function clearEndpointConfigCache() {
+  try {
+    const configStore = getLogStores(CacheKeys.CONFIG_STORE);
+    await configStore.delete(CacheKeys.ENDPOINT_CONFIG);
+  } catch {
+    // CONFIG_STORE or ENDPOINT_CONFIG may not exist — not critical
+  }
+}
+
+/**
+ * Invalidate all config-related caches after an admin config mutation.
+ * Clears the base config, per-principal override caches, tool caches,
+ * and the endpoints config cache.
+ * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
+ */
+async function invalidateConfigCaches(tenantId) {
+  const results = await Promise.allSettled([
+    clearAppConfigCache(),
+    clearOverrideCache(tenantId),
+    invalidateCachedTools({ invalidateGlobal: true }),
+    clearEndpointConfigCache(),
+  ]);
+  const labels = [
+    'clearAppConfigCache',
+    'clearOverrideCache',
+    'invalidateCachedTools',
+    'clearEndpointConfigCache',
+  ];
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].status === 'rejected') {
+      logger.error(`[invalidateConfigCaches] ${labels[i]} failed:`, results[i].reason);
+    }
+  }
+}
+
 module.exports = {
   getAppConfig,
   clearAppConfigCache,
+  invalidateConfigCaches,
 };

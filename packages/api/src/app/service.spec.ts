@@ -1,17 +1,24 @@
 import { createAppConfigService } from './service';
 
-function createMockCache() {
+/**
+ * Creates a mock cache that simulates Keyv's namespace behavior.
+ * Keyv stores keys internally as `namespace:key` but its API (get/set/delete)
+ * accepts un-namespaced keys and auto-prepends the namespace.
+ */
+function createMockCache(namespace = 'app_config') {
   const store = new Map();
   return {
-    get: jest.fn((key) => Promise.resolve(store.get(key))),
+    get: jest.fn((key) => Promise.resolve(store.get(`${namespace}:${key}`))),
     set: jest.fn((key, value) => {
-      store.set(key, value);
+      store.set(`${namespace}:${key}`, value);
       return Promise.resolve(undefined);
     }),
     delete: jest.fn((key) => {
-      store.delete(key);
+      store.delete(`${namespace}:${key}`);
       return Promise.resolve(true);
     }),
+    /** Mimic Keyv's opts.store structure for key enumeration in clearOverrideCache */
+    opts: { store: { keys: () => store.keys() } },
     _store: store,
   };
 }
@@ -56,6 +63,23 @@ describe('createAppConfigService', () => {
       await getAppConfig();
 
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+    });
+
+    it('baseOnly returns YAML config without DB queries', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([
+            { priority: 10, overrides: { interface: { endpointsMenu: false } }, isActive: true },
+          ]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ baseOnly: true });
+
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+      expect(config).toEqual(deps._baseConfig);
     });
 
     it('reloads base config when refresh is true', async () => {
@@ -144,8 +168,8 @@ describe('createAppConfigService', () => {
       await getAppConfig({ userId: 'uid1' });
 
       const cachedKeys = [...deps._cache._store.keys()];
-      const overrideKey = cachedKeys.find((k) => k.startsWith('_OVERRIDE_:'));
-      expect(overrideKey).toBe('_OVERRIDE_:__default__:uid1');
+      const overrideKey = cachedKeys.find((k) => k.includes('_OVERRIDE_:'));
+      expect(overrideKey).toBe('app_config:_OVERRIDE_:__default__:uid1');
     });
 
     it('tenantId is included in cache key to prevent cross-tenant contamination', async () => {
@@ -239,6 +263,72 @@ describe('createAppConfigService', () => {
       await clearAppConfigCache();
       await getAppConfig();
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('clearOverrideCache', () => {
+    it('clears all override caches when no tenantId is provided', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+      });
+      const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
+
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-b' });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+
+      await clearOverrideCache();
+
+      // After clearing, both tenants should re-query DB
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-b' });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(4);
+    });
+
+    it('clears only specified tenant override caches', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+      });
+      const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
+
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-b' });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+
+      await clearOverrideCache('tenant-a');
+
+      // tenant-a should re-query, tenant-b should be cached
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-b' });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not clear base config', async () => {
+      const deps = createDeps();
+      const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
+
+      await getAppConfig();
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+
+      await clearOverrideCache();
+
+      await getAppConfig();
+      // Base config should still be cached
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not throw when store.keys is unavailable (Redis fallback to TTL expiry)', async () => {
+      const deps = createDeps();
+      // Remove store.keys to simulate Redis-backed cache
+      deps._cache.opts = {};
+      const { clearOverrideCache } = createAppConfigService(deps);
+
+      // Should not throw — logs warning and relies on TTL expiry
+      await expect(clearOverrideCache()).resolves.toBeUndefined();
     });
   });
 });
