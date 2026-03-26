@@ -39,11 +39,23 @@ export const shortcutDefinitions: Record<string, ShortcutDefinition> = {
     displayMac: '⌘ ⇧ ;',
     displayOther: 'Ctrl+Shift+;',
   },
+  uploadFile: {
+    labelKey: 'com_shortcut_upload_file',
+    groupKey: 'com_shortcut_group_general',
+    displayMac: '⌘ ⇧ U',
+    displayOther: 'Ctrl+Shift+U',
+  },
   toggleSidebar: {
     labelKey: 'com_shortcut_toggle_sidebar',
     groupKey: 'com_shortcut_group_navigation',
     displayMac: '⌘ ⇧ S',
     displayOther: 'Ctrl+Shift+S',
+  },
+  toggleRightSidebar: {
+    labelKey: 'com_shortcut_toggle_right_sidebar',
+    groupKey: 'com_shortcut_group_navigation',
+    displayMac: '⌘ ⇧ R',
+    displayOther: 'Ctrl+Shift+R',
   },
   openModelSelector: {
     labelKey: 'com_shortcut_open_model_selector',
@@ -69,6 +81,30 @@ export const shortcutDefinitions: Record<string, ShortcutDefinition> = {
     displayMac: '⌘ ⇧ X',
     displayOther: 'Ctrl+Shift+X',
   },
+  regenerateResponse: {
+    labelKey: 'com_shortcut_regenerate_response',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ E',
+    displayOther: 'Ctrl+Shift+E',
+  },
+  editLastMessage: {
+    labelKey: 'com_shortcut_edit_last_message',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ I',
+    displayOther: 'Ctrl+Shift+I',
+  },
+  copyLastCode: {
+    labelKey: 'com_shortcut_copy_last_code',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ K',
+    displayOther: 'Ctrl+Shift+K',
+  },
+  scrollToTop: {
+    labelKey: 'com_shortcut_scroll_to_top',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ ↑',
+    displayOther: 'Ctrl+Shift+↑',
+  },
   scrollToBottom: {
     labelKey: 'com_shortcut_scroll_to_bottom',
     groupKey: 'com_shortcut_group_chat',
@@ -81,11 +117,17 @@ export const shortcutDefinitions: Record<string, ShortcutDefinition> = {
     displayMac: '⌘ ⇧ T',
     displayOther: 'Ctrl+Shift+T',
   },
-  copyLastCode: {
-    labelKey: 'com_shortcut_copy_last_code',
+  archiveConversation: {
+    labelKey: 'com_shortcut_archive_conversation',
     groupKey: 'com_shortcut_group_chat',
-    displayMac: '⌘ ⇧ K',
-    displayOther: 'Ctrl+Shift+K',
+    displayMac: '⌘ ⇧ A',
+    displayOther: 'Ctrl+Shift+A',
+  },
+  deleteConversation: {
+    labelKey: 'com_shortcut_delete_conversation',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ ⌫',
+    displayOther: 'Ctrl+Shift+Backspace',
   },
 };
 
