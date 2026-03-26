@@ -3,8 +3,9 @@
  * after successful passport authentication, so ALS tenant context is set for
  * all downstream middleware and route handlers.
  *
- * This catches the ordering bug from Finding 1 — if tenantContextMiddleware is
- * ever removed from the chain, these tests fail.
+ * requireJwtAuth must chain tenantContextMiddleware after passport populates
+ * req.user (not at global app.use() scope where req.user is undefined).
+ * If the chaining is removed, these tests fail.
  */
 
 const { getTenantId } = require('@librechat/data-schemas');
@@ -22,21 +23,20 @@ jest.mock('passport', () => ({
   }),
 }));
 
-// Mock @librechat/api — must use require() inside the factory to avoid
-// out-of-scope variable restrictions.
+// Mock @librechat/api — the real tenantContextMiddleware is TS and cannot be
+// required directly from CJS tests. This thin wrapper mirrors the real logic
+// (read req.user.tenantId, call tenantStorage.run) using the same data-schemas
+// primitives. The real implementation is covered by packages/api tenant.spec.ts.
 jest.mock('@librechat/api', () => {
   const { tenantStorage } = require('@librechat/data-schemas');
   return {
     isEnabled: jest.fn(() => false),
     tenantContextMiddleware: (req, res, next) => {
-      const user = req.user;
-      if (!user || !user.tenantId) {
-        next();
-        return;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        return next();
       }
-      tenantStorage.run({ tenantId: user.tenantId }, async () => {
-        next();
-      });
+      return tenantStorage.run({ tenantId }, async () => next());
     },
   };
 });

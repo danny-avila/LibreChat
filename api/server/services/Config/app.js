@@ -35,19 +35,21 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
  * and the endpoints config cache.
  * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
  */
+async function clearEndpointConfigCache() {
+  try {
+    const configStore = getLogStores(CacheKeys.CONFIG_STORE);
+    await configStore.delete(CacheKeys.ENDPOINT_CONFIG);
+  } catch {
+    // CONFIG_STORE or ENDPOINT_CONFIG may not exist — not critical
+  }
+}
+
 async function invalidateConfigCaches(tenantId) {
   await Promise.all([
     clearAppConfigCache(),
     clearOverrideCache(tenantId),
     invalidateCachedTools({ invalidateGlobal: true }),
-    (async () => {
-      try {
-        const configStore = getLogStores(CacheKeys.CONFIG_STORE);
-        await configStore.delete(CacheKeys.ENDPOINT_CONFIG);
-      } catch {
-        // CONFIG_STORE or ENDPOINT_CONFIG may not exist — not critical
-      }
-    })(),
+    clearEndpointConfigCache(),
   ]);
 }
 

@@ -3,12 +3,7 @@ import { tenantStorage, logger } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
 
-if (!isMainThread) {
-  logger.error(
-    '[tenantContextMiddleware] Loaded in a worker thread — ' +
-      'ALS context will not propagate. This middleware must only run in the main Express process.',
-  );
-}
+let _checkedThread = false;
 
 let _strictMode: boolean | undefined;
 
@@ -41,6 +36,16 @@ export function tenantContextMiddleware(
   res: Response,
   next: NextFunction,
 ): void {
+  if (!_checkedThread) {
+    _checkedThread = true;
+    if (!isMainThread) {
+      logger.error(
+        '[tenantContextMiddleware] Running in a worker thread — ' +
+          'ALS context will not propagate. This middleware must only run in the main Express process.',
+      );
+    }
+  }
+
   const user = req.user as { tenantId?: string } | undefined;
 
   if (!user) {

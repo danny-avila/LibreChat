@@ -45,9 +45,19 @@ export interface AppConfigServiceDeps {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+let _strictOverride: boolean | undefined;
+function isStrictOverrideMode(): boolean {
+  return (_strictOverride ??= process.env.TENANT_ISOLATION_STRICT === 'true');
+}
+
+/** @internal Resets the cached strict-override flag. Exposed for test teardown only. */
+export function _resetOverrideStrictCache(): void {
+  _strictOverride = undefined;
+}
+
 function overrideCacheKey(role?: string, userId?: string, tenantId?: string): string {
   const tenant = tenantId || '__default__';
-  if (!tenantId && process.env.TENANT_ISOLATION_STRICT === 'true') {
+  if (!tenantId && isStrictOverrideMode()) {
     logger.warn(
       '[overrideCacheKey] No tenantId in strict mode — falling back to __default__. ' +
         'This likely indicates a code path that bypasses the tenant context middleware.',
@@ -101,7 +111,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
   async function ensureBaseConfig(refresh?: boolean): Promise<AppConfig> {
     let baseConfig = (await cache.get(BASE_CONFIG_KEY)) as AppConfig | undefined;
     if (!baseConfig || refresh) {
-      logger.info('[getAppConfig] Loading base configuration...');
+      logger.info('[ensureBaseConfig] Loading base configuration...');
       baseConfig = await loadBaseConfig();
 
       if (!baseConfig) {

@@ -236,15 +236,9 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Get a list of all principal identifiers for a user (user ID + group IDs + public)
-   * For use in permission checks
-   * @param params - Parameters object
-   * @param params.userId - The user ID
-   * @param params.role - Optional user role (if not provided, will query from DB)
-   * @param session - Optional MongoDB session for transactions
-   * @returns Array of principal objects with type and id
-   */
-  /**
+   * Get a list of all principal identifiers for a user (user ID + group IDs + public).
+   * For use in permission checks.
+   *
    * Tenant filtering for group memberships is handled automatically by the
    * `applyTenantIsolation` Mongoose plugin on the Group schema. The
    * `tenantContextMiddleware` (chained by `requireJwtAuth` after passport auth)
@@ -257,6 +251,12 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * reject such queries.
    *
    * Ref: #12091 (resolved by tenant context middleware in requireJwtAuth)
+   *
+   * @param params - Parameters object
+   * @param params.userId - The user ID
+   * @param params.role - Optional user role (if not provided, will query from DB)
+   * @param session - Optional MongoDB session for transactions
+   * @returns Array of principal objects with type and id
    */
   async function getUserPrincipals(
     params: {

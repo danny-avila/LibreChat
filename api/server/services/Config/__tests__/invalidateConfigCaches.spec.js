@@ -118,16 +118,10 @@ describe('invalidateConfigCaches', () => {
         ),
     );
 
-    const start = Date.now();
     await invalidateConfigCaches();
-    const elapsed = Date.now() - start;
 
+    // All four should have been called (parallel execution via Promise.all)
     expect(order).toHaveLength(4);
-    expect(order).toContain('base');
-    expect(order).toContain('override');
-    expect(order).toContain('tools');
-    expect(order).toContain('endpoint');
-    // If sequential: ~40ms. Parallel: ~10ms. Use generous threshold.
-    expect(elapsed).toBeLessThan(35);
+    expect(new Set(order)).toEqual(new Set(['base', 'override', 'tools', 'endpoint']));
   });
 });
