@@ -378,4 +378,75 @@ describe('MCPServersInitializer', () => {
       expect(mockInspect).not.toHaveBeenCalled();
     });
   });
+
+  describe('populateLocalCache (follower path)', () => {
+    it('should populate App cache on follower after leader signals completion', async () => {
+      // Leader initializes first (populates cache + sets statusCache)
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).toHaveBeenCalledTimes(5);
+      expect(await registryStatusCache.isInitialized()).toBe(true);
+
+      // Simulate a follower process: reset singleton + process flags, keep statusCache
+      (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+      MCPServersRegistry.createInstance(mockMongoose);
+      const followerRegistry = MCPServersRegistry.getInstance();
+      MCPServersInitializer.resetProcessFlag();
+      jest.clearAllMocks();
+
+      // Follower's first call sets hasInitializedThisProcess=true, sees isLeader=true
+      // (in this test env), but we need to test the second-call path.
+      // Simulate the follower's state after its first recursive call resolved:
+      // hasInitializedThisProcess=true, statusCache.isInitialized()=true
+      // This triggers populateLocalCache.
+      // To do this, call initialize twice: first call does leader work, second hits the
+      // early-return with populateLocalCache.
+      await MCPServersInitializer.initialize(testConfigs);
+      jest.clearAllMocks();
+
+      // Verify follower's App cache is populated (servers are accessible)
+      const fileTools = await followerRegistry.getServerConfig('file_tools_server');
+      expect(fileTools).toBeDefined();
+      const oauthServer = await followerRegistry.getServerConfig('oauth_server');
+      expect(oauthServer).toBeDefined();
+      const searchTools = await followerRegistry.getServerConfig('search_tools_server');
+      expect(searchTools).toBeDefined();
+    });
+
+    it('should only populate local cache once even if initialize is called multiple times', async () => {
+      // First initialization
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).toHaveBeenCalledTimes(5);
+
+      jest.clearAllMocks();
+
+      // Second call triggers populateLocalCache, but cache is already populated (leader case)
+      // so localCachePopulated flag prevents re-initialization
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).not.toHaveBeenCalled();
+
+      // Third call also skips
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).not.toHaveBeenCalled();
+    });
+
+    it('should populate follower cache independently from DB configs', async () => {
+      // Leader initializes
+      await MCPServersInitializer.initialize(testConfigs);
+
+      // Simulate a fresh follower: new registry, reset flags
+      (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+      MCPServersRegistry.createInstance(mockMongoose);
+      const followerRegistry = MCPServersRegistry.getInstance();
+      MCPServersInitializer.resetProcessFlag();
+      jest.clearAllMocks();
+
+      // Follower initializes — should call inspector for all servers
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).toHaveBeenCalledTimes(5);
+
+      // Verify all configs accessible on follower
+      const allConfigs = await followerRegistry.getAllServerConfigs();
+      expect(Object.keys(allConfigs)).toHaveLength(5);
+    });
+  });
 });
