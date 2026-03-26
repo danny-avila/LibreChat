@@ -30,10 +30,12 @@ export class MCPServersInitializer {
    *   performs the expensive initialization operations.
    */
   private static hasInitializedThisProcess = false;
+  private static localCachePopulated = false;
 
-  /** Reset the process-level initialization flag. Only used for testing. */
+  /** Reset process-level initialization flags. Only used for testing. */
   public static resetProcessFlag(): void {
     MCPServersInitializer.hasInitializedThisProcess = false;
+    MCPServersInitializer.localCachePopulated = false;
   }
 
   public static async initialize(rawConfigs: t.MCPServers): Promise<void> {
@@ -67,6 +69,7 @@ export class MCPServersInitializer {
         ),
       );
       await statusCache.setInitialized(true);
+      MCPServersInitializer.localCachePopulated = true;
     } else {
       // Followers try again after a delay if not initialized
       await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -76,17 +79,21 @@ export class MCPServersInitializer {
 
   /**
    * Ensures the local in-memory App cache is populated for this process.
+   *
    * In cluster mode, the leader populates its cache during initialization. Followers
    * skip initialization but still need their own local cache populated since App configs
-   * use in-memory storage (not Redis). This method is idempotent — if configs already
-   * exist (leader case), the duplicate `add()` calls throw and are silently caught.
+   * use in-memory storage (not Redis).
+   *
+   * Uses a static flag for idempotency rather than querying `getAllServerConfigs()`,
+   * which would merge App + DB caches and produce false early returns in deployments
+   * with publicly shared DB configs, and would poison the TTL read-through cache
+   * with a stale empty result.
    */
   private static async populateLocalCache(rawConfigs: t.MCPServers): Promise<void> {
-    const registry = MCPServersRegistry.getInstance();
-    const existing = await registry.getAllServerConfigs();
-    if (Object.keys(existing).length > 0) {
+    if (MCPServersInitializer.localCachePopulated) {
       return;
     }
+    MCPServersInitializer.localCachePopulated = true;
 
     logger.info('[MCP] Populating local App cache for this process');
     const serverNames = Object.keys(rawConfigs);
