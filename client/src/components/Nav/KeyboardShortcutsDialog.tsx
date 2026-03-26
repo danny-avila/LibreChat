@@ -76,7 +76,7 @@ function KeyboardShortcutsDialog() {
           </OGDialogClose>
         </div>
 
-        <div className="max-h-[min(60vh,480px)] overflow-y-auto px-4 pb-4 pt-2">
+        <div className="max-h-[min(70vh,560px)] overflow-y-auto px-4 pb-4 pt-2">
           {groupEntries.map(([groupKey, shortcuts], groupIdx) => (
             <div
               key={groupKey}
