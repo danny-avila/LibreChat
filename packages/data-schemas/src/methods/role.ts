@@ -355,7 +355,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     const Role = mongoose.models.Role;
     const existing = await Role.findOne({ name: name.trim() }).lean();
     if (existing) {
-      throw new Error(`Role "${name}" already exists`);
+      throw new Error(`Role "${name.trim()}" already exists`);
     }
     let role;
     try {
@@ -376,6 +376,8 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     return role.toObject() as IRole;
   }
 
+  const getUserModel = () => mongoose.models.User as Model<IUser>;
+
   /** Guards against deleting system roles. Reassigns affected users back to USER. */
   async function deleteRoleByName(roleName: string): Promise<IRole | null> {
     if (SystemRoles[roleName as keyof typeof SystemRoles]) {
@@ -386,8 +388,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     if (!exists) {
       return null;
     }
-    const User = mongoose.models.User as Model<IUser>;
-    await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
+    await getUserModel().updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
     const deleted = await Role.findOneAndDelete({ name: roleName }).lean();
     const cache = deps.getCache?.(CacheKeys.ROLES);
     if (cache) {
@@ -397,18 +398,17 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   async function updateUsersByRole(oldRole: string, newRole: string): Promise<void> {
-    const User = mongoose.models.User as Model<IUser>;
-    await User.updateMany({ role: oldRole }, { $set: { role: newRole } });
+    await getUserModel().updateMany({ role: oldRole }, { $set: { role: newRole } });
   }
 
   async function listUsersByRole(
     roleName: string,
     options?: { limit?: number; offset?: number },
   ): Promise<IUser[]> {
-    const User = mongoose.models.User as Model<IUser>;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
-    return await User.find({ role: roleName })
+    return await getUserModel()
+      .find({ role: roleName })
       .select('_id name email avatar')
       .sort({ _id: 1 })
       .skip(offset)
@@ -417,8 +417,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   async function countUsersByRole(roleName: string): Promise<number> {
-    const User = mongoose.models.User as Model<IUser>;
-    return User.countDocuments({ role: roleName });
+    return getUserModel().countDocuments({ role: roleName });
   }
 
   return {

@@ -191,6 +191,22 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.createRoleByName).not.toHaveBeenCalled();
     });
 
+    it('returns 400 when description exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'editor', description: 'a'.repeat(2001) },
+      });
+
+      await handlers.createRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({
+        error: 'description must not exceed 2000 characters',
+      });
+      expect(deps.createRoleByName).not.toHaveBeenCalled();
+    });
+
     it('returns 409 when role already exists', async () => {
       const deps = createDeps({
         createRoleByName: jest.fn().mockRejectedValue(new Error('Role "editor" already exists')),
@@ -487,6 +503,44 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.updateUsersByRole).toHaveBeenNthCalledWith(2, 'new-name', 'editor');
     });
 
+    it('rolls back user migration when rename throws', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
+        updateRoleByName: jest.fn().mockRejectedValue(new Error('db crash')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        body: { name: 'new-name' },
+      });
+
+      await handlers.updateRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.updateUsersByRole).toHaveBeenCalledTimes(2);
+      expect(deps.updateUsersByRole).toHaveBeenNthCalledWith(1, 'editor', 'new-name');
+      expect(deps.updateUsersByRole).toHaveBeenNthCalledWith(2, 'new-name', 'editor');
+    });
+
+    it('returns 400 when description exceeds max length', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValue(mockRole()),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: 'editor' },
+        body: { description: 'a'.repeat(2001) },
+      });
+
+      await handlers.updateRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({
+        error: 'description must not exceed 2000 characters',
+      });
+      expect(deps.updateRoleByName).not.toHaveBeenCalled();
+    });
+
     it('returns 500 on unexpected error', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
@@ -586,7 +640,7 @@ describe('createAdminRolesHandlers', () => {
 
   describe('deleteRole', () => {
     it('deletes role and returns 200', async () => {
-      const deps = createDeps({ getRoleByName: jest.fn().mockResolvedValue(mockRole()) });
+      const deps = createDeps();
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
 
@@ -610,7 +664,7 @@ describe('createAdminRolesHandlers', () => {
     });
 
     it('returns 404 when role not found', async () => {
-      const deps = createDeps({ getRoleByName: jest.fn().mockResolvedValue(null) });
+      const deps = createDeps({ deleteRoleByName: jest.fn().mockResolvedValue(null) });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { name: 'nonexistent' } });
 
@@ -622,7 +676,6 @@ describe('createAdminRolesHandlers', () => {
 
     it('returns 500 on error', async () => {
       const deps = createDeps({
-        getRoleByName: jest.fn().mockResolvedValue(mockRole()),
         deleteRoleByName: jest.fn().mockRejectedValue(new Error('db down')),
       });
       const handlers = createAdminRolesHandlers(deps);

@@ -6,6 +6,7 @@ import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
 const MAX_NAME_LENGTH = 500;
+const MAX_DESCRIPTION_LENGTH = 2000;
 
 interface RoleNameParams {
   name: string;
@@ -93,6 +94,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
           .status(400)
           .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
       }
+      if (description !== undefined && typeof description !== 'string') {
+        return res.status(400).json({ error: 'description must be a string' });
+      }
+      if (description && description.length > MAX_DESCRIPTION_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters` });
+      }
       const role = await createRoleByName({
         name: name.trim(),
         description: description ?? '',
@@ -111,10 +120,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   }
 
   async function updateRoleHandler(req: ServerRequest, res: Response) {
+    const { name } = req.params as RoleNameParams;
+    const body = req.body as Partial<IRole>;
+    let isRename = false;
+    let trimmedName = '';
     try {
-      const { name } = req.params as RoleNameParams;
-      const body = req.body as Partial<IRole>;
-
       if (
         body.name !== undefined &&
         (!body.name || typeof body.name !== 'string' || !body.name.trim())
@@ -127,8 +137,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
           .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
       }
 
-      const trimmedName = body.name?.trim();
-      const isRename = trimmedName !== undefined && trimmedName !== name;
+      trimmedName = body.name?.trim() ?? '';
+      isRename = trimmedName !== '' && trimmedName !== name;
 
       if (isRename && SystemRoles[name as keyof typeof SystemRoles]) {
         return res.status(403).json({ error: 'Cannot rename system role' });
@@ -149,8 +159,17 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         }
       }
 
+      if (body.description !== undefined && typeof body.description !== 'string') {
+        return res.status(400).json({ error: 'description must be a string' });
+      }
+      if (body.description && body.description.length > MAX_DESCRIPTION_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters` });
+      }
+
       const updates: Partial<IRole> = {};
-      if (trimmedName !== undefined) {
+      if (isRename) {
         updates.name = trimmedName;
       }
       if (body.description !== undefined) {
@@ -171,6 +190,13 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
       return res.status(200).json({ role });
     } catch (error) {
+      if (isRename) {
+        try {
+          await updateUsersByRole(trimmedName, name);
+        } catch (rollbackError) {
+          logger.error('[adminRoles] rollback failed after updateRole error:', rollbackError);
+        }
+      }
       logger.error('[adminRoles] updateRole error:', error);
       return res.status(500).json({ error: 'Failed to update role' });
     }
@@ -208,12 +234,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(403).json({ error: 'Cannot delete system role' });
       }
 
-      const existing = await getRoleByName(name);
-      if (!existing) {
+      const deleted = await deleteRoleByName(name);
+      if (!deleted) {
         return res.status(404).json({ error: 'Role not found' });
       }
-
-      await deleteRoleByName(name);
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] deleteRole error:', error);
