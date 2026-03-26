@@ -80,7 +80,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
   }, []);
 
   return (
-    <div className="group/title relative mr-2 flex h-9 min-w-0 flex-1 items-center">
+    <div className="group/title relative mr-2 flex h-8 min-w-0 flex-1 items-center">
       {isEditing ? (
         <input
           ref={inputRef}
@@ -90,14 +90,14 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
           onKeyDown={handleKeyDown}
           onBlur={saveName}
           disabled={isLoading}
-          className="h-9 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-0 text-lg font-semibold text-text-primary outline-none focus:border-border-medium focus:outline-none disabled:opacity-60"
+          className="h-8 min-w-0 flex-1 rounded-md border border-transparent bg-transparent pl-2 pr-0 text-base font-semibold text-text-primary outline-none focus:border-border-medium focus:outline-none disabled:opacity-60"
           aria-label={localize('com_ui_name')}
         />
       ) : (
         <button
           type="button"
           onClick={() => setIsEditing(true)}
-          className="h-9 min-w-0 flex-1 cursor-text truncate text-left text-lg font-semibold text-text-primary transition-colors hover:text-text-secondary focus:outline-none"
+          className="h-8 min-w-0 flex-1 cursor-text truncate pl-2 text-left text-base font-semibold text-text-primary transition-colors hover:text-text-secondary focus:outline-none"
           title={newName}
           aria-label={localize('com_ui_edit') + ': ' + (newName ?? '')}
         >

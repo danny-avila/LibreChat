@@ -65,18 +65,15 @@ const VersionsPanel = React.memo(
     const isProductionVersion = selectedPrompt?._id === group?.productionId;
 
     return (
-      <div
-        className="flex h-full w-full flex-col overflow-hidden"
-        style={{ maxHeight: 'calc(100vh - 100px)' }}
-      >
+      <div className="flex h-full w-full flex-col overflow-hidden">
         {canEdit && (
-          <div className="shrink-0 border-b border-border-medium px-4 py-3">
+          <div className="shrink-0 border-b border-border-medium px-4 py-2">
             <Button
               variant="submit"
               size="sm"
               aria-label={localize('com_ui_make_production')}
               className={cn(
-                'w-full gap-2 transition-all duration-200',
+                'w-full gap-1.5 transition-all duration-200',
                 isProductionVersion &&
                   'border border-green-500/30 bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-950/30 dark:text-green-400 dark:hover:bg-green-950/50',
               )}
@@ -106,7 +103,7 @@ const VersionsPanel = React.memo(
             </Button>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="flex-1 overflow-y-auto px-4 py-2">
           {isLoadingPrompts &&
             Array.from({ length: 6 }).map((_, index: number) => (
               <div key={index} className="my-2">
@@ -115,7 +112,7 @@ const VersionsPanel = React.memo(
             ))}
           {!isLoadingPrompts && prompts.length > 0 && (
             <>
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between">
                 <h2 className="text-sm font-medium text-text-secondary">
                   {localize('com_ui_versions')}
                 </h2>
@@ -454,14 +451,14 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
 
   return (
     <FormProvider {...methods}>
-      <form className="mt-4 flex w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
+      <form className="flex w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
         <h1 className="sr-only">{localize('com_ui_edit_prompt_page')}</h1>
         <div className="relative w-full">
           <div className="h-full w-full">
             <div className="flex h-full">
               <div className="flex-1 overflow-hidden px-4">
                 {/* Header: Title + Actions */}
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="mb-3 mt-2 flex items-center justify-between gap-2">
                   {isLoadingGroup ? (
                     <Skeleton className="h-9 w-48" />
                   ) : (
@@ -510,7 +507,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
 
                 {/* Mobile Actions Row */}
                 {!isLoadingGroup && group && (
-                  <div className="mb-4 sm:hidden">
+                  <div className="mb-3 sm:hidden">
                     <HeaderActions
                       group={group}
                       canEdit={canEdit}
@@ -525,7 +522,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
                 {isLoadingPrompts ? (
                   <Skeleton className="h-96" aria-live="polite" />
                 ) : (
-                  <div className="mb-2 flex h-full flex-col gap-4">
+                  <div className="mb-2 flex h-full flex-col gap-3">
                     <PromptEditor
                       name="prompt"
                       isEditing={isEditing}
@@ -589,8 +586,8 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
             aria-label={localize('com_ui_versions')}
           >
             <div className="h-full shadow-xl">
-              <div className="flex items-center justify-between border-b border-border-medium px-4 py-3">
-                <h2 className="text-lg font-semibold text-text-primary">
+              <div className="flex items-center justify-between border-b border-border-medium px-4 py-2">
+                <h2 className="text-base font-semibold text-text-primary">
                   {localize('com_ui_versions')}
                 </h2>
                 <Button
