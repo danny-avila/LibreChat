@@ -58,15 +58,6 @@ export class ServerConfigsCacheRedisAggregateKey
   }
 
   /**
-   * Populates the local snapshot with the committed state after a successful write.
-   * Avoids an unnecessary Redis GET on the next read by caching the known-good state.
-   */
-  private populateLocalSnapshot(data: Record<string, ParsedServerConfig>): void {
-    this.localSnapshot = data;
-    this.localSnapshotExpiry = Date.now() + ServerConfigsCacheRedisAggregateKey.LOCAL_TTL_MS;
-  }
-
-  /**
    * Serializes write operations to prevent concurrent read-modify-write races.
    * Reads (`get`, `getAll`) are not serialized — they can run concurrently.
    * Always invalidates the local snapshot in `finally` to guarantee cleanup
@@ -121,7 +112,6 @@ export class ServerConfigsCacheRedisAggregateKey
       const newAll = { ...all, [serverName]: storedConfig };
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
       this.successCheck(`add App server "${serverName}"`, success);
-      this.populateLocalSnapshot(newAll);
       return { serverName, config: storedConfig };
     });
   }
@@ -139,7 +129,6 @@ export class ServerConfigsCacheRedisAggregateKey
       const newAll = { ...all, [serverName]: { ...config, updatedAt: Date.now() } };
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
       this.successCheck(`update App server "${serverName}"`, success);
-      this.populateLocalSnapshot(newAll);
     });
   }
 
@@ -154,7 +143,6 @@ export class ServerConfigsCacheRedisAggregateKey
       const { [serverName]: _, ...newAll } = all;
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
       this.successCheck(`remove App server "${serverName}"`, success);
-      this.populateLocalSnapshot(newAll);
     });
   }
 
