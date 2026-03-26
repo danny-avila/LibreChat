@@ -15,7 +15,6 @@ export { List as PromptGroupsList, ChatGroupItem, ListCard, NoPromptGroup } from
 export {
   CreatePromptButton,
   AdminSettings,
-  AdvancedSwitch,
   AlwaysMakeProd,
   AutoSendPrompt,
   BackToChat,

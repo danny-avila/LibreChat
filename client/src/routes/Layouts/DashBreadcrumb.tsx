@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useLocation } from 'react-router-dom';
 import { SystemRoles } from 'librechat-data-provider';
@@ -11,11 +11,9 @@ import {
   BreadcrumbSeparator,
 } from '@librechat/client';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
-import { AdvancedSwitch, AdminSettings } from '~/components/Prompts';
+import { AdminSettings } from '~/components/Prompts';
 import { useDashboardContext } from '~/Providers';
 import store from '~/store';
-
-const promptsPathPattern = /prompts\/(?!new(?:\/|$)).*$/;
 
 const getConversationId = (prevLocationPath: string) => {
   if (!prevLocationPath || prevLocationPath.includes('/d/')) {
@@ -42,11 +40,6 @@ export default function DashBreadcrumb() {
 
   const chatLinkHandler = useCustomLink('/c/' + lastConversationId, clickCallback);
   const promptsLinkHandler = useCustomLink('/d/prompts');
-
-  const isPromptsPath = useMemo(
-    () => promptsPathPattern.test(location.pathname),
-    [location.pathname],
-  );
 
   return (
     <div className="mr-2 mt-2 flex h-10 items-center justify-between">
@@ -96,7 +89,6 @@ export default function DashBreadcrumb() {
         </BreadcrumbList>
       </Breadcrumb>
       <div className="flex items-center justify-center gap-2">
-        {isPromptsPath && <AdvancedSwitch />}
         {user?.role === SystemRoles.ADMIN && <AdminSettings />}
       </div>
     </div>

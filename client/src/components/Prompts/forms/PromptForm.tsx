@@ -28,7 +28,6 @@ import PromptDetails from '../display/PromptDetails';
 import DeletePrompt from '../dialogs/DeletePrompt';
 import NoPromptGroup from '../lists/NoPromptGroup';
 import PromptEditor from '../editor/PromptEditor';
-import AdvancedSwitch from '../buttons/AdvancedSwitch';
 import SkeletonForm from '../utils/SkeletonForm';
 import Description from '../fields/Description';
 import SharePrompt from '../dialogs/SharePrompt';
@@ -70,9 +69,6 @@ const VersionsPanel = React.memo(
         className="flex h-full w-full flex-col overflow-hidden"
         style={{ maxHeight: 'calc(100vh - 100px)' }}
       >
-        <div className="shrink-0 px-4 py-3">
-          <AdvancedSwitch />
-        </div>
         {canEdit && (
           <div className="shrink-0 border-b border-border-medium px-4 py-3">
             <Button

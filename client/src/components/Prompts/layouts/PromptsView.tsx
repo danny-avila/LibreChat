@@ -2,15 +2,13 @@ import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { Sidebar, useMediaQuery } from '@librechat/client';
 import { Outlet, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
-import { AdvancedSwitch, AdminSettings } from '~/components/Prompts';
+import { AdminSettings } from '~/components/Prompts';
 import { useHasAccess, useLocalize, useAuthContext } from '~/hooks';
 import DashBreadcrumb from '~/routes/Layouts/DashBreadcrumb';
 import GroupSidePanel from '../sidebar/GroupSidePanel';
 import FilterPrompts from '../sidebar/FilterPrompts';
 import { PromptGroupsProvider } from '~/Providers';
 import { cn } from '~/utils';
-
-const promptsPathPattern = /prompts\/(?!new(?:\/|$)).*$/;
 
 export default function PromptsView() {
   const params = useParams();
@@ -24,11 +22,6 @@ export default function PromptsView() {
   const [panelVisible, setPanelVisible] = useState(!isSmallerScreen);
   const openPanelRef = useRef<HTMLButtonElement>(null);
   const closePanelRef = useRef<HTMLButtonElement>(null);
-  const isPromptsPath = useMemo(
-    () => promptsPathPattern.test(location.pathname),
-    [location.pathname],
-  );
-
   const hasAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.USE,
@@ -87,7 +80,6 @@ export default function PromptsView() {
               <Sidebar className="h-4 w-4" />
             </button>
             <div className="flex items-center justify-center gap-2">
-              {isPromptsPath && <AdvancedSwitch />}
               {user?.role === SystemRoles.ADMIN && <AdminSettings />}
             </div>
           </div>
