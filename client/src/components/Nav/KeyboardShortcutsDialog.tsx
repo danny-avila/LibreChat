@@ -97,7 +97,10 @@ function KeyboardShortcutsDialog() {
 
   return (
     <OGDialog open={open} onOpenChange={setOpen}>
-      <OGDialogContent showCloseButton={false} className="w-11/12 max-w-4xl overflow-hidden px-8">
+      <OGDialogContent
+        showCloseButton={false}
+        className="w-11/12 max-w-4xl overflow-hidden px-6 py-1"
+      >
         <div className="flex items-center justify-between pb-0 pt-5">
           <OGDialogTitle>{localize('com_shortcut_keyboard_shortcuts')}</OGDialogTitle>
           <OGDialogClose>
