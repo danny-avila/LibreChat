@@ -13,6 +13,12 @@ interface CacheStore {
   get: (key: string) => Promise<unknown>;
   set: (key: string, value: unknown, ttl?: number) => Promise<unknown>;
   delete: (key: string) => Promise<boolean>;
+  /** Keyv options — used for key enumeration when clearing override caches. */
+  opts?: {
+    store?: {
+      keys?: () => IterableIterator<string>;
+    };
+  };
 }
 
 export interface AppConfigServiceDeps {
@@ -39,8 +45,28 @@ export interface AppConfigServiceDeps {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+let _strictOverride: boolean | undefined;
+function isStrictOverrideMode(): boolean {
+  return (_strictOverride ??= process.env.TENANT_ISOLATION_STRICT === 'true');
+}
+
+/** @internal Resets the cached strict-override flag. Exposed for test teardown only. */
+let _warnedNoTenantInStrictMode = false;
+
+export function _resetOverrideStrictCache(): void {
+  _strictOverride = undefined;
+  _warnedNoTenantInStrictMode = false;
+}
+
 function overrideCacheKey(role?: string, userId?: string, tenantId?: string): string {
   const tenant = tenantId || '__default__';
+  if (!tenantId && isStrictOverrideMode() && !_warnedNoTenantInStrictMode) {
+    _warnedNoTenantInStrictMode = true;
+    logger.warn(
+      '[overrideCacheKey] No tenantId in strict mode — falling back to __default__. ' +
+        'This likely indicates a code path that bypasses the tenant context middleware.',
+    );
+  }
   if (userId && role) {
     return `_OVERRIDE_:${tenant}:${role}:${userId}`;
   }
@@ -83,20 +109,13 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
   }
 
   /**
-   * Get the app configuration, optionally merged with DB overrides for the given principal.
-   *
-   * The base config (from YAML + AppService) is cached indefinitely. Per-principal merged
-   * configs are cached with a short TTL (`overrideCacheTtl`, default 60s). On cache miss,
-   * `getApplicableConfigs` queries the DB for matching overrides and merges them by priority.
+   * Ensure the YAML-derived base config is loaded and cached.
+   * Returns the `_BASE_` config (YAML + AppService). No DB queries.
    */
-  async function getAppConfig(
-    options: { role?: string; userId?: string; tenantId?: string; refresh?: boolean } = {},
-  ): Promise<AppConfig> {
-    const { role, userId, tenantId, refresh } = options;
-
+  async function ensureBaseConfig(refresh?: boolean): Promise<AppConfig> {
     let baseConfig = (await cache.get(BASE_CONFIG_KEY)) as AppConfig | undefined;
     if (!baseConfig || refresh) {
-      logger.info('[getAppConfig] Loading base configuration...');
+      logger.info('[ensureBaseConfig] Loading base configuration...');
       baseConfig = await loadBaseConfig();
 
       if (!baseConfig) {
@@ -108,6 +127,37 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       }
 
       await cache.set(BASE_CONFIG_KEY, baseConfig);
+    }
+    return baseConfig;
+  }
+
+  /**
+   * Get the app configuration, optionally merged with DB overrides for the given principal.
+   *
+   * The base config (from YAML + AppService) is cached indefinitely. Per-principal merged
+   * configs are cached with a short TTL (`overrideCacheTtl`, default 60s). On cache miss,
+   * `getApplicableConfigs` queries the DB for matching overrides and merges them by priority.
+   *
+   * When `baseOnly` is true, returns the YAML-derived config without any DB queries.
+   * `role`, `userId`, and `tenantId` are ignored in this mode.
+   * Use this for startup, auth strategies, and other pre-tenant code paths.
+   */
+  async function getAppConfig(
+    options: {
+      role?: string;
+      userId?: string;
+      tenantId?: string;
+      refresh?: boolean;
+      /** When true, return only the YAML-derived base config — no DB override queries. */
+      baseOnly?: boolean;
+    } = {},
+  ): Promise<AppConfig> {
+    const { role, userId, tenantId, refresh, baseOnly } = options;
+
+    const baseConfig = await ensureBaseConfig(refresh);
+
+    if (baseOnly) {
+      return baseConfig;
     }
 
     const cacheKey = overrideCacheKey(role, userId, tenantId);
@@ -146,9 +196,55 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
     await cache.delete(BASE_CONFIG_KEY);
   }
 
+  /**
+   * Clear per-principal override caches. When `tenantId` is provided, only caches
+   * matching `_OVERRIDE_:${tenantId}:*` are deleted. When omitted, ALL override
+   * caches are cleared.
+   */
+  async function clearOverrideCache(tenantId?: string): Promise<void> {
+    const namespace = cacheKeys.APP_CONFIG;
+    const overrideSegment = tenantId ? `_OVERRIDE_:${tenantId}:` : '_OVERRIDE_:';
+
+    // In-memory store — enumerate keys directly.
+    // APP_CONFIG defaults to FORCED_IN_MEMORY_CACHE_NAMESPACES, so this is the
+    // standard path. Redis SCAN is intentionally avoided here — it can cause 60s+
+    // stalls under concurrent load (see #12410). When APP_CONFIG is Redis-backed
+    // and store.keys() is unavailable, overrides expire naturally via TTL.
+    const store = (cache as CacheStore).opts?.store;
+    if (store && typeof store.keys === 'function') {
+      // Keyv stores keys with a namespace prefix (e.g. "APP_CONFIG:_OVERRIDE_:...").
+      // We match on the namespaced key but delete using the un-namespaced key
+      // because Keyv.delete() auto-prepends the namespace.
+      const namespacedPrefix = `${namespace}:${overrideSegment}`;
+      const toDelete: string[] = [];
+      for (const key of store.keys()) {
+        if (key.startsWith(namespacedPrefix)) {
+          toDelete.push(key.slice(namespace.length + 1));
+        }
+      }
+      if (toDelete.length > 0) {
+        await Promise.all(toDelete.map((key) => cache.delete(key)));
+        logger.info(
+          `[clearOverrideCache] Cleared ${toDelete.length} override cache entries` +
+            (tenantId ? ` for tenant ${tenantId}` : ''),
+        );
+      }
+      return;
+    }
+
+    logger.warn(
+      '[clearOverrideCache] Cache store does not support key enumeration. ' +
+        'Override caches will expire naturally via TTL (%dms). ' +
+        'This is expected when APP_CONFIG is Redis-backed — Redis SCAN is avoided ' +
+        'for performance reasons (see #12410).',
+      overrideCacheTtl,
+    );
+  }
+
   return {
     getAppConfig,
     clearAppConfigCache,
+    clearOverrideCache,
   };
 }
 

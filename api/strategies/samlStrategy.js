@@ -193,7 +193,7 @@ async function setupSaml() {
           logger.debug('[samlStrategy] SAML profile:', profile);
 
           const userEmail = getEmail(profile) || '';
-          const appConfig = await getAppConfig();
+          const appConfig = await getAppConfig({ baseOnly: true });
 
           if (!isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)) {
             logger.error(

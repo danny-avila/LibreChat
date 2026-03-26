@@ -77,6 +77,8 @@ export interface AdminConfigDeps {
     userId?: string;
     tenantId?: string;
   }) => Promise<AppConfig>;
+  /** Invalidate all config-related caches after a mutation. */
+  invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
 }
 
 // ── Validation helpers ───────────────────────────────────────────────
@@ -133,6 +135,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
     toggleConfigActive,
     hasConfigCapability,
     getAppConfig,
+    invalidateConfigCaches,
   } = deps;
 
   /**
@@ -176,7 +179,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(501).json({ error: 'Base config endpoint not configured' });
       }
 
-      const appConfig = await getAppConfig();
+      const appConfig = await getAppConfig({
+        tenantId: user.tenantId,
+      });
       return res.status(200).json({ config: appConfig });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', error);
@@ -278,6 +283,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         priority ?? DEFAULT_PRIORITY,
       );
 
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+        logger.error('[adminConfig] Cache invalidation failed after upsert:', err),
+      );
       return res.status(config?.configVersion === 1 ? 201 : 200).json({ config });
     } catch (error) {
       logger.error('[adminConfig] upsertConfigOverrides error:', error);
@@ -367,6 +375,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         priority ?? existing?.priority ?? DEFAULT_PRIORITY,
       );
 
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+        logger.error('[adminConfig] Cache invalidation failed after patch:', err),
+      );
       return res.status(200).json({ config });
     } catch (error) {
       logger.error('[adminConfig] patchConfigField error:', error);
@@ -414,6 +425,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(404).json({ error: 'Config not found' });
       }
 
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+        logger.error('[adminConfig] Cache invalidation failed after field delete:', err),
+      );
       return res.status(200).json({ config });
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', error);
@@ -449,6 +463,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(404).json({ error: 'Config not found' });
       }
 
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+        logger.error('[adminConfig] Cache invalidation failed after config delete:', err),
+      );
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminConfig] deleteConfigOverrides error:', error);
@@ -489,6 +506,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(404).json({ error: 'Config not found' });
       }
 
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+        logger.error('[adminConfig] Cache invalidation failed after toggle:', err),
+      );
       return res.status(200).json({ config });
     } catch (error) {
       logger.error('[adminConfig] toggleConfig error:', error);
