@@ -3,11 +3,11 @@ import { ChevronDown } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
+import { useOptionalMessagesOperations } from '~/Providers';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import UIResourceCarousel from './UIResourceCarousel';
-import { useOptionalMessagesOperations } from '~/Providers';
-import { OutputRenderer } from './ToolOutput';
 import { handleUIAction, cn } from '~/utils';
+import { OutputRenderer } from './ToolOutput';
 
 function isSimpleObject(obj: unknown): obj is Record<string, string | number | boolean | null> {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {

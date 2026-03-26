@@ -1,8 +1,8 @@
 import React from 'react';
 import { UIResourceRenderer } from '@mcp-ui/client';
-import { handleUIAction } from '~/utils';
-import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
 import { useOptionalMessagesConversation, useOptionalMessagesOperations } from '~/Providers';
+import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
+import { handleUIAction } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface MCPUIResourceProps {

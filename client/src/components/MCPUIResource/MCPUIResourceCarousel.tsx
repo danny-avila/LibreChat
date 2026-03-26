@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
-import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
-import { useOptionalMessagesConversation } from '~/Providers';
-import UIResourceCarousel from '../Chat/Messages/Content/UIResourceCarousel';
 import type { UIResource } from 'librechat-data-provider';
+import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
+import UIResourceCarousel from '../Chat/Messages/Content/UIResourceCarousel';
+import { useOptionalMessagesConversation } from '~/Providers';
 
 interface MCPUIResourceCarouselProps {
   node: {
