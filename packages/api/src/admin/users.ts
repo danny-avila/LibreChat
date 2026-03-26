@@ -9,28 +9,21 @@ export interface AdminUsersDeps {
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
   ) => Promise<IUser[]>;
-  countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
 }
 
-interface UserIdParams {
-  id: string;
-}
-
 export function createAdminUsersHandlers(deps: AdminUsersDeps) {
-  const { findUsers, countUsers, deleteUserById } = deps;
+  const { findUsers, deleteUserById } = deps;
 
-  async function listUsersHandler(req: ServerRequest, res: Response) {
+  async function listUsersHandler(_req: ServerRequest, res: Response) {
     try {
       const users = await findUsers(
         {},
         '_id name username email avatar role provider createdAt updatedAt',
       );
 
-      const total = await countUsers();
-
       const mapped = users.map((u) => ({
-        id: (u._id ?? u.id ?? '').toString(),
+        id: u._id?.toString() ?? '',
         name: u.name ?? '',
         username: u.username ?? '',
         email: u.email ?? '',
@@ -41,7 +34,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         updatedAt: u.updatedAt ? new Date(u.updatedAt).toISOString() : new Date().toISOString(),
       }));
 
-      return res.status(200).json({ users: mapped, total });
+      return res.status(200).json({ users: mapped, total: users.length });
     } catch (error) {
       logger.error('[adminUsers] listUsers error:', error);
       return res.status(500).json({ error: 'Failed to list users' });
@@ -70,7 +63,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       );
 
       const results: AdminUserSearchResult[] = users.slice(0, searchLimit).map((u) => ({
-        userId: (u._id ?? u.id ?? '').toString(),
+        userId: u._id?.toString() ?? '',
         name: u.name ?? '',
         email: u.email ?? '',
         avatarUrl: u.avatar,
@@ -83,9 +76,9 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
     }
   }
 
-  async function deleteUserHandler(req: ServerRequest<UserIdParams>, res: Response) {
+  async function deleteUserHandler(req: ServerRequest, res: Response) {
     try {
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
 
       if (!isValidObjectIdString(id)) {
         return res.status(400).json({ error: 'Invalid user ID format' });
