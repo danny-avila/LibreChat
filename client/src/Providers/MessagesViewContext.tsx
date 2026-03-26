@@ -140,14 +140,26 @@ export function useMessagesOperations() {
   );
 }
 
-const noop = () => undefined;
+type OptionalMessagesOps = Pick<
+  MessagesViewContextValue,
+  'ask' | 'regenerate' | 'handleContinue' | 'getMessages' | 'setMessages'
+>;
+
+const NOOP_OPS: OptionalMessagesOps = {
+  ask: () => {},
+  regenerate: () => {},
+  handleContinue: () => {},
+  getMessages: () => undefined,
+  setMessages: () => {},
+};
 
 /**
  * Hook for components that need message operations but may render outside MessagesViewProvider
  * (e.g. the /search route). Returns no-op stubs when the provider is absent — UI actions will
- * be silently discarded rather than crashing.
+ * be silently discarded rather than crashing. Callers must use optional chaining on
+ * `getMessages()` results, as it returns `undefined` outside the provider.
  */
-export function useOptionalMessagesOperations() {
+export function useOptionalMessagesOperations(): OptionalMessagesOps {
   const context = useContext(MessagesViewContext);
   const ask = context?.ask;
   const regenerate = context?.regenerate;
@@ -156,12 +168,11 @@ export function useOptionalMessagesOperations() {
   const setMessages = context?.setMessages;
   return useMemo(
     () => ({
-      ask: ask ?? (noop as unknown as MessagesViewContextValue['ask']),
-      regenerate: regenerate ?? (noop as unknown as MessagesViewContextValue['regenerate']),
-      handleContinue:
-        handleContinue ?? (noop as unknown as MessagesViewContextValue['handleContinue']),
-      getMessages: getMessages ?? (noop as unknown as MessagesViewContextValue['getMessages']),
-      setMessages: setMessages ?? (noop as unknown as MessagesViewContextValue['setMessages']),
+      ask: ask ?? NOOP_OPS.ask,
+      regenerate: regenerate ?? NOOP_OPS.regenerate,
+      handleContinue: handleContinue ?? NOOP_OPS.handleContinue,
+      getMessages: getMessages ?? NOOP_OPS.getMessages,
+      setMessages: setMessages ?? NOOP_OPS.setMessages,
     }),
     [ask, regenerate, handleContinue, getMessages, setMessages],
   );
