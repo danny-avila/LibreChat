@@ -551,6 +551,7 @@ export default function useResumableSSE(
       startupConfig?.balance?.enabled,
       balanceQuery,
       removeActiveJob,
+      queryClient,
     ],
   );
 
