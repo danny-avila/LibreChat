@@ -51,6 +51,18 @@ export default function useAppStartup({
     localStorage.setItem(LocalStorageKeys.APP_TITLE, appTitle);
   }, [startupConfig]);
 
+  /** Set the app description meta tag */
+  useEffect(() => {
+    const appDescription = startupConfig?.appDescription ?? '';
+    if (!appDescription) {
+      return;
+    }
+    const metaDescription = document.querySelector('meta[name="description"]');
+    if (metaDescription) {
+      metaDescription.setAttribute('content', appDescription);
+    }
+  }, [startupConfig]);
+
   /** Set the default spec's preset as default */
   useEffect(() => {
     if (defaultPreset && defaultPreset.spec != null) {

@@ -1,11 +1,11 @@
 import { memo, useMemo, useState, useCallback, useRef, useId } from 'react';
-import { useAtomValue } from 'jotai';
-import { ContentTypes } from 'librechat-data-provider';
+import { useAtom } from 'jotai';
 import type { MouseEvent, FocusEvent } from 'react';
+import { ContentTypes } from 'librechat-data-provider';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar } from './Thinking';
-import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
 import { useMessageContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 type ReasoningProps = {
@@ -38,11 +38,10 @@ type ReasoningProps = {
 const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const contentId = useId();
   const localize = useLocalize();
-  const showThinking = useAtomValue(showThinkingAtom);
+  const [showThinking] = useAtom(showThinkingAtom);
   const [isExpanded, setIsExpanded] = useState(showThinking);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
   const { isSubmitting, isLatestMessage, nextType } = useMessageContext();
 
   // Strip <think> tags from the reasoning content (modern format)
@@ -114,10 +113,15 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
           role="group"
           aria-label={label}
           aria-hidden={!isExpanded || undefined}
-          className={cn(nextType !== ContentTypes.THINK && isExpanded && 'mb-4')}
-          style={expandStyle}
+          className={cn(
+            'grid transition-all duration-300 ease-out',
+            nextType !== ContentTypes.THINK && isExpanded && 'mb-4',
+          )}
+          style={{
+            gridTemplateRows: isExpanded ? '1fr' : '0fr',
+          }}
         >
-          <div className="relative overflow-hidden" ref={expandRef}>
+          <div className="relative overflow-hidden">
             <ThinkingContent>{reasoningText}</ThinkingContent>
             <FloatingThinkingBar
               isVisible={isBarVisible && isExpanded}

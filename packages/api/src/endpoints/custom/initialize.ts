@@ -91,15 +91,9 @@ export async function initializeCustom({
   const userProvidesKey = isUserProvided(CUSTOM_API_KEY);
   const userProvidesURL = isUserProvided(CUSTOM_BASE_URL);
 
-  // Expiry is only checked when present: the Agents API sends an OpenAI-compatible
-  // request body that does not include `key` (the expiry timestamp), so expiresAt
-  // will be undefined in that flow. The key is still fetched regardless.
+  let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
     checkUserKeyExpiry(expiresAt, endpoint);
-  }
-
-  let userValues = null;
-  if (userProvidesKey || userProvidesURL) {
     userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 

@@ -1,33 +1,24 @@
 import React from 'react';
 import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import type { TAttachment } from 'librechat-data-provider';
 import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
 import ToolCallInfo from '~/components/Chat/Messages/Content/ToolCallInfo';
 
 // Mock the dependencies
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string) => {
+  useLocalize: () => (key: string, values?: any) => {
     const translations: Record<string, string> = {
-      com_ui_parameters: 'Parameters',
+      com_assistants_domain_info: `Used ${values?.[0]}`,
+      com_assistants_function_use: `Used ${values?.[0]}`,
+      com_assistants_action_attempt: `Attempted to use ${values?.[0]}`,
+      com_assistants_attempt_info: 'Attempted to use function',
+      com_ui_result: 'Result',
+      com_ui_ui_resources: 'UI Resources',
     };
     return translations[key] || key;
   },
-  useExpandCollapse: (isExpanded: boolean) => ({
-    style: {
-      display: 'grid',
-      gridTemplateRows: isExpanded ? '1fr' : '0fr',
-      opacity: isExpanded ? 1 : 0,
-    },
-    ref: { current: null },
-  }),
-}));
-
-jest.mock('~/Providers', () => ({
-  useMessagesOperations: () => ({
-    ask: jest.fn(),
-  }),
 }));
 
 jest.mock('@mcp-ui/client', () => ({
@@ -39,22 +30,18 @@ jest.mock('../UIResourceCarousel', () => ({
   default: jest.fn(() => null),
 }));
 
-jest.mock('../ToolOutput', () => ({
-  OutputRenderer: ({ text }: { text: string }) => <div data-testid="output-renderer">{text}</div>,
-}));
+// Add TextEncoder/TextDecoder polyfill for Jest environment
+import { TextEncoder, TextDecoder } from 'util';
 
-jest.mock('~/utils', () => ({
-  handleUIAction: jest.fn(),
-  cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
-}));
-
-jest.mock('lucide-react', () => ({
-  ChevronDown: () => <span>{'ChevronDown'}</span>,
-}));
+if (typeof global.TextEncoder === 'undefined') {
+  global.TextEncoder = TextEncoder as any;
+  global.TextDecoder = TextDecoder as any;
+}
 
 describe('ToolCallInfo', () => {
   const mockProps = {
     input: '{"test": "input"}',
+    function_name: 'testFunction',
   };
 
   beforeEach(() => {
@@ -74,10 +61,11 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [uiResource] as any,
+          [Tools.ui_resources]: [uiResource],
         },
       ];
 
+      // Need output for ui_resources to render
       render(<ToolCallInfo {...mockProps} output="Some output" attachments={attachments} />);
 
       // Should render UIResourceRenderer for single resource
@@ -97,6 +85,7 @@ describe('ToolCallInfo', () => {
     });
 
     it('should render carousel for multiple ui_resources from attachments', () => {
+      // To test multiple resources, we can use a single attachment with multiple resources
       const attachments: TAttachment[] = [
         {
           type: Tools.ui_resources,
@@ -107,10 +96,11 @@ describe('ToolCallInfo', () => {
             { type: 'text', data: 'Resource 1' },
             { type: 'text', data: 'Resource 2' },
             { type: 'text', data: 'Resource 3' },
-          ] as any,
+          ],
         },
       ];
 
+      // Need output for ui_resources to render
       render(<ToolCallInfo {...mockProps} output="Some output" attachments={attachments} />);
 
       // Should render carousel for multiple resources
@@ -129,15 +119,50 @@ describe('ToolCallInfo', () => {
       expect(UIResourceRenderer).not.toHaveBeenCalled();
     });
 
+    it('should handle attachments with normal output', () => {
+      const attachments: TAttachment[] = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg123',
+          toolCallId: 'tool456',
+          conversationId: 'conv789',
+          [Tools.ui_resources]: [{ type: 'text', data: 'UI Resource' }],
+        },
+      ];
+
+      const output = JSON.stringify([
+        { type: 'text', text: 'Regular output 1' },
+        { type: 'text', text: 'Regular output 2' },
+      ]);
+
+      const { container } = render(
+        <ToolCallInfo {...mockProps} output={output} attachments={attachments} />,
+      );
+
+      // Check that the output is displayed normally
+      const codeBlocks = container.querySelectorAll('code');
+      const outputCode = codeBlocks[1]?.textContent; // Second code block is the output
+
+      expect(outputCode).toContain('Regular output 1');
+      expect(outputCode).toContain('Regular output 2');
+
+      // UI resources should be rendered via attachments
+      expect(UIResourceRenderer).toHaveBeenCalled();
+    });
+
     it('should handle no attachments', () => {
-      render(<ToolCallInfo {...mockProps} output="Some output" />);
+      const output = JSON.stringify([{ type: 'text', text: 'Regular output' }]);
+
+      render(<ToolCallInfo {...mockProps} output={output} />);
 
       expect(UIResourceRenderer).not.toHaveBeenCalled();
       expect(UIResourceCarousel).not.toHaveBeenCalled();
     });
 
     it('should handle empty attachments array', () => {
-      render(<ToolCallInfo {...mockProps} attachments={[]} />);
+      const attachments: TAttachment[] = [];
+
+      render(<ToolCallInfo {...mockProps} attachments={attachments} />);
 
       expect(UIResourceRenderer).not.toHaveBeenCalled();
       expect(UIResourceCarousel).not.toHaveBeenCalled();
@@ -158,65 +183,101 @@ describe('ToolCallInfo', () => {
 
       render(<ToolCallInfo {...mockProps} attachments={attachments} />);
 
+      // Should not render UI resources components for non-ui_resources attachments
       expect(UIResourceRenderer).not.toHaveBeenCalled();
       expect(UIResourceCarousel).not.toHaveBeenCalled();
     });
   });
 
   describe('rendering logic', () => {
-    it('should render output when provided', () => {
-      render(<ToolCallInfo {...mockProps} output="Some output" />);
-
-      expect(screen.getByTestId('output-renderer')).toBeInTheDocument();
-      expect(screen.getByTestId('output-renderer').textContent).toBe('Some output');
-    });
-
-    it('should render parameters toggle when input has JSON content', () => {
-      render(<ToolCallInfo {...mockProps} output="Some output" />);
-
-      expect(screen.getByText('Parameters')).toBeInTheDocument();
-    });
-
-    it('should not render parameters toggle when input is empty', () => {
-      render(<ToolCallInfo input="" output="Some output" />);
-
-      expect(screen.queryByText('Parameters')).not.toBeInTheDocument();
-    });
-
-    it('should toggle parameters visibility when clicking', () => {
-      render(<ToolCallInfo {...mockProps} output="Some output" />);
-
-      const paramsButton = screen.getByText('Parameters');
-      expect(paramsButton.closest('button')).toHaveAttribute('aria-expanded', 'false');
-
-      fireEvent.click(paramsButton.closest('button')!);
-      expect(paramsButton.closest('button')).toHaveAttribute('aria-expanded', 'true');
-    });
-
-    it('should render ui_resources section when attachments have ui_resources', () => {
+    it('should render UI Resources heading when ui_resources exist in attachments', () => {
       const attachments: TAttachment[] = [
         {
           type: Tools.ui_resources,
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'text', data: 'Test' }] as any,
+          [Tools.ui_resources]: [{ type: 'text', data: 'Test' }],
         },
       ];
 
+      // Need output for ui_resources section to render
+      render(<ToolCallInfo {...mockProps} output="Some output" attachments={attachments} />);
+
+      expect(screen.getByText('UI Resources')).toBeInTheDocument();
+    });
+
+    it('should not render UI Resources heading when no ui_resources in attachments', () => {
+      render(<ToolCallInfo {...mockProps} />);
+
+      expect(screen.queryByText('UI Resources')).not.toBeInTheDocument();
+    });
+
+    it('should pass correct props to UIResourceRenderer', () => {
+      const uiResource = {
+        type: 'form',
+        data: { fields: [{ name: 'test', type: 'text' }] },
+      };
+
+      const attachments: TAttachment[] = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg123',
+          toolCallId: 'tool456',
+          conversationId: 'conv789',
+          [Tools.ui_resources]: [uiResource],
+        },
+      ];
+
+      // Need output for ui_resources to render
       render(<ToolCallInfo {...mockProps} output="Some output" attachments={attachments} />);
 
       expect(UIResourceRenderer).toHaveBeenCalledWith(
         expect.objectContaining({
-          resource: { type: 'text', data: 'Test' },
+          resource: uiResource,
+          onUIAction: expect.any(Function),
+          htmlProps: {
+            autoResizeIframe: { width: true, height: true },
+          },
         }),
         expect.any(Object),
       );
     });
+
+    it('should console.log when UIAction is triggered', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      const attachments: TAttachment[] = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg123',
+          toolCallId: 'tool456',
+          conversationId: 'conv789',
+          [Tools.ui_resources]: [{ type: 'text', data: 'Test' }],
+        },
+      ];
+
+      // Need output for ui_resources to render
+      render(<ToolCallInfo {...mockProps} output="Some output" attachments={attachments} />);
+
+      const mockUIResourceRenderer = UIResourceRenderer as jest.MockedFunction<
+        typeof UIResourceRenderer
+      >;
+      const onUIAction = mockUIResourceRenderer.mock.calls[0]?.[0]?.onUIAction;
+      const testResult = { action: 'submit', data: { test: 'value' } };
+
+      if (onUIAction) {
+        await onUIAction(testResult as any);
+      }
+
+      expect(consoleSpy).toHaveBeenCalledWith('Action:', testResult);
+
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('backward compatibility', () => {
-    it('should handle output with ui_resources metadata (ignored — uses attachments)', () => {
+    it('should handle output with ui_resources for backward compatibility', () => {
       const output = JSON.stringify([
         { type: 'text', text: 'Regular output' },
         {
@@ -241,7 +302,7 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'attachment', data: 'From attachments' }] as any,
+          [Tools.ui_resources]: [{ type: 'attachment', data: 'From attachments' }],
         },
       ];
 
