@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const { isEnabled, isEmailDomainAllowed } = require('@librechat/api');
 const { createSocialUser, handleExistingUser } = require('./process');
@@ -13,7 +13,7 @@ const socialLogin =
         profile,
       });
 
-      const appConfig = await getAppConfig();
+      const appConfig = await runAsSystem(async () => getAppConfig());
 
       if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
         logger.error(

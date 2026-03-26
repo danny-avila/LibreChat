@@ -8,7 +8,7 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -21,6 +21,7 @@ const {
   createStreamServices,
   initializeFileStorage,
   updateInterfacePermissions,
+  tenantContextMiddleware,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -60,10 +61,13 @@ const startServer = async () => {
   app.set('trust proxy', trusted_proxy);
 
   await seedDatabase();
-  const appConfig = await getAppConfig();
-  initializeFileStorage(appConfig);
-  await performStartupChecks(appConfig);
-  await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
+  const appConfig = await runAsSystem(async () => {
+    const config = await getAppConfig();
+    initializeFileStorage(config);
+    await performStartupChecks(config);
+    await updateInterfacePermissions({ appConfig: config, getRoleByName, updateAccessPermissions });
+    return config;
+  });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -137,6 +141,9 @@ const startServer = async () => {
   /* Per-request capability cache — must be registered before any route that calls hasCapability */
   app.use(capabilityContextMiddleware);
 
+  /* Per-request tenant context — propagates tenantId into AsyncLocalStorage for Mongoose isolation */
+  app.use(tenantContextMiddleware);
+
   app.use('/oauth', routes.oauth);
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
@@ -205,8 +212,10 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    await initializeMCPs();
-    await initializeOAuthReconnectManager();
+    await runAsSystem(async () => {
+      await initializeMCPs();
+      await initializeOAuthReconnectManager();
+    });
     await checkMigrations();
 
     // Configure stream services (auto-detects Redis from USE_REDIS env var)

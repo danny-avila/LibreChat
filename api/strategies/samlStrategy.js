@@ -3,7 +3,7 @@ const path = require('path');
 const fetch = require('node-fetch');
 const passport = require('passport');
 const { ErrorTypes } = require('librechat-data-provider');
-const { hashToken, logger } = require('@librechat/data-schemas');
+const { hashToken, logger, runAsSystem } = require('@librechat/data-schemas');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
 const { getBalanceConfig, isEmailDomainAllowed } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -193,7 +193,7 @@ async function setupSaml() {
           logger.debug('[samlStrategy] SAML profile:', profile);
 
           const userEmail = getEmail(profile) || '';
-          const appConfig = await getAppConfig();
+          const appConfig = await runAsSystem(async () => getAppConfig());
 
           if (!isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)) {
             logger.error(
