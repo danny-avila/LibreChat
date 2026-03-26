@@ -65,6 +65,7 @@ function ModelSelectorContent() {
       description={localize('com_ui_select_model')}
       render={
         <button
+          data-testid="model-selector-button"
           className="my-1 flex h-9 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
           aria-label={localize('com_ui_select_model')}
         >
