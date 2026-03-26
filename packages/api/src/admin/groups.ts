@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
 import { logger, isValidObjectIdString } from '@librechat/data-schemas';
 import type {
@@ -8,7 +9,7 @@ import type {
   UpdateGroupRequest,
   GroupFilterOptions,
 } from '@librechat/data-schemas';
-import type { FilterQuery, Types, ClientSession, DeleteResult } from 'mongoose';
+import type { FilterQuery, ClientSession, DeleteResult } from 'mongoose';
 import type { Response } from 'express';
 import type { ValidationError } from '~/types/error';
 import type { ServerRequest } from '~/types/http';
@@ -73,7 +74,7 @@ export interface AdminGroupsDeps {
   ) => Promise<IConfig | null>;
   deleteAclEntries: (filter: {
     principalType: PrincipalType;
-    principalId: string;
+    principalId: string | Types.ObjectId;
   }) => Promise<DeleteResult>;
   deleteGrantsForPrincipal: (
     principalType: PrincipalType,
@@ -253,7 +254,10 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       }
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.GROUP, id),
-        deleteAclEntries({ principalType: PrincipalType.GROUP, principalId: id }),
+        deleteAclEntries({
+          principalType: PrincipalType.GROUP,
+          principalId: new Types.ObjectId(id),
+        }),
         deleteGrantsForPrincipal(PrincipalType.GROUP, id),
       ]);
       for (const result of cleanupResults) {
@@ -342,7 +346,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         return res.status(400).json({ error: 'userId is required' });
       }
       if (!isValidObjectIdString(userId)) {
-        return res.status(400).json({ error: 'Only native user ObjectIds can be added via this endpoint' });
+        return res
+          .status(400)
+          .json({ error: 'Only native user ObjectIds can be added via this endpoint' });
       }
 
       const { group } = await addUserToGroup(userId, id);

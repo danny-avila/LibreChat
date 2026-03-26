@@ -591,7 +591,7 @@ describe('createAdminGroupsHandlers', () => {
       expect(deps.deleteConfig).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
       expect(deps.deleteAclEntries).toHaveBeenCalledWith({
         principalType: PrincipalType.GROUP,
-        principalId: validId,
+        principalId: new Types.ObjectId(validId),
       });
       expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
     });
@@ -607,7 +607,7 @@ describe('createAdminGroupsHandlers', () => {
       expect(deps.deleteConfig).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
       expect(deps.deleteAclEntries).toHaveBeenCalledWith({
         principalType: PrincipalType.GROUP,
-        principalId: validId,
+        principalId: new Types.ObjectId(validId),
       });
       expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
     });
