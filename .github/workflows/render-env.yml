@@ -84,5 +84,5 @@ jobs:
       - name: Redeploy service with new env file
         uses: apideck-libraries/ecs-restart-service@v1
         with:
-          service: ${{ secrets.SERVICE_NAME }}
-          cluster: ${{ secrets.CLUSTER_NAME }}
+          service: $([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "${{ secrets.KITCHENSINK_SERVICE_NAME }}" || echo "${{ secrets.SERVICE_NAME }}")
+          cluster: $([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "${{ secrets.KITCHENSINK_CLUSTER_NAME }}" || echo "${{ secrets.CLUSTER_NAME }}")
