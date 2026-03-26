@@ -252,15 +252,12 @@ export type Agent = {
   instructions?: string | null;
   additional_instructions?: string | null;
   tools?: string[];
-  projectIds?: string[];
   tool_kwargs?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
-  /** @deprecated Use ACL permissions instead */
-  isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
   /** @deprecated Use edges instead */
   agent_ids?: string[];
@@ -313,9 +310,6 @@ export type AgentUpdateParams = {
   provider?: AgentProvider;
   model?: string | null;
   model_parameters?: AgentModelParameters;
-  projectIds?: string[];
-  removeProjectIds?: string[];
-  isCollaborative?: boolean;
 } & Pick<
   Agent,
   | 'agent_ids'
@@ -527,6 +521,21 @@ export type ContentPart = (
 
 export type TextData = (Text & PartMetadata) | undefined;
 
+export type SummaryContentPart = {
+  type: ContentTypes.SUMMARY;
+  content?: Array<{ type: ContentTypes.TEXT; text: string }>;
+  tokenCount?: number;
+  summarizing?: boolean;
+  summaryVersion?: number;
+  model?: string;
+  provider?: string;
+  createdAt?: string;
+  boundary?: {
+    messageId: string;
+    contentIndex: number;
+  };
+};
+
 export type TMessageContentParts =
   | ({
       type: ContentTypes.ERROR;
@@ -551,6 +560,7 @@ export type TMessageContentParts =
         PartMetadata;
     } & ContentMetadata)
   | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
+  | (SummaryContentPart & ContentMetadata)
   | (Agents.AgentUpdate & ContentMetadata)
   | (Agents.MessageContentImageUrl & ContentMetadata)
   | (Agents.MessageContentVideoUrl & ContentMetadata)

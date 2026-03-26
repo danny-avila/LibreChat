@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
+  refreshS3Url,
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
@@ -26,15 +27,6 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
-  getListAgentsByAccess,
-  countPromotedAgents,
-  revertAgentVersion,
-  createAgent,
-  updateAgent,
-  deleteAgent,
-  getAgent,
-} = require('~/models/Agent');
-const {
   findPubliclyAccessibleResources,
   getResourcePermissionsMap,
   findAccessibleResources,
@@ -42,15 +34,13 @@ const {
   grantPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { getCategoriesWithCounts, deleteFileByFilter } = require('~/models');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
-const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
-const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
+const db = require('~/models');
 
 const systemTools = {
   [Tools.execute_code]: true,
@@ -76,9 +66,7 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
     return [];
   }
 
-  const agents = (await Promise.all([...edgeAgentIds].map((id) => getAgent({ id })))).filter(
-    Boolean,
-  );
+  const agents = await db.getAgents({ id: { $in: [...edgeAgentIds] } });
 
   if (agents.length === 0) {
     return [];
@@ -207,7 +195,7 @@ const createAgentHandler = async (req, res) => {
     const availableTools = (await getCachedTools()) ?? {};
     agentData.tools = await filterAuthorizedTools({ tools, userId, availableTools });
 
-    const agent = await createAgent(agentData);
+    const agent = await db.createAgent(agentData);
 
     try {
       await Promise.all([
@@ -267,7 +255,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
 
     // Permissions are validated by middleware before calling this function
     // Simply load the agent by ID
-    const agent = await getAgent({ id });
+    const agent = await db.getAgent({ id });
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -287,9 +275,6 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     }
 
     agent.author = agent.author.toString();
-
-    // @deprecated - isCollaborative replaced by ACL permissions
-    agent.isCollaborative = !!agent.isCollaborative;
 
     // Check if agent is public
     const isPublic = await hasPublicPermission({
@@ -314,9 +299,6 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         author: agent.author,
         provider: agent.provider,
         model: agent.model,
-        projectIds: agent.projectIds,
-        // @deprecated - isCollaborative replaced by ACL permissions
-        isCollaborative: agent.isCollaborative,
         isPublic: agent.isPublic,
         version: agent.version,
         // Safe metadata
@@ -372,7 +354,7 @@ const updateAgentHandler = async (req, res) => {
     // Convert OCR to context in incoming updateData
     convertOcrToContextInPlace(updateData);
 
-    const existingAgent = await getAgent({ id });
+    const existingAgent = await db.getAgent({ id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -409,7 +391,7 @@ const updateAgentHandler = async (req, res) => {
 
     let updatedAgent =
       Object.keys(updateData).length > 0
-        ? await updateAgent({ id }, updateData, {
+        ? await db.updateAgent({ id }, updateData, {
             updatingUserId: req.user.id,
           })
         : existingAgent;
@@ -459,7 +441,7 @@ const duplicateAgentHandler = async (req, res) => {
   const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 
   try {
-    const agent = await getAgent({ id });
+    const agent = await db.getAgent({ id });
     if (!agent) {
       return res.status(404).json({
         error: 'Agent not found',
@@ -507,7 +489,7 @@ const duplicateAgentHandler = async (req, res) => {
     });
 
     const newActionsList = [];
-    const originalActions = (await getActions({ agent_id: id }, true)) ?? [];
+    const originalActions = (await db.getActions({ agent_id: id }, true)) ?? [];
     const promises = [];
 
     /**
@@ -526,7 +508,7 @@ const duplicateAgentHandler = async (req, res) => {
         delete filteredMetadata[field];
       }
 
-      const newAction = await updateAction(
+      const newAction = await db.updateAction(
         { action_id: newActionId, agent_id: newAgentId },
         {
           metadata: filteredMetadata,
@@ -560,7 +542,7 @@ const duplicateAgentHandler = async (req, res) => {
       });
     }
 
-    const newAgent = await createAgent(newAgentData);
+    const newAgent = await db.createAgent(newAgentData);
 
     try {
       await Promise.all([
@@ -613,11 +595,11 @@ const duplicateAgentHandler = async (req, res) => {
 const deleteAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const agent = await getAgent({ id });
+    const agent = await db.getAgent({ id });
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    await deleteAgent({ id });
+    await db.deleteAgent({ id });
     return res.json({ message: 'Agent deleted' });
   } catch (error) {
     logger.error('[/Agents/:id] Error deleting Agent', error);
@@ -692,7 +674,7 @@ const getListAgentsHandler = async (req, res) => {
       cachedRefresh != null && typeof cachedRefresh === 'object' && cachedRefresh.urlCache != null;
     if (!isValidCachedRefresh) {
       try {
-        const fullList = await getListAgentsByAccess({
+        const fullList = await db.getListAgentsByAccess({
           accessibleIds,
           otherParams: {},
           limit: MAX_AVATAR_REFRESH_AGENTS,
@@ -702,7 +684,7 @@ const getListAgentsHandler = async (req, res) => {
           agents: fullList?.data ?? [],
           userId,
           refreshS3Url,
-          updateAgent,
+          updateAgent: db.updateAgent,
         });
         cachedRefresh = { urlCache };
         await cache.set(refreshKey, cachedRefresh, Time.THIRTY_MINUTES);
@@ -714,7 +696,7 @@ const getListAgentsHandler = async (req, res) => {
     }
 
     // Use the new ACL-aware function
-    const data = await getListAgentsByAccess({
+    const data = await db.getListAgentsByAccess({
       accessibleIds,
       otherParams: filter,
       limit,
@@ -779,7 +761,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
-    const existingAgent = await getAgent({ id: agent_id });
+    const existingAgent = await db.getAgent({ id: agent_id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -811,7 +793,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
       try {
         await deleteFile(req, { filepath: _avatar.filepath });
-        await deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
+        await db.deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {
         logger.error('[/:agent_id/avatar] Error deleting old avatar', error);
       }
@@ -824,7 +806,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       },
     };
 
-    const updatedAgent = await updateAgent({ id: agent_id }, data, {
+    const updatedAgent = await db.updateAgent({ id: agent_id }, data, {
       updatingUserId: req.user.id,
     });
 
@@ -880,7 +862,7 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(400).json({ error: 'version_index is required' });
     }
 
-    const existingAgent = await getAgent({ id });
+    const existingAgent = await db.getAgent({ id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -888,7 +870,7 @@ const revertAgentVersionHandler = async (req, res) => {
 
     // Permissions are enforced via route middleware (ACL EDIT)
 
-    let updatedAgent = await revertAgentVersion({ id }, version_index);
+    let updatedAgent = await db.revertAgentVersion({ id }, version_index);
 
     if (updatedAgent.tools?.length) {
       const availableTools = (await getCachedTools()) ?? {};
@@ -899,7 +881,7 @@ const revertAgentVersionHandler = async (req, res) => {
         existingTools: updatedAgent.tools,
       });
       if (filteredTools.length !== updatedAgent.tools.length) {
-        updatedAgent = await updateAgent(
+        updatedAgent = await db.updateAgent(
           { id },
           { tools: filteredTools },
           { updatingUserId: req.user.id },
@@ -929,8 +911,8 @@ const revertAgentVersionHandler = async (req, res) => {
  */
 const getAgentCategories = async (_req, res) => {
   try {
-    const categories = await getCategoriesWithCounts();
-    const promotedCount = await countPromotedAgents();
+    const categories = await db.getCategoriesWithCounts();
+    const promotedCount = await db.countPromotedAgents();
     const formattedCategories = categories.map((category) => ({
       value: category.value,
       label: category.label,

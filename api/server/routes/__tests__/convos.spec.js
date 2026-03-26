@@ -7,8 +7,6 @@ jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () => require(MOCKS).api());
 jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
 jest.mock('librechat-data-provider', () => require(MOCKS).dataProvider());
-jest.mock('~/models/Conversation', () => require(MOCKS).conversationModel());
-jest.mock('~/models/ToolCall', () => require(MOCKS).toolCallModel());
 jest.mock('~/models', () => require(MOCKS).sharedModels());
 jest.mock('~/server/middleware/requireJwtAuth', () => require(MOCKS).requireJwtAuth());
 jest.mock('~/server/middleware', () => require(MOCKS).middlewarePassthrough());
@@ -23,9 +21,13 @@ jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assista
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
-  const { deleteConvos, saveConvo } = require('~/models/Conversation');
-  const { deleteToolCalls } = require('~/models/ToolCall');
+  const {
+    deleteAllSharedLinks,
+    deleteConvoSharedLink,
+    deleteToolCalls,
+    deleteConvos,
+    saveConvo,
+  } = require('~/models');
 
   beforeAll(() => {
     convosRouter = require('../convos');
@@ -435,7 +437,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockArchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: true },
         { context: `POST /api/convos/archive ${mockConversationId}` },
       );
@@ -464,7 +466,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUnarchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: false },
         { context: `POST /api/convos/archive ${mockConversationId}` },
       );

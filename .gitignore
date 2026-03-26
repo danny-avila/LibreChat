@@ -63,6 +63,7 @@ bower_components/
 .clineignore
 .cursor
 .aider*
+.bg-shell/
 
 # Floobits
 .floo
@@ -129,6 +130,7 @@ helm/**/charts/
 helm/**/.values.yaml
 
 !/client/src/@types/i18next.d.ts
+!/client/src/@types/react.d.ts
 
 # SAML Idp cert
 *.cert
@@ -142,8 +144,6 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 *.local.md
-
-cdk.out/
 
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
@@ -172,8 +172,14 @@ claude-flow.config.json
 *.sqlite-journal
 *.sqlite-wal
 claude-flow
+.playwright-mcp/*
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
+CLAUDE.md
+.gsd
 
+# NJ
+
+cdk.out/
 **/*.env
-**/cdk.context.json 
+**/cdk.context.json

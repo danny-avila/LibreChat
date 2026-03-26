@@ -43,6 +43,12 @@ interface:
   runCode: false
   sidePanel: false
   webSearch: false
+  mcpServers: {
+    use: false,
+    create: false,
+    share: false,
+    public: false,
+  }
 
 endpoints:
   bedrock:

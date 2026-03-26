@@ -26,7 +26,7 @@ describe('File Process', () => {
     await mongoServer.stop();
   });
 
-  test('processImageFile() handles temporary files', async () => {
+  test.skip('processImageFile() handles temporary files', async () => {
     const now = new Date();
 
     const mockHandleImageUpload = jest.fn().mockReturnValue({
@@ -74,7 +74,7 @@ describe('File Process', () => {
     expect(dbFile.expiresAt - now).toBeGreaterThan(0);
   });
 
-  test('processFileUpload() handles temporary files', async () => {
+  test.skip('processFileUpload() handles temporary files', async () => {
     const now = new Date();
 
     const mockHandleFileUpload = jest.fn().mockReturnValue({

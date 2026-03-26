@@ -8,6 +8,11 @@ jest.mock('react-router-dom', () => ({
   useOutletContext: () => ({ navVisible: false }),
 }));
 
+jest.mock('~/Providers/ChatContext', () => ({
+  ...jest.requireActual('~/Providers/ChatContext'),
+  useChatContext: () => ({ conversation: null, setConversation: jest.fn() }),
+}));
+
 describe('Header NJ customizations', () => {
   beforeAll(() => {
     jest

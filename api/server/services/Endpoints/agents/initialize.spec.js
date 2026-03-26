@@ -58,8 +58,8 @@ jest.mock('~/cache', () => ({
 }));
 
 const { initializeClient } = require('./initialize');
-const { createAgent } = require('~/models/Agent');
 const { User, AclEntry } = require('~/db/models');
+const { createAgent } = require('~/models');
 
 const PRIMARY_ID = 'agent_primary';
 const TARGET_ID = 'agent_target';
