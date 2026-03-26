@@ -13,6 +13,7 @@ const requireManageGroups = requireCapability(SystemCapabilities.MANAGE_GROUPS);
 
 const handlers = createAdminGroupsHandlers({
   listGroups: db.listGroups,
+  countGroups: db.countGroups,
   findGroupById: db.findGroupById,
   createGroup: db.createGroup,
   updateGroupById: db.updateGroupById,

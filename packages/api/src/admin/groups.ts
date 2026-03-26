@@ -16,6 +16,8 @@ import type { ServerRequest } from '~/types/http';
 type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
 
 const VALID_GROUP_SOURCES: ReadonlySet<string> = new Set(['local', 'entra']);
+const MAX_CREATE_MEMBER_IDS = 500;
+const MAX_SEARCH_LENGTH = 200;
 
 interface GroupIdParams {
   id: string;
@@ -26,7 +28,11 @@ interface GroupMemberParams extends GroupIdParams {
 }
 
 export interface AdminGroupsDeps {
-  listGroups: (filter?: GroupListFilter, session?: ClientSession) => Promise<IGroup[]>;
+  listGroups: (
+    filter?: GroupListFilter & { limit?: number; offset?: number },
+    session?: ClientSession,
+  ) => Promise<IGroup[]>;
+  countGroups: (filter?: GroupListFilter, session?: ClientSession) => Promise<number>;
   findGroupById: (
     groupId: string | Types.ObjectId,
     projection?: Record<string, 0 | 1>,
@@ -78,6 +84,7 @@ export interface AdminGroupsDeps {
 export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
   const {
     listGroups,
+    countGroups,
     findGroupById,
     createGroup,
     updateGroupById,
@@ -98,11 +105,21 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (source && VALID_GROUP_SOURCES.has(source)) {
         filter.source = source as IGroup['source'];
       }
+      if (search && search.length > MAX_SEARCH_LENGTH) {
+        return res
+          .status(400)
+          .json({ error: `search must not exceed ${MAX_SEARCH_LENGTH} characters` });
+      }
       if (search) {
         filter.search = search;
       }
-      const groups = await listGroups(filter);
-      return res.status(200).json({ groups });
+      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      const [groups, total] = await Promise.all([
+        listGroups({ ...filter, limit, offset }),
+        countGroups(filter),
+      ]);
+      return res.status(200).json({ groups, total, limit, offset });
     } catch (error) {
       logger.error('[adminGroups] listGroups error:', error);
       return res.status(500).json({ error: 'Failed to list groups' });
@@ -134,6 +151,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       }
 
       const rawIds = Array.isArray(body.memberIds) ? body.memberIds : [];
+      if (rawIds.length > MAX_CREATE_MEMBER_IDS) {
+        return res
+          .status(400)
+          .json({ error: `memberIds must not exceed ${MAX_CREATE_MEMBER_IDS} entries` });
+      }
       let memberIds = rawIds;
       const objectIds = rawIds.filter(isValidObjectIdString);
       if (objectIds.length > 0) {
@@ -229,16 +251,17 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (!deleted) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      try {
-        await Promise.all([
-          deleteConfig(PrincipalType.GROUP, id),
-          deleteAclEntries({ principalType: PrincipalType.GROUP, principalId: id }),
-          deleteGrantsForPrincipal(PrincipalType.GROUP, id),
-        ]);
-      } catch (cleanupError) {
-        logger.error('[adminGroups] cascade cleanup failed for group:', id, cleanupError);
+      const cleanupResults = await Promise.allSettled([
+        deleteConfig(PrincipalType.GROUP, id),
+        deleteAclEntries({ principalType: PrincipalType.GROUP, principalId: id }),
+        deleteGrantsForPrincipal(PrincipalType.GROUP, id),
+      ]);
+      for (const result of cleanupResults) {
+        if (result.status === 'rejected') {
+          logger.error('[adminGroups] cascade cleanup step failed for group:', id, result.reason);
+        }
       }
-      return res.status(200).json({ success: true });
+      return res.status(200).json({ success: true, id });
     } catch (error) {
       logger.error('[adminGroups] deleteGroup error:', error);
       return res.status(500).json({ error: 'Failed to delete group' });
@@ -251,12 +274,12 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (!isValidObjectIdString(id)) {
         return res.status(400).json({ error: 'Invalid group ID format' });
       }
-      const group = await findGroupById(id);
+      const group = await findGroupById(id, { memberIds: 1 });
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
 
-      const allMemberIds = group.memberIds || [];
+      const allMemberIds = [...new Set(group.memberIds || [])];
       const total = allMemberIds.length;
       const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
       const offset = Math.max(Number(req.query.offset) || 0, 0);
@@ -319,7 +342,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         return res.status(400).json({ error: 'userId is required' });
       }
       if (!isValidObjectIdString(userId)) {
-        return res.status(400).json({ error: 'Invalid user ID format' });
+        return res.status(400).json({ error: 'Only native user ObjectIds can be added via this endpoint' });
       }
 
       const { group } = await addUserToGroup(userId, id);
@@ -355,6 +378,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         } catch (err) {
           const msg = err instanceof Error ? err.message : '';
           if (msg === 'User not found' || msg.startsWith('User not found:')) {
+            /**
+             * Fallback: user record not found by _id. Attempt direct $pull by ObjectId string.
+             * If the group stored idOnTheSource (different from _id), this $pull won't match.
+             * In that case, use the non-ObjectId removal path with the idOnTheSource value.
+             */
             const group = await removeMemberById(id, userId);
             if (!group) {
               return res.status(404).json({ error: 'Group not found' });
