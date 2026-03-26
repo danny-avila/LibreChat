@@ -30,12 +30,10 @@ export class MCPServersInitializer {
    *   performs the expensive initialization operations.
    */
   private static hasInitializedThisProcess = false;
-  private static localCachePopulated = false;
 
-  /** Reset process-level initialization flags. Only used for testing. */
+  /** Reset the process-level initialization flag. Only used for testing. */
   public static resetProcessFlag(): void {
     MCPServersInitializer.hasInitializedThisProcess = false;
-    MCPServersInitializer.localCachePopulated = false;
   }
 
   public static async initialize(rawConfigs: t.MCPServers): Promise<void> {
@@ -45,13 +43,7 @@ export class MCPServersInitializer {
     // Set flag immediately so recursive calls (from followers) use Redis cache for coordination
     MCPServersInitializer.hasInitializedThisProcess = true;
 
-    if (!isFirstCallThisProcess && (await statusCache.isInitialized())) {
-      // App configs use in-memory storage (no Redis SCAN), so each process must
-      // populate its own cache. Followers reach here after the leader signals done
-      // but still need to initialize servers locally for their own in-memory cache.
-      await MCPServersInitializer.populateLocalCache(rawConfigs);
-      return;
-    }
+    if (!isFirstCallThisProcess && (await statusCache.isInitialized())) return;
 
     if (await isLeader()) {
       // Leader performs initialization - always reset on first call
@@ -69,44 +61,11 @@ export class MCPServersInitializer {
         ),
       );
       await statusCache.setInitialized(true);
-      MCPServersInitializer.localCachePopulated = true;
     } else {
       // Followers try again after a delay if not initialized
       await new Promise((resolve) => setTimeout(resolve, 3000));
       await this.initialize(rawConfigs);
     }
-  }
-
-  /**
-   * Ensures the local in-memory App cache is populated for this process.
-   *
-   * In cluster mode, the leader populates its cache during initialization. Followers
-   * skip initialization but still need their own local cache populated since App configs
-   * use in-memory storage (not Redis).
-   *
-   * Uses a static flag for idempotency rather than querying `getAllServerConfigs()`,
-   * which would merge App + DB caches and produce false early returns in deployments
-   * with publicly shared DB configs, and would poison the TTL read-through cache
-   * with a stale empty result.
-   */
-  private static async populateLocalCache(rawConfigs: t.MCPServers): Promise<void> {
-    if (MCPServersInitializer.localCachePopulated) {
-      return;
-    }
-    MCPServersInitializer.localCachePopulated = true;
-
-    logger.info('[MCP] Populating local App cache for this process');
-    const serverNames = Object.keys(rawConfigs);
-    await Promise.allSettled(
-      serverNames.map((serverName) =>
-        withTimeout(
-          MCPServersInitializer.initializeServer(serverName, rawConfigs[serverName]),
-          MCP_INIT_TIMEOUT_MS,
-          `${MCPServersInitializer.prefix(serverName)} Server initialization timed out`,
-          logger.error,
-        ),
-      ),
-    );
   }
 
   /** Initializes a single server with all its metadata and adds it to appropriate collections */

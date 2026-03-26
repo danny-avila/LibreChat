@@ -285,12 +285,6 @@ export class MCPServersRegistry {
     return new Set(oauthServers.map(([name]) => name));
   }
 
-  /**
-   * Clears the App config cache and all read-through caches for this process.
-   *
-   * Note: App configs use in-memory storage (not Redis), so this only affects the
-   * calling process. In cluster deployments, each instance must call reset() independently.
-   */
   public async reset(): Promise<void> {
     await this.cacheConfigsRepo.reset();
     await this.readThroughCache.clear();
