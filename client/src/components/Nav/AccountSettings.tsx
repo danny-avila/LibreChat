@@ -1,12 +1,14 @@
 import { useState, memo, useRef } from 'react';
 import * as Menu from '@ariakit/react/menu';
-import { FileText, LogOut } from 'lucide-react';
+import { useSetRecoilState } from 'recoil';
+import { FileText, LogOut, Keyboard } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
+import store from '~/store';
 
 function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const localize = useLocalize();
@@ -17,6 +19,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
@@ -82,6 +85,10 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
             {localize('com_nav_help_faq')}
           </Menu.MenuItem>
         )}
+        <Menu.MenuItem onClick={() => setShowShortcutsDialog(true)} className="select-item text-sm">
+          <Keyboard className="icon-md" aria-hidden="true" />
+          {localize('com_shortcut_keyboard_shortcuts')}
+        </Menu.MenuItem>
         <Menu.MenuItem onClick={() => setShowSettings(true)} className="select-item text-sm">
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
