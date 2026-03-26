@@ -186,7 +186,7 @@ class STTService {
 
   /**
    * Prepares the request for the OpenAI STT provider.
-   * @param {Object} sttSchema - The STT schema for OpenAI.
+   * @param {Object} sttSchema - The STT schema for OpenAI (includes optional language and extraParams).
    * @param {Stream} audioReadStream - The audio data to be transcribed.
    * @param {Object} audioFile - The audio file object (unused in OpenAI provider).
    * @param {string} language - The language code for the transcription.
@@ -206,8 +206,12 @@ class STTService {
       data.language = validLanguage;
     }
 
-    if (sttSchema?.extraParams) {
-      Object.assign(data, sttSchema.extraParams);
+    if (sttSchema.extraParams) {
+      const reservedFields = new Set(['file', 'model', 'language']);
+      const safeParams = Object.fromEntries(
+        Object.entries(sttSchema.extraParams).filter(([key]) => !reservedFields.has(key)),
+      );
+      Object.assign(data, safeParams);
     }
 
     const headers = {
