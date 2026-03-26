@@ -44,6 +44,19 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     return (await query.lean()) as IUser | null;
   }
 
+  async function findUsers(
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+  ): Promise<IUser[]> {
+    const User = mongoose.models.User;
+    const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
+    const query = User.find(normalizedCriteria);
+    if (fieldsToSelect) {
+      query.select(fieldsToSelect);
+    }
+    return (await query.lean()) as IUser[];
+  }
+
   /**
    * Count the number of user documents in the collection based on the provided filter.
    */
@@ -323,6 +336,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
 
   return {
     findUser,
+    findUsers,
     countUsers,
     createUser,
     updateUser,

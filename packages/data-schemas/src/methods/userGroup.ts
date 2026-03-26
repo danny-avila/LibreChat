@@ -1,8 +1,9 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
 import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
-import type { Model, ClientSession } from 'mongoose';
+import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { IGroup, IRole, IUser } from '~/types';
+import { escapeRegExp } from '~/utils/string';
 
 export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -14,7 +15,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    */
   async function findGroupById(
     groupId: string | Types.ObjectId,
-    projection: Record<string, unknown> = {},
+    projection: Record<string, 0 | 1> = {},
     session?: ClientSession,
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
@@ -36,7 +37,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   async function findGroupByExternalId(
     idOnTheSource: string,
     source: 'entra' | 'local' = 'entra',
-    projection: Record<string, unknown> = {},
+    projection: Record<string, 0 | 1> = {},
     session?: ClientSession,
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
@@ -658,6 +659,97 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     return Group.updateMany(filter, update, options || {});
   }
 
+  function buildGroupQuery(filter: {
+    source?: 'local' | 'entra';
+    search?: string;
+  }): FilterQuery<IGroup> {
+    const query: FilterQuery<IGroup> = {};
+    if (filter.source) {
+      query.source = filter.source;
+    }
+    if (filter.search) {
+      const regex = new RegExp(escapeRegExp(filter.search), 'i');
+      query.$or = [{ name: regex }, { email: regex }, { description: regex }];
+    }
+    return query;
+  }
+
+  /**
+   * List groups with optional source, search, and pagination filters.
+   * Results are sorted by name.
+   * @param filter - Optional filter with source, search, limit, and offset fields
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function listGroups(
+    filter: {
+      source?: 'local' | 'entra';
+      search?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+    session?: ClientSession,
+  ): Promise<IGroup[]> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = buildGroupQuery(filter);
+    const limit = filter.limit ?? 50;
+    const offset = filter.offset ?? 0;
+    return await Group.find(query)
+      .sort({ name: 1 })
+      .skip(offset)
+      .limit(limit)
+      .session(session ?? null)
+      .lean();
+  }
+
+  /**
+   * Count groups matching optional source and search filters.
+   * @param filter - Optional filter with source and search fields
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function countGroups(
+    filter: { source?: 'local' | 'entra'; search?: string } = {},
+    session?: ClientSession,
+  ): Promise<number> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = buildGroupQuery(filter);
+    return await Group.countDocuments(query).session(session ?? null);
+  }
+
+  /**
+   * Delete a group by its ID.
+   * @param groupId - The group's ObjectId
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function deleteGroup(
+    groupId: string | Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const options = session ? { session } : {};
+    return await Group.findByIdAndDelete(groupId, options).lean();
+  }
+
+  /**
+   * Remove a member from a group by raw memberId string ($pull from memberIds).
+   * Unlike removeUserFromGroup, this does not look up the user first.
+   * @param groupId - The group's ObjectId
+   * @param memberId - The raw memberId string to remove (ObjectId or idOnTheSource)
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function removeMemberById(
+    groupId: string | Types.ObjectId,
+    memberId: string,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const options = { new: true, ...(session ? { session } : {}) };
+    return await Group.findByIdAndUpdate(
+      groupId,
+      { $pull: { memberIds: memberId } },
+      options,
+    ).lean();
+  }
+
   return {
     findGroupById,
     findGroupByExternalId,
@@ -677,6 +769,10 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     searchPrincipals,
     calculateRelevanceScore,
     sortPrincipalsByRelevance,
+    listGroups,
+    countGroups,
+    deleteGroup,
+    removeMemberById,
   };
 }
 
