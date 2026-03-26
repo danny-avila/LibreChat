@@ -18,10 +18,18 @@ import {
   FileMapContext,
 } from '~/Providers';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
 import { UnifiedSidebar } from '~/components/UnifiedSidebar';
 import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
+import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
+
+/** Isolates keyboard shortcut listeners so they only mount after auth. */
+function KeyboardShortcutsProvider() {
+  useKeyboardShortcuts();
+  return <KeyboardShortcutsDialog />;
+}
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -98,6 +106,7 @@ export default function Root() {
               modalContent={config.interface.termsOfService.modalContent}
             />
           )}
+          <KeyboardShortcutsProvider />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SetConvoProvider>
