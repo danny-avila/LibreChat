@@ -15,7 +15,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    */
   async function findGroupById(
     groupId: string | Types.ObjectId,
-    projection: Record<string, unknown> = {},
+    projection: Record<string, 0 | 1> = {},
     session?: ClientSession,
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
@@ -37,7 +37,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   async function findGroupByExternalId(
     idOnTheSource: string,
     source: 'entra' | 'local' = 'entra',
-    projection: Record<string, unknown> = {},
+    projection: Record<string, 0 | 1> = {},
     session?: ClientSession,
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
@@ -652,33 +652,60 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     return Group.updateMany(filter, update, options || {});
   }
 
-  /**
-   * List groups with optional source and search filters.
-   * Results are sorted by name and capped at 500.
-   * @param filter - Optional filter with source and search fields
-   * @param session - Optional MongoDB session for transactions
-   */
-  async function listGroups(
-    filter: { source?: 'local' | 'entra'; search?: string } = {},
-    session?: ClientSession,
-  ): Promise<IGroup[]> {
-    const Group = mongoose.models.Group as Model<IGroup>;
+  function buildGroupQuery(filter: {
+    source?: 'local' | 'entra';
+    search?: string;
+  }): FilterQuery<IGroup> {
     const query: FilterQuery<IGroup> = {};
-
     if (filter.source) {
       query.source = filter.source;
     }
-
     if (filter.search) {
       const regex = new RegExp(escapeRegExp(filter.search), 'i');
       query.$or = [{ name: regex }, { email: regex }, { description: regex }];
     }
+    return query;
+  }
 
-    const dbQuery = Group.find(query).sort({ name: 1 }).limit(500);
-    if (session) {
-      dbQuery.session(session);
-    }
-    return await dbQuery.lean();
+  /**
+   * List groups with optional source, search, and pagination filters.
+   * Results are sorted by name.
+   * @param filter - Optional filter with source, search, limit, and offset fields
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function listGroups(
+    filter: {
+      source?: 'local' | 'entra';
+      search?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+    session?: ClientSession,
+  ): Promise<IGroup[]> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = buildGroupQuery(filter);
+    const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
+    const offset = Math.max(filter.offset ?? 0, 0);
+    return await Group.find(query)
+      .sort({ name: 1 })
+      .skip(offset)
+      .limit(limit)
+      .session(session ?? null)
+      .lean();
+  }
+
+  /**
+   * Count groups matching optional source and search filters.
+   * @param filter - Optional filter with source and search fields
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function countGroups(
+    filter: { source?: 'local' | 'entra'; search?: string } = {},
+    session?: ClientSession,
+  ): Promise<number> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = buildGroupQuery(filter);
+    return await Group.countDocuments(query).session(session ?? null);
   }
 
   /**
@@ -732,6 +759,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     calculateRelevanceScore,
     sortPrincipalsByRelevance,
     listGroups,
+    countGroups,
     deleteGroup,
     removeMemberById,
   };
