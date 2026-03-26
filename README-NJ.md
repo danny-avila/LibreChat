@@ -99,6 +99,16 @@ Here's the basic processes:
 **Upstream merges** - Push LibreChat's `main` onto our `main`, then create a merge commit on `newjersey`.
 Be sure to smoke test before merging!
 
+## Merging Upstream Changes
+
+We want to keep our repository up-to-date with the latest changes
+from [upstream](https://github.com/danny-avila/LibreChat/tree/main).
+
+To that end, we have a weekly
+action ([Sync Upstream LibreChat](https://github.com/newjersey/LibreChat/actions/workflows/nj-sync-upstream.yml)) which
+should fire each Wednesday. The action itself includes instructions on how to handle merge conflicts etc., but make sure
+to actually pay attention to the pull request it generates each week!
+
 ## Releasing to Prod
 
 Prod release happens in two steps:
