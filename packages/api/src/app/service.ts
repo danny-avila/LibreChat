@@ -125,6 +125,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
    * `getApplicableConfigs` queries the DB for matching overrides and merges them by priority.
    *
    * When `baseOnly` is true, returns the YAML-derived config without any DB queries.
+   * `role`, `userId`, and `tenantId` are ignored in this mode.
    * Use this for startup, auth strategies, and other pre-tenant code paths.
    */
   async function getAppConfig(

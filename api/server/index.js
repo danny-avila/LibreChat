@@ -8,7 +8,7 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -62,8 +62,10 @@ const startServer = async () => {
   await seedDatabase();
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
-  await performStartupChecks(appConfig);
-  await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
+  await runAsSystem(async () => {
+    await performStartupChecks(appConfig);
+    await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
+  });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -205,8 +207,10 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    await initializeMCPs();
-    await initializeOAuthReconnectManager();
+    await runAsSystem(async () => {
+      await initializeMCPs();
+      await initializeOAuthReconnectManager();
+    });
     await checkMigrations();
 
     // Configure stream services (auto-detects Redis from USE_REDIS env var)
