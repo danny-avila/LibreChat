@@ -1127,7 +1127,7 @@ class AgentClient extends BaseClient {
           output_tokens = item.tokenUsage.completionTokens;
         } else if (item.usage_metadata) {
           input_tokens = item.usage_metadata.input_tokens;
-          output_tokens = item.usage_metadata.output_tokens;          
+          output_tokens = item.usage_metadata.output_tokens;
         }
 
         return {
