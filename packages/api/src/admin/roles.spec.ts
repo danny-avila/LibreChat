@@ -467,6 +467,26 @@ describe('createAdminRolesHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Role not found' });
     });
 
+    it('rolls back user migration when rename fails', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
+        updateRoleByName: jest.fn().mockResolvedValue(null),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: 'editor' },
+        body: { name: 'new-name' },
+      });
+
+      await handlers.updateRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'Role not found' });
+      expect(deps.updateUsersByRole).toHaveBeenCalledTimes(2);
+      expect(deps.updateUsersByRole).toHaveBeenNthCalledWith(1, 'editor', 'new-name');
+      expect(deps.updateUsersByRole).toHaveBeenNthCalledWith(2, 'new-name', 'editor');
+    });
+
     it('returns 500 on unexpected error', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),

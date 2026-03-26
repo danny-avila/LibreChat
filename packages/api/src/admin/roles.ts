@@ -163,6 +163,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
       const role = await updateRoleByName(name, updates);
       if (!role) {
+        if (isRename) {
+          await updateUsersByRole(trimmedName, name);
+        }
         return res.status(404).json({ error: 'Role not found' });
       }
 
