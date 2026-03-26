@@ -684,8 +684,8 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IGroup[]> {
     const Group = mongoose.models.Group as Model<IGroup>;
     const query = buildGroupQuery(filter);
-    const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
-    const offset = Math.max(filter.offset ?? 0, 0);
+    const limit = filter.limit ?? 50;
+    const offset = filter.offset ?? 0;
     return await Group.find(query)
       .sort({ name: 1 })
       .skip(offset)
