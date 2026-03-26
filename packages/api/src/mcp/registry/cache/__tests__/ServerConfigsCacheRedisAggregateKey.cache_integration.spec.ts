@@ -243,4 +243,58 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       expect(Object.keys(result).length).toBe(0);
     });
   });
+
+  describe('local snapshot behavior', () => {
+    it('should return consistent results across rapid successive getAll calls', async () => {
+      await cache.add('server1', mockConfig1);
+      await cache.add('server2', mockConfig2);
+
+      const result1 = await cache.getAll();
+      const result2 = await cache.getAll();
+      const result3 = await cache.getAll();
+
+      expect(result1).toEqual(result2);
+      expect(result2).toEqual(result3);
+      expect(Object.keys(result1).length).toBe(2);
+    });
+
+    it('should invalidate snapshot after add', async () => {
+      await cache.add('server1', mockConfig1);
+      const before = await cache.getAll();
+      expect(Object.keys(before).length).toBe(1);
+
+      await cache.add('server2', mockConfig2);
+      const after = await cache.getAll();
+      expect(Object.keys(after).length).toBe(2);
+    });
+
+    it('should invalidate snapshot after update', async () => {
+      await cache.add('server1', mockConfig1);
+      const before = await cache.get('server1');
+      expect(before).toMatchObject(mockConfig1);
+
+      await cache.update('server1', mockConfig2);
+      const after = await cache.get('server1');
+      expect(after).toMatchObject(mockConfig2);
+    });
+
+    it('should invalidate snapshot after remove', async () => {
+      await cache.add('server1', mockConfig1);
+      await cache.add('server2', mockConfig2);
+      expect(Object.keys(await cache.getAll()).length).toBe(2);
+
+      await cache.remove('server1');
+      const after = await cache.getAll();
+      expect(Object.keys(after).length).toBe(1);
+      expect(after.server1).toBeUndefined();
+    });
+
+    it('should invalidate snapshot after reset', async () => {
+      await cache.add('server1', mockConfig1);
+      expect(Object.keys(await cache.getAll()).length).toBe(1);
+
+      await cache.reset();
+      expect(Object.keys(await cache.getAll()).length).toBe(0);
+    });
+  });
 });

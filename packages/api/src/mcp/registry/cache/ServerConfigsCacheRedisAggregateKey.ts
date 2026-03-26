@@ -1,4 +1,3 @@
-import { logger } from '@librechat/data-schemas';
 import type Keyv from 'keyv';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
@@ -37,9 +36,25 @@ export class ServerConfigsCacheRedisAggregateKey
   protected readonly cache: Keyv;
   private writeLock: Promise<void> = Promise.resolve();
 
+  /**
+   * In-memory snapshot of the aggregate key to avoid redundant Redis GETs.
+   * `getAll()` is called 20+ times per chat request (once per tool, per server
+   * config lookup, per connection check) but the data doesn't change within a
+   * request cycle. The snapshot collapses all reads within the TTL window into
+   * a single Redis GET. Invalidated on every write (`add`, `update`, `remove`, `reset`).
+   */
+  private localSnapshot: Record<string, ParsedServerConfig> | null = null;
+  private localSnapshotExpiry = 0;
+  private static readonly LOCAL_TTL_MS = 5_000;
+
   constructor(namespace: string, leaderOnly: boolean) {
     super(leaderOnly);
     this.cache = standardCache(`${this.PREFIX}::Servers::${namespace}`);
+  }
+
+  private invalidateLocalSnapshot(): void {
+    this.localSnapshot = null;
+    this.localSnapshotExpiry = 0;
   }
 
   /**
@@ -61,15 +76,18 @@ export class ServerConfigsCacheRedisAggregateKey
   }
 
   public async getAll(): Promise<Record<string, ParsedServerConfig>> {
-    const startTime = Date.now();
-    const result = (await this.cache.get(AGGREGATE_KEY)) as
-      | Record<string, ParsedServerConfig>
-      | undefined;
-    const elapsed = Date.now() - startTime;
-    logger.debug(
-      `[ServerConfigsCacheRedisAggregateKey] getAll: fetched ${result ? Object.keys(result).length : 0} configs in ${elapsed}ms`,
-    );
-    return result ?? {};
+    const now = Date.now();
+    if (this.localSnapshot !== null && now < this.localSnapshotExpiry) {
+      return this.localSnapshot;
+    }
+
+    const result =
+      ((await this.cache.get(AGGREGATE_KEY)) as Record<string, ParsedServerConfig> | undefined) ??
+      {};
+
+    this.localSnapshot = result;
+    this.localSnapshotExpiry = now + ServerConfigsCacheRedisAggregateKey.LOCAL_TTL_MS;
+    return result;
   }
 
   public async get(serverName: string): Promise<ParsedServerConfig | undefined> {
@@ -80,6 +98,7 @@ export class ServerConfigsCacheRedisAggregateKey
   public async add(serverName: string, config: ParsedServerConfig): Promise<AddServerResult> {
     if (this.leaderOnly) await this.leaderCheck('add MCP servers');
     return this.withWriteLock(async () => {
+      this.invalidateLocalSnapshot();
       const all = await this.getAll();
       if (all[serverName]) {
         throw new Error(
@@ -90,6 +109,7 @@ export class ServerConfigsCacheRedisAggregateKey
       all[serverName] = storedConfig;
       const success = await this.cache.set(AGGREGATE_KEY, all);
       this.successCheck(`add App server "${serverName}"`, success);
+      this.invalidateLocalSnapshot();
       return { serverName, config: storedConfig };
     });
   }
@@ -97,6 +117,7 @@ export class ServerConfigsCacheRedisAggregateKey
   public async update(serverName: string, config: ParsedServerConfig): Promise<void> {
     if (this.leaderOnly) await this.leaderCheck('update MCP servers');
     return this.withWriteLock(async () => {
+      this.invalidateLocalSnapshot();
       const all = await this.getAll();
       if (!all[serverName]) {
         throw new Error(
@@ -106,12 +127,14 @@ export class ServerConfigsCacheRedisAggregateKey
       all[serverName] = { ...config, updatedAt: Date.now() };
       const success = await this.cache.set(AGGREGATE_KEY, all);
       this.successCheck(`update App server "${serverName}"`, success);
+      this.invalidateLocalSnapshot();
     });
   }
 
   public async remove(serverName: string): Promise<void> {
     if (this.leaderOnly) await this.leaderCheck('remove MCP servers');
     return this.withWriteLock(async () => {
+      this.invalidateLocalSnapshot();
       const all = await this.getAll();
       if (!all[serverName]) {
         throw new Error(`Failed to remove server "${serverName}" in cache.`);
@@ -119,6 +142,7 @@ export class ServerConfigsCacheRedisAggregateKey
       delete all[serverName];
       const success = await this.cache.set(AGGREGATE_KEY, all);
       this.successCheck(`remove App server "${serverName}"`, success);
+      this.invalidateLocalSnapshot();
     });
   }
 
@@ -132,5 +156,6 @@ export class ServerConfigsCacheRedisAggregateKey
       await this.leaderCheck('reset App MCP servers cache');
     }
     await this.cache.delete(AGGREGATE_KEY);
+    this.invalidateLocalSnapshot();
   }
 }
