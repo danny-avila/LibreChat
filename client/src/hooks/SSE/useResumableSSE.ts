@@ -16,7 +16,12 @@ import {
 } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
-import { useGetStartupConfig, useGetUserBalance, queueTitleGeneration } from '~/data-provider';
+import {
+  useGetUserBalance,
+  useGetStartupConfig,
+  queueTitleGeneration,
+  streamStatusQueryKey,
+} from '~/data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
@@ -343,18 +348,20 @@ export default function useResumableSSE(
         /* @ts-ignore - sse.js types don't expose responseCode */
         const responseCode = e.responseCode;
 
-        // 404 means job doesn't exist (completed/deleted) - don't retry
+        // 404 → job completed & was cleaned up; messages are persisted in DB.
+        // Invalidate cache once so react-query refetches instead of showing an error.
         if (responseCode === 404) {
-          console.log('[ResumableSSE] Stream not found (404) - job completed or expired');
+          const convoId = currentSubmission.conversation?.conversationId;
+          console.log('[ResumableSSE] Stream 404, invalidating messages for:', convoId);
           sse.close();
           removeActiveJob(currentStreamId);
-          clearAllDrafts(currentSubmission.conversation?.conversationId);
-          errorHandler({
-            data: {
-              text: JSON.stringify({ type: ErrorTypes.STREAM_EXPIRED }),
-            } as unknown as Parameters<typeof errorHandler>[0]['data'],
-            submission: currentSubmission as EventSubmission,
-          });
+          clearAllDrafts(convoId);
+          clearStepMaps();
+          if (convoId) {
+            queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, convoId] });
+            queryClient.removeQueries({ queryKey: streamStatusQueryKey(convoId) });
+          }
+          setIsSubmitting(false);
           setShowStopButton(false);
           setStreamId(null);
           reconnectAttemptRef.current = 0;
@@ -544,6 +551,7 @@ export default function useResumableSSE(
       startupConfig?.balance?.enabled,
       balanceQuery,
       removeActiveJob,
+      queryClient,
     ],
   );
 
