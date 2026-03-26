@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
-import { useMessagesConversation } from '~/Providers';
+import { useOptionalMessagesConversation } from '~/Providers';
 import UIResourceCarousel from '../Chat/Messages/Content/UIResourceCarousel';
 import type { UIResource } from 'librechat-data-provider';
 
@@ -17,7 +17,7 @@ interface MCPUIResourceCarouselProps {
  * Works in both main app and share view.
  */
 export function MCPUIResourceCarousel(props: MCPUIResourceCarouselProps) {
-  const { conversation } = useMessagesConversation();
+  const { conversation } = useOptionalMessagesConversation();
 
   const conversationResourceMap = useConversationUIResources(
     conversation?.conversationId ?? undefined,
