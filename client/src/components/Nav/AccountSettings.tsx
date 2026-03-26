@@ -89,7 +89,11 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           <Keyboard className="icon-md" aria-hidden="true" />
           {localize('com_shortcut_keyboard_shortcuts')}
         </Menu.MenuItem>
-        <Menu.MenuItem onClick={() => setShowSettings(true)} className="select-item text-sm">
+        <Menu.MenuItem
+          onClick={() => setShowSettings(true)}
+          className="select-item text-sm"
+          data-testid="nav-settings"
+        >
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Menu.MenuItem>

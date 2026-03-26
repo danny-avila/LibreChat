@@ -269,13 +269,8 @@ export default function useKeyboardShortcuts() {
     }
     btn.click();
     setTimeout(() => {
-      const items = document.querySelectorAll<HTMLElement>('[role="menuitem"]');
-      for (const item of items) {
-        if (item.textContent?.includes('Settings') && !item.textContent?.includes('Keyboard')) {
-          item.click();
-          return;
-        }
-      }
+      const settingsItem = document.querySelector<HTMLElement>('[data-testid="nav-settings"]');
+      settingsItem?.click();
     }, 150);
   }, []);
 
