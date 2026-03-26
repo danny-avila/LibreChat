@@ -1,9 +1,8 @@
-import { logger } from '@librechat/data-schemas';
 import type Keyv from 'keyv';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { BaseRegistryCache } from './BaseRegistryCache';
-import { standardCache } from '~/cache';
+import { cacheConfig, standardCache } from '~/cache';
 
 /**
  * Redis-backed MCP server configs cache that stores all entries under a single aggregate key.
@@ -37,14 +36,38 @@ export class ServerConfigsCacheRedisAggregateKey
   protected readonly cache: Keyv;
   private writeLock: Promise<void> = Promise.resolve();
 
+  /**
+   * In-memory snapshot of the aggregate key to avoid redundant Redis GETs.
+   * `getAll()` is called 20+ times per chat request (once per tool, per server
+   * config lookup, per connection check) but the data doesn't change within a
+   * request cycle. The snapshot collapses all reads within the TTL window into
+   * a single Redis GET. Invalidated on every write (`add`, `update`, `remove`, `reset`).
+   *
+   * NOTE: In multi-instance deployments, the effective max staleness for cross-instance
+   * writes is up to 2×MCP_REGISTRY_CACHE_TTL. This happens when readThroughCacheAll
+   * (MCPServersRegistry) is populated from a snapshot that is nearly expired. For the
+   * default 5000ms TTL, worst-case cross-instance propagation is ~10s. This is acceptable
+   * given the single-writer invariant (leader-only initialization, rare manual reinspection).
+   */
+  private localSnapshot: Record<string, ParsedServerConfig> | null = null;
+  /** Milliseconds since epoch. 0 = epoch = always expired on first check. */
+  private localSnapshotExpiry = 0;
+
   constructor(namespace: string, leaderOnly: boolean) {
     super(leaderOnly);
     this.cache = standardCache(`${this.PREFIX}::Servers::${namespace}`);
   }
 
+  private invalidateLocalSnapshot(): void {
+    this.localSnapshot = null;
+    this.localSnapshotExpiry = 0;
+  }
+
   /**
    * Serializes write operations to prevent concurrent read-modify-write races.
    * Reads (`get`, `getAll`) are not serialized — they can run concurrently.
+   * Always invalidates the local snapshot in `finally` to guarantee cleanup
+   * even when the write callback throws (e.g., Redis SET failure).
    */
   private async withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
     const previousLock = this.writeLock;
@@ -56,20 +79,29 @@ export class ServerConfigsCacheRedisAggregateKey
       await previousLock;
       return await fn();
     } finally {
+      this.invalidateLocalSnapshot();
       resolve();
     }
   }
 
   public async getAll(): Promise<Record<string, ParsedServerConfig>> {
-    const startTime = Date.now();
-    const result = (await this.cache.get(AGGREGATE_KEY)) as
-      | Record<string, ParsedServerConfig>
-      | undefined;
-    const elapsed = Date.now() - startTime;
-    logger.debug(
-      `[ServerConfigsCacheRedisAggregateKey] getAll: fetched ${result ? Object.keys(result).length : 0} configs in ${elapsed}ms`,
-    );
-    return result ?? {};
+    const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
+    if (ttl > 0) {
+      const now = Date.now();
+      if (this.localSnapshot !== null && now < this.localSnapshotExpiry) {
+        return this.localSnapshot;
+      }
+    }
+
+    const result =
+      ((await this.cache.get(AGGREGATE_KEY)) as Record<string, ParsedServerConfig> | undefined) ??
+      {};
+
+    if (ttl > 0) {
+      this.localSnapshot = result;
+      this.localSnapshotExpiry = Date.now() + ttl;
+    }
+    return result;
   }
 
   public async get(serverName: string): Promise<ParsedServerConfig | undefined> {
@@ -80,6 +112,10 @@ export class ServerConfigsCacheRedisAggregateKey
   public async add(serverName: string, config: ParsedServerConfig): Promise<AddServerResult> {
     if (this.leaderOnly) await this.leaderCheck('add MCP servers');
     return this.withWriteLock(async () => {
+      // Force fresh Redis read so the read-modify-write uses current data,
+      // not a snapshot that may predate this write. Distinct from the finally-block
+      // invalidation which cleans up after the write completes or throws.
+      this.invalidateLocalSnapshot();
       const all = await this.getAll();
       if (all[serverName]) {
         throw new Error(
@@ -87,8 +123,8 @@ export class ServerConfigsCacheRedisAggregateKey
         );
       }
       const storedConfig = { ...config, updatedAt: Date.now() };
-      all[serverName] = storedConfig;
-      const success = await this.cache.set(AGGREGATE_KEY, all);
+      const newAll = { ...all, [serverName]: storedConfig };
+      const success = await this.cache.set(AGGREGATE_KEY, newAll);
       this.successCheck(`add App server "${serverName}"`, success);
       return { serverName, config: storedConfig };
     });
@@ -97,14 +133,15 @@ export class ServerConfigsCacheRedisAggregateKey
   public async update(serverName: string, config: ParsedServerConfig): Promise<void> {
     if (this.leaderOnly) await this.leaderCheck('update MCP servers');
     return this.withWriteLock(async () => {
+      this.invalidateLocalSnapshot(); // Force fresh Redis read (see add() comment)
       const all = await this.getAll();
       if (!all[serverName]) {
         throw new Error(
           `Server "${serverName}" does not exist in cache. Use add() to create new configs.`,
         );
       }
-      all[serverName] = { ...config, updatedAt: Date.now() };
-      const success = await this.cache.set(AGGREGATE_KEY, all);
+      const newAll = { ...all, [serverName]: { ...config, updatedAt: Date.now() } };
+      const success = await this.cache.set(AGGREGATE_KEY, newAll);
       this.successCheck(`update App server "${serverName}"`, success);
     });
   }
@@ -112,12 +149,13 @@ export class ServerConfigsCacheRedisAggregateKey
   public async remove(serverName: string): Promise<void> {
     if (this.leaderOnly) await this.leaderCheck('remove MCP servers');
     return this.withWriteLock(async () => {
+      this.invalidateLocalSnapshot(); // Force fresh Redis read (see add() comment)
       const all = await this.getAll();
       if (!all[serverName]) {
         throw new Error(`Failed to remove server "${serverName}" in cache.`);
       }
-      delete all[serverName];
-      const success = await this.cache.set(AGGREGATE_KEY, all);
+      const { [serverName]: _, ...newAll } = all;
+      const success = await this.cache.set(AGGREGATE_KEY, newAll);
       this.successCheck(`remove App server "${serverName}"`, success);
     });
   }
@@ -126,11 +164,16 @@ export class ServerConfigsCacheRedisAggregateKey
    * Resets the aggregate key directly instead of using SCAN-based `cache.clear()`.
    * Only one key (`__all__`) ever exists in this namespace, so a targeted delete is
    * more efficient and consistent with the PR's goal of eliminating SCAN operations.
+   *
+   * NOTE: Intentionally not serialized via `withWriteLock`. `reset()` is only called
+   * during lifecycle transitions (test teardown, full reinitialization via
+   * `MCPServersInitializer`) where no concurrent writes are in flight.
    */
   public override async reset(): Promise<void> {
     if (this.leaderOnly) {
       await this.leaderCheck('reset App MCP servers cache');
     }
     await this.cache.delete(AGGREGATE_KEY);
+    this.invalidateLocalSnapshot();
   }
 }
