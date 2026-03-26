@@ -140,6 +140,36 @@ export function useMessagesOperations() {
   );
 }
 
+const noopAsync = () => Promise.resolve();
+const noopReturn = () => [];
+const noop = () => {
+  /* noop */
+};
+
+/** Hook for components that need message operations but may render outside MessagesViewProvider (e.g. search route) */
+export function useOptionalMessagesOperations() {
+  const context = useContext(MessagesViewContext);
+  return useMemo(
+    () =>
+      context
+        ? {
+            ask: context.ask,
+            regenerate: context.regenerate,
+            handleContinue: context.handleContinue,
+            getMessages: context.getMessages,
+            setMessages: context.setMessages,
+          }
+        : {
+            ask: noopAsync as MessagesViewContextValue['ask'],
+            regenerate: noopAsync as MessagesViewContextValue['regenerate'],
+            handleContinue: noopAsync as MessagesViewContextValue['handleContinue'],
+            getMessages: noopReturn as MessagesViewContextValue['getMessages'],
+            setMessages: noop as MessagesViewContextValue['setMessages'],
+          },
+    [context],
+  );
+}
+
 /** Hook for components that only need message state */
 export function useMessagesState() {
   const { index, latestMessageId, latestMessageDepth, setLatestMessage } = useMessagesViewContext();
