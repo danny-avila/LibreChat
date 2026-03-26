@@ -246,12 +246,28 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
+  /**
+   * Delete all system grants for a principal.
+   * Used for cascade cleanup when a principal (group, role) is deleted.
+   */
+  async function deleteGrantsForPrincipal(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<void> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
+    const options = session ? { session } : {};
+    await SystemGrant.deleteMany({ principalType, principalId: normalizedPrincipalId }, options);
+  }
+
   return {
     grantCapability,
     seedSystemGrants,
     revokeCapability,
     hasCapabilityForPrincipals,
     getCapabilitiesForPrincipal,
+    deleteGrantsForPrincipal,
   };
 }
 

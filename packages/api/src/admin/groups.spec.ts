@@ -1,4 +1,5 @@
 import { Types } from 'mongoose';
+import { PrincipalType } from 'librechat-data-provider';
 import { createAdminGroupsHandlers } from './groups';
 import type { AdminGroupsDeps } from './groups';
 import type { IGroup, IUser } from '@librechat/data-schemas';
@@ -72,6 +73,9 @@ describe('createAdminGroupsHandlers', () => {
       removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: mockGroup() }),
       removeMemberById: jest.fn().mockResolvedValue(mockGroup()),
       findUsers: jest.fn().mockResolvedValue([]),
+      deleteConfig: jest.fn().mockResolvedValue(null),
+      deleteAclEntries: jest.fn().mockResolvedValue({ deletedCount: 0 }),
+      deleteGrantsForPrincipal: jest.fn().mockResolvedValue(undefined),
       ...overrides,
     };
   }
@@ -97,6 +101,16 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.listGroups(req, res);
 
       expect(deps.listGroups).toHaveBeenCalledWith({ source: 'entra', search: 'engineering' });
+    });
+
+    it('passes search filter alone', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = createReqRes({ query: { search: 'eng' } });
+
+      await handlers.listGroups(req, res);
+
+      expect(deps.listGroups).toHaveBeenCalledWith({ search: 'eng' });
     });
 
     it('ignores invalid source values', async () => {
@@ -155,6 +169,19 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(404);
       expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
+    it('returns 500 on error', async () => {
+      const deps = createDeps({
+        findGroupById: jest.fn().mockRejectedValue(new Error('db down')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.getGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to get group' });
     });
   });
 
@@ -327,6 +354,21 @@ describe('createAdminGroupsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'name must be a non-empty string' });
     });
 
+    it('returns 400 when no valid fields provided', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: {},
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'No valid fields to update' });
+      expect(deps.updateGroupById).not.toHaveBeenCalled();
+    });
+
     it('returns 404 when updateGroupById returns null', async () => {
       const deps = createDeps({
         updateGroupById: jest.fn().mockResolvedValue(null),
@@ -359,6 +401,22 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'invalid field' });
+    });
+
+    it('returns 500 on error', async () => {
+      const deps = createDeps({
+        updateGroupById: jest.fn().mockRejectedValue(new Error('db down')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { name: 'Updated' },
+      });
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to update group' });
     });
   });
 
@@ -395,6 +453,36 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(404);
       expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+      expect(deps.deleteConfig).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 on error', async () => {
+      const deps = createDeps({
+        deleteGroup: jest.fn().mockRejectedValue(new Error('db down')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to delete group' });
+    });
+
+    it('cleans up Config, AclEntry, and SystemGrant on group delete', async () => {
+      const deps = createDeps({ deleteGroup: jest.fn().mockResolvedValue(mockGroup()) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validId } });
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.deleteConfig).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
+      expect(deps.deleteAclEntries).toHaveBeenCalledWith({
+        principalType: PrincipalType.GROUP,
+        principalId: validId,
+      });
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
     });
   });
 
@@ -408,7 +496,7 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.getGroupMembers(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith({ members: [] });
+      expect(json).toHaveBeenCalledWith({ members: [], total: 0, limit: 50, offset: 0 });
       expect(deps.findUsers).not.toHaveBeenCalled();
     });
 
@@ -487,6 +575,68 @@ describe('createAdminGroupsHandlers', () => {
       expect(members).toHaveLength(1);
     });
 
+    it('paginates members with limit and offset', async () => {
+      const ids = ['m1', 'm2', 'm3', 'm4', 'm5'];
+      const group = mockGroup({ memberIds: ids });
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(group),
+        findUsers: jest.fn().mockResolvedValue([]),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, json } = createReqRes({
+        params: { id: validId },
+        query: { limit: '2', offset: '1' },
+      });
+
+      await handlers.getGroupMembers(req, res);
+
+      const result = json.mock.calls[0][0];
+      expect(result.total).toBe(5);
+      expect(result.limit).toBe(2);
+      expect(result.offset).toBe(1);
+      expect(result.members).toHaveLength(2);
+      expect(result.members[0].userId).toBe('m2');
+      expect(result.members[1].userId).toBe('m3');
+    });
+
+    it('caps limit at 200', async () => {
+      const ids = Array.from({ length: 5 }, (_, i) => `m${i}`);
+      const group = mockGroup({ memberIds: ids });
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(group),
+        findUsers: jest.fn().mockResolvedValue([]),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, json } = createReqRes({
+        params: { id: validId },
+        query: { limit: '999' },
+      });
+
+      await handlers.getGroupMembers(req, res);
+
+      const result = json.mock.calls[0][0];
+      expect(result.limit).toBe(200);
+    });
+
+    it('returns empty when offset exceeds total', async () => {
+      const group = mockGroup({ memberIds: ['m1', 'm2'] });
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(group),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, json } = createReqRes({
+        params: { id: validId },
+        query: { offset: '10' },
+      });
+
+      await handlers.getGroupMembers(req, res);
+
+      const result = json.mock.calls[0][0];
+      expect(result.members).toHaveLength(0);
+      expect(result.total).toBe(2);
+      expect(deps.findUsers).not.toHaveBeenCalled();
+    });
+
     it('returns 400 for invalid group ID', async () => {
       const deps = createDeps();
       const handlers = createAdminGroupsHandlers(deps);
@@ -507,6 +657,19 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(404);
       expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
+    it('returns 500 on error', async () => {
+      const deps = createDeps({
+        findGroupById: jest.fn().mockRejectedValue(new Error('db down')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+      await handlers.getGroupMembers(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to get group members' });
     });
   });
 
@@ -740,6 +903,38 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith({ error: 'Failed to remove member' });
+    });
+
+    it('returns 200 when removing ObjectId member not in group (idempotent delete)', async () => {
+      const group = mockGroup({ memberIds: [] });
+      const deps = createDeps({
+        removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId, userId: validUserId },
+      });
+
+      await handlers.removeGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('returns 200 when removing non-ObjectId member not in group (idempotent delete)', async () => {
+      const group = mockGroup({ memberIds: [] });
+      const deps = createDeps({
+        removeMemberById: jest.fn().mockResolvedValue(group),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId, userId: 'ext-not-in-group' },
+      });
+
+      await handlers.removeGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
     });
   });
 });
