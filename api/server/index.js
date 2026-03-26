@@ -8,8 +8,8 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
