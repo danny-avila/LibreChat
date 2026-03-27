@@ -54,6 +54,8 @@ export class MCPManager extends UserConnectionManager {
       user?: IUser;
       forceNew?: boolean;
       flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+      /** Pre-resolved config for config-source servers not in YAML/DB */
+      serverConfig?: t.ParsedServerConfig;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
     //the get method checks if the config is still valid as app level
@@ -310,6 +312,7 @@ Please follow these instructions when using tools from the respective MCP server
         signal: options?.signal,
         customUserVars,
         requestBody,
+        serverConfig: providedConfig,
       });
 
       if (!(await connection.isConnected())) {
