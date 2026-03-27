@@ -221,4 +221,25 @@ describe('ldapStrategy', () => {
     expect(resolveAppConfigForUser).not.toHaveBeenCalled();
     expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
   });
+
+  it('should block login when tenant config restricts the domain', async () => {
+    const existing = {
+      _id: 'u-blocked',
+      provider: 'ldap',
+      ldapId: 'uid-tenant',
+      tenantId: 'tenant-strict',
+      role: 'USER',
+    };
+    findUser.mockResolvedValue(existing);
+    resolveAppConfigForUser.mockResolvedValue({
+      registration: { allowedDomains: ['other.com'] },
+    });
+    isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    const userinfo = { uid: 'uid-tenant', mail: 'user@example.com', givenName: 'Test', cn: 'Test' };
+    const { user, info } = await callVerify(userinfo);
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: 'Email domain not allowed' });
+  });
 });
