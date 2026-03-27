@@ -128,7 +128,11 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
         .lean()
         .exec();
       if (cache) {
-        await cache.set(roleName, role);
+        if (updates.name && updates.name !== roleName) {
+          await Promise.all([cache.set(roleName, null), cache.set(updates.name, role)]);
+        } else {
+          await cache.set(roleName, role);
+        }
       }
       return role as unknown as IRole;
     } catch (error) {
@@ -375,20 +379,18 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     if (!name || typeof name !== 'string' || !name.trim()) {
       throw new Error('Role name is required');
     }
-    if (SystemRoles[name.trim() as keyof typeof SystemRoles]) {
+    const trimmed = name.trim();
+    if (SystemRoles[trimmed as keyof typeof SystemRoles]) {
       throw new RoleConflictError(`Cannot create role with reserved system name: ${name}`);
     }
     const Role = mongoose.models.Role;
-    const existing = await Role.findOne({ name: name.trim() }).lean();
+    const existing = await Role.findOne({ name: trimmed }).lean();
     if (existing) {
-      throw new RoleConflictError(`Role "${name.trim()}" already exists`);
+      throw new RoleConflictError(`Role "${trimmed}" already exists`);
     }
     let role;
     try {
-      role = await new Role({
-        ...roleData,
-        name: name.trim(),
-      }).save();
+      role = await new Role({ ...roleData, name: trimmed }).save();
     } catch (err) {
       /**
        * The compound unique index `{ name: 1, tenantId: 1 }` on the role schema
@@ -397,7 +399,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
        * the same user-facing message as the application-level duplicate check.
        */
       if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
-        throw new RoleConflictError(`Role "${name.trim()}" already exists`);
+        throw new RoleConflictError(`Role "${trimmed}" already exists`);
       }
       throw err;
     }
@@ -412,19 +414,14 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     return role.toObject() as IRole;
   }
 
-  const getUserModel = () => mongoose.models.User as Model<IUser>;
-
   /** Guards against deleting system roles. Reassigns affected users back to USER. */
   async function deleteRoleByName(roleName: string): Promise<IRole | null> {
     if (SystemRoles[roleName as keyof typeof SystemRoles]) {
       throw new Error(`Cannot delete system role: ${roleName}`);
     }
     const Role = mongoose.models.Role;
-    const exists = await Role.findOne({ name: roleName }).lean();
-    if (!exists) {
-      return null;
-    }
-    await getUserModel().updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
+    const User = mongoose.models.User as Model<IUser>;
+    await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
     const deleted = await Role.findOneAndDelete({ name: roleName }).lean();
     try {
       const cache = deps.getCache?.(CacheKeys.ROLES);
@@ -438,17 +435,18 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   async function updateUsersByRole(oldRole: string, newRole: string): Promise<void> {
-    await getUserModel().updateMany({ role: oldRole }, { $set: { role: newRole } });
+    const User = mongoose.models.User as Model<IUser>;
+    await User.updateMany({ role: oldRole }, { $set: { role: newRole } });
   }
 
   async function listUsersByRole(
     roleName: string,
     options?: { limit?: number; offset?: number },
   ): Promise<IUser[]> {
+    const User = mongoose.models.User as Model<IUser>;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
-    return await getUserModel()
-      .find({ role: roleName })
+    return await User.find({ role: roleName })
       .select('_id name email avatar')
       .sort({ _id: 1 })
       .skip(offset)
@@ -457,7 +455,8 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   async function countUsersByRole(roleName: string): Promise<number> {
-    return await getUserModel().countDocuments({ role: roleName });
+    const User = mongoose.models.User as Model<IUser>;
+    return await User.countDocuments({ role: roleName });
   }
 
   return {

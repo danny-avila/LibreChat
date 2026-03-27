@@ -4,22 +4,10 @@ import type { IRole, IUser, AdminMember } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import { parsePagination } from './pagination';
 
 const MAX_NAME_LENGTH = 500;
 const MAX_DESCRIPTION_LENGTH = 2000;
-
-const DEFAULT_PAGE_LIMIT = 50;
-const MAX_PAGE_LIMIT = 200;
-
-function parsePagination(query: { limit?: string; offset?: string }): {
-  limit: number;
-  offset: number;
-} {
-  return {
-    limit: Math.min(Math.max(Number(query.limit) || DEFAULT_PAGE_LIMIT, 1), MAX_PAGE_LIMIT),
-    offset: Math.max(Number(query.offset) || 0, 0),
-  };
-}
 
 function validateNameParam(name: string): string | null {
   if (!name || typeof name !== 'string') {
@@ -162,7 +150,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
       const role = await createRoleByName({
         name: (name as string).trim(),
-        description: description ?? '',
+        description,
         permissions: permissions ?? {},
       });
       return res.status(201).json({ role });
@@ -175,6 +163,33 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     }
   }
 
+  async function renameRole(
+    currentName: string,
+    newName: string,
+    extraUpdates?: Partial<IRole>,
+  ): Promise<IRole | null> {
+    await updateUsersByRole(currentName, newName);
+    try {
+      const updates: Partial<IRole> = { name: newName, ...extraUpdates };
+      const role = await updateRoleByName(currentName, updates);
+      if (!role) {
+        try {
+          await updateUsersByRole(newName, currentName);
+        } catch (rollbackError) {
+          logger.error('[adminRoles] rollback failed (role not found path):', rollbackError);
+        }
+      }
+      return role;
+    } catch (error) {
+      try {
+        await updateUsersByRole(newName, currentName);
+      } catch (rollbackError) {
+        logger.error('[adminRoles] rollback failed after updateRole error:', rollbackError);
+      }
+      throw error;
+    }
+  }
+
   async function updateRoleHandler(req: ServerRequest, res: Response) {
     const { name } = req.params as RoleNameParams;
     const paramError = validateNameParam(name);
@@ -182,9 +197,6 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       return res.status(400).json({ error: paramError });
     }
     const body = req.body as { name?: string; description?: string };
-    let isRename = false;
-    let trimmedName = '';
-    let migrationRan = false;
     try {
       const nameError = validateRoleName(body.name, false);
       if (nameError) {
@@ -195,14 +207,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(400).json({ error: descError });
       }
 
-      trimmedName = body.name?.trim() ?? '';
-      isRename = trimmedName !== '' && trimmedName !== name;
+      const trimmedName = body.name?.trim() ?? '';
+      const isRename = trimmedName !== '' && trimmedName !== name;
 
       if (isRename && SystemRoles[name as keyof typeof SystemRoles]) {
         return res.status(403).json({ error: 'Cannot rename system role' });
       }
       if (isRename && SystemRoles[trimmedName as keyof typeof SystemRoles]) {
-        return res.status(409).json({ error: 'Cannot rename to a reserved system role name' });
+        return res.status(403).json({ error: 'Cannot use a reserved system role name' });
       }
 
       const existing = await getRoleByName(name);
@@ -230,31 +242,21 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
 
       if (isRename) {
-        await updateUsersByRole(name, trimmedName);
-        migrationRan = true;
+        const descUpdate =
+          body.description !== undefined ? { description: body.description } : undefined;
+        const role = await renameRole(name, trimmedName, descUpdate);
+        if (!role) {
+          return res.status(404).json({ error: 'Role not found' });
+        }
+        return res.status(200).json({ role });
       }
 
       const role = await updateRoleByName(name, updates);
       if (!role) {
-        if (migrationRan) {
-          try {
-            await updateUsersByRole(trimmedName, name);
-          } catch (rollbackError) {
-            logger.error('[adminRoles] rollback failed (role not found path):', rollbackError);
-          }
-        }
         return res.status(404).json({ error: 'Role not found' });
       }
-
       return res.status(200).json({ role });
     } catch (error) {
-      if (migrationRan) {
-        try {
-          await updateUsersByRole(trimmedName, name);
-        } catch (rollbackError) {
-          logger.error('[adminRoles] rollback failed after updateRole error:', rollbackError);
-        }
-      }
       if (error instanceof RoleConflictError) {
         return res.status(409).json({ error: error.message });
       }
@@ -263,6 +265,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     }
   }
 
+  /**
+   * The re-fetch via `getRoleByName` after `updateAccessPermissions` depends on the
+   * callee having written the updated document to the role cache. If the cache layer
+   * is refactored to stop writing from within `updateAccessPermissions`, this handler
+   * must be updated to perform an explicit uncached DB read.
+   */
   async function updateRolePermissionsHandler(req: ServerRequest, res: Response) {
     try {
       const { name } = req.params as RoleNameParams;

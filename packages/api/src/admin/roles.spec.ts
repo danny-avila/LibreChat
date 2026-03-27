@@ -443,7 +443,7 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.getRoleByName).not.toHaveBeenCalled();
     });
 
-    it('returns 409 when renaming to a system role name', async () => {
+    it('returns 403 when renaming to a system role name', async () => {
       const deps = createDeps();
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -453,8 +453,8 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.updateRole(req, res);
 
-      expect(status).toHaveBeenCalledWith(409);
-      expect(json).toHaveBeenCalledWith({ error: 'Cannot rename to a reserved system role name' });
+      expect(status).toHaveBeenCalledWith(403);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot use a reserved system role name' });
     });
 
     it('returns 409 when target name already exists', async () => {

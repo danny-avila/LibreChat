@@ -30,6 +30,7 @@ let deleteRoleByName: ReturnType<typeof createRoleMethods>['deleteRoleByName'];
 let updateUsersByRole: ReturnType<typeof createRoleMethods>['updateUsersByRole'];
 let listUsersByRole: ReturnType<typeof createRoleMethods>['listUsersByRole'];
 let countUsersByRole: ReturnType<typeof createRoleMethods>['countUsersByRole'];
+let updateRoleByName: ReturnType<typeof createRoleMethods>['updateRoleByName'];
 let listRoles: ReturnType<typeof createRoleMethods>['listRoles'];
 let countRoles: ReturnType<typeof createRoleMethods>['countRoles'];
 let mongoServer: MongoMemoryServer;
@@ -47,6 +48,7 @@ beforeAll(async () => {
   initializeRoles = methods.initializeRoles;
   createRoleByName = methods.createRoleByName;
   deleteRoleByName = methods.deleteRoleByName;
+  updateRoleByName = methods.updateRoleByName;
   updateUsersByRole = methods.updateUsersByRole;
   listUsersByRole = methods.listUsersByRole;
   countUsersByRole = methods.countUsersByRole;
@@ -630,12 +632,42 @@ describe('deleteRoleByName', () => {
     expect(mockCache.set).toHaveBeenCalledWith('editor', null);
   });
 
-  it('does not touch cache when role does not exist', async () => {
+  it('returns null and invalidates cache when role does not exist', async () => {
     mockCache.set.mockClear();
 
-    await deleteRoleByName('nonexistent');
+    const result = await deleteRoleByName('nonexistent');
 
-    expect(mockCache.set).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+    expect(mockCache.set).toHaveBeenCalledWith('nonexistent', null);
+  });
+});
+
+describe('updateRoleByName - cache on rename', () => {
+  it('invalidates old key and populates new key on rename', async () => {
+    await createRoleByName({ name: 'editor', description: 'Can edit' });
+    mockCache.set.mockClear();
+
+    const updated = await updateRoleByName('editor', { name: 'senior-editor' });
+
+    expect(updated.name).toBe('senior-editor');
+    expect(mockCache.set).toHaveBeenCalledWith('editor', null);
+    expect(mockCache.set).toHaveBeenCalledWith(
+      'senior-editor',
+      expect.objectContaining({ name: 'senior-editor' }),
+    );
+  });
+
+  it('writes same key when name unchanged', async () => {
+    await createRoleByName({ name: 'editor' });
+    mockCache.set.mockClear();
+
+    await updateRoleByName('editor', { description: 'Updated desc' });
+
+    expect(mockCache.set).toHaveBeenCalledWith(
+      'editor',
+      expect.objectContaining({ name: 'editor', description: 'Updated desc' }),
+    );
+    expect(mockCache.set).toHaveBeenCalledTimes(1);
   });
 });
 
