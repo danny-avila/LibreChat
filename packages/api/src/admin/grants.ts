@@ -11,8 +11,6 @@ import type { Types } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
 
-export type { ResolvedPrincipal };
-
 const VALID_PRINCIPAL_TYPES = new Set<string>([
   PrincipalType.ROLE,
   PrincipalType.GROUP,
