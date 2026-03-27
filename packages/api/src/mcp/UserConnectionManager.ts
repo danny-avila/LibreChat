@@ -158,7 +158,7 @@ export abstract class UserConnectionManager {
         {
           serverConfig: config,
           serverName: serverName,
-          dbSourced: !!config.dbId,
+          dbSourced: config.source === 'user',
           useSSRFProtection: registry.shouldEnableSSRFProtection(),
           allowedDomains: registry.getAllowedDomains(),
         },

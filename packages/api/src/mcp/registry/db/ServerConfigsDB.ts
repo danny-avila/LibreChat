@@ -411,6 +411,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     const config: ParsedServerConfig = {
       ...serverDBDoc.config,
       dbId: (serverDBDoc._id as Types.ObjectId).toString(),
+      source: 'user',
       updatedAt: serverDBDoc.updatedAt?.getTime(),
     };
     return await this.decryptConfig(config);
