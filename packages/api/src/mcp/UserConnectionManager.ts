@@ -5,6 +5,7 @@ import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from './connection';
+import { isUserSourced } from './utils';
 import { mcpConfig } from './mcpConfig';
 
 /**
@@ -158,7 +159,7 @@ export abstract class UserConnectionManager {
         {
           serverConfig: config,
           serverName: serverName,
-          dbSourced: config.source ? config.source === 'user' : !!config.dbId,
+          dbSourced: isUserSourced(config),
           useSSRFProtection: registry.shouldEnableSSRFProtection(),
           allowedDomains: registry.getAllowedDomains(),
         },

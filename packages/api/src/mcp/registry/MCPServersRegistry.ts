@@ -145,9 +145,30 @@ export class MCPServersRegistry {
       return configFromYaml;
     }
 
+    const configFromConfigCache = await this.findInConfigCache(serverName);
+    if (configFromConfigCache) {
+      await this.readThroughCache.set(cacheKey, configFromConfigCache);
+      return configFromConfigCache;
+    }
+
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
     await this.readThroughCache.set(cacheKey, configFromDB);
     return configFromDB;
+  }
+
+  /**
+   * Scans configCacheRepo for any entry matching `${serverName}:*`.
+   * This is the authoritative fallback when the readThroughCache TTL has expired.
+   */
+  private async findInConfigCache(serverName: string): Promise<t.ParsedServerConfig | undefined> {
+    const allConfig = await this.configCacheRepo.getAll();
+    const prefix = `${serverName}:`;
+    for (const [key, val] of Object.entries(allConfig)) {
+      if (key.startsWith(prefix)) {
+        return val;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -437,7 +458,14 @@ export class MCPServersRegistry {
       );
 
       parsedConfig.source = 'config';
-      await this.configCacheRepo.add(cacheKey, parsedConfig);
+      try {
+        await this.configCacheRepo.add(cacheKey, parsedConfig);
+      } catch {
+        const existing = await this.configCacheRepo.get(cacheKey);
+        if (existing) {
+          return existing;
+        }
+      }
 
       logger.info(
         `${prefix} Initialized: tools=${parsedConfig.tools ?? 'N/A'}, ` +
@@ -446,6 +474,11 @@ export class MCPServersRegistry {
       return parsedConfig;
     } catch (error) {
       logger.error(`${prefix} Failed to initialize:`, error);
+
+      const existing = await this.configCacheRepo.get(cacheKey);
+      if (existing) {
+        return existing;
+      }
 
       try {
         const stubConfig: t.ParsedServerConfig = {
@@ -456,8 +489,11 @@ export class MCPServersRegistry {
         await this.configCacheRepo.add(cacheKey, stubConfig);
         logger.info(`${prefix} Stored stub config for recovery`);
         return stubConfig;
-      } catch (stubError) {
-        logger.error(`${prefix} Failed to store stub config:`, stubError);
+      } catch {
+        const existingStub = await this.configCacheRepo.get(cacheKey);
+        if (existingStub) {
+          return existingStub;
+        }
       }
       return undefined;
     }
@@ -481,9 +517,11 @@ export class MCPServersRegistry {
       ),
     ];
 
-    await this.configCacheRepo.reset();
-    await this.readThroughCache.clear();
-    await this.readThroughCacheAll.clear();
+    await Promise.all([
+      this.configCacheRepo.reset(),
+      this.readThroughCache.clear(),
+      this.readThroughCacheAll.clear(),
+    ]);
 
     if (evictedNames.length > 0) {
       logger.info(

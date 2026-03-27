@@ -6,7 +6,7 @@ import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
-import { hasCustomUserVars } from '~/mcp/utils';
+import { hasCustomUserVars, isUserSourced } from '~/mcp/utils';
 import { isEnabled } from '~/utils';
 
 /**
@@ -73,7 +73,7 @@ export class MCPServerInspector {
         this.connection = await MCPConnectionFactory.create({
           serverConfig: this.config,
           serverName: this.serverName,
-          dbSourced: this.config.source ? this.config.source === 'user' : !!this.config.dbId,
+          dbSourced: isUserSourced(this.config),
           useSSRFProtection: this.useSSRFProtection,
           allowedDomains: this.allowedDomains,
         });

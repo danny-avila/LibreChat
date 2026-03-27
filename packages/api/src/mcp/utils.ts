@@ -9,6 +9,15 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
 }
 
 /**
+ * Determines whether a server config is user-sourced (sandboxed placeholder resolution).
+ * When `source` is set, it is authoritative. When absent (pre-upgrade cached configs),
+ * falls back to the legacy `dbId` heuristic for backward compatibility.
+ */
+export function isUserSourced(config: Pick<ParsedServerConfig, 'source' | 'dbId'>): boolean {
+  return config.source != null ? config.source === 'user' : !!config.dbId;
+}
+
+/**
  * Allowlist-based sanitization for API responses. Only explicitly listed fields are included;
  * new fields added to ParsedServerConfig are excluded by default until allowlisted here.
  *

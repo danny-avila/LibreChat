@@ -60,9 +60,7 @@ async function clearMcpConfigCache() {
         const mcpManager = getMCPManager();
         if (mcpManager?.appConnections) {
           await Promise.allSettled(
-            evictedServers.map((serverName) =>
-              mcpManager.appConnections.disconnect(serverName).catch(() => {}),
-            ),
+            evictedServers.map((serverName) => mcpManager.appConnections.disconnect(serverName)),
           );
         }
       } catch {

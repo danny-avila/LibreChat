@@ -191,10 +191,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
 
       expect(r1.dedup_srv).toBeDefined();
       expect(r2.dedup_srv).toBeDefined();
-      // inspect might be called once (dedup hit) or twice (race), but the
-      // configCacheRepo should prevent redundant inspection on subsequent calls
-      const callCount = inspectSpy.mock.calls.length;
-      expect(callCount).toBeLessThanOrEqual(2);
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
 
       // Subsequent call must NOT re-inspect (cached)
       inspectSpy.mockClear();
@@ -273,6 +270,22 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     it('should find config-source server via read-through cache with userId', async () => {
       await registry.ensureConfigServers({ config_srv: sseConfig });
       const config = await registry.getServerConfig('config_srv', 'user-123');
+      expect(config).toBeDefined();
+      expect(config?.source).toBe('config');
+    });
+
+    it('should find config-source server after readThrough cache expires', async () => {
+      await registry.ensureConfigServers({ config_srv: sseConfig });
+      await registry['readThroughCache'].clear();
+      const config = await registry.getServerConfig('config_srv');
+      expect(config).toBeDefined();
+      expect(config?.source).toBe('config');
+    });
+
+    it('should find config-source server with userId after readThrough cache expires', async () => {
+      await registry.ensureConfigServers({ config_srv: sseConfig });
+      await registry['readThroughCache'].clear();
+      const config = await registry.getServerConfig('config_srv', 'user-456');
       expect(config).toBeDefined();
       expect(config?.source).toBe('config');
     });

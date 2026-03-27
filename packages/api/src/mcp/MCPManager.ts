@@ -16,6 +16,7 @@ import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
+import { isUserSourced } from './utils';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
 
@@ -103,7 +104,7 @@ export class MCPManager extends UserConnectionManager {
     const registry = MCPServersRegistry.getInstance();
     const useSSRFProtection = registry.shouldEnableSSRFProtection();
     const allowedDomains = registry.getAllowedDomains();
-    const dbSourced = serverConfig.source ? serverConfig.source === 'user' : !!serverConfig.dbId;
+    const dbSourced = isUserSourced(serverConfig);
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
@@ -303,7 +304,7 @@ Please follow these instructions when using tools from the respective MCP server
       }
 
       const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
-      const isDbSourced = rawConfig?.source ? rawConfig.source === 'user' : !!rawConfig?.dbId;
+      const isDbSourced = isUserSourced(rawConfig ?? {});
 
       /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
       const graphProcessedConfig = isDbSourced
