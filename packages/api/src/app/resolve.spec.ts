@@ -6,7 +6,7 @@ jest.mock('@librechat/data-schemas', () => {
   return { tenantStorage: new ALS() };
 });
 
-import { resolveAppConfigForUser } from './resolveAppConfig';
+import { resolveAppConfigForUser } from './resolve';
 
 const { tenantStorage } = jest.requireMock('@librechat/data-schemas') as {
   tenantStorage: AsyncLocalStorage<{ tenantId?: string }>;
