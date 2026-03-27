@@ -43,7 +43,7 @@ const NewChatButton = memo(function NewChatButton() {
           className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
           onClick={handleClick}
         >
-          <div className="flex size-6 items-center justify-center rounded-full bg-text-primary">
+          <div className="flex size-6 items-center justify-center rounded-full bg-jersey-blue">
             <NewChatIcon className="size-3.5 text-white dark:text-black" />
           </div>
         </a>
