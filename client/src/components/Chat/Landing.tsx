@@ -5,7 +5,7 @@ import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
-import { useLocalize, useAuthContext } from '~/hooks';
+import { useLocalize, useAuthContext, useSubmitMessage } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
 
 const containerClassName =
@@ -35,6 +35,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { user } = useAuthContext();
   const localize = useLocalize();
+  const { submitMessage } = useSubmitMessage();
 
   const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
   const [lineCount, setLineCount] = useState(1);
@@ -204,6 +205,22 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           </div>
         )}
       </div>
+      {!entity && (startupConfig?.interface?.customPromptStarters?.length ?? 0) > 0 && (
+        <div className="mt-6 flex flex-wrap justify-center gap-3 px-4">
+          {startupConfig!.interface!.customPromptStarters!.slice(0, 4).map((text, index) => (
+            <button
+              key={index}
+              dir="auto"
+              onClick={() => submitMessage({ text })}
+              className="relative flex w-44 cursor-pointer flex-col gap-2 rounded-2xl border border-border-medium px-3 pb-4 pt-3 text-start align-top text-[14px] shadow-[0_0_2px_0_rgba(0,0,0,0.05),0_4px_6px_0_rgba(0,0,0,0.02)] transition-colors duration-300 ease-in-out fade-in hover:bg-surface-tertiary"
+            >
+              <p className="break-word line-clamp-3 overflow-hidden text-balance text-text-secondary">
+                {text}
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

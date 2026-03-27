@@ -26,6 +26,7 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
 
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const [voice, setVoice] = useRecoilState(store.voice);
+  const languageTTS = useRecoilValue(store.languageTTS);
   const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
 
   const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
@@ -38,22 +39,32 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
 
   useEffect(() => {
     const firstVoice = voices[0];
-    if (voices.length && typeof firstVoice === 'object') {
-      const lastSelectedVoice = voices.find((v) =>
-        typeof v === 'object' ? v.value === voice : v === voice,
-      );
-      if (lastSelectedVoice != null) {
-        const currentVoice =
-          typeof lastSelectedVoice === 'object' ? lastSelectedVoice.value : lastSelectedVoice;
-        logger.log('useTextToSpeech.ts - Effect:', { voices, voice: currentVoice });
-        setVoice(currentVoice);
-        return;
-      }
-
-      logger.log('useTextToSpeech.ts - Effect:', { voices, voice: firstVoice.value });
-      setVoice(firstVoice.value);
+    if (!voices.length || typeof firstVoice !== 'object') {
+      return;
     }
-  }, [setVoice, voice, voices]);
+
+    const lastSelectedVoice = voices.find((v) =>
+      typeof v === 'object' ? v.value === voice : v === voice,
+    );
+    if (lastSelectedVoice != null) {
+      const currentVoice =
+        typeof lastSelectedVoice === 'object' ? lastSelectedVoice.value : lastSelectedVoice;
+      logger.log('useTextToSpeech.ts - Effect:', { voices, voice: currentVoice });
+      setVoice(currentVoice);
+      return;
+    }
+
+    // Prefer a voice matching the selected language
+    const langBase = languageTTS.split('-')[0].toLowerCase();
+    const langVoice = voices.find((v) => {
+      const name = (typeof v === 'object' ? v.value : v).toLowerCase();
+      return name.includes(languageTTS.toLowerCase()) || name.includes(langBase);
+    });
+    const preferred = langVoice ?? firstVoice;
+    const preferredValue = typeof preferred === 'object' ? preferred.value : preferred;
+    logger.log('useTextToSpeech.ts - Effect (lang-matched):', { voices, voice: preferredValue });
+    setVoice(preferredValue);
+  }, [setVoice, voice, voices, languageTTS]);
 
   const handleMouseDown = () => {
     isMouseDownRef.current = true;

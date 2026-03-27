@@ -64,10 +64,15 @@ function AuthLayout({
           <img
             src="assets/logo.svg"
             className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
+            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'Atlas Chat' })}
           />
         </div>
       </BlinkAnimation>
+      <p className="mt-2 text-center text-sm text-text-secondary">
+        <span lang="ar" dir="rtl">الذكاء الاصطناعي للجميع</span>
+        <span className="mx-2 opacity-40">·</span>
+        <span lang="fr">L'IA pour tous</span>
+      </p>
       <DisplayError />
       <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />

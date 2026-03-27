@@ -1,16 +1,80 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import Cookies from 'js-cookie';
 import { QueryKeys } from 'librechat-data-provider';
 import { Skeleton, Sidebar, Button, TooltipAnchor, NewChatIcon } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import { useActivePanel, resolveActivePanel } from '~/Providers';
 import { useLocalize, useNewConvo } from '~/hooks';
+import { isRTLLanguage } from '~/utils/isRTLLanguage';
+import { getSpeechLocale } from '~/utils/getSpeechLocale';
 import { clearMessagesCache, cn } from '~/utils';
 import store from '~/store';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
+
+const getLangLabel = (lang: string) => {
+  if (lang.startsWith('ar')) {
+    return 'ع';
+  }
+  if (lang.startsWith('fr')) {
+    return 'Fr';
+  }
+  return 'En';
+};
+
+const getNextLang = (lang: string) => {
+  if (lang.startsWith('ar')) {
+    return 'fr-FR';
+  }
+  if (lang.startsWith('fr')) {
+    return 'en-US';
+  }
+  return 'ar-EG';
+};
+
+const LanguageToggleButton = memo(function LanguageToggleButton() {
+  const localize = useLocalize();
+  const [langcode, setLangcode] = useRecoilState(store.lang);
+  const [, setChatDirection] = useRecoilState(store.chatDirection);
+  const [, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
+  const [, setLanguageTTS] = useRecoilState<string>(store.languageTTS);
+
+  const handleClick = useCallback(() => {
+    const next = getNextLang(langcode);
+    const direction = isRTLLanguage(next) ? 'RTL' : 'LTR';
+    const speechLocale = getSpeechLocale(next);
+    setChatDirection(direction);
+    setLanguageSTT(speechLocale);
+    setLanguageTTS(speechLocale);
+    requestAnimationFrame(() => {
+      document.documentElement.lang = next;
+      document.documentElement.dir = direction.toLowerCase();
+    });
+    setLangcode(next);
+    Cookies.set('lang', next, { expires: 365 });
+  }, [langcode, setLangcode, setChatDirection, setLanguageSTT, setLanguageTTS]);
+
+  return (
+    <TooltipAnchor
+      side="right"
+      description={localize('com_nav_language')}
+      render={
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label={localize('com_nav_language')}
+          className="h-9 w-9 rounded-lg text-xs font-bold text-text-secondary"
+          onClick={handleClick}
+        >
+          {getLangLabel(langcode)}
+        </Button>
+      }
+    />
+  );
+});
 
 const NewChatButton = memo(function NewChatButton() {
   const localize = useLocalize();
@@ -145,6 +209,7 @@ function ExpandedPanel({
         }
       />
       <NewChatButton />
+      <LanguageToggleButton />
       <div className="flex flex-col gap-1 overflow-y-auto">
         {links.map((link) => (
           <NavIconButton

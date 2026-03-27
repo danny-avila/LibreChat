@@ -665,6 +665,7 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    customPromptStarters: z.array(z.string()).optional(),
     remoteAgents: z
       .object({
         use: z.boolean().optional(),

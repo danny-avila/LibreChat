@@ -2976,3 +2976,23 @@ html {
 .sharepoint-picker-bg {
   background-color: #f5f5f5;
 }
+
+/* Arabic / RTL language optimizations */
+:lang(ar),
+:lang(fa),
+:lang(he),
+:lang(ur) {
+  font-family: 'Noto Sans Arabic', 'Inter', sans-serif;
+  line-height: 1.8;
+  letter-spacing: 0;
+  word-spacing: 0.05em;
+}
+
+[dir="rtl"] {
+  text-align: right;
+}
+
+[dir="rtl"] input,
+[dir="rtl"] textarea {
+  text-align: right;
+}

@@ -1,3 +1,3 @@
-openchat.eastus2.cloudapp.azure.com {
+atlas.neurovantis.ma, atlas.neurovantis.com {
     reverse_proxy api:3080
 }

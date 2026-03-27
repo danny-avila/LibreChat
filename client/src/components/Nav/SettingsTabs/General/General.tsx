@@ -2,6 +2,8 @@ import React, { useContext, useCallback } from 'react';
 import Cookies from 'js-cookie';
 import { useRecoilState } from 'recoil';
 import { Dropdown, ThemeContext } from '@librechat/client';
+import { isRTLLanguage } from '~/utils/isRTLLanguage';
+import { getSpeechLocale } from '~/utils/getSpeechLocale';
 import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
 import { useLocalize } from '~/hooks';
@@ -147,6 +149,9 @@ function General() {
   const { theme, setTheme } = useContext(ThemeContext);
 
   const [langcode, setLangcode] = useRecoilState(store.lang);
+  const [, setChatDirection] = useRecoilState(store.chatDirection);
+  const [, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
+  const [, setLanguageTTS] = useRecoilState<string>(store.languageTTS);
 
   const changeTheme = useCallback(
     (value: string) => {
@@ -162,13 +167,20 @@ function General() {
         userLang = navigator.language || navigator.languages[0];
       }
 
+      const direction = isRTLLanguage(userLang) ? 'RTL' : 'LTR';
+      const speechLocale = getSpeechLocale(userLang);
+      setChatDirection(direction);
+      setLanguageSTT(speechLocale);
+      setLanguageTTS(speechLocale);
+
       requestAnimationFrame(() => {
         document.documentElement.lang = userLang;
+        document.documentElement.dir = direction.toLowerCase();
       });
       setLangcode(userLang);
       Cookies.set('lang', userLang, { expires: 365 });
     },
-    [setLangcode],
+    [setLangcode, setChatDirection, setLanguageSTT, setLanguageTTS],
   );
 
   return (

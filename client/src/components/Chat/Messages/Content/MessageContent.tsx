@@ -113,6 +113,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
   return (
     <Container message={message}>
       <div
+        dir="auto"
         className={cn(
           'markdown prose message-content dark:prose-invert light w-full break-words',
           isSubmitting && 'submitting',
