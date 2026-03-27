@@ -534,6 +534,8 @@ router.post(
       const result = await reinitMCPServer({
         user,
         serverName,
+        serverConfig,
+        configServers,
         userMCPAuthMap,
       });
 

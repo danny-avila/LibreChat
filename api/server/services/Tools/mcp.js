@@ -25,6 +25,8 @@ async function reinitMCPServer({
   signal,
   forceNew,
   serverName,
+  serverConfig: providedConfig,
+  configServers,
   userMCPAuthMap,
   connectionTimeout,
   returnOnOAuth = true,
@@ -42,7 +44,8 @@ async function reinitMCPServer({
 
   try {
     const registry = getMCPServersRegistry();
-    const serverConfig = await registry.getServerConfig(serverName, user?.id);
+    const serverConfig =
+      providedConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
     if (serverConfig?.inspectionFailed) {
       logger.info(
         `[MCP Reinitialize] Server ${serverName} had failed inspection, attempting reinspection`,
@@ -93,6 +96,7 @@ async function reinitMCPServer({
         returnOnOAuth,
         customUserVars,
         connectionTimeout,
+        serverConfig,
       });
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
@@ -125,6 +129,7 @@ async function reinitMCPServer({
             oauthStart,
             customUserVars,
             connectionTimeout,
+            configServers,
           });
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {

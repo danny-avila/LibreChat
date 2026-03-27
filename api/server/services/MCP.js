@@ -266,6 +266,7 @@ async function reconnectServer({
   index,
   signal,
   serverName,
+  configServers,
   userMCPAuthMap,
   streamId = null,
 }) {
@@ -334,6 +335,7 @@ async function reconnectServer({
       user,
       signal,
       serverName,
+      configServers,
       oauthStart,
       flowManager,
       userMCPAuthMap,
@@ -398,6 +400,7 @@ async function createMCPTools({
     index,
     signal,
     serverName,
+    configServers,
     userMCPAuthMap,
     streamId,
   });
@@ -493,6 +496,7 @@ async function createMCPTool({
       index,
       signal,
       serverName,
+      configServers,
       userMCPAuthMap,
       streamId,
     });
