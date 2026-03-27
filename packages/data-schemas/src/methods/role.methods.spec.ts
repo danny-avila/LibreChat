@@ -30,6 +30,8 @@ let deleteRoleByName: ReturnType<typeof createRoleMethods>['deleteRoleByName'];
 let updateUsersByRole: ReturnType<typeof createRoleMethods>['updateUsersByRole'];
 let listUsersByRole: ReturnType<typeof createRoleMethods>['listUsersByRole'];
 let countUsersByRole: ReturnType<typeof createRoleMethods>['countUsersByRole'];
+let listRoles: ReturnType<typeof createRoleMethods>['listRoles'];
+let countRoles: ReturnType<typeof createRoleMethods>['countRoles'];
 let mongoServer: MongoMemoryServer;
 
 beforeAll(async () => {
@@ -48,6 +50,8 @@ beforeAll(async () => {
   updateUsersByRole = methods.updateUsersByRole;
   listUsersByRole = methods.listUsersByRole;
   countUsersByRole = methods.countUsersByRole;
+  listRoles = methods.listRoles;
+  countRoles = methods.countRoles;
 });
 
 afterAll(async () => {
@@ -743,5 +747,114 @@ describe('countUsersByRole', () => {
 
   it('returns 0 when no users have the role', async () => {
     expect(await countUsersByRole('nonexistent')).toBe(0);
+  });
+});
+
+describe('listRoles', () => {
+  beforeEach(async () => {
+    await Role.deleteMany({});
+  });
+
+  it('returns roles sorted alphabetically by name', async () => {
+    await Role.create([
+      { name: 'zebra', permissions: {} },
+      { name: 'alpha', permissions: {} },
+      { name: 'middle', permissions: {} },
+    ]);
+
+    const roles = await listRoles();
+
+    expect(roles.map((r) => r.name)).toEqual(['alpha', 'middle', 'zebra']);
+  });
+
+  it('respects limit and offset for pagination', async () => {
+    await Role.create([
+      { name: 'a-role', permissions: {} },
+      { name: 'b-role', permissions: {} },
+      { name: 'c-role', permissions: {} },
+      { name: 'd-role', permissions: {} },
+      { name: 'e-role', permissions: {} },
+    ]);
+
+    const page1 = await listRoles({ limit: 2, offset: 0 });
+    const page2 = await listRoles({ limit: 2, offset: 2 });
+    const page3 = await listRoles({ limit: 2, offset: 4 });
+
+    expect(page1).toHaveLength(2);
+    expect(page1.map((r) => r.name)).toEqual(['a-role', 'b-role']);
+    expect(page2).toHaveLength(2);
+    expect(page2.map((r) => r.name)).toEqual(['c-role', 'd-role']);
+    expect(page3).toHaveLength(1);
+    expect(page3.map((r) => r.name)).toEqual(['e-role']);
+  });
+
+  it('defaults to limit 50 and offset 0', async () => {
+    await Role.create({ name: 'only-role', permissions: {} });
+
+    const roles = await listRoles();
+
+    expect(roles).toHaveLength(1);
+    expect(roles[0].name).toBe('only-role');
+  });
+
+  it('returns only name and description fields', async () => {
+    await Role.create({
+      name: 'editor',
+      description: 'Can edit',
+      permissions: { PROMPTS: { USE: true } },
+    });
+
+    const roles = await listRoles();
+
+    expect(roles).toHaveLength(1);
+    expect(roles[0].name).toBe('editor');
+    expect(roles[0].description).toBe('Can edit');
+    expect(roles[0]._id).toBeDefined();
+    expect('permissions' in roles[0]).toBe(false);
+  });
+
+  it('returns empty array when no roles exist', async () => {
+    const roles = await listRoles();
+    expect(roles).toEqual([]);
+  });
+});
+
+describe('countRoles', () => {
+  beforeEach(async () => {
+    await Role.deleteMany({});
+  });
+
+  it('returns the total number of roles', async () => {
+    await Role.create([
+      { name: 'a', permissions: {} },
+      { name: 'b', permissions: {} },
+      { name: 'c', permissions: {} },
+    ]);
+
+    expect(await countRoles()).toBe(3);
+  });
+
+  it('returns 0 when no roles exist', async () => {
+    expect(await countRoles()).toBe(0);
+  });
+});
+
+describe('createRoleByName - duplicate key race', () => {
+  beforeEach(async () => {
+    await Role.deleteMany({});
+  });
+
+  it('throws RoleConflictError on concurrent insert (11000)', async () => {
+    await createRoleByName({ name: 'editor' });
+
+    const insertSpy = jest.spyOn(Role.prototype, 'save').mockImplementationOnce(() => {
+      const err = new Error('E11000 duplicate key error') as Error & { code: number };
+      err.code = 11000;
+      throw err;
+    });
+
+    await expect(createRoleByName({ name: 'editor2' })).rejects.toThrow(/already exists/);
+
+    insertSpy.mockRestore();
   });
 });

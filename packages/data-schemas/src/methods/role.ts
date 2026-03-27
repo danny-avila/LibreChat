@@ -38,8 +38,11 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       const defaultPerms = roleDefaults[roleName].permissions;
 
       if (!role) {
-        role = new Role(roleDefaults[roleName]);
+        role = new Role({ ...roleDefaults[roleName], description: '' });
       } else {
+        if (role.description == null) {
+          role.description = '';
+        }
         const permissions = role.toObject()?.permissions ?? {};
         role.permissions = role.permissions || {};
         for (const permType of Object.keys(defaultPerms)) {
@@ -59,12 +62,13 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     const Role = mongoose.models.Role;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
-    return await Role.find({})
+    const results = await Role.find({})
       .select('name description')
       .sort({ name: 1 })
       .skip(offset)
       .limit(limit)
       .lean();
+    return results as unknown[] as IRole[];
   }
 
   async function countRoles(): Promise<number> {
@@ -129,6 +133,10 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       }
       return role as unknown as IRole;
     } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
+        const targetName = updates.name ?? roleName;
+        throw new RoleConflictError(`Role "${targetName}" already exists`);
+      }
       throw new Error(`Failed to update role: ${(error as Error).message}`);
     }
   }

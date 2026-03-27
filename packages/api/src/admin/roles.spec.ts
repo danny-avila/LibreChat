@@ -703,7 +703,7 @@ describe('createAdminRolesHandlers', () => {
       });
       const handlers = createAdminRolesHandlers(deps);
       const perms = { chat: { read: true, write: true } };
-      const { req, res, status } = createReqRes({
+      const { req, res, status, json } = createReqRes({
         params: { name: 'editor' },
         body: { permissions: perms },
       });
@@ -712,6 +712,7 @@ describe('createAdminRolesHandlers', () => {
 
       expect(deps.updateAccessPermissions).toHaveBeenCalledWith('editor', perms, role);
       expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ role: expect.objectContaining({ name: 'editor' }) });
     });
 
     it('returns 400 when permissions is missing', async () => {
@@ -945,7 +946,7 @@ describe('createAdminRolesHandlers', () => {
     it('adds member and returns 200', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        findUser: jest.fn().mockResolvedValue(mockUser()),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: 'viewer' })),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -958,6 +959,24 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: 'editor' });
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('skips DB write when user already has the target role', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValue(mockRole()),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: 'editor' })),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: 'editor' },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addRoleMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+      expect(deps.updateUser).not.toHaveBeenCalled();
     });
 
     it('returns 400 when userId is missing', async () => {
@@ -1022,7 +1041,7 @@ describe('createAdminRolesHandlers', () => {
     it('returns 500 on unexpected error', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        findUser: jest.fn().mockResolvedValue(mockUser()),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: 'viewer' })),
         updateUser: jest.fn().mockRejectedValue(new Error('timeout')),
       });
       const handlers = createAdminRolesHandlers(deps);
@@ -1151,6 +1170,30 @@ describe('createAdminRolesHandlers', () => {
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
       expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: SystemRoles.USER });
+    });
+
+    it('rolls back removal when post-write check finds zero admins', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: SystemRoles.ADMIN })),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
+        countUsersByRole: jest.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(0),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: SystemRoles.ADMIN, userId: validUserId },
+      });
+
+      await handlers.removeRoleMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot remove the last admin user' });
+      expect(deps.updateUser).toHaveBeenCalledTimes(2);
+      expect(deps.updateUser).toHaveBeenNthCalledWith(1, validUserId, {
+        role: SystemRoles.USER,
+      });
+      expect(deps.updateUser).toHaveBeenNthCalledWith(2, validUserId, {
+        role: SystemRoles.ADMIN,
+      });
     });
 
     it('returns 500 on unexpected error', async () => {

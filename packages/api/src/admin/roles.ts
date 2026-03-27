@@ -8,6 +8,53 @@ import type { ServerRequest } from '~/types/http';
 const MAX_NAME_LENGTH = 500;
 const MAX_DESCRIPTION_LENGTH = 2000;
 
+function parsePagination(query: Record<string, unknown>): { limit: number; offset: number } {
+  return {
+    limit: Math.min(Math.max(Number(query.limit) || 50, 1), 200),
+    offset: Math.max(Number(query.offset) || 0, 0),
+  };
+}
+
+function validateNameParam(name: string): string | null {
+  if (!name || typeof name !== 'string') {
+    return 'name parameter is required';
+  }
+  if (name.length > MAX_NAME_LENGTH) {
+    return `name must not exceed ${MAX_NAME_LENGTH} characters`;
+  }
+  return null;
+}
+
+function validateRoleName(name: unknown, required: boolean): string | null {
+  if (required) {
+    if (!name || typeof name !== 'string' || !(name as string).trim()) {
+      return 'name is required';
+    }
+  } else if (name !== undefined) {
+    if (!name || typeof name !== 'string' || !(name as string).trim()) {
+      return 'name must be a non-empty string';
+    }
+  }
+  if (name !== undefined && typeof name === 'string' && name.trim().length > MAX_NAME_LENGTH) {
+    return `name must not exceed ${MAX_NAME_LENGTH} characters`;
+  }
+  return null;
+}
+
+function validateDescription(description: unknown): string | null {
+  if (description !== undefined && typeof description !== 'string') {
+    return 'description must be a string';
+  }
+  if (
+    description !== undefined &&
+    typeof description === 'string' &&
+    description.length > MAX_DESCRIPTION_LENGTH
+  ) {
+    return `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters`;
+  }
+  return null;
+}
+
 interface RoleNameParams {
   name: string;
 }
@@ -59,8 +106,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function listRolesHandler(req: ServerRequest, res: Response) {
     try {
-      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      const { limit, offset } = parsePagination(req.query);
       const [roles, total] = await Promise.all([listRoles({ limit, offset }), countRoles()]);
       return res.status(200).json({ roles, total, limit, offset });
     } catch (error) {
@@ -72,6 +118,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   async function getRoleHandler(req: ServerRequest, res: Response) {
     try {
       const { name } = req.params as RoleNameParams;
+      const paramError = validateNameParam(name);
+      if (paramError) {
+        return res.status(400).json({ error: paramError });
+      }
       const role = await getRoleByName(name);
       if (!role) {
         return res.status(404).json({ error: 'Role not found' });
@@ -90,21 +140,13 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         description?: string;
         permissions?: IRole['permissions'];
       };
-      if (!name || typeof name !== 'string' || !name.trim()) {
-        return res.status(400).json({ error: 'name is required' });
+      const nameError = validateRoleName(name, true);
+      if (nameError) {
+        return res.status(400).json({ error: nameError });
       }
-      if (name.trim().length > MAX_NAME_LENGTH) {
-        return res
-          .status(400)
-          .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
-      }
-      if (description !== undefined && typeof description !== 'string') {
-        return res.status(400).json({ error: 'description must be a string' });
-      }
-      if (description && description.length > MAX_DESCRIPTION_LENGTH) {
-        return res
-          .status(400)
-          .json({ error: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters` });
+      const descError = validateDescription(description);
+      if (descError) {
+        return res.status(400).json({ error: descError });
       }
       if (
         permissions !== undefined &&
@@ -113,7 +155,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(400).json({ error: 'permissions must be an object' });
       }
       const role = await createRoleByName({
-        name: name.trim(),
+        name: (name as string).trim(),
         description: description ?? '',
         permissions: permissions ?? {},
       });
@@ -129,29 +171,22 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function updateRoleHandler(req: ServerRequest, res: Response) {
     const { name } = req.params as RoleNameParams;
+    const paramError = validateNameParam(name);
+    if (paramError) {
+      return res.status(400).json({ error: paramError });
+    }
     const body = req.body as { name?: string; description?: string };
     let isRename = false;
     let trimmedName = '';
     let migrationRan = false;
     try {
-      if (
-        body.name !== undefined &&
-        (!body.name || typeof body.name !== 'string' || !body.name.trim())
-      ) {
-        return res.status(400).json({ error: 'name must be a non-empty string' });
+      const nameError = validateRoleName(body.name, false);
+      if (nameError) {
+        return res.status(400).json({ error: nameError });
       }
-      if (body.name !== undefined && body.name.trim().length > MAX_NAME_LENGTH) {
-        return res
-          .status(400)
-          .json({ error: `name must not exceed ${MAX_NAME_LENGTH} characters` });
-      }
-      if (body.description !== undefined && typeof body.description !== 'string') {
-        return res.status(400).json({ error: 'description must be a string' });
-      }
-      if (body.description && body.description.length > MAX_DESCRIPTION_LENGTH) {
-        return res
-          .status(400)
-          .json({ error: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters` });
+      const descError = validateDescription(body.description);
+      if (descError) {
+        return res.status(400).json({ error: descError });
       }
 
       trimmedName = body.name?.trim() ?? '';
@@ -214,6 +249,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
           logger.error('[adminRoles] rollback failed after updateRole error:', rollbackError);
         }
       }
+      if (error instanceof RoleConflictError) {
+        return res.status(409).json({ error: error.message });
+      }
       logger.error('[adminRoles] updateRole error:', error);
       return res.status(500).json({ error: 'Failed to update role' });
     }
@@ -222,6 +260,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   async function updateRolePermissionsHandler(req: ServerRequest, res: Response) {
     try {
       const { name } = req.params as RoleNameParams;
+      const paramError = validateNameParam(name);
+      if (paramError) {
+        return res.status(400).json({ error: paramError });
+      }
       const { permissions } = req.body as {
         permissions: Record<string, Record<string, boolean>>;
       };
@@ -250,6 +292,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   async function deleteRoleHandler(req: ServerRequest, res: Response) {
     try {
       const { name } = req.params as RoleNameParams;
+      const paramError = validateNameParam(name);
+      if (paramError) {
+        return res.status(400).json({ error: paramError });
+      }
       if (SystemRoles[name as keyof typeof SystemRoles]) {
         return res.status(403).json({ error: 'Cannot delete system role' });
       }
@@ -268,13 +314,16 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   async function getRoleMembersHandler(req: ServerRequest, res: Response) {
     try {
       const { name } = req.params as RoleNameParams;
+      const paramError = validateNameParam(name);
+      if (paramError) {
+        return res.status(400).json({ error: paramError });
+      }
       const existing = await getRoleByName(name);
       if (!existing) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
-      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      const { limit, offset } = parsePagination(req.query);
 
       const [users, total] = await Promise.all([
         listUsersByRole(name, { limit, offset }),
@@ -296,6 +345,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   async function addRoleMemberHandler(req: ServerRequest, res: Response) {
     try {
       const { name } = req.params as RoleNameParams;
+      const paramError = validateNameParam(name);
+      if (paramError) {
+        return res.status(400).json({ error: paramError });
+      }
       const { userId } = req.body as { userId: string };
 
       if (!userId || typeof userId !== 'string') {
@@ -315,6 +368,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(404).json({ error: 'User not found' });
       }
 
+      if (user.role === name) {
+        return res.status(200).json({ success: true });
+      }
+
       await updateUser(userId, { role: name });
       return res.status(200).json({ success: true });
     } catch (error) {
@@ -326,6 +383,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   async function removeRoleMemberHandler(req: ServerRequest, res: Response) {
     try {
       const { name, userId } = req.params as RoleMemberParams;
+      const paramError = validateNameParam(name);
+      if (paramError) {
+        return res.status(400).json({ error: paramError });
+      }
       if (!isValidObjectIdString(userId)) {
         return res.status(400).json({ error: 'Invalid user ID format' });
       }
@@ -352,6 +413,15 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
 
       await updateUser(userId, { role: SystemRoles.USER });
+
+      if (name === SystemRoles.ADMIN) {
+        const postCount = await countUsersByRole(SystemRoles.ADMIN);
+        if (postCount === 0) {
+          await updateUser(userId, { role: SystemRoles.ADMIN });
+          return res.status(400).json({ error: 'Cannot remove the last admin user' });
+        }
+      }
+
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] removeRoleMember error:', error);
