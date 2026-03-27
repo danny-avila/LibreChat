@@ -58,6 +58,7 @@ function createReqRes(
 function createDeps(overrides: Partial<AdminRolesDeps> = {}): AdminRolesDeps {
   return {
     listRoles: jest.fn().mockResolvedValue([]),
+    countRoles: jest.fn().mockResolvedValue(0),
     getRoleByName: jest.fn().mockResolvedValue(null),
     createRoleByName: jest.fn().mockResolvedValue(mockRole()),
     updateRoleByName: jest.fn().mockResolvedValue(mockRole()),
@@ -74,16 +75,46 @@ function createDeps(overrides: Partial<AdminRolesDeps> = {}): AdminRolesDeps {
 
 describe('createAdminRolesHandlers', () => {
   describe('listRoles', () => {
-    it('returns roles with 200', async () => {
+    it('returns paginated roles with 200', async () => {
       const roles = [mockRole()];
-      const deps = createDeps({ listRoles: jest.fn().mockResolvedValue(roles) });
+      const deps = createDeps({
+        listRoles: jest.fn().mockResolvedValue(roles),
+        countRoles: jest.fn().mockResolvedValue(1),
+      });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes();
 
       await handlers.listRoles(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith({ roles });
+      expect(json).toHaveBeenCalledWith({ roles, total: 1, limit: 50, offset: 0 });
+      expect(deps.listRoles).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    });
+
+    it('passes custom limit and offset from query', async () => {
+      const deps = createDeps({
+        countRoles: jest.fn().mockResolvedValue(100),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        query: { limit: '25', offset: '50' },
+      });
+
+      await handlers.listRoles(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ roles: [], total: 100, limit: 25, offset: 50 });
+      expect(deps.listRoles).toHaveBeenCalledWith({ limit: 25, offset: 50 });
+    });
+
+    it('clamps limit to 200', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res } = createReqRes({ query: { limit: '999' } });
+
+      await handlers.listRoles(req, res);
+
+      expect(deps.listRoles).toHaveBeenCalledWith({ limit: 200, offset: 0 });
     });
 
     it('returns 500 on error', async () => {

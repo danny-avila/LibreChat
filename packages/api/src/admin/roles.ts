@@ -17,7 +17,8 @@ interface RoleMemberParams extends RoleNameParams {
 }
 
 export interface AdminRolesDeps {
-  listRoles: () => Promise<IRole[]>;
+  listRoles: (options?: { limit?: number; offset?: number }) => Promise<IRole[]>;
+  countRoles: () => Promise<number>;
   getRoleByName: (name: string, fields?: string | string[] | null) => Promise<IRole | null>;
   createRoleByName: (roleData: Partial<IRole>) => Promise<IRole>;
   updateRoleByName: (name: string, updates: Partial<IRole>) => Promise<IRole | null>;
@@ -43,6 +44,7 @@ export interface AdminRolesDeps {
 export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   const {
     listRoles,
+    countRoles,
     getRoleByName,
     createRoleByName,
     updateRoleByName,
@@ -55,10 +57,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     countUsersByRole,
   } = deps;
 
-  async function listRolesHandler(_req: ServerRequest, res: Response) {
+  async function listRolesHandler(req: ServerRequest, res: Response) {
     try {
-      const roles = await listRoles();
-      return res.status(200).json({ roles });
+      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      const [roles, total] = await Promise.all([listRoles({ limit, offset }), countRoles()]);
+      return res.status(200).json({ roles, total, limit, offset });
     } catch (error) {
       logger.error('[adminRoles] listRoles error:', error);
       return res.status(500).json({ error: 'Failed to list roles' });
@@ -233,6 +237,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
       await updateAccessPermissions(name, permissions, existing);
       const updated = await getRoleByName(name);
+      if (!updated) {
+        return res.status(404).json({ error: 'Role not found' });
+      }
       return res.status(200).json({ role: updated });
     } catch (error) {
       logger.error('[adminRoles] updateRolePermissions error:', error);

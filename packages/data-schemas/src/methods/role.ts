@@ -55,9 +55,21 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   /**
    * List all roles in the system.
    */
-  async function listRoles() {
+  async function listRoles(options?: { limit?: number; offset?: number }): Promise<IRole[]> {
     const Role = mongoose.models.Role;
-    return await Role.find({}).select('name description permissions').lean();
+    const limit = options?.limit ?? 50;
+    const offset = options?.offset ?? 0;
+    return await Role.find({})
+      .select('name description')
+      .sort({ name: 1 })
+      .skip(offset)
+      .limit(limit)
+      .lean();
+  }
+
+  async function countRoles(): Promise<number> {
+    const Role = mongoose.models.Role;
+    return await Role.countDocuments({});
   }
 
   /**
@@ -443,6 +455,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
 
   return {
     listRoles,
+    countRoles,
     initializeRoles,
     getRoleByName,
     updateRoleByName,
