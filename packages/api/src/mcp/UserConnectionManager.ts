@@ -4,8 +4,8 @@ import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPConnection } from './connection';
 import { isUserSourced } from './utils';
+import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
 /**

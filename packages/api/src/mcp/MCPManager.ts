@@ -16,9 +16,9 @@ import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
-import { isUserSourced } from './utils';
-import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
+import { MCPConnection } from './connection';
+import { isUserSourced } from './utils';
 
 /**
  * Centralized manager for MCP server connections and tool execution.

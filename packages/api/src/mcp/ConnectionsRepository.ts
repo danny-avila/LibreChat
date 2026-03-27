@@ -1,8 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { hasCustomUserVars, isUserSourced } from './utils';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from './connection';
 
 const CONNECT_CONCURRENCY = 3;

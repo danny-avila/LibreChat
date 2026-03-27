@@ -3,10 +3,10 @@ import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
+import { hasCustomUserVars, isUserSourced } from '~/mcp/utils';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
-import { hasCustomUserVars, isUserSourced } from '~/mcp/utils';
 import { isEnabled } from '~/utils';
 
 /**
