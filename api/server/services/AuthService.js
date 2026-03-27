@@ -268,19 +268,15 @@ const registerUser = async (user, additionalData = {}) => {
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
 
-  const makeDomainDeniedError = () => {
-    const error = new Error(ErrorTypes.AUTH_FAILED);
-    error.code = ErrorTypes.AUTH_FAILED;
-    error.message = 'Email domain not allowed';
-    return error;
-  };
-
   const baseConfig = await getAppConfig({ baseOnly: true });
   if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
     logger.warn(
       `[requestPasswordReset] Blocked - email domain not allowed [Email: ${email}] [IP: ${req.ip}]`,
     );
-    return makeDomainDeniedError();
+    const error = new Error(ErrorTypes.AUTH_FAILED);
+    error.code = ErrorTypes.AUTH_FAILED;
+    error.message = 'Email domain not allowed';
+    return error;
   }
 
   const user = await findUser({ email }, 'email _id role tenantId');
@@ -297,7 +293,9 @@ const requestPasswordReset = async (req) => {
     logger.warn(
       `[requestPasswordReset] Tenant config blocked domain [Email: ${email}] [IP: ${req.ip}]`,
     );
-    return makeDomainDeniedError();
+    return {
+      message: 'If an account with that email exists, a password reset link has been sent to it.',
+    };
   }
   const emailEnabled = checkEmailConfig();
 

@@ -322,7 +322,7 @@ describe('requestPasswordReset', () => {
     expect(resolveAppConfigForUser).not.toHaveBeenCalled();
   });
 
-  it('should reject when tenant config blocks the domain', async () => {
+  it('should return generic response when tenant config blocks the domain (non-enumerable)', async () => {
     const user = {
       _id: 'user-tenant',
       email: 'user@example.com',
@@ -330,14 +330,12 @@ describe('requestPasswordReset', () => {
       role: 'USER',
     };
     findUser.mockResolvedValue(user);
-    // Base config allows, tenant config rejects
-    isEmailDomainAllowed
-      .mockReturnValueOnce(true) // base check passes
-      .mockReturnValueOnce(false); // tenant check fails
+    isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
 
     const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
     const result = await requestPasswordReset(req);
 
-    expect(result).toBeInstanceOf(Error);
+    expect(result).not.toBeInstanceOf(Error);
+    expect(result.message).toContain('If an account with that email exists');
   });
 });
