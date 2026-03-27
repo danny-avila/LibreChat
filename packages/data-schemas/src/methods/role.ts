@@ -438,7 +438,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   async function countUsersByRole(roleName: string): Promise<number> {
-    return getUserModel().countDocuments({ role: roleName });
+    return await getUserModel().countDocuments({ role: roleName });
   }
 
   return {
