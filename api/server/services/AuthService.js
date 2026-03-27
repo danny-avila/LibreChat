@@ -263,6 +263,11 @@ const registerUser = async (user, additionalData = {}) => {
  * re-check with tenant-scoped config after user lookup so tenant-specific
  * restrictions are enforced.
  *
+ * Phase 1 (base check) returns an Error (HTTP 400) — this intentionally reveals
+ * that the domain is globally blocked, but fires before any DB lookup so it
+ * cannot confirm user existence. Phase 2 (tenant check) returns the generic
+ * success message (HTTP 200) to prevent user-enumeration via status codes.
+ *
  * @param {ServerRequest} req
  */
 const requestPasswordReset = async (req) => {
