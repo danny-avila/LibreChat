@@ -122,6 +122,86 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   };
 }
 
+// ── MCP policy validation ────────────────────────────────────────────
+
+interface TenantMcpPolicy {
+  enabled?: boolean;
+  maxServersPerTenant?: number;
+  allowedTransports?: string[];
+  allowedDomains?: string[];
+}
+
+/**
+ * Validates that MCP servers in a config override comply with the operator-level
+ * `tenantMcpPolicy`. Returns an error string if validation fails, or null if valid.
+ */
+function validateMcpServerPolicy(
+  mcpServers: Record<string, unknown>,
+  policy: TenantMcpPolicy | undefined | null,
+): string | null {
+  if (!mcpServers || typeof mcpServers !== 'object' || Object.keys(mcpServers).length === 0) {
+    return null;
+  }
+
+  if (!policy?.enabled) {
+    return 'Config-source MCP servers are not enabled. Set mcpSettings.tenantMcpPolicy.enabled in YAML.';
+  }
+
+  const servers = Object.entries(mcpServers);
+
+  if (policy.maxServersPerTenant != null && servers.length > policy.maxServersPerTenant) {
+    return `Exceeds maximum of ${policy.maxServersPerTenant} config-source MCP servers per tenant.`;
+  }
+
+  const allowedTransports = policy.allowedTransports ? new Set(policy.allowedTransports) : null;
+  const allowedDomains = policy.allowedDomains
+    ? new Set(policy.allowedDomains.map((d) => d.toLowerCase()))
+    : null;
+
+  for (const [name, serverConfig] of servers) {
+    if (!serverConfig || typeof serverConfig !== 'object') {
+      continue;
+    }
+    const config = serverConfig as Record<string, unknown>;
+
+    // Validate transport
+    if (allowedTransports) {
+      // Infer transport from config shape
+      let transport: string | undefined;
+      if ('command' in config) {
+        transport = 'stdio';
+      } else if ('url' in config && typeof config.url === 'string') {
+        const url = config.url as string;
+        if (url.startsWith('ws://') || url.startsWith('wss://')) {
+          transport = 'websocket';
+        } else if (config.type === 'streamable-http') {
+          transport = 'streamable-http';
+        } else {
+          transport = 'sse';
+        }
+      }
+
+      if (transport && !allowedTransports.has(transport)) {
+        return `MCP server "${name}" uses transport "${transport}" which is not allowed by tenantMcpPolicy.`;
+      }
+    }
+
+    // Validate domain
+    if (allowedDomains && 'url' in config && typeof config.url === 'string') {
+      try {
+        const hostname = new URL(config.url as string).hostname.toLowerCase();
+        if (!allowedDomains.has(hostname)) {
+          return `MCP server "${name}" connects to domain "${hostname}" which is not allowed by tenantMcpPolicy.`;
+        }
+      } catch {
+        return `MCP server "${name}" has an invalid URL.`;
+      }
+    }
+  }
+
+  return null;
+}
+
 // ── Handler factory ──────────────────────────────────────────────────
 
 export function createAdminConfigHandlers(deps: AdminConfigDeps) {
@@ -275,6 +355,19 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         }
       }
 
+      // Validate MCP servers against operator policy
+      if (overrides.mcpServers && getAppConfig) {
+        const baseConfig = await getAppConfig({ tenantId: user.tenantId });
+        const policy = baseConfig?.mcpSettings?.tenantMcpPolicy;
+        const policyError = validateMcpServerPolicy(
+          overrides.mcpServers as Record<string, unknown>,
+          policy as TenantMcpPolicy | undefined,
+        );
+        if (policyError) {
+          return res.status(403).json({ error: policyError });
+        }
+      }
+
       const config = await upsertConfig(
         principalType,
         principalId,
@@ -360,6 +453,36 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         }
         seen.add(entry.fieldPath);
         fields[entry.fieldPath] = entry.value;
+      }
+
+      // Validate MCP server fields against operator policy
+      const mcpEntries = entries.filter(
+        (e) => e.fieldPath === 'mcpServers' || e.fieldPath.startsWith('mcpServers.'),
+      );
+      if (mcpEntries.length > 0 && getAppConfig) {
+        // Build a synthetic mcpServers object from the patch entries for validation
+        const mcpServers: Record<string, unknown> = {};
+        for (const entry of mcpEntries) {
+          if (entry.fieldPath === 'mcpServers' && typeof entry.value === 'object') {
+            Object.assign(mcpServers, entry.value);
+          } else if (entry.fieldPath.startsWith('mcpServers.')) {
+            const serverName = entry.fieldPath.split('.')[1];
+            if (serverName) {
+              mcpServers[serverName] = entry.value;
+            }
+          }
+        }
+        if (Object.keys(mcpServers).length > 0) {
+          const baseConfig = await getAppConfig({ tenantId: user.tenantId });
+          const policy = baseConfig?.mcpSettings?.tenantMcpPolicy;
+          const policyError = validateMcpServerPolicy(
+            mcpServers,
+            policy as TenantMcpPolicy | undefined,
+          );
+          if (policyError) {
+            return res.status(403).json({ error: policyError });
+          }
+        }
       }
 
       const existing =
