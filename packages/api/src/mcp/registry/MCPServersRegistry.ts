@@ -160,14 +160,21 @@ export class MCPServersRegistry {
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<Record<string, t.ParsedServerConfig>> {
-    if (configServers && Object.keys(configServers).length > 0) {
-      return {
-        ...(await this.cacheConfigsRepo.getAll()),
-        ...configServers,
-        ...(await this.dbConfigsRepo.getAll(userId)),
-      };
+    const baseConfigs = await this.getBaseServerConfigs(userId);
+    if (configServers != null && Object.keys(configServers).length > 0) {
+      return { ...baseConfigs, ...configServers };
     }
+    return baseConfigs;
+  }
 
+  /**
+   * Returns YAML + user-DB server configs, cached via `readThroughCacheAll`.
+   * Config-source servers are layered on top by `getAllServerConfigs` without
+   * invalidating this cache — the expensive `dbConfigsRepo.getAll` is shared.
+   */
+  private async getBaseServerConfigs(
+    userId?: string,
+  ): Promise<Record<string, t.ParsedServerConfig>> {
     const cacheKey = userId ?? '__no_user__';
 
     if (await this.readThroughCacheAll.has(cacheKey)) {
@@ -179,7 +186,7 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const fetchPromise = this.fetchAllServerConfigs(cacheKey, userId);
+    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId);
     this.pendingGetAllPromises.set(cacheKey, fetchPromise);
 
     try {
@@ -189,7 +196,7 @@ export class MCPServersRegistry {
     }
   }
 
-  private async fetchAllServerConfigs(
+  private async fetchBaseServerConfigs(
     cacheKey: string,
     userId?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
@@ -460,15 +467,13 @@ export class MCPServersRegistry {
   private async upsertConfigCache(cacheKey: string, config: t.ParsedServerConfig): Promise<void> {
     try {
       await this.configCacheRepo.add(cacheKey, config);
-    } catch {
-      try {
-        await this.configCacheRepo.update(cacheKey, config);
-      } catch (err) {
-        logger.warn(
-          `[MCPServersRegistry] upsertConfigCache: both add and update failed for "${cacheKey}":`,
-          err,
-        );
+    } catch (addErr) {
+      const isDuplicate =
+        addErr instanceof Error && addErr.message.includes('already exists in cache');
+      if (!isDuplicate) {
+        throw addErr;
       }
+      await this.configCacheRepo.update(cacheKey, config);
     }
   }
 
