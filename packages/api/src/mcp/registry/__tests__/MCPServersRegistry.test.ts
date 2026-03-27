@@ -256,12 +256,14 @@ describe('MCPServersRegistry', () => {
         await registry.getServerConfig('test_server');
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1);
 
-        // userId call falls back to server-only readThrough key (populated with truthy config)
         await registry.getServerConfig('test_server', 'user123');
-        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1);
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2);
+
+        await registry.getServerConfig('test_server', 'user123');
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2);
 
         await registry.getServerConfig('test_server', 'user456');
-        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1);
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(3);
       });
     });
 

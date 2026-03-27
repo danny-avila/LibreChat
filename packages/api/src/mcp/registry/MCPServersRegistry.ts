@@ -135,26 +135,11 @@ export class MCPServersRegistry {
       return await this.readThroughCache.get(cacheKey);
     }
 
-    if (userId) {
-      const serverOnlyKey = this.getReadThroughCacheKey(serverName);
-      const serverOnlyValue = await this.readThroughCache.get(serverOnlyKey);
-      if (serverOnlyValue) {
-        return serverOnlyValue;
-      }
-    }
-
     const configFromYaml = await this.cacheConfigsRepo.get(serverName);
     if (configFromYaml) {
       await this.readThroughCache.set(cacheKey, configFromYaml);
       return configFromYaml;
     }
-
-    // Config-source servers are NOT looked up from configCacheRepo here.
-    // The configCacheRepo uses hash-scoped keys (serverName:hash) for tenant isolation.
-    // Callers with tenant context pass `configServers` (resolved via ensureConfigServers)
-    // which is checked first at the top of this method. Callers without tenant context
-    // (ConnectionsRepository, MCPManager.callTool) rely on the readThrough cache populated
-    // by ensureSingleConfigServer during the request that established the connection.
 
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
     await this.readThroughCache.set(cacheKey, configFromDB);
@@ -415,15 +400,7 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const initPromise = (async () => {
-      const result = await this.lazyInitConfigServer(cacheKey, serverName, rawConfig);
-      if (result) {
-        const rtKey = this.getReadThroughCacheKey(serverName);
-        await this.readThroughCache.delete(rtKey);
-        await this.readThroughCache.set(rtKey, result);
-      }
-      return result;
-    })();
+    const initPromise = this.lazyInitConfigServer(cacheKey, serverName, rawConfig);
     this.pendingConfigInits.set(cacheKey, initPromise);
 
     try {
@@ -588,7 +565,7 @@ export class MCPServersRegistry {
    * with different configurations.
    */
   private configCacheKey(serverName: string, rawConfig: t.MCPOptions): string {
-    const hash = createHash('sha256').update(JSON.stringify(rawConfig)).digest('hex').slice(0, 8);
+    const hash = createHash('sha256').update(JSON.stringify(rawConfig)).digest('hex').slice(0, 16);
     return `${serverName}:${hash}`;
   }
 }

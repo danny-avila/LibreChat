@@ -262,6 +262,7 @@ Please follow these instructions when using tools from the respective MCP server
   async callTool({
     user,
     serverName,
+    serverConfig: providedConfig,
     toolName,
     provider,
     toolArguments,
@@ -276,6 +277,8 @@ Please follow these instructions when using tools from the respective MCP server
   }: {
     user?: IUser;
     serverName: string;
+    /** Pre-resolved config from tool creation context — avoids readThrough TTL and cross-tenant issues */
+    serverConfig?: t.ParsedServerConfig;
     toolName: string;
     provider: t.Provider;
     toolArguments?: Record<string, unknown>;
@@ -316,7 +319,9 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
 
-      const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
+      const rawConfig =
+        providedConfig ??
+        (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
       if (!rawConfig) {
         throw new McpError(
           ErrorCode.InvalidRequest,

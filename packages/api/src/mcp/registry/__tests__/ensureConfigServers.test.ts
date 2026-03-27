@@ -273,33 +273,17 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       expect(config?.source).toBe('config');
     });
 
-    it('should find config-source server via read-through cache without configServers', async () => {
-      await registry.ensureConfigServers({ config_srv: sseConfig });
-      const config = await registry.getServerConfig('config_srv');
+    it('should return config-source server with userId when configServers is passed', async () => {
+      const configServers = await registry.ensureConfigServers({ config_srv: sseConfig });
+      const config = await registry.getServerConfig('config_srv', 'user-123', configServers);
       expect(config).toBeDefined();
       expect(config?.source).toBe('config');
     });
 
-    it('should find config-source server via read-through cache with userId', async () => {
+    it('should return undefined for config-source server without configServers (tenant isolation)', async () => {
       await registry.ensureConfigServers({ config_srv: sseConfig });
-      const config = await registry.getServerConfig('config_srv', 'user-123');
-      expect(config).toBeDefined();
-      expect(config?.source).toBe('config');
-    });
-
-    it('should NOT return config-source server after readThrough expires without configServers (tenant isolation)', async () => {
-      await registry.ensureConfigServers({ config_srv: sseConfig });
-      await registry['readThroughCache'].clear();
       const config = await registry.getServerConfig('config_srv');
       expect(config).toBeUndefined();
-    });
-
-    it('should return config-source server after readThrough expires when configServers is passed', async () => {
-      const configServers = await registry.ensureConfigServers({ config_srv: sseConfig });
-      await registry['readThroughCache'].clear();
-      const config = await registry.getServerConfig('config_srv', undefined, configServers);
-      expect(config).toBeDefined();
-      expect(config?.source).toBe('config');
     });
 
     it('should return correct config after invalidation and re-init', async () => {

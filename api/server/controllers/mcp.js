@@ -86,9 +86,9 @@ const getMCPTools = async (req, res) => {
     }
 
     const mcpConfig = await resolveAllMcpConfigs(userId, req.user);
-    const configuredServers = mcpConfig ? Object.keys(mcpConfig) : [];
+    const configuredServers = Object.keys(mcpConfig);
 
-    if (!mcpConfig || Object.keys(mcpConfig).length === 0) {
+    if (!configuredServers.length) {
       return res.status(200).json({ servers: {} });
     }
 

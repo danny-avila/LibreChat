@@ -501,6 +501,7 @@ async function createMCPTool({
     provider,
     toolName,
     serverName,
+    serverConfig,
     toolDefinition,
     streamId,
   });
@@ -510,6 +511,7 @@ function createToolInstance({
   res,
   toolName,
   serverName,
+  serverConfig: _serverConfig,
   toolDefinition,
   provider: _provider,
   streamId = null,
@@ -577,6 +579,7 @@ function createToolInstance({
 
       const result = await mcpManager.callTool({
         serverName,
+        serverConfig: _serverConfig,
         toolName,
         provider,
         toolArguments,
