@@ -359,13 +359,12 @@ async function createMCPTools({
   config,
   provider,
   serverName,
+  configServers,
   userMCPAuthMap,
   streamId = null,
 }) {
-  // Early domain validation before reconnecting server (avoid wasted work on disallowed domains)
-  // Use getAppConfig() to support per-user/role domain restrictions
   const serverConfig =
-    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
+    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
   if (serverConfig?.url) {
     const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
@@ -440,14 +439,13 @@ async function createMCPTool({
   userMCPAuthMap,
   availableTools,
   config,
+  configServers,
   streamId = null,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
 
-  // Runtime domain validation: check if the server's domain is still allowed
-  // Use getAppConfig() to support per-user/role domain restrictions
   const serverConfig =
-    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
+    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
   if (serverConfig?.url) {
     const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;

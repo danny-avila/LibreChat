@@ -14,7 +14,9 @@ const {
   buildImageToolContext,
   buildWebSearchContext,
 } = require('@librechat/api');
+const { getTenantId } = require('@librechat/data-schemas');
 const { getMCPServersRegistry } = require('~/config');
+const { getAppConfig } = require('~/server/services/Config');
 const {
   Tools,
   Constants,
@@ -341,7 +343,7 @@ const loadTools = async ({
         continue;
       }
       const serverConfig = serverName
-        ? await getMCPServersRegistry().getServerConfig(serverName, user)
+        ? await getMCPServersRegistry().getServerConfig(serverName, user, configServers)
         : null;
       if (!serverConfig) {
         logger.warn(
@@ -419,6 +421,20 @@ const loadTools = async ({
   let index = -1;
   const failedMCPServers = new Set();
   const safeUser = createSafeUser(options.req?.user);
+
+  /** Resolve config-source servers for the current user/tenant context */
+  let configServers;
+  if (Object.keys(requestedMCPTools).length > 0) {
+    const registry = getMCPServersRegistry();
+    const reqUser = options.req?.user;
+    const appConfig = await getAppConfig({
+      role: reqUser?.role,
+      tenantId: getTenantId(),
+      userId: reqUser?.id,
+    });
+    configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+  }
+
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
     /** @type {LCAvailableTools} */
@@ -433,6 +449,7 @@ const loadTools = async ({
           signal,
           user: safeUser,
           userMCPAuthMap,
+          configServers,
           res: options.res,
           streamId: options.req?._resumableStreamId || null,
           model: agent?.model ?? model,

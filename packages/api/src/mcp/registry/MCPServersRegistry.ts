@@ -496,7 +496,8 @@ export class MCPServersRegistry {
 
     await Promise.all([
       this.configCacheRepo.reset(),
-      this.readThroughCache.clear(),
+      // Only clear readThroughCacheAll (merged results that may include stale config servers).
+      // readThroughCache (individual YAML/user lookups) is unaffected by config mutations.
       this.readThroughCacheAll.clear(),
     ]);
 

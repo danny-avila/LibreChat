@@ -63,12 +63,16 @@ export async function getMCPInstructionsForServers(
   mcpServers: string[],
   mcpManager: MCPManager,
   logger?: Logger,
+  configServers?: Record<string, import('~/mcp/types').ParsedServerConfig>,
 ): Promise<string> {
   if (!mcpServers.length) {
     return '';
   }
   try {
-    const mcpInstructions = await mcpManager.formatInstructionsForContext(mcpServers);
+    const mcpInstructions = await mcpManager.formatInstructionsForContext(
+      mcpServers,
+      configServers,
+    );
     if (mcpInstructions && logger) {
       logger.debug('[AgentContext] Fetched MCP instructions for servers:', mcpServers);
     }
@@ -125,6 +129,7 @@ export async function applyContextToAgent({
   ephemeralAgent,
   agentId,
   logger,
+  configServers,
 }: {
   agent: AgentWithTools;
   sharedRunContext: string;
@@ -132,12 +137,18 @@ export async function applyContextToAgent({
   ephemeralAgent?: TEphemeralAgent;
   agentId?: string;
   logger?: Logger;
+  configServers?: Record<string, import('~/mcp/types').ParsedServerConfig>;
 }): Promise<void> {
   const baseInstructions = agent.instructions || '';
 
   try {
     const mcpServers = ephemeralAgent?.mcp?.length ? ephemeralAgent.mcp : extractMCPServers(agent);
-    const mcpInstructions = await getMCPInstructionsForServers(mcpServers, mcpManager, logger);
+    const mcpInstructions = await getMCPInstructionsForServers(
+      mcpServers,
+      mcpManager,
+      logger,
+      configServers,
+    );
 
     agent.instructions = buildAgentInstructions({
       sharedRunContext,

@@ -40,6 +40,7 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
     initDuration: config.initDuration,
     updatedAt: config.updatedAt,
     dbId: config.dbId,
+    source: config.source,
     consumeOnly: config.consumeOnly,
     inspectionFailed: config.inspectionFailed,
     customUserVars: config.customUserVars,
