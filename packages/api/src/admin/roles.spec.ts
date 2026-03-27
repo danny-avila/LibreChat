@@ -1157,6 +1157,44 @@ describe('createAdminRolesHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'User not found' });
     });
 
+    it('returns 400 when reassigning the last admin to another role', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: 'editor' })),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
+        countUsersByRole: jest.fn().mockResolvedValue(1),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: 'editor' },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addRoleMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot remove the last admin user' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('allows reassigning an admin when multiple admins exist', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: 'editor' })),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
+        countUsersByRole: jest.fn().mockResolvedValue(3),
+        updateUser: jest.fn().mockResolvedValue(mockUser({ role: 'editor' })),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addRoleMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: 'editor' });
+    });
+
     it('returns 500 on unexpected error', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),

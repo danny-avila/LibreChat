@@ -414,6 +414,13 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(200).json({ success: true });
       }
 
+      if (user.role === SystemRoles.ADMIN && name !== SystemRoles.ADMIN) {
+        const adminCount = await countUsersByRole(SystemRoles.ADMIN);
+        if (adminCount <= 1) {
+          return res.status(400).json({ error: 'Cannot remove the last admin user' });
+        }
+      }
+
       await updateUser(userId, { role: name });
       return res.status(200).json({ success: true });
     } catch (error) {
