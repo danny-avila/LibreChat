@@ -13,6 +13,7 @@ import type { FilterQuery, ClientSession, DeleteResult } from 'mongoose';
 import type { Response } from 'express';
 import type { ValidationError } from '~/types/error';
 import type { ServerRequest } from '~/types/http';
+import { parsePagination } from './pagination';
 
 type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
 
@@ -119,8 +120,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (search) {
         filter.search = search;
       }
-      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      const { limit, offset } = parsePagination(req.query);
       const [groups, total] = await Promise.all([
         listGroups({ ...filter, limit, offset }),
         countGroups(filter),
@@ -348,8 +348,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
        */
       const allMemberIds = [...new Set(group.memberIds || [])];
       const total = allMemberIds.length;
-      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      const { limit, offset } = parsePagination(req.query);
 
       if (total === 0 || offset >= total) {
         return res.status(200).json({ members: [], total, limit, offset });

@@ -114,7 +114,7 @@ export type AdminMember = {
   name: string;
   email: string;
   avatarUrl?: string;
-  joinedAt: string;
+  joinedAt?: string;
 };
 
 /** Minimal user info returned by user search endpoints. */

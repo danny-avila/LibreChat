@@ -158,6 +158,7 @@ const userSchema = new Schema<IUser>(
 );
 
 userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
+userSchema.index({ role: 1, tenantId: 1 });
 
 const oAuthIdFields = [
   'googleId',
