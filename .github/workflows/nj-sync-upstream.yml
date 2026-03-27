@@ -13,6 +13,13 @@ jobs:
   sync-upstream:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: 3185872
+          private-key: ${{ secrets.AI_ASSISTANT_APP }}
+
       - name: Checkout newjersey
         uses: actions/checkout@v6
         with:
@@ -73,7 +80,7 @@ jobs:
       - name: Create PR
         if: steps.check.outputs.count != '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           BODY="Automated sync of upstream [\`danny-avila/LibreChat\`](https://github.com/danny-avila/LibreChat) \`main\` into \`newjersey\`.
           
