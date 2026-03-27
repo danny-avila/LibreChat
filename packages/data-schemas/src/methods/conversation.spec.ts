@@ -205,8 +205,7 @@ describe('Conversation Operations', () => {
     });
   });
 
-  // NJ: Skip; we're purposefully manipulating expiration date, and that breaks many of these tests
-  describe.skip('isTemporary conversation handling', () => {
+  describe('isTemporary conversation handling', () => {
     it('should save a conversation with expiredAt when isTemporary is true', async () => {
       mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
       mockCtx.isTemporary = true;

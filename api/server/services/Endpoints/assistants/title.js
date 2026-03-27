@@ -50,12 +50,10 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
     return;
   }
 
-  /* NJ: Do NOT skip title gen for temp convos, we show them in the UI atm
   // Skip title generation for temporary conversations
   if (req?.body?.isTemporary) {
     return;
   }
-  */
 
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${conversationId}`;

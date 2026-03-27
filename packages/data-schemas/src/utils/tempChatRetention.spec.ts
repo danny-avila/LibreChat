@@ -91,8 +91,7 @@ describe('tempChatRetention', () => {
   });
 
   describe('createTempChatExpirationDate', () => {
-    // NJ: Skip because we're purposefully manipulating the expiration date
-    it.skip('should create expiration date with default retention period', () => {
+    it('should create expiration date with default retention period', () => {
       const beforeCall = Date.now();
       const result = createTempChatExpirationDate();
       const afterCall = Date.now();
@@ -105,8 +104,7 @@ describe('tempChatRetention', () => {
       expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
 
-    // NJ: Skip because we're purposefully manipulating the expiration date
-    it.skip('should create expiration date with custom retention period', () => {
+    it('should create expiration date with custom retention period', () => {
       const config: Partial<AppConfig> = {
         interfaceConfig: {
           temporaryChatRetention: 12,
@@ -134,48 +132,6 @@ describe('tempChatRetention', () => {
       const now = new Date();
       const result = createTempChatExpirationDate();
       expect(result.getTime()).toBeGreaterThan(now.getTime());
-    });
-  });
-
-  describe('NJ createTempChatExpirationDate', () => {
-    beforeEach(() => {
-      jest.useFakeTimers();
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
-    it('should create expiration date for next midnight (in New Jersey)', () => {
-      // Not during DST
-      jest.setSystemTime(new Date(Date.UTC(2025, 0, 1, 7)));
-      const standardTimeExpirationDate = createTempChatExpirationDate();
-      expect(standardTimeExpirationDate.getTime()).toEqual(Date.UTC(2025, 0, 2, 5));
-
-      // Between months
-      jest.setSystemTime(new Date(Date.UTC(2025, 0, 31, 7)));
-      const monthCrossoverExpirationDate = createTempChatExpirationDate();
-      expect(monthCrossoverExpirationDate.getTime()).toEqual(Date.UTC(2025, 1, 1, 5));
-
-      // Between years
-      jest.setSystemTime(new Date(Date.UTC(2025, 11, 31, 9)));
-      const yearCrossoverExpirationDate = createTempChatExpirationDate();
-      expect(yearCrossoverExpirationDate.getTime()).toEqual(Date.UTC(2026, 0, 1, 5));
-
-      // During DST
-      jest.setSystemTime(new Date(Date.UTC(2025, 5, 1, 8)));
-      const dstExpirationDate = createTempChatExpirationDate();
-      expect(dstExpirationDate.getTime()).toEqual(Date.UTC(2025, 5, 2, 4));
-
-      // On the switch to DST
-      jest.setSystemTime(new Date(Date.UTC(2025, 2, 9, 6)));
-      const dstSwitchExpirationDate = createTempChatExpirationDate();
-      expect(dstSwitchExpirationDate.getTime()).toEqual(Date.UTC(2025, 2, 10, 4));
-
-      // On the switch off DST
-      jest.setSystemTime(new Date(Date.UTC(2025, 10, 2, 7, 30)));
-      const dstSwitchOffExpirationDate = createTempChatExpirationDate();
-      expect(dstSwitchOffExpirationDate.getTime()).toEqual(Date.UTC(2025, 10, 3, 5));
     });
   });
 });
