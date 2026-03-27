@@ -419,10 +419,14 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   /**
    * Guards against deleting system roles. Reassigns affected users back to USER.
    *
-   * Note: the user reassignment (`updateMany`) runs before `findOneAndDelete`.
-   * Without a MongoDB transaction these two operations are non-atomic — if the
-   * delete fails after the reassignment, users will already have been moved to
-   * USER while the role document still exists.
+   * No existence pre-check is performed: for a nonexistent role the `updateMany`
+   * is a harmless no-op and `findOneAndDelete` returns null. This is intentional
+   * so that calling delete after a partial failure still cleans up orphaned user
+   * references and cache entries (self-healing).
+   *
+   * Without a MongoDB transaction the two writes are non-atomic — if the delete
+   * fails after the reassignment, users will already have been moved to USER
+   * while the role document still exists.
    */
   async function deleteRoleByName(roleName: string): Promise<IRole | null> {
     if (systemRoleValues.has(roleName)) {

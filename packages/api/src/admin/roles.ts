@@ -19,6 +19,9 @@ function validateNameParam(name: string): string | null {
   if (name.length > MAX_NAME_LENGTH) {
     return `name must not exceed ${MAX_NAME_LENGTH} characters`;
   }
+  if (CONTROL_CHAR_RE.test(name)) {
+    return 'name contains invalid characters';
+  }
   return null;
 }
 
@@ -29,13 +32,14 @@ function validateRoleName(name: unknown, required: boolean): string | null {
   if (typeof name !== 'string' || !name.trim()) {
     return required ? 'name is required' : 'name must be a non-empty string';
   }
-  if (name.trim().length > MAX_NAME_LENGTH) {
+  const trimmed = name.trim();
+  if (trimmed.length > MAX_NAME_LENGTH) {
     return `name must not exceed ${MAX_NAME_LENGTH} characters`;
   }
-  if (CONTROL_CHAR_RE.test(name)) {
+  if (CONTROL_CHAR_RE.test(trimmed)) {
     return 'name contains invalid characters';
   }
-  if (RESERVED_ROLE_NAMES.has(name.trim().toLowerCase())) {
+  if (RESERVED_ROLE_NAMES.has(trimmed)) {
     return 'name is a reserved path segment';
   }
   return null;
@@ -154,11 +158,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       ) {
         return res.status(400).json({ error: 'permissions must be an object' });
       }
-      const role = await createRoleByName({
+      const roleData: Partial<IRole> = {
         name: (name as string).trim(),
-        description,
         permissions: permissions ?? {},
-      });
+      };
+      if (description !== undefined) {
+        roleData.description = description;
+      }
+      const role = await createRoleByName(roleData);
       return res.status(201).json({ role });
     } catch (error) {
       logger.error('[adminRoles] createRole error:', error);
