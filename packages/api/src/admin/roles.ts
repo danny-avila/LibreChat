@@ -509,7 +509,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         }
       }
 
-      await updateUser(userId, { role: SystemRoles.USER });
+      const removed = await updateUser(userId, { role: SystemRoles.USER });
+      if (!removed) {
+        return res.status(404).json({ error: 'User not found' });
+      }
 
       if (name === SystemRoles.ADMIN) {
         const postCount = await countUsersByRole(SystemRoles.ADMIN);
