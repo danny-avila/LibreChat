@@ -15,8 +15,6 @@ jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
 }));
 
 const FIXED_TIME = 1699564800000;
-const originalDateNow = Date.now;
-Date.now = jest.fn(() => FIXED_TIME);
 
 const mockMongoose = {} as typeof import('mongoose');
 
@@ -58,7 +56,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
   });
 
   afterAll(() => {
-    Date.now = originalDateNow;
+    jest.useRealTimers();
   });
 
   beforeEach(async () => {
@@ -162,16 +160,14 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     await registry.ensureConfigServers({ flaky_server: sseConfig });
     expect(inspectSpy).toHaveBeenCalledTimes(1);
 
-    // Advance time past the 5-minute retry window
-    const originalNow = Date.now;
-    Date.now = jest.fn(() => FIXED_TIME + 6 * 60 * 1000);
+    jest.setSystemTime(new Date(FIXED_TIME + 6 * 60 * 1000));
 
     const result = await registry.ensureConfigServers({ flaky_server: sseConfig });
     expect(inspectSpy).toHaveBeenCalledTimes(2);
     expect(result.flaky_server.inspectionFailed).toBeUndefined();
     expect(result.flaky_server.source).toBe('config');
 
-    Date.now = originalNow;
+    jest.setSystemTime(new Date(FIXED_TIME));
   });
 
   describe('cross-tenant isolation', () => {

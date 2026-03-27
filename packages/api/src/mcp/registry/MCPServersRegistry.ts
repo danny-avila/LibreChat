@@ -481,6 +481,7 @@ export class MCPServersRegistry {
         ...rawConfig,
         inspectionFailed: true,
         source: 'config',
+        updatedAt: Date.now(),
       };
       await this.upsertConfigCache(cacheKey, stubConfig);
       logger.info(`${prefix} Stored stub config for recovery`);
@@ -498,8 +499,11 @@ export class MCPServersRegistry {
     } catch {
       try {
         await this.configCacheRepo.update(cacheKey, config);
-      } catch {
-        // Another process may have added+removed between our attempts — non-critical
+      } catch (err) {
+        logger.warn(
+          `[MCPServersRegistry] upsertConfigCache: both add and update failed for "${cacheKey}":`,
+          err,
+        );
       }
     }
   }

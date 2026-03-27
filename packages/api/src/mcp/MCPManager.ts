@@ -317,7 +317,13 @@ Please follow these instructions when using tools from the respective MCP server
       }
 
       const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
-      const isDbSourced = isUserSourced(rawConfig ?? {});
+      if (!rawConfig) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `${logPrefix} Configuration for server "${serverName}" not found.`,
+        );
+      }
+      const isDbSourced = isUserSourced(rawConfig);
 
       /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
       const graphProcessedConfig = isDbSourced
