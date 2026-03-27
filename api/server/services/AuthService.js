@@ -13,6 +13,7 @@ const {
   checkEmailConfig,
   isEmailDomainAllowed,
   shouldUseSecureCookie,
+  resolveAppConfigForUser,
 } = require('@librechat/api');
 const {
   findUser,
@@ -30,7 +31,6 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
-const { resolveAppConfigForUser } = require('@librechat/api');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
 const { sendEmail } = require('~/server/utils');
@@ -279,7 +279,10 @@ const requestPasswordReset = async (req) => {
   const user = await findUser({ email }, 'email _id role tenantId');
   const appConfig = user?.tenantId ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
 
-  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+  if (
+    appConfig !== baseConfig &&
+    !isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)
+  ) {
     const error = new Error(ErrorTypes.AUTH_FAILED);
     error.code = ErrorTypes.AUTH_FAILED;
     error.message = 'Email domain not allowed';

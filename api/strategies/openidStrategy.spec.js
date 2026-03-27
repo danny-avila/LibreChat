@@ -1848,5 +1848,26 @@ describe('setupOpenId', () => {
       expect(resolveAppConfigForUser).not.toHaveBeenCalled();
       expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
     });
+
+    it('should block login when tenant config restricts the domain', async () => {
+      const { isEmailDomainAllowed } = require('@librechat/api');
+      const existingUser = {
+        _id: 'openid-tenant-blocked',
+        provider: 'openid',
+        openidId: '1234',
+        email: 'test@example.com',
+        tenantId: 'tenant-restrict',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existingUser);
+      resolveAppConfigForUser.mockResolvedValue({
+        registration: { allowedDomains: ['other.com'] },
+      });
+      isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+      const { user, details } = await validate(tokenset);
+      expect(user).toBe(false);
+      expect(details).toEqual({ message: 'Email domain not allowed' });
+    });
   });
 });

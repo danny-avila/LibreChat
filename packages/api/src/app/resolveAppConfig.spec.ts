@@ -8,11 +8,9 @@ jest.mock('@librechat/data-schemas', () => {
 
 import { resolveAppConfigForUser } from './resolveAppConfig';
 
-// Access the ALS instance created inside the mock factory
 const { tenantStorage } = jest.requireMock('@librechat/data-schemas') as {
   tenantStorage: AsyncLocalStorage<{ tenantId?: string }>;
 };
-const mockTenantStorage = tenantStorage;
 
 describe('resolveAppConfigForUser', () => {
   const mockGetAppConfig = jest.fn();
@@ -43,7 +41,7 @@ describe('resolveAppConfigForUser', () => {
   });
 
   it('calls tenantStorage.run for tenant users but not for non-tenant users', async () => {
-    const runSpy = jest.spyOn(mockTenantStorage, 'run');
+    const runSpy = jest.spyOn(tenantStorage, 'run');
 
     await resolveAppConfigForUser(mockGetAppConfig, { role: 'USER' });
     expect(runSpy).not.toHaveBeenCalled();
@@ -57,7 +55,7 @@ describe('resolveAppConfigForUser', () => {
   it('makes tenantId available via ALS inside getAppConfig', async () => {
     let capturedContext: { tenantId?: string } | undefined;
     mockGetAppConfig.mockImplementation(async () => {
-      capturedContext = mockTenantStorage.getStore();
+      capturedContext = tenantStorage.getStore();
       return { registration: {} };
     });
 
@@ -81,5 +79,17 @@ describe('resolveAppConfigForUser', () => {
   it('calls getAppConfig with role undefined when user has tenantId but no role', async () => {
     await resolveAppConfigForUser(mockGetAppConfig, { tenantId: 'tenant-e' });
     expect(mockGetAppConfig).toHaveBeenCalledWith({ role: undefined, tenantId: 'tenant-e' });
+  });
+
+  it('propagates rejection from getAppConfig for tenant users', async () => {
+    mockGetAppConfig.mockRejectedValue(new Error('config unavailable'));
+    await expect(
+      resolveAppConfigForUser(mockGetAppConfig, { tenantId: 'tenant-f', role: 'USER' }),
+    ).rejects.toThrow('config unavailable');
+  });
+
+  it('propagates rejection from getAppConfig for baseOnly path', async () => {
+    mockGetAppConfig.mockRejectedValue(new Error('cache failure'));
+    await expect(resolveAppConfigForUser(mockGetAppConfig, null)).rejects.toThrow('cache failure');
   });
 });

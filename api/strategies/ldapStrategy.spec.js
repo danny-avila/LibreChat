@@ -206,7 +206,7 @@ describe('ldapStrategy', () => {
     expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, existing);
   });
 
-  it('passes null user to resolveAppConfigForUser for new registration', async () => {
+  it('uses baseConfig for new user without calling resolveAppConfigForUser', async () => {
     findUser.mockResolvedValue(null);
 
     const userinfo = {
@@ -218,6 +218,7 @@ describe('ldapStrategy', () => {
 
     await callVerify(userinfo);
 
-    expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, null);
+    expect(resolveAppConfigForUser).not.toHaveBeenCalled();
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
   });
 });

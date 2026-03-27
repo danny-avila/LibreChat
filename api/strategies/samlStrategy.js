@@ -218,6 +218,15 @@ async function setupSaml() {
             );
           }
 
+          if (user && user.provider !== 'saml') {
+            logger.info(
+              `[samlStrategy] User ${user.email} already exists with provider ${user.provider}`,
+            );
+            return done(null, false, {
+              message: ErrorTypes.AUTH_FAILED,
+            });
+          }
+
           const appConfig = user?.tenantId
             ? await resolveAppConfigForUser(getAppConfig, user)
             : baseConfig;
@@ -230,15 +239,6 @@ async function setupSaml() {
               `[SAML Strategy] Authentication blocked - email domain not allowed [Email: ${userEmail}]`,
             );
             return done(null, false, { message: 'Email domain not allowed' });
-          }
-
-          if (user && user.provider !== 'saml') {
-            logger.info(
-              `[samlStrategy] User ${user.email} already exists with provider ${user.provider}`,
-            );
-            return done(null, false, {
-              message: ErrorTypes.AUTH_FAILED,
-            });
           }
 
           const fullName = getFullName(profile);

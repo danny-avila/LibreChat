@@ -469,4 +469,25 @@ u7wlOSk+oFzDIO/UILIA
     expect(resolveAppConfigForUser).not.toHaveBeenCalled();
     expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
   });
+
+  it('should block login when tenant config restricts the domain', async () => {
+    const { isEmailDomainAllowed } = require('@librechat/api');
+    const existingUser = {
+      _id: 'tenant-blocked',
+      provider: 'saml',
+      samlId: 'saml-1234',
+      email: 'test@example.com',
+      tenantId: 'tenant-restrict',
+      role: 'USER',
+    };
+    findUser.mockResolvedValue(existingUser);
+    resolveAppConfigForUser.mockResolvedValue({
+      registration: { allowedDomains: ['other.com'] },
+    });
+    isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    const profile = { ...baseProfile };
+    const { user } = await validate(profile);
+    expect(user).toBe(false);
+  });
 });

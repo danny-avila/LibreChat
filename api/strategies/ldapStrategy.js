@@ -94,16 +94,6 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     const ldapId =
       (LDAP_ID && userinfo[LDAP_ID]) || userinfo.uid || userinfo.sAMAccountName || userinfo.mail;
 
-    let user = await findUser({ ldapId });
-    if (user && user.provider !== 'ldap') {
-      logger.info(
-        `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
-      );
-      return done(null, false, {
-        message: ErrorTypes.AUTH_FAILED,
-      });
-    }
-
     const fullNameAttributes = LDAP_FULL_NAME && LDAP_FULL_NAME.split(',');
     const fullName =
       fullNameAttributes && fullNameAttributes.length > 0
@@ -127,8 +117,32 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       );
     }
 
-    const appConfig = await resolveAppConfigForUser(getAppConfig, user);
-    if (!isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)) {
+    const baseConfig = await getAppConfig({ baseOnly: true });
+    if (!isEmailDomainAllowed(mail, baseConfig?.registration?.allowedDomains)) {
+      logger.error(
+        `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
+      );
+      return done(null, false, { message: 'Email domain not allowed' });
+    }
+
+    let user = await findUser({ ldapId });
+    if (user && user.provider !== 'ldap') {
+      logger.info(
+        `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
+      );
+      return done(null, false, {
+        message: ErrorTypes.AUTH_FAILED,
+      });
+    }
+
+    const appConfig = user?.tenantId
+      ? await resolveAppConfigForUser(getAppConfig, user)
+      : baseConfig;
+
+    if (
+      appConfig !== baseConfig &&
+      !isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)
+    ) {
       logger.error(
         `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
       );
