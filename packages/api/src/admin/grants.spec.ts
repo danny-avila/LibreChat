@@ -9,7 +9,7 @@ import { createAdminGrantsHandlers } from './grants';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
-  logger: { error: jest.fn() },
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
 const validObjectId = new Types.ObjectId().toString();
@@ -530,7 +530,7 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.assignGrant(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
-      expect(json).toHaveBeenCalledWith({ error: 'Failed to create grant' });
+      expect(json).toHaveBeenCalledWith({ error: 'Grant operation returned no result' });
     });
 
     it('returns 500 on unexpected error', async () => {

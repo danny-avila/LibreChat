@@ -35,6 +35,12 @@ export interface ResolvedPrincipal {
   principalId?: string | Types.ObjectId;
 }
 
+interface GrantRequestBody {
+  principalType?: unknown;
+  principalId?: unknown;
+  capability?: unknown;
+}
+
 export interface AdminGrantsDeps {
   getCapabilitiesForPrincipal: (params: {
     principalType: PrincipalType;
@@ -77,7 +83,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
     if (!user) {
       return null;
     }
-    const userId = (user.id ?? user._id)?.toString();
+    const userId = user._id?.toString();
     if (!userId || !user.role) {
       return null;
     }
@@ -97,7 +103,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
     return null;
   }
 
-  function validateGrantBody(body: Record<string, unknown>): string | null {
+  function validateGrantBody(body: GrantRequestBody): string | null {
     const { principalType, principalId, capability } = body;
     if (typeof principalType !== 'string') {
       return 'Invalid principal type';
@@ -174,12 +180,13 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       }
 
       const readCap = READ_CAPABILITY_BY_TYPE[principalType as PrincipalType];
-      if (readCap) {
-        const principals = await getUserPrincipals(user);
-        const allowed = await hasCapabilityForPrincipals({ principals, capability: readCap });
-        if (!allowed) {
-          return res.status(403).json({ error: 'Insufficient permissions' });
-        }
+      if (!readCap) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+      const principals = await getUserPrincipals(user);
+      const allowed = await hasCapabilityForPrincipals({ principals, capability: readCap });
+      if (!allowed) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
       const grants = await getCapabilitiesForPrincipal({
@@ -195,7 +202,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
 
   async function assignGrantHandler(req: ServerRequest, res: Response) {
     try {
-      const bodyError = validateGrantBody(req.body as Record<string, unknown>);
+      const bodyError = validateGrantBody(req.body as GrantRequestBody);
       if (bodyError) {
         return res.status(400).json({ error: bodyError });
       }
@@ -232,7 +239,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         grantedBy: caller.userId,
       });
       if (!grant) {
-        return res.status(500).json({ error: 'Failed to create grant' });
+        return res.status(500).json({ error: 'Grant operation returned no result' });
       }
       return res.status(201).json({ grant });
     } catch (error) {
@@ -241,6 +248,11 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
     }
   }
 
+  /**
+   * Revocation requires MANAGE on the target principal type but does NOT
+   * require the caller to possess the capability being revoked. This avoids
+   * a bootstrap deadlock where no one can clean up grants they don't hold.
+   */
   async function revokeGrantHandler(req: ServerRequest, res: Response) {
     try {
       const { principalType, principalId, capability } = req.params as {

@@ -6,16 +6,11 @@ import {
   SystemCapabilities,
   readConfigCapability,
 } from '@librechat/data-schemas';
-import type { PrincipalType } from 'librechat-data-provider';
 import type { SystemCapability, ConfigSection } from '@librechat/data-schemas';
 import type { NextFunction, Response } from 'express';
 import type { Types, ClientSession } from 'mongoose';
+import type { ResolvedPrincipal } from '~/admin/grants';
 import type { ServerRequest } from '~/types/http';
-
-interface ResolvedPrincipal {
-  principalType: PrincipalType;
-  principalId?: string | Types.ObjectId;
-}
 
 interface CapabilityDeps {
   getUserPrincipals: (
