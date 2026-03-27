@@ -26,6 +26,7 @@ const handlers = createAdminRolesHandlers({
   updateUsersRoleByIds: db.updateUsersRoleByIds,
   listUsersByRole: db.listUsersByRole,
   countUsersByRole: db.countUsersByRole,
+  deleteGrantsForPrincipal: db.deleteGrantsForPrincipal,
 });
 
 router.use(requireJwtAuth, requireAdminAccess);

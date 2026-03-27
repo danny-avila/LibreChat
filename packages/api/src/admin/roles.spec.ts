@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { SystemRoles } from 'librechat-data-provider';
+import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type { IRole, IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -71,6 +71,7 @@ function createDeps(overrides: Partial<AdminRolesDeps> = {}): AdminRolesDeps {
     updateUsersRoleByIds: jest.fn().mockResolvedValue(undefined),
     listUsersByRole: jest.fn().mockResolvedValue([]),
     countUsersByRole: jest.fn().mockResolvedValue(0),
+    deleteGrantsForPrincipal: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -921,6 +922,41 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(deps.deleteRoleByName).toHaveBeenCalledWith('editor');
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('cleans up grants after successful deletion', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor');
+    });
+
+    it('does not clean up grants when role not found', async () => {
+      const deps = createDeps({ deleteRoleByName: jest.fn().mockResolvedValue(null) });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'nonexistent' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(deps.deleteGrantsForPrincipal).not.toHaveBeenCalled();
+    });
+
+    it('succeeds even when grant cleanup fails', async () => {
+      const deps = createDeps({
+        deleteGrantsForPrincipal: jest.fn().mockRejectedValue(new Error('cleanup failed')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
     });

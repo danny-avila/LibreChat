@@ -1,4 +1,4 @@
-import { SystemRoles } from 'librechat-data-provider';
+import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString, RoleConflictError } from '@librechat/data-schemas';
 import type { IRole, IUser, AdminMember } from '@librechat/data-schemas';
 import type { FilterQuery, Types } from 'mongoose';
@@ -105,6 +105,10 @@ export interface AdminRolesDeps {
     options?: { limit?: number; offset?: number },
   ) => Promise<IUser[]>;
   countUsersByRole: (roleName: string) => Promise<number>;
+  deleteGrantsForPrincipal: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+  ) => Promise<void>;
 }
 
 export function createAdminRolesHandlers(deps: AdminRolesDeps) {
@@ -123,6 +127,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     updateUsersRoleByIds,
     listUsersByRole,
     countUsersByRole,
+    deleteGrantsForPrincipal,
   } = deps;
 
   async function listRolesHandler(req: ServerRequest, res: Response) {
@@ -367,6 +372,16 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       if (!deleted) {
         return res.status(404).json({ error: 'Role not found' });
       }
+
+      const cleanupResults = await Promise.allSettled([
+        deleteGrantsForPrincipal(PrincipalType.ROLE, name),
+      ]);
+      for (const result of cleanupResults) {
+        if (result.status === 'rejected') {
+          logger.error('[adminRoles] cascade cleanup failed for role:', name, result.reason);
+        }
+      }
+
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] deleteRole error:', error);
