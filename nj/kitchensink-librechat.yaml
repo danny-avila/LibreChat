@@ -18,32 +18,41 @@ interface:
 
   # Disable temporary chats (we need to retain data for OPRA)
   temporaryChat: false
-
-  # We're purposefully disabling most LibreChat features (for now)
-  endpointsMenu: true
-  modelSelect: true
-  parameters: true
-  sidePanel: true
-  presets: true
-  prompts:
-    use: true
-    create: true
-    share: true
-    public: false
-  bookmarks: true
-  multiConvo: true
+  
+  # Turn everything on for kitchensink
   agents:
     use: true
     create: true
     share: true
     public: false
+  bookmarks: true
+  endpointsMenu: true
+  fileCitations: true
+  fileSearch: true
+  marketplace:
+    use: true
+  memories: true
+  multiConvo: true
+  parameters: true
   peoplePicker:
     users: true
     groups: true
     roles: true
-  marketplace:
+  presets: true
+  prompts: true
+  runCode: true
+  sidePanel: true
+  webSearch: true
+  mcpServers: 
     use: true
-  fileCitations: true
+    create: true
+    share: true
+    public: false
+  remoteAgents: 
+    use: true
+    create: true
+    share: true
+    public: false
 
 endpoints:
   bedrock:
@@ -51,8 +60,9 @@ endpoints:
       - "us-east-1"
     titleModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     guardrailConfig:
-      guardrailIdentifier: '${GUARDRAIL_ID}'
-      guardrailVersion: '${GUARDRAIL_VERSION}'
+      # My upstream PR to make guardrail config injectable from env vars has not been merged, so I must hardcode
+      guardrailIdentifier: "cwwc15fplrpc"
+      guardrailVersion: "10"
       trace: "enabled"
 
   agents:
