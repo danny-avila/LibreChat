@@ -1,6 +1,6 @@
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString, RoleConflictError } from '@librechat/data-schemas';
-import type { IRole, IUser, AdminMember } from '@librechat/data-schemas';
+import type { IRole, IUser, IConfig, AdminMember } from '@librechat/data-schemas';
 import type { FilterQuery, Types } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -105,6 +105,14 @@ export interface AdminRolesDeps {
     options?: { limit?: number; offset?: number },
   ) => Promise<IUser[]>;
   countUsersByRole: (roleName: string) => Promise<number>;
+  deleteConfig: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+  ) => Promise<IConfig | null>;
+  deleteAclEntries: (filter: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+  }) => Promise<void>;
   deleteGrantsForPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -127,6 +135,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     updateUsersRoleByIds,
     listUsersByRole,
     countUsersByRole,
+    deleteConfig,
+    deleteAclEntries,
     deleteGrantsForPrincipal,
   } = deps;
 
@@ -373,10 +383,15 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
-      try {
-        await deleteGrantsForPrincipal(PrincipalType.ROLE, name);
-      } catch (cleanupError) {
-        logger.error('[adminRoles] cascade cleanup failed for role:', name, cleanupError);
+      const cleanupResults = await Promise.allSettled([
+        deleteConfig(PrincipalType.ROLE, name),
+        deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name }),
+        deleteGrantsForPrincipal(PrincipalType.ROLE, name),
+      ]);
+      for (const result of cleanupResults) {
+        if (result.status === 'rejected') {
+          logger.error('[adminRoles] cascade cleanup failed for role:', name, result.reason);
+        }
       }
 
       return res.status(200).json({ success: true });
