@@ -148,9 +148,14 @@ export class MCPManager extends UserConnectionManager {
   }
 
   /** Returns all available tool functions from app-level connections */
-  public async getAppToolFunctions(): Promise<t.LCAvailableTools> {
+  public async getAppToolFunctions(
+    configServers?: Record<string, t.ParsedServerConfig>,
+  ): Promise<t.LCAvailableTools> {
     const toolFunctions: t.LCAvailableTools = {};
-    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
+    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs(
+      undefined,
+      configServers,
+    );
     for (const config of Object.values(configs)) {
       if (config.toolFunctions != null) {
         Object.assign(toolFunctions, config.toolFunctions);
@@ -194,9 +199,15 @@ export class MCPManager extends UserConnectionManager {
    * @param serverNames Optional array of server names. If not provided or empty, returns all servers.
    * @returns Object mapping server names to their instructions
    */
-  private async getInstructions(serverNames?: string[]): Promise<Record<string, string>> {
+  private async getInstructions(
+    serverNames?: string[],
+    configServers?: Record<string, t.ParsedServerConfig>,
+  ): Promise<Record<string, string>> {
     const instructions: Record<string, string> = {};
-    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
+    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs(
+      undefined,
+      configServers,
+    );
     for (const [serverName, config] of Object.entries(configs)) {
       if (config.serverInstructions != null) {
         instructions[serverName] = config.serverInstructions as string;
@@ -211,9 +222,11 @@ export class MCPManager extends UserConnectionManager {
    * @param serverNames Optional array of server names to include. If not provided, includes all servers.
    * @returns Formatted instructions string ready for context injection
    */
-  public async formatInstructionsForContext(serverNames?: string[]): Promise<string> {
-    /** Instructions for specified servers or all stored instructions */
-    const instructionsToInclude = await this.getInstructions(serverNames);
+  public async formatInstructionsForContext(
+    serverNames?: string[],
+    configServers?: Record<string, t.ParsedServerConfig>,
+  ): Promise<string> {
+    const instructionsToInclude = await this.getInstructions(serverNames, configServers);
 
     if (Object.keys(instructionsToInclude).length === 0) {
       return '';
