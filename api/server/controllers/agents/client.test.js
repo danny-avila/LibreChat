@@ -18,8 +18,14 @@ jest.mock('@librechat/api', () => ({
   loadAgent: jest.fn(),
 }));
 
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  getTenantId: jest.fn(() => 'default'),
+}));
+
 jest.mock('~/server/services/Config', () => ({
   getMCPServerTools: jest.fn(),
+  getAppConfig: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('~/models', () => ({
@@ -27,11 +33,15 @@ jest.mock('~/models', () => ({
   getRoleByName: jest.fn(),
 }));
 
-// Mock getMCPManager
+// Mock getMCPManager and getMCPServersRegistry
 const mockFormatInstructions = jest.fn();
+const mockEnsureConfigServers = jest.fn().mockResolvedValue({});
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
     formatInstructionsForContext: mockFormatInstructions,
+  })),
+  getMCPServersRegistry: jest.fn(() => ({
+    ensureConfigServers: mockEnsureConfigServers,
   })),
 }));
 
