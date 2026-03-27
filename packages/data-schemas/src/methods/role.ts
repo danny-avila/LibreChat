@@ -9,6 +9,8 @@ import type { Model } from 'mongoose';
 import type { IRole, IUser } from '~/types';
 import logger from '~/config/winston';
 
+const systemRoleValues = new Set<string>(Object.values(SystemRoles));
+
 export class RoleConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -96,7 +98,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       }
       const role = await query.lean().exec();
 
-      if (!role && SystemRoles[roleName as keyof typeof SystemRoles]) {
+      if (!role && systemRoleValues.has(roleName)) {
         const newRole = await new Role(roleDefaults[roleName as keyof typeof roleDefaults]).save();
         if (cache) {
           await cache.set(roleName, newRole);
@@ -380,7 +382,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       throw new Error('Role name is required');
     }
     const trimmed = name.trim();
-    if (SystemRoles[trimmed as keyof typeof SystemRoles]) {
+    if (systemRoleValues.has(trimmed)) {
       throw new RoleConflictError(`Cannot create role with reserved system name: ${name}`);
     }
     const Role = mongoose.models.Role;
@@ -414,9 +416,16 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     return role.toObject() as IRole;
   }
 
-  /** Guards against deleting system roles. Reassigns affected users back to USER. */
+  /**
+   * Guards against deleting system roles. Reassigns affected users back to USER.
+   *
+   * Note: the user reassignment (`updateMany`) runs before `findOneAndDelete`.
+   * Without a MongoDB transaction these two operations are non-atomic — if the
+   * delete fails after the reassignment, users will already have been moved to
+   * USER while the role document still exists.
+   */
   async function deleteRoleByName(roleName: string): Promise<IRole | null> {
-    if (SystemRoles[roleName as keyof typeof SystemRoles]) {
+    if (systemRoleValues.has(roleName)) {
       throw new Error(`Cannot delete system role: ${roleName}`);
     }
     const Role = mongoose.models.Role;

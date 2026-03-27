@@ -6,8 +6,11 @@ import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import { parsePagination } from './pagination';
 
+const systemRoleValues = new Set<string>(Object.values(SystemRoles));
 const MAX_NAME_LENGTH = 500;
 const MAX_DESCRIPTION_LENGTH = 2000;
+const CONTROL_CHAR_RE = /\p{Cc}/u;
+const RESERVED_ROLE_NAMES = new Set(['members', 'permissions']);
 
 function validateNameParam(name: string): string | null {
   if (!name || typeof name !== 'string') {
@@ -20,17 +23,20 @@ function validateNameParam(name: string): string | null {
 }
 
 function validateRoleName(name: unknown, required: boolean): string | null {
-  if (required) {
-    if (!name || typeof name !== 'string' || !(name as string).trim()) {
-      return 'name is required';
-    }
-  } else if (name !== undefined) {
-    if (!name || typeof name !== 'string' || !(name as string).trim()) {
-      return 'name must be a non-empty string';
-    }
+  if (name === undefined) {
+    return required ? 'name is required' : null;
   }
-  if (name !== undefined && typeof name === 'string' && name.trim().length > MAX_NAME_LENGTH) {
+  if (typeof name !== 'string' || !name.trim()) {
+    return required ? 'name is required' : 'name must be a non-empty string';
+  }
+  if (name.trim().length > MAX_NAME_LENGTH) {
     return `name must not exceed ${MAX_NAME_LENGTH} characters`;
+  }
+  if (CONTROL_CHAR_RE.test(name)) {
+    return 'name contains invalid characters';
+  }
+  if (RESERVED_ROLE_NAMES.has(name.trim().toLowerCase())) {
+    return 'name is a reserved path segment';
   }
   return null;
 }
@@ -176,7 +182,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         try {
           await updateUsersByRole(newName, currentName);
         } catch (rollbackError) {
-          logger.error('[adminRoles] rollback failed (role not found path):', rollbackError);
+          logger.error(
+            `[adminRoles] CRITICAL: rename rollback failed — users have dangling role "${newName}":`,
+            rollbackError,
+          );
         }
       }
       return role;
@@ -184,7 +193,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       try {
         await updateUsersByRole(newName, currentName);
       } catch (rollbackError) {
-        logger.error('[adminRoles] rollback failed after updateRole error:', rollbackError);
+        logger.error(
+          `[adminRoles] CRITICAL: rename rollback failed — users have dangling role "${newName}":`,
+          rollbackError,
+        );
       }
       throw error;
     }
@@ -210,10 +222,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       const trimmedName = body.name?.trim() ?? '';
       const isRename = trimmedName !== '' && trimmedName !== name;
 
-      if (isRename && SystemRoles[name as keyof typeof SystemRoles]) {
+      if (isRename && systemRoleValues.has(name)) {
         return res.status(403).json({ error: 'Cannot rename system role' });
       }
-      if (isRename && SystemRoles[trimmedName as keyof typeof SystemRoles]) {
+      if (isRename && systemRoleValues.has(trimmedName)) {
         return res.status(403).json({ error: 'Cannot use a reserved system role name' });
       }
 
@@ -310,7 +322,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       if (paramError) {
         return res.status(400).json({ error: paramError });
       }
-      if (SystemRoles[name as keyof typeof SystemRoles]) {
+      if (systemRoleValues.has(name)) {
         return res.status(403).json({ error: 'Cannot delete system role' });
       }
 
@@ -403,6 +415,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
       if (!isValidObjectIdString(userId)) {
         return res.status(400).json({ error: 'Invalid user ID format' });
+      }
+
+      if (systemRoleValues.has(name) && name !== SystemRoles.ADMIN) {
+        return res.status(403).json({ error: 'Cannot remove members from a system role' });
       }
 
       const existing = await getRoleByName(name);

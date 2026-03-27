@@ -64,6 +64,7 @@ const userSchema = new Schema<IUser>(
     role: {
       type: String,
       default: SystemRoles.USER,
+      index: true,
     },
     googleId: {
       type: String,

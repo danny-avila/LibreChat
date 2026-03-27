@@ -117,6 +117,46 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.listRoles).toHaveBeenCalledWith({ limit: 200, offset: 0 });
     });
 
+    it('clamps negative offset to 0', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res } = createReqRes({ query: { offset: '-5' } });
+
+      await handlers.listRoles(req, res);
+
+      expect(deps.listRoles).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    });
+
+    it('treats non-numeric limit as default', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res } = createReqRes({ query: { limit: 'abc' } });
+
+      await handlers.listRoles(req, res);
+
+      expect(deps.listRoles).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    });
+
+    it('clamps limit=0 to 1', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res } = createReqRes({ query: { limit: '0' } });
+
+      await handlers.listRoles(req, res);
+
+      expect(deps.listRoles).toHaveBeenCalledWith({ limit: 1, offset: 0 });
+    });
+
+    it('truncates float offset to integer', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res } = createReqRes({ query: { offset: '1.7' } });
+
+      await handlers.listRoles(req, res);
+
+      expect(deps.listRoles).toHaveBeenCalledWith({ limit: 50, offset: 1 });
+    });
+
     it('returns 500 on error', async () => {
       const deps = createDeps({ listRoles: jest.fn().mockRejectedValue(new Error('db down')) });
       const handlers = createAdminRolesHandlers(deps);
@@ -187,6 +227,25 @@ describe('createAdminRolesHandlers', () => {
       });
     });
 
+    it('passes provided permissions to createRoleByName', async () => {
+      const perms = { chat: { read: true, write: false } } as unknown as IRole['permissions'];
+      const role = mockRole({ permissions: perms });
+      const deps = createDeps({ createRoleByName: jest.fn().mockResolvedValue(role) });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'editor', permissions: perms },
+      });
+
+      await handlers.createRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+      expect(json).toHaveBeenCalledWith({ role });
+      expect(deps.createRoleByName).toHaveBeenCalledWith({
+        name: 'editor',
+        permissions: perms,
+      });
+    });
+
     it('returns 400 when name is missing', async () => {
       const deps = createDeps();
       const handlers = createAdminRolesHandlers(deps);
@@ -208,6 +267,30 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'name is required' });
+    });
+
+    it('returns 400 when name contains control characters', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: { name: 'bad\x00name' } });
+
+      await handlers.createRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'name contains invalid characters' });
+      expect(deps.createRoleByName).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when name is a reserved path segment', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: { name: 'members' } });
+
+      await handlers.createRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'name is a reserved path segment' });
+      expect(deps.createRoleByName).not.toHaveBeenCalled();
     });
 
     it('returns 400 when name exceeds max length', async () => {
@@ -426,6 +509,29 @@ describe('createAdminRolesHandlers', () => {
       await handlers.updateRole(req, res);
 
       expect(deps.updateUsersByRole).not.toHaveBeenCalled();
+    });
+
+    it('renames and updates description in a single request', async () => {
+      const role = mockRole({ name: 'senior-editor', description: 'Updated desc' });
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
+        updateRoleByName: jest.fn().mockResolvedValue(role),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: 'editor' },
+        body: { name: 'senior-editor', description: 'Updated desc' },
+      });
+
+      await handlers.updateRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ role });
+      expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'senior-editor');
+      expect(deps.updateRoleByName).toHaveBeenCalledWith('editor', {
+        name: 'senior-editor',
+        description: 'Updated desc',
+      });
     });
 
     it('returns 403 when renaming a system role', async () => {
@@ -696,10 +802,13 @@ describe('createAdminRolesHandlers', () => {
   });
 
   describe('updateRolePermissions', () => {
-    it('updates permissions and returns 200', async () => {
+    it('updates permissions and returns 200 with updated role', async () => {
       const role = mockRole();
+      const updatedRole = mockRole({
+        permissions: { chat: { read: true, write: true } } as IRole['permissions'],
+      });
       const deps = createDeps({
-        getRoleByName: jest.fn().mockResolvedValue(role),
+        getRoleByName: jest.fn().mockResolvedValueOnce(role).mockResolvedValueOnce(updatedRole),
       });
       const handlers = createAdminRolesHandlers(deps);
       const perms = { chat: { read: true, write: true } };
@@ -712,7 +821,7 @@ describe('createAdminRolesHandlers', () => {
 
       expect(deps.updateAccessPermissions).toHaveBeenCalledWith('editor', perms, role);
       expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith({ role: expect.objectContaining({ name: 'editor' }) });
+      expect(json).toHaveBeenCalledWith({ role: updatedRole });
     });
 
     it('returns 400 when permissions is missing', async () => {
@@ -1073,6 +1182,20 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: SystemRoles.USER });
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('returns 403 when removing from a non-ADMIN system role', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: SystemRoles.USER, userId: validUserId },
+      });
+
+      await handlers.removeRoleMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(403);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot remove members from a system role' });
+      expect(deps.getRoleByName).not.toHaveBeenCalled();
     });
 
     it('returns 400 for invalid ObjectId', async () => {
