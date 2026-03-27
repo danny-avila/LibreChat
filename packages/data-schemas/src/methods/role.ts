@@ -63,7 +63,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   async function listRoles(options?: {
     limit?: number;
     offset?: number;
-  }): Promise<Pick<IRole, 'name' | 'description'>[]> {
+  }): Promise<Pick<IRole, '_id' | 'name' | 'description'>[]> {
     const Role = mongoose.models.Role;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
