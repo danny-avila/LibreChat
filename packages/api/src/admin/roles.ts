@@ -373,13 +373,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
-      const cleanupResults = await Promise.allSettled([
-        deleteGrantsForPrincipal(PrincipalType.ROLE, name),
-      ]);
-      for (const result of cleanupResults) {
-        if (result.status === 'rejected') {
-          logger.error('[adminRoles] cascade cleanup failed for role:', name, result.reason);
-        }
+      try {
+        await deleteGrantsForPrincipal(PrincipalType.ROLE, name);
+      } catch (cleanupError) {
+        logger.error('[adminRoles] cascade cleanup failed for role:', name, cleanupError);
       }
 
       return res.status(200).json({ success: true });
