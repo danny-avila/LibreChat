@@ -11,6 +11,11 @@ import logger from '~/config/winston';
 
 const systemRoleValues = new Set<string>(Object.values(SystemRoles));
 
+/** Case-insensitive check — the legacy roles route uppercases params. */
+function isSystemRoleName(name: string): boolean {
+  return systemRoleValues.has(name.toUpperCase());
+}
+
 export class RoleConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -381,7 +386,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       throw new Error('Role name is required');
     }
     const trimmed = name.trim();
-    if (systemRoleValues.has(trimmed)) {
+    if (isSystemRoleName(trimmed)) {
       throw new RoleConflictError(`Cannot create role with reserved system name: ${name}`);
     }
     const Role = mongoose.models.Role;
@@ -430,7 +435,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
    * the second pass.
    */
   async function deleteRoleByName(roleName: string): Promise<IRole | null> {
-    if (systemRoleValues.has(roleName)) {
+    if (isSystemRoleName(roleName)) {
       throw new Error(`Cannot delete system role: ${roleName}`);
     }
     const Role = mongoose.models.Role;

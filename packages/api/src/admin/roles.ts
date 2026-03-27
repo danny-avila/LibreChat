@@ -7,6 +7,12 @@ import type { ServerRequest } from '~/types/http';
 import { parsePagination } from './pagination';
 
 const systemRoleValues = new Set<string>(Object.values(SystemRoles));
+
+/** Case-insensitive check — the legacy roles route uppercases params. */
+function isSystemRoleName(name: string): boolean {
+  return systemRoleValues.has(name.toUpperCase());
+}
+
 const MAX_NAME_LENGTH = 500;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const CONTROL_CHAR_RE = /\p{Cc}/u;
@@ -165,7 +171,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
       if (
         permissions !== undefined &&
-        (typeof permissions !== 'object' || Array.isArray(permissions))
+        (permissions === null || typeof permissions !== 'object' || Array.isArray(permissions))
       ) {
         return res.status(400).json({ error: 'permissions must be an object' });
       }
@@ -253,10 +259,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       const trimmedName = body.name?.trim() ?? '';
       const isRename = trimmedName !== '' && trimmedName !== name;
 
-      if (isRename && systemRoleValues.has(name)) {
+      if (isRename && isSystemRoleName(name)) {
         return res.status(403).json({ error: 'Cannot rename system role' });
       }
-      if (isRename && systemRoleValues.has(trimmedName)) {
+      if (isRename && isSystemRoleName(trimmedName)) {
         return res.status(403).json({ error: 'Cannot use a reserved system role name' });
       }
 
@@ -353,7 +359,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       if (paramError) {
         return res.status(400).json({ error: paramError });
       }
-      if (systemRoleValues.has(name)) {
+      if (isSystemRoleName(name)) {
         return res.status(403).json({ error: 'Cannot delete system role' });
       }
 
@@ -415,7 +421,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(400).json({ error: 'Invalid user ID format' });
       }
 
-      if (systemRoleValues.has(name) && name !== SystemRoles.ADMIN) {
+      if (isSystemRoleName(name) && name !== SystemRoles.ADMIN) {
         return res.status(403).json({ error: 'Cannot directly assign members to a system role' });
       }
 
@@ -440,7 +446,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         }
       }
 
-      await updateUser(userId, { role: name });
+      const updated = await updateUser(userId, { role: name });
+      if (!updated) {
+        return res.status(404).json({ error: 'User not found' });
+      }
 
       if (user.role === SystemRoles.ADMIN && name !== SystemRoles.ADMIN) {
         const postCount = await countUsersByRole(SystemRoles.ADMIN);
@@ -475,7 +484,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(400).json({ error: 'Invalid user ID format' });
       }
 
-      if (systemRoleValues.has(name) && name !== SystemRoles.ADMIN) {
+      if (isSystemRoleName(name) && name !== SystemRoles.ADMIN) {
         return res.status(403).json({ error: 'Cannot remove members from a system role' });
       }
 
