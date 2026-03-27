@@ -134,6 +134,28 @@ describe('createAdminGrantsHandlers', () => {
       expect(deps.getCapabilitiesForPrincipal).toHaveBeenCalledTimes(1);
     });
 
+    it('deduplicates capabilities across principals', async () => {
+      const readUsersGrant = mockGrant({ capability: SystemCapabilities.READ_USERS });
+      const deps = createDeps({
+        getUserPrincipals: jest.fn().mockResolvedValue([
+          { principalType: PrincipalType.USER, principalId: new Types.ObjectId() },
+          { principalType: PrincipalType.ROLE, principalId: 'editor' },
+        ]),
+        getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([readUsersGrant]),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+
+      await handlers.getEffectiveCapabilities(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      const response = json.mock.calls[0][0];
+      const readUsersCount = response.capabilities.filter(
+        (c: string) => c === SystemCapabilities.READ_USERS,
+      ).length;
+      expect(readUsersCount).toBe(1);
+    });
+
     it('returns 401 when user is not authenticated', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
@@ -249,6 +271,38 @@ describe('createAdminGrantsHandlers', () => {
       expect(status).toHaveBeenCalledWith(200);
     });
 
+    it('returns 401 when user is not authenticated', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { principalType: PrincipalType.ROLE, principalId: 'editor' },
+      });
+      (req as unknown as Record<string, unknown>).user = undefined;
+
+      await handlers.getPrincipalGrants(req, res);
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Authentication required' });
+    });
+
+    it('returns 403 when caller lacks READ capability', async () => {
+      const deps = createDeps({
+        hasCapabilityForPrincipals: jest.fn().mockResolvedValue(false),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { principalType: PrincipalType.ROLE, principalId: 'editor' },
+      });
+
+      await handlers.getPrincipalGrants(req, res);
+
+      expect(status).toHaveBeenCalledWith(403);
+      expect(json).toHaveBeenCalledWith({ error: 'Insufficient permissions' });
+      expect(deps.hasCapabilityForPrincipals).toHaveBeenCalledWith(
+        expect.objectContaining({ capability: SystemCapabilities.READ_ROLES }),
+      );
+    });
+
     it('returns 500 on unexpected error', async () => {
       const deps = createDeps({
         getCapabilitiesForPrincipal: jest.fn().mockRejectedValue(new Error('db error')),
@@ -272,7 +326,7 @@ describe('createAdminGrantsHandlers', () => {
       capability: SystemCapabilities.READ_USERS,
     };
 
-    it('assigns a grant and returns 200', async () => {
+    it('assigns a grant and returns 201', async () => {
       const grant = mockGrant();
       const deps = createDeps({ grantCapability: jest.fn().mockResolvedValue(grant) });
       const handlers = createAdminGrantsHandlers(deps);
@@ -287,7 +341,7 @@ describe('createAdminGrantsHandlers', () => {
           capability: SystemCapabilities.READ_USERS,
         }),
       );
-      expect(status).toHaveBeenCalledWith(200);
+      expect(status).toHaveBeenCalledWith(201);
       expect(json).toHaveBeenCalledWith({ grant });
     });
 
@@ -373,6 +427,19 @@ describe('createAdminGrantsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Invalid principalId format' });
     });
 
+    it('returns 401 when user is not authenticated', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: validBody });
+      (req as unknown as Record<string, unknown>).user = undefined;
+
+      await handlers.assignGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Authentication required' });
+      expect(deps.grantCapability).not.toHaveBeenCalled();
+    });
+
     it('returns 403 when caller lacks manage capability', async () => {
       const deps = createDeps({
         hasCapabilityForPrincipals: jest.fn().mockResolvedValue(false),
@@ -383,7 +450,25 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.assignGrant(req, res);
 
       expect(status).toHaveBeenCalledWith(403);
-      expect(json).toHaveBeenCalledWith({ error: 'Insufficient permissions' });
+      expect(deps.grantCapability).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when caller lacks the capability being granted', async () => {
+      const deps = createDeps({
+        hasCapabilityForPrincipals: jest.fn().mockImplementation(({ capability }) => {
+          if (capability === SystemCapabilities.MANAGE_ROLES) {
+            return Promise.resolve(true);
+          }
+          return Promise.resolve(false);
+        }),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: validBody });
+
+      await handlers.assignGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(403);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot grant a capability you do not possess' });
       expect(deps.grantCapability).not.toHaveBeenCalled();
     });
 
@@ -435,6 +520,19 @@ describe('createAdminGrantsHandlers', () => {
       );
     });
 
+    it('returns 500 when grantCapability returns null', async () => {
+      const deps = createDeps({
+        grantCapability: jest.fn().mockResolvedValue(null),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: validBody });
+
+      await handlers.assignGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to create grant' });
+    });
+
     it('returns 500 on unexpected error', async () => {
       const deps = createDeps({
         grantCapability: jest.fn().mockRejectedValue(new Error('db error')),
@@ -450,7 +548,7 @@ describe('createAdminGrantsHandlers', () => {
   });
 
   describe('revokeGrant', () => {
-    const validBody = {
+    const validParams = {
       principalType: PrincipalType.ROLE,
       principalId: 'editor',
       capability: SystemCapabilities.READ_USERS,
@@ -459,7 +557,7 @@ describe('createAdminGrantsHandlers', () => {
     it('revokes a grant and returns 200', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
-      const { req, res, status, json } = createReqRes({ body: validBody });
+      const { req, res, status, json } = createReqRes({ params: validParams });
 
       await handlers.revokeGrant(req, res);
 
@@ -476,7 +574,11 @@ describe('createAdminGrantsHandlers', () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
-        body: { principalId: 'editor', capability: SystemCapabilities.READ_USERS },
+        params: {
+          principalType: '',
+          principalId: 'editor',
+          capability: SystemCapabilities.READ_USERS,
+        },
       });
 
       await handlers.revokeGrant(req, res);
@@ -485,11 +587,28 @@ describe('createAdminGrantsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Invalid principal type' });
     });
 
+    it('returns 400 for missing principalId', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: {
+          principalType: PrincipalType.ROLE,
+          principalId: '',
+          capability: SystemCapabilities.READ_USERS,
+        },
+      });
+
+      await handlers.revokeGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'principalId is required' });
+    });
+
     it('returns 400 for invalid capability', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
-        body: { ...validBody, capability: 'fake' },
+        params: { ...validParams, capability: 'fake' },
       });
 
       await handlers.revokeGrant(req, res);
@@ -498,12 +617,25 @@ describe('createAdminGrantsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Invalid capability' });
     });
 
+    it('returns 401 when user is not authenticated', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: validParams });
+      (req as unknown as Record<string, unknown>).user = undefined;
+
+      await handlers.revokeGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Authentication required' });
+      expect(deps.revokeCapability).not.toHaveBeenCalled();
+    });
+
     it('returns 403 when caller lacks manage capability', async () => {
       const deps = createDeps({
         hasCapabilityForPrincipals: jest.fn().mockResolvedValue(false),
       });
       const handlers = createAdminGrantsHandlers(deps);
-      const { req, res, status, json } = createReqRes({ body: validBody });
+      const { req, res, status, json } = createReqRes({ params: validParams });
 
       await handlers.revokeGrant(req, res);
 
@@ -516,7 +648,7 @@ describe('createAdminGrantsHandlers', () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
-        body: {
+        params: {
           principalType: PrincipalType.USER,
           principalId: 'bad-id',
           capability: SystemCapabilities.READ_USERS,
@@ -534,7 +666,7 @@ describe('createAdminGrantsHandlers', () => {
         revokeCapability: jest.fn().mockRejectedValue(new Error('db error')),
       });
       const handlers = createAdminGrantsHandlers(deps);
-      const { req, res, status, json } = createReqRes({ body: validBody });
+      const { req, res, status, json } = createReqRes({ params: validParams });
 
       await handlers.revokeGrant(req, res);
 

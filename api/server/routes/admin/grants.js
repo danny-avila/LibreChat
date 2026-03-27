@@ -22,6 +22,6 @@ router.use(requireJwtAuth, requireAdminAccess);
 router.get('/effective', handlers.getEffectiveCapabilities);
 router.get('/:principalType/:principalId', handlers.getPrincipalGrants);
 router.post('/', handlers.assignGrant);
-router.delete('/', handlers.revokeGrant);
+router.delete('/:principalType/:principalId/:capability', handlers.revokeGrant);
 
 module.exports = router;
