@@ -133,14 +133,11 @@ const getMCPTools = async (req, res) => {
       try {
         const serverTools = serverToolsMap.get(serverName);
 
-        // Get server config once
         const serverConfig = mcpConfig[serverName];
-        const rawServerConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
 
-        // Initialize server object with all server-level data
         const server = {
           name: serverName,
-          icon: rawServerConfig?.iconPath || '',
+          icon: serverConfig?.iconPath || '',
           authenticated: true,
           authConfig: [],
           tools: [],

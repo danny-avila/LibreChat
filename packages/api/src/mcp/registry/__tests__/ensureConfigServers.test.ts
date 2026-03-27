@@ -255,29 +255,41 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     });
   });
 
-  describe('getServerConfig', () => {
-    it('should find config-source servers by name after ensureConfigServers', async () => {
-      await registry.ensureConfigServers({ config_srv: sseConfig });
-      const config = await registry.getServerConfig('config_srv');
+  describe('getServerConfig with configServers', () => {
+    it('should return config-source server when configServers is passed', async () => {
+      const configServers = await registry.ensureConfigServers({ config_srv: sseConfig });
+      const config = await registry.getServerConfig('config_srv', undefined, configServers);
       expect(config).toBeDefined();
       expect(config?.source).toBe('config');
     });
 
-    it('should return undefined for config-source server before ensureConfigServers', async () => {
-      const config = await registry.getServerConfig('nonexistent_config_srv');
+    it('should return undefined without configServers for config-source server', async () => {
+      await registry.ensureConfigServers({ config_srv: sseConfig });
+      const config = await registry.getServerConfig('config_srv');
       expect(config).toBeUndefined();
     });
 
     it('should return correct config after invalidation and re-init', async () => {
-      await registry.ensureConfigServers({ config_srv: sseConfig });
-      await registry.invalidateConfigCache();
-      const configAfterInvalidation = await registry.getServerConfig('config_srv');
-      expect(configAfterInvalidation).toBeUndefined();
+      const configServers1 = await registry.ensureConfigServers({ config_srv: sseConfig });
+      expect(await registry.getServerConfig('config_srv', undefined, configServers1)).toBeDefined();
 
-      await registry.ensureConfigServers({ config_srv: sseConfig });
-      const configAfterReInit = await registry.getServerConfig('config_srv');
-      expect(configAfterReInit).toBeDefined();
-      expect(configAfterReInit?.source).toBe('config');
+      await registry.invalidateConfigCache();
+
+      const configServers2 = await registry.ensureConfigServers({ config_srv: sseConfig });
+      const config = await registry.getServerConfig('config_srv', undefined, configServers2);
+      expect(config).toBeDefined();
+      expect(config?.source).toBe('config');
+    });
+
+    it('should not cross-contaminate between tenant configServers maps', async () => {
+      const tenantA = await registry.ensureConfigServers({ srv: sseConfig });
+      const tenantB = await registry.ensureConfigServers({ srv: altSseConfig });
+
+      const configA = await registry.getServerConfig('srv', undefined, tenantA);
+      const configB = await registry.getServerConfig('srv', undefined, tenantB);
+
+      expect((configA as unknown as { url: string }).url).toBe('https://mcp.example.com/sse');
+      expect((configB as unknown as { url: string }).url).toBe('https://mcp.other-tenant.com/sse');
     });
   });
 

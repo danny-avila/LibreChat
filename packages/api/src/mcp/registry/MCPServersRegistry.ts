@@ -57,9 +57,6 @@ export class MCPServersRegistry {
   /** Memoized YAML server names — set once after boot-time init, never changes. */
   private yamlServerNames: Set<string> | null = null;
 
-  /** Maps server name → hash-based config cache key for O(1) lookup by name. */
-  private readonly configNameToKey = new Map<string, string>();
-
   constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
@@ -116,10 +113,19 @@ export class MCPServersRegistry {
     return !Array.isArray(this.allowedDomains) || this.allowedDomains.length === 0;
   }
 
+  /**
+   * Returns the config for a single server. When `configServers` is provided, config-source
+   * servers are resolved from it directly (no global state, no cross-tenant race).
+   */
   public async getServerConfig(
     serverName: string,
     userId?: string,
+    configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
+    if (configServers?.[serverName]) {
+      return configServers[serverName];
+    }
+
     const cacheKey = this.getReadThroughCacheKey(serverName, userId);
 
     if (await this.readThroughCache.has(cacheKey)) {
@@ -130,15 +136,6 @@ export class MCPServersRegistry {
     if (configFromYaml) {
       await this.readThroughCache.set(cacheKey, configFromYaml);
       return configFromYaml;
-    }
-
-    const configCacheKey = this.configNameToKey.get(serverName);
-    if (configCacheKey) {
-      const configFromOverride = await this.configCacheRepo.get(configCacheKey);
-      if (configFromOverride) {
-        await this.readThroughCache.set(cacheKey, configFromOverride);
-        return configFromOverride;
-      }
     }
 
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
@@ -383,7 +380,6 @@ export class MCPServersRegistry {
     rawConfig: t.MCPOptions,
   ): Promise<t.ParsedServerConfig | undefined> {
     const cacheKey = this.configCacheKey(serverName, rawConfig);
-    this.configNameToKey.set(serverName, cacheKey);
 
     const cached = await this.configCacheRepo.get(cacheKey);
     if (cached) {
@@ -466,12 +462,19 @@ export class MCPServersRegistry {
    *          Callers should disconnect active connections for these servers.
    */
   public async invalidateConfigCache(): Promise<string[]> {
-    const evictedNames = [...this.configNameToKey.keys()];
+    const allCached = await this.configCacheRepo.getAll();
+    const evictedNames = [
+      ...new Set(
+        Object.keys(allCached).map((key) => {
+          const lastColon = key.lastIndexOf(':');
+          return lastColon > 0 ? key.slice(0, lastColon) : key;
+        }),
+      ),
+    ];
 
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
-    this.configNameToKey.clear();
 
     if (evictedNames.length > 0) {
       logger.info(
@@ -495,7 +498,6 @@ export class MCPServersRegistry {
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
     this.yamlServerNames = null;
-    this.configNameToKey.clear();
   }
 
   public async removeServer(
