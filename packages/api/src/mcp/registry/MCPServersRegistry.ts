@@ -14,6 +14,9 @@ import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache/cacheConfig';
 import { withTimeout } from '~/utils';
 
+/** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
+const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
+
 const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   const raw = process.env.MCP_INIT_TIMEOUT_MS;
   if (raw == null) {
@@ -402,6 +405,7 @@ export class MCPServersRegistry {
    * Ensures a single config-source server is initialized.
    * Cache key is scoped by config hash to prevent cross-tenant poisoning.
    * Deduplicates concurrent init requests for the same server+config.
+   * Stale failure stubs are retried after `CONFIG_STUB_RETRY_MS` to recover from transient errors.
    */
   private async ensureSingleConfigServer(
     serverName: string,
@@ -411,7 +415,12 @@ export class MCPServersRegistry {
 
     const cached = await this.configCacheRepo.get(cacheKey);
     if (cached) {
-      return cached;
+      const isStaleStub =
+        cached.inspectionFailed && Date.now() - (cached.updatedAt ?? 0) > CONFIG_STUB_RETRY_MS;
+      if (!isStaleStub) {
+        return cached;
+      }
+      logger.info(`[MCP][config][${serverName}] Retrying stale failure stub`);
     }
 
     const pending = this.pendingConfigInits.get(cacheKey);
@@ -458,14 +467,7 @@ export class MCPServersRegistry {
       );
 
       parsedConfig.source = 'config';
-      try {
-        await this.configCacheRepo.add(cacheKey, parsedConfig);
-      } catch {
-        const existing = await this.configCacheRepo.get(cacheKey);
-        if (existing) {
-          return existing;
-        }
-      }
+      await this.upsertConfigCache(cacheKey, parsedConfig);
 
       logger.info(
         `${prefix} Initialized: tools=${parsedConfig.tools ?? 'N/A'}, ` +
@@ -475,27 +477,30 @@ export class MCPServersRegistry {
     } catch (error) {
       logger.error(`${prefix} Failed to initialize:`, error);
 
-      const existing = await this.configCacheRepo.get(cacheKey);
-      if (existing) {
-        return existing;
-      }
+      const stubConfig: t.ParsedServerConfig = {
+        ...rawConfig,
+        inspectionFailed: true,
+        source: 'config',
+      };
+      await this.upsertConfigCache(cacheKey, stubConfig);
+      logger.info(`${prefix} Stored stub config for recovery`);
+      return stubConfig;
+    }
+  }
 
+  /**
+   * Writes a config to `configCacheRepo`, using `add` for new entries and `update` for existing ones.
+   * Handles cross-process races where another instance may have written the key first.
+   */
+  private async upsertConfigCache(cacheKey: string, config: t.ParsedServerConfig): Promise<void> {
+    try {
+      await this.configCacheRepo.add(cacheKey, config);
+    } catch {
       try {
-        const stubConfig: t.ParsedServerConfig = {
-          ...rawConfig,
-          inspectionFailed: true,
-          source: 'config',
-        };
-        await this.configCacheRepo.add(cacheKey, stubConfig);
-        logger.info(`${prefix} Stored stub config for recovery`);
-        return stubConfig;
+        await this.configCacheRepo.update(cacheKey, config);
       } catch {
-        const existingStub = await this.configCacheRepo.get(cacheKey);
-        if (existingStub) {
-          return existingStub;
-        }
+        // Another process may have added+removed between our attempts — non-critical
       }
-      return undefined;
     }
   }
 

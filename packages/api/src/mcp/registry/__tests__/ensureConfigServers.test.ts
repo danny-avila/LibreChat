@@ -157,6 +157,23 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(inspectSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('should retry stale failure stub after CONFIG_STUB_RETRY_MS', async () => {
+    inspectSpy.mockRejectedValueOnce(new Error('transient DNS failure'));
+    await registry.ensureConfigServers({ flaky_server: sseConfig });
+    expect(inspectSpy).toHaveBeenCalledTimes(1);
+
+    // Advance time past the 5-minute retry window
+    const originalNow = Date.now;
+    Date.now = jest.fn(() => FIXED_TIME + 6 * 60 * 1000);
+
+    const result = await registry.ensureConfigServers({ flaky_server: sseConfig });
+    expect(inspectSpy).toHaveBeenCalledTimes(2);
+    expect(result.flaky_server.inspectionFailed).toBeUndefined();
+    expect(result.flaky_server.source).toBe('config');
+
+    Date.now = originalNow;
+  });
+
   describe('cross-tenant isolation', () => {
     it('should use different cache keys for same server name with different configs', async () => {
       inspectSpy.mockClear();
