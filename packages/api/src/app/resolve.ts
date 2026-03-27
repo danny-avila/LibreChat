@@ -19,6 +19,12 @@ type GetAppConfig = (opts: {
  * Auth flows only apply role-level overrides (userId is not passed) because
  * user/group principal resolution requires heavier DB work that is deferred
  * to post-authentication config calls.
+ *
+ * `tenantId` is propagated through two channels that serve different purposes:
+ * - `tenantStorage.run()` sets the ALS context so Mongoose's `applyTenantIsolation`
+ *   plugin scopes any DB queries (e.g., `getApplicableConfigs`) to the tenant.
+ * - The explicit `tenantId` parameter to `getAppConfig` is used for cache-key
+ *   computation in `overrideCacheKey()`. Both channels are required.
  */
 export async function resolveAppConfigForUser(
   getAppConfig: GetAppConfig,

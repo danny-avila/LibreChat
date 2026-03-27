@@ -44,10 +44,7 @@ const socialLogin =
         ? await resolveAppConfigForUser(getAppConfig, existingUser)
         : baseConfig;
 
-      if (
-        appConfig !== baseConfig &&
-        !isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)
-      ) {
+      if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
         logger.error(
           `[${provider}Login] Authentication blocked - email domain not allowed [Email: ${email}]`,
         );

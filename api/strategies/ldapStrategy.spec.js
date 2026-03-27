@@ -118,6 +118,7 @@ describe('ldapStrategy', () => {
     expect(user).toBe(false);
     expect(info).toEqual({ message: ErrorTypes.AUTH_FAILED });
     expect(createUser).not.toHaveBeenCalled();
+    expect(resolveAppConfigForUser).not.toHaveBeenCalled();
   });
 
   it('updates an existing ldap user with current LDAP info', async () => {

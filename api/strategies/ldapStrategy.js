@@ -117,6 +117,9 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       );
     }
 
+    // Domain check before findUser for two-phase fast-fail (consistent with SAML/OpenID/social).
+    // This means cross-provider users from blocked domains get 'Email domain not allowed'
+    // instead of AUTH_FAILED — both deny access.
     const baseConfig = await getAppConfig({ baseOnly: true });
     if (!isEmailDomainAllowed(mail, baseConfig?.registration?.allowedDomains)) {
       logger.error(
@@ -139,10 +142,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       ? await resolveAppConfigForUser(getAppConfig, user)
       : baseConfig;
 
-    if (
-      appConfig !== baseConfig &&
-      !isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)
-    ) {
+    if (!isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)) {
       logger.error(
         `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
       );

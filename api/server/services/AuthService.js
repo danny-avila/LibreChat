@@ -268,25 +268,36 @@ const registerUser = async (user, additionalData = {}) => {
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
 
-  const baseConfig = await getAppConfig({ baseOnly: true });
-  if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
+  const makeDomainDeniedError = () => {
     const error = new Error(ErrorTypes.AUTH_FAILED);
     error.code = ErrorTypes.AUTH_FAILED;
     error.message = 'Email domain not allowed';
     return error;
+  };
+
+  const baseConfig = await getAppConfig({ baseOnly: true });
+  if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
+    logger.warn(
+      `[requestPasswordReset] Blocked - email domain not allowed [Email: ${email}] [IP: ${req.ip}]`,
+    );
+    return makeDomainDeniedError();
   }
 
   const user = await findUser({ email }, 'email _id role tenantId');
-  const appConfig = user?.tenantId ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
+  let appConfig = baseConfig;
+  if (user?.tenantId) {
+    try {
+      appConfig = await resolveAppConfigForUser(getAppConfig, user);
+    } catch (err) {
+      logger.error('[requestPasswordReset] Failed to resolve tenant config, using base:', err);
+    }
+  }
 
-  if (
-    appConfig !== baseConfig &&
-    !isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)
-  ) {
-    const error = new Error(ErrorTypes.AUTH_FAILED);
-    error.code = ErrorTypes.AUTH_FAILED;
-    error.message = 'Email domain not allowed';
-    return error;
+  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+    logger.warn(
+      `[requestPasswordReset] Tenant config blocked domain [Email: ${email}] [IP: ${req.ip}]`,
+    );
+    return makeDomainDeniedError();
   }
   const emailEnabled = checkEmailConfig();
 
