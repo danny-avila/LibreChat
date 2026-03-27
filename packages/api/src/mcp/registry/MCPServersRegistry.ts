@@ -165,10 +165,12 @@ export class MCPServersRegistry {
       this.cacheConfigsRepo.getAll(),
       this.getBaseServerConfigs(userId),
     ]);
-    // Extract user-DB entries from the cached base (keys not present in YAML).
+    // Extract user-DB entries from the cached base: any key not in YAML, or any key
+    // where the base value differs from the YAML value (DB overwrote it). This ensures
+    // user-DB always wins over both YAML and config, consistent with the no-configServers path.
     const userDbConfigs: Record<string, t.ParsedServerConfig> = {};
     for (const key of Object.keys(base)) {
-      if (!(key in yamlConfigs)) {
+      if (!(key in yamlConfigs) || base[key] !== yamlConfigs[key]) {
         userDbConfigs[key] = base[key];
       }
     }

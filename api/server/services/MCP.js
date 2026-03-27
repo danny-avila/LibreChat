@@ -1,5 +1,5 @@
 const { tool } = require('@langchain/core/tools');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   Providers,
   StepTypes,
@@ -25,12 +25,16 @@ const {
 } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { getGraphApiToken } = require('./GraphTokenService');
-const { getTenantId } = require('@librechat/data-schemas');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 const MAX_CACHE_SIZE = 1000;
+const lastReconnectAttempts = new Map();
+const RECONNECT_THROTTLE_MS = 10_000;
+
+const missingToolCache = new Map();
+const MISSING_TOOL_TTL_MS = 10_000;
 
 /**
  * Resolves config-source MCP servers from admin Config overrides for the current
@@ -48,11 +52,6 @@ async function resolveConfigServers(req) {
   });
   return registry.ensureConfigServers(appConfig?.mcpConfig || {});
 }
-const lastReconnectAttempts = new Map();
-const RECONNECT_THROTTLE_MS = 10_000;
-
-const missingToolCache = new Map();
-const MISSING_TOOL_TTL_MS = 10_000;
 
 function evictStale(map, ttl) {
   if (map.size <= MAX_CACHE_SIZE) {
