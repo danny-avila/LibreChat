@@ -17,20 +17,6 @@ const VALID_PRINCIPAL_TYPES = new Set<string>([
   PrincipalType.USER,
 ]);
 
-const VALID_CAPABILITIES = new Set<string>(Object.values(SystemCapabilities));
-
-const MANAGE_CAPABILITY_BY_TYPE: Partial<Record<PrincipalType, SystemCapability>> = {
-  [PrincipalType.ROLE]: SystemCapabilities.MANAGE_ROLES,
-  [PrincipalType.GROUP]: SystemCapabilities.MANAGE_GROUPS,
-  [PrincipalType.USER]: SystemCapabilities.MANAGE_USERS,
-};
-
-const READ_CAPABILITY_BY_TYPE: Partial<Record<PrincipalType, SystemCapability>> = {
-  [PrincipalType.ROLE]: SystemCapabilities.READ_ROLES,
-  [PrincipalType.GROUP]: SystemCapabilities.READ_GROUPS,
-  [PrincipalType.USER]: SystemCapabilities.READ_USERS,
-};
-
 interface GrantRequestBody {
   principalType?: unknown;
   principalId?: unknown;
@@ -78,6 +64,20 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
     getUserPrincipals,
     hasCapabilityForPrincipals,
   } = deps;
+
+  const VALID_CAPABILITIES = new Set<string>(Object.values(SystemCapabilities));
+
+  const MANAGE_CAPABILITY_BY_TYPE: Partial<Record<PrincipalType, SystemCapability>> = {
+    [PrincipalType.ROLE]: SystemCapabilities.MANAGE_ROLES,
+    [PrincipalType.GROUP]: SystemCapabilities.MANAGE_GROUPS,
+    [PrincipalType.USER]: SystemCapabilities.MANAGE_USERS,
+  };
+
+  const READ_CAPABILITY_BY_TYPE: Partial<Record<PrincipalType, SystemCapability>> = {
+    [PrincipalType.ROLE]: SystemCapabilities.READ_ROLES,
+    [PrincipalType.GROUP]: SystemCapabilities.READ_GROUPS,
+    [PrincipalType.USER]: SystemCapabilities.READ_USERS,
+  };
 
   function resolveUser(req: ServerRequest): { userId: string; role: string } | null {
     const user = req.user;
