@@ -54,7 +54,11 @@ export interface AdminGrantsDeps {
   }) => Promise<boolean>;
 }
 
-/** Creates admin grant handlers with dependency injection for the /api/admin/grants routes. */
+/**
+ * Creates admin grant handlers with dependency injection for the /api/admin/grants routes.
+ * All operations are currently platform-scoped (no tenantId threading).
+ * Multi-tenant grant management will require threading req.user.tenantId through dep calls.
+ */
 export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
   const {
     getCapabilitiesForPrincipal,

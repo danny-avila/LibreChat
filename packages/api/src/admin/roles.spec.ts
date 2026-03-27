@@ -970,6 +970,21 @@ describe('createAdminRolesHandlers', () => {
       expect(json).toHaveBeenCalledWith({ success: true });
     });
 
+    it('succeeds even when all cascade operations fail', async () => {
+      const deps = createDeps({
+        deleteConfig: jest.fn().mockRejectedValue(new Error('config cleanup failed')),
+        deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl cleanup failed')),
+        deleteGrantsForPrincipal: jest.fn().mockRejectedValue(new Error('grant cleanup failed')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
     it('returns 403 for system role', async () => {
       const deps = createDeps();
       const handlers = createAdminRolesHandlers(deps);

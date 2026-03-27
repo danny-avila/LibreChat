@@ -133,6 +133,23 @@ describe('createAdminGrantsHandlers', () => {
       });
     });
 
+    it('returns empty capabilities when all principals lack principalId', async () => {
+      const deps = createDeps({
+        getUserPrincipals: jest.fn().mockResolvedValue([
+          { principalType: PrincipalType.PUBLIC },
+        ]),
+        getCapabilitiesForPrincipals: jest.fn().mockResolvedValue([]),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+
+      await handlers.getEffectiveCapabilities(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ capabilities: [] });
+      expect(deps.getCapabilitiesForPrincipals).toHaveBeenCalledWith({ principals: [] });
+    });
+
     it('deduplicates capabilities across principals', async () => {
       const readUsersGrant = mockGrant({ capability: SystemCapabilities.READ_USERS });
       const deps = createDeps({
@@ -469,6 +486,27 @@ describe('createAdminGrantsHandlers', () => {
       expect(status).toHaveBeenCalledWith(403);
       expect(json).toHaveBeenCalledWith({ error: 'Cannot grant a capability you do not possess' });
       expect(deps.grantCapability).not.toHaveBeenCalled();
+    });
+
+    it('allows granting an implied capability the caller holds transitively', async () => {
+      const deps = createDeps({
+        hasCapabilityForPrincipals: jest.fn().mockResolvedValue(true),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status } = createReqRes({
+        body: {
+          principalType: PrincipalType.ROLE,
+          principalId: 'editor',
+          capability: SystemCapabilities.READ_ROLES,
+        },
+      });
+
+      await handlers.assignGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+      expect(deps.hasCapabilityForPrincipals).toHaveBeenCalledWith(
+        expect.objectContaining({ capability: SystemCapabilities.READ_ROLES }),
+      );
     });
 
     it('checks MANAGE_ROLES for role principal type', async () => {

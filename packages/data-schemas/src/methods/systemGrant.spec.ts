@@ -912,4 +912,124 @@ describe('systemGrant methods', () => {
       expect(count).toBe(2);
     });
   });
+
+  describe('getCapabilitiesForPrincipals', () => {
+    it('returns grants across multiple principals in a single query', async () => {
+      const userId = new Types.ObjectId();
+      await SystemGrant.create({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        capability: SystemCapabilities.READ_USERS,
+      });
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: 'editor',
+        capability: SystemCapabilities.READ_ROLES,
+      });
+
+      const grants = await methods.getCapabilitiesForPrincipals({
+        principals: [
+          { principalType: PrincipalType.USER, principalId: userId },
+          { principalType: PrincipalType.ROLE, principalId: 'editor' },
+        ],
+      });
+
+      expect(grants).toHaveLength(2);
+      const caps = grants.map((g) => g.capability).sort();
+      expect(caps).toEqual([SystemCapabilities.READ_ROLES, SystemCapabilities.READ_USERS]);
+    });
+
+    it('returns empty array for empty principals list', async () => {
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        capability: SystemCapabilities.ACCESS_ADMIN,
+      });
+
+      const grants = await methods.getCapabilitiesForPrincipals({ principals: [] });
+      expect(grants).toEqual([]);
+    });
+
+    it('returns only matching principals, not all grants', async () => {
+      const userId = new Types.ObjectId();
+      await SystemGrant.create({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        capability: SystemCapabilities.READ_USERS,
+      });
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: 'unrelated',
+        capability: SystemCapabilities.MANAGE_ROLES,
+      });
+
+      const grants = await methods.getCapabilitiesForPrincipals({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+      });
+
+      expect(grants).toHaveLength(1);
+      expect(grants[0].capability).toBe(SystemCapabilities.READ_USERS);
+    });
+
+    it('returns multiple grants for the same principal', async () => {
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        capability: SystemCapabilities.ACCESS_ADMIN,
+      });
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        capability: SystemCapabilities.MANAGE_ROLES,
+      });
+
+      const grants = await methods.getCapabilitiesForPrincipals({
+        principals: [{ principalType: PrincipalType.ROLE, principalId: 'admin' }],
+      });
+
+      expect(grants).toHaveLength(2);
+    });
+
+    it('excludes tenant-scoped grants when no tenantId provided', async () => {
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        capability: SystemCapabilities.ACCESS_ADMIN,
+      });
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        capability: SystemCapabilities.MANAGE_USERS,
+        tenantId: 'tenant-1',
+      });
+
+      const grants = await methods.getCapabilitiesForPrincipals({
+        principals: [{ principalType: PrincipalType.ROLE, principalId: 'admin' }],
+      });
+
+      expect(grants).toHaveLength(1);
+      expect(grants[0].capability).toBe(SystemCapabilities.ACCESS_ADMIN);
+    });
+
+    it('includes both platform and tenant grants when tenantId provided', async () => {
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        capability: SystemCapabilities.ACCESS_ADMIN,
+      });
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        capability: SystemCapabilities.MANAGE_USERS,
+        tenantId: 'tenant-1',
+      });
+
+      const grants = await methods.getCapabilitiesForPrincipals({
+        principals: [{ principalType: PrincipalType.ROLE, principalId: 'admin' }],
+        tenantId: 'tenant-1',
+      });
+
+      expect(grants).toHaveLength(2);
+    });
+  });
 });
