@@ -1,4 +1,4 @@
-import type { SummarizationConfig } from 'librechat-data-provider';
+import { EModelEndpoint, type SummarizationConfig } from 'librechat-data-provider';
 import { createRun } from '~/agents/run';
 
 // Mock winston logger
@@ -207,6 +207,28 @@ describe('summarizationEnabled resolution', () => {
     const config = agents[0].summarizationConfig as Record<string, unknown>;
     expect(config.provider).toBe('openAI');
     expect(config.model).toBe('gpt-4o');
+  });
+});
+
+describe('Bedrock system instruction handoff', () => {
+  it('merges Bedrock system into instructions and clears clientOptions.system', async () => {
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          provider: EModelEndpoint.bedrock,
+          endpoint: EModelEndpoint.bedrock,
+          model: 'global.anthropic.claude-sonnet-4-6',
+          instructions: 'Attached document(s): file context',
+          model_parameters: {
+            model: 'global.anthropic.claude-sonnet-4-6',
+            system: 'You talk like a pirate',
+          },
+        }),
+      ],
+    });
+
+    expect(agents[0].instructions).toBe('You talk like a pirate\n\nAttached document(s): file context');
+    expect((agents[0].clientOptions as Record<string, unknown>).system).toBeUndefined();
   });
 });
 

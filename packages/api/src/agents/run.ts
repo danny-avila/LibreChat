@@ -1,5 +1,5 @@
 import { Run, Providers, Constants } from '@librechat/agents';
-import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
+import { providerEndpointMap, KnownEndpoints, EModelEndpoint } from 'librechat-data-provider';
 import type {
   SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
@@ -318,17 +318,23 @@ export async function createRun({
       agent.model_parameters,
     );
 
+    const bedrockSystemInstruction =
+      agent.provider === EModelEndpoint.bedrock && typeof llmConfig.system === 'string'
+        ? llmConfig.system.trim()
+        : '';
+
     const systemMessage = Object.values(agent.toolContextMap ?? {})
       .join('\n')
       .trim();
 
     const systemContent = [
+      bedrockSystemInstruction,
       systemMessage,
       agent.instructions ?? '',
       agent.additional_instructions ?? '',
     ]
-      .join('\n')
-      .trim();
+      .filter(isNonEmptyString)
+      .join('\n\n');
 
     /**
      * Resolve request-based headers for Custom Endpoints. Note: if this is added to
@@ -351,6 +357,10 @@ export async function createRun({
     ) {
       llmConfig.streamUsage = false;
       llmConfig.usage = true;
+    }
+
+    if (bedrockSystemInstruction) {
+      delete llmConfig.system;
     }
 
     /**

@@ -18,6 +18,8 @@ type AnthropicInput = BedrockConverseInput & {
     AnthropicReasoning;
 };
 
+const reservedBedrockAdditionalFields = new Set<string>(['system']);
+
 /** Extracts opus major/minor version from both naming formats */
 function parseOpusVersion(model: string): { major: number; minor: number } | null {
   const nameFirst = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
@@ -173,6 +175,7 @@ export const bedrockInputParser = s.tConversationSchema
     maxContextTokens: true,
     /* Bedrock params; optionType: 'model' */
     region: true,
+    system: true,
     model: true,
     maxTokens: true,
     temperature: true,
@@ -200,6 +203,7 @@ export const bedrockInputParser = s.tConversationSchema
       'artifacts',
       'additionalModelRequestFields',
       'region',
+      'system',
       'model',
       'maxTokens',
       'temperature',
@@ -295,6 +299,13 @@ export const bedrockInputParser = s.tConversationSchema
       typedData.additionalModelRequestFields != null
     ) {
       const amrf = typedData.additionalModelRequestFields as Record<string, unknown>;
+      if (typedData.system == null && typeof amrf.system === 'string' && amrf.system !== '') {
+        typedData.system = amrf.system;
+      }
+      reservedBedrockAdditionalFields.forEach((key) => {
+        delete amrf[key];
+      });
+
       if (!isAnthropicModel) {
         delete amrf.anthropic_beta;
         delete amrf.thinking;
@@ -393,19 +404,24 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
     typeof data.additionalModelRequestFields === 'object' &&
     data.additionalModelRequestFields !== null
   ) {
-    Object.entries(data.additionalModelRequestFields as Record<string, unknown>).forEach(
-      ([key, value]) => {
-        if (knownKeys.includes(key)) {
-          if (key === 'top_k') {
-            result['topK'] = value;
-          } else if (key === 'thinking' || key === 'thinkingBudget') {
-            return;
-          } else {
+    const amrf = data.additionalModelRequestFields as Record<string, unknown>;
+    Object.entries(amrf).forEach(([key, value]) => {
+      if (knownKeys.includes(key)) {
+        if (key === 'top_k') {
+          if (result.topK === undefined) {
+            result.topK = value;
+          }
+        } else if (key === 'thinking' || key === 'thinkingBudget') {
+          return;
+        } else {
+          if (result[key] === undefined) {
             result[key] = value;
           }
         }
-      },
-    );
+
+        delete amrf[key];
+      }
+    });
   }
 
   // Handle maxTokens and maxOutputTokens

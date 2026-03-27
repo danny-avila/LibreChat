@@ -115,6 +115,45 @@ describe('initializeBedrock', () => {
         sessionToken: 'test-session-token',
       });
     });
+
+    it('should keep top-level system when additionalModelRequestFields has stale system', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'global.anthropic.claude-sonnet-4-6-20260215-v1:0',
+          system: 'Use current system prompt',
+          additionalModelRequestFields: {
+            system: 'stale system prompt',
+          },
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      const amrf = result.llmConfig.additionalModelRequestFields as
+        | Record<string, unknown>
+        | undefined;
+
+      expect(result.llmConfig.system).toBe('Use current system prompt');
+      expect(amrf?.system).toBeUndefined();
+    });
+
+    it('should migrate legacy additionalModelRequestFields.system into top-level system', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'global.anthropic.claude-sonnet-4-6-20260215-v1:0',
+          additionalModelRequestFields: {
+            system: 'legacy system prompt',
+          },
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      const amrf = result.llmConfig.additionalModelRequestFields as
+        | Record<string, unknown>
+        | undefined;
+
+      expect(result.llmConfig.system).toBe('legacy system prompt');
+      expect(amrf?.system).toBeUndefined();
+    });
   });
 
   describe('GuardrailConfig', () => {
