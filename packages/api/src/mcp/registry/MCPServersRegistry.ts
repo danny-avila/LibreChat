@@ -148,23 +148,20 @@ export class MCPServersRegistry {
 
   /**
    * Returns all server configs visible to the given user.
-   *
-   * When `configServers` is provided (resolved config-source servers from `getAppConfig()`),
-   * they are included in the merged result between YAML and user servers.
-   * Merge order: YAML (lowest precedence) → Config overrides → User (highest precedence).
-   *
-   * @param userId - Optional user ID for scoping DB (user-provided) servers
-   * @param configServers - Optional config-source servers already ensured via `ensureConfigServers()`
+   * Merge order: YAML (lowest) → Config overrides → User DB (highest).
    */
   public async getAllServerConfigs(
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<Record<string, t.ParsedServerConfig>> {
-    const baseConfigs = await this.getBaseServerConfigs(userId);
-    if (configServers != null && Object.keys(configServers).length > 0) {
-      return { ...baseConfigs, ...configServers };
+    if (configServers == null || !Object.keys(configServers).length) {
+      return this.getBaseServerConfigs(userId);
     }
-    return baseConfigs;
+    return {
+      ...(await this.cacheConfigsRepo.getAll()),
+      ...configServers,
+      ...(await this.dbConfigsRepo.getAll(userId)),
+    };
   }
 
   /**
@@ -468,6 +465,8 @@ export class MCPServersRegistry {
     try {
       await this.configCacheRepo.add(cacheKey, config);
     } catch (addErr) {
+      // Matches duplicate-key message from ServerConfigsCacheInMemory.add and
+      // ServerConfigsCacheRedisAggregateKey.add — update if those change.
       const isDuplicate =
         addErr instanceof Error && addErr.message.includes('already exists in cache');
       if (!isDuplicate) {
