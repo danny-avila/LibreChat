@@ -1,7 +1,7 @@
 import { SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString, RoleConflictError } from '@librechat/data-schemas';
 import type { IRole, IUser, AdminMember } from '@librechat/data-schemas';
-import type { FilterQuery } from 'mongoose';
+import type { FilterQuery, Types } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import { parsePagination } from './pagination';
@@ -10,7 +10,12 @@ const systemRoleValues = new Set<string>(Object.values(SystemRoles));
 const MAX_NAME_LENGTH = 500;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const CONTROL_CHAR_RE = /\p{Cc}/u;
-/** Role names that conflict with route sub-paths: /:name/members, /:name/permissions */
+/**
+ * Role names that would create semantically ambiguous URLs.
+ * e.g. GET /api/admin/roles/members — is that "list roles" or "get role named members"?
+ * Express routing resolves this correctly (single vs multi-segment), but the URLs
+ * are confusing for API consumers. Keep in sync with sub-path routes in routes/admin/roles.js.
+ */
 const RESERVED_ROLE_NAMES = new Set(['members', 'permissions']);
 
 function validateNameParam(name: string): string | null {
@@ -67,7 +72,7 @@ interface RoleMemberParams extends RoleNameParams {
   userId: string;
 }
 
-export type RoleListItem = { _id: unknown; name: string; description?: string };
+export type RoleListItem = { _id: Types.ObjectId | string; name: string; description?: string };
 
 export interface AdminRolesDeps {
   listRoles: (options?: { limit?: number; offset?: number }) => Promise<RoleListItem[]>;
@@ -194,7 +199,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       await updateUsersRoleByIds(migratedIds, currentName);
     } catch (rollbackError) {
       logger.error(
-        `[adminRoles] CRITICAL: rename rollback failed — ${migratedIds.length} users have dangling role "${newName}":`,
+        `[adminRoles] CRITICAL: rename rollback failed — ${migratedIds.length} users have dangling role "${newName}": [${migratedIds.join(', ')}]`,
         rollbackError,
       );
     }
@@ -229,13 +234,13 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
   }
 
   async function updateRoleHandler(req: ServerRequest, res: Response) {
-    const { name } = req.params as RoleNameParams;
-    const paramError = validateNameParam(name);
-    if (paramError) {
-      return res.status(400).json({ error: paramError });
-    }
-    const body = req.body as { name?: string; description?: string };
     try {
+      const { name } = req.params as RoleNameParams;
+      const paramError = validateNameParam(name);
+      if (paramError) {
+        return res.status(400).json({ error: paramError });
+      }
+      const body = req.body as { name?: string; description?: string };
       const nameError = validateRoleName(body.name, false);
       if (nameError) {
         return res.status(400).json({ error: nameError });
@@ -410,6 +415,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(400).json({ error: 'Invalid user ID format' });
       }
 
+      if (systemRoleValues.has(name) && name !== SystemRoles.ADMIN) {
+        return res.status(403).json({ error: 'Cannot directly assign members to a system role' });
+      }
+
       const existing = await getRoleByName(name);
       if (!existing) {
         return res.status(404).json({ error: 'Role not found' });
@@ -440,7 +449,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
             await updateUser(userId, { role: SystemRoles.ADMIN });
           } catch (rollbackError) {
             logger.error(
-              '[adminRoles] CRITICAL: admin rollback failed in addRoleMember:',
+              `[adminRoles] CRITICAL: admin rollback failed in addRoleMember for user ${userId}:`,
               rollbackError,
             );
           }
@@ -499,7 +508,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
           try {
             await updateUser(userId, { role: SystemRoles.ADMIN });
           } catch (rollbackError) {
-            logger.error('[adminRoles] CRITICAL: admin rollback failed:', rollbackError);
+            logger.error(
+              `[adminRoles] CRITICAL: admin rollback failed for user ${userId}:`,
+              rollbackError,
+            );
           }
           return res.status(400).json({ error: 'Cannot remove the last admin user' });
         }

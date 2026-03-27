@@ -58,9 +58,12 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   /**
-   * List all roles in the system.
+   * List all roles in the system. Returns only name and description (projected).
    */
-  async function listRoles(options?: { limit?: number; offset?: number }): Promise<IRole[]> {
+  async function listRoles(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<Pick<IRole, 'name' | 'description'>[]> {
     const Role = mongoose.models.Role;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
@@ -69,7 +72,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       .sort({ name: 1 })
       .skip(offset)
       .limit(limit)
-      .lean<IRole[]>();
+      .lean();
   }
 
   async function countRoles(): Promise<number> {
@@ -416,13 +419,15 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
    * Guards against deleting system roles. Reassigns affected users back to USER.
    *
    * No existence pre-check is performed: for a nonexistent role the `updateMany`
-   * is a harmless no-op and `findOneAndDelete` returns null. This is intentional
-   * so that calling delete after a partial failure still cleans up orphaned user
-   * references and cache entries (self-healing).
+   * is a harmless no-op and `findOneAndDelete` returns null. This makes the
+   * function idempotent — a retry after a partial failure will still clean up
+   * orphaned user references and cache entries.
    *
    * Without a MongoDB transaction the two writes are non-atomic — if the delete
    * fails after the reassignment, users will already have been moved to USER
-   * while the role document still exists.
+   * while the role document still exists. Recovery requires the caller to retry
+   * the delete call, which will succeed since the `updateMany` is a no-op on
+   * the second pass.
    */
   async function deleteRoleByName(roleName: string): Promise<IRole | null> {
     if (systemRoleValues.has(roleName)) {
