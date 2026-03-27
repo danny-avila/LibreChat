@@ -1,7 +1,6 @@
 import { ServerConfigsCacheRedisAggregateKey } from './ServerConfigsCacheRedisAggregateKey';
 import { ServerConfigsCacheInMemory } from './ServerConfigsCacheInMemory';
 import { ServerConfigsCacheRedis } from './ServerConfigsCacheRedis';
-import { CONFIG_CACHE_NAMESPACE } from '~/mcp/registry/MCPServersRegistry';
 import { cacheConfig } from '~/cache';
 
 export type ServerConfigsCache =
@@ -16,6 +15,9 @@ export type ServerConfigsCache =
  * load (see GitHub #11624, #12408). When Redis is disabled, uses in-memory storage.
  */
 export const APP_CACHE_NAMESPACE = 'App' as const;
+
+/** Namespace for admin-defined config-override MCP server inspection results. */
+export const CONFIG_CACHE_NAMESPACE = 'Config' as const;
 
 /** Namespaces that use the aggregate-key optimization to avoid SCAN+N-GETs stalls. */
 const AGGREGATE_KEY_NAMESPACES = new Set<string>([APP_CACHE_NAMESPACE, CONFIG_CACHE_NAMESPACE]);

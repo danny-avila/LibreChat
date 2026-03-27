@@ -73,7 +73,7 @@ export class MCPServerInspector {
         this.connection = await MCPConnectionFactory.create({
           serverConfig: this.config,
           serverName: this.serverName,
-          dbSourced: this.config.source !== 'yaml' && this.config.source !== 'config',
+          dbSourced: this.config.source ? this.config.source === 'user' : !!this.config.dbId,
           useSSRFProtection: this.useSSRFProtection,
           allowedDomains: this.allowedDomains,
         });

@@ -3,18 +3,16 @@ import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
-import { ServerConfigsCacheFactory, APP_CACHE_NAMESPACE } from './cache/ServerConfigsCacheFactory';
+import {
+  ServerConfigsCacheFactory,
+  APP_CACHE_NAMESPACE,
+  CONFIG_CACHE_NAMESPACE,
+} from './cache/ServerConfigsCacheFactory';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache/cacheConfig';
 import { withTimeout } from '~/utils';
-
-/**
- * Namespace for config-override MCP server inspection results (admin-defined via Config collection).
- * Uses the same aggregate-key optimization as APP_CACHE_NAMESPACE to avoid SCAN-based Redis stalls.
- */
-export const CONFIG_CACHE_NAMESPACE = 'Config' as const;
 
 const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   const raw = process.env.MCP_INIT_TIMEOUT_MS;
