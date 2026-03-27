@@ -18,6 +18,7 @@ const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getOAuthServers: jest.fn(),
   getAllServerConfigs: jest.fn(),
+  ensureConfigServers: jest.fn().mockResolvedValue({}),
   addServer: jest.fn(),
   updateServer: jest.fn(),
   removeServer: jest.fn(),
@@ -58,6 +59,7 @@ jest.mock('@librechat/api', () => {
 });
 
 jest.mock('@librechat/data-schemas', () => ({
+  getTenantId: jest.fn(),
   logger: {
     debug: jest.fn(),
     info: jest.fn(),
@@ -93,6 +95,7 @@ jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn(),
   getMCPServerTools: jest.fn(),
   loadCustomConfig: jest.fn(),
+  getAppConfig: jest.fn().mockResolvedValue({ mcpConfig: {} }),
 }));
 
 jest.mock('~/server/services/Config/mcp', () => ({
@@ -1350,7 +1353,7 @@ describe('MCP Routes', () => {
         },
       });
 
-      expect(getMCPSetupData).toHaveBeenCalledWith('test-user-id');
+      expect(getMCPSetupData).toHaveBeenCalledWith('test-user-id', expect.any(Object));
       expect(getServerConnectionStatus).toHaveBeenCalledTimes(2);
     });
 
@@ -1721,7 +1724,10 @@ describe('MCP Routes', () => {
       });
       expect(response.body['server-1'].headers).toBeUndefined();
       expect(response.body['server-2'].headers).toBeUndefined();
-      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith('test-user-id');
+      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(
+        'test-user-id',
+        expect.any(Object),
+      );
     });
 
     it('should return empty object when no servers are configured', async () => {

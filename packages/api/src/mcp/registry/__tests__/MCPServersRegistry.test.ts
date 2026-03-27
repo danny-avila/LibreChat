@@ -112,8 +112,8 @@ describe('MCPServersRegistry', () => {
       const userConfigBefore = await registry.getServerConfig('user_server');
       const allConfigsBefore = await registry.getAllServerConfigs();
 
-      expect(appConfigBefore).toEqual(testParsedConfig);
-      expect(userConfigBefore).toEqual(testParsedConfig);
+      expect(appConfigBefore).toEqual(expect.objectContaining(testParsedConfig));
+      expect(userConfigBefore).toEqual(expect.objectContaining(testParsedConfig));
       expect(Object.keys(allConfigsBefore)).toHaveLength(2);
 
       // Reset everything

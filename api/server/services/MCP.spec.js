@@ -128,7 +128,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       const result = await getMCPSetupData(mockUserId);
 
-      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(mockUserId);
+      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(mockUserId, undefined);
       expect(mockGetMCPManager).toHaveBeenCalledWith(mockUserId);
       expect(mockMCPManager.appConnections.getLoaded).toHaveBeenCalled();
       expect(mockMCPManager.getUserConnections).toHaveBeenCalledWith(mockUserId);
