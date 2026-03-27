@@ -9,6 +9,13 @@ import type { Model } from 'mongoose';
 import type { IRole, IUser } from '~/types';
 import logger from '~/config/winston';
 
+export class RoleConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RoleConflictError';
+  }
+}
+
 export interface RoleDeps {
   /** Returns a cache store for the given key. Injected from getLogStores. */
   getCache?: (key: string) => {
@@ -350,12 +357,12 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       throw new Error('Role name is required');
     }
     if (SystemRoles[name.trim() as keyof typeof SystemRoles]) {
-      throw new Error(`Cannot create role with reserved system name: ${name}`);
+      throw new RoleConflictError(`Cannot create role with reserved system name: ${name}`);
     }
     const Role = mongoose.models.Role;
     const existing = await Role.findOne({ name: name.trim() }).lean();
     if (existing) {
-      throw new Error(`Role "${name.trim()}" already exists`);
+      throw new RoleConflictError(`Role "${name.trim()}" already exists`);
     }
     let role;
     try {
@@ -371,7 +378,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
        * the same user-facing message as the application-level duplicate check.
        */
       if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
-        throw new Error(`Role "${name.trim()}" already exists`);
+        throw new RoleConflictError(`Role "${name.trim()}" already exists`);
       }
       throw err;
     }
@@ -400,9 +407,13 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     }
     await getUserModel().updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
     const deleted = await Role.findOneAndDelete({ name: roleName }).lean();
-    const cache = deps.getCache?.(CacheKeys.ROLES);
-    if (cache) {
-      await cache.set(roleName, null);
+    try {
+      const cache = deps.getCache?.(CacheKeys.ROLES);
+      if (cache) {
+        await cache.set(roleName, null);
+      }
+    } catch (cacheError) {
+      logger.error(`[deleteRoleByName] cache invalidation failed for "${roleName}":`, cacheError);
     }
     return deleted as IRole | null;
   }

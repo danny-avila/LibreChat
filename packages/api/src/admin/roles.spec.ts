@@ -6,6 +6,8 @@ import type { ServerRequest } from '~/types/http';
 import type { AdminRolesDeps } from './roles';
 import { createAdminRolesHandlers } from './roles';
 
+const { RoleConflictError } = jest.requireActual('@librechat/data-schemas');
+
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
   logger: { error: jest.fn() },
@@ -209,7 +211,9 @@ describe('createAdminRolesHandlers', () => {
 
     it('returns 409 when role already exists', async () => {
       const deps = createDeps({
-        createRoleByName: jest.fn().mockRejectedValue(new Error('Role "editor" already exists')),
+        createRoleByName: jest
+          .fn()
+          .mockRejectedValue(new RoleConflictError('Role "editor" already exists')),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({ body: { name: 'editor' } });
@@ -224,7 +228,9 @@ describe('createAdminRolesHandlers', () => {
       const deps = createDeps({
         createRoleByName: jest
           .fn()
-          .mockRejectedValue(new Error('Cannot create role with reserved system name: ADMIN')),
+          .mockRejectedValue(
+            new RoleConflictError('Cannot create role with reserved system name: ADMIN'),
+          ),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({ body: { name: 'ADMIN' } });
@@ -262,6 +268,34 @@ describe('createAdminRolesHandlers', () => {
       await handlers.createRole(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
+    });
+
+    it('returns 400 when description is not a string', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'editor', description: 123 },
+      });
+
+      await handlers.createRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'description must be a string' });
+      expect(deps.createRoleByName).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when permissions is an array', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        body: { name: 'editor', permissions: [1, 2, 3] },
+      });
+
+      await handlers.createRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'permissions must be an object' });
+      expect(deps.createRoleByName).not.toHaveBeenCalled();
     });
   });
 
@@ -522,10 +556,29 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.updateUsersByRole).toHaveBeenNthCalledWith(2, 'new-name', 'editor');
     });
 
-    it('returns 400 when description exceeds max length', async () => {
+    it('logs rollback failure and still returns 500', async () => {
       const deps = createDeps({
-        getRoleByName: jest.fn().mockResolvedValue(mockRole()),
+        getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
+        updateUsersByRole: jest
+          .fn()
+          .mockResolvedValueOnce(undefined)
+          .mockRejectedValueOnce(new Error('rollback failed')),
+        updateRoleByName: jest.fn().mockRejectedValue(new Error('rename failed')),
       });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        body: { name: 'new-name' },
+      });
+
+      await handlers.updateRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.updateUsersByRole).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns 400 when description exceeds max length', async () => {
+      const deps = createDeps();
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
         params: { name: 'editor' },
@@ -538,7 +591,7 @@ describe('createAdminRolesHandlers', () => {
       expect(json).toHaveBeenCalledWith({
         error: 'description must not exceed 2000 characters',
       });
-      expect(deps.updateRoleByName).not.toHaveBeenCalled();
+      expect(deps.getRoleByName).not.toHaveBeenCalled();
     });
 
     it('returns 500 on unexpected error', async () => {

@@ -1,6 +1,7 @@
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
 import { createTokenMethods, type TokenMethods } from './token';
-import { createRoleMethods, type RoleMethods, type RoleDeps } from './role';
+import { createRoleMethods, RoleConflictError, type RoleMethods, type RoleDeps } from './role';
+export { RoleConflictError };
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 
 export { DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };

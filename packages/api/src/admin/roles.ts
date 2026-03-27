@@ -1,5 +1,5 @@
 import { SystemRoles } from 'librechat-data-provider';
-import { logger, isValidObjectIdString } from '@librechat/data-schemas';
+import { logger, isValidObjectIdString, RoleConflictError } from '@librechat/data-schemas';
 import type { IRole, IUser, AdminMember } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
 import type { Response } from 'express';
@@ -102,6 +102,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
           .status(400)
           .json({ error: `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters` });
       }
+      if (
+        permissions !== undefined &&
+        (typeof permissions !== 'object' || Array.isArray(permissions))
+      ) {
+        return res.status(400).json({ error: 'permissions must be an object' });
+      }
       const role = await createRoleByName({
         name: name.trim(),
         description: description ?? '',
@@ -110,18 +116,16 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       return res.status(201).json({ role });
     } catch (error) {
       logger.error('[adminRoles] createRole error:', error);
-      const is409 =
-        error instanceof Error &&
-        (error.message.startsWith('Role "') ||
-          error.message.startsWith('Cannot create role with reserved'));
-      const message = is409 && error instanceof Error ? error.message : 'Failed to create role';
-      return res.status(is409 ? 409 : 500).json({ error: message });
+      if (error instanceof RoleConflictError) {
+        return res.status(409).json({ error: error.message });
+      }
+      return res.status(500).json({ error: 'Failed to create role' });
     }
   }
 
   async function updateRoleHandler(req: ServerRequest, res: Response) {
     const { name } = req.params as RoleNameParams;
-    const body = req.body as Partial<IRole>;
+    const body = req.body as { name?: string; description?: string };
     let isRename = false;
     let trimmedName = '';
     let migrationRan = false;
@@ -188,7 +192,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       const role = await updateRoleByName(name, updates);
       if (!role) {
         if (migrationRan) {
-          await updateUsersByRole(trimmedName, name);
+          try {
+            await updateUsersByRole(trimmedName, name);
+          } catch (rollbackError) {
+            logger.error('[adminRoles] rollback failed (role not found path):', rollbackError);
+          }
         }
         return res.status(404).json({ error: 'Role not found' });
       }
