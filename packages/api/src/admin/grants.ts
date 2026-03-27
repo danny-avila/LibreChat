@@ -11,6 +11,7 @@ import type { Types } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
 
+/** Module-level: PrincipalType is from librechat-data-provider (never mocked by external tests). */
 const VALID_PRINCIPAL_TYPES = new Set<string>([
   PrincipalType.ROLE,
   PrincipalType.GROUP,
@@ -88,7 +89,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
     if (!user) {
       return null;
     }
-    const userId = user._id?.toString();
+    const userId = user._id?.toString() ?? user.id;
     if (!userId || !user.role) {
       return null;
     }

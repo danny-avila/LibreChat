@@ -201,16 +201,15 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     principals: Array<{ principalType: string; principalId: string | Types.ObjectId }>;
     tenantId?: string;
   }): Promise<ISystemGrant[]> {
-    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    if (!principals.length) {
+      return [];
+    }
 
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const principalsQuery = principals.map((p) => ({
       principalType: p.principalType,
       principalId: normalizePrincipalId(p.principalId, p.principalType as PrincipalType),
     }));
-
-    if (!principalsQuery.length) {
-      return [];
-    }
 
     const filter: Record<string, unknown> = { $or: principalsQuery };
 
