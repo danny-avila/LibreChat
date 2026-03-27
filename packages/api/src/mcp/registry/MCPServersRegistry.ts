@@ -394,7 +394,9 @@ export class MCPServersRegistry {
     const initPromise = (async () => {
       const result = await this.lazyInitConfigServer(cacheKey, serverName, rawConfig);
       if (result) {
-        await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName));
+        const rtKey = this.getReadThroughCacheKey(serverName);
+        await this.readThroughCache.delete(rtKey);
+        await this.readThroughCache.set(rtKey, result);
       }
       return result;
     })();

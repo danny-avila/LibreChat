@@ -263,10 +263,11 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       expect(config?.source).toBe('config');
     });
 
-    it('should return undefined without configServers for config-source server', async () => {
+    it('should find config-source server via read-through cache without configServers', async () => {
       await registry.ensureConfigServers({ config_srv: sseConfig });
       const config = await registry.getServerConfig('config_srv');
-      expect(config).toBeUndefined();
+      expect(config).toBeDefined();
+      expect(config?.source).toBe('config');
     });
 
     it('should return correct config after invalidation and re-init', async () => {
