@@ -92,6 +92,7 @@ export class MCPManager extends UserConnectionManager {
     const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
       serverName,
       user?.id,
+      args.configServers,
     );
 
     if (!serverConfig) {

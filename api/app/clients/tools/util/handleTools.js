@@ -14,9 +14,6 @@ const {
   buildImageToolContext,
   buildWebSearchContext,
 } = require('@librechat/api');
-const { getTenantId } = require('@librechat/data-schemas');
-const { getMCPServersRegistry } = require('~/config');
-const { getAppConfig } = require('~/server/services/Config');
 const {
   Tools,
   Constants,
@@ -44,9 +41,10 @@ const {
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
-const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
+const { createMCPTool, createMCPTools, resolveConfigServers } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
+const { getMCPServersRegistry } = require('~/config');
 const { getRoleByName } = require('~/models');
 
 /**
@@ -261,14 +259,7 @@ const loadTools = async ({
   /** Resolve config-source servers for the current user/tenant context */
   let configServers;
   if (tools.some((tool) => tool && mcpToolPattern.test(tool))) {
-    const registry = getMCPServersRegistry();
-    const reqUser = options.req?.user;
-    const appConfig = await getAppConfig({
-      role: reqUser?.role,
-      tenantId: getTenantId(),
-      userId: reqUser?.id,
-    });
-    configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+    configServers = await resolveConfigServers(options.req);
   }
 
   for (const tool of tools) {

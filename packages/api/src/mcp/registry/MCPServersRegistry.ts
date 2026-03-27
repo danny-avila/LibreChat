@@ -157,17 +157,32 @@ export class MCPServersRegistry {
     if (configServers == null || !Object.keys(configServers).length) {
       return this.getBaseServerConfigs(userId);
     }
+    // getBaseServerConfigs caches the merged YAML + user-DB result via readThroughCacheAll.
+    // We call it first to warm/use the cache, then layer config-source servers between
+    // YAML and user-DB. cacheConfigsRepo.getAll() is always fast (in-memory aggregate key).
+    // Effective merge order: YAML (lowest) → Config overrides → User DB (highest).
+    const [yamlConfigs, base] = await Promise.all([
+      this.cacheConfigsRepo.getAll(),
+      this.getBaseServerConfigs(userId),
+    ]);
+    // Extract user-DB entries from the cached base (keys not present in YAML).
+    const userDbConfigs: Record<string, t.ParsedServerConfig> = {};
+    for (const key of Object.keys(base)) {
+      if (!(key in yamlConfigs)) {
+        userDbConfigs[key] = base[key];
+      }
+    }
     return {
-      ...(await this.cacheConfigsRepo.getAll()),
+      ...yamlConfigs,
       ...configServers,
-      ...(await this.dbConfigsRepo.getAll(userId)),
+      ...userDbConfigs,
     };
   }
 
   /**
    * Returns YAML + user-DB server configs, cached via `readThroughCacheAll`.
-   * Config-source servers are layered on top by `getAllServerConfigs` without
-   * invalidating this cache — the expensive `dbConfigsRepo.getAll` is shared.
+   * Always called by `getAllServerConfigs` so the DB query is amortized across
+   * requests within the TTL window regardless of whether `configServers` is present.
    */
   private async getBaseServerConfigs(
     userId?: string,

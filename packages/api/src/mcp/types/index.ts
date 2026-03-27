@@ -212,6 +212,8 @@ export interface ToolDiscoveryOptions {
   customUserVars?: Record<string, string>;
   requestBody?: RequestBody;
   connectionTimeout?: number;
+  /** Pre-resolved config-source servers for tenant-scoped lookup */
+  configServers?: Record<string, ParsedServerConfig>;
 }
 
 export interface ToolDiscoveryResult {

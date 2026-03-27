@@ -4,6 +4,7 @@ import type { Agent, TEphemeralAgent } from 'librechat-data-provider';
 import type { LCTool } from '@librechat/agents';
 import type { Logger } from 'winston';
 import type { MCPManager } from '~/mcp/MCPManager';
+import type { ParsedServerConfig } from '~/mcp/types';
 
 /**
  * Agent type with optional tools array that can contain DynamicStructuredTool or string.
@@ -63,7 +64,7 @@ export async function getMCPInstructionsForServers(
   mcpServers: string[],
   mcpManager: MCPManager,
   logger?: Logger,
-  configServers?: Record<string, import('~/mcp/types').ParsedServerConfig>,
+  configServers?: Record<string, ParsedServerConfig>,
 ): Promise<string> {
   if (!mcpServers.length) {
     return '';
@@ -137,7 +138,7 @@ export async function applyContextToAgent({
   ephemeralAgent?: TEphemeralAgent;
   agentId?: string;
   logger?: Logger;
-  configServers?: Record<string, import('~/mcp/types').ParsedServerConfig>;
+  configServers?: Record<string, ParsedServerConfig>;
 }): Promise<void> {
   const baseInstructions = agent.instructions || '';
 

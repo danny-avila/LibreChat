@@ -25,11 +25,29 @@ const {
 } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { getGraphApiToken } = require('./GraphTokenService');
+const { getTenantId } = require('@librechat/data-schemas');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 const MAX_CACHE_SIZE = 1000;
+
+/**
+ * Resolves config-source MCP servers from admin Config overrides for the current
+ * request context. Returns the parsed configs keyed by server name.
+ * @param {import('express').Request} req - Express request with user context
+ * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
+ */
+async function resolveConfigServers(req) {
+  const registry = getMCPServersRegistry();
+  const user = req?.user;
+  const appConfig = await getAppConfig({
+    role: user?.role,
+    tenantId: getTenantId(),
+    userId: user?.id,
+  });
+  return registry.ensureConfigServers(appConfig?.mcpConfig || {});
+}
 const lastReconnectAttempts = new Map();
 const RECONNECT_THROTTLE_MS = 10_000;
 
@@ -667,6 +685,9 @@ async function getMCPSetupData(userId, options = {}) {
   /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();
   try {
+    // Use getLoaded() instead of getAll() to avoid forcing connection creation.
+    // getAll() creates connections for all servers, which is problematic for servers
+    // that require user context (e.g., those with {{LIBRECHAT_USER_ID}} placeholders).
     appConnections = (await mcpManager.appConnections?.getLoaded()) || new Map();
   } catch (error) {
     logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
@@ -798,6 +819,7 @@ module.exports = {
   createMCPTool,
   createMCPTools,
   getMCPSetupData,
+  resolveConfigServers,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
   createUnavailableToolStub,

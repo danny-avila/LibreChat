@@ -52,9 +52,8 @@ const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
-const { getTenantId } = require('@librechat/data-schemas');
-const { getMCPManager, getMCPServersRegistry } = require('~/config');
-const { getAppConfig } = require('~/server/services/Config');
+const { getMCPManager } = require('~/config');
+const { resolveConfigServers } = require('~/server/services/MCP');
 const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
@@ -380,14 +379,7 @@ class AgentClient extends BaseClient {
     const ephemeralAgent = this.options.req.body.ephemeralAgent;
     const mcpManager = getMCPManager();
 
-    const reqUser = this.options.req?.user;
-    const registry = getMCPServersRegistry();
-    const appConfig = await getAppConfig({
-      role: reqUser?.role,
-      tenantId: getTenantId(),
-      userId: reqUser?.id,
-    });
-    const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+    const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
       allAgents.map(({ agent, agentId }) =>

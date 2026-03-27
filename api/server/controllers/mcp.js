@@ -64,7 +64,7 @@ function handleMCPError(error, res) {
  * Resolves config-source MCP servers from admin Config overrides and merges all
  * server configs (YAML + config + user) for the given user context.
  * @param {string} userId
- * @param {{ role?: string }} [user]
+ * @param {{ id?: string, role?: string }} [user]
  * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
  */
 async function resolveAllMcpConfigs(userId, user) {
