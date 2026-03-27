@@ -57,6 +57,9 @@ export class MCPServersRegistry {
   /** Memoized YAML server names — set once after boot-time init, never changes. */
   private yamlServerNames: Set<string> | null = null;
 
+  /** Maps server name → hash-based config cache key for O(1) lookup by name. */
+  private readonly configNameToKey = new Map<string, string>();
+
   constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
@@ -127,6 +130,15 @@ export class MCPServersRegistry {
     if (configFromYaml) {
       await this.readThroughCache.set(cacheKey, configFromYaml);
       return configFromYaml;
+    }
+
+    const configCacheKey = this.configNameToKey.get(serverName);
+    if (configCacheKey) {
+      const configFromOverride = await this.configCacheRepo.get(configCacheKey);
+      if (configFromOverride) {
+        await this.readThroughCache.set(cacheKey, configFromOverride);
+        return configFromOverride;
+      }
     }
 
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
@@ -371,6 +383,7 @@ export class MCPServersRegistry {
     rawConfig: t.MCPOptions,
   ): Promise<t.ParsedServerConfig | undefined> {
     const cacheKey = this.configCacheKey(serverName, rawConfig);
+    this.configNameToKey.set(serverName, cacheKey);
 
     const cached = await this.configCacheRepo.get(cacheKey);
     if (cached) {
@@ -382,7 +395,13 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const initPromise = this.lazyInitConfigServer(cacheKey, serverName, rawConfig);
+    const initPromise = (async () => {
+      const result = await this.lazyInitConfigServer(cacheKey, serverName, rawConfig);
+      if (result) {
+        await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName));
+      }
+      return result;
+    })();
     this.pendingConfigInits.set(cacheKey, initPromise);
 
     try {
@@ -447,22 +466,19 @@ export class MCPServersRegistry {
    *          Callers should disconnect active connections for these servers.
    */
   public async invalidateConfigCache(): Promise<string[]> {
-    const allCached = await this.configCacheRepo.getAll();
-    const evicted = Object.values(allCached)
-      .map((config) => config.title || '')
-      .filter(Boolean);
-    // Also collect the original server names from the config entries' tool functions
-    const evictedNames = Object.keys(allCached).map((key) => key.split(':')[0]);
+    const evictedNames = [...this.configNameToKey.keys()];
 
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
+    this.configNameToKey.clear();
+
     if (evictedNames.length > 0) {
       logger.info(
-        `[MCPServersRegistry] Config server cache invalidated, evicted: ${[...new Set(evictedNames)].join(', ')}`,
+        `[MCPServersRegistry] Config server cache invalidated, evicted: ${evictedNames.join(', ')}`,
       );
     }
-    return [...new Set(evictedNames)];
+    return evictedNames;
   }
 
   // TODO: This is currently used to determine if a server requires OAuth. However, this info can
@@ -479,6 +495,7 @@ export class MCPServersRegistry {
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
     this.yamlServerNames = null;
+    this.configNameToKey.clear();
   }
 
   public async removeServer(

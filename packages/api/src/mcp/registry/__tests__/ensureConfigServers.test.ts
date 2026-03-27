@@ -255,6 +255,32 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     });
   });
 
+  describe('getServerConfig', () => {
+    it('should find config-source servers by name after ensureConfigServers', async () => {
+      await registry.ensureConfigServers({ config_srv: sseConfig });
+      const config = await registry.getServerConfig('config_srv');
+      expect(config).toBeDefined();
+      expect(config?.source).toBe('config');
+    });
+
+    it('should return undefined for config-source server before ensureConfigServers', async () => {
+      const config = await registry.getServerConfig('nonexistent_config_srv');
+      expect(config).toBeUndefined();
+    });
+
+    it('should return correct config after invalidation and re-init', async () => {
+      await registry.ensureConfigServers({ config_srv: sseConfig });
+      await registry.invalidateConfigCache();
+      const configAfterInvalidation = await registry.getServerConfig('config_srv');
+      expect(configAfterInvalidation).toBeUndefined();
+
+      await registry.ensureConfigServers({ config_srv: sseConfig });
+      const configAfterReInit = await registry.getServerConfig('config_srv');
+      expect(configAfterReInit).toBeDefined();
+      expect(configAfterReInit?.source).toBe('config');
+    });
+  });
+
   describe('source tagging', () => {
     it('should tag CACHE-stored servers as yaml', async () => {
       await registry.addServer('yaml_srv', yamlConfig, 'CACHE');
