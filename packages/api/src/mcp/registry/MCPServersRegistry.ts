@@ -132,6 +132,13 @@ export class MCPServersRegistry {
       return await this.readThroughCache.get(cacheKey);
     }
 
+    if (userId) {
+      const serverOnlyKey = this.getReadThroughCacheKey(serverName);
+      if (await this.readThroughCache.has(serverOnlyKey)) {
+        return await this.readThroughCache.get(serverOnlyKey);
+      }
+    }
+
     const configFromYaml = await this.cacheConfigsRepo.get(serverName);
     if (configFromYaml) {
       await this.readThroughCache.set(cacheKey, configFromYaml);

@@ -270,6 +270,13 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       expect(config?.source).toBe('config');
     });
 
+    it('should find config-source server via read-through cache with userId', async () => {
+      await registry.ensureConfigServers({ config_srv: sseConfig });
+      const config = await registry.getServerConfig('config_srv', 'user-123');
+      expect(config).toBeDefined();
+      expect(config?.source).toBe('config');
+    });
+
     it('should return correct config after invalidation and re-init', async () => {
       const configServers1 = await registry.ensureConfigServers({ config_srv: sseConfig });
       expect(await registry.getServerConfig('config_srv', undefined, configServers1)).toBeDefined();
