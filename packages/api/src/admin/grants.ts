@@ -8,7 +8,10 @@ import {
 import type { ISystemGrant, SystemCapability } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { Types } from 'mongoose';
+import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
+
+export type { ResolvedPrincipal };
 
 const VALID_PRINCIPAL_TYPES = new Set<string>([
   PrincipalType.ROLE,
@@ -29,11 +32,6 @@ const READ_CAPABILITY_BY_TYPE: Partial<Record<PrincipalType, SystemCapability>> 
   [PrincipalType.GROUP]: SystemCapabilities.READ_GROUPS,
   [PrincipalType.USER]: SystemCapabilities.READ_USERS,
 };
-
-export interface ResolvedPrincipal {
-  principalType: string;
-  principalId?: string | Types.ObjectId;
-}
 
 interface GrantRequestBody {
   principalType?: unknown;

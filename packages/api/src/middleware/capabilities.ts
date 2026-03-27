@@ -9,7 +9,7 @@ import {
 import type { SystemCapability, ConfigSection } from '@librechat/data-schemas';
 import type { NextFunction, Response } from 'express';
 import type { Types, ClientSession } from 'mongoose';
-import type { ResolvedPrincipal } from '~/admin/grants';
+import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
 
 interface CapabilityDeps {
