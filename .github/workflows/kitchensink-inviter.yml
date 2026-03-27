@@ -1,0 +1,40 @@
+name: KitchenSink User Inviter
+
+on:
+  workflow_dispatch:
+    inputs:
+      email_list:
+        description: 'Comma-separated list of email addresses'
+        required: true
+        type: string
+
+jobs:
+  invite-users:
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install boto3
+        run: pip install boto3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Run kitchensink-inviter
+        env:
+          KITCHENSINK_CLUSTER_NAME: ${{ secrets.KITCHENSINK_CLUSTER_NAME }}
+          KITCHENSINK_SERVICE_NAME: ${{ secrets.KITCHENSINK_SERVICE_NAME }}
+          DEFAULT_PASSWORD: ${{ secrets.DEFAULT_PASSWORD }}
+        run: python nj/utils/kitchensink-inviter.py "${{ inputs.email_list }}"
