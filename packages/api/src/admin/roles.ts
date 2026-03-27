@@ -85,6 +85,8 @@ export interface AdminRolesDeps {
   ) => Promise<IUser | null>;
   updateUser: (userId: string, data: Partial<IUser>) => Promise<IUser | null>;
   updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
+  findUserIdsByRole: (roleName: string) => Promise<string[]>;
+  updateUsersRoleByIds: (userIds: string[], newRole: string) => Promise<void>;
   listUsersByRole: (
     roleName: string,
     options?: { limit?: number; offset?: number },
@@ -104,6 +106,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     findUser,
     updateUser,
     updateUsersByRole,
+    findUserIdsByRole,
+    updateUsersRoleByIds,
     listUsersByRole,
     countUsersByRole,
   } = deps;
@@ -176,35 +180,40 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     }
   }
 
+  async function rollbackMigratedUsers(
+    migratedIds: string[],
+    currentName: string,
+    newName: string,
+  ): Promise<void> {
+    if (migratedIds.length === 0) {
+      return;
+    }
+    try {
+      await updateUsersRoleByIds(migratedIds, currentName);
+    } catch (rollbackError) {
+      logger.error(
+        `[adminRoles] CRITICAL: rename rollback failed — ${migratedIds.length} users have dangling role "${newName}":`,
+        rollbackError,
+      );
+    }
+  }
+
   async function renameRole(
     currentName: string,
     newName: string,
     extraUpdates?: Partial<IRole>,
   ): Promise<IRole | null> {
+    const migratedIds = await findUserIdsByRole(currentName);
     await updateUsersByRole(currentName, newName);
     try {
       const updates: Partial<IRole> = { name: newName, ...extraUpdates };
       const role = await updateRoleByName(currentName, updates);
       if (!role) {
-        try {
-          await updateUsersByRole(newName, currentName);
-        } catch (rollbackError) {
-          logger.error(
-            `[adminRoles] CRITICAL: rename rollback failed — users have dangling role "${newName}":`,
-            rollbackError,
-          );
-        }
+        await rollbackMigratedUsers(migratedIds, currentName, newName);
       }
       return role;
     } catch (error) {
-      try {
-        await updateUsersByRole(newName, currentName);
-      } catch (rollbackError) {
-        logger.error(
-          `[adminRoles] CRITICAL: rename rollback failed — users have dangling role "${newName}":`,
-          rollbackError,
-        );
-      }
+      await rollbackMigratedUsers(migratedIds, currentName, newName);
       throw error;
     }
   }

@@ -452,6 +452,20 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     await User.updateMany({ role: oldRole }, { $set: { role: newRole } });
   }
 
+  async function findUserIdsByRole(roleName: string): Promise<string[]> {
+    const User = mongoose.models.User as Model<IUser>;
+    const users = await User.find({ role: roleName }).select('_id').lean();
+    return users.map((u) => u._id.toString());
+  }
+
+  async function updateUsersRoleByIds(userIds: string[], newRole: string): Promise<void> {
+    if (userIds.length === 0) {
+      return;
+    }
+    const User = mongoose.models.User as Model<IUser>;
+    await User.updateMany({ _id: { $in: userIds } }, { $set: { role: newRole } });
+  }
+
   async function listUsersByRole(
     roleName: string,
     options?: { limit?: number; offset?: number },
@@ -483,6 +497,8 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     createRoleByName,
     deleteRoleByName,
     updateUsersByRole,
+    findUserIdsByRole,
+    updateUsersRoleByIds,
     listUsersByRole,
     countUsersByRole,
   };
