@@ -30,6 +30,7 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
+const { resolveAppConfigForUser } = require('@librechat/api');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
 const { sendEmail } = require('~/server/utils');
@@ -255,19 +256,35 @@ const registerUser = async (user, additionalData = {}) => {
 };
 
 /**
- * Request password reset
+ * Request password reset.
+ *
+ * Uses a two-phase domain check: fast-fail with the memory-cached base config
+ * (zero DB queries) to block globally denied domains before user lookup, then
+ * re-check with tenant-scoped config after user lookup so tenant-specific
+ * restrictions are enforced.
+ *
  * @param {ServerRequest} req
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
-  const appConfig = await getAppConfig({ baseOnly: true });
+
+  const baseConfig = await getAppConfig({ baseOnly: true });
+  if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
+    const error = new Error(ErrorTypes.AUTH_FAILED);
+    error.code = ErrorTypes.AUTH_FAILED;
+    error.message = 'Email domain not allowed';
+    return error;
+  }
+
+  const user = await findUser({ email }, 'email _id role tenantId');
+  const appConfig = user?.tenantId ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
+
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
     const error = new Error(ErrorTypes.AUTH_FAILED);
     error.code = ErrorTypes.AUTH_FAILED;
     error.message = 'Email domain not allowed';
     return error;
   }
-  const user = await findUser({ email }, 'email _id');
   const emailEnabled = checkEmailConfig();
 
   logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);

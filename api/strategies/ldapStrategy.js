@@ -2,7 +2,12 @@ const fs = require('fs');
 const LdapStrategy = require('passport-ldapauth');
 const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
-const { isEnabled, getBalanceConfig, isEmailDomainAllowed } = require('@librechat/api');
+const {
+  isEnabled,
+  getBalanceConfig,
+  isEmailDomainAllowed,
+  resolveAppConfigForUser,
+} = require('@librechat/api');
 const { createUser, findUser, updateUser, countUsers } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -122,7 +127,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
       );
     }
 
-    const appConfig = await getAppConfig({ baseOnly: true });
+    const appConfig = await resolveAppConfigForUser(getAppConfig, user);
     if (!isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)) {
       logger.error(
         `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
