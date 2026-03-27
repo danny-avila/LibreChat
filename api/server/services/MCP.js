@@ -644,12 +644,24 @@ function createToolInstance({
 }
 
 /**
- * Get MCP setup data including config, connections, and OAuth servers
+ * Get MCP setup data including config, connections, and OAuth servers.
+ * Resolves config-source servers from admin Config overrides when tenant context is available.
  * @param {string} userId - The user ID
+ * @param {{ role?: string, tenantId?: string }} [options] - Optional role/tenant context
  * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
  */
-async function getMCPSetupData(userId) {
-  const mcpConfig = await getMCPServersRegistry().getAllServerConfigs(userId);
+async function getMCPSetupData(userId, options = {}) {
+  const registry = getMCPServersRegistry();
+  const { role, tenantId } = options;
+
+  // Resolve config-source servers from admin Config overrides
+  let configServers;
+  if (role || tenantId) {
+    const appConfig = await getAppConfig({ role, tenantId, userId });
+    configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+  }
+
+  const mcpConfig = await registry.getAllServerConfigs(userId, configServers);
 
   if (!mcpConfig) {
     throw new Error('MCP config not found');

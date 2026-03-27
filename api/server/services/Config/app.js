@@ -39,10 +39,22 @@ async function clearEndpointConfigCache() {
   }
 }
 
+/** Clears config-source MCP server inspection cache so servers are re-inspected on next access. */
+async function clearMcpConfigCache() {
+  try {
+    // Lazy require to avoid circular dependency at module load time
+    const { getMCPServersRegistry } = require('~/config');
+    const registry = getMCPServersRegistry();
+    await registry.invalidateConfigCache();
+  } catch {
+    // Registry may not be initialized yet (e.g., during startup) — not critical
+  }
+}
+
 /**
  * Invalidate all config-related caches after an admin config mutation.
  * Clears the base config, per-principal override caches, tool caches,
- * and the endpoints config cache.
+ * the endpoints config cache, and the MCP config-source server cache.
  * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
  */
 async function invalidateConfigCaches(tenantId) {
@@ -51,12 +63,14 @@ async function invalidateConfigCaches(tenantId) {
     clearOverrideCache(tenantId),
     invalidateCachedTools({ invalidateGlobal: true }),
     clearEndpointConfigCache(),
+    clearMcpConfigCache(),
   ]);
   const labels = [
     'clearAppConfigCache',
     'clearOverrideCache',
     'invalidateCachedTools',
     'clearEndpointConfigCache',
+    'clearMcpConfigCache',
   ];
   for (let i = 0; i < results.length; i++) {
     if (results[i].status === 'rejected') {

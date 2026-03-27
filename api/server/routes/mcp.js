@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   CacheKeys,
   Constants,
@@ -564,6 +564,7 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
+      { role: user.role, tenantId: getTenantId() },
     );
     const connectionStatus = {};
 
@@ -616,6 +617,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
+      { role: user.role, tenantId: getTenantId() },
     );
 
     if (!mcpConfig[serverName]) {
