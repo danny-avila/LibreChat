@@ -104,6 +104,7 @@ jest.mock('~/server/services/Config/mcp', () => ({
 
 jest.mock('~/server/services/MCP', () => ({
   getMCPSetupData: jest.fn(),
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
   getServerConnectionStatus: jest.fn(),
 }));
 
@@ -1934,7 +1935,9 @@ describe('MCP Routes', () => {
         title: 'Test Server',
       };
 
-      mockRegistryInstance.getServerConfig.mockResolvedValue(mockConfig);
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue({
+        'test-server': mockConfig,
+      });
 
       const response = await request(app).get('/api/mcp/servers/test-server');
 
@@ -1942,14 +1945,11 @@ describe('MCP Routes', () => {
       expect(response.body.type).toBe('sse');
       expect(response.body.url).toBe('https://mcp-server.example.com/sse');
       expect(response.body.title).toBe('Test Server');
-      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
-        'test-server',
-        'test-user-id',
-      );
+      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith('test-user-id', {});
     });
 
     it('should return 404 when server not found', async () => {
-      mockRegistryInstance.getServerConfig.mockResolvedValue(null);
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue({});
 
       const response = await request(app).get('/api/mcp/servers/non-existent-server');
 
@@ -1958,14 +1958,16 @@ describe('MCP Routes', () => {
     });
 
     it('should redact secrets from get response', async () => {
-      mockRegistryInstance.getServerConfig.mockResolvedValue({
-        type: 'sse',
-        url: 'https://mcp-server.example.com/sse',
-        title: 'Secret Server',
-        apiKey: { source: 'admin', authorization_type: 'bearer', key: 'decrypted-admin-key' },
-        oauth: { client_id: 'cid', client_secret: 'decrypted-oauth-secret' },
-        headers: { Authorization: 'Bearer internal-token' },
-        oauth_headers: { 'X-OAuth': 'secret-value' },
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue({
+        'secret-server': {
+          type: 'sse',
+          url: 'https://mcp-server.example.com/sse',
+          title: 'Secret Server',
+          apiKey: { source: 'admin', authorization_type: 'bearer', key: 'decrypted-admin-key' },
+          oauth: { client_id: 'cid', client_secret: 'decrypted-oauth-secret' },
+          headers: { Authorization: 'Bearer internal-token' },
+          oauth_headers: { 'X-OAuth': 'secret-value' },
+        },
       });
 
       const response = await request(app).get('/api/mcp/servers/secret-server');
@@ -1981,7 +1983,7 @@ describe('MCP Routes', () => {
     });
 
     it('should return 500 when registry throws error', async () => {
-      mockRegistryInstance.getServerConfig.mockRejectedValue(new Error('Database error'));
+      mockRegistryInstance.getAllServerConfigs.mockRejectedValue(new Error('Database error'));
 
       const response = await request(app).get('/api/mcp/servers/error-server');
 
