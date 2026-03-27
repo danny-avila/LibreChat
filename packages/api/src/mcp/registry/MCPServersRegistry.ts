@@ -137,8 +137,9 @@ export class MCPServersRegistry {
 
     if (userId) {
       const serverOnlyKey = this.getReadThroughCacheKey(serverName);
-      if (await this.readThroughCache.has(serverOnlyKey)) {
-        return await this.readThroughCache.get(serverOnlyKey);
+      const serverOnlyValue = await this.readThroughCache.get(serverOnlyKey);
+      if (serverOnlyValue) {
+        return serverOnlyValue;
       }
     }
 
