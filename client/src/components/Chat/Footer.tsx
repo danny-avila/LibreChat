@@ -26,7 +26,7 @@ function Footer({ className }: { className?: string }) {
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : 'Atlas Chat - ' + localize('com_ui_latest_footer')
+      : 'AtlasChat - ' + localize('com_ui_latest_footer')
   ).split('|');
 
   useEffect(() => {

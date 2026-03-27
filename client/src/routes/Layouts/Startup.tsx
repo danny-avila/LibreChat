@@ -44,7 +44,7 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   }, [isAuthenticated, navigate, data]);
 
   useEffect(() => {
-    document.title = startupConfig?.appTitle || 'Atlas Chat';
+    document.title = startupConfig?.appTitle || 'AtlasChat';
   }, [startupConfig?.appTitle]);
 
   useEffect(() => {

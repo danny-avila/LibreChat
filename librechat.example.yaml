@@ -27,7 +27,7 @@ cache: true
 
 # Custom interface configuration
 interface:
-  customWelcome: 'Welcome to Atlas Chat! Enjoy your experience.'
+  customWelcome: 'Welcome to AtlasChat! Enjoy your experience.'
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
@@ -42,7 +42,7 @@ interface:
     externalUrl: 'https://librechat.ai/tos'
     openNewTab: true
     modalAcceptance: true
-    modalTitle: 'Terms of Service for Atlas Chat'
+    modalTitle: 'Terms of Service for AtlasChat'
     modalContent: |
       # Terms and Conditions for LibreChat
 
