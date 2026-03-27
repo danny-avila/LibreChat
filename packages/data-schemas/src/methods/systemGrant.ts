@@ -194,6 +194,35 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     return await SystemGrant.find(filter).lean();
   }
 
+  async function getCapabilitiesForPrincipals({
+    principals,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: string; principalId: string | Types.ObjectId }>;
+    tenantId?: string;
+  }): Promise<ISystemGrant[]> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+
+    const principalsQuery = principals.map((p) => ({
+      principalType: p.principalType,
+      principalId: normalizePrincipalId(p.principalId, p.principalType as PrincipalType),
+    }));
+
+    if (!principalsQuery.length) {
+      return [];
+    }
+
+    const filter: Record<string, unknown> = { $or: principalsQuery };
+
+    if (tenantId != null) {
+      filter.$and = [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }];
+    } else {
+      filter.tenantId = { $exists: false };
+    }
+
+    return await SystemGrant.find(filter).lean();
+  }
+
   /**
    * Seed the ADMIN role with all system capabilities (no tenantId — single-instance mode).
    * Idempotent and concurrency-safe: uses bulkWrite with ordered:false so parallel
@@ -267,6 +296,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     revokeCapability,
     hasCapabilityForPrincipals,
     getCapabilitiesForPrincipal,
+    getCapabilitiesForPrincipals,
     deleteGrantsForPrincipal,
   };
 }

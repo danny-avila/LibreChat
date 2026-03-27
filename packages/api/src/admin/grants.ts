@@ -43,6 +43,10 @@ export interface AdminGrantsDeps {
     principalId: string | Types.ObjectId;
     tenantId?: string;
   }) => Promise<ISystemGrant[]>;
+  getCapabilitiesForPrincipals: (params: {
+    principals: Array<{ principalType: string; principalId: string | Types.ObjectId }>;
+    tenantId?: string;
+  }) => Promise<ISystemGrant[]>;
   grantCapability: (params: {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
@@ -68,6 +72,7 @@ export interface AdminGrantsDeps {
 export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
   const {
     getCapabilitiesForPrincipal,
+    getCapabilitiesForPrincipals,
     grantCapability,
     revokeCapability,
     getUserPrincipals,
@@ -125,30 +130,16 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       }
 
       const principals = await getUserPrincipals(user);
-      /**
-       * PUBLIC principals have no principalId and are intentionally excluded —
-       * the data layer (hasCapabilityForPrincipals) also filters them out.
-       * PUBLIC is not in VALID_PRINCIPAL_TYPES so it cannot be granted via this API.
-       */
-      const grantArrays = await Promise.all(
-        principals
-          .filter(
-            (p): p is ResolvedPrincipal & { principalId: string | Types.ObjectId } =>
-              p.principalId != null,
-          )
-          .map((p) =>
-            getCapabilitiesForPrincipal({
-              principalType: p.principalType as PrincipalType,
-              principalId: p.principalId,
-            }),
-          ),
+      const filteredPrincipals = principals.filter(
+        (p): p is ResolvedPrincipal & { principalId: string | Types.ObjectId } =>
+          p.principalId != null,
       );
 
+      const grants = await getCapabilitiesForPrincipals({ principals: filteredPrincipals });
+
       const directCaps = new Set<string>();
-      for (const grants of grantArrays) {
-        for (const grant of grants) {
-          directCaps.add(grant.capability);
-        }
+      for (const grant of grants) {
+        directCaps.add(grant.capability);
       }
 
       return res.status(200).json({ capabilities: expandImplications(Array.from(directCaps)) });

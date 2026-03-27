@@ -50,6 +50,7 @@ function createReqRes(
 function createDeps(overrides: Partial<AdminGrantsDeps> = {}): AdminGrantsDeps {
   return {
     getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([]),
+    getCapabilitiesForPrincipals: jest.fn().mockResolvedValue([]),
     grantCapability: jest.fn().mockResolvedValue(mockGrant()),
     revokeCapability: jest.fn().mockResolvedValue(undefined),
     getUserPrincipals: jest.fn().mockResolvedValue([
@@ -66,7 +67,7 @@ describe('createAdminGrantsHandlers', () => {
     it('returns expanded capabilities for the user', async () => {
       const manageRolesGrant = mockGrant({ capability: SystemCapabilities.MANAGE_ROLES });
       const deps = createDeps({
-        getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([manageRolesGrant]),
+        getCapabilitiesForPrincipals: jest.fn().mockResolvedValue([manageRolesGrant]),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes();
@@ -91,7 +92,7 @@ describe('createAdminGrantsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ capabilities: [] });
     });
 
-    it('queries each principal separately', async () => {
+    it('queries all principals in a single batch', async () => {
       const userId = new Types.ObjectId();
       const principals = [
         { principalType: PrincipalType.USER, principalId: userId },
@@ -99,21 +100,18 @@ describe('createAdminGrantsHandlers', () => {
       ];
       const deps = createDeps({
         getUserPrincipals: jest.fn().mockResolvedValue(principals),
-        getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([]),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res } = createReqRes();
 
       await handlers.getEffectiveCapabilities(req, res);
 
-      expect(deps.getCapabilitiesForPrincipal).toHaveBeenCalledTimes(2);
-      expect(deps.getCapabilitiesForPrincipal).toHaveBeenCalledWith({
-        principalType: PrincipalType.USER,
-        principalId: userId,
-      });
-      expect(deps.getCapabilitiesForPrincipal).toHaveBeenCalledWith({
-        principalType: PrincipalType.ROLE,
-        principalId: 'editor',
+      expect(deps.getCapabilitiesForPrincipals).toHaveBeenCalledTimes(1);
+      expect(deps.getCapabilitiesForPrincipals).toHaveBeenCalledWith({
+        principals: [
+          { principalType: PrincipalType.USER, principalId: userId },
+          { principalType: PrincipalType.ROLE, principalId: 'editor' },
+        ],
       });
     });
 
@@ -124,14 +122,15 @@ describe('createAdminGrantsHandlers', () => {
       ];
       const deps = createDeps({
         getUserPrincipals: jest.fn().mockResolvedValue(principals),
-        getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([]),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res } = createReqRes();
 
       await handlers.getEffectiveCapabilities(req, res);
 
-      expect(deps.getCapabilitiesForPrincipal).toHaveBeenCalledTimes(1);
+      expect(deps.getCapabilitiesForPrincipals).toHaveBeenCalledWith({
+        principals: [{ principalType: PrincipalType.ROLE, principalId: 'editor' }],
+      });
     });
 
     it('deduplicates capabilities across principals', async () => {
@@ -141,7 +140,7 @@ describe('createAdminGrantsHandlers', () => {
           { principalType: PrincipalType.USER, principalId: new Types.ObjectId() },
           { principalType: PrincipalType.ROLE, principalId: 'editor' },
         ]),
-        getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([readUsersGrant]),
+        getCapabilitiesForPrincipals: jest.fn().mockResolvedValue([readUsersGrant, readUsersGrant]),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes();

@@ -11,6 +11,7 @@ const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
 const handlers = createAdminGrantsHandlers({
   getCapabilitiesForPrincipal: db.getCapabilitiesForPrincipal,
+  getCapabilitiesForPrincipals: db.getCapabilitiesForPrincipals,
   grantCapability: db.grantCapability,
   revokeCapability: db.revokeCapability,
   getUserPrincipals: db.getUserPrincipals,
