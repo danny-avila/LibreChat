@@ -258,6 +258,19 @@ const loadTools = async ({
   const toolContextMap = {};
   const requestedMCPTools = {};
 
+  /** Resolve config-source servers for the current user/tenant context */
+  let configServers;
+  if (tools.some((tool) => tool && mcpToolPattern.test(tool))) {
+    const registry = getMCPServersRegistry();
+    const reqUser = options.req?.user;
+    const appConfig = await getAppConfig({
+      role: reqUser?.role,
+      tenantId: getTenantId(),
+      userId: reqUser?.id,
+    });
+    configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+  }
+
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
       requestedTools[tool] = async () => {
@@ -421,19 +434,6 @@ const loadTools = async ({
   let index = -1;
   const failedMCPServers = new Set();
   const safeUser = createSafeUser(options.req?.user);
-
-  /** Resolve config-source servers for the current user/tenant context */
-  let configServers;
-  if (Object.keys(requestedMCPTools).length > 0) {
-    const registry = getMCPServersRegistry();
-    const reqUser = options.req?.user;
-    const appConfig = await getAppConfig({
-      role: reqUser?.role,
-      tenantId: getTenantId(),
-      userId: reqUser?.id,
-    });
-    configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  }
 
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
