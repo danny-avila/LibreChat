@@ -1,0 +1,112 @@
+# LiteLLM Configuration for Local + Cloud Models
+# Place this file at project root: ./litellm_config.yaml
+# Enable in docker-compose.override.yml by uncommenting the litellm service
+
+model_list:
+  # === LOCAL MODELS (via Ollama) ===
+  # Prerequisites:
+  # 1. Ollama must be running: docker-compose up -d ollama
+  # 2. Pull models: ollama pull mistral, ollama pull llama2, etc.
+  # 3. Verify: curl http://localhost:11434/api/tags
+  
+  - model_name: local-mistral
+    litellm_params:
+      model: ollama/mistral
+      api_base: http://host.docker.internal:11434
+      max_retries: 3
+    model_info:
+      mode: embedding
+      output_cost_per_token: 0  # Free (local)
+
+  - model_name: local-llama2
+    litellm_params:
+      model: ollama/llama2
+      api_base: http://host.docker.internal:11434
+      max_retries: 3
+    model_info:
+      mode: embedding
+      output_cost_per_token: 0
+
+  - model_name: local-neural-chat
+    litellm_params:
+      model: ollama/neural-chat
+      api_base: http://host.docker.internal:11434
+    model_info:
+      output_cost_per_token: 0
+
+  # === CLOUD MODELS (Examples) ===
+  
+  # OpenAI Models
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: gpt-4o-mini
+      api_key: ${OPENAI_API_KEY}
+
+  - model_name: gpt-4o
+    litellm_params:
+      model: gpt-4o
+      api_key: ${OPENAI_API_KEY}
+
+  # Anthropic Claude
+  - model_name: claude-opus
+    litellm_params:
+      model: bedrock/anthropic.claude-opus
+      api_key: ${ANTHROPIC_API_KEY}
+
+  - model_name: claude-sonnet
+    litellm_params:
+      model: bedrock/anthropic.claude-3-5-sonnet-20241022-v2
+      api_key: ${ANTHROPIC_API_KEY}
+
+  # Google Gemini
+  - model_name: gemini-pro
+    litellm_params:
+      model: gemini-pro
+      api_key: ${GOOGLE_KEY}
+
+  # Mistral AI
+  - model_name: mistral-large
+    litellm_params:
+      model: mistral-large-latest
+      api_key: ${MISTRAL_API_KEY}
+
+  # Open Router (Free / Cheap Options)
+  - model_name: openrouter-free
+    litellm_params:
+      model: openrouter/meta-llama/llama-3.3-70b-instruct:free
+      api_key: ${OPENROUTER_KEY}
+
+# === Router Configuration ===
+# Advanced routing logic for load balancing or fallbacks
+# Uncomment to enable routing policies
+
+# router:
+#   strategy: dynamic  # dynamic, round_robin, or least_requests
+#
+#   # Fallback chain: if local-mistral fails, try local-llama2, then gpt-4o-mini
+#   fallbacks:
+#     - model_name: local-mistral
+#       fallback_models:
+#         - local-llama2
+#         - gpt-4o-mini
+#
+#     - model_name: claude-opus
+#       fallback_models:
+#         - gpt-4o
+#         - mistral-large
+
+# === General Settings ===
+general:
+  completion_max_tokens: 4096
+  api_timeout: 120
+  litellm_log_level: INFO  # DEBUG for troubleshooting
+
+# === Monitoring & Observability ===
+monitoring:
+  telemetry_enabled: true
+  trace_enabled: false  # Set to true for debugging
+  service_name: "librechat-litellm"
+
+# === Authentication ===
+auth:
+  master_key: sk-1234567890  # Must match LITELLM_MASTER_KEY env var
