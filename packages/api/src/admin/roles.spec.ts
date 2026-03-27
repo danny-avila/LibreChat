@@ -1196,6 +1196,28 @@ describe('createAdminRolesHandlers', () => {
       });
     });
 
+    it('returns 400 even when rollback updateUser throws', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: SystemRoles.ADMIN })),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
+        countUsersByRole: jest.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(0),
+        updateUser: jest
+          .fn()
+          .mockResolvedValueOnce(mockUser({ role: SystemRoles.USER }))
+          .mockRejectedValueOnce(new Error('rollback failed')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: SystemRoles.ADMIN, userId: validUserId },
+      });
+
+      await handlers.removeRoleMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot remove the last admin user' });
+      expect(deps.updateUser).toHaveBeenCalledTimes(2);
+    });
+
     it('returns 500 on unexpected error', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),

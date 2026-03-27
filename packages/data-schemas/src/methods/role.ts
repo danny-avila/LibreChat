@@ -62,13 +62,12 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     const Role = mongoose.models.Role;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
-    const results = await Role.find({})
+    return await Role.find({})
       .select('name description')
       .sort({ name: 1 })
       .skip(offset)
       .limit(limit)
-      .lean();
-    return results as unknown[] as IRole[];
+      .lean<IRole[]>();
   }
 
   async function countRoles(): Promise<number> {
@@ -137,7 +136,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
         const targetName = updates.name ?? roleName;
         throw new RoleConflictError(`Role "${targetName}" already exists`);
       }
-      throw new Error(`Failed to update role: ${(error as Error).message}`);
+      throw new Error(`Failed to update role: ${(error as Error).message}`, { cause: error });
     }
   }
 

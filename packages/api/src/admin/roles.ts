@@ -8,9 +8,15 @@ import type { ServerRequest } from '~/types/http';
 const MAX_NAME_LENGTH = 500;
 const MAX_DESCRIPTION_LENGTH = 2000;
 
-function parsePagination(query: Record<string, unknown>): { limit: number; offset: number } {
+const DEFAULT_PAGE_LIMIT = 50;
+const MAX_PAGE_LIMIT = 200;
+
+function parsePagination(query: { limit?: string; offset?: string }): {
+  limit: number;
+  offset: number;
+} {
   return {
-    limit: Math.min(Math.max(Number(query.limit) || 50, 1), 200),
+    limit: Math.min(Math.max(Number(query.limit) || DEFAULT_PAGE_LIMIT, 1), MAX_PAGE_LIMIT),
     offset: Math.max(Number(query.offset) || 0, 0),
   };
 }
@@ -417,7 +423,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       if (name === SystemRoles.ADMIN) {
         const postCount = await countUsersByRole(SystemRoles.ADMIN);
         if (postCount === 0) {
-          await updateUser(userId, { role: SystemRoles.ADMIN });
+          try {
+            await updateUser(userId, { role: SystemRoles.ADMIN });
+          } catch (rollbackError) {
+            logger.error('[adminRoles] CRITICAL: admin rollback failed:', rollbackError);
+          }
           return res.status(400).json({ error: 'Cannot remove the last admin user' });
         }
       }

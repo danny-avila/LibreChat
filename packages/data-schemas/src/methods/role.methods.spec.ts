@@ -817,6 +817,16 @@ describe('listRoles', () => {
     const roles = await listRoles();
     expect(roles).toEqual([]);
   });
+
+  it('returns undefined description for pre-existing roles without the field', async () => {
+    await Role.collection.insertOne({ name: 'legacy', permissions: {} });
+
+    const roles = await listRoles();
+
+    expect(roles).toHaveLength(1);
+    expect(roles[0].name).toBe('legacy');
+    expect(roles[0].description).toBeUndefined();
+  });
 });
 
 describe('countRoles', () => {
