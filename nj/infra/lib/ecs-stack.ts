@@ -329,18 +329,11 @@ export class EcsStack extends cdk.Stack {
   }
 
   private CreateFileS3Bucket(){
-    const lifecycleRule: s3.LifecycleRule = {
-      enabled: true,
-      expiration: cdk.Duration.days(1),
-      prefix: "tmp/",
-    }
-
     const s3Bucket = new s3.Bucket(this, 'LibrechatFileBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       versioned: true,
-      lifecycleRules: [lifecycleRule],
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     })
 
