@@ -495,7 +495,10 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
   const appConfig = user?.tenantId ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
 
-  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+  if (
+    appConfig !== baseConfig &&
+    !isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)
+  ) {
     logger.error(
       `[OpenID Strategy] Authentication blocked - email domain not allowed [Identifier: ${email}]`,
     );

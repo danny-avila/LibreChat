@@ -222,7 +222,10 @@ async function setupSaml() {
             ? await resolveAppConfigForUser(getAppConfig, user)
             : baseConfig;
 
-          if (!isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)) {
+          if (
+            appConfig !== baseConfig &&
+            !isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)
+          ) {
             logger.error(
               `[SAML Strategy] Authentication blocked - email domain not allowed [Email: ${userEmail}]`,
             );

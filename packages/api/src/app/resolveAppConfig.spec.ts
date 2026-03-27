@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
 import type { AsyncLocalStorage } from 'async_hooks';
 
 jest.mock('@librechat/data-schemas', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { AsyncLocalStorage: ALS } = require('async_hooks');
   return { tenantStorage: new ALS() };
 });
