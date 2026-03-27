@@ -287,18 +287,17 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       expect(config?.source).toBe('config');
     });
 
-    it('should find config-source server after readThrough cache expires', async () => {
+    it('should NOT return config-source server after readThrough expires without configServers (tenant isolation)', async () => {
       await registry.ensureConfigServers({ config_srv: sseConfig });
       await registry['readThroughCache'].clear();
       const config = await registry.getServerConfig('config_srv');
-      expect(config).toBeDefined();
-      expect(config?.source).toBe('config');
+      expect(config).toBeUndefined();
     });
 
-    it('should find config-source server with userId after readThrough cache expires', async () => {
-      await registry.ensureConfigServers({ config_srv: sseConfig });
+    it('should return config-source server after readThrough expires when configServers is passed', async () => {
+      const configServers = await registry.ensureConfigServers({ config_srv: sseConfig });
       await registry['readThroughCache'].clear();
-      const config = await registry.getServerConfig('config_srv', 'user-456');
+      const config = await registry.getServerConfig('config_srv', undefined, configServers);
       expect(config).toBeDefined();
       expect(config?.source).toBe('config');
     });

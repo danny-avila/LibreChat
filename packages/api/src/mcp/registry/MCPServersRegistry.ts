@@ -149,30 +149,16 @@ export class MCPServersRegistry {
       return configFromYaml;
     }
 
-    const configFromConfigCache = await this.findInConfigCache(serverName);
-    if (configFromConfigCache) {
-      await this.readThroughCache.set(cacheKey, configFromConfigCache);
-      return configFromConfigCache;
-    }
+    // Config-source servers are NOT looked up from configCacheRepo here.
+    // The configCacheRepo uses hash-scoped keys (serverName:hash) for tenant isolation.
+    // Callers with tenant context pass `configServers` (resolved via ensureConfigServers)
+    // which is checked first at the top of this method. Callers without tenant context
+    // (ConnectionsRepository, MCPManager.callTool) rely on the readThrough cache populated
+    // by ensureSingleConfigServer during the request that established the connection.
 
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
     await this.readThroughCache.set(cacheKey, configFromDB);
     return configFromDB;
-  }
-
-  /**
-   * Scans configCacheRepo for any entry matching `${serverName}:*`.
-   * This is the authoritative fallback when the readThroughCache TTL has expired.
-   */
-  private async findInConfigCache(serverName: string): Promise<t.ParsedServerConfig | undefined> {
-    const allConfig = await this.configCacheRepo.getAll();
-    const prefix = `${serverName}:`;
-    for (const [key, val] of Object.entries(allConfig)) {
-      if (key.startsWith(prefix)) {
-        return val;
-      }
-    }
-    return undefined;
   }
 
   /**

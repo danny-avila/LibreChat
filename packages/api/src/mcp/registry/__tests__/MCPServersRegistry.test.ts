@@ -250,12 +250,13 @@ describe('MCPServersRegistry', () => {
       });
 
       it('should use different cache keys for different userIds', async () => {
+        await registry['cacheConfigsRepo'].add('test_server', testParsedConfig);
         const cacheRepoGetSpy = jest.spyOn(registry['cacheConfigsRepo'], 'get');
 
         await registry.getServerConfig('test_server');
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1);
 
-        // userId call falls back to server-only readThrough key (set by first call)
+        // userId call falls back to server-only readThrough key (populated with truthy config)
         await registry.getServerConfig('test_server', 'user123');
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1);
 
