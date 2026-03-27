@@ -10,6 +10,7 @@ const systemRoleValues = new Set<string>(Object.values(SystemRoles));
 const MAX_NAME_LENGTH = 500;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const CONTROL_CHAR_RE = /\p{Cc}/u;
+/** Role names that conflict with route sub-paths: /:name/members, /:name/permissions */
 const RESERVED_ROLE_NAMES = new Set(['members', 'permissions']);
 
 function validateNameParam(name: string): string | null {
@@ -46,14 +47,13 @@ function validateRoleName(name: unknown, required: boolean): string | null {
 }
 
 function validateDescription(description: unknown): string | null {
-  if (description !== undefined && typeof description !== 'string') {
+  if (description === undefined) {
+    return null;
+  }
+  if (typeof description !== 'string') {
     return 'description must be a string';
   }
-  if (
-    description !== undefined &&
-    typeof description === 'string' &&
-    description.length > MAX_DESCRIPTION_LENGTH
-  ) {
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
     return `description must not exceed ${MAX_DESCRIPTION_LENGTH} characters`;
   }
   return null;
@@ -67,8 +67,10 @@ interface RoleMemberParams extends RoleNameParams {
   userId: string;
 }
 
+export type RoleListItem = { _id: unknown; name: string; description?: string };
+
 export interface AdminRolesDeps {
-  listRoles: (options?: { limit?: number; offset?: number }) => Promise<IRole[]>;
+  listRoles: (options?: { limit?: number; offset?: number }) => Promise<RoleListItem[]>;
   countRoles: () => Promise<number>;
   getRoleByName: (name: string, fields?: string | string[] | null) => Promise<IRole | null>;
   createRoleByName: (roleData: Partial<IRole>) => Promise<IRole>;
@@ -198,6 +200,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     }
   }
 
+  /**
+   * Renames a role by migrating users to the new name and updating the role document.
+   *
+   * The ID snapshot from `findUserIdsByRole` is a point-in-time read. Users assigned
+   * to `currentName` between the snapshot and the bulk `updateUsersByRole` write will
+   * be moved to `newName` but will NOT be reverted on rollback. This window is narrow
+   * and only relevant under concurrent admin operations during a rename.
+   */
   async function renameRole(
     currentName: string,
     newName: string,
@@ -422,6 +432,22 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
 
       await updateUser(userId, { role: name });
+
+      if (user.role === SystemRoles.ADMIN && name !== SystemRoles.ADMIN) {
+        const postCount = await countUsersByRole(SystemRoles.ADMIN);
+        if (postCount === 0) {
+          try {
+            await updateUser(userId, { role: SystemRoles.ADMIN });
+          } catch (rollbackError) {
+            logger.error(
+              '[adminRoles] CRITICAL: admin rollback failed in addRoleMember:',
+              rollbackError,
+            );
+          }
+          return res.status(400).json({ error: 'Cannot remove the last admin user' });
+        }
+      }
+
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] addRoleMember error:', error);

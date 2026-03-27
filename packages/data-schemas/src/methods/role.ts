@@ -121,11 +121,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     const cache = deps.getCache?.(CacheKeys.ROLES);
     try {
       const Role = mongoose.models.Role;
-      const role = await Role.findOneAndUpdate(
-        { name: roleName },
-        { $set: updates },
-        { new: true, lean: true },
-      )
+      const role = await Role.findOneAndUpdate({ name: roleName }, { $set: updates }, { new: true })
         .select('-__v')
         .lean()
         .exec();
@@ -439,6 +435,9 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     try {
       const cache = deps.getCache?.(CacheKeys.ROLES);
       if (cache) {
+        // Setting null evicts the stale document. getRoleByName treats falsy cached
+        // values as a miss and falls through to the DB, so this does not provide
+        // negative caching — it only prevents serving the pre-deletion document.
         await cache.set(roleName, null);
       }
     } catch (cacheError) {

@@ -1195,6 +1195,27 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: 'editor' });
     });
 
+    it('rolls back assignment when post-write admin count is zero', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: 'editor' })),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
+        countUsersByRole: jest.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(0),
+        updateUser: jest.fn().mockResolvedValue(mockUser()),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { name: 'editor' },
+        body: { userId: validUserId },
+      });
+
+      await handlers.addRoleMember(req, res);
+
+      expect(deps.updateUser).toHaveBeenCalledTimes(2);
+      expect(deps.updateUser).toHaveBeenLastCalledWith(validUserId, { role: SystemRoles.ADMIN });
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot remove the last admin user' });
+    });
+
     it('returns 500 on unexpected error', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),

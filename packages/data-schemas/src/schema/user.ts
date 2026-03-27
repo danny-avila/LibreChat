@@ -64,7 +64,6 @@ const userSchema = new Schema<IUser>(
     role: {
       type: String,
       default: SystemRoles.USER,
-      index: true,
     },
     googleId: {
       type: String,
@@ -159,6 +158,7 @@ const userSchema = new Schema<IUser>(
 );
 
 userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
+userSchema.index({ role: 1, tenantId: 1 });
 
 const oAuthIdFields = [
   'googleId',
