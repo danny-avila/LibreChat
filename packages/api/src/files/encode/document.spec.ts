@@ -710,5 +710,90 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         file_data: `data:application/pdf;base64,${mockContent}`,
       });
     });
+
+    it('should format Mistral document as document_url with MISTRALAI provider', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockFile(5);
+
+      const mockContent = Buffer.from('test-pdf-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      mockedValidatePdf.mockResolvedValue({ isValid: true });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.MISTRALAI },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document_url',
+        document_url: `data:application/pdf;base64,${mockContent}`,
+      });
+    });
+
+    it('should format Mistral document as document_url with MISTRAL provider', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockFile(5);
+
+      const mockContent = Buffer.from('test-pdf-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      mockedValidatePdf.mockResolvedValue({ isValid: true });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.MISTRAL },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document_url',
+        document_url: `data:application/pdf;base64,${mockContent}`,
+      });
+    });
+
+    it('should format Mistral document as document_url when endpoint name is "mistral"', async () => {
+      /**
+       * Custom endpoints configured as "Mistral" resolve to provider="openAI" internally.
+       * The endpoint name check ensures correct format is used in this case.
+       */
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockFile(5);
+
+      const mockContent = Buffer.from('test-pdf-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      mockedValidatePdf.mockResolvedValue({ isValid: true });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.OPENAI, endpoint: 'Mistral' },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document_url',
+        document_url: `data:application/pdf;base64,${mockContent}`,
+      });
+    });
   });
 });
