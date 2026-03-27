@@ -146,6 +146,17 @@ export class ServerConfigsCacheRedisAggregateKey
     });
   }
 
+  public async upsert(serverName: string, config: ParsedServerConfig): Promise<void> {
+    if (this.leaderOnly) await this.leaderCheck('upsert MCP servers');
+    return this.withWriteLock(async () => {
+      this.invalidateLocalSnapshot();
+      const all = await this.getAll();
+      const newAll = { ...all, [serverName]: { ...config, updatedAt: Date.now() } };
+      const success = await this.cache.set(AGGREGATE_KEY, newAll);
+      this.successCheck(`upsert App server "${serverName}"`, success);
+    });
+  }
+
   public async remove(serverName: string): Promise<void> {
     if (this.leaderOnly) await this.leaderCheck('remove MCP servers');
     return this.withWriteLock(async () => {

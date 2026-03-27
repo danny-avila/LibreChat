@@ -475,22 +475,11 @@ export class MCPServersRegistry {
   }
 
   /**
-   * Writes a config to `configCacheRepo`, using `add` for new entries and `update` for existing ones.
-   * Handles cross-process races where another instance may have written the key first.
+   * Writes a config to `configCacheRepo` using the atomic upsert operation.
+   * Safe for cross-process races — the underlying cache handles add-or-update internally.
    */
   private async upsertConfigCache(cacheKey: string, config: t.ParsedServerConfig): Promise<void> {
-    try {
-      await this.configCacheRepo.add(cacheKey, config);
-    } catch (addErr) {
-      // Matches duplicate-key message from ServerConfigsCacheInMemory.add and
-      // ServerConfigsCacheRedisAggregateKey.add — update if those change.
-      const isDuplicate =
-        addErr instanceof Error && addErr.message.includes('already exists in cache');
-      if (!isDuplicate) {
-        throw addErr;
-      }
-      await this.configCacheRepo.update(cacheKey, config);
-    }
+    await this.configCacheRepo.upsert(cacheKey, config);
   }
 
   /**

@@ -221,6 +221,18 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   }
 
   /**
+   * Atomic add-or-update. For DB-backed servers this delegates to update since
+   * DB servers are always created via the explicit add() flow with ACL setup.
+   */
+  public async upsert(
+    serverName: string,
+    config: ParsedServerConfig,
+    userId?: string,
+  ): Promise<void> {
+    return this.update(serverName, config, userId);
+  }
+
+  /**
    * Deletes an MCP server and removes all associated ACL entries.
    * @param serverName - The serverName of the server to remove
    * @param userId - User performing the deletion (for logging)
