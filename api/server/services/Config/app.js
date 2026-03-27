@@ -39,13 +39,32 @@ async function clearEndpointConfigCache() {
   }
 }
 
-/** Clears config-source MCP server inspection cache so servers are re-inspected on next access. */
+/**
+ * Clears config-source MCP server inspection cache so servers are re-inspected on next access.
+ * Disconnects active connections for evicted servers so removed configs don't linger.
+ */
 async function clearMcpConfigCache() {
   try {
     // Lazy require to avoid circular dependency at module load time
-    const { getMCPServersRegistry } = require('~/config');
+    const { getMCPServersRegistry, getMCPManager } = require('~/config');
     const registry = getMCPServersRegistry();
-    await registry.invalidateConfigCache();
+    const evictedServers = await registry.invalidateConfigCache();
+
+    // Proactively disconnect connections for evicted config-source servers
+    if (evictedServers.length > 0) {
+      try {
+        const mcpManager = getMCPManager();
+        if (mcpManager?.appConnections) {
+          await Promise.allSettled(
+            evictedServers.map((serverName) =>
+              mcpManager.appConnections.disconnect(serverName).catch(() => {}),
+            ),
+          );
+        }
+      } catch {
+        // MCPManager may not be initialized — connections will be cleaned up lazily
+      }
+    }
   } catch {
     // Registry may not be initialized yet (e.g., during startup) — not critical
   }

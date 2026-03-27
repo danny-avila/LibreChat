@@ -463,12 +463,21 @@ export class MCPServersRegistry {
   /**
    * Clears the config-source server cache, forcing re-inspection on next access.
    * Called when admin config overrides change (e.g., mcpServers mutation).
+   *
+   * @returns Names of servers that were evicted from the config cache.
+   *          Callers should disconnect active connections for these servers.
    */
-  public async invalidateConfigCache(): Promise<void> {
+  public async invalidateConfigCache(): Promise<string[]> {
+    const evicted = Object.keys(await this.configCacheRepo.getAll());
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
-    logger.info('[MCPServersRegistry] Config server cache invalidated');
+    if (evicted.length > 0) {
+      logger.info(
+        `[MCPServersRegistry] Config server cache invalidated, evicted: ${evicted.join(', ')}`,
+      );
+    }
+    return evicted;
   }
 
   // TODO: This is currently used to determine if a server requires OAuth. However, this info can
