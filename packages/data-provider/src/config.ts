@@ -995,20 +995,6 @@ export const configSchema = z.object({
   mcpSettings: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
-      tenantMcpPolicy: z
-        .object({
-          /** Master switch — when false, config-source MCP servers are rejected at write time. */
-          enabled: z.boolean().default(false),
-          /** Maximum number of config-source MCP servers per tenant. */
-          maxServersPerTenant: z.number().int().positive().default(25),
-          /** Allowed transport types for config-source servers. When unset, all transports allowed. */
-          allowedTransports: z
-            .array(z.enum(['stdio', 'sse', 'websocket', 'streamable-http']))
-            .optional(),
-          /** Domain allowlist for config-source servers. When unset, inherits top-level allowedDomains. */
-          allowedDomains: z.array(z.string()).optional(),
-        })
-        .optional(),
     })
     .optional(),
   interface: interfaceSchema,
