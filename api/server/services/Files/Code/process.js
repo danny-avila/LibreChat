@@ -243,8 +243,7 @@ const processCodeOutput = async ({
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
     };
 
-    await createFile(file);
-
+    await createFile(file, true);
     return Object.assign(file, { messageId, toolCallId });
   } catch (error) {
     if (error?.message === 'Path traversal detected in filename') {

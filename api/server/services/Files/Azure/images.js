@@ -15,7 +15,6 @@ const { saveBufferToAzure } = require('./crud');
  * @param {Express.Multer.File} params.file - The file object.
  * @param {string} params.file_id - The file id.
  * @param {EModelEndpoint} params.endpoint - The endpoint parameters.
- * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  * @param {string} [params.resolution='high'] - The image resolution.
  * @param {string} [params.basePath='images'] - The base folder within the container.
  * @param {string} [params.containerName] - The Azure Blob container name.
@@ -26,7 +25,6 @@ async function uploadImageToAzure({
   file,
   file_id,
   endpoint,
-  temporary,
   resolution = 'high',
   basePath = 'images',
   containerName,
@@ -61,7 +59,6 @@ async function uploadImageToAzure({
       buffer: webPBuffer,
       fileName,
       basePath,
-      temporary,
       containerName,
     });
     await fs.promises.unlink(inputFilePath);

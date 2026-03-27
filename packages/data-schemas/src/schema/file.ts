@@ -76,6 +76,7 @@ const file: Schema<IMongoFile> = new Schema(
     },
     expiresAt: {
       type: Date,
+      expires: 3600, // 1 hour in seconds
     },
     tenantId: {
       type: String,
@@ -87,7 +88,6 @@ const file: Schema<IMongoFile> = new Schema(
   },
 );
 
-file.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 file.index({ createdAt: 1, updatedAt: 1 });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },

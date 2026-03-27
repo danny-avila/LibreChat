@@ -20,7 +20,6 @@ const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } =
  * @param {string} params.fileName - The name of the file.
  * @param {string} [params.basePath='images'] - The base folder within the container.
  * @param {string} [params.containerName] - The Azure Blob container name.
- * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  * @returns {Promise<string>} The URL of the uploaded blob.
  */
 async function saveBufferToAzure({
@@ -29,14 +28,13 @@ async function saveBufferToAzure({
   fileName,
   basePath = defaultBasePath,
   containerName,
-  temporary,
 }) {
   try {
     const containerClient = await getAzureContainerClient(containerName);
     const access = AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true' ? 'blob' : undefined;
     // Create the container if it doesn't exist. This is done per operation.
     await containerClient.createIfNotExists({ access });
-    const blobPath = getBlobPath(basePath, userId, fileName, temporary);
+    const blobPath = `${basePath}/${userId}/${fileName}`;
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
     await blockBlobClient.uploadData(buffer);
     return blockBlobClient.url;
@@ -87,7 +85,7 @@ async function saveURLToAzure({
 async function getAzureURL({ fileName, basePath = defaultBasePath, userId, containerName }) {
   try {
     const containerClient = await getAzureContainerClient(containerName);
-    const blobPath = getBlobPath(basePath, userId, fileName);
+    const blobPath = userId ? `${basePath}/${userId}/${fileName}` : `${basePath}/${fileName}`;
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
     return blockBlobClient.url;
   } catch (error) {
@@ -134,7 +132,6 @@ async function deleteFileFromAzure(req, file) {
  * @param {string} params.fileName - The name of the file in Azure.
  * @param {string} [params.basePath='images'] - The base folder within the container.
  * @param {string} [params.containerName] - The Azure Blob container name.
- * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  * @returns {Promise<string>} The URL of the uploaded blob.
  */
 async function streamFileToAzure({
@@ -143,7 +140,6 @@ async function streamFileToAzure({
   fileName,
   basePath = defaultBasePath,
   containerName,
-  temporary,
 }) {
   try {
     const containerClient = await getAzureContainerClient(containerName);
@@ -152,7 +148,7 @@ async function streamFileToAzure({
     // Create the container if it doesn't exist
     await containerClient.createIfNotExists({ access });
 
-    const blobPath = getBlobPath(basePath, userId, fileName, temporary);
+    const blobPath = `${basePath}/${userId}/${fileName}`;
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
 
     // Get file size for proper content length
@@ -197,7 +193,6 @@ async function streamFileToAzure({
  * @param {string} params.file_id - The file id.
  * @param {string} [params.basePath='images'] - The base folder within the container.
  * @param {string} [params.containerName] - The Azure Blob container name.
- * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  * @returns {Promise<{ filepath: string, bytes: number }>} An object containing the blob URL and its byte size.
  */
 async function uploadFileToAzure({
@@ -206,7 +201,6 @@ async function uploadFileToAzure({
   file_id,
   basePath = defaultBasePath,
   containerName,
-  temporary,
 }) {
   try {
     const inputFilePath = file.path;
@@ -221,7 +215,6 @@ async function uploadFileToAzure({
       fileName,
       basePath,
       containerName,
-      temporary,
     });
 
     return { filepath: fileURL, bytes };
@@ -250,12 +243,6 @@ async function getAzureFileStream(_req, fileURL) {
     logger.error('[getAzureFileStream] Error getting blob stream:', error);
     throw error;
   }
-}
-
-function getBlobPath(basePath, userId, fileName, temporary) {
-  const tempPath = temporary ? 'tmp/' : '';
-  const userIdPath = userId ? `${userId}/` : '';
-  return `${tempPath}${basePath}/${userIdPath}${fileName}`;
 }
 
 module.exports = {

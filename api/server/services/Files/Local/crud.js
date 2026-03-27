@@ -61,10 +61,9 @@ const saveLocalImage = async (req, file, filename) => {
  * @param {string} params.fileName - The name of the file to be saved.
  * @param {string} [params.basePath='images'] - Optional. The base path where the file will be stored.
  *                                          Defaults to 'images' if not specified.
- * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  * @returns {Promise<string>} - A promise that resolves to the path of the saved file.
  */
-async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images', temporary }) {
+async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }) {
   try {
     const { publicPath, uploads } = paths;
 
@@ -72,13 +71,8 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images', 
      * For 'images': save to publicPath/images/userId (images are served statically)
      * For 'uploads': save to uploads/userId (files downloaded via API)
      * */
-    let fileDir;
-    if (basePath === 'images') {
-      fileDir = temporary ? path.join(basePath, 'tmp', userId) : path.join(basePath, userId);
-    } else {
-      fileDir = temporary ? path.join('tmp', userId) : userId;
-    }
-    const directoryPath = path.join(basePath === 'images' ? publicPath : uploads, fileDir);
+    const directoryPath =
+      basePath === 'images' ? path.join(publicPath, basePath, userId) : path.join(uploads, userId);
 
     if (!fs.existsSync(directoryPath)) {
       fs.mkdirSync(directoryPath, { recursive: true });
@@ -92,7 +86,9 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images', 
     }
     fs.writeFileSync(resolvedPath, buffer);
 
-    return path.posix.join('/', basePath, userId, fileName);
+    const filePath = path.posix.join('/', basePath, userId, fileName);
+
+    return filePath;
   } catch (error) {
     logger.error('[saveLocalBuffer] Error while saving the buffer:', error);
     throw error;
@@ -267,23 +263,20 @@ const deleteLocalFile = async (req, file) => {
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {string} params.file_id - The file ID.
- * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  *
  * @returns {Promise<{ filepath: string, bytes: number }>}
  *          A promise that resolves to an object containing:
  *            - filepath: The path where the file is saved.
  *            - bytes: The size of the file in bytes.
  */
-async function uploadLocalFile({ req, file, file_id, temporary }) {
+async function uploadLocalFile({ req, file, file_id }) {
   const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const bytes = Buffer.byteLength(inputBuffer);
 
   const { uploads } = appConfig.paths;
-  let userPath = temporary
-    ? path.join(uploads, 'tmp', req.user.id)
-    : path.join(uploads, req.user.id);
+  const userPath = path.join(uploads, req.user.id);
 
   if (!fs.existsSync(userPath)) {
     fs.mkdirSync(userPath, { recursive: true });

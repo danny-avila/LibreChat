@@ -4,7 +4,6 @@ import { RecoilRoot } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { EModelEndpoint, Providers } from 'librechat-data-provider';
 import AttachFileMenu from '../AttachFileMenu';
-import store from '~/store';
 
 jest.mock('~/hooks', () => ({
   useAgentToolPermissions: jest.fn(),
@@ -107,13 +106,10 @@ function setupMocks(overrides: { provider?: string } = {}) {
   });
 }
 
-function renderMenu(
-  props: Record<string, unknown> = {},
-  initialRecoilState?: (MutableSnapshot) => void,
-) {
+function renderMenu(props: Record<string, unknown> = {}) {
   return render(
     <QueryClientProvider client={queryClient}>
-      <RecoilRoot initializeState={initialRecoilState}>
+      <RecoilRoot>
         <AttachFileMenu conversationId="test-convo" {...props} />
       </RecoilRoot>
     </QueryClientProvider>,
@@ -354,16 +350,6 @@ describe('AttachFileMenu', () => {
       setupMocks();
       renderMenu({ agentId: '', endpointType: EModelEndpoint.openAI });
       expect(screen.getByRole('button', { name: /attach file options/i })).toBeInTheDocument();
-    });
-  });
-
-  describe('Additional metadata', () => {
-    it('should pass additional metadata w/ temporary status to file handler', () => {
-      renderMenu({}, ({ set }) => set(store.isTemporary, true));
-
-      expect(mockUseFileHandling).toHaveBeenCalledWith({
-        additionalMetadata: { temporary: 'true' },
-      });
     });
   });
 });

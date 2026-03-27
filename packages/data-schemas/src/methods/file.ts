@@ -201,13 +201,26 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Creates a new file.
+   * Creates a new file with a TTL of 1 hour.
    * @param data - The file data to be created, must contain file_id
+   * @param disableTTL - Whether to disable the TTL
    * @returns A promise that resolves to the created file document
    */
-  async function createFile(data: Partial<IMongoFile>): Promise<IMongoFile | null> {
+  async function createFile(
+    data: Partial<IMongoFile>,
+    disableTTL?: boolean,
+  ): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndUpdate({ file_id: data.file_id }, data, {
+    const fileData: Partial<IMongoFile> = {
+      ...data,
+      expiresAt: new Date(Date.now() + 3600 * 1000),
+    };
+
+    if (disableTTL) {
+      delete fileData.expiresAt;
+    }
+
+    return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
       new: true,
       upsert: true,
     }).lean();

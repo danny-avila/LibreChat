@@ -23,7 +23,6 @@ router.post('/', async (req, res) => {
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
-    metadata.temporary = metadata.temporary === 'true';
 
     if (!isAssistantsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
       const denied = await verifyAgentUploadPermission({

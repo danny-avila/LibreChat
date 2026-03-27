@@ -35,16 +35,13 @@ export default function useDragHelpers() {
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );
-  const isTemporary = useRecoilValue(store.isTemporary);
 
   const isAssistants = useMemo(
     () => isAssistantsEndpoint(conversation?.endpoint),
     [conversation?.endpoint],
   );
 
-  const { handleFiles } = useFileHandling({
-    additionalMetadata: { temporary: isTemporary.toString() },
-  });
+  const { handleFiles } = useFileHandling();
 
   const handleOptionSelect = useCallback(
     (toolResource: EToolResources | undefined) => {
