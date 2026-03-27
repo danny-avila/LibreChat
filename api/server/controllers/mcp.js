@@ -61,9 +61,21 @@ function handleMCPError(error, res) {
 }
 
 /**
+ * Resolves config-source MCP servers from admin Config overrides and merges all
+ * server configs (YAML + config + user) for the given user context.
+ * @param {string} userId
+ * @param {{ role?: string }} [user]
+ * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
+ */
+async function resolveAllMcpConfigs(userId, user) {
+  const registry = getMCPServersRegistry();
+  const appConfig = await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
+  const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+  return registry.getAllServerConfigs(userId, configServers);
+}
+
+/**
  * Get all MCP tools available to the user.
- * Resolves config-source MCP servers from admin Config overrides via `getAppConfig()`,
- * lazily initializes them, and merges with YAML and user-provided servers.
  */
 const getMCPTools = async (req, res) => {
   try {
@@ -73,21 +85,10 @@ const getMCPTools = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    // Resolve config-source servers from admin Config overrides
-    const registry = getMCPServersRegistry();
-    const tenantId = getTenantId();
-    const role = req.user?.role;
-    const appConfig = await getAppConfig({ role, tenantId, userId });
-    const resolvedMcpConfig = appConfig?.mcpConfig || {};
-
-    // Lazily initialize any config-source servers not yet inspected
-    const configServers = await registry.ensureConfigServers(resolvedMcpConfig);
-
-    // Merge YAML + config + user servers
-    const mcpConfig = await registry.getAllServerConfigs(userId, configServers);
+    const mcpConfig = await resolveAllMcpConfigs(userId, req.user);
     const configuredServers = mcpConfig ? Object.keys(mcpConfig) : [];
 
-    if (!mcpConfig || Object.keys(mcpConfig).length == 0) {
+    if (!mcpConfig || Object.keys(mcpConfig).length === 0) {
       return res.status(200).json({ servers: {} });
     }
 
@@ -200,12 +201,7 @@ const getMCPServersList = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const registry = getMCPServersRegistry();
-    const tenantId = getTenantId();
-    const role = req.user?.role;
-    const appConfig = await getAppConfig({ role, tenantId, userId });
-    const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-    const serverConfigs = await registry.getAllServerConfigs(userId, configServers);
+    const serverConfigs = await resolveAllMcpConfigs(userId, req.user);
     return res.json(redactAllServerSecrets(serverConfigs));
   } catch (error) {
     logger.error('[getMCPServersList]', error);

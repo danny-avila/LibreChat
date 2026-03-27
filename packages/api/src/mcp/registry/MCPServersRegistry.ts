@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
@@ -9,11 +10,20 @@ import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache/cacheConfig';
 import { withTimeout } from '~/utils';
 
-/** Namespace for config-override MCP server inspection results (admin-defined via Config collection). */
-const CONFIG_CACHE_NAMESPACE = 'Config' as const;
+/**
+ * Namespace for config-override MCP server inspection results (admin-defined via Config collection).
+ * Uses the same aggregate-key optimization as APP_CACHE_NAMESPACE to avoid SCAN-based Redis stalls.
+ */
+export const CONFIG_CACHE_NAMESPACE = 'Config' as const;
 
-const CONFIG_SERVER_INIT_TIMEOUT_MS =
-  process.env.MCP_INIT_TIMEOUT_MS != null ? parseInt(process.env.MCP_INIT_TIMEOUT_MS) : 30_000;
+const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
+  const raw = process.env.MCP_INIT_TIMEOUT_MS;
+  if (raw == null) {
+    return 30_000;
+  }
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000;
+})();
 
 /**
  * Central registry for managing MCP server configurations.
@@ -45,6 +55,9 @@ export class MCPServersRegistry {
     string,
     Promise<t.ParsedServerConfig | undefined>
   >();
+
+  /** Memoized YAML server names — set once after boot-time init, never changes. */
+  private yamlServerNames: Set<string> | null = null;
 
   constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
@@ -112,21 +125,12 @@ export class MCPServersRegistry {
       return await this.readThroughCache.get(cacheKey);
     }
 
-    // Check YAML cache first (boot-time initialized)
     const configFromYaml = await this.cacheConfigsRepo.get(serverName);
     if (configFromYaml) {
       await this.readThroughCache.set(cacheKey, configFromYaml);
       return configFromYaml;
     }
 
-    // Check config-source cache (lazily initialized from admin Config overrides)
-    const configFromOverride = await this.configCacheRepo.get(serverName);
-    if (configFromOverride) {
-      await this.readThroughCache.set(cacheKey, configFromOverride);
-      return configFromOverride;
-    }
-
-    // Check DB (user-provided servers)
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
     await this.readThroughCache.set(cacheKey, configFromDB);
     return configFromDB;
@@ -146,9 +150,12 @@ export class MCPServersRegistry {
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<Record<string, t.ParsedServerConfig>> {
-    // When config servers are provided, skip the read-through cache (it doesn't account for them)
     if (configServers && Object.keys(configServers).length > 0) {
-      return this.fetchAllServerConfigsWithConfigServers(userId, configServers);
+      return {
+        ...(await this.cacheConfigsRepo.getAll()),
+        ...configServers,
+        ...(await this.dbConfigsRepo.getAll(userId)),
+      };
     }
 
     const cacheKey = userId ?? '__no_user__';
@@ -183,17 +190,6 @@ export class MCPServersRegistry {
 
     await this.readThroughCacheAll.set(cacheKey, result);
     return result;
-  }
-
-  private async fetchAllServerConfigsWithConfigServers(
-    userId?: string,
-    configServers?: Record<string, t.ParsedServerConfig>,
-  ): Promise<Record<string, t.ParsedServerConfig>> {
-    return {
-      ...(await this.cacheConfigsRepo.getAll()),
-      ...(configServers ?? {}),
-      ...(await this.dbConfigsRepo.getAll(userId)),
-    };
   }
 
   /**
@@ -232,13 +228,11 @@ export class MCPServersRegistry {
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
-      // Preserve domain-specific error for better error handling
       if (isMCPDomainNotAllowedError(error)) {
         throw error;
       }
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
-    // Tag source based on storage location — CACHE = YAML boot-time, DB = user-provided
     parsedConfig.source = storageLocation === 'CACHE' ? 'yaml' : 'user';
     return await configRepo.add(serverName, parsedConfig, userId);
   }
@@ -322,7 +316,6 @@ export class MCPServersRegistry {
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
-      // Preserve domain-specific error for better error handling
       if (isMCPDomainNotAllowedError(error)) {
         throw error;
       }
@@ -334,13 +327,11 @@ export class MCPServersRegistry {
 
   /**
    * Ensures that config-source MCP servers (from admin Config overrides) are initialized.
+   * Identifies servers in `resolvedMcpConfig` that are not from YAML, lazily initializes
+   * any not yet in the config cache, and returns their parsed configs.
    *
-   * Compares the resolved `mcpConfig` (which includes YAML + Config override servers)
-   * against the YAML-only cache to identify config-source servers. Lazily initializes
-   * any that aren't yet in the config cache.
-   *
-   * @param resolvedMcpConfig - The merged mcpConfig from `getAppConfig()` (YAML + overrides)
-   * @returns Parsed configs for all config-source servers (already initialized or newly initialized)
+   * Config cache keys are scoped by a hash of the raw config to prevent cross-tenant
+   * cache poisoning when two tenants define a server with the same name but different configs.
    */
   public async ensureConfigServers(
     resolvedMcpConfig: Record<string, t.MCPOptions>,
@@ -349,10 +340,7 @@ export class MCPServersRegistry {
       return {};
     }
 
-    // Identify which servers are from config overrides (not YAML)
-    const yamlConfigs = await this.cacheConfigsRepo.getAll();
-    const yamlNames = new Set(Object.keys(yamlConfigs));
-
+    const yamlNames = await this.getYamlServerNames();
     const configServerEntries = Object.entries(resolvedMcpConfig).filter(
       ([name]) => !yamlNames.has(name),
     );
@@ -365,16 +353,9 @@ export class MCPServersRegistry {
 
     await Promise.allSettled(
       configServerEntries.map(async ([serverName, rawConfig]) => {
-        try {
-          const parsed = await this.ensureSingleConfigServer(serverName, rawConfig);
-          if (parsed) {
-            result[serverName] = parsed;
-          }
-        } catch (error) {
-          logger.error(
-            `[MCPServersRegistry] Failed to ensure config server "${serverName}":`,
-            error,
-          );
+        const parsed = await this.ensureSingleConfigServer(serverName, rawConfig);
+        if (parsed) {
+          result[serverName] = parsed;
         }
       }),
     );
@@ -384,32 +365,32 @@ export class MCPServersRegistry {
 
   /**
    * Ensures a single config-source server is initialized.
-   * Checks the config cache first; if missing, lazily inspects and caches the result.
-   * Deduplicates concurrent init requests for the same server.
+   * Cache key is scoped by config hash to prevent cross-tenant poisoning.
+   * Deduplicates concurrent init requests for the same server+config.
    */
   private async ensureSingleConfigServer(
     serverName: string,
     rawConfig: t.MCPOptions,
   ): Promise<t.ParsedServerConfig | undefined> {
-    // Check config cache first
-    const cached = await this.configCacheRepo.get(serverName);
+    const cacheKey = this.configCacheKey(serverName, rawConfig);
+
+    const cached = await this.configCacheRepo.get(cacheKey);
     if (cached) {
       return cached;
     }
 
-    // Deduplicate concurrent init requests
-    const pending = this.pendingConfigInits.get(serverName);
+    const pending = this.pendingConfigInits.get(cacheKey);
     if (pending) {
       return pending;
     }
 
-    const initPromise = this.lazyInitConfigServer(serverName, rawConfig);
-    this.pendingConfigInits.set(serverName, initPromise);
+    const initPromise = this.lazyInitConfigServer(cacheKey, serverName, rawConfig);
+    this.pendingConfigInits.set(cacheKey, initPromise);
 
     try {
       return await initPromise;
     } finally {
-      this.pendingConfigInits.delete(serverName);
+      this.pendingConfigInits.delete(cacheKey);
     }
   }
 
@@ -418,6 +399,7 @@ export class MCPServersRegistry {
    * stores the parsed config in the config cache with `source: 'config'`.
    */
   private async lazyInitConfigServer(
+    cacheKey: string,
     serverName: string,
     rawConfig: t.MCPOptions,
   ): Promise<t.ParsedServerConfig | undefined> {
@@ -433,7 +415,7 @@ export class MCPServersRegistry {
       );
 
       parsedConfig.source = 'config';
-      await this.configCacheRepo.add(serverName, parsedConfig);
+      await this.configCacheRepo.add(cacheKey, parsedConfig);
 
       logger.info(
         `${prefix} Initialized: tools=${parsedConfig.tools ?? 'N/A'}, ` +
@@ -443,14 +425,13 @@ export class MCPServersRegistry {
     } catch (error) {
       logger.error(`${prefix} Failed to initialize:`, error);
 
-      // Store a stub so we don't retry on every request
       try {
         const stubConfig: t.ParsedServerConfig = {
           ...rawConfig,
           inspectionFailed: true,
           source: 'config',
         };
-        await this.configCacheRepo.add(serverName, stubConfig);
+        await this.configCacheRepo.add(cacheKey, stubConfig);
         logger.info(`${prefix} Stored stub config for recovery`);
         return stubConfig;
       } catch (stubError) {
@@ -468,16 +449,22 @@ export class MCPServersRegistry {
    *          Callers should disconnect active connections for these servers.
    */
   public async invalidateConfigCache(): Promise<string[]> {
-    const evicted = Object.keys(await this.configCacheRepo.getAll());
+    const allCached = await this.configCacheRepo.getAll();
+    const evicted = Object.values(allCached)
+      .map((config) => config.title || '')
+      .filter(Boolean);
+    // Also collect the original server names from the config entries' tool functions
+    const evictedNames = Object.keys(allCached).map((key) => key.split(':')[0]);
+
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
-    if (evicted.length > 0) {
+    if (evictedNames.length > 0) {
       logger.info(
-        `[MCPServersRegistry] Config server cache invalidated, evicted: ${evicted.join(', ')}`,
+        `[MCPServersRegistry] Config server cache invalidated, evicted: ${[...new Set(evictedNames)].join(', ')}`,
       );
     }
-    return evicted;
+    return [...new Set(evictedNames)];
   }
 
   // TODO: This is currently used to determine if a server requires OAuth. However, this info can
@@ -493,6 +480,7 @@ export class MCPServersRegistry {
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
+    this.yamlServerNames = null;
   }
 
   public async removeServer(
@@ -519,5 +507,28 @@ export class MCPServersRegistry {
 
   private getReadThroughCacheKey(serverName: string, userId?: string): string {
     return userId ? `${serverName}::${userId}` : serverName;
+  }
+
+  /**
+   * Returns memoized YAML server names. Populated lazily on first call after boot/reset.
+   * YAML servers don't change after boot, so this avoids repeated `getAll()` calls.
+   */
+  private async getYamlServerNames(): Promise<Set<string>> {
+    if (this.yamlServerNames) {
+      return this.yamlServerNames;
+    }
+    const yamlConfigs = await this.cacheConfigsRepo.getAll();
+    this.yamlServerNames = new Set(Object.keys(yamlConfigs));
+    return this.yamlServerNames;
+  }
+
+  /**
+   * Produces a config-cache key scoped by server name AND a hash of the raw config.
+   * Prevents cross-tenant cache poisoning when two tenants define the same server name
+   * with different configurations.
+   */
+  private configCacheKey(serverName: string, rawConfig: t.MCPOptions): string {
+    const hash = createHash('sha256').update(JSON.stringify(rawConfig)).digest('hex').slice(0, 8);
+    return `${serverName}:${hash}`;
   }
 }

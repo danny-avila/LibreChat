@@ -654,13 +654,8 @@ async function getMCPSetupData(userId, options = {}) {
   const registry = getMCPServersRegistry();
   const { role, tenantId } = options;
 
-  // Resolve config-source servers from admin Config overrides
-  let configServers;
-  if (role || tenantId) {
-    const appConfig = await getAppConfig({ role, tenantId, userId });
-    configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  }
-
+  const appConfig = await getAppConfig({ role, tenantId, userId });
+  const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
   const mcpConfig = await registry.getAllServerConfigs(userId, configServers);
 
   if (!mcpConfig) {
@@ -671,15 +666,16 @@ async function getMCPSetupData(userId, options = {}) {
   /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();
   try {
-    // Use getLoaded() instead of getAll() to avoid forcing connection creation
-    // getAll() creates connections for all servers, which is problematic for servers
-    // that require user context (e.g., those with {{LIBRECHAT_USER_ID}} placeholders)
     appConnections = (await mcpManager.appConnections?.getLoaded()) || new Map();
   } catch (error) {
     logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
   }
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
-  const oauthServers = await getMCPServersRegistry().getOAuthServers(userId);
+  const oauthServers = new Set(
+    Object.entries(mcpConfig)
+      .filter(([, config]) => config.requiresOAuth)
+      .map(([name]) => name),
+  );
 
   return {
     mcpConfig,

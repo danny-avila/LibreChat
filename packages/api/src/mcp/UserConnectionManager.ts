@@ -158,7 +158,7 @@ export abstract class UserConnectionManager {
         {
           serverConfig: config,
           serverName: serverName,
-          dbSourced: config.source === 'user',
+          dbSourced: config.source !== 'yaml' && config.source !== 'config',
           useSSRFProtection: registry.shouldEnableSSRFProtection(),
           allowedDomains: registry.getAllowedDomains(),
         },

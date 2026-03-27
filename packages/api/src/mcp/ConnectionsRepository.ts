@@ -82,7 +82,9 @@ export class ConnectionsRepository {
       {
         serverName,
         serverConfig,
-        dbSourced: (serverConfig as t.ParsedServerConfig).source === 'user',
+        dbSourced:
+          (serverConfig as t.ParsedServerConfig).source !== 'yaml' &&
+          (serverConfig as t.ParsedServerConfig).source !== 'config',
         useSSRFProtection: registry.shouldEnableSSRFProtection(),
         allowedDomains: registry.getAllowedDomains(),
       },

@@ -103,7 +103,7 @@ export class MCPManager extends UserConnectionManager {
     const registry = MCPServersRegistry.getInstance();
     const useSSRFProtection = registry.shouldEnableSSRFProtection();
     const allowedDomains = registry.getAllowedDomains();
-    const dbSourced = serverConfig.source === 'user';
+    const dbSourced = serverConfig.source !== 'yaml' && serverConfig.source !== 'config';
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
@@ -303,7 +303,7 @@ Please follow these instructions when using tools from the respective MCP server
       }
 
       const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
-      const isDbSourced = rawConfig?.source === 'user';
+      const isDbSourced = rawConfig?.source !== 'yaml' && rawConfig?.source !== 'config';
 
       /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
       const graphProcessedConfig = isDbSourced

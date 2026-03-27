@@ -44,15 +44,19 @@ async function clearEndpointConfigCache() {
  * Disconnects active connections for evicted servers so removed configs don't linger.
  */
 async function clearMcpConfigCache() {
+  let registry;
   try {
-    // Lazy require to avoid circular dependency at module load time
-    const { getMCPServersRegistry, getMCPManager } = require('~/config');
-    const registry = getMCPServersRegistry();
-    const evictedServers = await registry.invalidateConfigCache();
+    const { getMCPServersRegistry } = require('~/config');
+    registry = getMCPServersRegistry();
+  } catch {
+    return; // Registry not initialized yet (startup) — not critical
+  }
 
-    // Proactively disconnect connections for evicted config-source servers
+  try {
+    const evictedServers = await registry.invalidateConfigCache();
     if (evictedServers.length > 0) {
       try {
+        const { getMCPManager } = require('~/config');
         const mcpManager = getMCPManager();
         if (mcpManager?.appConnections) {
           await Promise.allSettled(
@@ -62,11 +66,11 @@ async function clearMcpConfigCache() {
           );
         }
       } catch {
-        // MCPManager may not be initialized — connections will be cleaned up lazily
+        // MCPManager may not be initialized — connections cleaned up lazily
       }
     }
-  } catch {
-    // Registry may not be initialized yet (e.g., during startup) — not critical
+  } catch (error) {
+    logger.error('[clearMcpConfigCache] Failed to invalidate config cache:', error);
   }
 }
 
