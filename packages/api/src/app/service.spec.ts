@@ -1,4 +1,8 @@
+import type { AppConfig } from '@librechat/data-schemas';
 import { createAppConfigService } from './service';
+
+/** Test configs use mock fields that don't exist on AppConfig to verify merge behavior. */
+type TestConfig = AppConfig & Record<string, unknown>;
 
 /**
  * Creates a mock cache that simulates Keyv's namespace behavior.
@@ -18,7 +22,9 @@ function createMockCache(namespace = 'app_config') {
       return Promise.resolve(true);
     }),
     /** Mimic Keyv's opts.store structure for key enumeration in clearOverrideCache */
-    opts: { store: { keys: () => store.keys() } },
+    opts: { store: { keys: () => store.keys() } } as {
+      store?: { keys: () => IterableIterator<string> };
+    },
     _store: store,
   };
 }
@@ -123,8 +129,10 @@ describe('createAppConfigService', () => {
 
       const config = await getAppConfig({ role: 'ADMIN' });
 
-      expect(config.interface.endpointsMenu).toBe(false);
-      expect(config.endpoints).toEqual(['openAI']);
+      // Test data uses mock fields that don't exist on AppConfig to verify merge behavior
+      const merged = config as TestConfig;
+      expect((merged.interface as Record<string, boolean>).endpointsMenu).toBe(false);
+      expect(merged.endpoints).toEqual(['openAI']);
     });
 
     it('caches merged result with TTL', async () => {
@@ -199,7 +207,7 @@ describe('createAppConfigService', () => {
       const config = await getAppConfig({ role: 'ADMIN' });
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);
-      expect((config as Record<string, unknown>).restricted).toBe(true);
+      expect((config as TestConfig).restricted).toBe(true);
     });
 
     it('does not short-circuit other users when one user has no overrides', async () => {
@@ -216,7 +224,7 @@ describe('createAppConfigService', () => {
       const config = await getAppConfig({ role: 'ADMIN' });
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);
-      expect((config as Record<string, unknown>).x).toBe('admin-only');
+      expect((config as TestConfig).x).toBe('admin-only');
     });
 
     it('falls back to base config on getApplicableConfigs error', async () => {

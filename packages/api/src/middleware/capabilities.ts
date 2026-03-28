@@ -18,7 +18,10 @@ interface ResolvedPrincipal {
 }
 
 interface CapabilityDeps {
-  getUserPrincipals: (params: { userId: string; role: string }) => Promise<ResolvedPrincipal[]>;
+  getUserPrincipals: (
+    params: { userId: string | Types.ObjectId; role?: string | null },
+    session?: import('mongoose').ClientSession,
+  ) => Promise<ResolvedPrincipal[]>;
   hasCapabilityForPrincipals: (params: {
     principals: ResolvedPrincipal[];
     capability: SystemCapability;

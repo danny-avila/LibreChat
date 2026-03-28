@@ -261,7 +261,7 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       await cache.getAll();
 
       // Snapshot should be served; Redis should NOT have been called
-      expect(cacheGetSpy).not.toHaveBeenCalled();
+      expect(cacheGetSpy.mock.calls.length).toBe(0);
       cacheGetSpy.mockRestore();
     });
 
@@ -330,7 +330,7 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const cacheGetSpy = jest.spyOn((cache as any).cache, 'get');
       const result = await cache.getAll();
-      expect(cacheGetSpy).toHaveBeenCalledTimes(1);
+      expect(cacheGetSpy.mock.calls.length).toBe(1);
       expect(Object.keys(result).length).toBe(1);
       cacheGetSpy.mockRestore();
     });

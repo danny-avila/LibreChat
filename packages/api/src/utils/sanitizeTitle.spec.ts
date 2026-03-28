@@ -1,3 +1,10 @@
+/* ES2024 String.prototype.isWellFormed — not in this TS lib version */
+declare global {
+  interface String {
+    isWellFormed(): boolean;
+  }
+}
+
 import { sanitizeTitle, MAX_TITLE_LENGTH, DEFAULT_TITLE_FALLBACK } from './sanitizeTitle';
 
 describe('sanitizeTitle', () => {
