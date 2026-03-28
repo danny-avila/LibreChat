@@ -17,6 +17,13 @@ export interface AdminUsersDeps {
     options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
   ) => Promise<IUser[]>;
   countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
+  /**
+   * Thin data-layer delete — removes the User document only.
+   * Full cascade of user-owned resources (conversations, messages, files, tokens, etc.)
+   * is handled by `UserController.deleteUserController` in the self-delete flow.
+   * This admin endpoint currently cascades Config, AclEntries, and SystemGrants.
+   * A future iteration should consolidate the full cascade into a shared service function.
+   */
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
   deleteConfig: (
     principalType: PrincipalType,
@@ -33,7 +40,10 @@ export interface AdminUsersDeps {
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps) {
-  const { findUsers, countUsers, deleteUserById, deleteConfig, deleteAclEntries, deleteGrantsForPrincipal } = deps;
+  const {
+    findUsers, countUsers, deleteUserById,
+    deleteConfig, deleteAclEntries, deleteGrantsForPrincipal,
+  } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
     try {
@@ -65,26 +75,27 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
   async function searchUsersHandler(req: ServerRequest, res: Response) {
     try {
       const { q: query, limit = '20' } = req.query as { q?: string; limit?: string };
+      const trimmed = query?.trim() ?? '';
 
-      if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      if (!trimmed) {
         return res.status(400).json({ error: 'Query parameter "q" is required' });
       }
 
-      if (query.trim().length < 2) {
+      if (trimmed.length < 2) {
         return res.status(400).json({ error: 'Query must be at least 2 characters' });
       }
 
-      if (query.trim().length > MAX_SEARCH_LENGTH) {
+      if (trimmed.length > MAX_SEARCH_LENGTH) {
         return res.status(400).json({ error: `Query must not exceed ${MAX_SEARCH_LENGTH} characters` });
       }
 
       const searchLimit = Math.min(Math.max(1, parseInt(limit) || 20), 50);
-      const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'i');
 
       const users = await findUsers(
         { $or: [{ name: regex }, { email: regex }, { username: regex }] },
-        '_id name email avatar',
+        '_id name email username avatar',
         { limit: searchLimit },
       );
 
@@ -92,6 +103,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         userId: u._id?.toString() ?? '',
         name: u.name ?? '',
         email: u.email ?? '',
+        username: u.username,
         avatarUrl: u.avatar,
       }));
 
@@ -129,6 +141,16 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         return res.status(404).json({ error: 'User not found' });
       }
 
+      if (targetUser?.role === SystemRoles.ADMIN) {
+        const remaining = await countUsers({ role: SystemRoles.ADMIN });
+        if (remaining === 0) {
+          logger.error(
+            `[adminUsers] CRITICAL: last admin deleted via race condition, user: ${id}. ` +
+              'Manual DB intervention required to restore an ADMIN user.',
+          );
+        }
+      }
+
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.USER, id),
         deleteAclEntries({ principalType: PrincipalType.USER, principalId: id }),
@@ -140,7 +162,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         }
       }
 
-      return res.status(200).json({ message: result.message });
+      return res.status(200).json({ message: result.message || 'User deleted successfully' });
     } catch (error) {
       logger.error('[adminUsers] deleteUser error:', error);
       return res.status(500).json({ error: 'Failed to delete user' });

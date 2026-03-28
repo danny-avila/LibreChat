@@ -1,4 +1,5 @@
 import { Types } from 'mongoose';
+import { SystemRoles } from 'librechat-data-provider';
 import type { IUser, UserDeleteResult } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -14,7 +15,7 @@ const validUserId = new Types.ObjectId().toString();
 
 function mockUser(overrides: Partial<IUser> = {}): IUser {
   return {
-    _id: new Types.ObjectId(validUserId),
+    _id: new Types.ObjectId(),
     name: 'Test User',
     username: 'testuser',
     email: 'test@example.com',
@@ -64,8 +65,8 @@ describe('createAdminUsersHandlers', () => {
   describe('listUsers', () => {
     it('returns paginated users with total count', async () => {
       const users = [
-        mockUser(),
-        mockUser({ _id: new Types.ObjectId(), name: 'Other' } as Partial<IUser>),
+        mockUser({ _id: new Types.ObjectId(validUserId) }),
+        mockUser({ name: 'Other' }),
       ];
       const deps = createDeps({
         findUsers: jest.fn().mockResolvedValue(users),
@@ -128,7 +129,7 @@ describe('createAdminUsersHandlers', () => {
   });
 
   describe('searchUsers', () => {
-    it('returns matching users', async () => {
+    it('returns matching users with username', async () => {
       const users = [mockUser()];
       const deps = createDeps({ findUsers: jest.fn().mockResolvedValue(users) });
       const handlers = createAdminUsersHandlers(deps);
@@ -142,6 +143,7 @@ describe('createAdminUsersHandlers', () => {
       expect(response.users[0]).toHaveProperty('userId');
       expect(response.users[0]).toHaveProperty('name');
       expect(response.users[0]).toHaveProperty('email');
+      expect(response.users[0]).toHaveProperty('username');
     });
 
     it('searches name, email, and username fields', async () => {
@@ -157,6 +159,18 @@ describe('createAdminUsersHandlers', () => {
       expect(filter.$or[0]).toHaveProperty('name');
       expect(filter.$or[1]).toHaveProperty('email');
       expect(filter.$or[2]).toHaveProperty('username');
+    });
+
+    it('projects username in the field selection', async () => {
+      const findUsers = jest.fn().mockResolvedValue([]);
+      const deps = createDeps({ findUsers });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({ query: { q: 'test' } });
+
+      await handlers.searchUsers(req, res);
+
+      const projection = findUsers.mock.calls[0][1];
+      expect(projection).toContain('username');
     });
 
     it('escapes regex special characters in query', async () => {
@@ -284,6 +298,18 @@ describe('createAdminUsersHandlers', () => {
       expect(json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
     });
 
+    it('returns fallback message when result.message is empty', async () => {
+      const result: UserDeleteResult = { deletedCount: 1, message: '' };
+      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
+    });
+
     it('returns 403 when deleting own account', async () => {
       const userId = new Types.ObjectId();
       const deps = createDeps();
@@ -303,7 +329,7 @@ describe('createAdminUsersHandlers', () => {
     it('returns 400 when deleting the last admin', async () => {
       const targetId = new Types.ObjectId().toString();
       const deps = createDeps({
-        findUsers: jest.fn().mockResolvedValue([mockUser({ role: 'ADMIN' } as Partial<IUser>)]),
+        findUsers: jest.fn().mockResolvedValue([mockUser({ role: SystemRoles.ADMIN })]),
         countUsers: jest.fn().mockResolvedValue(1),
       });
       const handlers = createAdminUsersHandlers(deps);
@@ -314,12 +340,13 @@ describe('createAdminUsersHandlers', () => {
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'Cannot delete the last admin user' });
       expect(deps.deleteUserById).not.toHaveBeenCalled();
+      expect(deps.countUsers).toHaveBeenCalledWith({ role: SystemRoles.ADMIN });
     });
 
     it('allows deleting an admin when other admins exist', async () => {
       const targetId = new Types.ObjectId().toString();
       const deps = createDeps({
-        findUsers: jest.fn().mockResolvedValue([mockUser({ role: 'ADMIN' } as Partial<IUser>)]),
+        findUsers: jest.fn().mockResolvedValue([mockUser({ role: SystemRoles.ADMIN })]),
         countUsers: jest.fn().mockResolvedValue(3),
       });
       const handlers = createAdminUsersHandlers(deps);
@@ -329,6 +356,20 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(deps.deleteUserById).toHaveBeenCalledWith(targetId);
+    });
+
+    it('does not check admin count when target is a regular user', async () => {
+      const targetId = new Types.ObjectId().toString();
+      const deps = createDeps({
+        findUsers: jest.fn().mockResolvedValue([mockUser({ role: 'USER' })]),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: targetId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.countUsers).not.toHaveBeenCalled();
     });
 
     it('cascades cleanup of Config, AclEntries, and SystemGrants', async () => {

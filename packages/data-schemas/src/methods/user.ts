@@ -55,13 +55,13 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    if (options?.sort) {
+    if (options?.sort != null) {
       query.sort(options.sort);
     }
     if (options?.offset != null) {
       query.skip(options.offset);
     }
-    if (options?.limit != null) {
+    if (options?.limit != null && options.limit > 0) {
       query.limit(options.limit);
     }
     return (await query.lean()) as IUser[];
