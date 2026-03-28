@@ -11,13 +11,6 @@ import type { Types } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
 
-/** Module-level: PrincipalType is from librechat-data-provider (never mocked by external tests). */
-const VALID_PRINCIPAL_TYPES = new Set<string>([
-  PrincipalType.ROLE,
-  PrincipalType.GROUP,
-  PrincipalType.USER,
-]);
-
 interface GrantRequestBody {
   principalType?: unknown;
   principalId?: unknown;
@@ -72,17 +65,21 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
 
   const VALID_CAPABILITIES = new Set<string>(Object.values(SystemCapabilities));
 
-  const MANAGE_CAPABILITY_BY_TYPE: Partial<Record<PrincipalType, SystemCapability>> = {
+  type GrantPrincipalType = PrincipalType.ROLE | PrincipalType.GROUP | PrincipalType.USER;
+
+  const MANAGE_CAPABILITY_BY_TYPE: Record<GrantPrincipalType, SystemCapability> = {
     [PrincipalType.ROLE]: SystemCapabilities.MANAGE_ROLES,
     [PrincipalType.GROUP]: SystemCapabilities.MANAGE_GROUPS,
     [PrincipalType.USER]: SystemCapabilities.MANAGE_USERS,
   };
 
-  const READ_CAPABILITY_BY_TYPE: Partial<Record<PrincipalType, SystemCapability>> = {
+  const READ_CAPABILITY_BY_TYPE: Record<GrantPrincipalType, SystemCapability> = {
     [PrincipalType.ROLE]: SystemCapabilities.READ_ROLES,
     [PrincipalType.GROUP]: SystemCapabilities.READ_GROUPS,
     [PrincipalType.USER]: SystemCapabilities.READ_USERS,
   };
+
+  const VALID_PRINCIPAL_TYPES = new Set<string>(Object.keys(MANAGE_CAPABILITY_BY_TYPE));
 
   function resolveUser(req: ServerRequest): { userId: string; role: string } | null {
     const user = req.user;
