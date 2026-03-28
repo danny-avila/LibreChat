@@ -2,8 +2,8 @@ import { ResourceType, SystemCategories } from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
 import type { IAclEntry, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
-import { escapeRegExp } from '~/utils/string';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
 export interface PromptDeps {

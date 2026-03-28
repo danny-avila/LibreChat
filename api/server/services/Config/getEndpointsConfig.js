@@ -1,5 +1,5 @@
-const { loadCustomEndpointsConfig } = require('@librechat/api');
 const { scopedCacheKey } = require('@librechat/data-schemas');
+const { loadCustomEndpointsConfig } = require('@librechat/api');
 const {
   CacheKeys,
   EModelEndpoint,

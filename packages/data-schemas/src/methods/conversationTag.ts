@@ -1,6 +1,6 @@
 import type { Model } from 'mongoose';
-import logger from '~/config/winston';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import logger from '~/config/winston';
 
 interface IConversationTag {
   user: string;
