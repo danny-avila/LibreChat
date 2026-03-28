@@ -96,7 +96,7 @@ describe('createAdminUsersHandlers', () => {
       expect(findUsers).toHaveBeenCalledWith(
         {},
         expect.any(String),
-        { limit: 10, offset: 20 },
+        { limit: 10, offset: 20, sort: { createdAt: -1 } },
       );
     });
 

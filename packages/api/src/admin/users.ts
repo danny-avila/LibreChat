@@ -11,7 +11,7 @@ export interface AdminUsersDeps {
   findUsers: (
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
-    options?: { limit?: number; offset?: number },
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
   ) => Promise<IUser[]>;
   countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
@@ -24,7 +24,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
     try {
       const { limit, offset } = parsePagination(req.query);
       const [users, total] = await Promise.all([
-        findUsers({}, USER_LIST_FIELDS, { limit, offset }),
+        findUsers({}, USER_LIST_FIELDS, { limit, offset, sort: { createdAt: -1 } }),
         countUsers(),
       ]);
 
@@ -64,7 +64,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       const regex = new RegExp(escaped, 'i');
 
       const users = await findUsers(
-        { $or: [{ name: regex }, { email: regex }, { username: regex }] },
+        { $or: [{ name: regex }, { email: regex }] },
         '_id name email avatar',
         { limit: searchLimit },
       );
