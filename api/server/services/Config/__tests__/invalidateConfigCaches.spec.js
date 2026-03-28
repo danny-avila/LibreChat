@@ -32,12 +32,14 @@ jest.mock('../getCachedTools', () => ({
   invalidateCachedTools: mockInvalidateCachedTools,
 }));
 
+const mockClearMcpConfigCache = jest.fn().mockResolvedValue(undefined);
 jest.mock('@librechat/api', () => ({
   createAppConfigService: jest.fn(() => ({
     getAppConfig: jest.fn().mockResolvedValue({ availableTools: {} }),
     clearAppConfigCache: mockClearAppConfigCache,
     clearOverrideCache: mockClearOverrideCache,
   })),
+  clearMcpConfigCache: mockClearMcpConfigCache,
 }));
 
 // ── Tests ──────────────────────────────────────────────────────────────

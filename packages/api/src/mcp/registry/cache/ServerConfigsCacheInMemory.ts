@@ -28,6 +28,10 @@ export class ServerConfigsCacheInMemory {
     this.cache.set(serverName, { ...config, updatedAt: Date.now() });
   }
 
+  public async upsert(serverName: string, config: ParsedServerConfig): Promise<void> {
+    this.cache.set(serverName, { ...config, updatedAt: Date.now() });
+  }
+
   public async remove(serverName: string): Promise<void> {
     if (!this.cache.delete(serverName)) {
       throw new Error(`Failed to remove server "${serverName}" in cache.`);
