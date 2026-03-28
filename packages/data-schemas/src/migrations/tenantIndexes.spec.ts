@@ -1,4 +1,4 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { dropSupersededTenantIndexes, SUPERSEDED_INDEXES } from './tenantIndexes';
 
@@ -24,7 +24,7 @@ afterAll(async () => {
 describe('dropSupersededTenantIndexes', () => {
   describe('with pre-existing single-field unique indexes (simulates upgrade)', () => {
     beforeAll(async () => {
-      const db = mongoose.connection.db;
+      const db = mongoose.connection.db!;
 
       await db.createCollection('users');
       const users = db.collection('users');
@@ -133,7 +133,7 @@ describe('dropSupersededTenantIndexes', () => {
     });
 
     it('old unique indexes are actually gone from users collection', async () => {
-      const indexes = await mongoose.connection.db.collection('users').indexes();
+      const indexes = await mongoose.connection.db!.collection('users').indexes();
       const indexNames = indexes.map((idx) => idx.name);
 
       expect(indexNames).not.toContain('email_1');
@@ -143,14 +143,14 @@ describe('dropSupersededTenantIndexes', () => {
     });
 
     it('old unique indexes are actually gone from roles collection', async () => {
-      const indexes = await mongoose.connection.db.collection('roles').indexes();
+      const indexes = await mongoose.connection.db!.collection('roles').indexes();
       const indexNames = indexes.map((idx) => idx.name);
 
       expect(indexNames).not.toContain('name_1');
     });
 
     it('old compound unique indexes are gone from conversations collection', async () => {
-      const indexes = await mongoose.connection.db.collection('conversations').indexes();
+      const indexes = await mongoose.connection.db!.collection('conversations').indexes();
       const indexNames = indexes.map((idx) => idx.name);
 
       expect(indexNames).not.toContain('conversationId_1_user_1');
@@ -159,7 +159,7 @@ describe('dropSupersededTenantIndexes', () => {
 
   describe('multi-tenant writes after migration', () => {
     beforeAll(async () => {
-      const db = mongoose.connection.db;
+      const db = mongoose.connection.db!;
 
       const users = db.collection('users');
       await users.createIndex(
@@ -169,7 +169,7 @@ describe('dropSupersededTenantIndexes', () => {
     });
 
     it('allows same email in different tenants after old index is dropped', async () => {
-      const users = mongoose.connection.db.collection('users');
+      const users = mongoose.connection.db!.collection('users');
 
       await users.insertOne({
         email: 'shared@example.com',
@@ -196,7 +196,7 @@ describe('dropSupersededTenantIndexes', () => {
     });
 
     it('still rejects duplicate email within same tenant', async () => {
-      const users = mongoose.connection.db.collection('users');
+      const users = mongoose.connection.db!.collection('users');
 
       await users.insertOne({
         email: 'unique-within@example.com',
@@ -247,7 +247,7 @@ describe('dropSupersededTenantIndexes', () => {
       partialConnection = mongoose.createConnection(partialServer.getUri());
       await partialConnection.asPromise();
 
-      const db = partialConnection.db;
+      const db = partialConnection.db!;
       await db.createCollection('users');
       await db.collection('users').createIndex({ email: 1 }, { unique: true, name: 'email_1' });
     });
