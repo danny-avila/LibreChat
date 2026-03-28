@@ -2,6 +2,7 @@ import type { Document, Types } from 'mongoose';
 import { CursorPaginationParams } from '~/common';
 
 export interface IUser extends Document {
+  _id: Types.ObjectId;
   name?: string;
   username?: string;
   email: string;
@@ -50,6 +51,20 @@ export interface IUser extends Document {
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
   tenantId?: string;
+  /** Federated tokens from OpenID Connect providers */
+  federatedTokens?: {
+    access_token?: string;
+    id_token?: string;
+    refresh_token?: string;
+    expires_at?: number;
+  };
+  /** Legacy OpenID token storage */
+  openidTokens?: {
+    access_token?: string;
+    id_token?: string;
+    refresh_token?: string;
+    expires_at?: number;
+  };
 }
 
 export interface BalanceConfig {

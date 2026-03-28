@@ -48,13 +48,13 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
   ): Promise<IUser[]> {
-    const User = mongoose.models.User;
+    const User = mongoose.models.User as mongoose.Model<IUser>;
     const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
     const query = User.find(normalizedCriteria);
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return (await query.lean()) as IUser[];
+    return await query.lean();
   }
 
   /**
@@ -302,7 +302,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       .slice(0, limit)
       .map((user) => {
         // Remove the search score from final results
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
         const { _searchScore, ...userWithoutScore } = user;
         return userWithoutScore;
       });
