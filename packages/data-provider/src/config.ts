@@ -96,10 +96,23 @@ export const cloudfrontConfigSchema = z
     invalidateOnDelete: z.boolean().default(false),
     imageSigning: cloudfrontSigningSchema.default('none'),
     urlExpiry: z.number().positive().default(3600),
+    cookieExpiry: z.number().positive().max(604800).default(1800),
+    cookieDomain: z
+      .string()
+      .min(1)
+      .refine((d) => d.startsWith('.'), {
+        message: 'cookieDomain must start with a dot (e.g., ".example.com") to apply to subdomains',
+      })
+      .optional(),
   })
   .refine((data) => !data.invalidateOnDelete || !!data.distributionId, {
     message: 'distributionId is required when invalidateOnDelete is true',
     path: ['distributionId'],
+  })
+  .refine((data) => data.imageSigning !== 'cookies' || !!data.cookieDomain, {
+    message:
+      'cookieDomain is required when imageSigning is "cookies" (e.g., ".example.com" for API at api.example.com and CDN at cdn.example.com)',
+    path: ['cookieDomain'],
   })
   .optional();
 
