@@ -14,9 +14,9 @@ const {
   isMCPInspectionFailedError,
 } = require('@librechat/api');
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
+const { resolveConfigServers, resolveAllMcpConfigs } = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
-const { resolveConfigServers, resolveAllMcpConfigs } = require('~/server/services/MCP');
 
 /**
  * Handles MCP-specific errors and sends appropriate HTTP responses.
