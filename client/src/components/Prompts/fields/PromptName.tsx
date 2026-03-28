@@ -16,6 +16,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const wasLoadingRef = useRef(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const cancelledRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(name);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -25,6 +26,10 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
   }, []);
 
   const saveName = useCallback(() => {
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      return;
+    }
     const savedName = newName?.trim();
     if (savedName && savedName !== name) {
       setSaveStatus('saving');
@@ -39,6 +44,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
     (e: React.KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        cancelledRef.current = true;
         setNewName(name);
         setIsEditing(false);
       }
@@ -62,6 +68,9 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
       setSaveStatus('saving');
     } else if (wasLoadingRef.current && !isLoading) {
       setSaveStatus('saved');
+      if (savedTimerRef.current) {
+        clearTimeout(savedTimerRef.current);
+      }
       savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
     }
     wasLoadingRef.current = isLoading;

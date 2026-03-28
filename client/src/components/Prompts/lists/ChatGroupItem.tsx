@@ -49,7 +49,7 @@ function ChatGroupItem({
   const canEdit = hasPermission(PermissionBits.EDIT);
   const canDelete = hasPermission(PermissionBits.DELETE);
 
-  const previewButtonRef = useRef<HTMLButtonElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const deleteGroup = useDeletePromptGroup({
     onSuccess: () => {
@@ -61,7 +61,10 @@ function ChatGroupItem({
   });
 
   const handleDelete = useCallback(() => {
-    deleteGroup.mutate({ id: group._id ?? '' });
+    if (!group._id) {
+      return;
+    }
+    deleteGroup.mutate({ id: group._id });
   }, [group._id, deleteGroup]);
 
   const onCardClick = useCallback(() => {
@@ -196,6 +199,7 @@ function ChatGroupItem({
                 setIsOpen={setMenuOpen}
                 trigger={
                   <Ariakit.MenuButton
+                    ref={menuButtonRef}
                     aria-label={localize('com_nav_convo_menu_options')}
                     className={cn(
                       'flex size-7 items-center justify-center rounded-md text-text-secondary transition-opacity hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
@@ -220,7 +224,7 @@ function ChatGroupItem({
         onOpenChange={setPreviewDialogOpen}
         onCloseAutoFocus={() => {
           requestAnimationFrame(() => {
-            previewButtonRef.current?.focus({ preventScroll: true });
+            menuButtonRef.current?.focus({ preventScroll: true });
           });
         }}
       />
