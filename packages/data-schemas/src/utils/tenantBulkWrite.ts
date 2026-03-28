@@ -1,6 +1,7 @@
 import type { AnyBulkWriteOperation, Model, MongooseBulkWriteOptions } from 'mongoose';
 import type { BulkWriteResult } from 'mongodb';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import logger from '~/config/winston';
 
 let _strictMode: boolean | undefined;
 
@@ -101,5 +102,8 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
       '[TenantIsolation] Unknown bulkWrite operation type in strict mode — refusing to pass through without tenant injection',
     );
   }
+  logger.warn(
+    '[tenantSafeBulkWrite] Unknown bulk op type, passing through without tenant injection',
+  );
   return op;
 }
