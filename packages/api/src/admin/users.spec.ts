@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { SystemRoles } from 'librechat-data-provider';
+import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type { IUser, UserDeleteResult } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -97,11 +97,11 @@ describe('createAdminUsersHandlers', () => {
 
       await handlers.listUsers(req, res);
 
-      expect(findUsers).toHaveBeenCalledWith(
-        {},
-        expect.any(String),
-        { limit: 10, offset: 20, sort: { createdAt: -1 } },
-      );
+      expect(findUsers).toHaveBeenCalledWith({}, expect.any(String), {
+        limit: 10,
+        offset: 20,
+        sort: { createdAt: -1 },
+      });
     });
 
     it('returns empty list when no users', async () => {
@@ -251,11 +251,7 @@ describe('createAdminUsersHandlers', () => {
 
       await handlers.searchUsers(req, res);
 
-      expect(findUsers).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.any(String),
-        { limit: 3 },
-      );
+      expect(findUsers).toHaveBeenCalledWith(expect.any(Object), expect.any(String), { limit: 3 });
     });
 
     it('caps limit at 50', async () => {
@@ -266,11 +262,7 @@ describe('createAdminUsersHandlers', () => {
 
       await handlers.searchUsers(req, res);
 
-      expect(findUsers).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.any(String),
-        { limit: 50 },
-      );
+      expect(findUsers).toHaveBeenCalledWith(expect.any(Object), expect.any(String), { limit: 50 });
     });
 
     it('returns 500 on error', async () => {
@@ -381,12 +373,12 @@ describe('createAdminUsersHandlers', () => {
       await handlers.deleteUser(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.deleteConfig).toHaveBeenCalledWith('USER', validUserId);
+      expect(deps.deleteConfig).toHaveBeenCalledWith(PrincipalType.USER, validUserId);
       expect(deps.deleteAclEntries).toHaveBeenCalledWith({
-        principalType: 'USER',
-        principalId: validUserId,
+        principalType: PrincipalType.USER,
+        principalId: expect.any(Types.ObjectId),
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith('USER', validUserId);
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.USER, validUserId);
     });
 
     it('returns success even when cascade cleanup partially fails', async () => {

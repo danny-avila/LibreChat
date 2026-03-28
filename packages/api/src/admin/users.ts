@@ -1,7 +1,13 @@
+import { Types } from 'mongoose';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString } from '@librechat/data-schemas';
-import type { IUser, IConfig, AdminUserSearchResult, UserDeleteResult } from '@librechat/data-schemas';
-import type { FilterQuery, Types } from 'mongoose';
+import type {
+  IUser,
+  IConfig,
+  AdminUserSearchResult,
+  UserDeleteResult,
+} from '@librechat/data-schemas';
+import type { FilterQuery } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import { parsePagination } from './pagination';
@@ -41,8 +47,12 @@ export interface AdminUsersDeps {
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps) {
   const {
-    findUsers, countUsers, deleteUserById,
-    deleteConfig, deleteAclEntries, deleteGrantsForPrincipal,
+    findUsers,
+    countUsers,
+    deleteUserById,
+    deleteConfig,
+    deleteAclEntries,
+    deleteGrantsForPrincipal,
   } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
@@ -86,7 +96,9 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       }
 
       if (trimmed.length > MAX_SEARCH_LENGTH) {
-        return res.status(400).json({ error: `Query must not exceed ${MAX_SEARCH_LENGTH} characters` });
+        return res
+          .status(400)
+          .json({ error: `Query must not exceed ${MAX_SEARCH_LENGTH} characters` });
       }
 
       const searchLimit = Math.min(Math.max(1, parseInt(limit) || 20), 50);
@@ -151,9 +163,10 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         }
       }
 
+      const objectId = new Types.ObjectId(id);
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.USER, id),
-        deleteAclEntries({ principalType: PrincipalType.USER, principalId: id }),
+        deleteAclEntries({ principalType: PrincipalType.USER, principalId: objectId }),
         deleteGrantsForPrincipal(PrincipalType.USER, id),
       ]);
       for (const r of cleanupResults) {
