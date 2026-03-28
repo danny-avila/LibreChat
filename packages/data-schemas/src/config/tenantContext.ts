@@ -26,3 +26,9 @@ export function getTenantId(): string | undefined {
 export function runAsSystem<T>(fn: () => Promise<T>): Promise<T> {
   return tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, fn);
 }
+
+/** Appends `:${tenantId}` to a cache key when tenant context is active. */
+export function scopedCacheKey(baseKey: string): string {
+  const tenantId = getTenantId();
+  return tenantId ? `${baseKey}:${tenantId}` : baseKey;
+}

@@ -1,5 +1,5 @@
 const express = require('express');
-const { logger, getTenantId } = require('@librechat/data-schemas');
+const { logger, getTenantId, scopedCacheKey } = require('@librechat/data-schemas');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
 const { CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
@@ -24,7 +24,7 @@ router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
 
   const tenantId = getTenantId();
-  const cacheKey = tenantId ? `${CacheKeys.STARTUP_CONFIG}:${tenantId}` : CacheKeys.STARTUP_CONFIG;
+  const cacheKey = scopedCacheKey(CacheKeys.STARTUP_CONFIG);
   const cachedStartupConfig = await cache.get(cacheKey);
   if (cachedStartupConfig) {
     res.send(cachedStartupConfig);
@@ -41,7 +41,7 @@ router.get('/', async function (req, res) {
   try {
     const appConfig = await getAppConfig({
       role: req.user?.role,
-      tenantId: tenantId || req.user?.tenantId,
+      tenantId: req.user?.tenantId || tenantId,
     });
 
     const isOpenIdEnabled =

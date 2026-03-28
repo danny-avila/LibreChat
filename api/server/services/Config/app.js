@@ -1,5 +1,5 @@
 const { CacheKeys } = require('librechat-data-provider');
-const { AppService, logger, getTenantId } = require('@librechat/data-schemas');
+const { AppService, logger, scopedCacheKey } = require('@librechat/data-schemas');
 const { createAppConfigService, clearMcpConfigCache } = require('@librechat/api');
 const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
@@ -33,11 +33,7 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
 async function clearEndpointConfigCache() {
   try {
     const configStore = getLogStores(CacheKeys.CONFIG_STORE);
-    const tenantId = getTenantId();
-    const cacheKey = tenantId
-      ? `${CacheKeys.ENDPOINT_CONFIG}:${tenantId}`
-      : CacheKeys.ENDPOINT_CONFIG;
-    await configStore.delete(cacheKey);
+    await configStore.delete(scopedCacheKey(CacheKeys.ENDPOINT_CONFIG));
   } catch {
     // CONFIG_STORE or ENDPOINT_CONFIG may not exist — not critical
   }

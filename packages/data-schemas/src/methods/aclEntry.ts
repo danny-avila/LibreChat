@@ -375,7 +375,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
    * @param options - Optional query options (e.g., { session })
    */
   async function bulkWriteAclEntries(
-    ops: AnyBulkWriteOperation[],
+    ops: AnyBulkWriteOperation<IAclEntry>[],
     options?: { session?: ClientSession },
   ) {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;

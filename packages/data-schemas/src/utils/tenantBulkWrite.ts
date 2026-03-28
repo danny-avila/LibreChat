@@ -1,10 +1,6 @@
 import type { AnyBulkWriteOperation, Model, MongooseBulkWriteOptions } from 'mongoose';
 import type { BulkWriteResult } from 'mongodb';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
-import logger from '~/config/winston';
-
-/** Mongoose's default schema type for unparameterized bulk operations. */
-type BulkOp = AnyBulkWriteOperation;
 
 let _strictMode: boolean | undefined;
 
@@ -34,7 +30,7 @@ export function _resetBulkWriteStrictCache(): void {
  */
 export async function tenantSafeBulkWrite<T>(
   model: Model<T>,
-  ops: BulkOp[],
+  ops: AnyBulkWriteOperation[],
   options?: MongooseBulkWriteOptions,
 ): Promise<BulkWriteResult> {
   const tenantId = getTenantId();
@@ -60,7 +56,7 @@ export async function tenantSafeBulkWrite<T>(
  * Injects `tenantId` into a single bulk-write operation.
  * Returns a new operation object — does not mutate the original.
  */
-function injectTenantId(op: BulkOp, tenantId: string): BulkOp {
+function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWriteOperation {
   if ('insertOne' in op) {
     return {
       insertOne: {
@@ -100,8 +96,10 @@ function injectTenantId(op: BulkOp, tenantId: string): BulkOp {
     };
   }
 
-  logger.warn(
-    '[tenantSafeBulkWrite] Unknown bulk operation type, passing through without tenant injection',
-  );
+  if (isStrict()) {
+    throw new Error(
+      '[TenantIsolation] Unknown bulkWrite operation type in strict mode — refusing to pass through without tenant injection',
+    );
+  }
   return op;
 }

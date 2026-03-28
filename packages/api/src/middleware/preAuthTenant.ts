@@ -1,4 +1,4 @@
-import { tenantStorage, logger } from '@librechat/data-schemas';
+import { tenantStorage } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
 
 /**
@@ -37,8 +37,6 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
     next();
     return;
   }
-
-  logger.debug(`[preAuthTenant] Resolved tenant from header: ${tenantId}`);
 
   return void tenantStorage.run({ tenantId }, async () => {
     next();

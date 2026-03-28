@@ -510,29 +510,37 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
         matchFilter._id = new ObjectId(matchFilter._id);
       }
       const tenantId = getTenantId();
-      const lookupPipeline =
-        tenantId && tenantId !== SYSTEM_TENANT_ID
-          ? [
-              {
-                $match: {
-                  $expr: {
-                    $and: [{ $eq: ['$_id', '$$prodId'] }, { $eq: ['$tenantId', tenantId] }],
+      const useTenantFilter = tenantId && tenantId !== SYSTEM_TENANT_ID;
+
+      const lookupStage = useTenantFilter
+        ? {
+            $lookup: {
+              from: 'prompts',
+              let: { prodId: '$productionId' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [{ $eq: ['$_id', '$$prodId'] }, { $eq: ['$tenantId', tenantId] }],
+                    },
                   },
                 },
-              },
-            ]
-          : [{ $match: { $expr: { $eq: ['$_id', '$$prodId'] } } }];
+              ],
+              as: 'productionPrompt',
+            },
+          }
+        : {
+            $lookup: {
+              from: 'prompts',
+              localField: 'productionId',
+              foreignField: '_id',
+              as: 'productionPrompt',
+            },
+          };
 
       const result = await PromptGroup.aggregate([
         { $match: matchFilter },
-        {
-          $lookup: {
-            from: 'prompts',
-            let: { prodId: '$productionId' },
-            pipeline: lookupPipeline,
-            as: 'productionPrompt',
-          },
-        },
+        lookupStage,
         { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
       ]);
       const group = result[0] || null;

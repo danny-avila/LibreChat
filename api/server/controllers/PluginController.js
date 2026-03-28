@@ -1,4 +1,4 @@
-const { logger, getTenantId } = require('@librechat/data-schemas');
+const { logger, scopedCacheKey } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const { getToolkitKey, checkPluginAuth, filterUniquePlugins } = require('@librechat/api');
 const { getCachedTools, setCachedTools } = require('~/server/services/Config');
@@ -9,8 +9,7 @@ const { getLogStores } = require('~/cache');
 const getAvailablePluginsController = async (req, res) => {
   try {
     const cache = getLogStores(CacheKeys.TOOL_CACHE);
-    const tenantId = getTenantId();
-    const pluginsCacheKey = tenantId ? `${CacheKeys.PLUGINS}:${tenantId}` : CacheKeys.PLUGINS;
+    const pluginsCacheKey = scopedCacheKey(CacheKeys.PLUGINS);
     const cachedPlugins = await cache.get(pluginsCacheKey);
     if (cachedPlugins) {
       res.status(200).json(cachedPlugins);
@@ -66,8 +65,7 @@ const getAvailableTools = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
     const cache = getLogStores(CacheKeys.TOOL_CACHE);
-    const tenantId = getTenantId();
-    const toolsCacheKey = tenantId ? `${CacheKeys.TOOLS}:${tenantId}` : CacheKeys.TOOLS;
+    const toolsCacheKey = scopedCacheKey(CacheKeys.TOOLS);
     const cachedToolsArray = await cache.get(toolsCacheKey);
 
     const appConfig =
