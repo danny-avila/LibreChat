@@ -38,10 +38,11 @@ async function clearEndpointConfigCache() {
   try {
     const configStore = getLogStores(CacheKeys.CONFIG_STORE);
     const scoped = scopedCacheKey(CacheKeys.ENDPOINT_CONFIG);
-    await configStore.delete(scoped);
+    const keys = [scoped];
     if (scoped !== CacheKeys.ENDPOINT_CONFIG) {
-      await configStore.delete(CacheKeys.ENDPOINT_CONFIG);
+      keys.push(CacheKeys.ENDPOINT_CONFIG);
     }
+    await Promise.all(keys.map((k) => configStore.delete(k)));
   } catch {
     // CONFIG_STORE or ENDPOINT_CONFIG may not exist — not critical
   }

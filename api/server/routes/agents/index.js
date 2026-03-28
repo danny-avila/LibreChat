@@ -67,6 +67,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
+  // Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check above passes
   if (job.metadata?.tenantId && job.metadata.tenantId !== req.user.tenantId) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
