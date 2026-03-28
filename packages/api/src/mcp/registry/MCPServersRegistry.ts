@@ -510,8 +510,10 @@ export class MCPServersRegistry {
     return evictedNames;
   }
 
-  // TODO: This is currently used to determine if a server requires OAuth. However, this info can
-  // can be determined through config.requiresOAuth. Refactor usages and remove this method.
+  // TODO: Refactor callers to use config.requiresOAuth directly instead of this method.
+  // Known gap: config-source OAuth servers are not included here because callers
+  // (OAuthReconnectionManager, UserController) lack request context to resolve configServers.
+  // Config-source OAuth auto-reconnection and uninstall cleanup require a separate mechanism.
   public async getOAuthServers(userId?: string): Promise<Set<string>> {
     const allServers = await this.getAllServerConfigs(userId);
     const oauthServers = Object.entries(allServers).filter(([, config]) => config.requiresOAuth);
@@ -585,10 +587,14 @@ export class MCPServersRegistry {
    * with different configurations.
    */
   private configCacheKey(serverName: string, rawConfig: t.MCPOptions): string {
-    const sorted = JSON.stringify(
-      rawConfig,
-      Object.keys(rawConfig as Record<string, unknown>).sort(),
-    );
+    const sorted = JSON.stringify(rawConfig, (_key, value: unknown) => {
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        return Object.fromEntries(
+          Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)),
+        );
+      }
+      return value;
+    });
     const hash = createHash('sha256').update(sorted).digest('hex').slice(0, 16);
     return `${serverName}:${hash}`;
   }
