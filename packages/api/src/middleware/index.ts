@@ -6,5 +6,6 @@ export * from './balance';
 export * from './json';
 export * from './capabilities';
 export { tenantContextMiddleware } from './tenant';
+export { preAuthTenantMiddleware } from './preAuthTenant';
 export * from './concurrency';
 export * from './checkBalance';
