@@ -24,6 +24,6 @@ router.use(requireJwtAuth, requireAdminAccess);
 
 router.get('/', requireReadUsers, handlers.listUsers);
 router.get('/search', requireReadUsers, handlers.searchUsers);
-router.delete('/:id', requireManageUsers, handlers.deleteUser);
+// router.delete('/:id', requireManageUsers, handlers.deleteUser);
 
 module.exports = router;
