@@ -4,6 +4,7 @@ import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { isUserSourced } from './utils';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
@@ -38,6 +39,8 @@ export abstract class UserConnectionManager {
     opts: {
       serverName: string;
       forceNew?: boolean;
+      /** Pre-resolved config for config-source servers not in YAML/DB */
+      serverConfig?: t.ParsedServerConfig;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth'>,
   ): Promise<MCPConnection> {
     const { serverName, forceNew, user } = opts;
@@ -85,9 +88,11 @@ export abstract class UserConnectionManager {
       signal,
       returnOnOAuth = false,
       connectionTimeout,
+      serverConfig: providedConfig,
     }: {
       serverName: string;
       forceNew?: boolean;
+      serverConfig?: t.ParsedServerConfig;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth'>,
     userId: string,
   ): Promise<MCPConnection> {
@@ -98,7 +103,9 @@ export abstract class UserConnectionManager {
       );
     }
 
-    const config = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
+    const config =
+      providedConfig ??
+      (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
 
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);
@@ -158,7 +165,7 @@ export abstract class UserConnectionManager {
         {
           serverConfig: config,
           serverName: serverName,
-          dbSourced: !!config.dbId,
+          dbSourced: isUserSourced(config),
           useSSRFProtection: registry.shouldEnableSSRFProtection(),
           allowedDomains: registry.getAllowedDomains(),
         },

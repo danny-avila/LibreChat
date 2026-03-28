@@ -14,6 +14,7 @@ const mockRegistryInstance = {
   getOAuthServers: jest.fn(() => Promise.resolve(new Set())),
   getAllServerConfigs: jest.fn(() => Promise.resolve({})),
   getServerConfig: jest.fn(() => Promise.resolve(null)),
+  ensureConfigServers: jest.fn(() => Promise.resolve({})),
 };
 
 // Create isMCPDomainAllowed mock that can be configured per-test
@@ -113,38 +114,43 @@ describe('tests for the new helper functions used by the MCP connection status e
     });
 
     it('should successfully return MCP setup data', async () => {
-      mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfig);
+      const mockConfigWithOAuth = {
+        server1: { type: 'stdio' },
+        server2: { type: 'http', requiresOAuth: true },
+      };
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfigWithOAuth);
 
       const mockAppConnections = new Map([['server1', { status: 'connected' }]]);
       const mockUserConnections = new Map([['server2', { status: 'disconnected' }]]);
-      const mockOAuthServers = new Set(['server2']);
 
       const mockMCPManager = {
         appConnections: { getLoaded: jest.fn(() => Promise.resolve(mockAppConnections)) },
         getUserConnections: jest.fn(() => mockUserConnections),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
-      mockRegistryInstance.getOAuthServers.mockResolvedValue(mockOAuthServers);
 
       const result = await getMCPSetupData(mockUserId);
 
-      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(mockUserId);
+      expect(mockRegistryInstance.ensureConfigServers).toHaveBeenCalled();
+      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(
+        mockUserId,
+        expect.any(Object),
+      );
       expect(mockGetMCPManager).toHaveBeenCalledWith(mockUserId);
       expect(mockMCPManager.appConnections.getLoaded).toHaveBeenCalled();
       expect(mockMCPManager.getUserConnections).toHaveBeenCalledWith(mockUserId);
-      expect(mockRegistryInstance.getOAuthServers).toHaveBeenCalledWith(mockUserId);
 
-      expect(result).toEqual({
-        mcpConfig: mockConfig,
-        appConnections: mockAppConnections,
-        userConnections: mockUserConnections,
-        oauthServers: mockOAuthServers,
-      });
+      expect(result.mcpConfig).toEqual(mockConfigWithOAuth);
+      expect(result.appConnections).toEqual(mockAppConnections);
+      expect(result.userConnections).toEqual(mockUserConnections);
+      expect(result.oauthServers).toEqual(new Set(['server2']));
     });
 
-    it('should throw error when MCP config not found', async () => {
-      mockRegistryInstance.getAllServerConfigs.mockResolvedValue(null);
-      await expect(getMCPSetupData(mockUserId)).rejects.toThrow('MCP config not found');
+    it('should return empty data when no servers are configured', async () => {
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue({});
+      const result = await getMCPSetupData(mockUserId);
+      expect(result.mcpConfig).toEqual({});
+      expect(result.oauthServers).toEqual(new Set());
     });
 
     it('should handle null values from MCP manager gracefully', async () => {

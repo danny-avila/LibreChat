@@ -89,6 +89,8 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   metadata?: OAuthMetadata;
   resourceMetadata?: OAuthProtectedResourceMetadata;
   authorizationUrl?: string;
+  /** Custom headers for OAuth token exchange, persisted at flow initiation for the callback. */
+  oauthHeaders?: Record<string, string>;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {

@@ -25,11 +25,13 @@ async function reinitMCPServer({
   signal,
   forceNew,
   serverName,
+  configServers,
   userMCPAuthMap,
   connectionTimeout,
   returnOnOAuth = true,
   oauthStart: _oauthStart,
   flowManager: _flowManager,
+  serverConfig: providedConfig,
 }) {
   /** @type {MCPConnection | null} */
   let connection = null;
@@ -42,13 +44,28 @@ async function reinitMCPServer({
 
   try {
     const registry = getMCPServersRegistry();
-    const serverConfig = await registry.getServerConfig(serverName, user?.id);
+    const serverConfig =
+      providedConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
     if (serverConfig?.inspectionFailed) {
+      if (serverConfig.source === 'config') {
+        logger.info(
+          `[MCP Reinitialize] Config-source server ${serverName} has inspectionFailed — retry handled by config cache`,
+        );
+        return {
+          availableTools: null,
+          success: false,
+          message: `MCP server '${serverName}' is still unreachable`,
+          oauthRequired: false,
+          serverName,
+          oauthUrl: null,
+          tools: null,
+        };
+      }
       logger.info(
         `[MCP Reinitialize] Server ${serverName} had failed inspection, attempting reinspection`,
       );
       try {
-        const storageLocation = serverConfig.dbId ? 'DB' : 'CACHE';
+        const storageLocation = serverConfig.source === 'user' ? 'DB' : 'CACHE';
         await registry.reinspectServer(serverName, storageLocation, user?.id);
         logger.info(`[MCP Reinitialize] Reinspection succeeded for server: ${serverName}`);
       } catch (reinspectError) {
@@ -93,6 +110,7 @@ async function reinitMCPServer({
         returnOnOAuth,
         customUserVars,
         connectionTimeout,
+        serverConfig,
       });
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
@@ -125,6 +143,7 @@ async function reinitMCPServer({
             oauthStart,
             customUserVars,
             connectionTimeout,
+            configServers,
           });
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {

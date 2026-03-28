@@ -16,11 +16,17 @@ export type ServerConfigsCache =
  */
 export const APP_CACHE_NAMESPACE = 'App' as const;
 
+/** Namespace for admin-defined config-override MCP server inspection results. */
+export const CONFIG_CACHE_NAMESPACE = 'Config' as const;
+
+/** Namespaces that use the aggregate-key optimization to avoid SCAN+N-GETs stalls. */
+const AGGREGATE_KEY_NAMESPACES = new Set<string>([APP_CACHE_NAMESPACE, CONFIG_CACHE_NAMESPACE]);
+
 /**
  * Factory for creating the appropriate ServerConfigsCache implementation based on
  * deployment mode and namespace.
  *
- * The {@link APP_CACHE_NAMESPACE} namespace uses {@link ServerConfigsCacheRedisAggregateKey}
+ * Namespaces in {@link AGGREGATE_KEY_NAMESPACES} use {@link ServerConfigsCacheRedisAggregateKey}
  * when Redis is enabled — storing all configs under a single key so `getAll()` is one GET
  * instead of SCAN + N GETs. Cross-instance visibility is preserved: reinspection results
  * propagate through Redis automatically.
@@ -32,8 +38,8 @@ export class ServerConfigsCacheFactory {
   /**
    * Create a ServerConfigsCache instance.
    *
-   * @param namespace - The namespace for the cache. {@link APP_CACHE_NAMESPACE} uses
-   *   aggregate-key Redis storage (or in-memory when Redis is disabled).
+   * @param namespace - The namespace for the cache. Namespaces in {@link AGGREGATE_KEY_NAMESPACES}
+   *   use aggregate-key Redis storage (or in-memory when Redis is disabled).
    * @param leaderOnly - Whether write operations should only be performed by the leader.
    * @returns ServerConfigsCache instance
    */
@@ -42,7 +48,7 @@ export class ServerConfigsCacheFactory {
       return new ServerConfigsCacheInMemory();
     }
 
-    if (namespace === APP_CACHE_NAMESPACE) {
+    if (AGGREGATE_KEY_NAMESPACES.has(namespace)) {
       return new ServerConfigsCacheRedisAggregateKey(namespace, leaderOnly);
     }
 

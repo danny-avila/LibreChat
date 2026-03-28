@@ -3,6 +3,7 @@ import {
   normalizeServerName,
   redactAllServerSecrets,
   redactServerSecrets,
+  isUserSourced,
 } from '~/mcp/utils';
 import type { ParsedServerConfig } from '~/mcp/types';
 
@@ -271,5 +272,31 @@ describe('redactAllServerSecrets', () => {
     expect(redacted['server-b'].oauth?.client_secret).toBeUndefined();
     expect(redacted['server-b'].oauth?.client_id).toBe('cid-b');
     expect((redacted['server-c'] as Record<string, unknown>).command).toBeUndefined();
+  });
+});
+
+describe('isUserSourced', () => {
+  it('returns false when source is yaml', () => {
+    expect(isUserSourced({ source: 'yaml' })).toBe(false);
+  });
+
+  it('returns false when source is config', () => {
+    expect(isUserSourced({ source: 'config' })).toBe(false);
+  });
+
+  it('returns true when source is user', () => {
+    expect(isUserSourced({ source: 'user' })).toBe(true);
+  });
+
+  it('falls back to dbId when source is undefined — dbId present means user-sourced', () => {
+    expect(isUserSourced({ source: undefined, dbId: 'abc123' })).toBe(true);
+  });
+
+  it('falls back to dbId when source is undefined — no dbId means trusted', () => {
+    expect(isUserSourced({ source: undefined, dbId: undefined })).toBe(false);
+  });
+
+  it('returns false when both source and dbId are absent (pre-upgrade YAML server)', () => {
+    expect(isUserSourced({})).toBe(false);
   });
 });

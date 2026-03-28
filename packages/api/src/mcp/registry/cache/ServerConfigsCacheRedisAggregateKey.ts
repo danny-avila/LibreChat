@@ -53,8 +53,11 @@ export class ServerConfigsCacheRedisAggregateKey
   /** Milliseconds since epoch. 0 = epoch = always expired on first check. */
   private localSnapshotExpiry = 0;
 
+  private readonly namespace: string;
+
   constructor(namespace: string, leaderOnly: boolean) {
     super(leaderOnly);
+    this.namespace = namespace;
     this.cache = standardCache(`${this.PREFIX}::Servers::${namespace}`);
   }
 
@@ -125,7 +128,7 @@ export class ServerConfigsCacheRedisAggregateKey
       const storedConfig = { ...config, updatedAt: Date.now() };
       const newAll = { ...all, [serverName]: storedConfig };
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
-      this.successCheck(`add App server "${serverName}"`, success);
+      this.successCheck(`add ${this.namespace} server "${serverName}"`, success);
       return { serverName, config: storedConfig };
     });
   }
@@ -142,7 +145,18 @@ export class ServerConfigsCacheRedisAggregateKey
       }
       const newAll = { ...all, [serverName]: { ...config, updatedAt: Date.now() } };
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
-      this.successCheck(`update App server "${serverName}"`, success);
+      this.successCheck(`update ${this.namespace} server "${serverName}"`, success);
+    });
+  }
+
+  public async upsert(serverName: string, config: ParsedServerConfig): Promise<void> {
+    if (this.leaderOnly) await this.leaderCheck('upsert MCP servers');
+    return this.withWriteLock(async () => {
+      this.invalidateLocalSnapshot();
+      const all = await this.getAll();
+      const newAll = { ...all, [serverName]: { ...config, updatedAt: Date.now() } };
+      const success = await this.cache.set(AGGREGATE_KEY, newAll);
+      this.successCheck(`upsert ${this.namespace} server "${serverName}"`, success);
     });
   }
 
@@ -156,7 +170,7 @@ export class ServerConfigsCacheRedisAggregateKey
       }
       const { [serverName]: _, ...newAll } = all;
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
-      this.successCheck(`remove App server "${serverName}"`, success);
+      this.successCheck(`remove ${this.namespace} server "${serverName}"`, success);
     });
   }
 
@@ -171,7 +185,7 @@ export class ServerConfigsCacheRedisAggregateKey
    */
   public override async reset(): Promise<void> {
     if (this.leaderOnly) {
-      await this.leaderCheck('reset App MCP servers cache');
+      await this.leaderCheck(`reset ${this.namespace} MCP servers cache`);
     }
     await this.cache.delete(AGGREGATE_KEY);
     this.invalidateLocalSnapshot();

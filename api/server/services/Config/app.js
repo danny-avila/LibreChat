@@ -1,6 +1,6 @@
 const { CacheKeys } = require('librechat-data-provider');
-const { createAppConfigService } = require('@librechat/api');
 const { AppService, logger } = require('@librechat/data-schemas');
+const { createAppConfigService, clearMcpConfigCache } = require('@librechat/api');
 const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
 const loadCustomConfig = require('./loadCustomConfig');
@@ -42,7 +42,7 @@ async function clearEndpointConfigCache() {
 /**
  * Invalidate all config-related caches after an admin config mutation.
  * Clears the base config, per-principal override caches, tool caches,
- * and the endpoints config cache.
+ * the endpoints config cache, and the MCP config-source server cache.
  * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
  */
 async function invalidateConfigCaches(tenantId) {
@@ -51,12 +51,14 @@ async function invalidateConfigCaches(tenantId) {
     clearOverrideCache(tenantId),
     invalidateCachedTools({ invalidateGlobal: true }),
     clearEndpointConfigCache(),
+    clearMcpConfigCache(),
   ]);
   const labels = [
     'clearAppConfigCache',
     'clearOverrideCache',
     'invalidateCachedTools',
     'clearEndpointConfigCache',
+    'clearMcpConfigCache',
   ];
   for (let i = 0; i < results.length; i++) {
     if (results[i].status === 'rejected') {

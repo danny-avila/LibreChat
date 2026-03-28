@@ -221,6 +221,25 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   }
 
   /**
+   * Atomic add-or-update. For DB-backed servers this delegates to update since
+   * DB servers are always created via the explicit add() flow with ACL setup.
+   * Config-source servers should use configCacheRepo, not dbConfigsRepo.
+   */
+  public async upsert(
+    serverName: string,
+    config: ParsedServerConfig,
+    userId?: string,
+  ): Promise<void> {
+    if (!userId) {
+      throw new Error(
+        `[ServerConfigsDB.upsert] User ID is required for DB-backed MCP server upsert of "${serverName}". ` +
+          'Config-source servers should use configCacheRepo, not dbConfigsRepo.',
+      );
+    }
+    return this.update(serverName, config, userId);
+  }
+
+  /**
    * Deletes an MCP server and removes all associated ACL entries.
    * @param serverName - The serverName of the server to remove
    * @param userId - User performing the deletion (for logging)
@@ -411,6 +430,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     const config: ParsedServerConfig = {
       ...serverDBDoc.config,
       dbId: (serverDBDoc._id as Types.ObjectId).toString(),
+      source: 'user',
       updatedAt: serverDBDoc.updatedAt?.getTime(),
     };
     return await this.decryptConfig(config);

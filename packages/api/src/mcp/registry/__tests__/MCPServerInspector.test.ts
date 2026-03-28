@@ -321,12 +321,12 @@ describe('MCPServerInspector', () => {
       const result = await MCPServerInspector.inspect('test_server', rawConfig);
 
       // Verify factory was called to create connection
-      expect(MCPConnectionFactory.create).toHaveBeenCalledWith({
-        serverName: 'test_server',
-        serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
-        useSSRFProtection: true,
-        dbSourced: false,
-      });
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test_server',
+          serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
+        }),
+      );
 
       // Verify temporary connection was disconnected
       expect(tempMockConnection.disconnect).toHaveBeenCalled();

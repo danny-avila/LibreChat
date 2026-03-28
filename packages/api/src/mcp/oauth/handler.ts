@@ -467,6 +467,7 @@ export class MCPOAuthHandler {
           codeVerifier,
           clientInfo,
           metadata,
+          ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
         };
 
         logger.debug(
@@ -573,6 +574,7 @@ export class MCPOAuthHandler {
         clientInfo,
         metadata,
         resourceMetadata,
+        ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
       };
 
       logger.debug(

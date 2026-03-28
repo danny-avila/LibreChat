@@ -14,7 +14,6 @@ const {
   buildImageToolContext,
   buildWebSearchContext,
 } = require('@librechat/api');
-const { getMCPServersRegistry } = require('~/config');
 const {
   Tools,
   Constants,
@@ -39,12 +38,13 @@ const {
   createGeminiImageTool,
   createOpenAIImageTools,
 } = require('../');
-const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+const { createMCPTool, createMCPTools, resolveConfigServers } = require('~/server/services/MCP');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
-const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
+const { getMCPServersRegistry } = require('~/config');
 const { getRoleByName } = require('~/models');
 
 /**
@@ -256,6 +256,12 @@ const loadTools = async ({
   const toolContextMap = {};
   const requestedMCPTools = {};
 
+  /** Resolve config-source servers for the current user/tenant context */
+  let configServers;
+  if (tools.some((tool) => tool && mcpToolPattern.test(tool))) {
+    configServers = await resolveConfigServers(options.req);
+  }
+
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
       requestedTools[tool] = async () => {
@@ -341,7 +347,7 @@ const loadTools = async ({
         continue;
       }
       const serverConfig = serverName
-        ? await getMCPServersRegistry().getServerConfig(serverName, user)
+        ? await getMCPServersRegistry().getServerConfig(serverName, user, configServers)
         : null;
       if (!serverConfig) {
         logger.warn(
@@ -419,6 +425,7 @@ const loadTools = async ({
   let index = -1;
   const failedMCPServers = new Set();
   const safeUser = createSafeUser(options.req?.user);
+
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
     /** @type {LCAvailableTools} */
@@ -433,6 +440,7 @@ const loadTools = async ({
           signal,
           user: safeUser,
           userMCPAuthMap,
+          configServers,
           res: options.res,
           streamId: options.req?._resumableStreamId || null,
           model: agent?.model ?? model,
