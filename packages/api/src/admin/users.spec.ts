@@ -198,6 +198,19 @@ describe('createAdminUsersHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Query must be at least 2 characters' });
     });
 
+    it('returns 400 when query exceeds max length', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ query: { q: 'a'.repeat(201) } });
+
+      await handlers.searchUsers(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: expect.stringContaining('200') }),
+      );
+    });
+
     it('passes limit to findUsers', async () => {
       const findUsers = jest.fn().mockResolvedValue([mockUser()]);
       const deps = createDeps({ findUsers });
@@ -267,6 +280,37 @@ describe('createAdminUsersHandlers', () => {
       expect(status).toHaveBeenCalledWith(403);
       expect(json).toHaveBeenCalledWith({ error: 'Cannot delete your own account' });
       expect(deps.deleteUserById).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when deleting the last admin', async () => {
+      const targetId = new Types.ObjectId().toString();
+      const deps = createDeps({
+        findUsers: jest.fn().mockResolvedValue([mockUser({ role: 'ADMIN' } as Partial<IUser>)]),
+        countUsers: jest.fn().mockResolvedValue(1),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: targetId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot delete the last admin user' });
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
+    });
+
+    it('allows deleting an admin when other admins exist', async () => {
+      const targetId = new Types.ObjectId().toString();
+      const deps = createDeps({
+        findUsers: jest.fn().mockResolvedValue([mockUser({ role: 'ADMIN' } as Partial<IUser>)]),
+        countUsers: jest.fn().mockResolvedValue(3),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: targetId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.deleteUserById).toHaveBeenCalledWith(targetId);
     });
 
     it('returns 400 for invalid ObjectId', async () => {

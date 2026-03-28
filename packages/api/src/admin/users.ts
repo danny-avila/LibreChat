@@ -1,9 +1,12 @@
+import { SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString } from '@librechat/data-schemas';
 import type { IUser, AdminUserSearchResult, UserDeleteResult } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import { parsePagination } from './pagination';
+
+const MAX_SEARCH_LENGTH = 200;
 
 const USER_LIST_FIELDS = '_id name username email avatar role provider createdAt updatedAt';
 
@@ -59,6 +62,10 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         return res.status(400).json({ error: 'Query must be at least 2 characters' });
       }
 
+      if (query.trim().length > MAX_SEARCH_LENGTH) {
+        return res.status(400).json({ error: `Query must not exceed ${MAX_SEARCH_LENGTH} characters` });
+      }
+
       const searchLimit = Math.min(Math.max(1, parseInt(limit) || 20), 50);
       const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'i');
@@ -94,6 +101,14 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       const callerId = req.user?._id?.toString() ?? req.user?.id;
       if (callerId === id) {
         return res.status(403).json({ error: 'Cannot delete your own account' });
+      }
+
+      const [targetUser] = await findUsers({ _id: id }, 'role', { limit: 1 });
+      if (targetUser?.role === SystemRoles.ADMIN) {
+        const adminCount = await countUsers({ role: SystemRoles.ADMIN });
+        if (adminCount <= 1) {
+          return res.status(400).json({ error: 'Cannot delete the last admin user' });
+        }
       }
 
       const result = await deleteUserById(id);
