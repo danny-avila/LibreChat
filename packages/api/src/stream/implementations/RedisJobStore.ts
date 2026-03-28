@@ -870,6 +870,7 @@ export class RedisJobStore implements IJobStore {
     return {
       streamId: data.streamId,
       userId: data.userId,
+      tenantId: data.tenantId || undefined,
       status: data.status as JobStatus,
       createdAt: parseInt(data.createdAt, 10),
       completedAt: data.completedAt ? parseInt(data.completedAt, 10) : undefined,
