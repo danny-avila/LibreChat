@@ -1,4 +1,4 @@
-import { logger, tenantStorage } from '@librechat/data-schemas';
+import { logger, tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import {
   SystemRoles,
   Permissions,
@@ -72,9 +72,7 @@ export async function updateInterfacePermissions({
    */
   tenantId?: string;
 }) {
-  // If a tenantId is provided, re-enter with tenant-scoped ALS context
-  // so that all downstream Mongoose queries target that tenant's roles.
-  if (tenantId) {
+  if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
     return tenantStorage.run({ tenantId }, async () =>
       updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions }),
     );

@@ -23,7 +23,6 @@ const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 router.get('/', async function (req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
 
-  const tenantId = getTenantId();
   const cacheKey = scopedCacheKey(CacheKeys.STARTUP_CONFIG);
   const cachedStartupConfig = await cache.get(cacheKey);
   if (cachedStartupConfig) {
@@ -41,7 +40,7 @@ router.get('/', async function (req, res) {
   try {
     const appConfig = await getAppConfig({
       role: req.user?.role,
-      tenantId: req.user?.tenantId || tenantId,
+      tenantId: req.user?.tenantId || getTenantId(),
     });
 
     const isOpenIdEnabled =

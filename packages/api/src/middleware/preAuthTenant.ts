@@ -1,4 +1,4 @@
-import { tenantStorage } from '@librechat/data-schemas';
+import { tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
 
 /**
@@ -33,7 +33,7 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
   const tenantId = req.headers['x-tenant-id'];
 
   // No header or empty value — pass through without tenant context
-  if (!tenantId || typeof tenantId !== 'string') {
+  if (!tenantId || typeof tenantId !== 'string' || tenantId === SYSTEM_TENANT_ID) {
     next();
     return;
   }

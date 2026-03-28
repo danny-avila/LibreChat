@@ -520,9 +520,8 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
               pipeline: [
                 {
                   $match: {
-                    $expr: {
-                      $and: [{ $eq: ['$_id', '$$prodId'] }, { $eq: ['$tenantId', tenantId] }],
-                    },
+                    $expr: { $eq: ['$_id', '$$prodId'] },
+                    tenantId,
                   },
                 },
               ],

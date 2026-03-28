@@ -39,6 +39,18 @@ describe('preAuthTenantMiddleware', () => {
     expect(capturedTenantId).toBe('acme-corp');
   });
 
+  it('rejects __SYSTEM__ sentinel to prevent tenant isolation bypass', () => {
+    req.headers = { 'x-tenant-id': '__SYSTEM__' };
+    let capturedTenantId: string | undefined = 'should-be-overwritten';
+
+    const capturedNext: NextFunction = () => {
+      capturedTenantId = getTenantId();
+    };
+
+    preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
+    expect(capturedTenantId).toBeUndefined();
+  });
+
   it('ignores array-valued headers (Express can produce these)', () => {
     req.headers = { 'x-tenant-id': ['a', 'b'] as unknown as string };
     preAuthTenantMiddleware(req as Request, res as Response, next);

@@ -30,5 +30,8 @@ export function runAsSystem<T>(fn: () => Promise<T>): Promise<T> {
 /** Appends `:${tenantId}` to a cache key when tenant context is active. */
 export function scopedCacheKey(baseKey: string): string {
   const tenantId = getTenantId();
-  return tenantId ? `${baseKey}:${tenantId}` : baseKey;
+  if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
+    return baseKey;
+  }
+  return `${baseKey}:${tenantId}`;
 }
