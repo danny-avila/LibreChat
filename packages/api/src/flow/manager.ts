@@ -1,5 +1,5 @@
 import { Keyv } from 'keyv';
-import { logger, getTenantId } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
@@ -258,10 +258,10 @@ export class FlowStateManager<T = unknown> {
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
     if (!flowState) {
-      const tenantId = getTenantId();
       logger.warn(
-        `[FlowStateManager] completeFlow: flow not found. key=${flowKey}, tenantId=${tenantId ?? 'none'}. ` +
-          'If multi-tenant, verify X-Tenant-Id header is consistent between OAuth initiation and callback.',
+        `[FlowStateManager] completeFlow: flow not found — key=${flowKey}. ` +
+          'Possible causes: flow TTL expired before callback arrived, flow was never created, or ' +
+          'the callback is routing to a different instance without shared Keyv storage.',
         { flowId, type },
       );
       return false;
