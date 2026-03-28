@@ -8,6 +8,7 @@ import type {
   Model,
 } from 'mongoose';
 import type { IAclEntry } from '~/types';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 
 export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -378,7 +379,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     options?: { session?: ClientSession },
   ) {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    return AclEntry.bulkWrite(ops, options || {});
+    return tenantSafeBulkWrite(AclEntry, ops, options || {});
   }
 
   /**
@@ -448,7 +449,9 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       { $group: { _id: '$resourceId' } },
     ]);
 
-    const multiOwnerIds = new Set(otherOwners.map((doc: { _id: Types.ObjectId }) => doc._id.toString()));
+    const multiOwnerIds = new Set(
+      otherOwners.map((doc: { _id: Types.ObjectId }) => doc._id.toString()),
+    );
     return ownedIds.filter((id) => !multiOwnerIds.has(id.toString()));
   }
 

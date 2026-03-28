@@ -2,6 +2,7 @@ import logger from '../config/winston';
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type { IMongoFile } from '~/types/file';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 
 /** Factory function that takes mongoose instance and returns the file methods */
 export function createFileMethods(mongoose: typeof import('mongoose')) {
@@ -322,7 +323,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       },
     }));
 
-    const result = await File.bulkWrite(bulkOperations);
+    const result = await tenantSafeBulkWrite(File, bulkOperations);
     logger.info(`Updated ${result.modifiedCount} files with new S3 URLs`);
   }
 

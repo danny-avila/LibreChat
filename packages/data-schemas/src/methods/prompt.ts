@@ -1,8 +1,9 @@
 import { ResourceType, SystemCategories } from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
 import type { IAclEntry, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
-import { escapeRegExp } from '~/utils/string';
+import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
 export interface PromptDeps {
@@ -508,16 +509,37 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       if (typeof matchFilter._id === 'string') {
         matchFilter._id = new ObjectId(matchFilter._id);
       }
+      const tenantId = getTenantId();
+      const useTenantFilter = tenantId && tenantId !== SYSTEM_TENANT_ID;
+
+      const lookupStage = useTenantFilter
+        ? {
+            $lookup: {
+              from: 'prompts',
+              let: { prodId: '$productionId' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: { $eq: ['$_id', '$$prodId'] },
+                    tenantId,
+                  },
+                },
+              ],
+              as: 'productionPrompt',
+            },
+          }
+        : {
+            $lookup: {
+              from: 'prompts',
+              localField: 'productionId',
+              foreignField: '_id',
+              as: 'productionPrompt',
+            },
+          };
+
       const result = await PromptGroup.aggregate([
         { $match: matchFilter },
-        {
-          $lookup: {
-            from: 'prompts',
-            localField: 'productionId',
-            foreignField: '_id',
-            as: 'productionPrompt',
-          },
-        },
+        lookupStage,
         { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
       ]);
       const group = result[0] || null;

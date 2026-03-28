@@ -8,6 +8,7 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     warn: jest.fn(),
   },
+  scopedCacheKey: jest.fn((key) => key),
 }));
 
 jest.mock('~/server/services/Config', () => ({

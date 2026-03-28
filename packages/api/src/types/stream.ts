@@ -4,6 +4,7 @@ import type { ServerSentEvent } from '~/types';
 
 export interface GenerationJobMetadata {
   userId: string;
+  tenantId?: string;
   conversationId?: string;
   /** User message data for rebuilding submission on reconnect */
   userMessage?: Agents.UserMessageMeta;

@@ -1,5 +1,5 @@
 const { CacheKeys } = require('librechat-data-provider');
-const { AppService, logger } = require('@librechat/data-schemas');
+const { AppService, logger, scopedCacheKey } = require('@librechat/data-schemas');
 const { createAppConfigService, clearMcpConfigCache } = require('@librechat/api');
 const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
@@ -29,11 +29,23 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
   getUserPrincipals: db.getUserPrincipals,
 });
 
-/** Deletes the ENDPOINT_CONFIG entry from CONFIG_STORE. Failures are non-critical and swallowed. */
+/**
+ * Deletes ENDPOINT_CONFIG entries from CONFIG_STORE.
+ * Clears both the tenant-scoped key (if in tenant context) and the
+ * unscoped base key (populated by unauthenticated /api/endpoints calls).
+ * Other tenants' scoped keys are NOT actively cleared — they expire
+ * via TTL. Config mutations in one tenant do not propagate immediately
+ * to other tenants' endpoint config caches.
+ */
 async function clearEndpointConfigCache() {
   try {
     const configStore = getLogStores(CacheKeys.CONFIG_STORE);
-    await configStore.delete(CacheKeys.ENDPOINT_CONFIG);
+    const scoped = scopedCacheKey(CacheKeys.ENDPOINT_CONFIG);
+    const keys = [scoped];
+    if (scoped !== CacheKeys.ENDPOINT_CONFIG) {
+      keys.push(CacheKeys.ENDPOINT_CONFIG);
+    }
+    await Promise.all(keys.map((k) => configStore.delete(k)));
   } catch {
     // CONFIG_STORE or ENDPOINT_CONFIG may not exist — not critical
   }

@@ -17,6 +17,11 @@ const chat = require('./chat');
 
 const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
+/** Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check passes. */
+function hasTenantMismatch(job, user) {
+  return job.metadata?.tenantId != null && job.metadata.tenantId !== user.tenantId;
+}
+
 const router = express.Router();
 
 /**
@@ -64,6 +69,10 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   }
 
   if (job.metadata?.userId && job.metadata.userId !== req.user.id) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  if (hasTenantMismatch(job, req.user)) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -150,7 +159,10 @@ router.get('/chat/stream/:streamId', async (req, res) => {
  * @returns { activeJobIds: string[] }
  */
 router.get('/chat/active', async (req, res) => {
-  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(req.user.id);
+  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+    req.user.id,
+    req.user.tenantId,
+  );
   res.json({ activeJobIds });
 });
 
@@ -171,6 +183,10 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   }
 
   if (job.metadata.userId !== req.user.id) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  if (hasTenantMismatch(job, req.user)) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -213,7 +229,10 @@ router.post('/chat/abort', async (req, res) => {
   // This handles the case where frontend sends "new" but job was created with a UUID
   if (!job && userId) {
     logger.debug(`[AgentStream] Job not found by ID, checking active jobs for user: ${userId}`);
-    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(userId);
+    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+      userId,
+      req.user.tenantId,
+    );
     if (activeJobIds.length > 0) {
       // Abort the most recent active job for this user
       jobStreamId = activeJobIds[0];
@@ -227,6 +246,10 @@ router.post('/chat/abort', async (req, res) => {
   if (job && jobStreamId) {
     if (job.metadata?.userId && job.metadata.userId !== userId) {
       logger.warn(`[AgentStream] Unauthorized abort attempt for ${jobStreamId} by user ${userId}`);
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (hasTenantMismatch(job, req.user)) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 

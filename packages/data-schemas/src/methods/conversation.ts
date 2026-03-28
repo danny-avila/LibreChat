@@ -1,6 +1,7 @@
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
-import logger from '~/config/winston';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import logger from '~/config/winston';
 import type { AppConfig, IConversation } from '~/types';
 import type { MessageMethods } from './message';
 import type { DeleteResult } from 'mongoose';
@@ -228,7 +229,7 @@ export function createConversationMethods(
         },
       }));
 
-      const result = await Conversation.bulkWrite(bulkOps);
+      const result = await tenantSafeBulkWrite(Conversation, bulkOps);
       return result;
     } catch (error) {
       logger.error('[bulkSaveConvos] Error saving conversations in bulk', error);

@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
+const { logger, scopedCacheKey } = require('@librechat/data-schemas');
 const { getCachedTools, setCachedTools } = require('./getCachedTools');
 const { getLogStores } = require('~/cache');
 
@@ -36,7 +36,7 @@ async function updateMCPServerTools({ userId, serverName, tools }) {
     await setCachedTools(serverTools, { userId, serverName });
 
     const cache = getLogStores(CacheKeys.TOOL_CACHE);
-    await cache.delete(CacheKeys.TOOLS);
+    await cache.delete(scopedCacheKey(CacheKeys.TOOLS));
     logger.debug(
       `[MCP Cache] Updated ${tools.length} tools for server ${serverName} (user: ${userId})`,
     );
@@ -48,7 +48,10 @@ async function updateMCPServerTools({ userId, serverName, tools }) {
 }
 
 /**
- * Merges app-level tools with global tools
+ * Merges app-level tools with global tools.
+ * Only the current ALS-scoped key (base key in system/startup context) is cleared.
+ * Tenant-scoped TOOLS:tenantId keys are NOT actively invalidated — they expire
+ * via TTL on the next tenant request. This matches clearEndpointConfigCache behavior.
  * @param {import('@librechat/api').LCAvailableTools} appTools
  * @returns {Promise<void>}
  */
@@ -62,7 +65,7 @@ async function mergeAppTools(appTools) {
     const mergedTools = { ...cachedTools, ...appTools };
     await setCachedTools(mergedTools);
     const cache = getLogStores(CacheKeys.TOOL_CACHE);
-    await cache.delete(CacheKeys.TOOLS);
+    await cache.delete(scopedCacheKey(CacheKeys.TOOLS));
     logger.debug(`Merged ${count} app-level tools`);
   } catch (error) {
     logger.error('Failed to merge app-level tools:', error);

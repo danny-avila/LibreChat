@@ -1,6 +1,7 @@
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import logger from '~/config/winston';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import type { AppConfig, IMessage } from '~/types';
 
 /** Simple UUID v4 regex to replace zod validation */
@@ -165,7 +166,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           upsert: true,
         },
       }));
-      const result = await Message.bulkWrite(bulkOps);
+      const result = await tenantSafeBulkWrite(Message, bulkOps);
       return result;
     } catch (err) {
       logger.error('Error saving messages in bulk:', err);

@@ -19,6 +19,12 @@ export type * from './types';
 export type * from './methods';
 export { default as logger } from './config/winston';
 export { default as meiliLogger } from './config/meiliLogger';
-export { tenantStorage, getTenantId, runAsSystem, SYSTEM_TENANT_ID } from './config/tenantContext';
+export {
+  tenantStorage,
+  getTenantId,
+  runAsSystem,
+  scopedCacheKey,
+  SYSTEM_TENANT_ID,
+} from './config/tenantContext';
 export type { TenantContext } from './config/tenantContext';
 export { dropSupersededTenantIndexes, dropSupersededPromptGroupIndexes } from './migrations';

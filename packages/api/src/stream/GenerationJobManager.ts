@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { StandardGraph } from '@librechat/agents';
 import { parseTextParts } from 'librechat-data-provider';
 import type { Agents, TMessageContentParts } from 'librechat-data-provider';
@@ -197,7 +197,9 @@ class GenerationJobManagerClass {
     userId: string,
     conversationId?: string,
   ): Promise<t.GenerationJob> {
-    const jobData = await this.jobStore.createJob(streamId, userId, conversationId);
+    const tenantId = getTenantId();
+    const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
+    const jobData = await this.jobStore.createJob(streamId, userId, conversationId, safeTenantId);
 
     /**
      * Create runtime state with readyPromise.
@@ -355,6 +357,7 @@ class GenerationJobManagerClass {
       error: jobData.error,
       metadata: {
         userId: jobData.userId,
+        tenantId: jobData.tenantId,
         conversationId: jobData.conversationId,
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
@@ -1255,8 +1258,8 @@ class GenerationJobManagerClass {
    * @param userId - The user ID to query
    * @returns Array of conversation IDs with active jobs
    */
-  async getActiveJobIdsForUser(userId: string): Promise<string[]> {
-    return this.jobStore.getActiveJobIdsByUser(userId);
+  async getActiveJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
+    return this.jobStore.getActiveJobIdsByUser(userId, tenantId);
   }
 
   /**
