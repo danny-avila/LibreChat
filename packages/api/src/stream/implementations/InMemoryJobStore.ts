@@ -88,11 +88,12 @@ export class InMemoryJobStore implements IJobStore {
 
     this.jobs.set(streamId, job);
 
-    // Track job by userId for efficient user-scoped queries
-    let userJobs = this.userJobMap.get(userId);
+    // Track job by userId (tenant-qualified when available) for efficient user-scoped queries
+    const userKey = tenantId ? `${tenantId}:${userId}` : userId;
+    let userJobs = this.userJobMap.get(userKey);
     if (!userJobs) {
       userJobs = new Set();
-      this.userJobMap.set(userId, userJobs);
+      this.userJobMap.set(userKey, userJobs);
     }
     userJobs.add(streamId);
 
@@ -207,8 +208,9 @@ export class InMemoryJobStore implements IJobStore {
    * Returns conversation IDs of running jobs belonging to the user.
    * Also performs self-healing cleanup: removes stale entries for jobs that no longer exist.
    */
-  async getActiveJobIdsByUser(userId: string): Promise<string[]> {
-    const trackedIds = this.userJobMap.get(userId);
+  async getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    const userKey = tenantId ? `${tenantId}:${userId}` : userId;
+    const trackedIds = this.userJobMap.get(userKey);
     if (!trackedIds || trackedIds.size === 0) {
       return [];
     }

@@ -188,7 +188,7 @@ export interface IJobStore {
    * @param userId - The user ID to query
    * @returns Array of conversation IDs with active jobs
    */
-  getActiveJobIdsByUser(userId: string): Promise<string[]>;
+  getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]>;
 
   // ===== Content State Methods =====
   // These methods manage volatile content state tied to each job.

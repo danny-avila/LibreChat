@@ -155,7 +155,10 @@ router.get('/chat/stream/:streamId', async (req, res) => {
  * @returns { activeJobIds: string[] }
  */
 router.get('/chat/active', async (req, res) => {
-  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(req.user.id);
+  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+    req.user.id,
+    req.user.tenantId,
+  );
   res.json({ activeJobIds });
 });
 
@@ -179,6 +182,7 @@ router.get('/chat/status/:conversationId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
+  // Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check above passes
   if (job.metadata?.tenantId && job.metadata.tenantId !== req.user.tenantId) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
@@ -222,7 +226,10 @@ router.post('/chat/abort', async (req, res) => {
   // This handles the case where frontend sends "new" but job was created with a UUID
   if (!job && userId) {
     logger.debug(`[AgentStream] Job not found by ID, checking active jobs for user: ${userId}`);
-    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(userId);
+    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+      userId,
+      req.user?.tenantId,
+    );
     if (activeJobIds.length > 0) {
       // Abort the most recent active job for this user
       jobStreamId = activeJobIds[0];
@@ -239,6 +246,7 @@ router.post('/chat/abort', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
+    // Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check above passes
     if (job.metadata?.tenantId && job.metadata.tenantId !== req.user.tenantId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }

@@ -1258,8 +1258,8 @@ class GenerationJobManagerClass {
    * @param userId - The user ID to query
    * @returns Array of conversation IDs with active jobs
    */
-  async getActiveJobIdsForUser(userId: string): Promise<string[]> {
-    return this.jobStore.getActiveJobIdsByUser(userId);
+  async getActiveJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
+    return this.jobStore.getActiveJobIdsByUser(userId, tenantId);
   }
 
   /**

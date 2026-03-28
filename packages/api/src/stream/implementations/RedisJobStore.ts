@@ -29,8 +29,9 @@ const KEYS = {
   runSteps: (streamId: string) => `stream:{${streamId}}:runsteps`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
-  /** User's active jobs set: stream:user:{userId}:jobs */
-  userJobs: (userId: string) => `stream:user:{${userId}}:jobs`,
+  /** User's active jobs set, tenant-qualified when tenantId is available */
+  userJobs: (userId: string, tenantId?: string) =>
+    tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
 };
 
 /**
@@ -153,7 +154,7 @@ export class RedisJobStore implements IJobStore {
     };
 
     const key = KEYS.job(streamId);
-    const userJobsKey = KEYS.userJobs(userId);
+    const userJobsKey = KEYS.userJobs(userId, tenantId);
 
     // For cluster mode, we can't pipeline keys on different slots
     // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
@@ -379,8 +380,8 @@ export class RedisJobStore implements IJobStore {
    * @param userId - The user ID to query
    * @returns Array of conversation IDs with active jobs
    */
-  async getActiveJobIdsByUser(userId: string): Promise<string[]> {
-    const userJobsKey = KEYS.userJobs(userId);
+  async getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    const userJobsKey = KEYS.userJobs(userId, tenantId);
     const trackedIds = await this.redis.smembers(userJobsKey);
 
     if (trackedIds.length === 0) {
