@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import {
   SystemRoles,
   Permissions,
@@ -54,6 +54,7 @@ export async function updateInterfacePermissions({
   appConfig,
   getRoleByName,
   updateAccessPermissions,
+  tenantId,
 }: {
   appConfig: AppConfig;
   getRoleByName: (roleName: string, fieldsToSelect?: string | string[]) => Promise<IRole | null>;
@@ -63,7 +64,22 @@ export async function updateInterfacePermissions({
 
     roleData?: IRole | null,
   ) => Promise<void>;
+  /**
+   * Optional tenant ID for scoping role updates to a specific tenant.
+   * When provided, the function runs inside `tenantStorage.run({ tenantId })`
+   * so that Mongoose queries target tenant-scoped roles.
+   * When omitted, runs in the caller's existing ALS context (typically `runAsSystem()`).
+   */
+  tenantId?: string;
 }) {
+  // If a tenantId is provided, re-enter with tenant-scoped ALS context
+  // so that all downstream Mongoose queries target that tenant's roles.
+  if (tenantId) {
+    return tenantStorage.run({ tenantId }, async () =>
+      updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions }),
+    );
+  }
+
   const loadedInterface = appConfig?.interfaceConfig;
   if (!loadedInterface) {
     return;
