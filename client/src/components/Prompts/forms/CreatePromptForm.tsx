@@ -80,7 +80,7 @@ const CreatePromptForm = ({
       if (onSuccess && groupId) {
         onSuccess(groupId);
       } else {
-        navigate(`/d/prompts/${groupId}`, { replace: true });
+        navigate(`/prompts/${groupId}`, { replace: true });
       }
     },
   });

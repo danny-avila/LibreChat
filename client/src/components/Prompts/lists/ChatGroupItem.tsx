@@ -51,7 +51,7 @@ function ChatGroupItem({
 
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const promptPath = isChatRoute ? '/prompts' : '/d/prompts';
+  const promptPath = '/prompts';
 
   const deleteGroup = useDeletePromptGroup({
     onSuccess: () => {

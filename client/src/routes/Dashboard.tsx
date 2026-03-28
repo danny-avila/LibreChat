@@ -1,10 +1,4 @@
 import { Navigate } from 'react-router-dom';
-import {
-  PromptsView,
-  PromptForm,
-  CreatePromptForm,
-  EmptyPromptPreview,
-} from '~/components/Prompts';
 import DashboardRoute from './Layouts/Dashboard';
 
 const dashboardRoutes = {
@@ -56,21 +50,7 @@ const dashboardRoutes = {
     */
     {
       path: 'prompts/*',
-      element: <PromptsView />,
-      children: [
-        {
-          index: true,
-          element: <EmptyPromptPreview />,
-        },
-        {
-          path: 'new',
-          element: <CreatePromptForm />,
-        },
-        {
-          path: ':promptId',
-          element: <PromptForm />,
-        },
-      ],
+      element: <Navigate to="/prompts/new" replace={true} />,
     },
     {
       path: '*',

@@ -1,14 +1,10 @@
-import { useMemo, useCallback } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
 import { useLocation } from 'react-router-dom';
 import { Button, Sidebar, TooltipAnchor } from '@librechat/client';
-import { usePromptGroupsContext, useDashboardContext } from '~/Providers';
-import { useLocalize, useCustomLink } from '~/hooks';
+import { usePromptGroupsContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 import PanelNavigation from './PanelNavigation';
 import List from '../lists/List';
 import { cn } from '~/utils';
-import store from '~/store';
 
 export default function GroupSidePanel({
   children,
@@ -27,23 +23,6 @@ export default function GroupSidePanel({
   const localize = useLocalize();
   const isChatRoute = isChatRouteProp ?? location.pathname?.startsWith('/c/') ?? false;
 
-  const { prevLocationPath } = useDashboardContext();
-  const setPromptsName = useSetRecoilState(store.promptsName);
-  const setPromptsCategory = useSetRecoilState(store.promptsCategory);
-  const clickCallback = useCallback(() => {
-    setPromptsName('');
-    setPromptsCategory('');
-  }, [setPromptsName, setPromptsCategory]);
-  const lastConversationId = useMemo(() => {
-    if (!prevLocationPath || prevLocationPath.includes('/d/')) {
-      return 'new';
-    }
-    const parts = prevLocationPath.split('/');
-    return parts[parts.length - 1];
-  }, [prevLocationPath]);
-  const chatLinkHandler = useCustomLink('/c/' + lastConversationId, clickCallback);
-  const promptsLinkHandler = useCustomLink('/d/prompts');
-
   const { promptGroups, groupsQuery, nextPage, prevPage, hasNextPage, hasPreviousPage } =
     usePromptGroupsContext();
 
@@ -53,27 +32,7 @@ export default function GroupSidePanel({
       className={cn('flex h-full w-full flex-col md:mr-2 md:w-[450px] md:shrink-0', className)}
     >
       {onClose && (
-        <div className="flex items-center justify-between px-2 py-[2px] md:py-2">
-          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
-            <a
-              href="/"
-              onClick={chatLinkHandler}
-              className="flex items-center gap-1 text-text-secondary hover:text-text-primary"
-            >
-              <ArrowLeft className="icon-xs" aria-hidden="true" />
-              <span>{localize('com_ui_chat')}</span>
-            </a>
-            <span className="text-text-tertiary" aria-hidden="true">
-              /
-            </span>
-            <a
-              href="/d/prompts"
-              onClick={promptsLinkHandler}
-              className="text-text-secondary hover:text-text-primary"
-            >
-              {localize('com_ui_prompts')}
-            </a>
-          </nav>
+        <div className="flex items-center justify-end px-2 py-[2px] md:py-2">
           <TooltipAnchor
             description={localize('com_nav_close_sidebar')}
             render={
