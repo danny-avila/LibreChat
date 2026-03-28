@@ -606,6 +606,9 @@ describe('MCP Routes', () => {
       MCPTokenStorage.storeTokens.mockResolvedValue();
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      require('~/config').getOAuthReconnectionManager.mockReturnValue({
+        clearReconnection: jest.fn(),
+      });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
           fetchTools: jest.fn().mockResolvedValue([]),
@@ -655,6 +658,9 @@ describe('MCP Routes', () => {
       });
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      require('~/config').getOAuthReconnectionManager.mockReturnValue({
+        clearReconnection: jest.fn(),
+      });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
           fetchTools: jest.fn().mockResolvedValue([]),
