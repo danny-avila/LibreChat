@@ -33,6 +33,9 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
  * Deletes ENDPOINT_CONFIG entries from CONFIG_STORE.
  * Clears both the tenant-scoped key (if in tenant context) and the
  * unscoped base key (populated by unauthenticated /api/endpoints calls).
+ * Other tenants' scoped keys are NOT actively cleared — they expire
+ * via TTL. Config mutations in one tenant do not propagate immediately
+ * to other tenants' endpoint config caches.
  */
 async function clearEndpointConfigCache() {
   try {

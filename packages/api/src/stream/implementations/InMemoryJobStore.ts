@@ -230,7 +230,7 @@ export class InMemoryJobStore implements IJobStore {
 
     // Clean up empty set
     if (trackedIds.size === 0) {
-      this.userJobMap.delete(userId);
+      this.userJobMap.delete(userKey);
     }
 
     return activeIds;
