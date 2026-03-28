@@ -54,6 +54,7 @@
     "rollup": "^4.34.9",
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "rollup-plugin-typescript2": "^0.35.0",
+    "testcontainers": "^11.13.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.0.4"
   },

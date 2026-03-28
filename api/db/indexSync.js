@@ -95,20 +95,30 @@ async function ensureFilterableAttributes(client) {
     try {
       const messagesIndex = client.index('messages');
       const settings = await messagesIndex.getSettings();
+      const filterableAttributes = settings.filterableAttributes || [];
+      const sortableAttributes = settings.sortableAttributes || [];
 
-      if (!settings.filterableAttributes || !settings.filterableAttributes.includes('user')) {
-        logger.info('[indexSync] Configuring messages index to filter by user...');
+      const hasUserFilter = filterableAttributes.includes('user');
+      const hasSortableAttributes =
+        sortableAttributes.includes('createdAt') && sortableAttributes.includes('updatedAt');
+
+      if (!hasUserFilter || !hasSortableAttributes) {
+        logger.info('[indexSync] Configuring messages index for filtering and sorting...');
         await messagesIndex.updateSettings({
           filterableAttributes: ['user'],
+          sortableAttributes: ['createdAt', 'updatedAt'],
         });
-        logger.info('[indexSync] Messages index configured for user filtering');
+        logger.info(
+          '[indexSync] Messages index configured for user filtering and timestamps sortable',
+        );
         settingsUpdated = true;
       }
 
       // Check if existing documents have user field indexed
       try {
         const searchResult = await messagesIndex.search('', { limit: 1 });
-        if (searchResult.hits.length > 0 && !searchResult.hits[0].user) {
+        const firstHit = searchResult.hits.length > 0 ? searchResult.hits[0] : null;
+        if (firstHit && !firstHit.user) {
           logger.info(
             '[indexSync] Existing messages missing user field, will clean up orphaned documents...',
           );
@@ -127,20 +137,30 @@ async function ensureFilterableAttributes(client) {
     try {
       const convosIndex = client.index('convos');
       const settings = await convosIndex.getSettings();
+      const filterableAttributes = settings.filterableAttributes || [];
+      const sortableAttributes = settings.sortableAttributes || [];
 
-      if (!settings.filterableAttributes || !settings.filterableAttributes.includes('user')) {
-        logger.info('[indexSync] Configuring convos index to filter by user...');
+      const hasUserFilter = filterableAttributes.includes('user');
+      const hasSortableAttributes =
+        sortableAttributes.includes('createdAt') && sortableAttributes.includes('updatedAt');
+
+      if (!hasUserFilter || !hasSortableAttributes) {
+        logger.info('[indexSync] Configuring convos index for filtering and sorting...');
         await convosIndex.updateSettings({
           filterableAttributes: ['user'],
+          sortableAttributes: ['createdAt', 'updatedAt'],
         });
-        logger.info('[indexSync] Convos index configured for user filtering');
+        logger.info(
+          '[indexSync] Convos index configured for user filtering and timestamps sortable',
+        );
         settingsUpdated = true;
       }
 
       // Check if existing documents have user field indexed
       try {
         const searchResult = await convosIndex.search('', { limit: 1 });
-        if (searchResult.hits.length > 0 && !searchResult.hits[0].user) {
+        const firstHit = searchResult.hits.length > 0 ? searchResult.hits[0] : null;
+        if (firstHit && !firstHit.user) {
           logger.info(
             '[indexSync] Existing conversations missing user field, will clean up orphaned documents...',
           );
