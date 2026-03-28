@@ -71,7 +71,7 @@ export async function updateInterfacePermissions({
    * When omitted, runs in the caller's existing ALS context (typically `runAsSystem()`).
    */
   tenantId?: string;
-}) {
+}): Promise<void> {
   if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
     return tenantStorage.run({ tenantId }, async () =>
       updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions }),
