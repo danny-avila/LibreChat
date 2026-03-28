@@ -36,23 +36,6 @@ const RECONNECT_THROTTLE_MS = 10_000;
 const missingToolCache = new Map();
 const MISSING_TOOL_TTL_MS = 10_000;
 
-/**
- * Resolves config-source MCP servers from admin Config overrides for the current
- * request context. Returns the parsed configs keyed by server name.
- * @param {import('express').Request} req - Express request with user context
- * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
- */
-async function resolveConfigServers(req) {
-  const registry = getMCPServersRegistry();
-  const user = req?.user;
-  const appConfig = await getAppConfig({
-    role: user?.role,
-    tenantId: getTenantId(),
-    userId: user?.id,
-  });
-  return registry.ensureConfigServers(appConfig?.mcpConfig || {});
-}
-
 function evictStale(map, ttl) {
   if (map.size <= MAX_CACHE_SIZE) {
     return;
@@ -70,6 +53,23 @@ function evictStale(map, ttl) {
 
 const unavailableMsg =
   "This tool's MCP server is temporarily unavailable. Please try again shortly.";
+
+/**
+ * Resolves config-source MCP servers from admin Config overrides for the current
+ * request context. Returns the parsed configs keyed by server name.
+ * @param {import('express').Request} req - Express request with user context
+ * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
+ */
+async function resolveConfigServers(req) {
+  const registry = getMCPServersRegistry();
+  const user = req?.user;
+  const appConfig = await getAppConfig({
+    role: user?.role,
+    tenantId: getTenantId(),
+    userId: user?.id,
+  });
+  return registry.ensureConfigServers(appConfig?.mcpConfig || {});
+}
 
 /**
  * @param {string} toolName
@@ -679,11 +679,6 @@ async function getMCPSetupData(userId, options = {}) {
   const appConfig = await getAppConfig({ role, tenantId, userId });
   const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
   const mcpConfig = await registry.getAllServerConfigs(userId, configServers);
-
-  if (!mcpConfig) {
-    throw new Error('MCP config not found');
-  }
-
   const mcpManager = getMCPManager(userId);
   /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();

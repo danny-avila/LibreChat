@@ -53,8 +53,11 @@ export class ServerConfigsCacheRedisAggregateKey
   /** Milliseconds since epoch. 0 = epoch = always expired on first check. */
   private localSnapshotExpiry = 0;
 
+  private readonly namespace: string;
+
   constructor(namespace: string, leaderOnly: boolean) {
     super(leaderOnly);
+    this.namespace = namespace;
     this.cache = standardCache(`${this.PREFIX}::Servers::${namespace}`);
   }
 
@@ -125,7 +128,7 @@ export class ServerConfigsCacheRedisAggregateKey
       const storedConfig = { ...config, updatedAt: Date.now() };
       const newAll = { ...all, [serverName]: storedConfig };
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
-      this.successCheck(`add App server "${serverName}"`, success);
+      this.successCheck(`add ${this.namespace} server "${serverName}"`, success);
       return { serverName, config: storedConfig };
     });
   }
@@ -142,7 +145,7 @@ export class ServerConfigsCacheRedisAggregateKey
       }
       const newAll = { ...all, [serverName]: { ...config, updatedAt: Date.now() } };
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
-      this.successCheck(`update App server "${serverName}"`, success);
+      this.successCheck(`update ${this.namespace} server "${serverName}"`, success);
     });
   }
 
@@ -153,7 +156,7 @@ export class ServerConfigsCacheRedisAggregateKey
       const all = await this.getAll();
       const newAll = { ...all, [serverName]: { ...config, updatedAt: Date.now() } };
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
-      this.successCheck(`upsert App server "${serverName}"`, success);
+      this.successCheck(`upsert ${this.namespace} server "${serverName}"`, success);
     });
   }
 
@@ -167,7 +170,7 @@ export class ServerConfigsCacheRedisAggregateKey
       }
       const { [serverName]: _, ...newAll } = all;
       const success = await this.cache.set(AGGREGATE_KEY, newAll);
-      this.successCheck(`remove App server "${serverName}"`, success);
+      this.successCheck(`remove ${this.namespace} server "${serverName}"`, success);
     });
   }
 

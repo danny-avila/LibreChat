@@ -59,6 +59,7 @@ export class MCPServersRegistry {
 
   /** Memoized YAML server names — set once after boot-time init, never changes. */
   private yamlServerNames: Set<string> | null = null;
+  private yamlServerNamesPromise: Promise<Set<string>> | null = null;
 
   constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
@@ -157,28 +158,11 @@ export class MCPServersRegistry {
     if (configServers == null || !Object.keys(configServers).length) {
       return this.getBaseServerConfigs(userId);
     }
-    // getBaseServerConfigs caches the merged YAML + user-DB result via readThroughCacheAll.
-    // We call it first to warm/use the cache, then layer config-source servers between
-    // YAML and user-DB. cacheConfigsRepo.getAll() is always fast (in-memory aggregate key).
-    // Effective merge order: YAML (lowest) → Config overrides → User DB (highest).
     const [yamlConfigs, base] = await Promise.all([
       this.cacheConfigsRepo.getAll(),
       this.getBaseServerConfigs(userId),
     ]);
-    // Extract user-DB entries from the cached base: any key not in YAML, or any key
-    // where the base value differs from the YAML value (DB overwrote it). This ensures
-    // user-DB always wins over both YAML and config, consistent with the no-configServers path.
-    const userDbConfigs: Record<string, t.ParsedServerConfig> = {};
-    for (const key of Object.keys(base)) {
-      if (!(key in yamlConfigs) || base[key] !== yamlConfigs[key]) {
-        userDbConfigs[key] = base[key];
-      }
-    }
-    return {
-      ...yamlConfigs,
-      ...configServers,
-      ...userDbConfigs,
-    };
+    return { ...yamlConfigs, ...configServers, ...base };
   }
 
   /**
@@ -468,8 +452,15 @@ export class MCPServersRegistry {
         source: 'config',
         updatedAt: Date.now(),
       };
-      await this.upsertConfigCache(cacheKey, stubConfig);
-      logger.info(`${prefix} Stored stub config for recovery`);
+      try {
+        await this.upsertConfigCache(cacheKey, stubConfig);
+        logger.info(`${prefix} Stored stub config for recovery`);
+      } catch (cacheError) {
+        logger.error(
+          `${prefix} Failed to store stub config (will retry on next request):`,
+          cacheError,
+        );
+      }
       return stubConfig;
     }
   }
@@ -529,6 +520,7 @@ export class MCPServersRegistry {
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
     this.yamlServerNames = null;
+    this.yamlServerNamesPromise = null;
   }
 
   public async removeServer(
@@ -560,14 +552,21 @@ export class MCPServersRegistry {
   /**
    * Returns memoized YAML server names. Populated lazily on first call after boot/reset.
    * YAML servers don't change after boot, so this avoids repeated `getAll()` calls.
+   * Uses promise deduplication to prevent concurrent cold-start double-fetch.
    */
-  private async getYamlServerNames(): Promise<Set<string>> {
+  private getYamlServerNames(): Promise<Set<string>> {
     if (this.yamlServerNames) {
-      return this.yamlServerNames;
+      return Promise.resolve(this.yamlServerNames);
     }
-    const yamlConfigs = await this.cacheConfigsRepo.getAll();
-    this.yamlServerNames = new Set(Object.keys(yamlConfigs));
-    return this.yamlServerNames;
+    if (this.yamlServerNamesPromise) {
+      return this.yamlServerNamesPromise;
+    }
+    this.yamlServerNamesPromise = this.cacheConfigsRepo.getAll().then((configs) => {
+      this.yamlServerNames = new Set(Object.keys(configs));
+      this.yamlServerNamesPromise = null;
+      return this.yamlServerNames;
+    });
+    return this.yamlServerNamesPromise;
   }
 
   /**

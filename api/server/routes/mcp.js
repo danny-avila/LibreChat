@@ -238,8 +238,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     }
 
     logger.debug('[MCP OAuth] Completing OAuth flow');
-    // OAuth callback has no JWT auth context — config servers were resolved during
-    // flow initiation and the server config is in readThrough cache from that path.
     const oauthHeaders = await getOAuthHeaders(serverName, flowState.userId);
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager, oauthHeaders);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
