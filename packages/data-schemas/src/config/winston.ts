@@ -1,5 +1,5 @@
 import winston from 'winston';
-import DailyRotateFile from 'winston-daily-rotate-file';
+import 'winston-daily-rotate-file';
 import { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } from './parsers';
 import { getLogDirectory } from './utils';
 
@@ -44,7 +44,7 @@ const fileFormat = winston.format.combine(
 );
 
 const transports: winston.transport[] = [
-  new DailyRotateFile({
+  new winston.transports.DailyRotateFile({
     level: 'error',
     filename: `${logDir}/error-%DATE%.log`,
     datePattern: 'YYYY-MM-DD',
@@ -57,7 +57,7 @@ const transports: winston.transport[] = [
 
 if (useDebugLogging) {
   transports.push(
-    new DailyRotateFile({
+    new winston.transports.DailyRotateFile({
       level: 'debug',
       filename: `${logDir}/debug-%DATE%.log`,
       datePattern: 'YYYY-MM-DD',

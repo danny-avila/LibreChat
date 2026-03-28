@@ -1,5 +1,5 @@
 import winston from 'winston';
-import DailyRotateFile from 'winston-daily-rotate-file';
+import 'winston-daily-rotate-file';
 import { getLogDirectory } from './utils';
 
 const logDir = getLogDirectory();
@@ -42,7 +42,7 @@ const fileFormat = winston.format.combine(
 
 const logLevel = useDebugLogging ? 'debug' : 'error';
 const transports: winston.transport[] = [
-  new DailyRotateFile({
+  new winston.transports.DailyRotateFile({
     level: logLevel,
     filename: `${logDir}/meiliSync-%DATE%.log`,
     datePattern: 'YYYY-MM-DD',
