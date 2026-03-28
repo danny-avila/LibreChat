@@ -185,7 +185,7 @@ export class ServerConfigsCacheRedisAggregateKey
    */
   public override async reset(): Promise<void> {
     if (this.leaderOnly) {
-      await this.leaderCheck('reset App MCP servers cache');
+      await this.leaderCheck(`reset ${this.namespace} MCP servers cache`);
     }
     await this.cache.delete(AGGREGATE_KEY);
     this.invalidateLocalSnapshot();

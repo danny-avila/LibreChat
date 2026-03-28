@@ -561,11 +561,17 @@ export class MCPServersRegistry {
     if (this.yamlServerNamesPromise) {
       return this.yamlServerNamesPromise;
     }
-    this.yamlServerNamesPromise = this.cacheConfigsRepo.getAll().then((configs) => {
-      this.yamlServerNames = new Set(Object.keys(configs));
-      this.yamlServerNamesPromise = null;
-      return this.yamlServerNames;
-    });
+    this.yamlServerNamesPromise = this.cacheConfigsRepo
+      .getAll()
+      .then((configs) => {
+        this.yamlServerNames = new Set(Object.keys(configs));
+        this.yamlServerNamesPromise = null;
+        return this.yamlServerNames;
+      })
+      .catch((err) => {
+        this.yamlServerNamesPromise = null;
+        throw err;
+      });
     return this.yamlServerNamesPromise;
   }
 
