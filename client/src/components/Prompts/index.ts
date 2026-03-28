@@ -18,5 +18,4 @@ export {
   AlwaysMakeProd,
   AutoSendPrompt,
   BackToChat,
-  ManagePrompts,
 } from './buttons';

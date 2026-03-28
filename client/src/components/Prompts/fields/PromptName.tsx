@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Pencil, Check, Loader2 } from 'lucide-react';
+import { Pencil, Check, Loader2, X } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 
 type Props = {
@@ -25,11 +25,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
     setNewName(e.target.value);
   }, []);
 
-  const saveName = useCallback(() => {
-    if (skipBlurRef.current) {
-      skipBlurRef.current = false;
-      return;
-    }
+  const commitName = useCallback(() => {
     const savedName = newName?.trim();
     if (savedName && savedName !== name) {
       setSaveStatus('saving');
@@ -39,6 +35,14 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
     }
     setIsEditing(false);
   }, [newName, name, onSave]);
+
+  const saveName = useCallback(() => {
+    if (skipBlurRef.current) {
+      skipBlurRef.current = false;
+      return;
+    }
+    commitName();
+  }, [commitName]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -51,17 +55,10 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
       if (e.key === 'Enter') {
         e.preventDefault();
         skipBlurRef.current = true;
-        const savedName = newName?.trim();
-        if (savedName && savedName !== name) {
-          setSaveStatus('saving');
-          onSave(savedName);
-        } else {
-          setNewName(name);
-        }
-        setIsEditing(false);
+        commitName();
       }
     },
-    [name, newName, onSave],
+    [name, commitName],
   );
 
   useEffect(() => {
@@ -132,6 +129,12 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
           <Check
             className="size-4 text-green-500 transition-opacity duration-300"
             aria-label={localize('com_ui_saved')}
+          />
+        )}
+        {saveStatus === 'error' && (
+          <X
+            className="size-4 text-red-500 transition-opacity duration-300"
+            aria-label={localize('com_ui_error')}
           />
         )}
         {saveStatus === 'idle' && !isEditing && (

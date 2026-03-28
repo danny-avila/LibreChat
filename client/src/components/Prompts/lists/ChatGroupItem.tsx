@@ -51,12 +51,17 @@ function ChatGroupItem({
 
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  const promptPath = isChatRoute ? '/prompts' : '/d/prompts';
+
   const deleteGroup = useDeletePromptGroup({
     onSuccess: () => {
       announcePolite({
         message: localize('com_ui_prompt_deleted_group', { 0: group.name }),
         isStatus: true,
       });
+      if (!isChatRoute && params.promptId === group._id) {
+        navigate(`${promptPath}/new`, { replace: true });
+      }
     },
   });
 
@@ -74,7 +79,7 @@ function ChatGroupItem({
 
   const onCardClick = useCallback(() => {
     if (!isChatRoute) {
-      navigate(`/prompts/${group._id}`, { replace: true });
+      navigate(`${promptPath}/${group._id}`, { replace: true });
       return;
     }
 
@@ -92,7 +97,7 @@ function ChatGroupItem({
     if (group._id) {
       recordUsage.mutate(group._id);
     }
-  }, [group, submitPrompt, recordUsage, isChatRoute, navigate]);
+  }, [group, submitPrompt, recordUsage, isChatRoute, navigate, promptPath]);
 
   const snippet =
     typeof group.oneliner === 'string' && group.oneliner.length > 0
@@ -114,7 +119,7 @@ function ChatGroupItem({
     if (canEdit) {
       items.push({
         label: localize('com_ui_edit'),
-        onClick: () => navigate(`/prompts/${group._id}`),
+        onClick: () => navigate(`${promptPath}/${group._id}`),
         icon: <SquarePen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
       });
     }
@@ -126,7 +131,7 @@ function ChatGroupItem({
       });
     }
     return items;
-  }, [localize, canEdit, canDelete, group._id, navigate]);
+  }, [localize, canEdit, canDelete, group._id, navigate, promptPath]);
 
   return (
     <>
