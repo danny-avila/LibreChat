@@ -1,26 +1,32 @@
 import { logger, isValidObjectIdString } from '@librechat/data-schemas';
 import type { IUser, AdminUserSearchResult, UserDeleteResult } from '@librechat/data-schemas';
-import type { ServerRequest } from '~/types/http';
 import type { FilterQuery } from 'mongoose';
 import type { Response } from 'express';
+import type { ServerRequest } from '~/types/http';
+import { parsePagination } from './pagination';
+
+const USER_LIST_FIELDS = '_id name username email avatar role provider createdAt updatedAt';
 
 export interface AdminUsersDeps {
   findUsers: (
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
+    options?: { limit?: number; offset?: number },
   ) => Promise<IUser[]>;
+  countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps) {
-  const { findUsers, deleteUserById } = deps;
+  const { findUsers, countUsers, deleteUserById } = deps;
 
-  async function listUsersHandler(_req: ServerRequest, res: Response) {
+  async function listUsersHandler(req: ServerRequest, res: Response) {
     try {
-      const users = await findUsers(
-        {},
-        '_id name username email avatar role provider createdAt updatedAt',
-      );
+      const { limit, offset } = parsePagination(req.query);
+      const [users, total] = await Promise.all([
+        findUsers({}, USER_LIST_FIELDS, { limit, offset }),
+        countUsers(),
+      ]);
 
       const mapped = users.map((u) => ({
         id: u._id?.toString() ?? '',
@@ -30,11 +36,11 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         avatar: u.avatar ?? '',
         role: u.role ?? 'USER',
         provider: u.provider ?? 'local',
-        createdAt: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString(),
-        updatedAt: u.updatedAt ? new Date(u.updatedAt).toISOString() : new Date().toISOString(),
+        createdAt: u.createdAt ? new Date(u.createdAt).toISOString() : undefined,
+        updatedAt: u.updatedAt ? new Date(u.updatedAt).toISOString() : undefined,
       }));
 
-      return res.status(200).json({ users: mapped, total: users.length });
+      return res.status(200).json({ users: mapped, total, limit, offset });
     } catch (error) {
       logger.error('[adminUsers] listUsers error:', error);
       return res.status(500).json({ error: 'Failed to list users' });
@@ -60,9 +66,10 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       const users = await findUsers(
         { $or: [{ name: regex }, { email: regex }, { username: regex }] },
         '_id name email avatar',
+        { limit: searchLimit },
       );
 
-      const results: AdminUserSearchResult[] = users.slice(0, searchLimit).map((u) => ({
+      const results: AdminUserSearchResult[] = users.map((u) => ({
         userId: u._id?.toString() ?? '',
         name: u.name ?? '',
         email: u.email ?? '',
@@ -82,6 +89,11 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
 
       if (!isValidObjectIdString(id)) {
         return res.status(400).json({ error: 'Invalid user ID format' });
+      }
+
+      const callerId = req.user?._id?.toString() ?? req.user?.id;
+      if (callerId === id) {
+        return res.status(403).json({ error: 'Cannot delete your own account' });
       }
 
       const result = await deleteUserById(id);

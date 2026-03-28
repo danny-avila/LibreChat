@@ -1,15 +1,13 @@
 import { Types } from 'mongoose';
 import type { IUser, UserDeleteResult } from '@librechat/data-schemas';
+import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminUsersDeps } from './users';
-import type { Response } from 'express';
 import { createAdminUsersHandlers } from './users';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
-  logger: {
-    error: jest.fn(),
-  },
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
 const validUserId = new Types.ObjectId().toString();
@@ -33,12 +31,14 @@ function createReqRes(
   overrides: {
     params?: Record<string, string>;
     query?: Record<string, string>;
+    user?: { _id?: Types.ObjectId; id?: string; role?: string };
   } = {},
 ) {
   const req = {
     params: overrides.params ?? {},
     query: overrides.query ?? {},
     body: {},
+    user: overrides.user ?? { _id: new Types.ObjectId(), role: 'admin' },
   } as unknown as ServerRequest;
 
   const json = jest.fn();
@@ -51,6 +51,7 @@ function createReqRes(
 function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
   return {
     findUsers: jest.fn().mockResolvedValue([]),
+    countUsers: jest.fn().mockResolvedValue(0),
     deleteUserById: jest.fn().mockResolvedValue({ deletedCount: 1, message: 'User deleted' }),
     ...overrides,
   };
@@ -58,38 +59,45 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
 
 describe('createAdminUsersHandlers', () => {
   describe('listUsers', () => {
-    it('returns mapped users with total count', async () => {
+    it('returns paginated users with total count', async () => {
       const users = [
         mockUser(),
         mockUser({ _id: new Types.ObjectId(), name: 'Other' } as Partial<IUser>),
       ];
-      const deps = createDeps({ findUsers: jest.fn().mockResolvedValue(users) });
+      const deps = createDeps({
+        findUsers: jest.fn().mockResolvedValue(users),
+        countUsers: jest.fn().mockResolvedValue(2),
+      });
       const handlers = createAdminUsersHandlers(deps);
       const { req, res, status, json } = createReqRes();
 
       await handlers.listUsers(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith(
-        expect.objectContaining({ total: 2, users: expect.arrayContaining([]) }),
-      );
       const response = json.mock.calls[0][0];
       expect(response.users).toHaveLength(2);
+      expect(response.total).toBe(2);
+      expect(response).toHaveProperty('limit');
+      expect(response).toHaveProperty('offset');
       expect(response.users[0]).toHaveProperty('id');
       expect(response.users[0]).toHaveProperty('name');
       expect(response.users[0]).toHaveProperty('email');
       expect(response.users[0]).toHaveProperty('role');
     });
 
-    it('returns total derived from users.length, not a separate query', async () => {
-      const users = [mockUser(), mockUser(), mockUser()];
-      const deps = createDeps({ findUsers: jest.fn().mockResolvedValue(users) });
+    it('passes pagination params to findUsers', async () => {
+      const findUsers = jest.fn().mockResolvedValue([]);
+      const deps = createDeps({ findUsers });
       const handlers = createAdminUsersHandlers(deps);
-      const { req, res, json } = createReqRes();
+      const { req, res } = createReqRes({ query: { limit: '10', offset: '20' } });
 
       await handlers.listUsers(req, res);
 
-      expect(json.mock.calls[0][0].total).toBe(3);
+      expect(findUsers).toHaveBeenCalledWith(
+        {},
+        expect.any(String),
+        { limit: 10, offset: 20 },
+      );
     });
 
     it('returns empty list when no users', async () => {
@@ -100,7 +108,8 @@ describe('createAdminUsersHandlers', () => {
       await handlers.listUsers(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith({ users: [], total: 0 });
+      expect(json.mock.calls[0][0].users).toEqual([]);
+      expect(json.mock.calls[0][0].total).toBe(0);
     });
 
     it('returns 500 on error', async () => {
@@ -189,30 +198,34 @@ describe('createAdminUsersHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Query must be at least 2 characters' });
     });
 
-    it('respects limit parameter', async () => {
-      const users = Array.from({ length: 10 }, (_, i) =>
-        mockUser({ _id: new Types.ObjectId(), name: `User ${i}` } as Partial<IUser>),
-      );
-      const deps = createDeps({ findUsers: jest.fn().mockResolvedValue(users) });
+    it('passes limit to findUsers', async () => {
+      const findUsers = jest.fn().mockResolvedValue([mockUser()]);
+      const deps = createDeps({ findUsers });
       const handlers = createAdminUsersHandlers(deps);
-      const { req, res, json } = createReqRes({ query: { q: 'User', limit: '3' } });
+      const { req, res } = createReqRes({ query: { q: 'User', limit: '3' } });
 
       await handlers.searchUsers(req, res);
 
-      expect(json.mock.calls[0][0].users).toHaveLength(3);
+      expect(findUsers).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.any(String),
+        { limit: 3 },
+      );
     });
 
     it('caps limit at 50', async () => {
-      const users = Array.from({ length: 60 }, (_, i) =>
-        mockUser({ _id: new Types.ObjectId(), name: `User ${i}` } as Partial<IUser>),
-      );
-      const deps = createDeps({ findUsers: jest.fn().mockResolvedValue(users) });
+      const findUsers = jest.fn().mockResolvedValue([]);
+      const deps = createDeps({ findUsers });
       const handlers = createAdminUsersHandlers(deps);
-      const { req, res, json } = createReqRes({ query: { q: 'User', limit: '100' } });
+      const { req, res } = createReqRes({ query: { q: 'User', limit: '100' } });
 
       await handlers.searchUsers(req, res);
 
-      expect(json.mock.calls[0][0].users).toHaveLength(50);
+      expect(findUsers).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.any(String),
+        { limit: 50 },
+      );
     });
 
     it('returns 500 on error', async () => {
@@ -238,6 +251,22 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
+    });
+
+    it('returns 403 when deleting own account', async () => {
+      const userId = new Types.ObjectId();
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: userId.toString() },
+        user: { _id: userId, role: 'admin' },
+      });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(403);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot delete your own account' });
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
     });
 
     it('returns 400 for invalid ObjectId', async () => {
