@@ -64,6 +64,9 @@ jest.mock('~/models', () => ({
 jest.mock('~/config', () => ({
   getFlowStateManager: jest.fn(() => ({})),
 }));
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
+}));
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({})),
 }));

@@ -146,9 +146,11 @@ describe('tests for the new helper functions used by the MCP connection status e
       expect(result.oauthServers).toEqual(new Set(['server2']));
     });
 
-    it('should throw error when MCP config not found', async () => {
+    it('should handle null MCP config gracefully', async () => {
       mockRegistryInstance.getAllServerConfigs.mockResolvedValue(null);
-      await expect(getMCPSetupData(mockUserId)).rejects.toThrow('MCP config not found');
+      const result = await getMCPSetupData(mockUserId);
+      expect(result.mcpConfig).toBeNull();
+      expect(result.oauthServers).toEqual(new Set());
     });
 
     it('should handle null values from MCP manager gracefully', async () => {
