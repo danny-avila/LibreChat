@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getCachedTools, setCachedTools } = require('./getCachedTools');
 const { getLogStores } = require('~/cache');
@@ -36,7 +36,9 @@ async function updateMCPServerTools({ userId, serverName, tools }) {
     await setCachedTools(serverTools, { userId, serverName });
 
     const cache = getLogStores(CacheKeys.TOOL_CACHE);
-    await cache.delete(CacheKeys.TOOLS);
+    const tenantId = getTenantId();
+    const toolsCacheKey = tenantId ? `${CacheKeys.TOOLS}:${tenantId}` : CacheKeys.TOOLS;
+    await cache.delete(toolsCacheKey);
     logger.debug(
       `[MCP Cache] Updated ${tools.length} tools for server ${serverName} (user: ${userId})`,
     );
@@ -62,7 +64,9 @@ async function mergeAppTools(appTools) {
     const mergedTools = { ...cachedTools, ...appTools };
     await setCachedTools(mergedTools);
     const cache = getLogStores(CacheKeys.TOOL_CACHE);
-    await cache.delete(CacheKeys.TOOLS);
+    const tenantId = getTenantId();
+    const toolsCacheKey = tenantId ? `${CacheKeys.TOOLS}:${tenantId}` : CacheKeys.TOOLS;
+    await cache.delete(toolsCacheKey);
     logger.debug(`Merged ${count} app-level tools`);
   } catch (error) {
     logger.error('Failed to merge app-level tools:', error);
