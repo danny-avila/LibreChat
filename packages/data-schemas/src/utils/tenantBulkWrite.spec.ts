@@ -174,6 +174,92 @@ describe('tenantSafeBulkWrite', () => {
     });
   });
 
+  describe('deleteMany and replaceOne', () => {
+    it('injects tenantId into deleteMany filters', async () => {
+      const Model = createTestModel('deleteMany');
+
+      await runAsSystem(async () => {
+        await Model.create([
+          { name: 'batch-del', value: 0, tenantId: 'tenant-a' },
+          { name: 'batch-del', value: 0, tenantId: 'tenant-a' },
+          { name: 'batch-del', value: 0, tenantId: 'tenant-b' },
+        ]);
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await tenantSafeBulkWrite(Model, [{ deleteMany: { filter: { name: 'batch-del' } } }]);
+      });
+
+      const docs = await runAsSystem(async () => Model.find({}).lean());
+      expect(docs).toHaveLength(1);
+      expect(docs[0].tenantId).toBe('tenant-b');
+    });
+
+    it('injects tenantId into replaceOne filter and replacement', async () => {
+      const Model = createTestModel('replaceOne');
+
+      await runAsSystem(async () => {
+        await Model.create([
+          { name: 'to-replace', value: 1, tenantId: 'tenant-a' },
+          { name: 'to-replace', value: 1, tenantId: 'tenant-b' },
+        ]);
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await tenantSafeBulkWrite(Model, [
+          {
+            replaceOne: {
+              filter: { name: 'to-replace' },
+              replacement: { name: 'replaced', value: 99 },
+            },
+          },
+        ]);
+      });
+
+      const docs = await runAsSystem(async () => Model.find({}).sort({ name: 1 }).lean());
+      const replaced = docs.find((d) => d.name === 'replaced');
+      const untouched = docs.find((d) => d.tenantId === 'tenant-b');
+      expect(replaced?.value).toBe(99);
+      expect(replaced?.tenantId).toBe('tenant-a');
+      expect(untouched?.value).toBe(1);
+    });
+
+    it('replaceOne overwrites a conflicting tenantId in the replacement document', async () => {
+      const Model = createTestModel('replaceOverwrite');
+
+      await runAsSystem(async () => {
+        await Model.create({ name: 'conflict', value: 1, tenantId: 'tenant-a' });
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await tenantSafeBulkWrite(Model, [
+          {
+            replaceOne: {
+              filter: { name: 'conflict' },
+              replacement: { name: 'conflict', value: 2, tenantId: 'tenant-evil' } as ITestDoc,
+            },
+          },
+        ]);
+      });
+
+      const docs = await runAsSystem(async () => Model.find({}).lean());
+      expect(docs).toHaveLength(1);
+      expect(docs[0].tenantId).toBe('tenant-a');
+      expect(docs[0].value).toBe(2);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('handles empty ops array', async () => {
+      const Model = createTestModel('emptyOps');
+      const result = await tenantStorage.run({ tenantId: 'tenant-x' }, async () =>
+        tenantSafeBulkWrite(Model, []),
+      );
+      expect(result.insertedCount).toBe(0);
+      expect(result.modifiedCount).toBe(0);
+    });
+  });
+
   describe('without tenant context', () => {
     it('passes through in non-strict mode', async () => {
       const Model = createTestModel('noCtx');

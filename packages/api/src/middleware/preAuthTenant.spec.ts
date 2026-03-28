@@ -5,32 +5,36 @@ import type { Request, Response, NextFunction } from 'express';
 describe('preAuthTenantMiddleware', () => {
   let req: Partial<Request>;
   let res: Partial<Response>;
-  let next: jest.Mock<NextFunction>;
 
   beforeEach(() => {
     req = { headers: {} };
     res = {};
-    next = jest.fn();
   });
 
   it('calls next() without ALS context when no X-Tenant-Id header is present', () => {
-    preAuthTenantMiddleware(req as Request, res as Response, next);
-    expect(next).toHaveBeenCalledTimes(1);
-    // No tenant context should be set
-    expect(getTenantId()).toBeUndefined();
+    let capturedTenantId: string | undefined = 'sentinel';
+    const capturedNext: NextFunction = () => {
+      capturedTenantId = getTenantId();
+    };
+
+    preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
+    expect(capturedTenantId).toBeUndefined();
   });
 
   it('calls next() without ALS context when X-Tenant-Id header is empty', () => {
     req.headers = { 'x-tenant-id': '' };
-    preAuthTenantMiddleware(req as Request, res as Response, next);
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(getTenantId()).toBeUndefined();
+    let capturedTenantId: string | undefined = 'sentinel';
+    const capturedNext: NextFunction = () => {
+      capturedTenantId = getTenantId();
+    };
+
+    preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
+    expect(capturedTenantId).toBeUndefined();
   });
 
   it('wraps downstream in ALS context when X-Tenant-Id header is present', () => {
     req.headers = { 'x-tenant-id': 'acme-corp' };
     let capturedTenantId: string | undefined;
-
     const capturedNext: NextFunction = () => {
       capturedTenantId = getTenantId();
     };
@@ -42,7 +46,6 @@ describe('preAuthTenantMiddleware', () => {
   it('rejects __SYSTEM__ sentinel to prevent tenant isolation bypass', () => {
     req.headers = { 'x-tenant-id': '__SYSTEM__' };
     let capturedTenantId: string | undefined = 'should-be-overwritten';
-
     const capturedNext: NextFunction = () => {
       capturedTenantId = getTenantId();
     };
@@ -53,9 +56,12 @@ describe('preAuthTenantMiddleware', () => {
 
   it('ignores array-valued headers (Express can produce these)', () => {
     req.headers = { 'x-tenant-id': ['a', 'b'] as unknown as string };
-    preAuthTenantMiddleware(req as Request, res as Response, next);
-    expect(next).toHaveBeenCalledTimes(1);
-    // typeof check rejects arrays
-    expect(getTenantId()).toBeUndefined();
+    let capturedTenantId: string | undefined = 'sentinel';
+    const capturedNext: NextFunction = () => {
+      capturedTenantId = getTenantId();
+    };
+
+    preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
+    expect(capturedTenantId).toBeUndefined();
   });
 });
