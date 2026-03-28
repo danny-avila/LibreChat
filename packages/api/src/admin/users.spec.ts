@@ -53,6 +53,9 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     findUsers: jest.fn().mockResolvedValue([]),
     countUsers: jest.fn().mockResolvedValue(0),
     deleteUserById: jest.fn().mockResolvedValue({ deletedCount: 1, message: 'User deleted' }),
+    deleteConfig: jest.fn().mockResolvedValue(null),
+    deleteAclEntries: jest.fn().mockResolvedValue(undefined),
+    deleteGrantsForPrincipal: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -139,6 +142,21 @@ describe('createAdminUsersHandlers', () => {
       expect(response.users[0]).toHaveProperty('userId');
       expect(response.users[0]).toHaveProperty('name');
       expect(response.users[0]).toHaveProperty('email');
+    });
+
+    it('searches name, email, and username fields', async () => {
+      const findUsers = jest.fn().mockResolvedValue([]);
+      const deps = createDeps({ findUsers });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({ query: { q: 'test' } });
+
+      await handlers.searchUsers(req, res);
+
+      const filter = findUsers.mock.calls[0][0];
+      expect(filter.$or).toHaveLength(3);
+      expect(filter.$or[0]).toHaveProperty('name');
+      expect(filter.$or[1]).toHaveProperty('email');
+      expect(filter.$or[2]).toHaveProperty('username');
     });
 
     it('escapes regex special characters in query', async () => {
@@ -311,6 +329,52 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(deps.deleteUserById).toHaveBeenCalledWith(targetId);
+    });
+
+    it('cascades cleanup of Config, AclEntries, and SystemGrants', async () => {
+      const result: UserDeleteResult = { deletedCount: 1, message: 'User deleted successfully' };
+      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.deleteConfig).toHaveBeenCalledWith('USER', validUserId);
+      expect(deps.deleteAclEntries).toHaveBeenCalledWith({
+        principalType: 'USER',
+        principalId: validUserId,
+      });
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith('USER', validUserId);
+    });
+
+    it('returns success even when cascade cleanup partially fails', async () => {
+      const result: UserDeleteResult = { deletedCount: 1, message: 'User deleted successfully' };
+      const deps = createDeps({
+        deleteUserById: jest.fn().mockResolvedValue(result),
+        deleteConfig: jest.fn().mockRejectedValue(new Error('cleanup failed')),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
+    });
+
+    it('does not cascade when user is not found', async () => {
+      const result: UserDeleteResult = { deletedCount: 0, message: '' };
+      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(deps.deleteConfig).not.toHaveBeenCalled();
+      expect(deps.deleteAclEntries).not.toHaveBeenCalled();
+      expect(deps.deleteGrantsForPrincipal).not.toHaveBeenCalled();
     });
 
     it('returns 400 for invalid ObjectId', async () => {

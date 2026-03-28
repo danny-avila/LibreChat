@@ -1,7 +1,7 @@
-import { SystemRoles } from 'librechat-data-provider';
+import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString } from '@librechat/data-schemas';
-import type { IUser, AdminUserSearchResult, UserDeleteResult } from '@librechat/data-schemas';
-import type { FilterQuery } from 'mongoose';
+import type { IUser, IConfig, AdminUserSearchResult, UserDeleteResult } from '@librechat/data-schemas';
+import type { FilterQuery, Types } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import { parsePagination } from './pagination';
@@ -18,10 +18,22 @@ export interface AdminUsersDeps {
   ) => Promise<IUser[]>;
   countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
+  deleteConfig: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+  ) => Promise<IConfig | null>;
+  deleteAclEntries: (filter: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+  }) => Promise<void>;
+  deleteGrantsForPrincipal: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+  ) => Promise<void>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps) {
-  const { findUsers, countUsers, deleteUserById } = deps;
+  const { findUsers, countUsers, deleteUserById, deleteConfig, deleteAclEntries, deleteGrantsForPrincipal } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
     try {
@@ -71,7 +83,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       const regex = new RegExp(escaped, 'i');
 
       const users = await findUsers(
-        { $or: [{ name: regex }, { email: regex }] },
+        { $or: [{ name: regex }, { email: regex }, { username: regex }] },
         '_id name email avatar',
         { limit: searchLimit },
       );
@@ -115,6 +127,17 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
 
       if (result.deletedCount === 0) {
         return res.status(404).json({ error: 'User not found' });
+      }
+
+      const cleanupResults = await Promise.allSettled([
+        deleteConfig(PrincipalType.USER, id),
+        deleteAclEntries({ principalType: PrincipalType.USER, principalId: id }),
+        deleteGrantsForPrincipal(PrincipalType.USER, id),
+      ]);
+      for (const r of cleanupResults) {
+        if (r.status === 'rejected') {
+          logger.error('[adminUsers] cascade cleanup failed for user:', id, r.reason);
+        }
       }
 
       return res.status(200).json({ message: result.message });
