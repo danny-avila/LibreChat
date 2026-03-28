@@ -20,6 +20,7 @@ function makeConfig(overrides: Partial<RequiredCloudFrontConfig> = {}): Required
     invalidateOnDelete: false,
     imageSigning: 'none',
     urlExpiry: 3600,
+    cookieExpiry: 1800,
     ...overrides,
   };
 }
@@ -63,14 +64,17 @@ describe('CloudFront CDN module', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('without signing keys'));
     });
 
-    it('returns true and logs with signing keys when env vars are set', async () => {
+    it('returns true without signing-key warnings when keys are set and imageSigning is "none"', async () => {
       process.env.CLOUDFRONT_KEY_PAIR_ID = 'K123';
       process.env.CLOUDFRONT_PRIVATE_KEY =
         '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----';
       const { initializeCloudFront } = await load();
       expect(initializeCloudFront(makeConfig())).toBe(true);
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Signing keys are configured but URL signing is not yet active'),
+      expect(mockLogger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('Signing keys are configured'),
+      );
+      expect(mockLogger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('without signing keys'),
       );
     });
 
@@ -101,12 +105,33 @@ describe('CloudFront CDN module', () => {
       );
     });
 
-    it('warns when imageSigning is not "none"', async () => {
+    it('returns false and errors when imageSigning is "cookies" but signing keys are missing', async () => {
+      const { initializeCloudFront } = await load();
+      const result = initializeCloudFront(makeConfig({ imageSigning: 'cookies' }));
+      expect(result).toBe(false);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '[initializeCloudFront] imageSigning="cookies" requires CLOUDFRONT_KEY_PAIR_ID',
+        ),
+      );
+    });
+
+    it('logs info when imageSigning is "cookies" and signing keys are present', async () => {
+      process.env.CLOUDFRONT_KEY_PAIR_ID = 'K123';
+      process.env.CLOUDFRONT_PRIVATE_KEY = 'my-private-key';
       const { initializeCloudFront } = await load();
       initializeCloudFront(makeConfig({ imageSigning: 'cookies' }));
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('CloudFront cookie signing enabled'),
+      );
+    });
+
+    it('warns when imageSigning is "url"', async () => {
+      const { initializeCloudFront } = await load();
+      initializeCloudFront(makeConfig({ imageSigning: 'url' }));
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.stringContaining(
-          '[initializeCloudFront] imageSigning="cookies" is configured but not yet implemented',
+          '[initializeCloudFront] imageSigning="url" is configured but not yet implemented',
         ),
       );
     });

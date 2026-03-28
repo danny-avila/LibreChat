@@ -14,6 +14,7 @@ jest.mock('@librechat/api', () => ({
   isEmailDomainAllowed: jest.fn(),
   math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
   shouldUseSecureCookie: jest.fn(() => false),
+  setCloudFrontCookies: jest.fn(() => true),
 }));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
@@ -35,8 +36,9 @@ jest.mock('~/strategies/validators', () => ({ registerSchema: { parse: jest.fn()
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
 
-const { shouldUseSecureCookie } = require('@librechat/api');
-const { setOpenIDAuthTokens } = require('./AuthService');
+const { shouldUseSecureCookie, setCloudFrontCookies } = require('@librechat/api');
+const { createSession, generateToken, generateRefreshToken, getUserById } = require('~/models');
+const { setOpenIDAuthTokens, setAuthTokens } = require('./AuthService');
 
 /** Helper to build a mock Express response */
 function mockResponse() {
@@ -264,6 +266,70 @@ describe('setOpenIDAuthTokens', () => {
       const result = setOpenIDAuthTokens(tokenset, req, res, 'user-123', 'existing-refresh');
       expect(result).toBe('the-id-token');
       expect(req.session.openidTokens.refreshToken).toBe('existing-refresh');
+    });
+  });
+});
+
+describe('CloudFront cookie integration', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('setOpenIDAuthTokens', () => {
+    const validTokenset = {
+      id_token: 'the-id-token',
+      access_token: 'the-access-token',
+      refresh_token: 'the-refresh-token',
+    };
+
+    it('calls setCloudFrontCookies with response object', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+
+      setOpenIDAuthTokens(validTokenset, req, res, 'user-123');
+
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(res);
+    });
+
+    it('succeeds even when setCloudFrontCookies returns false', () => {
+      setCloudFrontCookies.mockReturnValue(false);
+
+      const req = mockRequest();
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(validTokenset, req, res, 'user-123');
+
+      expect(result).toBe('the-id-token');
+    });
+  });
+
+  describe('setAuthTokens', () => {
+    beforeEach(() => {
+      getUserById.mockResolvedValue({ _id: 'user-123' });
+      generateToken.mockResolvedValue('mock-access-token');
+      generateRefreshToken.mockReturnValue('mock-refresh-token');
+      createSession.mockResolvedValue({
+        session: { expiration: new Date(Date.now() + 604800000) },
+        refreshToken: 'mock-refresh-token',
+      });
+    });
+
+    it('calls setCloudFrontCookies with response object', async () => {
+      const res = mockResponse();
+
+      await setAuthTokens('user-123', res);
+
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(res);
+    });
+
+    it('succeeds even when setCloudFrontCookies returns false', async () => {
+      setCloudFrontCookies.mockReturnValue(false);
+
+      const res = mockResponse();
+
+      const result = await setAuthTokens('user-123', res);
+
+      expect(result).toBe('mock-access-token');
     });
   });
 });
