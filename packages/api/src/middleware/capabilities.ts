@@ -191,7 +191,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
           return;
         }
 
-        res.status(403).json({ message: 'Forbidden' });
+        res.status(403).json({ message: `Forbidden: missing capability '${capability}'` });
       } catch (err) {
         logger.error(`[requireCapability] Error checking capability: ${capability}`, err);
         res.status(500).json({ message: 'Internal Server Error' });
