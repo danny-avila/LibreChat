@@ -66,9 +66,8 @@ export async function updateInterfacePermissions({
   ) => Promise<void>;
   /**
    * Optional tenant ID for scoping role updates to a specific tenant.
-   * When provided, the function runs inside `tenantStorage.run({ tenantId })`
-   * so that Mongoose queries target tenant-scoped roles.
-   * When omitted, runs in the caller's existing ALS context (typically `runAsSystem()`).
+   * When provided (and not SYSTEM_TENANT_ID), runs inside `tenantStorage.run({ tenantId })`.
+   * When omitted or SYSTEM_TENANT_ID, uses the caller's existing ALS context.
    */
   tenantId?: string;
 }): Promise<void> {

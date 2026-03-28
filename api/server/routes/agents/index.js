@@ -17,6 +17,11 @@ const chat = require('./chat');
 
 const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
+/** Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check passes. */
+function hasTenantMismatch(job, user) {
+  return job.metadata?.tenantId != null && job.metadata.tenantId !== user.tenantId;
+}
+
 const router = express.Router();
 
 /**
@@ -67,8 +72,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
-  // Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check above passes
-  if (job.metadata?.tenantId && job.metadata.tenantId !== req.user.tenantId) {
+  if (hasTenantMismatch(job, req.user)) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -182,8 +186,7 @@ router.get('/chat/status/:conversationId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
-  // Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check above passes
-  if (job.metadata?.tenantId && job.metadata.tenantId !== req.user.tenantId) {
+  if (hasTenantMismatch(job, req.user)) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -228,7 +231,7 @@ router.post('/chat/abort', async (req, res) => {
     logger.debug(`[AgentStream] Job not found by ID, checking active jobs for user: ${userId}`);
     const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
       userId,
-      req.user?.tenantId,
+      req.user.tenantId,
     );
     if (activeJobIds.length > 0) {
       // Abort the most recent active job for this user
@@ -246,8 +249,7 @@ router.post('/chat/abort', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    // Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check above passes
-    if (job.metadata?.tenantId && job.metadata.tenantId !== req.user.tenantId) {
+    if (hasTenantMismatch(job, req.user)) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 

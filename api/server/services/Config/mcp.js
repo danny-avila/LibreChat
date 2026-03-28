@@ -48,7 +48,10 @@ async function updateMCPServerTools({ userId, serverName, tools }) {
 }
 
 /**
- * Merges app-level tools with global tools
+ * Merges app-level tools with global tools.
+ * Only the current ALS-scoped key (base key in system/startup context) is cleared.
+ * Tenant-scoped TOOLS:tenantId keys are NOT actively invalidated — they expire
+ * via TTL on the next tenant request. This matches clearEndpointConfigCache behavior.
  * @param {import('@librechat/api').LCAvailableTools} appTools
  * @returns {Promise<void>}
  */

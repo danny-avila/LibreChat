@@ -27,7 +27,11 @@ export function runAsSystem<T>(fn: () => Promise<T>): Promise<T> {
   return tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, fn);
 }
 
-/** Appends `:${tenantId}` to a cache key when tenant context is active. */
+/**
+ * Appends `:${tenantId}` to a cache key when a non-system tenant context is active.
+ * Returns the base key unchanged when no ALS context is set or when running
+ * inside `runAsSystem()` (SYSTEM_TENANT_ID context).
+ */
 export function scopedCacheKey(baseKey: string): string {
   const tenantId = getTenantId();
   if (!tenantId || tenantId === SYSTEM_TENANT_ID) {

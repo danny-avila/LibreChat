@@ -149,6 +149,17 @@ export class InMemoryJobStore implements IJobStore {
     }
 
     for (const id of toDelete) {
+      const job = this.jobs.get(id);
+      if (job) {
+        const userKey = job.tenantId ? `${job.tenantId}:${job.userId}` : job.userId;
+        const userJobs = this.userJobMap.get(userKey);
+        if (userJobs) {
+          userJobs.delete(id);
+          if (userJobs.size === 0) {
+            this.userJobMap.delete(userKey);
+          }
+        }
+      }
       await this.deleteJob(id);
     }
 
