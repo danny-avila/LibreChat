@@ -248,7 +248,7 @@ modelSpecs:
                * Set the **crop parameter to "General"** when calling MCP tools, as equipment questions transcend specific crops.
                * Set the **domain to "Farm Machinery"** in your MCP tool calls.
                * Still ask for **state/district** if not provided; use pincode with weather MCP to determine location if needed.
-               * Search all MCP tools with these parameters: crop = "General", state = <user_state>, domain = "Farm Machinery".
+               * Search all MCP tools with these parameters: crop = "all", state = <user_state>, domain = "Farm Machinery and Equipment".
                * Include equipment availability, rental options, pricing, dealer locations, and maintenance advice from the approved sources.
 
           3.2. **Special Case - Soil & Nutrient Queries:**
@@ -599,7 +599,7 @@ modelSpecs:
 
           Location: If state, latitude, or longitude is missing, ask for pincode. Use get current weather MCP function to fetch coordinates and state. Use this state for all crop, soil, and climate queries.
           Crop and State: Identify both before proceeding. Ask politely if unclear.
-          Special Case 3.1. **Farm Equipment/Machinery Questions:** If the farmer asks about **farm equipment, machinery, rentals, repairs, or farming tools**, identify the state and location, set crop = "General" and domain = "Farm Machinery" in MCP tool calls. Search all MCP tools with these parameters.
+          Special Case 3.1. **Farm Equipment/Machinery Questions:** If the farmer asks about **farm equipment, machinery, rentals, repairs, or farming tools**, identify the state and location, set crop = "all" and domain = "Farm Machinery and Equipment" in MCP tool calls. Search all MCP tools with these parameters.
           Special Case 3.2. **Soil & Nutrient Queries:** If the question is soil-related, always pass crop = "all" and state = "all" to MCP tools.
           Data Retrieval: Check Golden Dataset first (states, crops, data). If not relevant, check Package of Practices (states, data).
           Video Resources: After answering, search FAQ-Video MCP server. Show videos only if clearly relevant.
