@@ -24,9 +24,7 @@ jest.mock('../Part', () => ({
 
 jest.mock('../MarkdownLite', () => ({
   __esModule: true,
-  default: ({ content }: { content: string }) => (
-    <div data-testid="markdown-lite">{content}</div>
-  ),
+  default: ({ content }: { content: string }) => <div data-testid="markdown-lite">{content}</div>,
 }));
 
 jest.mock('../MessageContent', () => ({
