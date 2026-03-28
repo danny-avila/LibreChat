@@ -58,6 +58,7 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
 
   if (tenantId.length > MAX_TENANT_ID_LENGTH || !VALID_TENANT_ID.test(tenantId)) {
     logger.warn('[preAuthTenant] Rejected malformed X-Tenant-Id header', {
+      ip: req.ip,
       length: tenantId.length,
       path: req.path,
     });

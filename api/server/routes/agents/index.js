@@ -238,7 +238,7 @@ router.post('/chat/abort', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    if (job.metadata?.tenantId && job.metadata.tenantId !== req.user?.tenantId) {
+    if (job.metadata?.tenantId && job.metadata.tenantId !== req.user.tenantId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 

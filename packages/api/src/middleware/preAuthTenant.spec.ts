@@ -1,12 +1,23 @@
-import { getTenantId } from '@librechat/data-schemas';
+import { getTenantId, logger } from '@librechat/data-schemas';
 import { preAuthTenantMiddleware } from './preAuthTenant';
 import type { Request, Response, NextFunction } from 'express';
+
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: {
+    warn: jest.fn(),
+    error: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
 
 describe('preAuthTenantMiddleware', () => {
   let req: Partial<Request>;
   let res: Partial<Response>;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     req = { headers: {} };
     res = {};
   });
@@ -43,8 +54,10 @@ describe('preAuthTenantMiddleware', () => {
     expect(capturedTenantId).toBe('acme-corp');
   });
 
-  it('ignores __SYSTEM__ sentinel to prevent tenant isolation bypass', () => {
+  it('ignores __SYSTEM__ sentinel and logs warning', () => {
     req.headers = { 'x-tenant-id': '__SYSTEM__' };
+    req.ip = '10.0.0.1';
+    req.path = '/api/config';
     let capturedTenantId: string | undefined = 'should-be-overwritten';
     const capturedNext: NextFunction = () => {
       capturedTenantId = getTenantId();
@@ -52,6 +65,10 @@ describe('preAuthTenantMiddleware', () => {
 
     preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
     expect(capturedTenantId).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('__SYSTEM__'),
+      expect.objectContaining({ ip: '10.0.0.1', path: '/api/config' }),
+    );
   });
 
   it('ignores array-valued headers (Express can produce these)', () => {
@@ -65,8 +82,9 @@ describe('preAuthTenantMiddleware', () => {
     expect(capturedTenantId).toBeUndefined();
   });
 
-  it('ignores tenant IDs containing invalid characters', () => {
+  it('ignores tenant IDs containing invalid characters and logs warning', () => {
     req.headers = { 'x-tenant-id': 'tenant:injected' };
+    req.path = '/api/auth/login';
     let capturedTenantId: string | undefined = 'sentinel';
     const capturedNext: NextFunction = () => {
       capturedTenantId = getTenantId();
@@ -74,6 +92,10 @@ describe('preAuthTenantMiddleware', () => {
 
     preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
     expect(capturedTenantId).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('malformed'),
+      expect.objectContaining({ path: '/api/auth/login' }),
+    );
   });
 
   it('trims whitespace from tenant ID header', () => {
@@ -87,8 +109,9 @@ describe('preAuthTenantMiddleware', () => {
     expect(capturedTenantId).toBe('acme-corp');
   });
 
-  it('ignores tenant IDs exceeding max length', () => {
+  it('ignores tenant IDs exceeding max length and logs warning', () => {
     req.headers = { 'x-tenant-id': 'a'.repeat(200) };
+    req.path = '/api/share/abc';
     let capturedTenantId: string | undefined = 'sentinel';
     const capturedNext: NextFunction = () => {
       capturedTenantId = getTenantId();
@@ -96,5 +119,9 @@ describe('preAuthTenantMiddleware', () => {
 
     preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
     expect(capturedTenantId).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('malformed'),
+      expect.objectContaining({ length: 200, path: '/api/share/abc' }),
+    );
   });
 });
