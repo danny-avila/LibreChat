@@ -10,6 +10,7 @@ const router = express.Router();
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
 const handlers = createAdminGrantsHandlers({
+  listAllGrants: db.listAllGrants,
   getCapabilitiesForPrincipal: db.getCapabilitiesForPrincipal,
   getCapabilitiesForPrincipals: db.getCapabilitiesForPrincipals,
   grantCapability: db.grantCapability,
@@ -20,6 +21,7 @@ const handlers = createAdminGrantsHandlers({
 
 router.use(requireJwtAuth, requireAdminAccess);
 
+router.get('/', handlers.listAllGrants);
 router.get('/effective', handlers.getEffectiveCapabilities);
 router.get('/:principalType/:principalId', handlers.getPrincipalGrants);
 router.post('/', handlers.assignGrant);

@@ -49,6 +49,7 @@ function createReqRes(
 
 function createDeps(overrides: Partial<AdminGrantsDeps> = {}): AdminGrantsDeps {
   return {
+    listAllGrants: jest.fn().mockResolvedValue([]),
     getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([]),
     getCapabilitiesForPrincipals: jest.fn().mockResolvedValue([]),
     grantCapability: jest.fn().mockResolvedValue(mockGrant()),
@@ -63,6 +64,86 @@ function createDeps(overrides: Partial<AdminGrantsDeps> = {}): AdminGrantsDeps {
 }
 
 describe('createAdminGrantsHandlers', () => {
+  describe('listAllGrants', () => {
+    it('returns all grants', async () => {
+      const grants = [mockGrant(), mockGrant({ capability: SystemCapabilities.MANAGE_ROLES })];
+      const deps = createDeps({ listAllGrants: jest.fn().mockResolvedValue(grants) });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+
+      await handlers.listAllGrants(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ grants });
+    });
+
+    it('returns empty array when no grants exist', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+
+      await handlers.listAllGrants(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ grants: [] });
+    });
+
+    it('filters grants to principal types the caller can read', async () => {
+      const roleGrant = mockGrant({
+        principalType: PrincipalType.ROLE,
+        capability: SystemCapabilities.READ_USERS,
+      });
+      const groupGrant = mockGrant({
+        principalType: PrincipalType.GROUP,
+        principalId: new Types.ObjectId().toString(),
+        capability: SystemCapabilities.READ_USERS,
+      });
+      const deps = createDeps({
+        listAllGrants: jest.fn().mockResolvedValue([roleGrant, groupGrant]),
+        hasCapabilityForPrincipals: jest.fn().mockImplementation(({ capability }) => {
+          if (capability === SystemCapabilities.READ_ROLES) {
+            return Promise.resolve(true);
+          }
+          return Promise.resolve(false);
+        }),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+
+      await handlers.listAllGrants(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      const response = json.mock.calls[0][0];
+      expect(response.grants).toHaveLength(1);
+      expect(response.grants[0].principalType).toBe(PrincipalType.ROLE);
+    });
+
+    it('returns 401 when user is not authenticated', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+      (req as unknown as Record<string, unknown>).user = undefined;
+
+      await handlers.listAllGrants(req, res);
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Authentication required' });
+    });
+
+    it('returns 500 on error', async () => {
+      const deps = createDeps({
+        listAllGrants: jest.fn().mockRejectedValue(new Error('db error')),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+
+      await handlers.listAllGrants(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to list grants' });
+    });
+  });
+
   describe('getEffectiveCapabilities', () => {
     it('returns expanded capabilities for the user', async () => {
       const manageRolesGrant = mockGrant({ capability: SystemCapabilities.MANAGE_ROLES });

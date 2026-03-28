@@ -194,6 +194,15 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     return await SystemGrant.find(filter).lean();
   }
 
+  async function listAllGrants(tenantId?: string): Promise<ISystemGrant[]> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const filter: Record<string, unknown> =
+      tenantId != null
+        ? { $or: [{ tenantId }, { tenantId: { $exists: false } }] }
+        : { tenantId: { $exists: false } };
+    return await SystemGrant.find(filter).lean();
+  }
+
   async function getCapabilitiesForPrincipals({
     principals,
     tenantId,
@@ -294,6 +303,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     seedSystemGrants,
     revokeCapability,
     hasCapabilityForPrincipals,
+    listAllGrants,
     getCapabilitiesForPrincipal,
     getCapabilitiesForPrincipals,
     deleteGrantsForPrincipal,

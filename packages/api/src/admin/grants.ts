@@ -18,6 +18,7 @@ interface GrantRequestBody {
 }
 
 export interface AdminGrantsDeps {
+  listAllGrants: (tenantId?: string) => Promise<ISystemGrant[]>;
   getCapabilitiesForPrincipal: (params: {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
@@ -55,6 +56,7 @@ export interface AdminGrantsDeps {
  */
 export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
   const {
+    listAllGrants,
     getCapabilitiesForPrincipal,
     getCapabilitiesForPrincipals,
     grantCapability,
@@ -122,6 +124,30 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       return 'Invalid capability';
     }
     return null;
+  }
+
+  async function listAllGrantsHandler(req: ServerRequest, res: Response) {
+    try {
+      const user = resolveUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const principals = await getUserPrincipals(user);
+      const allowedTypes = new Set<string>();
+      for (const [type, cap] of Object.entries(READ_CAPABILITY_BY_TYPE)) {
+        if (await hasCapabilityForPrincipals({ principals, capability: cap })) {
+          allowedTypes.add(type);
+        }
+      }
+
+      const allGrants = await listAllGrants();
+      const grants = allGrants.filter((g) => allowedTypes.has(g.principalType));
+      return res.status(200).json({ grants });
+    } catch (error) {
+      logger.error('[adminGrants] listAllGrants error:', error);
+      return res.status(500).json({ error: 'Failed to list grants' });
+    }
   }
 
   async function getEffectiveCapabilitiesHandler(req: ServerRequest, res: Response) {
@@ -285,6 +311,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
   }
 
   return {
+    listAllGrants: listAllGrantsHandler,
     getEffectiveCapabilities: getEffectiveCapabilitiesHandler,
     getPrincipalGrants: getPrincipalGrantsHandler,
     assignGrant: assignGrantHandler,
