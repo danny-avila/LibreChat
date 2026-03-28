@@ -159,7 +159,7 @@ export class MCPServersRegistry {
       return this.getBaseServerConfigs(userId);
     }
     const base = await this.getBaseServerConfigs(userId);
-    return { ...base, ...configServers };
+    return { ...configServers, ...base };
   }
 
   /**
@@ -433,13 +433,13 @@ export class MCPServersRegistry {
     logger.info(`${prefix} Lazy-initializing config-source server`);
 
     try {
-      const parsedConfig = await withTimeout(
+      const inspected = await withTimeout(
         MCPServerInspector.inspect(serverName, rawConfig, undefined, this.allowedDomains),
         CONFIG_SERVER_INIT_TIMEOUT_MS,
         `${prefix} Server initialization timed out`,
       );
 
-      parsedConfig.source = 'config';
+      const parsedConfig: t.ParsedServerConfig = { ...inspected, source: 'config' };
       await this.upsertConfigCache(cacheKey, parsedConfig);
 
       logger.info(

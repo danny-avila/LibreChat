@@ -146,10 +146,10 @@ describe('tests for the new helper functions used by the MCP connection status e
       expect(result.oauthServers).toEqual(new Set(['server2']));
     });
 
-    it('should handle null MCP config gracefully', async () => {
-      mockRegistryInstance.getAllServerConfigs.mockResolvedValue(null);
+    it('should return empty data when no servers are configured', async () => {
+      mockRegistryInstance.getAllServerConfigs.mockResolvedValue({});
       const result = await getMCPSetupData(mockUserId);
-      expect(result.mcpConfig).toBeNull();
+      expect(result.mcpConfig).toEqual({});
       expect(result.oauthServers).toEqual(new Set());
     });
 

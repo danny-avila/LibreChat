@@ -706,7 +706,7 @@ async function getMCPSetupData(userId, options = {}) {
   }
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
   const oauthServers = new Set(
-    Object.entries(mcpConfig || {})
+    Object.entries(mcpConfig)
       .filter(([, config]) => config.requiresOAuth)
       .map(([name]) => name),
   );
