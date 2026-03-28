@@ -87,18 +87,18 @@ async function resolveConfigServers(req) {
  * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
  */
 async function resolveAllMcpConfigs(userId, user) {
+  const registry = getMCPServersRegistry();
+  const appConfig = await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
+  let configServers = {};
   try {
-    const registry = getMCPServersRegistry();
-    const appConfig = await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
-    const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-    return await registry.getAllServerConfigs(userId, configServers);
+    configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
   } catch (error) {
     logger.warn(
-      '[resolveAllMcpConfigs] Failed to resolve config servers, degrading to empty:',
+      '[resolveAllMcpConfigs] Config server resolution failed, continuing without:',
       error,
     );
-    return {};
   }
+  return await registry.getAllServerConfigs(userId, configServers);
 }
 
 /**
@@ -450,6 +450,7 @@ async function createMCPTools({
       user,
       provider,
       userMCPAuthMap,
+      configServers,
       streamId,
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,

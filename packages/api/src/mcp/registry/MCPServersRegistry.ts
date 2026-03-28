@@ -149,7 +149,8 @@ export class MCPServersRegistry {
 
   /**
    * Returns all server configs visible to the given user.
-   * Merge order: YAML (lowest) → Config overrides → User DB (highest).
+   * YAML and Config tiers are mutually exclusive by design (`ensureConfigServers` filters
+   * YAML names), so the spread order only matters for User DB (highest priority) overriding both.
    */
   public async getAllServerConfigs(
     userId?: string,

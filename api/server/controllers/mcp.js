@@ -16,7 +16,7 @@ const {
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
-const { resolveAllMcpConfigs } = require('~/server/services/MCP');
+const { resolveConfigServers, resolveAllMcpConfigs } = require('~/server/services/MCP');
 
 /**
  * Handles MCP-specific errors and sends appropriate HTTP responses.
@@ -235,8 +235,12 @@ const getMCPServerById = async (req, res) => {
     if (!serverName) {
       return res.status(400).json({ message: 'Server name is required' });
     }
-    const allConfigs = await resolveAllMcpConfigs(userId, req.user);
-    const parsedConfig = allConfigs[serverName];
+    const configServers = await resolveConfigServers(req);
+    const parsedConfig = await getMCPServersRegistry().getServerConfig(
+      serverName,
+      userId,
+      configServers,
+    );
 
     if (!parsedConfig) {
       return res.status(404).json({ message: 'MCP server not found' });
