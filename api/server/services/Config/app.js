@@ -30,14 +30,18 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
 });
 
 /**
- * Deletes the ENDPOINT_CONFIG entry for the current tenant from CONFIG_STORE.
- * In multi-tenant mode, only the calling tenant's scoped key is cleared.
- * Other tenants' caches expire naturally via TTL after global config changes.
+ * Deletes ENDPOINT_CONFIG entries from CONFIG_STORE.
+ * Clears both the tenant-scoped key (if in tenant context) and the
+ * unscoped base key (populated by unauthenticated /api/endpoints calls).
  */
 async function clearEndpointConfigCache() {
   try {
     const configStore = getLogStores(CacheKeys.CONFIG_STORE);
-    await configStore.delete(scopedCacheKey(CacheKeys.ENDPOINT_CONFIG));
+    const scoped = scopedCacheKey(CacheKeys.ENDPOINT_CONFIG);
+    await configStore.delete(scoped);
+    if (scoped !== CacheKeys.ENDPOINT_CONFIG) {
+      await configStore.delete(CacheKeys.ENDPOINT_CONFIG);
+    }
   } catch {
     // CONFIG_STORE or ENDPOINT_CONFIG may not exist — not critical
   }
