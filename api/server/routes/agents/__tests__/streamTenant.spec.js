@@ -73,7 +73,14 @@ describe('SSE stream tenant isolation', () => {
     expect(res.body.error).toBe('Unauthorized');
   });
 
-  it('allows access when tenant matches', async () => {
+  it('returns 404 when stream does not exist', async () => {
+    mockGenerationJobManager.getJob.mockResolvedValue(null);
+
+    const res = await request(app).get('/agents/chat/stream/nonexistent');
+    expect(res.status).toBe(404);
+  });
+
+  it('does not return 403 when tenant matches', async () => {
     mockUserId = 'user-123';
     mockTenantId = 'tenant-a';
 
@@ -82,11 +89,17 @@ describe('SSE stream tenant isolation', () => {
       status: 'running',
     });
 
+    mockGenerationJobManager.subscribe.mockImplementation((_streamId, _handler, res) => {
+      res.end();
+      return () => {};
+    });
+
     const res = await request(app).get('/agents/chat/stream/stream-123');
     expect(res.status).not.toBe(403);
+    expect(res.status).not.toBe(404);
   });
 
-  it('skips tenant check when job has no tenantId (OSS mode)', async () => {
+  it('does not return 403 when job has no tenantId (single-tenant mode)', async () => {
     mockUserId = 'user-123';
     mockTenantId = undefined;
 
@@ -95,7 +108,13 @@ describe('SSE stream tenant isolation', () => {
       status: 'running',
     });
 
+    mockGenerationJobManager.subscribe.mockImplementation((_streamId, _handler, res) => {
+      res.end();
+      return () => {};
+    });
+
     const res = await request(app).get('/agents/chat/stream/stream-123');
     expect(res.status).not.toBe(403);
+    expect(res.status).not.toBe(404);
   });
 });

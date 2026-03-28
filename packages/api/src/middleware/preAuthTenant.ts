@@ -18,16 +18,16 @@ import type { Request, Response, NextFunction } from 'express';
  * **How the header gets set**: The deployment's reverse proxy, auth gateway,
  * or OpenID strategy sets `X-Tenant-Id` based on subdomain, path, or OIDC claim.
  * This middleware does NOT resolve tenants from subdomains or tokens — that is
- * the responsibility of the deployment layer (private fork).
+ * the responsibility of the deployment layer.
  *
  * **Design**: Intentionally minimal. No subdomain parsing, no OIDC claim
- * extraction, no YAML-driven strategy. The private fork can:
- * 1. Set the header in its reverse proxy / ingress (simplest),
+ * extraction, no YAML-driven strategy. Multi-tenant deployments can:
+ * 1. Set the header in the reverse proxy / ingress (simplest),
  * 2. Replace this middleware's resolver logic entirely, or
  * 3. Layer additional resolution on top (e.g., OpenID `tenant` claim → header).
  *
  * If no header is present, downstream runs without tenant ALS context (same as
- * single-tenant mode). This preserves backward compatibility for OSS deployments.
+ * single-tenant mode). This preserves backward compatibility.
  */
 export function preAuthTenantMiddleware(req: Request, res: Response, next: NextFunction): void {
   const tenantId = req.headers['x-tenant-id'];
