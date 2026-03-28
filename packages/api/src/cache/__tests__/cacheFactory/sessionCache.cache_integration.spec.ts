@@ -1,4 +1,4 @@
-import type { MemoryStore } from 'express-session';
+import type { MemoryStore, SessionData } from 'express-session';
 import type { RedisStore as ConnectRedis } from 'connect-redis';
 
 interface TestSessionData {
@@ -20,13 +20,7 @@ describe('sessionCache', () => {
   const asyncStore = (store: CacheSessionStore) => ({
     set: (id: string, data: TestSessionData) =>
       new Promise<void>((resolve) =>
-        store.set(
-          id,
-          data as Partial<
-            import('express-session').SessionData
-          > as import('express-session').SessionData,
-          () => resolve(),
-        ),
+        store.set(id, data as Partial<SessionData> as SessionData, () => resolve()),
       ),
     get: (id: string) =>
       new Promise<TestSessionData | null | undefined>((resolve) =>
@@ -35,13 +29,7 @@ describe('sessionCache', () => {
     destroy: (id: string) => new Promise<void>((resolve) => store.destroy(id, () => resolve())),
     touch: (id: string, data: TestSessionData) =>
       new Promise<void>((resolve) =>
-        store.touch(
-          id,
-          data as Partial<
-            import('express-session').SessionData
-          > as import('express-session').SessionData,
-          () => resolve(),
-        ),
+        store.touch(id, data as Partial<SessionData> as SessionData, () => resolve()),
       ),
   });
 

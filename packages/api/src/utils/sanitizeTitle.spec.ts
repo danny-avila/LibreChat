@@ -1,4 +1,4 @@
-/* ES2024 String.prototype.isWellFormed — not in this TS lib version */
+/* String.prototype.isWellFormed — ES2024 API, available in Node 20+ but not in TS 5.3 lib */
 declare global {
   interface String {
     isWellFormed(): boolean;

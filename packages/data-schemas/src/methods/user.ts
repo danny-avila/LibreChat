@@ -35,13 +35,13 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
   ): Promise<IUser | null> {
-    const User = mongoose.models.User;
+    const User = mongoose.models.User as mongoose.Model<IUser>;
     const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
     const query = User.findOne(normalizedCriteria);
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return (await query.lean()) as IUser | null;
+    return await query.lean();
   }
 
   async function findUsers(
@@ -301,8 +301,6 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       .sort((a, b) => b._searchScore - a._searchScore)
       .slice(0, limit)
       .map((user) => {
-        // Remove the search score from final results
-
         const { _searchScore, ...userWithoutScore } = user;
         return userWithoutScore;
       });

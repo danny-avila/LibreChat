@@ -7,7 +7,7 @@ import type {
   DeleteResult,
   Model,
 } from 'mongoose';
-import type { IAclEntry } from '~/types';
+import type { AclEntry, IAclEntry } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 
 export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
@@ -375,11 +375,11 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
    * @param options - Optional query options (e.g., { session })
    */
   async function bulkWriteAclEntries(
-    ops: AnyBulkWriteOperation[],
+    ops: AnyBulkWriteOperation<AclEntry>[],
     options?: { session?: ClientSession },
   ) {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    return tenantSafeBulkWrite(AclEntry, ops, options || {});
+    return tenantSafeBulkWrite(AclEntry, ops as AnyBulkWriteOperation[], options || {});
   }
 
   /**

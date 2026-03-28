@@ -289,16 +289,8 @@ describe('updateAccessPermissions', () => {
     // SHARED_GLOBAL=false → SHARE=false (inherited)
     expect(updatedRole.permissions[PermissionTypes.AGENTS]!.SHARE).toBe(false);
     // SHARED_GLOBAL cleaned up
-    const promptsPerms = updatedRole.permissions[PermissionTypes.PROMPTS] as Record<
-      string,
-      boolean | undefined
-    >;
-    const agentsPerms = updatedRole.permissions[PermissionTypes.AGENTS] as Record<
-      string,
-      boolean | undefined
-    >;
-    expect(promptsPerms.SHARED_GLOBAL).toBeUndefined();
-    expect(agentsPerms.SHARED_GLOBAL).toBeUndefined();
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS]).not.toHaveProperty('SHARED_GLOBAL');
+    expect(updatedRole.permissions[PermissionTypes.AGENTS]).not.toHaveProperty('SHARED_GLOBAL');
   });
 
   it('should respect explicit SHARE in update payload and not override it with SHARED_GLOBAL', async () => {
@@ -318,11 +310,7 @@ describe('updateAccessPermissions', () => {
     const updatedRole = await getRoleByName(SystemRoles.USER);
 
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]!.SHARE).toBe(false);
-    const promptsPerms2 = updatedRole.permissions[PermissionTypes.PROMPTS] as Record<
-      string,
-      boolean | undefined
-    >;
-    expect(promptsPerms2.SHARED_GLOBAL).toBeUndefined();
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS]).not.toHaveProperty('SHARED_GLOBAL');
   });
 
   it('should migrate SHARED_GLOBAL to SHARE even when the permType is not in the update payload', async () => {
@@ -350,11 +338,7 @@ describe('updateAccessPermissions', () => {
     // SHARE should have been inherited from SHARED_GLOBAL, not silently dropped
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]!.SHARE).toBe(true);
     // SHARED_GLOBAL should be removed
-    const promptsPerms3 = updatedRole.permissions[PermissionTypes.PROMPTS] as Record<
-      string,
-      boolean | undefined
-    >;
-    expect(promptsPerms3.SHARED_GLOBAL).toBeUndefined();
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS]).not.toHaveProperty('SHARED_GLOBAL');
     // Original USE should be untouched
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]!.USE).toBe(true);
     // The actual update should have applied
@@ -382,11 +366,7 @@ describe('updateAccessPermissions', () => {
 
     const updatedRole = await getRoleByName(SystemRoles.USER);
 
-    const promptsPerms4 = updatedRole.permissions[PermissionTypes.PROMPTS] as Record<
-      string,
-      boolean | undefined
-    >;
-    expect(promptsPerms4.SHARED_GLOBAL).toBeUndefined();
+    expect(updatedRole.permissions[PermissionTypes.PROMPTS]).not.toHaveProperty('SHARED_GLOBAL');
     expect(updatedRole.permissions[PermissionTypes.PROMPTS]!.SHARE).toBe(true);
     expect(updatedRole.permissions[PermissionTypes.MULTI_CONVO]!.USE).toBe(true);
   });
