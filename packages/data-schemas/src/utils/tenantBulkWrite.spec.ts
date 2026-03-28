@@ -174,6 +174,32 @@ describe('tenantSafeBulkWrite', () => {
     });
   });
 
+  describe('with SYSTEM_TENANT_ID in strict mode', () => {
+    it('does not throw when runAsSystem is used in strict mode', async () => {
+      process.env.TENANT_ISOLATION_STRICT = 'true';
+      _resetBulkWriteStrictCache();
+
+      const Model = createTestModel('systemStrict');
+
+      await runAsSystem(async () => {
+        await Model.create({ name: 'strict-sys', value: 0 });
+      });
+
+      await expect(
+        runAsSystem(async () =>
+          tenantSafeBulkWrite(Model, [
+            {
+              updateOne: {
+                filter: { name: 'strict-sys' },
+                update: { $set: { value: 42 } },
+              },
+            },
+          ]),
+        ),
+      ).resolves.toBeDefined();
+    });
+  });
+
   describe('deleteMany and replaceOne', () => {
     it('injects tenantId into deleteMany filters', async () => {
       const Model = createTestModel('deleteMany');

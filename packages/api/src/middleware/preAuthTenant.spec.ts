@@ -43,7 +43,7 @@ describe('preAuthTenantMiddleware', () => {
     expect(capturedTenantId).toBe('acme-corp');
   });
 
-  it('rejects __SYSTEM__ sentinel to prevent tenant isolation bypass', () => {
+  it('ignores __SYSTEM__ sentinel to prevent tenant isolation bypass', () => {
     req.headers = { 'x-tenant-id': '__SYSTEM__' };
     let capturedTenantId: string | undefined = 'should-be-overwritten';
     const capturedNext: NextFunction = () => {
@@ -65,7 +65,7 @@ describe('preAuthTenantMiddleware', () => {
     expect(capturedTenantId).toBeUndefined();
   });
 
-  it('rejects tenant IDs containing invalid characters', () => {
+  it('ignores tenant IDs containing invalid characters', () => {
     req.headers = { 'x-tenant-id': 'tenant:injected' };
     let capturedTenantId: string | undefined = 'sentinel';
     const capturedNext: NextFunction = () => {
@@ -87,7 +87,7 @@ describe('preAuthTenantMiddleware', () => {
     expect(capturedTenantId).toBe('acme-corp');
   });
 
-  it('rejects tenant IDs exceeding max length', () => {
+  it('ignores tenant IDs exceeding max length', () => {
     req.headers = { 'x-tenant-id': 'a'.repeat(200) };
     let capturedTenantId: string | undefined = 'sentinel';
     const capturedNext: NextFunction = () => {

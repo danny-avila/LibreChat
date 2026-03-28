@@ -120,4 +120,17 @@ describe('SSE stream tenant isolation', () => {
     expect(res.status).toBe(200);
     expect(mockGenerationJobManager.subscribe).toHaveBeenCalledTimes(1);
   });
+
+  it('returns 403 when job has tenantId but user has no tenantId', async () => {
+    mockUserId = 'user-123';
+    mockTenantId = undefined;
+
+    mockGenerationJobManager.getJob.mockResolvedValue({
+      metadata: { userId: 'user-123', tenantId: 'some-tenant' },
+      status: 'running',
+    });
+
+    const res = await request(app).get('/agents/chat/stream/stream-123');
+    expect(res.status).toBe(403);
+  });
 });

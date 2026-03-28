@@ -1,4 +1,4 @@
-import { tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { tenantStorage, logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
 
 /**
@@ -30,7 +30,7 @@ import type { Request, Response, NextFunction } from 'express';
  * single-tenant mode). This preserves backward compatibility.
  */
 const MAX_TENANT_ID_LENGTH = 128;
-const VALID_TENANT_ID = /^[a-zA-Z0-9_\-.]+$/;
+const VALID_TENANT_ID = /^[-a-zA-Z0-9_.]+$/;
 
 export function preAuthTenantMiddleware(req: Request, res: Response, next: NextFunction): void {
   const raw = req.headers['x-tenant-id'];
@@ -42,12 +42,25 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
 
   const tenantId = raw.trim();
 
-  if (
-    !tenantId ||
-    tenantId === SYSTEM_TENANT_ID ||
-    tenantId.length > MAX_TENANT_ID_LENGTH ||
-    !VALID_TENANT_ID.test(tenantId)
-  ) {
+  if (!tenantId) {
+    next();
+    return;
+  }
+
+  if (tenantId === SYSTEM_TENANT_ID) {
+    logger.warn('[preAuthTenant] Rejected __SYSTEM__ sentinel in X-Tenant-Id header', {
+      ip: req.ip,
+      path: req.path,
+    });
+    next();
+    return;
+  }
+
+  if (tenantId.length > MAX_TENANT_ID_LENGTH || !VALID_TENANT_ID.test(tenantId)) {
+    logger.warn('[preAuthTenant] Rejected malformed X-Tenant-Id header', {
+      length: tenantId.length,
+      path: req.path,
+    });
     next();
     return;
   }

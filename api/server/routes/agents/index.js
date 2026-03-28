@@ -178,6 +178,10 @@ router.get('/chat/status/:conversationId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
+  if (job.metadata?.tenantId && job.metadata.tenantId !== req.user.tenantId) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
   // Get resume state which contains aggregatedContent
   // Avoid calling both getStreamInfo and getResumeState (both fetch content)
   const resumeState = await GenerationJobManager.getResumeState(conversationId);
@@ -231,6 +235,10 @@ router.post('/chat/abort', async (req, res) => {
   if (job && jobStreamId) {
     if (job.metadata?.userId && job.metadata.userId !== userId) {
       logger.warn(`[AgentStream] Unauthorized abort attempt for ${jobStreamId} by user ${userId}`);
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (job.metadata?.tenantId && job.metadata.tenantId !== req.user?.tenantId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
