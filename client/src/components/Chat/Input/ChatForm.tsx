@@ -47,11 +47,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
   const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
-
   // Location access state
   const [position, setPosition] = useState<TAskProps['position'] | null>(null);
   const [locationAllowed, setLocationAllowed] = useState(false);
-
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
