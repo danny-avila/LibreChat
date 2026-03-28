@@ -183,6 +183,17 @@ export class InMemoryJobStore implements IJobStore {
 
     if (oldestId) {
       logger.warn(`[InMemoryJobStore] Evicting oldest job: ${oldestId}`);
+      const job = this.jobs.get(oldestId);
+      if (job) {
+        const userKey = job.tenantId ? `${job.tenantId}:${job.userId}` : job.userId;
+        const userJobs = this.userJobMap.get(userKey);
+        if (userJobs) {
+          userJobs.delete(oldestId);
+          if (userJobs.size === 0) {
+            this.userJobMap.delete(userKey);
+          }
+        }
+      }
       await this.deleteJob(oldestId);
     }
   }
