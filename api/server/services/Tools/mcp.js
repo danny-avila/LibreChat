@@ -25,13 +25,13 @@ async function reinitMCPServer({
   signal,
   forceNew,
   serverName,
-  serverConfig: providedConfig,
   configServers,
   userMCPAuthMap,
   connectionTimeout,
   returnOnOAuth = true,
   oauthStart: _oauthStart,
   flowManager: _flowManager,
+  serverConfig: providedConfig,
 }) {
   /** @type {MCPConnection | null} */
   let connection = null;

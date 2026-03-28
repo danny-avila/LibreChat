@@ -37,9 +37,9 @@ const {
   getMCPManager,
 } = require('~/config');
 const {
-  getMCPSetupData,
-  resolveConfigServers,
   getServerConnectionStatus,
+  resolveConfigServers,
+  getMCPSetupData,
 } = require('~/server/services/MCP');
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');

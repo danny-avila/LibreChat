@@ -16,8 +16,8 @@ import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
-import { processMCPEnv } from '~/utils/env';
 import { MCPConnection } from './connection';
+import { processMCPEnv } from '~/utils/env';
 import { isUserSourced } from './utils';
 
 /**

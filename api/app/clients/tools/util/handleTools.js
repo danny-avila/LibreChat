@@ -38,10 +38,10 @@ const {
   createGeminiImageTool,
   createOpenAIImageTools,
 } = require('../');
-const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
-const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
-const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { createMCPTool, createMCPTools, resolveConfigServers } = require('~/server/services/MCP');
+const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
