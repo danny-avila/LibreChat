@@ -1,5 +1,5 @@
 import { Keyv } from 'keyv';
-import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
@@ -54,17 +54,12 @@ export class FlowStateManager<T = unknown> {
   }
 
   /**
-   * Every method that calls getFlowKey (initFlow, createFlow,
-   * createFlowWithHandler, completeFlow, failFlow, isFlowStale,
-   * deleteFlow, getFlowState) must run within the same ALS tenant
-   * context for the key to match. In multi-tenant mode, OAuth callbacks
-   * must carry the same X-Tenant-Id as the originating request.
+   * Flow keys are intentionally NOT tenant-scoped. OAuth callbacks arrive
+   * without tenant ALS context (the provider redirect doesn't carry
+   * X-Tenant-Id). Flow IDs are random UUIDs with no collision risk, and
+   * flow data is ephemeral (TTL-bounded, no sensitive user content).
    */
   private getFlowKey(flowId: string, type: string): string {
-    const tenantId = getTenantId();
-    if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
-      return `${type}:${tenantId}:${flowId}`;
-    }
     return `${type}:${flowId}`;
   }
 

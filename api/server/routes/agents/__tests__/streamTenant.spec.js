@@ -58,7 +58,7 @@ app.use('/agents', agentsRouter);
  */
 function mockSubscribeSuccess() {
   mockGenerationJobManager.subscribe.mockImplementation((_streamId, _writeEvent, onDone) => {
-    onDone({ done: true });
+    process.nextTick(() => onDone({ done: true }));
     return { unsubscribe: jest.fn() };
   });
 }

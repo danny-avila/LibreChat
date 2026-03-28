@@ -12,7 +12,7 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-describe('FlowStateManager tenant-scoped keys', () => {
+describe('FlowStateManager flow keys are not tenant-scoped', () => {
   let manager: FlowStateManager;
 
   beforeEach(() => {
@@ -20,36 +20,20 @@ describe('FlowStateManager tenant-scoped keys', () => {
     manager = new FlowStateManager(store, { ci: true, ttl: 60_000 });
   });
 
-  it('completeFlow finds a flow created under the same tenant context', async () => {
-    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
-      await manager.initFlow('flow-1', 'oauth', {});
-      const found = await manager.completeFlow('flow-1', 'oauth', { token: 'abc' });
-      expect(found).toBe(true);
-    });
-  });
-
-  it('completeFlow does NOT find a flow created under a different tenant context', async () => {
+  it('completeFlow finds a flow regardless of tenant context (OAuth callback compatibility)', async () => {
     await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
       await manager.initFlow('flow-1', 'oauth', {});
     });
 
-    const found = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
-      manager.completeFlow('flow-1', 'oauth', { token: 'abc' }),
-    );
-    expect(found).toBe(false);
+    const found = await manager.completeFlow('flow-1', 'oauth', { token: 'abc' });
+    expect(found).toBe(true);
   });
 
-  it('flows without tenant context are separate from tenant-scoped flows', async () => {
+  it('completeFlow works when both creation and completion have the same tenant', async () => {
     await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
       await manager.initFlow('flow-2', 'oauth', {});
+      const found = await manager.completeFlow('flow-2', 'oauth', { token: 'abc' });
+      expect(found).toBe(true);
     });
-
-    const foundWithoutTenant = await manager.completeFlow('flow-2', 'oauth', { token: 'abc' });
-    expect(foundWithoutTenant).toBe(false);
-
-    const foundWithTenant = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
-      manager.completeFlow('flow-2', 'oauth', { token: 'abc' }),
-    );
-    expect(foundWithTenant).toBe(true);
   });
 });
