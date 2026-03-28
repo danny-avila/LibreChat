@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import {
   SystemRoles,
   Permissions,
@@ -54,6 +54,7 @@ export async function updateInterfacePermissions({
   appConfig,
   getRoleByName,
   updateAccessPermissions,
+  tenantId,
 }: {
   appConfig: AppConfig;
   getRoleByName: (roleName: string, fieldsToSelect?: string | string[]) => Promise<IRole | null>;
@@ -63,7 +64,19 @@ export async function updateInterfacePermissions({
 
     roleData?: IRole | null,
   ) => Promise<void>;
-}) {
+  /**
+   * Optional tenant ID for scoping role updates to a specific tenant.
+   * When provided (and not SYSTEM_TENANT_ID), runs inside `tenantStorage.run({ tenantId })`.
+   * When omitted or SYSTEM_TENANT_ID, uses the caller's existing ALS context.
+   */
+  tenantId?: string;
+}): Promise<void> {
+  if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
+    return tenantStorage.run({ tenantId }, async () =>
+      updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions }),
+    );
+  }
+
   const loadedInterface = appConfig?.interfaceConfig;
   if (!loadedInterface) {
     return;

@@ -5,8 +5,6 @@ const agentSchema = new Schema<IAgent>(
   {
     id: {
       type: String,
-      index: true,
-      unique: true,
       required: true,
     },
     name: {
@@ -124,6 +122,7 @@ const agentSchema = new Schema<IAgent>(
   },
 );
 
+agentSchema.index({ id: 1, tenantId: 1 }, { unique: true });
 agentSchema.index({ updatedAt: -1, _id: 1 });
 agentSchema.index({ 'edges.to': 1 });
 

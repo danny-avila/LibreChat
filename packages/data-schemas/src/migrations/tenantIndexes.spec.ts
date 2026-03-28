@@ -47,7 +47,13 @@ describe('dropSupersededTenantIndexes', () => {
       await db.createCollection('roles');
       await db.collection('roles').createIndex({ name: 1 }, { unique: true, name: 'name_1' });
 
+      await db.createCollection('agents');
+      await db.collection('agents').createIndex({ id: 1 }, { unique: true, name: 'id_1' });
+
       await db.createCollection('conversations');
+      await db
+        .collection('conversations')
+        .createIndex({ conversationId: 1 }, { unique: true, name: 'conversationId_1' });
       await db
         .collection('conversations')
         .createIndex(
@@ -58,7 +64,15 @@ describe('dropSupersededTenantIndexes', () => {
       await db.createCollection('messages');
       await db
         .collection('messages')
+        .createIndex({ messageId: 1 }, { unique: true, name: 'messageId_1' });
+      await db
+        .collection('messages')
         .createIndex({ messageId: 1, user: 1 }, { unique: true, name: 'messageId_1_user_1' });
+
+      await db.createCollection('presets');
+      await db
+        .collection('presets')
+        .createIndex({ presetId: 1 }, { unique: true, name: 'presetId_1' });
 
       await db.createCollection('agentcategories');
       await db
