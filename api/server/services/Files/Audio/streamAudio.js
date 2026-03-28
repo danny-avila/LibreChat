@@ -68,6 +68,7 @@ function createChunkProcessor(user, messageId) {
   }
 
   const messageCache = getLogStores(CacheKeys.MESSAGES);
+  // Captured at creation time — must be called within an active request ALS scope
   const cacheKey = scopedCacheKey(messageId);
 
   /**

@@ -53,6 +53,11 @@ export class FlowStateManager<T = unknown> {
     process.on('SIGHUP', cleanup);
   }
 
+  /**
+   * The ALS tenant context must be identical at every lifecycle stage
+   * (initFlow, createFlow, completeFlow, failFlow) for the key to match.
+   * OAuth callbacks must carry the same X-Tenant-Id as the originating request.
+   */
   private getFlowKey(flowId: string, type: string): string {
     const tenantId = getTenantId();
     if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
