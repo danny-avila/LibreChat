@@ -1,22 +1,22 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Pencil, Check, Loader2 } from 'lucide-react';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 type Props = {
   name?: string;
   isLoading?: boolean;
+  isError?: boolean;
   onSave: (newName: string) => void;
 };
 
-type SaveStatus = 'idle' | 'saving' | 'saved';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
+const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false, onSave }) => {
   const localize = useLocalize();
   const inputRef = useRef<HTMLInputElement>(null);
   const wasLoadingRef = useRef(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const cancelledRef = useRef(false);
+  const skipBlurRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(name);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -26,8 +26,8 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
   }, []);
 
   const saveName = useCallback(() => {
-    if (cancelledRef.current) {
-      cancelledRef.current = false;
+    if (skipBlurRef.current) {
+      skipBlurRef.current = false;
       return;
     }
     const savedName = newName?.trim();
@@ -44,16 +44,24 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
     (e: React.KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        cancelledRef.current = true;
+        skipBlurRef.current = true;
         setNewName(name);
         setIsEditing(false);
       }
       if (e.key === 'Enter') {
         e.preventDefault();
-        saveName();
+        skipBlurRef.current = true;
+        const savedName = newName?.trim();
+        if (savedName && savedName !== name) {
+          setSaveStatus('saving');
+          onSave(savedName);
+        } else {
+          setNewName(name);
+        }
+        setIsEditing(false);
       }
     },
-    [name, saveName],
+    [name, newName, onSave],
   );
 
   useEffect(() => {
@@ -67,14 +75,14 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
     if (isLoading) {
       setSaveStatus('saving');
     } else if (wasLoadingRef.current && !isLoading) {
-      setSaveStatus('saved');
+      setSaveStatus(isError ? 'error' : 'saved');
       if (savedTimerRef.current) {
         clearTimeout(savedTimerRef.current);
       }
       savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
     }
     wasLoadingRef.current = isLoading;
-  }, [isLoading]);
+  }, [isLoading, isError]);
 
   useEffect(() => {
     setNewName(name);
@@ -122,10 +130,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, onSave }) => {
         )}
         {saveStatus === 'saved' && (
           <Check
-            className={cn(
-              'size-4 text-green-500 transition-opacity duration-300',
-              saveStatus === 'saved' ? 'opacity-100' : 'opacity-0',
-            )}
+            className="size-4 text-green-500 transition-opacity duration-300"
             aria-label={localize('com_ui_saved')}
           />
         )}

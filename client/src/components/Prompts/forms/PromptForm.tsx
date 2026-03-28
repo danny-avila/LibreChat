@@ -177,7 +177,7 @@ const HeaderActions = React.memo(
 
 HeaderActions.displayName = 'HeaderActions';
 
-const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
+const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -466,6 +466,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string } = {}) => {
                         <PromptName
                           name={groupName}
                           isLoading={updateGroupMutation.isLoading}
+                          isError={updateGroupMutation.isError}
                           onSave={(value) => {
                             if (!canEdit || !group._id) {
                               return;

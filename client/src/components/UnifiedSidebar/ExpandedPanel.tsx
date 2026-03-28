@@ -19,14 +19,13 @@ const NewChatButton = memo(function NewChatButton() {
   const conversation = useRecoilValue(store.conversationByIndex(0));
 
   const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
-        window.open('/c/new', '_blank');
-        return;
+    (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (e.button === 0 && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        clearMessagesCache(queryClient, conversation?.conversationId);
+        queryClient.invalidateQueries([QueryKeys.messages]);
+        newConversation();
       }
-      clearMessagesCache(queryClient, conversation?.conversationId);
-      queryClient.invalidateQueries([QueryKeys.messages]);
-      newConversation();
     },
     [queryClient, conversation?.conversationId, newConversation],
   );
@@ -36,16 +35,15 @@ const NewChatButton = memo(function NewChatButton() {
       side="right"
       description={localize('com_ui_new_chat')}
       render={
-        <Button
+        <a
+          href="/c/new"
           data-testid="new-chat-button"
-          size="icon"
-          variant="ghost"
           aria-label={localize('com_ui_new_chat')}
-          className="h-9 w-9 rounded-lg"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
           onClick={handleClick}
         >
           <NewChatIcon className="h-5 w-5 text-text-primary" />
-        </Button>
+        </a>
       }
     />
   );
