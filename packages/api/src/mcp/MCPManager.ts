@@ -151,14 +151,9 @@ export class MCPManager extends UserConnectionManager {
   }
 
   /** Returns all available tool functions from app-level connections */
-  public async getAppToolFunctions(
-    configServers?: Record<string, t.ParsedServerConfig>,
-  ): Promise<t.LCAvailableTools> {
+  public async getAppToolFunctions(): Promise<t.LCAvailableTools> {
     const toolFunctions: t.LCAvailableTools = {};
-    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs(
-      undefined,
-      configServers,
-    );
+    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
     for (const config of Object.values(configs)) {
       if (config.toolFunctions != null) {
         Object.assign(toolFunctions, config.toolFunctions);

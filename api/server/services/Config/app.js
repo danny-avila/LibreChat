@@ -41,7 +41,10 @@ async function clearEndpointConfigCache() {
 
 /**
  * Clears config-source MCP server inspection cache so servers are re-inspected on next access.
- * Disconnects active connections for evicted servers so removed configs don't linger.
+ * Best-effort disconnection of app-level connections for evicted servers.
+ * User-level connections (used by config-source servers) are cleaned up lazily via
+ * the stale-check mechanism on the next tool call — this is an accepted design tradeoff
+ * since iterating all active user sessions is expensive and config mutations are rare.
  */
 async function clearMcpConfigCache() {
   let registry;
@@ -50,26 +53,31 @@ async function clearMcpConfigCache() {
     const { getMCPServersRegistry } = require('~/config');
     registry = getMCPServersRegistry();
   } catch {
-    return; // Registry not initialized yet (startup) — not critical
+    return;
+  }
+
+  let evictedServers;
+  try {
+    evictedServers = await registry.invalidateConfigCache();
+  } catch (error) {
+    logger.error('[clearMcpConfigCache] Failed to invalidate config cache:', error);
+    return;
+  }
+
+  if (!evictedServers.length) {
+    return;
   }
 
   try {
-    const evictedServers = await registry.invalidateConfigCache();
-    if (evictedServers.length > 0) {
-      try {
-        const { getMCPManager } = require('~/config');
-        const mcpManager = getMCPManager();
-        if (mcpManager?.appConnections) {
-          await Promise.allSettled(
-            evictedServers.map((serverName) => mcpManager.appConnections.disconnect(serverName)),
-          );
-        }
-      } catch {
-        // MCPManager may not be initialized — connections cleaned up lazily
-      }
+    const { getMCPManager } = require('~/config');
+    const mcpManager = getMCPManager();
+    if (mcpManager?.appConnections) {
+      await Promise.allSettled(
+        evictedServers.map((serverName) => mcpManager.appConnections.disconnect(serverName)),
+      );
     }
-  } catch (error) {
-    logger.error('[clearMcpConfigCache] Failed to invalidate config cache:', error);
+  } catch {
+    // MCPManager not yet initialized — connections cleaned up lazily
   }
 }
 

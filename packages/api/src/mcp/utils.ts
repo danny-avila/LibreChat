@@ -40,6 +40,7 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
     initDuration: config.initDuration,
     updatedAt: config.updatedAt,
     dbId: config.dbId,
+    /** Trust tier (yaml/config/user) — safe to expose; used by the UI for display purposes. */
     source: config.source,
     consumeOnly: config.consumeOnly,
     inspectionFailed: config.inspectionFailed,

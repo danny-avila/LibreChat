@@ -585,7 +585,11 @@ export class MCPServersRegistry {
    * with different configurations.
    */
   private configCacheKey(serverName: string, rawConfig: t.MCPOptions): string {
-    const hash = createHash('sha256').update(JSON.stringify(rawConfig)).digest('hex').slice(0, 16);
+    const sorted = JSON.stringify(
+      rawConfig,
+      Object.keys(rawConfig as Record<string, unknown>).sort(),
+    );
+    const hash = createHash('sha256').update(sorted).digest('hex').slice(0, 16);
     return `${serverName}:${hash}`;
   }
 }

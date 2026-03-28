@@ -61,14 +61,22 @@ const unavailableMsg =
  * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
  */
 async function resolveConfigServers(req) {
-  const registry = getMCPServersRegistry();
-  const user = req?.user;
-  const appConfig = await getAppConfig({
-    role: user?.role,
-    tenantId: getTenantId(),
-    userId: user?.id,
-  });
-  return registry.ensureConfigServers(appConfig?.mcpConfig || {});
+  try {
+    const registry = getMCPServersRegistry();
+    const user = req?.user;
+    const appConfig = await getAppConfig({
+      role: user?.role,
+      tenantId: getTenantId(),
+      userId: user?.id,
+    });
+    return await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+  } catch (error) {
+    logger.warn(
+      '[resolveConfigServers] Failed to resolve config servers, degrading to empty:',
+      error,
+    );
+    return {};
+  }
 }
 
 /**
@@ -79,10 +87,18 @@ async function resolveConfigServers(req) {
  * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
  */
 async function resolveAllMcpConfigs(userId, user) {
-  const registry = getMCPServersRegistry();
-  const appConfig = await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
-  const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  return registry.getAllServerConfigs(userId, configServers);
+  try {
+    const registry = getMCPServersRegistry();
+    const appConfig = await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
+    const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+    return await registry.getAllServerConfigs(userId, configServers);
+  } catch (error) {
+    logger.warn(
+      '[resolveAllMcpConfigs] Failed to resolve config servers, degrading to empty:',
+      error,
+    );
+    return {};
+  }
 }
 
 /**
