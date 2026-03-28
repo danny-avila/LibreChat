@@ -260,7 +260,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       expect(stateAfterComplete).toBeUndefined();
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('cannot recover metadata'),
+        expect.stringContaining('flow not found'),
         expect.any(Object),
       );
     });
