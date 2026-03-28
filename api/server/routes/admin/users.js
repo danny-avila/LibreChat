@@ -13,7 +13,6 @@ const requireManageUsers = requireCapability(SystemCapabilities.MANAGE_USERS);
 
 const handlers = createAdminUsersHandlers({
   findUsers: db.findUsers,
-  countUsers: db.countUsers,
   deleteUserById: db.deleteUserById,
 });
 
