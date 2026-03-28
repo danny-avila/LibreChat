@@ -84,6 +84,7 @@ describe('preAuthTenantMiddleware', () => {
 
   it('ignores tenant IDs containing invalid characters and logs warning', () => {
     req.headers = { 'x-tenant-id': 'tenant:injected' };
+    req.ip = '192.168.1.1';
     req.path = '/api/auth/login';
     let capturedTenantId: string | undefined = 'sentinel';
     const capturedNext: NextFunction = () => {
@@ -94,7 +95,7 @@ describe('preAuthTenantMiddleware', () => {
     expect(capturedTenantId).toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('malformed'),
-      expect.objectContaining({ path: '/api/auth/login' }),
+      expect.objectContaining({ ip: '192.168.1.1', path: '/api/auth/login' }),
     );
   });
 
@@ -111,6 +112,7 @@ describe('preAuthTenantMiddleware', () => {
 
   it('ignores tenant IDs exceeding max length and logs warning', () => {
     req.headers = { 'x-tenant-id': 'a'.repeat(200) };
+    req.ip = '192.168.1.1';
     req.path = '/api/share/abc';
     let capturedTenantId: string | undefined = 'sentinel';
     const capturedNext: NextFunction = () => {
@@ -121,7 +123,7 @@ describe('preAuthTenantMiddleware', () => {
     expect(capturedTenantId).toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('malformed'),
-      expect.objectContaining({ length: 200, path: '/api/share/abc' }),
+      expect.objectContaining({ ip: '192.168.1.1', length: 200, path: '/api/share/abc' }),
     );
   });
 });
