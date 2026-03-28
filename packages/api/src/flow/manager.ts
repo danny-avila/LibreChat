@@ -54,9 +54,11 @@ export class FlowStateManager<T = unknown> {
   }
 
   /**
-   * The ALS tenant context must be identical at every lifecycle stage
-   * (initFlow, createFlow, completeFlow, failFlow) for the key to match.
-   * OAuth callbacks must carry the same X-Tenant-Id as the originating request.
+   * Every method that calls getFlowKey (initFlow, createFlow,
+   * createFlowWithHandler, completeFlow, failFlow, isFlowStale,
+   * deleteFlow, getFlowState) must run within the same ALS tenant
+   * context for the key to match. In multi-tenant mode, OAuth callbacks
+   * must carry the same X-Tenant-Id as the originating request.
    */
   private getFlowKey(flowId: string, type: string): string {
     const tenantId = getTenantId();
@@ -261,8 +263,10 @@ export class FlowStateManager<T = unknown> {
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
     if (!flowState) {
+      const tenantId = getTenantId();
       logger.warn(
-        '[FlowStateManager] Flow state not found during completion — cannot recover metadata, skipping',
+        `[FlowStateManager] completeFlow: flow not found. key=${flowKey}, tenantId=${tenantId ?? 'none'}. ` +
+          'If multi-tenant, verify X-Tenant-Id header is consistent between OAuth initiation and callback.',
         { flowId, type },
       );
       return false;

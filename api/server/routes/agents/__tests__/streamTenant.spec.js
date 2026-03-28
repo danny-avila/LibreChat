@@ -52,6 +52,17 @@ const agentsRouter = require('../index');
 const app = express();
 app.use('/agents', agentsRouter);
 
+/**
+ * Mocks subscribe to immediately call onDone (3rd arg) so the SSE
+ * response closes and supertest can collect a status code.
+ */
+function mockSubscribeSuccess() {
+  mockGenerationJobManager.subscribe.mockImplementation((_streamId, _writeEvent, onDone) => {
+    onDone({ done: true });
+    return { unsubscribe: jest.fn() };
+  });
+}
+
 describe('SSE stream tenant isolation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -80,41 +91,33 @@ describe('SSE stream tenant isolation', () => {
     expect(res.status).toBe(404);
   });
 
-  it('does not return 403 when tenant matches', async () => {
+  it('proceeds past tenant guard when tenant matches', async () => {
     mockUserId = 'user-123';
     mockTenantId = 'tenant-a';
+    mockSubscribeSuccess();
 
     mockGenerationJobManager.getJob.mockResolvedValue({
       metadata: { userId: 'user-123', tenantId: 'tenant-a' },
       status: 'running',
     });
 
-    mockGenerationJobManager.subscribe.mockImplementation((_streamId, _handler, res) => {
-      res.end();
-      return () => {};
-    });
-
     const res = await request(app).get('/agents/chat/stream/stream-123');
-    expect(res.status).not.toBe(403);
-    expect(res.status).not.toBe(404);
+    expect(res.status).toBe(200);
+    expect(mockGenerationJobManager.subscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('does not return 403 when job has no tenantId (single-tenant mode)', async () => {
+  it('proceeds past tenant guard when job has no tenantId (single-tenant mode)', async () => {
     mockUserId = 'user-123';
     mockTenantId = undefined;
+    mockSubscribeSuccess();
 
     mockGenerationJobManager.getJob.mockResolvedValue({
       metadata: { userId: 'user-123' },
       status: 'running',
     });
 
-    mockGenerationJobManager.subscribe.mockImplementation((_streamId, _handler, res) => {
-      res.end();
-      return () => {};
-    });
-
     const res = await request(app).get('/agents/chat/stream/stream-123');
-    expect(res.status).not.toBe(403);
-    expect(res.status).not.toBe(404);
+    expect(res.status).toBe(200);
+    expect(mockGenerationJobManager.subscribe).toHaveBeenCalledTimes(1);
   });
 });

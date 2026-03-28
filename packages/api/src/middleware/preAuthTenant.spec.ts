@@ -64,4 +64,37 @@ describe('preAuthTenantMiddleware', () => {
     preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
     expect(capturedTenantId).toBeUndefined();
   });
+
+  it('rejects tenant IDs containing invalid characters', () => {
+    req.headers = { 'x-tenant-id': 'tenant:injected' };
+    let capturedTenantId: string | undefined = 'sentinel';
+    const capturedNext: NextFunction = () => {
+      capturedTenantId = getTenantId();
+    };
+
+    preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
+    expect(capturedTenantId).toBeUndefined();
+  });
+
+  it('trims whitespace from tenant ID header', () => {
+    req.headers = { 'x-tenant-id': '  acme-corp  ' };
+    let capturedTenantId: string | undefined;
+    const capturedNext: NextFunction = () => {
+      capturedTenantId = getTenantId();
+    };
+
+    preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
+    expect(capturedTenantId).toBe('acme-corp');
+  });
+
+  it('rejects tenant IDs exceeding max length', () => {
+    req.headers = { 'x-tenant-id': 'a'.repeat(200) };
+    let capturedTenantId: string | undefined = 'sentinel';
+    const capturedNext: NextFunction = () => {
+      capturedTenantId = getTenantId();
+    };
+
+    preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
+    expect(capturedTenantId).toBeUndefined();
+  });
 });

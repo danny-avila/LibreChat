@@ -29,11 +29,25 @@ import type { Request, Response, NextFunction } from 'express';
  * If no header is present, downstream runs without tenant ALS context (same as
  * single-tenant mode). This preserves backward compatibility.
  */
-export function preAuthTenantMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const tenantId = req.headers['x-tenant-id'];
+const MAX_TENANT_ID_LENGTH = 128;
+const VALID_TENANT_ID = /^[a-zA-Z0-9_\-.]+$/;
 
-  // No header or empty value — pass through without tenant context
-  if (!tenantId || typeof tenantId !== 'string' || tenantId === SYSTEM_TENANT_ID) {
+export function preAuthTenantMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const raw = req.headers['x-tenant-id'];
+
+  if (!raw || typeof raw !== 'string') {
+    next();
+    return;
+  }
+
+  const tenantId = raw.trim();
+
+  if (
+    !tenantId ||
+    tenantId === SYSTEM_TENANT_ID ||
+    tenantId.length > MAX_TENANT_ID_LENGTH ||
+    !VALID_TENANT_ID.test(tenantId)
+  ) {
     next();
     return;
   }

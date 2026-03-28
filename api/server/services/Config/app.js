@@ -29,7 +29,11 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
   getUserPrincipals: db.getUserPrincipals,
 });
 
-/** Deletes the ENDPOINT_CONFIG entry from CONFIG_STORE. Failures are non-critical and swallowed. */
+/**
+ * Deletes the ENDPOINT_CONFIG entry for the current tenant from CONFIG_STORE.
+ * In multi-tenant mode, only the calling tenant's scoped key is cleared.
+ * Other tenants' caches expire naturally via TTL after global config changes.
+ */
 async function clearEndpointConfigCache() {
   try {
     const configStore = getLogStores(CacheKeys.CONFIG_STORE);
