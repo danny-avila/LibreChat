@@ -238,7 +238,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     }
 
     logger.debug('[MCP OAuth] Completing OAuth flow');
-    const oauthHeaders = await getOAuthHeaders(serverName, flowState.userId);
+    const oauthHeaders =
+      flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager, oauthHeaders);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
