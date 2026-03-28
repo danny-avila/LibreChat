@@ -238,6 +238,12 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     }
 
     logger.debug('[MCP OAuth] Completing OAuth flow');
+    if (!flowState.oauthHeaders) {
+      logger.warn(
+        '[MCP OAuth] oauthHeaders absent from flow state — config-source server oauth_headers will be empty',
+        { serverName, flowId },
+      );
+    }
     const oauthHeaders =
       flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager, oauthHeaders);
@@ -607,9 +613,6 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       connectionStatus,
     });
   } catch (error) {
-    if (error.message === 'MCP config not found') {
-      return res.status(404).json({ error: error.message });
-    }
     logger.error('[MCP Connection Status] Failed to get connection status', error);
     res.status(500).json({ error: 'Failed to get connection status' });
   }
@@ -655,9 +658,6 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
       requiresOAuth: serverStatus.requiresOAuth,
     });
   } catch (error) {
-    if (error.message === 'MCP config not found') {
-      return res.status(404).json({ error: error.message });
-    }
     logger.error(
       `[MCP Per-Server Status] Failed to get connection status for ${req.params.serverName}`,
       error,

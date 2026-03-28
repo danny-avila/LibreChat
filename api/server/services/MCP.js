@@ -72,6 +72,20 @@ async function resolveConfigServers(req) {
 }
 
 /**
+ * Resolves config-source servers and merges all server configs (YAML + config + user DB)
+ * for the given user context. Shared helper for controllers needing the full merged config.
+ * @param {string} userId
+ * @param {{ id?: string, role?: string }} [user]
+ * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
+ */
+async function resolveAllMcpConfigs(userId, user) {
+  const registry = getMCPServersRegistry();
+  const appConfig = await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
+  const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+  return registry.getAllServerConfigs(userId, configServers);
+}
+
+/**
  * @param {string} toolName
  * @param {string} serverName
  */
@@ -530,14 +544,14 @@ function createToolInstance({
   res,
   toolName,
   serverName,
-  serverConfig: _serverConfig,
+  serverConfig: capturedServerConfig,
   toolDefinition,
-  provider: _provider,
+  provider: capturedProvider,
   streamId = null,
 }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
-  const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
+  const isGoogle = capturedProvider === Providers.VERTEXAI || capturedProvider === Providers.GOOGLE;
 
   let schema = parameters ? normalizeJsonSchema(resolveJsonSchemaRefs(parameters)) : null;
 
@@ -566,7 +580,7 @@ function createToolInstance({
       const flowManager = getFlowStateManager(flowsCache);
       derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
-      const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
+      const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
       const flowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
@@ -598,7 +612,7 @@ function createToolInstance({
 
       const result = await mcpManager.callTool({
         serverName,
-        serverConfig: _serverConfig,
+        serverConfig: capturedServerConfig,
         toolName,
         provider,
         toolArguments,
@@ -818,6 +832,7 @@ module.exports = {
   createMCPTools,
   getMCPSetupData,
   resolveConfigServers,
+  resolveAllMcpConfigs,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
   createUnavailableToolStub,

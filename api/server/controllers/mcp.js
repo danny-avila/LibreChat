@@ -5,7 +5,7 @@
  * @import { MCPServerRegistry } from '@librechat/api'
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
-const { logger, getTenantId } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const {
   MCPErrorCodes,
   redactServerSecrets,
@@ -14,12 +14,9 @@ const {
   isMCPInspectionFailedError,
 } = require('@librechat/api');
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
-const {
-  cacheMCPServerTools,
-  getMCPServerTools,
-  getAppConfig,
-} = require('~/server/services/Config');
+const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
+const { resolveAllMcpConfigs } = require('~/server/services/MCP');
 
 /**
  * Handles MCP-specific errors and sends appropriate HTTP responses.
@@ -58,20 +55,6 @@ function handleMCPError(error, res) {
   }
 
   return null;
-}
-
-/**
- * Resolves config-source MCP servers from admin Config overrides and merges all
- * server configs (YAML + config + user) for the given user context.
- * @param {string} userId
- * @param {{ id?: string, role?: string }} [user]
- * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
- */
-async function resolveAllMcpConfigs(userId, user) {
-  const registry = getMCPServersRegistry();
-  const appConfig = await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
-  const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  return registry.getAllServerConfigs(userId, configServers);
 }
 
 /**

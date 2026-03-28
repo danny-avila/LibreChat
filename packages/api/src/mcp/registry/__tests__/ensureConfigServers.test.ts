@@ -9,6 +9,7 @@ jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
     getAll: jest.fn().mockResolvedValue({}),
     add: jest.fn().mockResolvedValue(undefined),
     update: jest.fn().mockResolvedValue(undefined),
+    upsert: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
     reset: jest.fn().mockResolvedValue(undefined),
   })),

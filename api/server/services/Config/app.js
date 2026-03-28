@@ -46,6 +46,7 @@ async function clearEndpointConfigCache() {
 async function clearMcpConfigCache() {
   let registry;
   try {
+    // Dynamic require: avoids circular dependency (Config/app → ~/config → ... → Config/app).
     const { getMCPServersRegistry } = require('~/config');
     registry = getMCPServersRegistry();
   } catch {

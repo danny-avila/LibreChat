@@ -102,9 +102,11 @@ jest.mock('~/server/services/Config/mcp', () => ({
   updateMCPServerTools: jest.fn(),
 }));
 
+const mockResolveAllMcpConfigs = jest.fn().mockResolvedValue({});
 jest.mock('~/server/services/MCP', () => ({
   getMCPSetupData: jest.fn(),
   resolveConfigServers: jest.fn().mockResolvedValue({}),
+  resolveAllMcpConfigs: (...args) => mockResolveAllMcpConfigs(...args),
   getServerConnectionStatus: jest.fn(),
 }));
 
@@ -1358,15 +1360,6 @@ describe('MCP Routes', () => {
       expect(getServerConnectionStatus).toHaveBeenCalledTimes(2);
     });
 
-    it('should return 404 when MCP config is not found', async () => {
-      getMCPSetupData.mockRejectedValue(new Error('MCP config not found'));
-
-      const response = await request(app).get('/api/mcp/connection/status');
-
-      expect(response.status).toBe(404);
-      expect(response.body).toEqual({ error: 'MCP config not found' });
-    });
-
     it('should return 500 when connection status check fails', async () => {
       getMCPSetupData.mockRejectedValue(new Error('Database error'));
 
@@ -1439,15 +1432,6 @@ describe('MCP Routes', () => {
       expect(response.body).toEqual({
         error: "MCP server 'non-existent-server' not found in configuration",
       });
-    });
-
-    it('should return 404 when MCP config is not found', async () => {
-      getMCPSetupData.mockRejectedValue(new Error('MCP config not found'));
-
-      const response = await request(app).get('/api/mcp/connection/status/test-server');
-
-      expect(response.status).toBe(404);
-      expect(response.body).toEqual({ error: 'MCP config not found' });
     });
 
     it('should return 500 when connection status check fails', async () => {
@@ -1708,7 +1692,7 @@ describe('MCP Routes', () => {
         },
       };
 
-      mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockServerConfigs);
+      mockResolveAllMcpConfigs.mockResolvedValue(mockServerConfigs);
 
       const response = await request(app).get('/api/mcp/servers');
 
@@ -1725,14 +1709,14 @@ describe('MCP Routes', () => {
       });
       expect(response.body['server-1'].headers).toBeUndefined();
       expect(response.body['server-2'].headers).toBeUndefined();
-      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(
+      expect(mockResolveAllMcpConfigs).toHaveBeenCalledWith(
         'test-user-id',
-        expect.any(Object),
+        expect.objectContaining({ id: 'test-user-id' }),
       );
     });
 
     it('should return empty object when no servers are configured', async () => {
-      mockRegistryInstance.getAllServerConfigs.mockResolvedValue({});
+      mockResolveAllMcpConfigs.mockResolvedValue({});
 
       const response = await request(app).get('/api/mcp/servers');
 
@@ -1756,7 +1740,7 @@ describe('MCP Routes', () => {
     });
 
     it('should return 500 when server config retrieval fails', async () => {
-      mockRegistryInstance.getAllServerConfigs.mockRejectedValue(new Error('Database error'));
+      mockResolveAllMcpConfigs.mockRejectedValue(new Error('Database error'));
 
       const response = await request(app).get('/api/mcp/servers');
 
@@ -1935,7 +1919,7 @@ describe('MCP Routes', () => {
         title: 'Test Server',
       };
 
-      mockRegistryInstance.getAllServerConfigs.mockResolvedValue({
+      mockResolveAllMcpConfigs.mockResolvedValue({
         'test-server': mockConfig,
       });
 
@@ -1945,11 +1929,14 @@ describe('MCP Routes', () => {
       expect(response.body.type).toBe('sse');
       expect(response.body.url).toBe('https://mcp-server.example.com/sse');
       expect(response.body.title).toBe('Test Server');
-      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith('test-user-id', {});
+      expect(mockResolveAllMcpConfigs).toHaveBeenCalledWith(
+        'test-user-id',
+        expect.objectContaining({ id: 'test-user-id' }),
+      );
     });
 
     it('should return 404 when server not found', async () => {
-      mockRegistryInstance.getAllServerConfigs.mockResolvedValue({});
+      mockResolveAllMcpConfigs.mockResolvedValue({});
 
       const response = await request(app).get('/api/mcp/servers/non-existent-server');
 
@@ -1958,7 +1945,7 @@ describe('MCP Routes', () => {
     });
 
     it('should redact secrets from get response', async () => {
-      mockRegistryInstance.getAllServerConfigs.mockResolvedValue({
+      mockResolveAllMcpConfigs.mockResolvedValue({
         'secret-server': {
           type: 'sse',
           url: 'https://mcp-server.example.com/sse',
@@ -1983,7 +1970,7 @@ describe('MCP Routes', () => {
     });
 
     it('should return 500 when registry throws error', async () => {
-      mockRegistryInstance.getAllServerConfigs.mockRejectedValue(new Error('Database error'));
+      mockResolveAllMcpConfigs.mockRejectedValue(new Error('Database error'));
 
       const response = await request(app).get('/api/mcp/servers/error-server');
 

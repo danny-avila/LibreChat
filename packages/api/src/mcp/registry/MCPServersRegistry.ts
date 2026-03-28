@@ -158,11 +158,8 @@ export class MCPServersRegistry {
     if (configServers == null || !Object.keys(configServers).length) {
       return this.getBaseServerConfigs(userId);
     }
-    const [yamlConfigs, base] = await Promise.all([
-      this.cacheConfigsRepo.getAll(),
-      this.getBaseServerConfigs(userId),
-    ]);
-    return { ...yamlConfigs, ...configServers, ...base };
+    const base = await this.getBaseServerConfigs(userId);
+    return { ...base, ...configServers };
   }
 
   /**
@@ -248,8 +245,11 @@ export class MCPServersRegistry {
       }
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
-    parsedConfig.source = storageLocation === 'CACHE' ? 'yaml' : 'user';
-    return await configRepo.add(serverName, parsedConfig, userId);
+    const tagged = {
+      ...parsedConfig,
+      source: (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource,
+    };
+    return await configRepo.add(serverName, tagged, userId);
   }
 
   /**
@@ -366,7 +366,7 @@ export class MCPServersRegistry {
 
     const result: Record<string, t.ParsedServerConfig> = {};
 
-    await Promise.allSettled(
+    const settled = await Promise.allSettled(
       configServerEntries.map(async ([serverName, rawConfig]) => {
         const parsed = await this.ensureSingleConfigServer(serverName, rawConfig);
         if (parsed) {
@@ -374,6 +374,11 @@ export class MCPServersRegistry {
         }
       }),
     );
+    for (const outcome of settled) {
+      if (outcome.status === 'rejected') {
+        logger.error('[MCPServersRegistry][ensureConfigServers] Unexpected error:', outcome.reason);
+      }
+    }
 
     return result;
   }
@@ -432,7 +437,6 @@ export class MCPServersRegistry {
         MCPServerInspector.inspect(serverName, rawConfig, undefined, this.allowedDomains),
         CONFIG_SERVER_INIT_TIMEOUT_MS,
         `${prefix} Server initialization timed out`,
-        logger.error,
       );
 
       parsedConfig.source = 'config';
