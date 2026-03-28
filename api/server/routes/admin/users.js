@@ -9,7 +9,7 @@ const router = express.Router();
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const requireReadUsers = requireCapability(SystemCapabilities.READ_USERS);
-const requireManageUsers = requireCapability(SystemCapabilities.MANAGE_USERS);
+// const requireManageUsers = requireCapability(SystemCapabilities.MANAGE_USERS);
 
 const handlers = createAdminUsersHandlers({
   findUsers: db.findUsers,
