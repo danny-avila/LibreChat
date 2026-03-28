@@ -70,6 +70,7 @@ export class InMemoryJobStore implements IJobStore {
     streamId: string,
     userId: string,
     conversationId?: string,
+    tenantId?: string,
   ): Promise<SerializableJobData> {
     if (this.jobs.size >= this.maxJobs) {
       await this.evictOldest();
@@ -78,6 +79,7 @@ export class InMemoryJobStore implements IJobStore {
     const job: SerializableJobData = {
       streamId,
       userId,
+      ...(tenantId && { tenantId }),
       status: 'running',
       createdAt: Date.now(),
       conversationId,

@@ -5,6 +5,7 @@ const {
   parseTextParts,
   findLastSeparatorIndex,
 } = require('librechat-data-provider');
+const { scopedCacheKey } = require('@librechat/data-schemas');
 const { getLogStores } = require('~/cache');
 const { getMessage } = require('~/models');
 
@@ -67,6 +68,7 @@ function createChunkProcessor(user, messageId) {
   }
 
   const messageCache = getLogStores(CacheKeys.MESSAGES);
+  const cacheKey = scopedCacheKey(messageId);
 
   /**
    * @returns {Promise<{ text: string, isFinished: boolean }[] | string>}
@@ -81,7 +83,7 @@ function createChunkProcessor(user, messageId) {
     }
 
     /** @type { string | { text: string; complete: boolean } } */
-    let message = await messageCache.get(messageId);
+    let message = await messageCache.get(cacheKey);
     if (!message) {
       message = await getMessage({ user, messageId });
     }
@@ -92,7 +94,7 @@ function createChunkProcessor(user, messageId) {
     } else {
       const text = message.content?.length > 0 ? parseTextParts(message.content) : message.text;
       messageCache.set(
-        messageId,
+        cacheKey,
         {
           text,
           complete: true,

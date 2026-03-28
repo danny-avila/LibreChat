@@ -140,10 +140,12 @@ export class RedisJobStore implements IJobStore {
     streamId: string,
     userId: string,
     conversationId?: string,
+    tenantId?: string,
   ): Promise<SerializableJobData> {
     const job: SerializableJobData = {
       streamId,
       userId,
+      ...(tenantId && { tenantId }),
       status: 'running',
       createdAt: Date.now(),
       conversationId,

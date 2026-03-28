@@ -67,6 +67,10 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
+  if (job.metadata?.tenantId && job.metadata.tenantId !== req.user.tenantId) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
   res.setHeader('Content-Encoding', 'identity');
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');

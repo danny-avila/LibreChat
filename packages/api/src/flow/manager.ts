@@ -1,5 +1,5 @@
 import { Keyv } from 'keyv';
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
@@ -54,6 +54,10 @@ export class FlowStateManager<T = unknown> {
   }
 
   private getFlowKey(flowId: string, type: string): string {
+    const tenantId = getTenantId();
+    if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
+      return `${type}:${tenantId}:${flowId}`;
+    }
     return `${type}:${flowId}`;
   }
 
