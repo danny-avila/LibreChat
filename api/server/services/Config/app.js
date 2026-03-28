@@ -1,5 +1,5 @@
 const { CacheKeys } = require('librechat-data-provider');
-const { createAppConfigService } = require('@librechat/api');
+const { createAppConfigService, clearMcpConfigCache } = require('@librechat/api');
 const { AppService, logger } = require('@librechat/data-schemas');
 const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
@@ -36,48 +36,6 @@ async function clearEndpointConfigCache() {
     await configStore.delete(CacheKeys.ENDPOINT_CONFIG);
   } catch {
     // CONFIG_STORE or ENDPOINT_CONFIG may not exist — not critical
-  }
-}
-
-/**
- * Clears config-source MCP server inspection cache so servers are re-inspected on next access.
- * Best-effort disconnection of app-level connections for evicted servers.
- * User-level connections (used by config-source servers) are cleaned up lazily via
- * the stale-check mechanism on the next tool call — this is an accepted design tradeoff
- * since iterating all active user sessions is expensive and config mutations are rare.
- */
-async function clearMcpConfigCache() {
-  let registry;
-  try {
-    // Dynamic require: avoids circular dependency (Config/app → ~/config → ... → Config/app).
-    const { getMCPServersRegistry } = require('~/config');
-    registry = getMCPServersRegistry();
-  } catch {
-    return;
-  }
-
-  let evictedServers;
-  try {
-    evictedServers = await registry.invalidateConfigCache();
-  } catch (error) {
-    logger.error('[clearMcpConfigCache] Failed to invalidate config cache:', error);
-    return;
-  }
-
-  if (!evictedServers.length) {
-    return;
-  }
-
-  try {
-    const { getMCPManager } = require('~/config');
-    const mcpManager = getMCPManager();
-    if (mcpManager?.appConnections) {
-      await Promise.allSettled(
-        evictedServers.map((serverName) => mcpManager.appConnections.disconnect(serverName)),
-      );
-    }
-  } catch {
-    // MCPManager not yet initialized — connections cleaned up lazily
   }
 }
 
