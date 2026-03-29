@@ -10,6 +10,7 @@ jest.mock('~/hooks', () => ({
   useAgentCapabilities: jest.fn(),
   useGetAgentsConfig: jest.fn(),
   useFileHandling: jest.fn(),
+  useFileHandlingNoChatContext: jest.fn(),
   useLocalize: jest.fn(),
 }));
 
@@ -52,6 +53,7 @@ jest.mock('@librechat/client', () => {
       ),
     AttachmentIcon: () => R.createElement('span', { 'data-testid': 'attachment-icon' }),
     SharePointIcon: () => R.createElement('span', { 'data-testid': 'sharepoint-icon' }),
+    useToastContext: () => ({ showToast: jest.fn() }),
   };
 });
 
@@ -67,6 +69,7 @@ const mockUseAgentToolPermissions = jest.requireMock('~/hooks').useAgentToolPerm
 const mockUseAgentCapabilities = jest.requireMock('~/hooks').useAgentCapabilities;
 const mockUseGetAgentsConfig = jest.requireMock('~/hooks').useGetAgentsConfig;
 const mockUseFileHandling = jest.requireMock('~/hooks').useFileHandling;
+const mockUseFileHandlingNoChatContext = jest.requireMock('~/hooks').useFileHandlingNoChatContext;
 const mockUseLocalize = jest.requireMock('~/hooks').useLocalize;
 const mockUseSharePointFileHandling = jest.requireMock(
   '~/hooks/Files/useSharePointFileHandling',
@@ -93,6 +96,7 @@ function setupMocks(overrides: { provider?: string } = {}) {
   });
   mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: {} });
   mockUseFileHandling.mockReturnValue({ handleFileChange: jest.fn() });
+  mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange: jest.fn() });
   mockUseSharePointFileHandling.mockReturnValue({
     handleSharePointFiles: jest.fn(),
     isProcessing: false,

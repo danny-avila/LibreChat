@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
+import { useFileHandlingNoChatContext } from '~/hooks';
 import FileRow from './FileRow';
 import store from '~/store';
 

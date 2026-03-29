@@ -29,9 +29,9 @@ import {
   useAgentToolPermissions,
   useAgentCapabilities,
   useGetAgentsConfig,
+  useFileHandlingNoChatContext,
   useLocalize,
 } from '~/hooks';
-import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
