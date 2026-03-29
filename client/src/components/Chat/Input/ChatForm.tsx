@@ -1,4 +1,4 @@
-import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
+import { memo, useRef, useMemo, useEffect, useState, useCallback, type MouseEvent } from 'react';
 import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
@@ -82,6 +82,17 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   } = useAddedChatContext();
   const assistantMap = useAssistantsMapContext();
 
+  /**
+   * Stabilize handleStopGenerating via ref so StopButton always receives the same
+   * function reference, preventing memo-busting re-renders when ChatContext changes.
+   */
+  const handleStopRef = useRef(handleStopGenerating);
+  handleStopRef.current = handleStopGenerating;
+  const stableHandleStop = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => handleStopRef.current(e),
+    [],
+  );
+
   const endpoint = useMemo(
     () => conversation?.endpointType ?? conversation?.endpoint,
     [conversation?.endpointType, conversation?.endpoint],
@@ -89,6 +100,26 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const conversationId = useMemo(
     () => conversation?.conversationId ?? Constants.NEW_CONVO,
     [conversation?.conversationId],
+  );
+
+  /**
+   * Stabilize conversation reference for memo'd children (AttachFileChat, FileFormChat).
+   * Only produces a new reference when fields that affect child rendering actually change,
+   * preventing re-renders from unrelated conversation metadata updates (e.g., title generation).
+   */
+  const stableConversation = useMemo(
+    () => conversation,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      conversation?.conversationId,
+      conversation?.endpoint,
+      conversation?.endpointType,
+      conversation?.agent_id,
+      conversation?.assistant_id,
+      conversation?.spec,
+      conversation?.useResponsesApi,
+      conversation?.messages?.length,
+    ],
   );
 
   const isRTL = useMemo(
@@ -255,7 +286,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               setBadges={setBadges}
             />
             <FileFormChat
-              conversation={conversation}
+              conversation={stableConversation}
               files={files}
               setFiles={setFiles}
               setFilesLoading={setFilesLoading}
@@ -321,7 +352,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               )}
             >
               <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
-                <AttachFileChat conversation={conversation} disableInputs={disableInputs} />
+                <AttachFileChat conversation={stableConversation} disableInputs={disableInputs} />
               </div>
               <BadgeRow
                 showEphemeralBadges={
@@ -347,7 +378,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
                 {isSubmitting && showStopButton ? (
-                  <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+                  <StopButton stop={stableHandleStop} setShowStopButton={setShowStopButton} />
                 ) : (
                   endpoint && (
                     <SendButton
