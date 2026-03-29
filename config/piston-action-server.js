@@ -137,7 +137,7 @@ const fetchJson = async (url, options) => {
 /** Maps LibreChat 2-letter lang codes → Piston runtime names */
 const LANG_MAP = {
   py: 'python',
-  js: 'node',
+  js: 'javascript',
   ts: 'typescript',
   c: 'c',
   cpp: 'cpp',
@@ -158,8 +158,8 @@ const runPiston = async (language, code, stdin = '', args = []) => {
     files: [{ name: 'main', content: code }],
     stdin,
     args,
-    run_timeout: 10000,
-    compile_timeout: 10000,
+    run_timeout: 3000,
+    compile_timeout: 3000,
     run_memory_limit: 256000000,
     compile_memory_limit: 256000000,
   };

@@ -33,22 +33,19 @@ const DESIRED_RUNTIMES = (process.env.RUNTIMES || '').trim()
   ? process.env.RUNTIMES.split(',').map(s => s.trim())
   : [
       'python',     // py
-      'node',       // js
+      'javascript', // js  (Piston built-in runtime name)
       'typescript', // ts
       'bash',       // bash / shell scripts
       'go',         // go
       'rust',       // rs
       'java',       // java
       'php',        // php
-      'c',          // c
-      'cpp',        // c++
-      'r',          // r
     ];
 
 /** Smoke-test: one execution per language to confirm the runtime works */
 const SMOKE_TESTS = {
   python:     { lang: 'py',   code: 'print("python ok")',                  expect: 'python ok' },
-  node:       { lang: 'js',   code: 'console.log("node ok")',              expect: 'node ok'   },
+  javascript: { lang: 'js',   code: 'console.log("javascript ok")',        expect: 'javascript ok' },
   typescript: { lang: 'ts',   code: 'console.log("ts ok")',                expect: 'ts ok'     },
   bash:       { lang: 'bash', code: 'echo "bash ok"',                      expect: 'bash ok'   },
   go: {
