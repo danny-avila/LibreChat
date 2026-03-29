@@ -427,6 +427,7 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
       conversation?.assistant_id,
       conversation?.spec,
       conversation?.useResponsesApi,
+      conversation?.model,
       conversation?.messages?.length,
     ],
   );
@@ -441,10 +442,11 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
 
   const newConvoRef = useRef(newConversation);
   newConvoRef.current = newConversation;
-  const stableNewConversation = useCallback(
-    (...args: Parameters<ConvoGenerator>) => newConvoRef.current(...args),
+  const stableNewConversation: ConvoGenerator = useCallback(
+    (...args: Parameters<ConvoGenerator>): ReturnType<ConvoGenerator> =>
+      newConvoRef.current(...args),
     [],
-  ) as ConvoGenerator;
+  );
 
   return (
     <ChatForm
@@ -460,5 +462,7 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
     />
   );
 }
+
+ChatFormWrapper.displayName = 'ChatFormWrapper';
 
 export default ChatFormWrapper;

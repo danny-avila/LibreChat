@@ -368,10 +368,7 @@ export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
 export type TMessageChatContext = {
   ask: (...args: Parameters<TAskFunction>) => void;
   index: number;
-  regenerate: (
-    params: { parentMessageId: string | null } & Record<string, unknown>,
-    options?: { addedConvo?: t.TConversation | null },
-  ) => void;
+  regenerate: (message: t.TMessage, options?: { addedConvo?: t.TConversation | null }) => void;
   conversation: t.TConversation | null;
   latestMessageId: string | undefined;
   latestMessageDepth: number | undefined;

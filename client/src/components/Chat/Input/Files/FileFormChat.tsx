@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TConversation } from 'librechat-data-provider';
-import type { ExtendedFile } from '~/common';
+import type { ExtendedFile, FileSetter } from '~/common';
 import { useFileHandlingNoChatContext } from '~/hooks';
 import FileRow from './FileRow';
 import store from '~/store';
@@ -14,7 +14,7 @@ function FileFormChat({
 }: {
   conversation: TConversation | null;
   files: Map<string, ExtendedFile>;
-  setFiles: React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
+  setFiles: FileSetter;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();

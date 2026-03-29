@@ -60,21 +60,16 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
 
-  const handleScroll = useCallback(
-    (event: unknown | TouchEvent | WheelEvent) => {
-      throttle(() => {
+  const handleScroll = useMemo(
+    () =>
+      throttle((event: unknown) => {
         logger.log(
           'message_scrolling',
           `useMessageProcess: setting abort scroll to ${isSubmittingRef.current}, handleScroll event`,
           event,
         );
-        if (isSubmittingRef.current) {
-          setAbortScroll(true);
-        } else {
-          setAbortScroll(false);
-        }
-      }, 500)();
-    },
+        setAbortScroll(isSubmittingRef.current);
+      }, 500),
     [setAbortScroll],
   );
 

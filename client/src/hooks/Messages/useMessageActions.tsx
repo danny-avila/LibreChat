@@ -110,7 +110,7 @@ export default function useMessageActions(props: TMessageActions) {
    * chatContext.isSubmitting uses a getter (ref-backed), so reading it here
    * captures the current value without adding it as a reactive dependency.
    */
-  const isSubmittingRef = useRef(false);
+  const isSubmittingRef = useRef(chatContext.isSubmitting);
   isSubmittingRef.current = chatContext.isSubmitting;
 
   const regenerateMessage = useCallback(() => {

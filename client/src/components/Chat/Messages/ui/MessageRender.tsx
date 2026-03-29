@@ -75,7 +75,7 @@ function areMessageRenderPropsEqual(prev: MessageRenderProps, next: MessageRende
     prevMsg.depth === nextMsg.depth &&
     prevMsg.isCreatedByUser === nextMsg.isCreatedByUser &&
     (prevMsg.children?.length ?? 0) === (nextMsg.children?.length ?? 0) &&
-    prevMsg.content === nextMsg.content &&
+    (prevMsg.content?.length ?? 0) === (nextMsg.content?.length ?? 0) &&
     prevMsg.model === nextMsg.model &&
     prevMsg.endpoint === nextMsg.endpoint &&
     prevMsg.iconURL === nextMsg.iconURL &&
