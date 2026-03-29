@@ -56,22 +56,26 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     }
   }, [hasNoChildren, message, setLatestMessage, conversation?.conversationId]);
 
+  /** Use ref for isSubmitting to stabilize handleScroll across isSubmitting changes */
+  const isSubmittingRef = useRef(isSubmitting);
+  isSubmittingRef.current = isSubmitting;
+
   const handleScroll = useCallback(
     (event: unknown | TouchEvent | WheelEvent) => {
       throttle(() => {
         logger.log(
           'message_scrolling',
-          `useMessageProcess: setting abort scroll to ${isSubmitting}, handleScroll event`,
+          `useMessageProcess: setting abort scroll to ${isSubmittingRef.current}, handleScroll event`,
           event,
         );
-        if (isSubmitting) {
+        if (isSubmittingRef.current) {
           setAbortScroll(true);
         } else {
           setAbortScroll(false);
         }
       }, 500)();
     },
-    [isSubmitting, setAbortScroll],
+    [setAbortScroll],
   );
 
   return {
