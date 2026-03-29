@@ -57,15 +57,23 @@ function AuthLayout({
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
+    <div className="relative flex min-h-screen flex-col bg-gradient-to-br from-brand-teal-50 via-white to-white dark:from-brand-teal-900 dark:via-gray-900 dark:to-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
-          <img
-            src="assets/logo.svg"
-            className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'AtlasChat' })}
-          />
+        <div className="mx-auto mt-8 flex flex-col items-center gap-3">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-teal-600 to-brand-teal-800 shadow-lg">
+            <svg width="38" height="38" viewBox="0 0 512 512" aria-hidden="true">
+              <path
+                d="M256,88 L278,174 L355,129 L310,206 L396,228 L310,250 L355,327 L278,282 L256,368 L234,282 L157,327 L202,250 L116,228 L202,206 L157,129 L234,174 Z"
+                fill="#E8C84A"
+              />
+              <circle cx="256" cy="228" r="28" fill="rgba(8,61,78,0.8)"/>
+              <path d="M256,214 L260,223 L270,228 L260,233 L256,242 L252,233 L242,228 L252,223 Z" fill="#C9A01E"/>
+            </svg>
+          </div>
+          <span className="text-xl font-bold tracking-tight text-brand-teal-700 dark:text-brand-teal-300">
+            {localize('com_ui_logo', { 0: 'AtlasChat' })}
+          </span>
         </div>
       </BlinkAnimation>
       <p className="mt-2 text-center text-sm text-text-secondary">
@@ -78,11 +86,11 @@ function AuthLayout({
         <ThemeSelector />
       </div>
 
-      <main className="flex flex-grow items-center justify-center">
-        <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+      <main className="flex flex-grow items-center justify-center px-4 py-6">
+        <div className="auth-card-enterprise w-authPageWidth overflow-hidden bg-white px-6 py-6 dark:bg-gray-900 sm:max-w-md sm:rounded-2xl">
           {!hasStartupConfigError && !isFetching && header && (
             <h1
-              className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
+              className="mb-4 text-center text-3xl font-semibold text-gray-900 dark:text-white"
               style={{ userSelect: 'none' }}
             >
               {header}

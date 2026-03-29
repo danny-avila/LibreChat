@@ -6,6 +6,25 @@
 :root {
   --white: #fff;
   --black: #000;
+  /* AtlasChat brand — Moroccan teal + gold */
+  --brand-teal-50:  #effaf9;
+  --brand-teal-100: #caeee9;
+  --brand-teal-200: #97ddd6;
+  --brand-teal-300: #5ec6bc;
+  --brand-teal-400: #2da99e;
+  --brand-teal-500: #0d8c82;
+  --brand-teal-600: #0c6478;   /* primary CTA */
+  --brand-teal-700: #094d5e;
+  --brand-teal-800: #063947;
+  --brand-teal-900: #042530;
+  --brand-gold-50:  #fffbeb;
+  --brand-gold-100: #fef3c7;
+  --brand-gold-200: #fde68a;
+  --brand-gold-300: #f2d76a;
+  --brand-gold-400: #e8c84a;   /* accent gold */
+  --brand-gold-500: #c9a01e;
+  --brand-gold-600: #a07d14;
+  --brand-gold-700: #7a5f0e;
   --gray-20: #ececf1;
   --gray-50: #f7f7f8;
   --gray-100: #ececec;
@@ -87,12 +106,11 @@ html {
   --surface-tertiary: var(--gray-100);
   --surface-tertiary-alt: var(--white);
   --surface-dialog: var(--white);
-  --surface-submit: var(--green-700);
-  --surface-submit-hover: var(--green-800);
+  --surface-submit: var(--brand-teal-600);
+  --surface-submit-hover: var(--brand-teal-700);
   --surface-destructive: var(--red-700);
   --surface-destructive-hover: var(--red-800);
   --surface-chat: var(--white);
-  --border-light: var(--gray-200);
   --border-medium-alt: var(--gray-300);
   --border-medium: var(--gray-300);
   --border-heavy: var(--gray-400);
@@ -2995,4 +3013,127 @@ html {
 [dir="rtl"] input,
 [dir="rtl"] textarea {
   text-align: right;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   AtlasChat Enterprise UI — Brand tokens, message bubbles, polish
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Brand color utilities */
+.text-brand-teal   { color: var(--brand-teal-600); }
+.text-brand-gold   { color: var(--brand-gold-400); }
+.bg-brand-teal     { background-color: var(--brand-teal-600); }
+.bg-brand-gold     { background-color: var(--brand-gold-400); }
+.border-brand-teal { border-color: var(--brand-teal-600); }
+.border-brand-gold { border-color: var(--brand-gold-400); }
+
+/* Focus ring — teal instead of default gray */
+*:focus-visible {
+  outline: 2px solid var(--brand-teal-500);
+  outline-offset: 2px;
+}
+
+/* ── Message bubbles ─────────────────────────────────────────────── */
+.user-turn .message-text-content {
+  background: linear-gradient(135deg, var(--brand-teal-600) 0%, var(--brand-teal-700) 100%);
+  color: #fff;
+  border-radius: 18px 18px 4px 18px;
+  padding: 10px 14px;
+  max-width: 85%;
+  align-self: flex-end;
+  box-shadow: 0 1px 4px rgba(12, 100, 120, 0.18);
+  line-height: 1.55;
+}
+.agent-turn .message-text-content {
+  background: var(--surface-primary-alt);
+  border: 1px solid var(--border-light);
+  border-radius: 4px 18px 18px 18px;
+  padding: 10px 14px;
+  max-width: 90%;
+  align-self: flex-start;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  line-height: 1.6;
+}
+.dark .agent-turn .message-text-content {
+  background: var(--surface-secondary);
+  border-color: var(--border-medium);
+}
+
+/* ── Sidebar brand strip ─────────────────────────────────────────── */
+.atlaschat-brand-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--brand-teal-600) 0%, var(--brand-teal-800) 100%);
+  box-shadow: 0 2px 6px rgba(12, 100, 120, 0.35);
+  flex-shrink: 0;
+}
+
+/* ── Auth page enterprise card ───────────────────────────────────── */
+.auth-card-enterprise {
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 4px 24px rgba(0, 0, 0, 0.08);
+}
+.dark .auth-card-enterprise {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Send button — teal brand ────────────────────────────────────── */
+button[data-testid="send-button"],
+button[aria-label*="Send"],
+button[aria-label*="Envoyer"],
+button[aria-label*="إرسال"] {
+  background-color: var(--brand-teal-600) !important;
+  transition: background-color 0.15s ease;
+}
+button[data-testid="send-button"]:hover,
+button[aria-label*="Send"]:hover,
+button[aria-label*="Envoyer"]:hover,
+button[aria-label*="إرسال"]:hover {
+  background-color: var(--brand-teal-700) !important;
+}
+
+/* ── Scrollbar refinement ────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-teal-400);
+}
+
+/* ── Enterprise code block header ───────────────────────────────── */
+.code-block-header {
+  background: var(--brand-teal-800);
+  color: var(--brand-gold-200);
+  border-bottom: 1px solid var(--brand-teal-700);
+}
+.dark .code-block-header {
+  background: var(--brand-teal-900);
+  color: var(--brand-gold-300);
+}
+
+/* ── Prompt starter cards — Moroccan accent border on hover ─────── */
+.prompt-starter-card {
+  border-color: var(--border-medium);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.prompt-starter-card:hover {
+  border-color: var(--brand-teal-400);
+  box-shadow: 0 2px 12px rgba(12, 100, 120, 0.12);
 }

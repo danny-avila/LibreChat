@@ -190,6 +190,21 @@ function ExpandedPanel({
 
   return (
     <div className="flex h-full flex-shrink-0 flex-col gap-2 border-r border-border-light bg-surface-primary-alt px-2 py-2">
+      {/* AtlasChat brand icon */}
+      <div className="mb-0.5 flex justify-center">
+        <div className="atlaschat-brand-strip" title="AtlasChat">
+          <svg width="20" height="20" viewBox="0 0 512 512" aria-hidden="true">
+            <path
+              d="M256,88 L278,174 L355,129 L310,206 L396,228 L310,250 L355,327 L278,282 L256,368 L234,282 L157,327 L202,250 L116,228 L202,206 L157,129 L234,174 Z"
+              fill="#E8C84A"
+            />
+            <path
+              d="M0,370 L50,330 L95,295 L135,315 L178,275 L210,298 L256,262 L302,292 L342,268 L382,296 L425,275 L470,315 L512,335 L512,450 L0,450 Z"
+              fill="rgba(255,255,255,0.15)"
+            />
+          </svg>
+        </div>
+      </div>
       <TooltipAnchor
         side="right"
         description={localize(toggleLabel)}
