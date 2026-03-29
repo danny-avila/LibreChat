@@ -71,6 +71,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     conversation,
     isSubmitting,
     filesLoading,
+    setFilesLoading,
     newConversation,
     handleStopGenerating,
   } = useChatContext();
@@ -253,7 +254,12 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               handleSaveBadges={handleSaveBadges}
               setBadges={setBadges}
             />
-            <FileFormChat conversation={conversation} />
+            <FileFormChat
+              conversation={conversation}
+              files={files}
+              setFiles={setFiles}
+              setFilesLoading={setFilesLoading}
+            />
             {endpoint && (
               <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
                 <div
