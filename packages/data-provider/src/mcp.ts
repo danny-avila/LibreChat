@@ -20,8 +20,8 @@ const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
   timeout: z.number().int().nonnegative().optional(),
   /** Timeout (ms) for the long-lived SSE GET stream body before undici aborts it. Default: 300_000 (5 min). */
-  sseReadTimeout: z.number().positive().optional(),
-  initTimeout: z.number().optional(),
+  sseReadTimeout: z.number().int().positive().optional(),
+  initTimeout: z.number().int().nonnegative().optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
   /**
@@ -134,11 +134,9 @@ export const StdioOptionsSchema = BaseOptionsSchema.extend({
       return processedEnv;
     }),
   /**
-   * How to handle stderr of the child process. This matches the semantics of Node's `child_process.spawn`.
-   *
-   * @type {import('node:child_process').IOType | import('node:stream').Stream | number}
-   *
-   * The default is "inherit", meaning messages to stderr will be printed to the parent process's stderr.
+   * How to handle stderr of the child process.
+   * Accepts: 'pipe' | 'ignore' | 'inherit' | file descriptor number.
+   * Defaults to "inherit".
    */
   stderr: z
     .union([z.enum(['pipe', 'ignore', 'inherit']), z.number().int().nonnegative()])

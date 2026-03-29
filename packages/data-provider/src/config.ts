@@ -307,6 +307,43 @@ export const agentsEndpointSchema = baseEndpointSchema
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
 
+export const paramDefinitionSchema = z.object({
+  key: z.string(),
+  description: z.string().optional(),
+  type: z.nativeEnum(SettingTypes).optional(),
+  default: z.union([z.number(), z.boolean(), z.string(), z.array(z.string())]).optional(),
+  showLabel: z.boolean().optional(),
+  showDefault: z.boolean().optional(),
+  options: z.array(z.string()).optional(),
+  range: z
+    .object({
+      min: z.number(),
+      max: z.number(),
+      step: z.number().optional(),
+    })
+    .optional(),
+  enumMappings: z.record(z.union([z.number(), z.boolean(), z.string()])).optional(),
+  component: z.nativeEnum(ComponentTypes).optional(),
+  optionType: z.nativeEnum(OptionTypes).optional(),
+  columnSpan: z.number().int().nonnegative().optional(),
+  columns: z.number().int().min(1).max(4).optional(),
+  label: z.string().optional(),
+  placeholder: z.string().optional(),
+  labelCode: z.boolean().optional(),
+  placeholderCode: z.boolean().optional(),
+  descriptionCode: z.boolean().optional(),
+  minText: z.number().optional(),
+  maxText: z.number().optional(),
+  minTags: z.number().min(0).optional(),
+  maxTags: z.number().min(0).optional(),
+  includeInput: z.boolean().optional(),
+  descriptionSide: z.enum(['top', 'right', 'bottom', 'left']).optional(),
+  searchPlaceholder: z.string().optional(),
+  selectPlaceholder: z.string().optional(),
+  searchPlaceholderCode: z.boolean().optional(),
+  selectPlaceholderCode: z.boolean().optional(),
+});
+
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
     name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
@@ -329,48 +366,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     customParams: z
       .object({
         defaultParamsEndpoint: z.string().default('custom'),
-        paramDefinitions: z
-          .array(
-            z.object({
-              key: z.string(),
-              description: z.string().optional(),
-              type: z.nativeEnum(SettingTypes).optional(),
-              default: z
-                .union([z.number(), z.boolean(), z.string(), z.array(z.string())])
-                .optional(),
-              showLabel: z.boolean().optional(),
-              showDefault: z.boolean().optional(),
-              options: z.array(z.string()).optional(),
-              range: z
-                .object({
-                  min: z.number(),
-                  max: z.number(),
-                  step: z.number().optional(),
-                })
-                .optional(),
-              enumMappings: z.record(z.union([z.number(), z.boolean(), z.string()])).optional(),
-              component: z.nativeEnum(ComponentTypes).optional(),
-              optionType: z.nativeEnum(OptionTypes).optional(),
-              columnSpan: z.number().optional(),
-              columns: z.number().min(1).max(4).optional(),
-              label: z.string().optional(),
-              placeholder: z.string().optional(),
-              labelCode: z.boolean().optional(),
-              placeholderCode: z.boolean().optional(),
-              descriptionCode: z.boolean().optional(),
-              minText: z.number().optional(),
-              maxText: z.number().optional(),
-              minTags: z.number().min(0).optional(),
-              maxTags: z.number().min(0).optional(),
-              includeInput: z.boolean().optional(),
-              descriptionSide: z.enum(['top', 'right', 'bottom', 'left']).optional(),
-              searchPlaceholder: z.string().optional(),
-              selectPlaceholder: z.string().optional(),
-              searchPlaceholderCode: z.boolean().optional(),
-              selectPlaceholderCode: z.boolean().optional(),
-            }),
-          )
-          .optional(),
+        paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
       .optional(),
@@ -900,7 +896,7 @@ export const webSearchSchema = z.object({
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
-  scraperTimeout: z.number().optional(),
+  scraperTimeout: z.number().int().nonnegative().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
   firecrawlOptions: z
     .object({
@@ -928,7 +924,7 @@ export const webSearchSchema = z.object({
       changeTrackingOptions: z
         .object({
           modes: z.array(z.string()).optional(),
-          schema: z.record(z.string()).optional(),
+          schema: z.record(z.unknown()).optional(),
           prompt: z.string().optional(),
           tag: z.string().nullable().optional(),
         })
