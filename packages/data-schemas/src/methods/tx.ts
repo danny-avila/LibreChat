@@ -387,7 +387,7 @@ export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: Tx
   function getPremiumRate(
     valueKey: string,
     tokenType: string,
-    inputTokenCount?: number,
+    inputTokenCount?: number | null,
   ): number | null {
     if (inputTokenCount == null) {
       return null;

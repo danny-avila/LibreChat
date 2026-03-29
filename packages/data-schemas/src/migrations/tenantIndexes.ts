@@ -55,7 +55,7 @@ export async function dropSupersededTenantIndexes(
   const result: MigrationResult = { dropped: [], skipped: [], errors: [] };
 
   for (const [collectionName, indexNames] of Object.entries(SUPERSEDED_INDEXES)) {
-    const collection = connection.db.collection(collectionName);
+    const collection = connection.db!.collection(collectionName);
 
     let existingIndexes: Array<{ name?: string }>;
     try {

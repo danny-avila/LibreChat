@@ -864,8 +864,8 @@ describe('spendTokens', () => {
       const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
 
       expect(result).not.toBeNull();
-      expect(result!.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
-      expect(result!.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
+      expect(result!.prompt!.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result!.completion!.completion).toBeCloseTo(-expectedCompletionCost, 0);
     });
 
     it('should charge standard rates for structured tokens when below threshold', async () => {
@@ -907,8 +907,8 @@ describe('spendTokens', () => {
       const expectedCompletionCost = tokenUsage.completionTokens * standardCompletionRate;
 
       expect(result).not.toBeNull();
-      expect(result!.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
-      expect(result!.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
+      expect(result!.prompt!.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result!.completion!.completion).toBeCloseTo(-expectedCompletionCost, 0);
     });
 
     it('should charge standard rates for gemini-3.1-pro-preview when prompt tokens are below threshold', async () => {
@@ -937,7 +937,7 @@ describe('spendTokens', () => {
         completionTokens * tokenValues['gemini-3.1'].completion;
 
       const balance = await Balance.findOne({ user: userId });
-      expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+      expect(balance!.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
     });
 
     it('should charge premium rates for gemini-3.1-pro-preview when prompt tokens exceed threshold', async () => {
@@ -966,7 +966,7 @@ describe('spendTokens', () => {
         completionTokens * premiumTokenValues['gemini-3.1'].completion;
 
       const balance = await Balance.findOne({ user: userId });
-      expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+      expect(balance!.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
     });
 
     it('should charge premium rates for gemini-3.1-pro-preview-customtools when prompt tokens exceed threshold', async () => {
@@ -995,7 +995,7 @@ describe('spendTokens', () => {
         completionTokens * premiumTokenValues['gemini-3.1'].completion;
 
       const balance = await Balance.findOne({ user: userId });
-      expect(balance.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+      expect(balance!.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
     });
 
     it('should charge premium rates for structured gemini-3.1 tokens when total input exceeds threshold', async () => {
@@ -1032,13 +1032,13 @@ describe('spendTokens', () => {
 
       const expectedPromptCost =
         tokenUsage.promptTokens.input * premiumPromptRate +
-        tokenUsage.promptTokens.write * writeRate +
-        tokenUsage.promptTokens.read * readRate;
+        tokenUsage.promptTokens.write * writeRate! +
+        tokenUsage.promptTokens.read * readRate!;
       const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
 
       expect(result).not.toBeNull();
-      expect(result!.prompt.prompt).toBeCloseTo(-expectedPromptCost, 0);
-      expect(result!.completion.completion).toBeCloseTo(-expectedCompletionCost, 0);
+      expect(result!.prompt!.prompt).toBeCloseTo(-expectedPromptCost, 0);
+      expect(result!.completion!.completion).toBeCloseTo(-expectedCompletionCost, 0);
     });
 
     it('should not apply premium pricing to non-premium models regardless of prompt size', async () => {

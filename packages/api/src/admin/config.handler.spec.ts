@@ -1,3 +1,5 @@
+import type { Response } from 'express';
+import type { ServerRequest } from '~/types/http';
 import { createAdminConfigHandlers } from './config';
 
 function mockReq(overrides = {}) {
@@ -7,23 +9,30 @@ function mockReq(overrides = {}) {
     body: {},
     query: {},
     ...overrides,
-  };
+  } as Partial<ServerRequest> as ServerRequest;
+}
+
+interface MockRes {
+  statusCode: number;
+  body: undefined | { config?: unknown; error?: string; [key: string]: unknown };
+  status: jest.Mock;
+  json: jest.Mock;
 }
 
 function mockRes() {
-  const res = {
+  const res: MockRes = {
     statusCode: 200,
     body: undefined,
-    status: jest.fn((code) => {
+    status: jest.fn((code: number) => {
       res.statusCode = code;
       return res;
     }),
-    json: jest.fn((data) => {
+    json: jest.fn((data: MockRes['body']) => {
       res.body = data;
       return res;
     }),
   };
-  return res;
+  return res as Partial<Response> as Response & MockRes;
 }
 
 function createHandlers(overrides = {}) {
@@ -93,7 +102,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.getConfig(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.config).toEqual(config);
+      expect(res.body!.config).toEqual(config);
     });
 
     it('returns 400 for invalid principalType', async () => {
@@ -191,7 +200,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.deleteConfigField(req, res);
 
       expect(res.statusCode).toBe(400);
-      expect(res.body.error).toContain('query parameter');
+      expect(res.body!.error).toContain('query parameter');
     });
 
     it('rejects unsafe field paths', async () => {
@@ -408,7 +417,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.getBaseConfig(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.config).toEqual({ interface: { endpointsMenu: true } });
+      expect(res.body!.config).toEqual({ interface: { endpointsMenu: true } });
     });
   });
 });

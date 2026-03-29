@@ -70,7 +70,7 @@ describe('upsertConfig', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { a: 1 },
+      { interface: { endpointsMenu: true } },
       10,
     );
 
@@ -78,7 +78,7 @@ describe('upsertConfig', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { a: 2 },
+      { interface: { endpointsMenu: false } },
       10,
     );
 
@@ -88,7 +88,7 @@ describe('upsertConfig', () => {
 
   it('normalizes ObjectId principalId to string', async () => {
     const oid = new Types.ObjectId();
-    await methods.upsertConfig(PrincipalType.USER, oid, PrincipalModel.USER, { test: true }, 100);
+    await methods.upsertConfig(PrincipalType.USER, oid, PrincipalModel.USER, { cache: true }, 100);
 
     const found = await methods.findConfigByPrincipal(PrincipalType.USER, oid.toString());
     expect(found).toBeTruthy();
@@ -98,7 +98,13 @@ describe('upsertConfig', () => {
 
 describe('findConfigByPrincipal', () => {
   it('finds an active config', async () => {
-    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, { x: 1 }, 10);
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { cache: true },
+      10,
+    );
 
     const result = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'admin');
     expect(result).toBeTruthy();
@@ -111,7 +117,13 @@ describe('findConfigByPrincipal', () => {
   });
 
   it('does not find inactive configs', async () => {
-    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, { x: 1 }, 10);
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { cache: true },
+      10,
+    );
     await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false);
 
     const result = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'admin');
@@ -155,7 +167,13 @@ describe('listAllConfigs', () => {
 
 describe('getApplicableConfigs', () => {
   it('always includes the __base__ config', async () => {
-    await methods.upsertConfig(PrincipalType.ROLE, '__base__', PrincipalModel.ROLE, { a: 1 }, 0);
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      '__base__',
+      PrincipalModel.ROLE,
+      { cache: true },
+      0,
+    );
 
     const configs = await methods.getApplicableConfigs([]);
     expect(configs).toHaveLength(1);
@@ -163,9 +181,27 @@ describe('getApplicableConfigs', () => {
   });
 
   it('returns base + matching principals', async () => {
-    await methods.upsertConfig(PrincipalType.ROLE, '__base__', PrincipalModel.ROLE, { a: 1 }, 0);
-    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, { b: 2 }, 10);
-    await methods.upsertConfig(PrincipalType.ROLE, 'user', PrincipalModel.ROLE, { c: 3 }, 10);
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      '__base__',
+      PrincipalModel.ROLE,
+      { cache: true },
+      0,
+    );
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { version: '2' },
+      10,
+    );
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'user',
+      PrincipalModel.ROLE,
+      { version: '3' },
+      10,
+    );
 
     const configs = await methods.getApplicableConfigs([
       { principalType: PrincipalType.ROLE, principalId: 'admin' },

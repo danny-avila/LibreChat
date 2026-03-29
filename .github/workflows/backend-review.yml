@@ -97,6 +97,65 @@ jobs:
           path: packages/api/dist
           retention-days: 2
 
+  typecheck:
+    name: TypeScript type checks
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            api/node_modules
+            packages/api/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+
+      - name: Download api build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-api
+          path: packages/api/dist
+
+      - name: Type check data-provider
+        run: npx tsc --noEmit -p packages/data-provider/tsconfig.json
+
+      - name: Type check data-schemas
+        run: npx tsc --noEmit -p packages/data-schemas/tsconfig.json
+
+      - name: Type check @librechat/api
+        run: npx tsc --noEmit -p packages/api/tsconfig.json
+
+      - name: Type check @librechat/client
+        run: npx tsc --noEmit -p packages/client/tsconfig.json
+
   circular-deps:
     name: Circular dependency checks
     needs: build

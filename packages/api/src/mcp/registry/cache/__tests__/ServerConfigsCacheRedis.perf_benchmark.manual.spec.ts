@@ -13,6 +13,7 @@
  * the current SCAN+GET implementation.
  */
 import { expect } from '@playwright/test';
+import type { RedisClientType } from 'redis';
 import type { ParsedServerConfig } from '~/mcp/types';
 
 describe('ServerConfigsCacheRedis Performance Benchmark', () => {
@@ -103,7 +104,9 @@ describe('ServerConfigsCacheRedis Performance Benchmark', () => {
           // Phase 1: SCAN only (key discovery)
           const scanStart = Date.now();
           const keys: string[] = [];
-          for await (const key of keyvRedisClient!.scanIterator({ MATCH: pattern })) {
+          for await (const key of (keyvRedisClient as RedisClientType).scanIterator({
+            MATCH: pattern,
+          })) {
             keys.push(key);
           }
           const scanMs = Date.now() - scanStart;
@@ -166,7 +169,9 @@ describe('ServerConfigsCacheRedis Performance Benchmark', () => {
         // Measure SCAN with noise
         const scanStart = Date.now();
         const keys: string[] = [];
-        for await (const key of keyvRedisClient!.scanIterator({ MATCH: pattern })) {
+        for await (const key of (keyvRedisClient as RedisClientType).scanIterator({
+          MATCH: pattern,
+        })) {
           keys.push(key);
         }
         const scanMs = Date.now() - scanStart;
@@ -299,7 +304,9 @@ describe('ServerConfigsCacheRedis Performance Benchmark', () => {
         // First, discover keys via SCAN (same for both approaches)
         const pattern = `*MCP::ServersRegistry::Servers::${ns}:*`;
         const keys: string[] = [];
-        for await (const key of keyvRedisClient!.scanIterator({ MATCH: pattern })) {
+        for await (const key of (keyvRedisClient as RedisClientType).scanIterator({
+          MATCH: pattern,
+        })) {
           keys.push(key);
         }
 

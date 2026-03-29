@@ -59,8 +59,8 @@ describe('redisClients Integration Tests', () => {
         if (keys.length > 0) {
           await ioredisClient.del(...keys);
         }
-      } catch (error: any) {
-        console.warn('Error cleaning up test keys:', error.message);
+      } catch (error) {
+        console.warn('Error cleaning up test keys:', (error as Error).message);
       }
     }
 
@@ -70,8 +70,8 @@ describe('redisClients Integration Tests', () => {
         if (ioredisClient.status === 'ready') {
           ioredisClient.disconnect();
         }
-      } catch (error: any) {
-        console.warn('Error disconnecting ioredis client:', error.message);
+      } catch (error) {
+        console.warn('Error disconnecting ioredis client:', (error as Error).message);
       }
       ioredisClient = null;
     }
@@ -80,8 +80,8 @@ describe('redisClients Integration Tests', () => {
       try {
         // Try to disconnect - keyv/redis client doesn't have an isReady property
         await keyvRedisClient.disconnect();
-      } catch (error: any) {
-        console.warn('Error disconnecting keyv redis client:', error.message);
+      } catch (error) {
+        console.warn('Error disconnecting keyv redis client:', (error as Error).message);
       }
       keyvRedisClient = null;
     }
@@ -138,7 +138,11 @@ describe('redisClients Integration Tests', () => {
       test('should connect and perform set/get/delete operations', async () => {
         const clients = await import('../redisClients');
         keyvRedisClient = clients.keyvRedisClient;
-        await testRedisOperations(keyvRedisClient!, 'keyv-single', clients.keyvRedisClientReady!);
+        await testRedisOperations(
+          keyvRedisClient!,
+          'keyv-single',
+          clients.keyvRedisClientReady!.then(() => undefined),
+        );
       });
     });
 
@@ -150,7 +154,11 @@ describe('redisClients Integration Tests', () => {
 
         const clients = await import('../redisClients');
         keyvRedisClient = clients.keyvRedisClient;
-        await testRedisOperations(keyvRedisClient!, 'keyv-cluster', clients.keyvRedisClientReady!);
+        await testRedisOperations(
+          keyvRedisClient!,
+          'keyv-cluster',
+          clients.keyvRedisClientReady!.then(() => undefined),
+        );
       });
     });
   });
