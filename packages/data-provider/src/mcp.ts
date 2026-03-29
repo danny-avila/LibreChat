@@ -18,7 +18,7 @@ const BaseOptionsSchema = z.object({
    */
   startup: z.boolean().optional(),
   iconPath: z.string().optional(),
-  timeout: z.number().optional(),
+  timeout: z.number().int().nonnegative().optional(),
   /** Timeout (ms) for the long-lived SSE GET stream body before undici aborts it. Default: 300_000 (5 min). */
   sseReadTimeout: z.number().positive().optional(),
   initTimeout: z.number().optional(),

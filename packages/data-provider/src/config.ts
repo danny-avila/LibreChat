@@ -375,7 +375,7 @@ export const endpointSchema = baseEndpointSchema.merge(
       .strict()
       .optional(),
     directEndpoint: z.boolean().optional(),
-    titleMessageRole: z.string().optional(),
+    titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
   }),
 );
 
@@ -537,7 +537,7 @@ const speechTab = z
       .optional()
       .or(
         z.object({
-          engineSTT: z.string().optional(),
+          engineSTT: z.enum(['openai', 'azureOpenAI']).optional(),
           languageSTT: z.string().optional(),
           autoTranscribeAudio: z.boolean().optional(),
           decibelValue: z.number().optional(),
@@ -550,11 +550,11 @@ const speechTab = z
       .optional()
       .or(
         z.object({
-          engineTTS: z.string().optional(),
+          engineTTS: z.enum(['openai', 'azureOpenAI', 'elevenlabs', 'localai']).optional(),
           voice: z.string().optional(),
           languageTTS: z.string().optional(),
           automaticPlayback: z.boolean().optional(),
-          playbackRate: z.number().optional(),
+          playbackRate: z.number().min(0.25).max(4).optional(),
           cacheTTS: z.boolean().optional(),
         }),
       )
@@ -909,7 +909,7 @@ export const webSearchSchema = z.object({
       excludeTags: z.array(z.string()).optional(),
       headers: z.record(z.string()).optional(),
       waitFor: z.number().optional(),
-      timeout: z.number().optional(),
+      timeout: z.number().int().nonnegative().optional(),
       maxAge: z.number().optional(),
       mobile: z.boolean().optional(),
       skipTlsVerification: z.boolean().optional(),
