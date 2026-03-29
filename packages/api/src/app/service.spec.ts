@@ -1,8 +1,12 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import { createAppConfigService } from './service';
 
-/** Test configs use mock fields that don't exist on AppConfig to verify merge behavior. */
-type TestConfig = AppConfig & Record<string, unknown>;
+/** Extends AppConfig with mock fields used by merge behavior tests. */
+interface TestConfig extends AppConfig {
+  restricted?: boolean;
+  x?: string;
+  interface?: { endpointsMenu?: boolean; [key: string]: boolean | undefined };
+}
 
 /**
  * Creates a mock cache that simulates Keyv's namespace behavior.
@@ -131,7 +135,7 @@ describe('createAppConfigService', () => {
 
       // Test data uses mock fields that don't exist on AppConfig to verify merge behavior
       const merged = config as TestConfig;
-      expect((merged.interface as Record<string, boolean>).endpointsMenu).toBe(false);
+      expect(merged.interface?.endpointsMenu).toBe(false);
       expect(merged.endpoints).toEqual(['openAI']);
     });
 

@@ -1,10 +1,3 @@
-/* String.prototype.isWellFormed — ES2024 API, available in Node 20+ but not in TS 5.3 lib */
-declare global {
-  interface String {
-    isWellFormed(): boolean;
-  }
-}
-
 import { sanitizeTitle, MAX_TITLE_LENGTH, DEFAULT_TITLE_FALLBACK } from './sanitizeTitle';
 
 describe('sanitizeTitle', () => {
