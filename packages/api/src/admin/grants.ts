@@ -194,7 +194,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      const readCap = READ_CAPABILITY_BY_TYPE[principalType as PrincipalType];
+      const readCap = READ_CAPABILITY_BY_TYPE[principalType as GrantPrincipalType];
       if (!readCap) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
@@ -223,7 +223,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       }
 
       const { principalType, principalId, capability } = req.body as {
-        principalType: PrincipalType;
+        principalType: GrantPrincipalType;
         principalId: string;
         capability: SystemCapability;
       };
@@ -290,7 +290,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       }
 
       const principals = await getUserPrincipals(caller);
-      const manageCap = MANAGE_CAPABILITY_BY_TYPE[principalType as PrincipalType];
+      const manageCap = MANAGE_CAPABILITY_BY_TYPE[principalType as GrantPrincipalType];
       if (
         !manageCap ||
         !(await hasCapabilityForPrincipals({ principals, capability: manageCap }))
