@@ -2,7 +2,7 @@ import { useCallback, useMemo, memo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import type { TMessageProps, TMessageIcon } from '~/common';
+import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
 import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
@@ -16,7 +16,14 @@ import store from '~/store';
 
 type ContentRenderProps = {
   message?: TMessage;
+  /**
+   * Effective isSubmitting: false for non-latest messages, real value for latest.
+   * Computed by the wrapper (MessageContent.tsx) so this memo'd component only re-renders
+   * when the value actually matters.
+   */
   isSubmitting?: boolean;
+  /** Stable context object from wrapper — avoids ChatContext subscription inside memo */
+  chatContext: TMessageChatContext;
 } & Pick<
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
@@ -30,6 +37,7 @@ const ContentRender = memo(function ContentRender({
   currentEditId,
   setCurrentEditId,
   isSubmitting = false,
+  chatContext,
 }: ContentRenderProps) {
   const localize = useLocalize();
   const { attachments, searchResults } = useAttachments({
@@ -55,6 +63,7 @@ const ContentRender = memo(function ContentRender({
     searchResults,
     currentEditId,
     setCurrentEditId,
+    chatContext,
   });
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
@@ -66,8 +75,6 @@ const ContentRender = memo(function ContentRender({
   );
   const hasNoChildren = !(msg?.children?.length ?? 0);
   const isLatestMessage = msg?.messageId === latestMessageId;
-  /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
-  const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
   const iconData: TMessageIcon = useMemo(
     () => ({
@@ -158,13 +165,13 @@ const ContentRender = memo(function ContentRender({
               searchResults={searchResults}
               setSiblingIdx={setSiblingIdx}
               isLatestMessage={isLatestMessage}
-              isSubmitting={effectiveIsSubmitting}
+              isSubmitting={isSubmitting}
               isCreatedByUser={msg.isCreatedByUser}
               conversationId={conversation?.conversationId}
               content={msg.content as Array<TMessageContentParts | undefined>}
             />
           </div>
-          {hasNoChildren && effectiveIsSubmitting ? (
+          {hasNoChildren && isSubmitting ? (
             <PlaceholderRow />
           ) : (
             <SubRow classes="text-xs">

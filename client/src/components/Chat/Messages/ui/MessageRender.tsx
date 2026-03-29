@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, memo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import type { TMessageProps, TMessageIcon } from '~/common';
+import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
 import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
@@ -17,7 +17,14 @@ import store from '~/store';
 
 type MessageRenderProps = {
   message?: TMessage;
+  /**
+   * Effective isSubmitting: false for non-latest messages, real value for latest.
+   * Computed by the wrapper (Message.tsx) so this memo'd component only re-renders
+   * when the value actually matters.
+   */
   isSubmitting?: boolean;
+  /** Stable context object from wrapper — avoids ChatContext subscription inside memo */
+  chatContext: TMessageChatContext;
 } & Pick<
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
@@ -31,6 +38,7 @@ const MessageRender = memo(function MessageRender({
   currentEditId,
   setCurrentEditId,
   isSubmitting = false,
+  chatContext,
 }: MessageRenderProps) {
   const localize = useLocalize();
   const {
@@ -52,6 +60,7 @@ const MessageRender = memo(function MessageRender({
     message: msg,
     currentEditId,
     setCurrentEditId,
+    chatContext,
   });
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
@@ -63,8 +72,6 @@ const MessageRender = memo(function MessageRender({
     [hasNoChildren, msg?.depth, latestMessageDepth],
   );
   const isLatestMessage = msg?.messageId === latestMessageId;
-  /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
-  const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
   const iconData: TMessageIcon = useMemo(
     () => ({
@@ -92,10 +99,10 @@ const MessageRender = memo(function MessageRender({
       messageId,
       isLatestMessage,
       isExpanded: false as const,
-      isSubmitting: effectiveIsSubmitting,
+      isSubmitting,
       conversationId: conversation?.conversationId,
     }),
-    [messageId, conversation?.conversationId, effectiveIsSubmitting, isLatestMessage],
+    [messageId, conversation?.conversationId, isSubmitting, isLatestMessage],
   );
 
   if (!msg) {
@@ -165,7 +172,7 @@ const MessageRender = memo(function MessageRender({
                 message={msg}
                 enterEdit={enterEdit}
                 error={!!(msg.error ?? false)}
-                isSubmitting={effectiveIsSubmitting}
+                isSubmitting={isSubmitting}
                 unfinished={msg.unfinished ?? false}
                 isCreatedByUser={msg.isCreatedByUser ?? true}
                 siblingIdx={siblingIdx ?? 0}
@@ -173,7 +180,7 @@ const MessageRender = memo(function MessageRender({
               />
             </MessageContext.Provider>
           </div>
-          {hasNoChildren && effectiveIsSubmitting ? (
+          {hasNoChildren && isSubmitting ? (
             <PlaceholderRow />
           ) : (
             <SubRow classes="text-xs">
