@@ -409,5 +409,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     </form>
   );
 });
+ChatForm.displayName = 'ChatForm';
 
 export default ChatForm;
