@@ -925,6 +925,11 @@ export const tQueryParamsSchema = tConversationSchema
 
 /** Narrowed preset schema for use in model specs — omits system/DB/deprecated fields */
 export const tModelSpecPresetSchema = tPresetSchema.omit({
+  conversationId: true,
+  presetId: true,
+  title: true,
+  defaultPreset: true,
+  order: true,
   isArchived: true,
   user: true,
   messages: true,

@@ -106,6 +106,11 @@ describe('paramDefinitionSchema', () => {
 describe('tModelSpecPresetSchema', () => {
   it('strips system/DB fields from preset', () => {
     const result = tModelSpecPresetSchema.safeParse({
+      conversationId: 'conv-123',
+      presetId: 'preset-456',
+      title: 'My Preset',
+      defaultPreset: true,
+      order: 3,
       isArchived: true,
       user: 'user123',
       messages: ['msg1'],
@@ -118,6 +123,11 @@ describe('tModelSpecPresetSchema', () => {
     });
     expect(result.success).toBe(true);
     if (result.success) {
+      expect(result.data).not.toHaveProperty('conversationId');
+      expect(result.data).not.toHaveProperty('presetId');
+      expect(result.data).not.toHaveProperty('title');
+      expect(result.data).not.toHaveProperty('defaultPreset');
+      expect(result.data).not.toHaveProperty('order');
       expect(result.data).not.toHaveProperty('isArchived');
       expect(result.data).not.toHaveProperty('user');
       expect(result.data).not.toHaveProperty('messages');
