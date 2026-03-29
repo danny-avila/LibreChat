@@ -104,7 +104,7 @@ const BaseOptionsSchema = z.object({
 });
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
-  type: z.literal('stdio').optional(),
+  type: z.literal('stdio').default('stdio'),
   /**
    * The executable to run to start the server.
    */
@@ -140,11 +140,13 @@ export const StdioOptionsSchema = BaseOptionsSchema.extend({
    *
    * The default is "inherit", meaning messages to stderr will be printed to the parent process's stderr.
    */
-  stderr: z.any().optional(),
+  stderr: z
+    .union([z.enum(['pipe', 'ignore', 'inherit']), z.number().int().nonnegative()])
+    .optional(),
 });
 
 export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
-  type: z.literal('websocket').optional(),
+  type: z.literal('websocket').default('websocket'),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
@@ -161,7 +163,7 @@ export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
 });
 
 export const SSEOptionsSchema = BaseOptionsSchema.extend({
-  type: z.literal('sse').optional(),
+  type: z.literal('sse').default('sse'),
   headers: z.record(z.string(), z.string()).optional(),
   url: z
     .string()
