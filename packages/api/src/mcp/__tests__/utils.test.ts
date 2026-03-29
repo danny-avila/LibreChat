@@ -1,5 +1,53 @@
-import { normalizeServerName, redactServerSecrets, redactAllServerSecrets } from '~/mcp/utils';
+import {
+  isOAuthError,
+  normalizeServerName,
+  redactServerSecrets,
+  redactAllServerSecrets,
+} from '~/mcp/utils';
 import type { ParsedServerConfig } from '~/mcp/types';
+
+describe('isOAuthError', () => {
+  it('should return true for error with code 401', () => {
+    expect(isOAuthError({ code: 401, message: 'Unauthorized' })).toBe(true);
+  });
+
+  it('should return true for error with code 403', () => {
+    expect(isOAuthError({ code: 403, message: 'Forbidden' })).toBe(true);
+  });
+
+  it('should return true for message containing 401', () => {
+    expect(isOAuthError(new Error('Non-200 status code (401)'))).toBe(true);
+  });
+
+  it('should return true for message containing invalid_token', () => {
+    expect(isOAuthError(new Error('invalid_token: token expired'))).toBe(true);
+  });
+
+  it('should return true for message containing invalid_grant', () => {
+    expect(isOAuthError(new Error('invalid_grant: refresh token revoked'))).toBe(true);
+  });
+
+  it('should return true for message containing authentication required', () => {
+    expect(isOAuthError(new Error('Authentication Required'))).toBe(true);
+  });
+
+  it('should return true for message containing unauthorized', () => {
+    expect(isOAuthError(new Error('Unauthorized access'))).toBe(true);
+  });
+
+  it('should return false for non-auth errors', () => {
+    expect(isOAuthError(new Error('Connection timeout'))).toBe(false);
+    expect(isOAuthError(new Error('Internal server error'))).toBe(false);
+    expect(isOAuthError({ code: 500, message: 'Server error' })).toBe(false);
+  });
+
+  it('should return false for null/undefined/non-object', () => {
+    expect(isOAuthError(null)).toBe(false);
+    expect(isOAuthError(undefined)).toBe(false);
+    expect(isOAuthError('string error')).toBe(false);
+    expect(isOAuthError(42)).toBe(false);
+  });
+});
 
 describe('normalizeServerName', () => {
   it('should not modify server names that already match the pattern', () => {

@@ -1,6 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver } from '~/utils/graph';
+import type { FlowStateManager } from '~/flow/manager';
+import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type * as t from '~/mcp/types';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
@@ -964,6 +966,181 @@ describe('MCPManager', () => {
         expect.objectContaining({ serverName }),
         expect.objectContaining({ user: mockUser, useOAuth: true }),
       );
+    });
+  });
+
+  describe('callTool - OAuth retry on 401', () => {
+    const mockUser: Partial<IUser> = {
+      id: 'user-123',
+      provider: 'openid',
+      openidId: 'oidc-sub-456',
+    };
+
+    const mockFlowManager = {
+      getState: jest.fn(),
+      setState: jest.fn(),
+      clearState: jest.fn(),
+      createFlow: jest.fn(),
+      getFlowState: jest.fn(),
+      deleteFlow: jest.fn(),
+      initFlow: jest.fn(),
+    } as unknown as FlowStateManager<MCPOAuthTokens | null>;
+
+    const mockOauthStart = jest.fn().mockResolvedValue(undefined);
+
+    const toolCallParams = {
+      user: mockUser as IUser,
+      serverName,
+      toolName: 'test_tool',
+      provider: 'openai' as t.Provider,
+      flowManager: mockFlowManager,
+      oauthStart: mockOauthStart,
+    };
+
+    function createMockConnection(requestFn: jest.Mock) {
+      return {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        timeout: 30000,
+        client: { request: requestFn },
+      } as unknown as MCPConnection;
+    }
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options) => options,
+      );
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+      });
+    });
+
+    it('should retry tool call after successful OAuth flow on 401', async () => {
+      const requestFn = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Non-200 status code (401)'))
+        .mockResolvedValueOnce({
+          content: [{ type: 'text', text: 'Success after OAuth' }],
+          isError: false,
+        });
+
+      let callCount = 0;
+      mockAppConnections({
+        get: jest.fn().mockImplementation(() => {
+          callCount++;
+          return Promise.resolve(createMockConnection(requestFn));
+        }),
+      });
+
+      (MCPConnectionFactory.handleToolCallOAuth as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue({ access_token: 'new-token' });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'disconnectUserConnection').mockResolvedValue(undefined);
+
+      const result = await manager.callTool(toolCallParams);
+
+      expect(result).toBeDefined();
+      expect(MCPConnectionFactory.handleToolCallOAuth).toHaveBeenCalledTimes(1);
+      expect(manager.disconnectUserConnection).toHaveBeenCalledWith(mockUser.id, serverName);
+      expect(requestFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('should only retry once even if retry also returns 401', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const requestFn = jest.fn().mockRejectedValue(authError);
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(createMockConnection(requestFn)),
+      });
+
+      (MCPConnectionFactory.handleToolCallOAuth as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue({ access_token: 'new-token' });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'disconnectUserConnection').mockResolvedValue(undefined);
+
+      await expect(manager.callTool(toolCallParams)).rejects.toThrow();
+      expect(MCPConnectionFactory.handleToolCallOAuth).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw immediately without OAuth attempt when no flowManager', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const requestFn = jest.fn().mockRejectedValue(authError);
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(createMockConnection(requestFn)),
+      });
+
+      (MCPConnectionFactory.handleToolCallOAuth as jest.Mock) = jest.fn();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(
+        manager.callTool({
+          ...toolCallParams,
+          flowManager: undefined as unknown as FlowStateManager<MCPOAuthTokens | null>,
+        }),
+      ).rejects.toThrow('401');
+
+      expect(MCPConnectionFactory.handleToolCallOAuth).not.toHaveBeenCalled();
+    });
+
+    it('should throw immediately without OAuth attempt when no oauthStart', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const requestFn = jest.fn().mockRejectedValue(authError);
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(createMockConnection(requestFn)),
+      });
+
+      (MCPConnectionFactory.handleToolCallOAuth as jest.Mock) = jest.fn();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(
+        manager.callTool({
+          ...toolCallParams,
+          oauthStart: undefined,
+        }),
+      ).rejects.toThrow('401');
+
+      expect(MCPConnectionFactory.handleToolCallOAuth).not.toHaveBeenCalled();
+    });
+
+    it('should throw original error when OAuth flow returns no tokens', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const requestFn = jest.fn().mockRejectedValue(authError);
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(createMockConnection(requestFn)),
+      });
+
+      (MCPConnectionFactory.handleToolCallOAuth as jest.Mock) = jest.fn().mockResolvedValue(null);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(manager.callTool(toolCallParams)).rejects.toThrow('401');
+      expect(MCPConnectionFactory.handleToolCallOAuth).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not attempt OAuth for non-auth errors', async () => {
+      const requestFn = jest.fn().mockRejectedValue(new Error('Connection timeout'));
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(createMockConnection(requestFn)),
+      });
+
+      (MCPConnectionFactory.handleToolCallOAuth as jest.Mock) = jest.fn();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(manager.callTool(toolCallParams)).rejects.toThrow('Connection timeout');
+      expect(MCPConnectionFactory.handleToolCallOAuth).not.toHaveBeenCalled();
     });
   });
 });

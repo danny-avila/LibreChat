@@ -111,6 +111,38 @@ export function sanitizeUrlForLogging(url: string | URL): string {
   }
 }
 
+/** Determines if an error indicates OAuth authentication is required */
+export function isOAuthError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  if ('code' in error) {
+    const code = (error as { code?: number }).code;
+    if (code === 401 || code === 403) {
+      return true;
+    }
+  }
+
+  if ('message' in error && typeof (error as { message?: unknown }).message === 'string') {
+    const message = ((error as { message: string }).message).toLowerCase();
+    if (message.includes('401') || message.includes('non-200 status code (401)')) {
+      return true;
+    }
+    if (message.includes('invalid_token')) {
+      return true;
+    }
+    if (message.includes('invalid_grant')) {
+      return true;
+    }
+    if (message.includes('authentication required') || message.includes('unauthorized')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Escapes special regex characters in a string so they are treated literally.
  * @param str - The string to escape
