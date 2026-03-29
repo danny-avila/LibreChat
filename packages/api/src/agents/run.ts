@@ -359,7 +359,7 @@ export async function createRun({
       llmConfig.usage = true;
     }
 
-    if (bedrockSystemInstruction) {
+    if (agent.provider === EModelEndpoint.bedrock && typeof llmConfig.system === 'string') {
       delete llmConfig.system;
     }
 
