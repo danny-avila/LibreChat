@@ -442,7 +442,7 @@ export const fileConfig = {
   },
 };
 
-const supportedMimeTypesSchema = z.array(z.union([z.string(), z.instanceof(RegExp)])).optional();
+const supportedMimeTypesSchema = z.array(z.string()).optional();
 
 export const endpointFileConfigSchema = z.object({
   disabled: z.boolean().optional(),
@@ -681,7 +681,7 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...ocrRest,
     };
     if (ocrMimeTypes) {
-      mergedConfig.ocr.supportedMimeTypes = convertStringsToRegex(ocrMimeTypes as string[]);
+      mergedConfig.ocr.supportedMimeTypes = convertStringsToRegex(ocrMimeTypes);
     }
   }
 
@@ -692,7 +692,7 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...textRest,
     };
     if (textMimeTypes) {
-      mergedConfig.text.supportedMimeTypes = convertStringsToRegex(textMimeTypes as string[]);
+      mergedConfig.text.supportedMimeTypes = convertStringsToRegex(textMimeTypes);
     }
   }
 

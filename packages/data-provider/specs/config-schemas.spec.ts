@@ -4,9 +4,7 @@ import {
   agentsEndpointSchema,
   azureEndpointSchema,
 } from '../src/config';
-import { tModelSpecPresetSchema } from '../src/schemas';
-import { tModelSpecSchema } from '../src/models';
-import { EModelEndpoint } from '../src/schemas';
+import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
 
 describe('paramDefinitionSchema', () => {
   it('accepts a minimal definition with only key', () => {
@@ -113,6 +111,7 @@ describe('tModelSpecPresetSchema', () => {
       messages: ['msg1'],
       tags: ['tag1'],
       file_ids: ['file1'],
+      expiredAt: '2026-12-31',
       parentMessageId: 'parent1',
       model: 'gpt-4o',
       endpoint: EModelEndpoint.openAI,
@@ -124,6 +123,7 @@ describe('tModelSpecPresetSchema', () => {
       expect(result.data).not.toHaveProperty('messages');
       expect(result.data).not.toHaveProperty('tags');
       expect(result.data).not.toHaveProperty('file_ids');
+      expect(result.data).not.toHaveProperty('expiredAt');
       expect(result.data).not.toHaveProperty('parentMessageId');
       expect(result.data).toHaveProperty('model', 'gpt-4o');
     }
@@ -237,5 +237,8 @@ describe('azureEndpointSchema', () => {
       plugins: true,
     });
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('plugins');
+    }
   });
 });
