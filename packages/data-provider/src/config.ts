@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema, isAgentsEndpoint } from './schemas';
+import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
@@ -279,6 +280,7 @@ export const defaultAgentCapabilities = [
 ];
 
 export const agentsEndpointSchema = baseEndpointSchema
+  .omit({ baseURL: true })
   .merge(
     z.object({
       /* agents specific */
@@ -319,8 +321,6 @@ export const endpointSchema = baseEndpointSchema.merge(
       fetch: z.boolean().optional(),
       userIdQuery: z.boolean().optional(),
     }),
-    summarize: z.boolean().optional(),
-    summaryModel: z.string().optional(),
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
     headers: z.record(z.any()).optional(),
@@ -329,11 +329,51 @@ export const endpointSchema = baseEndpointSchema.merge(
     customParams: z
       .object({
         defaultParamsEndpoint: z.string().default('custom'),
-        paramDefinitions: z.array(z.record(z.any())).optional(),
+        paramDefinitions: z
+          .array(
+            z.object({
+              key: z.string(),
+              description: z.string().optional(),
+              type: z.nativeEnum(SettingTypes).optional(),
+              default: z
+                .union([z.number(), z.boolean(), z.string(), z.array(z.string())])
+                .optional(),
+              showLabel: z.boolean().optional(),
+              showDefault: z.boolean().optional(),
+              options: z.array(z.string()).optional(),
+              range: z
+                .object({
+                  min: z.number(),
+                  max: z.number(),
+                  step: z.number().optional(),
+                })
+                .optional(),
+              enumMappings: z.record(z.union([z.number(), z.boolean(), z.string()])).optional(),
+              component: z.nativeEnum(ComponentTypes).optional(),
+              optionType: z.nativeEnum(OptionTypes).optional(),
+              columnSpan: z.number().optional(),
+              columns: z.number().min(1).max(4).optional(),
+              label: z.string().optional(),
+              placeholder: z.string().optional(),
+              labelCode: z.boolean().optional(),
+              placeholderCode: z.boolean().optional(),
+              descriptionCode: z.boolean().optional(),
+              minText: z.number().optional(),
+              maxText: z.number().optional(),
+              minTags: z.number().min(0).optional(),
+              maxTags: z.number().min(0).optional(),
+              includeInput: z.boolean().optional(),
+              descriptionSide: z.enum(['top', 'right', 'bottom', 'left']).optional(),
+              searchPlaceholder: z.string().optional(),
+              selectPlaceholder: z.string().optional(),
+              searchPlaceholderCode: z.boolean().optional(),
+              selectPlaceholderCode: z.boolean().optional(),
+            }),
+          )
+          .optional(),
       })
       .strict()
       .optional(),
-    customOrder: z.number().optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.string().optional(),
   }),
@@ -344,7 +384,6 @@ export type TEndpoint = z.infer<typeof endpointSchema>;
 export const azureEndpointSchema = z
   .object({
     groups: azureGroupConfigsSchema,
-    plugins: z.boolean().optional(),
     assistants: z.boolean().optional(),
   })
   .and(
@@ -356,9 +395,6 @@ export const azureEndpointSchema = z
         titleModel: true,
         titlePrompt: true,
         titlePromptTemplate: true,
-        summarize: true,
-        summaryModel: true,
-        customOrder: true,
       })
       .partial(),
   );
@@ -1026,7 +1062,7 @@ export const configSchema = z.object({
   modelSpecs: specsConfigSchema.optional(),
   endpoints: z
     .object({
-      all: baseEndpointSchema.optional(),
+      all: baseEndpointSchema.omit({ baseURL: true }).optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
       [EModelEndpoint.anthropic]: anthropicEndpointSchema.optional(),
