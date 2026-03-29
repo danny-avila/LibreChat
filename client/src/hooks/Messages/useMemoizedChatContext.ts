@@ -39,6 +39,13 @@ export default function useMemoizedChatContext(
     ],
   );
 
+  /**
+   * `isSubmitting` is included in deps so that chatContext gets a new reference
+   * when streaming starts/ends (2x per session). This ensures HoverButtons
+   * re-renders to update regenerate/edit button visibility via useGenerationsByLatest.
+   * The getter pattern is still valuable: callbacks reading chatContext.isSubmitting
+   * at call-time always get the current value even between these re-renders.
+   */
   const chatContext: TMessageChatContext = useMemo(
     () => ({
       ask: chatCtx.ask,
@@ -60,6 +67,7 @@ export default function useMemoizedChatContext(
       chatCtx.latestMessageId,
       chatCtx.latestMessageDepth,
       chatCtx.handleContinue,
+      isSubmitting,
     ],
   );
 

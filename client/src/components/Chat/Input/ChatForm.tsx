@@ -428,7 +428,7 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
       conversation?.spec,
       conversation?.useResponsesApi,
       conversation?.model,
-      conversation?.messages?.length,
+      (conversation?.messages?.length ?? 0) > 0,
     ],
   );
 

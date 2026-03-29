@@ -99,7 +99,6 @@ function setupMocks(overrides: { provider?: string } = {}) {
     codeEnabled: false,
   });
   mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: {} });
-  mockUseFileHandling.mockReturnValue({ handleFileChange: jest.fn() });
   mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange: jest.fn() });
   const sharePointReturnValue = {
     handleSharePointFiles: jest.fn(),

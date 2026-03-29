@@ -47,6 +47,9 @@ export default function useMessageActions(props: TMessageActions) {
     latestMessageId,
     latestMessageDepth,
     handleContinue,
+    // NOTE: isSubmitting is intentionally NOT destructured here.
+    // chatContext.isSubmitting is a getter backed by a ref — destructuring
+    // would capture a one-time snapshot. Always access via chatContext.isSubmitting.
   } = chatContext;
 
   const getAddedConvo = useGetAddedConvo();
