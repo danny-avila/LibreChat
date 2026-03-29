@@ -352,7 +352,13 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               )}
             >
               <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
-                <AttachFileChat conversation={stableConversation} disableInputs={disableInputs} />
+                <AttachFileChat
+                  conversation={stableConversation}
+                  disableInputs={disableInputs}
+                  files={files}
+                  setFiles={setFiles}
+                  setFilesLoading={setFilesLoading}
+                />
               </div>
               <BadgeRow
                 showEphemeralBadges={

@@ -110,7 +110,14 @@ function renderMenu(props: Record<string, unknown> = {}) {
   return render(
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
-        <AttachFileMenu conversationId="test-convo" {...props} />
+        <AttachFileMenu
+          conversationId="test-convo"
+          files={new Map()}
+          setFiles={() => {}}
+          setFilesLoading={() => {}}
+          conversation={null}
+          {...props}
+        />
       </RecoilRoot>
     </QueryClientProvider>,
   );

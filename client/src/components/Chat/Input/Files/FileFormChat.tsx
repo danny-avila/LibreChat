@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useFileHandling } from '~/hooks';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import FileRow from './FileRow';
 import store from '~/store';
 
@@ -19,7 +19,12 @@ function FileFormChat({
 }) {
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
   const { endpoint: _endpoint } = conversation ?? { endpoint: null };
-  const { abortUpload } = useFileHandling();
+  const { abortUpload } = useFileHandlingNoChatContext(undefined, {
+    files,
+    setFiles,
+    setFilesLoading,
+    conversation,
+  });
 
   const isRTL = chatDirection === 'rtl';
 
