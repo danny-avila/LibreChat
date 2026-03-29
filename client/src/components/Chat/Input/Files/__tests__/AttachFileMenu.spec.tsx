@@ -9,7 +9,6 @@ jest.mock('~/hooks', () => ({
   useAgentToolPermissions: jest.fn(),
   useAgentCapabilities: jest.fn(),
   useGetAgentsConfig: jest.fn(),
-  useFileHandling: jest.fn(),
   useFileHandlingNoChatContext: jest.fn(),
   useLocalize: jest.fn(),
 }));
@@ -69,7 +68,6 @@ jest.mock('@ariakit/react', () => {
 const mockUseAgentToolPermissions = jest.requireMock('~/hooks').useAgentToolPermissions;
 const mockUseAgentCapabilities = jest.requireMock('~/hooks').useAgentCapabilities;
 const mockUseGetAgentsConfig = jest.requireMock('~/hooks').useGetAgentsConfig;
-const mockUseFileHandling = jest.requireMock('~/hooks').useFileHandling;
 const mockUseFileHandlingNoChatContext = jest.requireMock('~/hooks').useFileHandlingNoChatContext;
 const mockUseLocalize = jest.requireMock('~/hooks').useLocalize;
 const mockUseSharePointFileHandling = jest.requireMock(
