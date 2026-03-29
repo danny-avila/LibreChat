@@ -152,6 +152,15 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     }
   }, [isCollapsed]);
 
+  const handleTextareaFocus = useCallback(() => {
+    handleFocusOrClick();
+    setIsTextAreaFocused(true);
+  }, [handleFocusOrClick]);
+
+  const handleTextareaBlur = useCallback(() => {
+    setIsTextAreaFocused(false);
+  }, []);
+
   useAutoSave({
     files,
     setFiles,
@@ -321,11 +330,8 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     tabIndex={0}
                     data-testid="text-input"
                     rows={1}
-                    onFocus={() => {
-                      handleFocusOrClick();
-                      setIsTextAreaFocused(true);
-                    }}
-                    onBlur={setIsTextAreaFocused.bind(null, false)}
+                    onFocus={handleTextareaFocus}
+                    onBlur={handleTextareaBlur}
                     aria-label={localize('com_ui_message_input')}
                     onClick={handleFocusOrClick}
                     style={{ height: 44, overflowY: 'auto' }}

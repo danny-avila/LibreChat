@@ -32,7 +32,7 @@ import {
   useFileHandlingNoChatContext,
   useLocalize,
 } from '~/hooks';
-import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
+import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -87,9 +87,11 @@ const AttachFileMenu = ({
     setFilesLoading,
     conversation,
   });
-  const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    toolResource,
-  });
+  const { handleSharePointFiles, isProcessing, downloadProgress } =
+    useSharePointFileHandlingNoChatContext(
+      { toolResource },
+      { files, setFiles, setFilesLoading, conversation },
+    );
 
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();

@@ -17,6 +17,7 @@ jest.mock('~/hooks', () => ({
 jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
   __esModule: true,
   default: jest.fn(),
+  useSharePointFileHandlingNoChatContext: jest.fn(),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -74,6 +75,9 @@ const mockUseLocalize = jest.requireMock('~/hooks').useLocalize;
 const mockUseSharePointFileHandling = jest.requireMock(
   '~/hooks/Files/useSharePointFileHandling',
 ).default;
+const mockUseSharePointFileHandlingNoChatContext = jest.requireMock(
+  '~/hooks/Files/useSharePointFileHandling',
+).useSharePointFileHandlingNoChatContext;
 const mockUseGetStartupConfig = jest.requireMock('~/data-provider').useGetStartupConfig;
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -97,11 +101,14 @@ function setupMocks(overrides: { provider?: string } = {}) {
   mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: {} });
   mockUseFileHandling.mockReturnValue({ handleFileChange: jest.fn() });
   mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange: jest.fn() });
-  mockUseSharePointFileHandling.mockReturnValue({
+  const sharePointReturnValue = {
     handleSharePointFiles: jest.fn(),
     isProcessing: false,
     downloadProgress: 0,
-  });
+    error: null,
+  };
+  mockUseSharePointFileHandling.mockReturnValue(sharePointReturnValue);
+  mockUseSharePointFileHandlingNoChatContext.mockReturnValue(sharePointReturnValue);
   mockUseGetStartupConfig.mockReturnValue({ data: { sharePointFilePickerEnabled: false } });
   mockUseAgentToolPermissions.mockReturnValue({
     fileSearchAllowedByAgent: false,
