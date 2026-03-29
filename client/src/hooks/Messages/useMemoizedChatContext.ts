@@ -1,4 +1,4 @@
-import { useRef, useMemo, useCallback } from 'react';
+import { useRef, useMemo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageChatContext } from '~/common/types';
 import { useChatContext } from '~/Providers';
