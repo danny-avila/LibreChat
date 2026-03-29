@@ -121,11 +121,11 @@ export const azureBaseSchema = z.object({
   instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
   assistants: z.boolean().optional(),
-  addParams: z.record(z.any()).optional(),
+  addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   dropParams: z.array(z.string()).optional(),
   version: z.string().optional(),
   baseURL: z.string().optional(),
-  additionalHeaders: z.record(z.any()).optional(),
+  additionalHeaders: z.record(z.string()).optional(),
 });
 
 export type TAzureBaseSchema = z.infer<typeof azureBaseSchema>;
@@ -258,7 +258,7 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
         userIdQuery: z.boolean().optional(),
       })
       .optional(),
-    headers: z.record(z.any()).optional(),
+    headers: z.record(z.string()).optional(),
   }),
 );
 
@@ -323,8 +323,8 @@ export const endpointSchema = baseEndpointSchema.merge(
     }),
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
-    headers: z.record(z.any()).optional(),
-    addParams: z.record(z.any()).optional(),
+    headers: z.record(z.string()).optional(),
+    addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
     dropParams: z.array(z.string()).optional(),
     customParams: z
       .object({
@@ -928,7 +928,7 @@ export const webSearchSchema = z.object({
       changeTrackingOptions: z
         .object({
           modes: z.array(z.string()).optional(),
-          schema: z.record(z.unknown()).optional(),
+          schema: z.record(z.string()).optional(),
           prompt: z.string().optional(),
           tag: z.string().nullable().optional(),
         })
@@ -978,7 +978,7 @@ export const memorySchema = z.object({
         provider: z.string(),
         model: z.string(),
         instructions: z.string().optional(),
-        model_parameters: z.record(z.any()).optional(),
+        model_parameters: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
       }),
     ])
     .optional(),
