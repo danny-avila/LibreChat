@@ -1,5 +1,8 @@
 services:
   api:
+    build:
+      context: .
+      dockerfile: Dockerfile
     user: "1000:1000"
     ports: !override []  # Caddy proxies via Docker network — no host binding needed
     volumes:
