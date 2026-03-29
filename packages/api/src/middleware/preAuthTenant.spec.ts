@@ -13,7 +13,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 describe('preAuthTenantMiddleware', () => {
-  let req: Partial<Request>;
+  let req: { headers: Record<string, string | string[] | undefined>; ip?: string; path?: string };
   let res: Partial<Response>;
 
   beforeEach(() => {
