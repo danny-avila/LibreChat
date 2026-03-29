@@ -7,24 +7,26 @@ import store from '~/store';
 
 /** Syncs the `chatDirection` Recoil state to `document.documentElement.dir`
  *  so all CSS `dir`-aware and Tailwind `rtl:` variants work automatically.
- *  Also bootstraps direction + speech locale from the stored language on first load. */
+ *  Only applies direction + speech locale when the user has explicitly set a language. */
 export default function DirectionManager() {
   const [chatDirection, setChatDirection] = useRecoilState(store.chatDirection);
   const [languageSTT, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
   const [, setLanguageTTS] = useRecoilState<string>(store.languageTTS);
 
   useEffect(() => {
-    const storedLang = Cookies.get('lang') || localStorage.getItem('lang') || navigator.language;
-    if (storedLang) {
-      document.documentElement.lang = storedLang;
-      if (isRTLLanguage(storedLang)) {
-        setChatDirection('RTL');
-      }
-      if (!languageSTT) {
-        const locale = getSpeechLocale(storedLang);
-        setLanguageSTT(locale);
-        setLanguageTTS(locale);
-      }
+    // Only honour an explicit user choice — never auto-detect from navigator.language
+    const storedLang = Cookies.get('lang') || localStorage.getItem('lang');
+    if (!storedLang) {
+      return;
+    }
+    document.documentElement.lang = storedLang;
+    if (isRTLLanguage(storedLang)) {
+      setChatDirection('RTL');
+    }
+    if (!languageSTT) {
+      const locale = getSpeechLocale(storedLang);
+      setLanguageSTT(locale);
+      setLanguageTTS(locale);
     }
   // Only run once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
