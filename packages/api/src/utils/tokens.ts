@@ -72,6 +72,7 @@ const mistralModels = {
   'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
   'mistral-large': 131000,
+  'mistral-large-3': 255000,
   'mistral-saba': 32000,
   'ministral-3b': 131000,
   'ministral-8b': 131000,
