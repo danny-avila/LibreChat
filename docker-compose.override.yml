@@ -1,0 +1,235 @@
+services:
+  api:
+    user: "1000:1000"
+    ports: !override []  # Caddy proxies via Docker network — no host binding needed
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+    # Resource limits for stability
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    container_name: librechat-redis
+    image: redis:7-alpine
+    restart: always
+    user: "1000:1000"
+    command: ["redis-server", "--save", "", "--stop-writes-on-bgsave-error", "no", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - redis-data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  mongodb:
+    user: "1000:1000"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  meilisearch:
+    user: "1000:1000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  vectordb:
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "myuser"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  rag_api:
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+
+  piston:
+    container_name: librechat-piston
+    image: ghcr.io/engineer-man/piston:latest
+    restart: always
+    privileged: true
+    working_dir: /tmp
+    volumes:
+      - piston-data:/piston
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+  piston_action:
+    container_name: librechat-piston-action
+    image: node:20-alpine
+    restart: always
+    depends_on:
+      piston:
+        condition: service_started
+    environment:
+      - PORT=3333
+      - PISTON_URL=http://piston:2000
+    command: ["node", "/app/config/piston-action-server.js"]
+    volumes:
+      - ./config:/app/config:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # One-shot container that installs Piston language runtimes on first boot.
+  # Exits 0 when done; restart:no means it won't loop. Safe to re-run manually:
+  #   docker compose run --rm ci_setup
+  ci_setup:
+    container_name: librechat-ci-setup
+    image: node:20-alpine
+    restart: 'no'
+    depends_on:
+      piston_action:
+        condition: service_healthy
+    environment:
+      - PISTON_URL=http://piston:2000
+      - PISTON_ACTION_URL=http://piston_action:3333
+      - MAX_WAIT_SECS=120
+    command: ["node", "/app/config/setup-code-interpreter.js"]
+    volumes:
+      - ./config:/app/config:ro
+
+  # === Optional: Uncomment to enable local models ===
+  # ollama:
+  #   container_name: ollama
+  #   image: ollama/ollama:latest
+  #   restart: always
+  #   user: "1000:1000"
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama-models:/root/.ollama
+  #   environment:
+  #     - OLLAMA_HOST=0.0.0.0:11434
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:11434"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '4.0'
+  #         memory: 8G
+  #       reservations:
+  #         cpus: '2.0'
+  #         memory: 4G
+
+  # === Optional: LiteLLM Proxy for unified local + cloud models ===
+  # litellm:
+  #   container_name: litellm-proxy
+  #   image: ghcr.io/berriai/litellm:main
+  #   restart: always
+  #   user: "1000:1000"
+  #   environment:
+  #     - LITELLM_LOG=DEBUG
+  #     - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./litellm_config.yaml:/app/config.yaml:ro
+  #   command: ["litellm", "--config", "/app/config.yaml", "--port", "8000"]
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '2.0'
+  #         memory: 2G
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+volumes:
+  caddy_data:
+  caddy_config:
+  redis-data:
+  piston-data:
+  # ollama-models:  # Uncomment if using Ollama
+

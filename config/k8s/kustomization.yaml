@@ -1,0 +1,35 @@
+# Kustomize configuration for AtlasChat Code Interpreter
+#
+# Embeds the real piston-action-server.js and setup-code-interpreter.js
+# into their ConfigMaps automatically at apply-time — no manual copy-paste.
+#
+# Usage:
+#   kubectl apply -k config/k8s/
+#
+# Or generate the final YAML without applying:
+#   kubectl kustomize config/k8s/
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: atlaschat-ci
+
+resources:
+  - code-interpreter.yaml
+
+# Replace ConfigMap placeholders with real file contents
+configMapGenerator:
+  - name: piston-action-config
+    behavior: replace
+    files:
+      - piston-action-server.js=../piston-action-server.js
+
+  - name: ci-setup-script
+    behavior: replace
+    files:
+      - setup-code-interpreter.js=../setup-code-interpreter.js
+
+# Automatically append a content hash suffix to ConfigMap names so Pods
+# roll when scripts change — remove if you prefer stable names.
+generatorOptions:
+  disableNameSuffixHash: false

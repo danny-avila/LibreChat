@@ -1,0 +1,385 @@
+# ============================================================================
+# AtlasChat — Self-Hosted Code Interpreter — Kubernetes Manifests
+# ============================================================================
+#
+# Components:
+#   1. Namespace          atlaschat-ci
+#   2. ConfigMap          piston-action-config   (serves piston-action-server.js)
+#   3. PersistentVolumeClaim  piston-data        (language runtime packages)
+#   4. Deployment/Service piston                 (sandbox engine, privileged)
+#   5. Deployment/Service piston-action          (LibreChat bridge API, scalable)
+#   6. Job                ci-runtime-setup       (installs language runtimes once)
+#
+# Usage:
+#   kubectl apply -f config/k8s/code-interpreter.yaml
+#
+# After deployment set in LibreChat:
+#   LIBRECHAT_CODE_API_KEY=self-hosted
+#   LIBRECHAT_CODE_BASEURL=http://piston-action.atlaschat-ci.svc.cluster.local:3333
+#
+# To re-run runtime installation (e.g. after Piston data volume wipe):
+#   kubectl delete job ci-runtime-setup -n atlaschat-ci
+#   kubectl apply -f config/k8s/code-interpreter.yaml
+# ============================================================================
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: atlaschat-ci
+  labels:
+    app.kubernetes.io/part-of: atlaschat
+    app.kubernetes.io/component: code-interpreter
+
+---
+# ── PVC — Piston language package cache ─────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: piston-data
+  namespace: atlaschat-ci
+  labels:
+    app: piston
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi     # each runtime ~200-600 MB; 10 Gi covers 8-10 languages
+
+---
+# ── ConfigMap — piston-action-server source ──────────────────────────────────
+# Keeps the bridge script versioned alongside manifests.
+# Mount at /app/config/piston-action-server.js inside the piston-action Pod.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: piston-action-config
+  namespace: atlaschat-ci
+  labels:
+    app: piston-action
+data:
+  # Source loaded from file at apply-time; use kustomize secretGenerator or
+  # replace this with the inline content from config/piston-action-server.js.
+  # To embed: kubectl create configmap piston-action-config \
+  #   --from-file=piston-action-server.js=config/piston-action-server.js \
+  #   -n atlaschat-ci --dry-run=client -o yaml
+  piston-action-server.js: |
+    /* See config/piston-action-server.js in the AtlasChat repo */
+    /* Replace this placeholder with the full file contents, or use kustomize */
+    console.error('ConfigMap placeholder — replace with real piston-action-server.js');
+    process.exit(1);
+
+---
+# ── ConfigMap — setup script ─────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ci-setup-script
+  namespace: atlaschat-ci
+  labels:
+    app: ci-runtime-setup
+data:
+  # Replace placeholder via: kubectl create configmap ci-setup-script \
+  #   --from-file=setup-code-interpreter.js=config/setup-code-interpreter.js \
+  #   -n atlaschat-ci --dry-run=client -o yaml
+  setup-code-interpreter.js: |
+    /* See config/setup-code-interpreter.js in the AtlasChat repo */
+    console.error('ConfigMap placeholder — replace with real setup-code-interpreter.js');
+    process.exit(1);
+
+---
+# ── Piston Deployment ─────────────────────────────────────────────────────────
+# Single replica — Piston uses Linux namespaces/cgroups; scaling requires
+# a shared PVC (ReadWriteMany) or a separate Piston per node (DaemonSet).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: piston
+  namespace: atlaschat-ci
+  labels:
+    app: piston
+    app.kubernetes.io/component: sandbox-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: piston
+  strategy:
+    type: Recreate   # required: volume is ReadWriteOnce
+  template:
+    metadata:
+      labels:
+        app: piston
+    spec:
+      securityContext:
+        runAsUser: 0   # Piston must run as root
+
+      containers:
+        - name: piston
+          image: ghcr.io/engineer-man/piston:latest
+          imagePullPolicy: IfNotPresent
+          workingDir: /tmp
+
+          ports:
+            - name: api
+              containerPort: 2000
+              protocol: TCP
+
+          securityContext:
+            privileged: true   # required: Piston uses unshare / namespaces
+
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+
+          livenessProbe:
+            httpGet:
+              path: /api/v2/runtimes
+              port: 2000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /api/v2/runtimes
+              port: 2000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+
+          volumeMounts:
+            - name: piston-data
+              mountPath: /piston
+
+      volumes:
+        - name: piston-data
+          persistentVolumeClaim:
+            claimName: piston-data
+
+---
+# ── Piston Service ────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: piston
+  namespace: atlaschat-ci
+  labels:
+    app: piston
+spec:
+  selector:
+    app: piston
+  ports:
+    - name: api
+      port: 2000
+      targetPort: 2000
+      protocol: TCP
+  type: ClusterIP
+
+---
+# ── Piston-Action Deployment ─────────────────────────────────────────────────
+# Stateless bridge — safe to scale horizontally.
+# Each replica connects to the single Piston service above.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: piston-action
+  namespace: atlaschat-ci
+  labels:
+    app: piston-action
+    app.kubernetes.io/component: code-interpreter-api
+spec:
+  replicas: 2    # scale freely — completely stateless
+  selector:
+    matchLabels:
+      app: piston-action
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: piston-action
+    spec:
+      containers:
+        - name: piston-action
+          image: node:20-alpine
+          command: ["node", "/app/config/piston-action-server.js"]
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 3333
+              protocol: TCP
+
+          env:
+            - name: PORT
+              value: "3333"
+            - name: PISTON_URL
+              value: "http://piston.atlaschat-ci.svc.cluster.local:2000"
+            # Override via Secret or external config manager for multi-tenant setups:
+            # - name: PISTON_URL
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: code-interpreter-secrets
+            #       key: pistonUrl
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3333
+            initialDelaySeconds: 5
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3333
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 2
+
+          volumeMounts:
+            - name: server-script
+              mountPath: /app/config
+
+      volumes:
+        - name: server-script
+          configMap:
+            name: piston-action-config
+
+---
+# ── Piston-Action Service ─────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: piston-action
+  namespace: atlaschat-ci
+  labels:
+    app: piston-action
+spec:
+  selector:
+    app: piston-action
+  ports:
+    - name: http
+      port: 3333
+      targetPort: 3333
+      protocol: TCP
+  type: ClusterIP
+
+---
+# ── HorizontalPodAutoscaler for piston-action ────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: piston-action-hpa
+  namespace: atlaschat-ci
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: piston-action
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+# ── Runtime Installer Job ─────────────────────────────────────────────────────
+# Runs once after deployment to install language runtimes into Piston.
+# Re-trigger by deleting and re-applying: kubectl delete job ci-runtime-setup -n atlaschat-ci
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ci-runtime-setup
+  namespace: atlaschat-ci
+  labels:
+    app: ci-runtime-setup
+    app.kubernetes.io/component: setup
+  annotations:
+    # Automatically cleaned up 1 hour after completion
+    ttlSecondsAfterFinished: "3600"
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: ci-runtime-setup
+    spec:
+      restartPolicy: OnFailure
+
+      # Wait for Piston to be ready before running the setup
+      initContainers:
+        - name: wait-for-piston
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for Piston API…"
+              until wget -qO- http://piston.atlaschat-ci.svc.cluster.local:2000/api/v2/runtimes > /dev/null 2>&1; do
+                echo "  Piston not ready, retrying in 5s…"
+                sleep 5
+              done
+              echo "Piston is ready."
+
+      containers:
+        - name: setup
+          image: node:20-alpine
+          command: ["node", "/scripts/setup-code-interpreter.js"]
+
+          env:
+            - name: PISTON_URL
+              value: "http://piston.atlaschat-ci.svc.cluster.local:2000"
+            - name: PISTON_ACTION_URL
+              value: "http://piston-action.atlaschat-ci.svc.cluster.local:3333"
+            - name: MAX_WAIT_SECS
+              value: "60"
+            # Comma-separated list — override to install a subset:
+            # - name: RUNTIMES
+            #   value: "python,node,bash"
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          volumeMounts:
+            - name: setup-script
+              mountPath: /scripts
+
+      volumes:
+        - name: setup-script
+          configMap:
+            name: ci-setup-script

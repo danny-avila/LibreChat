@@ -137,10 +137,10 @@ const fetchJson = async (url, options) => {
 /** Maps LibreChat 2-letter lang codes → Piston runtime names */
 const LANG_MAP = {
   py: 'python',
-  js: 'javascript',
+  js: 'node',
   ts: 'typescript',
   c: 'c',
-  cpp: 'c++',
+  cpp: 'cpp',
   java: 'java',
   php: 'php',
   rs: 'rust',
