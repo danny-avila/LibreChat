@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useUpdateFeedbackMutation } from 'librechat-data-provider/react-query';
 import {
@@ -106,20 +106,17 @@ export default function useMessageActions(props: TMessageActions) {
   }, [agentsMap, conversation?.agent_id, conversation?.endpoint, message?.model]);
 
   /**
-   * Use a ref for isSubmitting in the regenerate guard so this callback stays stable.
-   * chatContext.isSubmitting uses a getter (ref-backed), so reading it here
-   * captures the current value without adding it as a reactive dependency.
+   * chatContext.isSubmitting is a getter backed by the wrapper's ref,
+   * so it always returns the current value at call-time — even for
+   * non-latest messages that don't re-render during streaming.
    */
-  const isSubmittingRef = useRef(chatContext.isSubmitting);
-  isSubmittingRef.current = chatContext.isSubmitting;
-
   const regenerateMessage = useCallback(() => {
-    if ((isSubmittingRef.current && isCreatedByUser === true) || !message) {
+    if ((chatContext.isSubmitting && isCreatedByUser === true) || !message) {
       return;
     }
 
     regenerate(message, { addedConvo: getAddedConvo() });
-  }, [isCreatedByUser, message, regenerate, getAddedConvo]);
+  }, [chatContext, isCreatedByUser, message, regenerate, getAddedConvo]);
 
   const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
 
