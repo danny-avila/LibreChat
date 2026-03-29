@@ -32,7 +32,6 @@ class BaseClient {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
     this.sender = options.sender ?? 'AI';
-    this.contextStrategy = null;
     this.currentDateString = new Date().toLocaleDateString('en-us', {
       year: 'numeric',
       month: 'long',
