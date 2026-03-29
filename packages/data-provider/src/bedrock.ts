@@ -299,8 +299,10 @@ export const bedrockInputParser = s.tConversationSchema
       typedData.additionalModelRequestFields != null
     ) {
       const amrf = typedData.additionalModelRequestFields as Record<string, unknown>;
-      if (typedData.system == null && typeof amrf.system === 'string' && amrf.system !== '') {
-        typedData.system = amrf.system;
+      const amrfSystem =
+        typeof amrf.system === 'string' ? amrf.system.trim() : undefined;
+      if (typedData.system == null && typeof amrfSystem === 'string' && amrfSystem !== '') {
+        typedData.system = amrfSystem;
       }
       reservedBedrockAdditionalFields.forEach((key) => {
         delete amrf[key];
