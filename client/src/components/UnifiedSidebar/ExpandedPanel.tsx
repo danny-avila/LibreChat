@@ -15,14 +15,15 @@ import store from '~/store';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
 
-const getLangLabel = (lang: string) => {
+/** Shows the label of the NEXT language (what clicking will switch TO) */
+const getNextLangLabel = (lang: string) => {
   if (lang.startsWith('ar')) {
-    return 'ع';
-  }
-  if (lang.startsWith('fr')) {
     return 'Fr';
   }
-  return 'En';
+  if (lang.startsWith('fr')) {
+    return 'En';
+  }
+  return 'ع';
 };
 
 const getNextLang = (lang: string) => {
@@ -36,7 +37,6 @@ const getNextLang = (lang: string) => {
 };
 
 const LanguageToggleButton = memo(function LanguageToggleButton() {
-  const localize = useLocalize();
   const [langcode, setLangcode] = useRecoilState(store.lang);
   const [, setChatDirection] = useRecoilState(store.chatDirection);
   const [, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
@@ -57,19 +57,22 @@ const LanguageToggleButton = memo(function LanguageToggleButton() {
     Cookies.set('lang', next, { expires: 365 });
   }, [langcode, setLangcode, setChatDirection, setLanguageSTT, setLanguageTTS]);
 
+  const nextLangLabel = getNextLangLabel(langcode);
+  const nextLangName = langcode.startsWith('ar') ? 'Français' : langcode.startsWith('fr') ? 'English' : 'العربية';
+
   return (
     <TooltipAnchor
       side="right"
-      description={localize('com_nav_language')}
+      description={nextLangName}
       render={
         <Button
           size="icon"
           variant="ghost"
-          aria-label={localize('com_nav_language')}
+          aria-label={`Switch to ${nextLangName}`}
           className="h-9 w-9 rounded-lg text-xs font-bold text-text-secondary"
           onClick={handleClick}
         >
-          {getLangLabel(langcode)}
+          {nextLangLabel}
         </Button>
       }
     />
@@ -198,10 +201,6 @@ function ExpandedPanel({
               d="M256,88 L278,174 L355,129 L310,206 L396,228 L310,250 L355,327 L278,282 L256,368 L234,282 L157,327 L202,250 L116,228 L202,206 L157,129 L234,174 Z"
               fill="#E8C84A"
             />
-            <path
-              d="M0,370 L50,330 L95,295 L135,315 L178,275 L210,298 L256,262 L302,292 L342,268 L382,296 L425,275 L470,315 L512,335 L512,450 L0,450 Z"
-              fill="rgba(255,255,255,0.15)"
-            />
           </svg>
         </div>
       </div>
@@ -224,7 +223,6 @@ function ExpandedPanel({
         }
       />
       <NewChatButton />
-      <LanguageToggleButton />
       <div className="flex flex-col gap-1 overflow-y-auto">
         {links.map((link) => (
           <NavIconButton
@@ -238,7 +236,8 @@ function ExpandedPanel({
         ))}
       </div>
 
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col gap-1">
+        <LanguageToggleButton />
         <Suspense fallback={<Skeleton className="h-9 w-9 rounded-lg" />}>
           <AccountSettings collapsed />
         </Suspense>
