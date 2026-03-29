@@ -59,7 +59,13 @@ function renderComponent(conversation: Record<string, unknown> | null, disableIn
   return render(
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
-        <AttachFileChat conversation={conversation as never} disableInputs={disableInputs} />
+        <AttachFileChat
+          conversation={conversation as never}
+          disableInputs={disableInputs}
+          files={new Map()}
+          setFiles={() => {}}
+          setFilesLoading={() => {}}
+        />
       </RecoilRoot>
     </QueryClientProvider>,
   );
