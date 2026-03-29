@@ -17,6 +17,7 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
+import { isOAuthError } from './utils';
 import { processMCPEnv } from '~/utils/env';
 
 /**
@@ -241,11 +242,86 @@ Please follow these instructions when using tools from the respective MCP server
    * (if userId is provided) or an app-level connection. Updates the last activity timestamp
    * for user-specific connections upon successful call initiation.
    *
+   * On 401/auth errors, attempts OAuth flow and retries once with a fresh connection.
+   *
    * @param graphTokenResolver - Optional function to resolve Graph API tokens via OBO flow.
    *   When provided and the server config contains `{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}` placeholders,
    *   they will be resolved to actual Graph API tokens before the tool call.
    */
-  async callTool({
+  async callTool(params: {
+    user?: IUser;
+    serverName: string;
+    toolName: string;
+    provider: t.Provider;
+    toolArguments?: Record<string, unknown>;
+    options?: RequestOptions;
+    requestBody?: RequestBody;
+    tokenMethods?: TokenMethods;
+    customUserVars?: Record<string, string>;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    oauthStart?: (authURL: string) => Promise<void>;
+    oauthEnd?: () => Promise<void>;
+    graphTokenResolver?: GraphTokenResolver;
+  }): Promise<t.FormattedToolResponse> {
+    const { user, serverName, toolName, flowManager, oauthStart, tokenMethods, options } = params;
+    const userId = user?.id;
+    const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
+
+    try {
+      return await this._doToolCall(params);
+    } catch (error) {
+      if (!isOAuthError(error) || !userId || !flowManager || !oauthStart) {
+        logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
+        throw error;
+      }
+
+      logger.info(`${logPrefix}[${toolName}] Got auth error during tool call, attempting OAuth`);
+
+      const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
+        serverName,
+        userId,
+      );
+      if (!serverConfig) {
+        logger.error(`${logPrefix}[${toolName}] Server config not found for OAuth retry`);
+        throw error;
+      }
+
+      const registry = MCPServersRegistry.getInstance();
+      const basic: t.BasicConnectionOptions = {
+        serverName,
+        serverConfig,
+        dbSourced: !!serverConfig.dbId,
+        useSSRFProtection: registry.shouldEnableSSRFProtection(),
+        allowedDomains: registry.getAllowedDomains(),
+      };
+
+      const tokens = await MCPConnectionFactory.handleToolCallOAuth(basic, {
+        useOAuth: true,
+        user,
+        flowManager,
+        tokenMethods,
+        oauthStart,
+        signal: options?.signal,
+      });
+
+      if (!tokens) {
+        logger.warn(`${logPrefix}[${toolName}] OAuth flow returned no tokens, throwing original`);
+        throw error;
+      }
+
+      await this.disconnectUserConnection(userId, serverName);
+      logger.info(`${logPrefix}[${toolName}] OAuth succeeded, retrying tool call`);
+
+      try {
+        return await this._doToolCall(params);
+      } catch (retryError) {
+        logger.error(`${logPrefix}[${toolName}] Tool call failed after OAuth retry`, retryError);
+        throw retryError;
+      }
+    }
+  }
+
+  private async _doToolCall({
     user,
     serverName,
     toolName,
@@ -274,81 +350,72 @@ Please follow these instructions when using tools from the respective MCP server
     oauthEnd?: () => Promise<void>;
     graphTokenResolver?: GraphTokenResolver;
   }): Promise<t.FormattedToolResponse> {
-    /** User-specific connection */
-    let connection: MCPConnection | undefined;
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
-    try {
-      if (userId && user) this.updateUserLastActivity(userId);
-
-      connection = await this.getConnection({
-        serverName,
-        user,
-        flowManager,
-        tokenMethods,
-        oauthStart,
-        oauthEnd,
-        signal: options?.signal,
-        customUserVars,
-        requestBody,
-      });
-
-      if (!(await connection.isConnected())) {
-        /** May happen if getUserConnection failed silently or app connection dropped */
-        throw new McpError(
-          ErrorCode.InternalError, // Use InternalError for connection issues
-          `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
-        );
-      }
-
-      const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
-      const isDbSourced = !!rawConfig?.dbId;
-
-      /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
-      const graphProcessedConfig = isDbSourced
-        ? (rawConfig as t.MCPOptions)
-        : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
-            user,
-            graphTokenResolver,
-            scopes: process.env.GRAPH_API_SCOPES,
-          });
-      const currentOptions = processMCPEnv({
-        user,
-        body: requestBody,
-        dbSourced: isDbSourced,
-        options: graphProcessedConfig,
-        customUserVars,
-      });
-      if ('headers' in currentOptions) {
-        connection.setRequestHeaders(currentOptions.headers || {});
-      }
-
-      const result = await connection.client.request(
-        {
-          method: 'tools/call',
-          params: {
-            name: toolName,
-            arguments: toolArguments,
-          },
-        },
-        CallToolResultSchema,
-        {
-          timeout: connection.timeout,
-          resetTimeoutOnProgress: true,
-          ...options,
-        },
-      );
-      if (userId) {
-        this.updateUserLastActivity(userId);
-      }
-      this.checkIdleConnections();
-      return formatToolContent(result as t.MCPToolCallResponse, provider);
-    } catch (error) {
-      // Log with context and re-throw or handle as needed
-      logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
-      // Rethrowing allows the caller (createMCPTool) to handle the final user message
-      throw error;
+    if (userId && user) {
+      this.updateUserLastActivity(userId);
     }
+
+    const connection = await this.getConnection({
+      serverName,
+      user,
+      flowManager,
+      tokenMethods,
+      oauthStart,
+      oauthEnd,
+      signal: options?.signal,
+      customUserVars,
+      requestBody,
+    });
+
+    if (!(await connection.isConnected())) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
+      );
+    }
+
+    const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
+    const isDbSourced = !!rawConfig?.dbId;
+
+    const graphProcessedConfig = isDbSourced
+      ? (rawConfig as t.MCPOptions)
+      : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+          user,
+          graphTokenResolver,
+          scopes: process.env.GRAPH_API_SCOPES,
+        });
+    const currentOptions = processMCPEnv({
+      user,
+      body: requestBody,
+      dbSourced: isDbSourced,
+      options: graphProcessedConfig,
+      customUserVars,
+    });
+    if ('headers' in currentOptions) {
+      connection.setRequestHeaders(currentOptions.headers || {});
+    }
+
+    const result = await connection.client.request(
+      {
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: toolArguments,
+        },
+      },
+      CallToolResultSchema,
+      {
+        timeout: connection.timeout,
+        resetTimeoutOnProgress: true,
+        ...options,
+      },
+    );
+    if (userId) {
+      this.updateUserLastActivity(userId);
+    }
+    this.checkIdleConnections();
+    return formatToolContent(result as t.MCPToolCallResponse, provider);
   }
 }

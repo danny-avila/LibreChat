@@ -7,7 +7,7 @@ import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
-import { sanitizeUrlForLogging } from './utils';
+import { isOAuthError, sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -183,6 +183,44 @@ export class MCPConnectionFactory {
     }
 
     return null;
+  }
+
+  /**
+   * Handles OAuth flow for a tool call 401 retry.
+   * Creates a temporary factory instance and runs the existing handleOAuthRequired() flow,
+   * storing tokens on success.
+   */
+  static async handleToolCallOAuth(
+    basic: t.BasicConnectionOptions,
+    oauth: t.OAuthConnectionOptions,
+  ): Promise<MCPOAuthTokens | null> {
+    const factory = new this(basic, oauth);
+    const result = await factory.handleOAuthRequired();
+    if (!result?.tokens) {
+      return null;
+    }
+
+    if (oauth.tokenMethods?.createToken) {
+      try {
+        await MCPTokenStorage.storeTokens({
+          userId: oauth.user!.id,
+          serverName: basic.serverName,
+          tokens: result.tokens,
+          createToken: oauth.tokenMethods.createToken,
+          updateToken: oauth.tokenMethods.updateToken,
+          findToken: oauth.tokenMethods.findToken,
+          clientInfo: result.clientInfo,
+          metadata: result.metadata,
+        });
+      } catch (error) {
+        logger.error(
+          `[MCP][${basic.serverName}] Failed to store tokens after tool call OAuth`,
+          error,
+        );
+      }
+    }
+
+    return result.tokens;
   }
 
   protected constructor(
@@ -466,38 +504,8 @@ export class MCPConnectionFactory {
     }
   }
 
-  // Determines if an error indicates OAuth authentication is required
   private isOAuthError(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-
-    // Check for error code
-    if ('code' in error) {
-      const code = (error as { code?: number }).code;
-      if (code === 401 || code === 403) {
-        return true;
-      }
-    }
-
-    // Check message for various auth error indicators
-    if ('message' in error && typeof error.message === 'string') {
-      const message = error.message.toLowerCase();
-      // Check for 401 status
-      if (message.includes('401') || message.includes('non-200 status code (401)')) {
-        return true;
-      }
-      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
-      if (message.includes('invalid_token')) {
-        return true;
-      }
-      // Check for authentication required
-      if (message.includes('authentication required') || message.includes('unauthorized')) {
-        return true;
-      }
-    }
-
-    return false;
+    return isOAuthError(error);
   }
 
   /** Manages OAuth flow initiation and completion */
