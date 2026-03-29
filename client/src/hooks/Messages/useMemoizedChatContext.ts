@@ -59,6 +59,7 @@ export default function useMemoizedChatContext(
         return isSubmittingRef.current;
       },
     }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       chatCtx.ask,
       chatCtx.index,
@@ -67,7 +68,7 @@ export default function useMemoizedChatContext(
       chatCtx.latestMessageId,
       chatCtx.latestMessageDepth,
       chatCtx.handleContinue,
-      isSubmitting,
+      isSubmitting, // intentional: forces new reference on streaming start/end so HoverButtons re-renders
     ],
   );
 

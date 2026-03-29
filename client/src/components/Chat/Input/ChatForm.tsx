@@ -416,6 +416,7 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
    * Stabilize conversation reference: only update when rendering-relevant fields change,
    * not on every metadata update (e.g., title generation during streaming).
    */
+  const hasMessages = (conversation?.messages?.length ?? 0) > 0;
   const stableConversation = useMemo(
     () => conversation,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -428,7 +429,7 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
       conversation?.spec,
       conversation?.useResponsesApi,
       conversation?.model,
-      (conversation?.messages?.length ?? 0) > 0,
+      hasMessages,
     ],
   );
 
