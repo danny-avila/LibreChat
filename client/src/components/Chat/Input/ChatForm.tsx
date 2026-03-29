@@ -431,13 +431,20 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
     ],
   );
 
-  /** Stabilize handleStopGenerating via ref so it never triggers ChatForm re-renders */
+  /** Stabilize function refs so they never trigger ChatForm re-renders */
   const handleStopRef = useRef(handleStopGenerating);
   handleStopRef.current = handleStopGenerating;
   const stableHandleStop = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => handleStopRef.current(e),
     [],
   );
+
+  const newConvoRef = useRef(newConversation);
+  newConvoRef.current = newConversation;
+  const stableNewConversation = useCallback(
+    (...args: Parameters<ConvoGenerator>) => newConvoRef.current(...args),
+    [],
+  ) as ConvoGenerator;
 
   return (
     <ChatForm
@@ -448,7 +455,7 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
       isSubmitting={isSubmitting}
       filesLoading={filesLoading}
       setFilesLoading={setFilesLoading}
-      newConversation={newConversation}
+      newConversation={stableNewConversation}
       handleStopGenerating={stableHandleStop}
     />
   );
