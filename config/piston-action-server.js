@@ -134,14 +134,24 @@ const fetchJson = async (url, options) => {
   return data;
 };
 
-const handleExecute = async (req, res) => {
-  const { language, code, stdin = '', args = [] } = await readJson(req);
+/** Maps LibreChat 2-letter lang codes → Piston runtime names */
+const LANG_MAP = {
+  py: 'python',
+  js: 'javascript',
+  ts: 'typescript',
+  c: 'c',
+  cpp: 'c++',
+  java: 'java',
+  php: 'php',
+  rs: 'rust',
+  go: 'go',
+  d: 'd',
+  f90: 'fortran',
+  r: 'r',
+  bash: 'bash',
+};
 
-  if (!language || !code) {
-    sendJson(res, 400, { message: 'language and code are required' });
-    return;
-  }
-
+const runPiston = async (language, code, stdin = '', args = []) => {
   const payload = {
     language,
     version: '*',
@@ -153,14 +163,44 @@ const handleExecute = async (req, res) => {
     run_memory_limit: 256000000,
     compile_memory_limit: 256000000,
   };
-
-  const result = await fetchJson(`${PISTON_URL}/api/v2/execute`, {
+  return fetchJson(`${PISTON_URL}/api/v2/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+};
 
+/** Original /execute endpoint — uses `language` field (OpenAPI action format) */
+const handleExecute = async (req, res) => {
+  const { language, code, stdin = '', args = [] } = await readJson(req);
+
+  if (!language || !code) {
+    sendJson(res, 400, { message: 'language and code are required' });
+    return;
+  }
+
+  const result = await runPiston(language, code, stdin, args);
   sendJson(res, 200, result);
+};
+
+/** /exec endpoint — LibreChat CodeExecutor format: uses `lang` (2-letter) field */
+const handleExec = async (req, res) => {
+  const { lang, code, args = [] } = await readJson(req);
+
+  if (!lang || !code) {
+    sendJson(res, 400, { message: 'lang and code are required' });
+    return;
+  }
+
+  const language = LANG_MAP[lang] || lang;
+  const result = await runPiston(language, code, '', args);
+
+  const run = result.run || result;
+  sendJson(res, 200, {
+    stdout: run.stdout || '',
+    stderr: run.stderr || run.message || '',
+    session_id: `piston-${Date.now()}`,
+  });
 };
 
 const handleRuntimes = async (res) => {
@@ -191,6 +231,16 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && requestUrl.pathname === '/execute') {
       await handleExecute(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/exec') {
+      await handleExec(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && requestUrl.pathname.startsWith('/files/')) {
+      sendJson(res, 200, []);
       return;
     }
 
