@@ -63,7 +63,6 @@ function createApp(user) {
   });
 
   const { createAdminGrantsHandlers, getCachedPrincipals } = require('@librechat/api');
-  const { SystemCapabilities } = require('@librechat/data-schemas');
 
   const handlers = createAdminGrantsHandlers({
     listGrants: db.listGrants,
@@ -182,7 +181,7 @@ describe('Admin Grants Routes — Integration', () => {
   it('POST / returns 401 without authenticated user', async () => {
     const app = createApp(undefined);
 
-    await request(app)
+    const res = await request(app)
       .post('/api/admin/grants')
       .send({
         principalType: PrincipalType.ROLE,
@@ -190,5 +189,7 @@ describe('Admin Grants Routes — Integration', () => {
         capability: 'read:users',
       })
       .expect(401);
+
+    expect(res.body).toHaveProperty('error', 'Authentication required');
   });
 });
