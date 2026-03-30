@@ -20,13 +20,18 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
   const [availableUsers, setAvailableUsers] = useState<User[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [emailAdding, setEmailAdding] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [pendingEmails, setPendingEmails] = useState<string[]>([]);
 
   useEffect(() => {
     if (groupId) {
       fetchMembers();
       fetchAvailableUsers();
+      fetchPendingEmails();
     }
   }, [groupId]);
 
@@ -53,6 +58,18 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
       console.error('Failed to fetch group members:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPendingEmails = async () => {
+    try {
+      const response = await fetch(`http://localhost:3081/api/groups/${groupId}`);
+      const data = await response.json();
+      if (data.success) {
+        setPendingEmails(data.data?.pendingEmails ?? []);
+      }
+    } catch {
+      // non-critical
     }
   };
 
@@ -88,6 +105,46 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
       }
     } catch (error) {
       console.error('Failed to add member:', error);
+    }
+  };
+
+  const handleAddByEmail = async () => {
+    const email = emailInput.trim();
+    if (!email) return;
+    setEmailError('');
+    setEmailAdding(true);
+    try {
+      const response = await fetch(`http://localhost:3081/api/groups/${groupId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        if (data.pending) {
+          await fetchPendingEmails();
+        } else {
+          await fetchMembers();
+        }
+        setEmailInput('');
+      } else {
+        setEmailError(data.message || 'Failed to add user');
+      }
+    } catch (err) {
+      setEmailError(err instanceof Error ? err.message : 'Network error — check console');
+    } finally {
+      setEmailAdding(false);
+    }
+  };
+
+  const handleRemovePendingEmail = async (email: string) => {
+    try {
+      await fetch(`http://localhost:3081/api/groups/${groupId}/pending/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+      });
+      setPendingEmails((prev) => prev.filter((e) => e !== email));
+    } catch {
+      // silent
     }
   };
 
@@ -152,6 +209,29 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
             <Label className="text-sm font-medium text-text-primary">
               Add Entra ID Users to Group
             </Label>
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder="Add by email address..."
+                value={emailInput}
+                onChange={(e) => { setEmailInput(e.target.value); setEmailError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddByEmail()}
+                className="flex-1"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAddByEmail}
+                disabled={emailAdding || !emailInput.trim()}
+                className="flex items-center gap-1"
+              >
+                <UserPlus className="h-4 w-4" />
+                {emailAdding ? 'Adding...' : 'Add'}
+              </Button>
+            </div>
+            {emailError && (
+              <p className="text-xs text-red-500">{emailError}</p>
+            )}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
               <Input
@@ -207,6 +287,46 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending Members */}
+      {pendingEmails.length > 0 && (
+        <div className="rounded-lg border border-border-light bg-surface-primary">
+          <div className="border-b border-border-light px-3 py-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+              Pending — will be added on first login
+            </p>
+          </div>
+          <div className="divide-y divide-border-light">
+            {pendingEmails.map((email) => (
+              <div
+                key={email}
+                className="flex items-center justify-between p-3 hover:bg-surface-hover"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-secondary text-sm font-medium text-text-secondary">
+                    {email.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm text-text-primary">{email}</p>
+                    <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+                      pending
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRemovePendingEmail(email)}
+                  className="flex items-center gap-1 text-red-500 hover:bg-red-50 hover:text-red-600"
+                >
+                  <UserMinus className="h-4 w-4" />
+                  Remove
+                </Button>
+              </div>
+            ))}
           </div>
         </div>
       )}
