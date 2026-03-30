@@ -29,10 +29,10 @@ import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 export async function encodeAndFormatDocuments(
   req: ServerRequest,
   files: IMongoFile[],
-  params: { provider: Providers; endpoint?: string; useResponsesApi?: boolean },
+  params: { provider: Providers; endpoint?: string; useResponsesApi?: boolean; model?: string },
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<DocumentResult> {
-  const { provider, endpoint, useResponsesApi } = params;
+  const { provider, endpoint, useResponsesApi, model } = params;
   if (!files?.length) {
     return { documents: [], files: [] };
   }
@@ -94,6 +94,7 @@ export async function encodeAndFormatDocuments(
         mimeType,
         fileBuffer,
         configuredFileSizeLimit,
+        model,
       );
 
       if (!validation.isValid) {
@@ -122,6 +123,7 @@ export async function encodeAndFormatDocuments(
         pdfBuffer.length,
         provider,
         configuredFileSizeLimit,
+        model,
       );
 
       if (!validation.isValid) {
