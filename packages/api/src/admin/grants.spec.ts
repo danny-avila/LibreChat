@@ -60,13 +60,15 @@ function createDeps(overrides: Partial<AdminGrantsDeps> = {}): AdminGrantsDeps {
       { principalType: PrincipalType.ROLE, principalId: 'admin' },
     ]),
     hasCapabilityForPrincipals: jest.fn().mockResolvedValue(true),
-    getHeldCapabilities: jest.fn().mockResolvedValue(
-      new Set([
-        SystemCapabilities.READ_ROLES,
-        SystemCapabilities.READ_GROUPS,
-        SystemCapabilities.READ_USERS,
-      ]),
-    ),
+    getHeldCapabilities: jest
+      .fn()
+      .mockResolvedValue(
+        new Set([
+          SystemCapabilities.READ_ROLES,
+          SystemCapabilities.READ_GROUPS,
+          SystemCapabilities.READ_USERS,
+        ]),
+      ),
     getCachedPrincipals: jest.fn().mockReturnValue(undefined),
     ...overrides,
   };
@@ -108,9 +110,7 @@ describe('createAdminGrantsHandlers', () => {
 
     it('passes principalTypes filter based on caller read permissions', async () => {
       const deps = createDeps({
-        getHeldCapabilities: jest.fn().mockResolvedValue(
-          new Set([SystemCapabilities.READ_ROLES]),
-        ),
+        getHeldCapabilities: jest.fn().mockResolvedValue(new Set([SystemCapabilities.READ_ROLES])),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res } = createReqRes();
@@ -966,7 +966,7 @@ describe('createAdminGrantsHandlers', () => {
       );
     });
 
-    it('accepts encoded section-level config capability in path', async () => {
+    it('accepts section-level config capability with colons', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status } = createReqRes({

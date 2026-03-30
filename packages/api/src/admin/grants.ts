@@ -14,9 +14,9 @@ import type { ServerRequest } from '~/types/http';
 import { parsePagination } from './pagination';
 
 interface GrantRequestBody {
-  principalType?: unknown;
-  principalId?: unknown;
-  capability?: unknown;
+  principalType?: string;
+  principalId?: string | null;
+  capability?: string;
 }
 
 export interface AdminGrantsDeps {
