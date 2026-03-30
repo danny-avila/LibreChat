@@ -119,7 +119,7 @@ export interface AdminRolesDeps {
   deleteGrantsForPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    tenantId?: string,
+    options?: { tenantId?: string },
   ) => Promise<void>;
 }
 
@@ -391,7 +391,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.ROLE, name),
         deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name }),
-        deleteGrantsForPrincipal(PrincipalType.ROLE, name, tenantId),
+        deleteGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }),
       ]);
       for (const result of cleanupResults) {
         if (result.status === 'rejected') {

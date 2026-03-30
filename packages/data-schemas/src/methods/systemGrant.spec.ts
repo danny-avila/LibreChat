@@ -830,6 +830,63 @@ describe('systemGrant methods', () => {
       expect(remainingA).toBe(0);
       expect(remainingB).toBe(1);
     });
+
+    it('with tenantId deletes only tenant-scoped grants, not platform-level grants', async () => {
+      // Platform-level grant (no tenantId)
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'editor',
+        capability: SystemCapabilities.READ_USERS,
+      });
+      // Tenant-scoped grant
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'editor',
+        capability: SystemCapabilities.READ_CONFIGS,
+        tenantId: 'tenant-1',
+      });
+      // Different tenant grant
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'editor',
+        capability: SystemCapabilities.READ_GROUPS,
+        tenantId: 'tenant-2',
+      });
+
+      await methods.deleteGrantsForPrincipal(PrincipalType.ROLE, 'editor', {
+        tenantId: 'tenant-1',
+      });
+
+      const remaining = await SystemGrant.find({
+        principalType: PrincipalType.ROLE,
+        principalId: 'editor',
+      }).lean();
+      const caps = remaining.map((g) => g.capability).sort();
+      // Platform-level and tenant-2 grants survive
+      expect(caps).toEqual([SystemCapabilities.READ_GROUPS, SystemCapabilities.READ_USERS]);
+    });
+
+    it('without tenantId deletes all grants across all tenants', async () => {
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'temp-role',
+        capability: SystemCapabilities.READ_USERS,
+      });
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'temp-role',
+        capability: SystemCapabilities.READ_CONFIGS,
+        tenantId: 'tenant-a',
+      });
+
+      await methods.deleteGrantsForPrincipal(PrincipalType.ROLE, 'temp-role');
+
+      const remaining = await SystemGrant.countDocuments({
+        principalType: PrincipalType.ROLE,
+        principalId: 'temp-role',
+      });
+      expect(remaining).toBe(0);
+    });
   });
 
   describe('schema validation', () => {

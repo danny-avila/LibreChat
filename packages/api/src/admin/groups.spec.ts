@@ -809,11 +809,9 @@ describe('createAdminGroupsHandlers', () => {
         principalType: PrincipalType.GROUP,
         principalId: new Types.ObjectId(validId),
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(
-        PrincipalType.GROUP,
-        validId,
-        undefined,
-      );
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId, {
+        tenantId: undefined,
+      });
     });
 
     it('cleans up Config, AclEntry, and SystemGrant on group delete', async () => {
@@ -829,11 +827,9 @@ describe('createAdminGroupsHandlers', () => {
         principalType: PrincipalType.GROUP,
         principalId: new Types.ObjectId(validId),
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(
-        PrincipalType.GROUP,
-        validId,
-        undefined,
-      );
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId, {
+        tenantId: undefined,
+      });
     });
   });
 

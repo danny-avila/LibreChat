@@ -3,6 +3,6 @@ export { createAdminGrantsHandlers } from './grants';
 export { createAdminGroupsHandlers } from './groups';
 export { createAdminRolesHandlers } from './roles';
 export type { AdminConfigDeps } from './config';
-export type { AdminGrantsDeps } from './grants';
+export type { AdminGrantsDeps, GrantPrincipalType } from './grants';
 export type { AdminGroupsDeps } from './groups';
 export type { AdminRolesDeps } from './roles';

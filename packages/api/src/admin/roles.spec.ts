@@ -943,11 +943,9 @@ describe('createAdminRolesHandlers', () => {
         principalType: PrincipalType.ROLE,
         principalId: 'editor',
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(
-        PrincipalType.ROLE,
-        'editor',
-        undefined,
-      );
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor', {
+        tenantId: undefined,
+      });
     });
 
     it('passes tenantId to grant cleanup', async () => {
@@ -961,11 +959,9 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(
-        PrincipalType.ROLE,
-        'editor',
-        'tenant-1',
-      );
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor', {
+        tenantId: 'tenant-1',
+      });
     });
 
     it('does not clean up when role not found', async () => {

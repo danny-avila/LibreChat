@@ -72,8 +72,14 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }): Promise<boolean> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const principalsQuery = principals
-      .filter((p) => p.principalType !== PrincipalType.PUBLIC)
-      .map((p) => ({ principalType: p.principalType, principalId: p.principalId }));
+      .filter(
+        (p): p is typeof p & { principalId: string | Types.ObjectId } =>
+          p.principalType !== PrincipalType.PUBLIC && p.principalId != null,
+      )
+      .map((p) => ({
+        principalType: p.principalType,
+        principalId: normalizePrincipalId(p.principalId, p.principalType),
+      }));
 
     if (!principalsQuery.length) {
       return false;
@@ -281,7 +287,9 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     offset?: number;
   }): Promise<ISystemGrant[]> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
-    const limit = Math.max(1, options?.limit ?? 50);
+    const GRANTS_DEFAULT_LIMIT = 50;
+    const GRANTS_MAX_LIMIT = 200;
+    const limit = Math.min(GRANTS_MAX_LIMIT, Math.max(1, options?.limit ?? GRANTS_DEFAULT_LIMIT));
     const offset = options?.offset ?? 0;
     const filter: FilterQuery<ISystemGrant> = {
       ...(options?.principalTypes?.length && { principalType: { $in: options.principalTypes } }),
@@ -395,36 +403,27 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
    * Delete system grants for a principal.
    * Used for cascade cleanup when a principal (group, role) is deleted.
    *
-   * When `tenantId` is provided, only grants scoped to that tenant (plus
-   * platform-level grants without a tenantId) are removed. When omitted,
-   * ALL grants for the principal are removed regardless of tenant — this
-   * matches the current role-deletion path which is also tenant-unaware.
+   * When `tenantId` is provided, only grants scoped to **exactly** that
+   * tenant are removed — platform-level grants (no tenantId) are left
+   * intact so they continue to serve other tenants.
+   * When `tenantId` is omitted, ALL grants for the principal are removed
+   * regardless of tenant scope.
    */
   async function deleteGrantsForPrincipal(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    sessionOrTenantId?: ClientSession | string,
-    maybeSession?: ClientSession,
+    options?: { tenantId?: string; session?: ClientSession },
   ): Promise<void> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
 
-    let tenantId: string | undefined;
-    let session: ClientSession | undefined;
-    if (typeof sessionOrTenantId === 'string') {
-      tenantId = sessionOrTenantId;
-      session = maybeSession;
-    } else {
-      session = sessionOrTenantId;
-    }
-
     const filter: FilterQuery<ISystemGrant> = {
       principalType,
       principalId: normalizedPrincipalId,
-      ...(tenantId != null && tenantCondition(tenantId)),
+      ...(options?.tenantId != null && { tenantId: options.tenantId }),
     };
-    const options = session ? { session } : {};
-    await SystemGrant.deleteMany(filter, options);
+    const queryOptions = options?.session ? { session: options.session } : {};
+    await SystemGrant.deleteMany(filter, queryOptions);
   }
 
   return {

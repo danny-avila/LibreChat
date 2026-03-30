@@ -85,7 +85,7 @@ export interface AdminGroupsDeps {
   deleteGrantsForPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    tenantId?: string,
+    options?: { tenantId?: string },
   ) => Promise<void>;
 }
 
@@ -318,7 +318,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
           principalType: PrincipalType.GROUP,
           principalId: new Types.ObjectId(id),
         }),
-        deleteGrantsForPrincipal(PrincipalType.GROUP, id, tenantId),
+        deleteGrantsForPrincipal(PrincipalType.GROUP, id, { tenantId }),
       ]);
       for (const result of cleanupResults) {
         if (result.status === 'rejected') {

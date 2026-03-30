@@ -334,6 +334,13 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         return res.status(403).json({ error: 'Cannot grant a capability you do not possess' });
       }
 
+      /*
+       * Role existence is validated when checkRoleExists is provided.
+       * GROUP and USER principals are ObjectId-validated by validatePrincipal
+       * but not existence-checked — orphan grants for deleted principals are
+       * accepted as a trade-off. Cascade cleanup on group/user deletion
+       * (deleteGrantsForPrincipal) handles the removal path.
+       */
       if (principalType === PrincipalType.ROLE && checkRoleExists) {
         const exists = await checkRoleExists(principalId);
         if (!exists) {
