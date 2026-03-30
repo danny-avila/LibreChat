@@ -38,6 +38,10 @@ export interface CheckBalanceDeps {
     errorMessage: Record<string, unknown>,
     score: number,
   ) => Promise<void>;
+  /** Optional: balance config for lazy initialization when no record exists */
+  balanceConfig?: { startBalance?: number };
+  /** Optional: upsert function for lazy initialization when no record exists */
+  upsertBalanceFields?: (userId: string, fields: Record<string, unknown>) => Promise<unknown>;
 }
 
 function addIntervalToDate(date: Date, value: number, unit: TimeUnit): Date {
@@ -84,6 +88,18 @@ async function checkBalanceRecord(
 
   const record = await deps.findBalanceByUser(user);
   if (!record) {
+    if (deps.balanceConfig?.startBalance != null && deps.upsertBalanceFields) {
+      logger.debug('[Balance.check] Lazy-initializing balance record for user', {
+        user,
+        startBalance: deps.balanceConfig.startBalance,
+      });
+      await deps.upsertBalanceFields(user, {
+        user,
+        tokenCredits: deps.balanceConfig.startBalance,
+      });
+      const balance = deps.balanceConfig.startBalance;
+      return { canSpend: balance >= tokenCost, balance, tokenCost };
+    }
     logger.debug('[Balance.check] No balance record found for user', { user });
     return { canSpend: false, balance: 0, tokenCost };
   }
