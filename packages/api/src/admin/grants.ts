@@ -212,6 +212,18 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
     }
   }
 
+  /**
+   * Returns the caller's effective capabilities: direct grants plus base-level
+   * implications (e.g. manage:roles → read:roles).
+   *
+   * Note: this endpoint does NOT expand parent capabilities into their
+   * section-level children (e.g. manage:configs does NOT expand into
+   * manage:configs:endpoints, manage:configs:models, etc.). Section-level
+   * capabilities are resolved dynamically by the authorization layer
+   * (hasCapabilityForPrincipals / getHeldCapabilities) at check time via
+   * getParentCapabilities. The admin UI should treat a base capability like
+   * manage:configs as implying authority over all its sections.
+   */
   async function getEffectiveCapabilitiesHandler(req: ServerRequest, res: Response) {
     try {
       const user = resolveUser(req);
