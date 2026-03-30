@@ -103,7 +103,6 @@ router.get('/oauth/openid', async (req, res, next) => {
 
 router.get(
   '/oauth/openid/callback',
-  /** Capture OAuth state before passport consumes the query params */
   (req, res, next) => {
     req.oauthState = req.query.state;
     next();
@@ -113,7 +112,6 @@ router.get(
     failureMessage: true,
     session: false,
   }),
-  /** Retrieve PKCE challenge from cache using the OAuth state */
   async (req, res, next) => {
     if (!req.oauthState) {
       return next();

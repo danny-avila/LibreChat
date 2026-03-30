@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import crypto from 'crypto';
 
 jest.mock(
@@ -22,6 +21,7 @@ describe('admin OAuth code exchange', () => {
     username: 'admin',
     role: 'ADMIN',
     provider: 'openid',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 
   const createCache = () => {
@@ -36,6 +36,7 @@ describe('admin OAuth code exchange', () => {
       }),
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return { cache: cache as any, store, spies: cache };
   };
 
