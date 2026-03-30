@@ -1460,6 +1460,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         'user-123',
         {},
         undefined,
+        undefined,
         mockFindToken,
       );
 
@@ -1502,6 +1503,8 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         client_id: 'new-client-id',
         client_secret: 'new-client-secret',
         redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
       });
 
       mockStartAuthorization.mockResolvedValueOnce({
@@ -1514,6 +1517,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         'https://example.com/mcp',
         'user-123',
         {},
+        undefined,
         undefined,
         mockFindToken,
       );
@@ -1544,6 +1548,8 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         client_id: 'new-client-id',
         client_secret: 'new-client-secret',
         redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
       });
 
       mockStartAuthorization.mockResolvedValueOnce({
@@ -1591,6 +1597,8 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         client_id: 'new-client-id',
         client_secret: 'new-client-secret',
         redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
       });
 
       mockStartAuthorization.mockResolvedValueOnce({
@@ -1603,6 +1611,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         'https://example.com/mcp',
         'user-123',
         {},
+        undefined,
         undefined,
         mockFindToken,
       );
@@ -1643,6 +1652,8 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         client_id: 'new-client-id',
         client_secret: 'new-client-secret',
         redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
       });
 
       mockStartAuthorization.mockResolvedValueOnce({
@@ -1655,6 +1666,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         'https://example.com/mcp',
         'user-123',
         {},
+        undefined,
         undefined,
         mockFindToken,
       );
