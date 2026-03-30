@@ -27,7 +27,11 @@ const router = express.Router();
 function resolveRequestOrigin(req) {
   const originHeader = req.get('origin');
   if (originHeader) {
-    return originHeader;
+    try {
+      return new URL(originHeader).origin;
+    } catch {
+      return originHeader;
+    }
   }
 
   const refererHeader = req.get('referer');
@@ -73,16 +77,22 @@ router.get('/oauth/openid/check', (req, res) => {
 /** PKCE challenge cache TTL: 5 minutes (enough for user to authenticate with IdP) */
 const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
 /** Regex pattern for valid PKCE challenges: 64 hex characters (SHA-256 hex digest) */
-const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/i;
+const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
 
-router.get('/oauth/openid', (req, res, next) => {
+router.get('/oauth/openid', async (req, res, next) => {
   const state = randomState();
   const codeChallenge = req.query.code_challenge;
 
-  /** Store PKCE challenge keyed by OAuth state for retrieval in callback */
   if (typeof codeChallenge === 'string' && PKCE_CHALLENGE_PATTERN.test(codeChallenge)) {
-    const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-    cache.set(`pkce:${state}`, codeChallenge, PKCE_CHALLENGE_TTL);
+    try {
+      const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+      await cache.set(`pkce:${state}`, codeChallenge, PKCE_CHALLENGE_TTL);
+    } catch (err) {
+      logger.error('[admin/oauth/openid] Failed to store PKCE challenge:', err);
+      return res.redirect(
+        `${getAdminPanelUrl()}/auth/openid/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
+      );
+    }
   }
 
   return passport.authenticate('openidAdmin', {
@@ -126,7 +136,7 @@ router.get(
 );
 
 /** Regex pattern for valid exchange codes: 64 hex characters */
-const EXCHANGE_CODE_PATTERN = /^[a-f0-9]{64}$/i;
+const EXCHANGE_CODE_PATTERN = /^[a-f0-9]{64}$/;
 
 /**
  * Exchange OAuth authorization code for tokens.
@@ -154,6 +164,17 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
       return res.status(400).json({
         error: 'Invalid authorization code format',
         error_code: 'INVALID_CODE_FORMAT',
+      });
+    }
+
+    if (
+      codeVerifier !== undefined &&
+      (typeof codeVerifier !== 'string' || codeVerifier.length > 512)
+    ) {
+      logger.warn('[admin/oauth/exchange] Invalid code_verifier format');
+      return res.status(400).json({
+        error: 'Invalid code_verifier',
+        error_code: 'INVALID_VERIFIER',
       });
     }
 

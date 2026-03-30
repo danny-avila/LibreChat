@@ -27,7 +27,7 @@ describe('admin OAuth code exchange', () => {
   const createCache = () => {
     const store = new Map();
     const cache = {
-      set: jest.fn(async (key: string, value: unknown) => {
+      set: jest.fn(async (key: string, value: unknown, _ttl?: number) => {
         store.set(key, value);
       }),
       get: jest.fn(async (key: string) => store.get(key)),
@@ -73,6 +73,21 @@ describe('admin OAuth code exchange', () => {
       expect(result).toBeNull();
       expect(spies.delete).toHaveBeenCalledWith(exchangeCode);
       expect(store.has(exchangeCode)).toBe(false);
+    });
+
+    it('rejects code exchange when origin is stored but request has no origin', async () => {
+      const { cache } = createCache();
+      const exchangeCode = await generateAdminExchangeCode(
+        cache,
+        user,
+        'jwt-token',
+        'refresh-token',
+        'https://admin.example.com',
+      );
+
+      const result = await exchangeAdminCode(cache, exchangeCode, undefined);
+
+      expect(result).toBeNull();
     });
 
     it('allows exchange when no origin was stored (backward compat)', async () => {
@@ -123,6 +138,13 @@ describe('admin OAuth code exchange', () => {
 
     it('verifyCodeChallenge returns false for wrong verifier', () => {
       expect(verifyCodeChallenge('wrong-verifier', codeChallenge)).toBe(false);
+    });
+
+    it('verifyCodeChallenge handles hex case insensitively (input gate rejects uppercase)', () => {
+      const uppercaseChallenge = codeChallenge.toUpperCase();
+      // Buffer.from(hex) is case-insensitive, so verification passes at this layer.
+      // Uppercase challenges are rejected earlier by PKCE_CHALLENGE_PATTERN (no /i flag).
+      expect(verifyCodeChallenge(codeVerifier, uppercaseChallenge)).toBe(true);
     });
 
     it('exchanges code when valid code_verifier is provided', async () => {

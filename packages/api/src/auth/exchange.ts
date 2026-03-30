@@ -72,14 +72,23 @@ export function serializeUserForExchange(user: IUser): AdminExchangeUser {
 
 /**
  * Verifies a PKCE code_verifier against a stored code_challenge.
- * Uses SHA-256 hash comparison (S256 method).
+ * Uses hex-encoded SHA-256 comparison (not RFC 7636 S256 which uses base64url).
  * @param verifier - The code_verifier provided during exchange
- * @param challenge - The code_challenge stored during code generation
+ * @param challenge - The hex-encoded SHA-256 code_challenge stored during code generation
  * @returns True if the verifier matches the challenge
  */
 export function verifyCodeChallenge(verifier: string, challenge: string): boolean {
-  const computed = crypto.createHash('sha256').update(verifier).digest('hex');
-  return computed === challenge;
+  const computed = crypto.createHash('sha256').update(verifier).digest();
+  let storedBuf: Buffer;
+  try {
+    storedBuf = Buffer.from(challenge, 'hex');
+  } catch {
+    return false;
+  }
+  if (computed.length !== storedBuf.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(computed, storedBuf);
 }
 
 /**
