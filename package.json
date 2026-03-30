@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "set-balance": "node config/set-balance.js",
@@ -112,6 +113,7 @@
     "@playwright/test": "^1.56.1",
     "@types/react-virtualized": "^9.22.0",
     "caniuse-lite": "^1.0.30001741",
+    "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
     "elliptic": "^6.6.1",
     "eslint": "^9.39.1",
