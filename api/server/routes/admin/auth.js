@@ -24,6 +24,28 @@ const setBalanceConfig = createSetBalanceConfig({
 
 const router = express.Router();
 
+function resolveRequestOrigin(req) {
+  const originHeader = req.get('origin');
+  if (originHeader) {
+    try {
+      return new URL(originHeader).origin;
+    } catch {
+      return undefined;
+    }
+  }
+
+  const refererHeader = req.get('referer');
+  if (!refererHeader) {
+    return undefined;
+  }
+
+  try {
+    return new URL(refererHeader).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 router.post(
   '/login/local',
   middleware.logHeaders,
@@ -52,20 +74,67 @@ router.get('/oauth/openid/check', (req, res) => {
   res.status(200).json({ message: 'OpenID check successful' });
 });
 
-router.get('/oauth/openid', (req, res, next) => {
+/** PKCE challenge cache TTL: 5 minutes (enough for user to authenticate with IdP) */
+const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
+/** Regex pattern for valid PKCE challenges: 64 hex characters (SHA-256 hex digest) */
+const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
+
+router.get('/oauth/openid', async (req, res, next) => {
+  const state = randomState();
+  const codeChallenge = req.query.code_challenge;
+
+  if (typeof codeChallenge === 'string' && PKCE_CHALLENGE_PATTERN.test(codeChallenge)) {
+    try {
+      const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+      await cache.set(`pkce:${state}`, codeChallenge, PKCE_CHALLENGE_TTL);
+    } catch (err) {
+      logger.error('[admin/oauth/openid] Failed to store PKCE challenge:', err);
+      return res.redirect(
+        `${getAdminPanelUrl()}/auth/openid/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
+      );
+    }
+  }
+
   return passport.authenticate('openidAdmin', {
     session: false,
-    state: randomState(),
+    state,
   })(req, res, next);
 });
 
 router.get(
   '/oauth/openid/callback',
+  (req, res, next) => {
+    req.oauthState = typeof req.query.state === 'string' ? req.query.state : undefined;
+    next();
+  },
   passport.authenticate('openidAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/openid/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,
     session: false,
   }),
+  async (req, res, next) => {
+    if (!req.oauthState) {
+      return next();
+    }
+    try {
+      const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+      const challenge = await cache.get(`pkce:${req.oauthState}`);
+      if (challenge) {
+        req.pkceChallenge = challenge;
+        await cache.delete(`pkce:${req.oauthState}`);
+      } else {
+        logger.warn(
+          '[admin/oauth/callback] State present but no PKCE challenge found; PKCE will not be enforced for this request',
+        );
+      }
+    } catch (err) {
+      logger.error('[admin/oauth/callback] Failed to retrieve PKCE challenge, aborting:', err);
+      return res.redirect(
+        `${getAdminPanelUrl()}/auth/openid/callback?error=pkce_retrieval_failed&error_description=Failed+to+retrieve+PKCE+challenge`,
+      );
+    }
+    next();
+  },
   requireAdminAccess,
   setBalanceConfig,
   middleware.checkDomainAllowed,
@@ -73,7 +142,7 @@ router.get(
 );
 
 /** Regex pattern for valid exchange codes: 64 hex characters */
-const EXCHANGE_CODE_PATTERN = /^[a-f0-9]{64}$/i;
+const EXCHANGE_CODE_PATTERN = /^[a-f0-9]{64}$/;
 
 /**
  * Exchange OAuth authorization code for tokens.
@@ -81,12 +150,12 @@ const EXCHANGE_CODE_PATTERN = /^[a-f0-9]{64}$/i;
  * The code is one-time-use and expires in 30 seconds.
  *
  * POST /api/admin/oauth/exchange
- * Body: { code: string }
+ * Body: { code: string, code_verifier?: string }
  * Response: { token: string, refreshToken: string, user: object }
  */
 router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
   try {
-    const { code } = req.body;
+    const { code, code_verifier: codeVerifier } = req.body;
 
     if (!code) {
       logger.warn('[admin/oauth/exchange] Missing authorization code');
@@ -104,8 +173,20 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
       });
     }
 
+    if (
+      codeVerifier !== undefined &&
+      (typeof codeVerifier !== 'string' || codeVerifier.length < 1 || codeVerifier.length > 512)
+    ) {
+      logger.warn('[admin/oauth/exchange] Invalid code_verifier format');
+      return res.status(400).json({
+        error: 'Invalid code_verifier',
+        error_code: 'INVALID_VERIFIER',
+      });
+    }
+
     const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-    const result = await exchangeAdminCode(cache, code);
+    const requestOrigin = resolveRequestOrigin(req);
+    const result = await exchangeAdminCode(cache, code, requestOrigin, codeVerifier);
 
     if (!result) {
       return res.status(401).json({
