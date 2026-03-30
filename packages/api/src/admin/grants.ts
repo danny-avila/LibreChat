@@ -36,7 +36,7 @@ export interface AdminGrantsDeps {
     tenantId?: string;
   }) => Promise<ISystemGrant[]>;
   getCapabilitiesForPrincipals: (params: {
-    principals: Array<{ principalType: string; principalId: string | Types.ObjectId }>;
+    principals: Array<{ principalType: PrincipalType; principalId: string | Types.ObjectId }>;
     tenantId?: string;
   }) => Promise<ISystemGrant[]>;
   grantCapability: (params: {
@@ -71,7 +71,10 @@ export interface AdminGrantsDeps {
     role: string;
     tenantId?: string;
   }) => ResolvedPrincipal[] | undefined;
+  checkRoleExists?: (roleId: string) => Promise<boolean>;
 }
+
+export type GrantPrincipalType = PrincipalType.ROLE | PrincipalType.GROUP | PrincipalType.USER;
 
 /** Creates admin grant handlers with dependency injection for the /api/admin/grants routes. */
 export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
@@ -86,9 +89,8 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
     hasCapabilityForPrincipals,
     getHeldCapabilities,
     getCachedPrincipals,
+    checkRoleExists,
   } = deps;
-
-  type GrantPrincipalType = PrincipalType.ROLE | PrincipalType.GROUP | PrincipalType.USER;
 
   const MANAGE_CAPABILITY_BY_TYPE: Record<GrantPrincipalType, SystemCapability> = {
     [PrincipalType.ROLE]: SystemCapabilities.MANAGE_ROLES,
@@ -143,7 +145,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       return 'Invalid principal type';
     }
     if (!principalId) {
-      return 'principalId is required';
+      return 'Principal ID is required';
     }
     if (principalType !== PrincipalType.ROLE && !isValidObjectIdString(principalId)) {
       return 'Invalid principalId format';
@@ -157,10 +159,10 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       return 'Invalid principal type';
     }
     if (principalId == null) {
-      return 'principalId is required';
+      return 'Principal ID is required';
     }
     if (typeof principalId !== 'string') {
-      return 'principalId must be a string';
+      return 'Principal ID must be a string';
     }
     const principalError = validatePrincipal(principalType, principalId);
     if (principalError) {
@@ -179,6 +181,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
+      const { limit, offset } = parsePagination(req.query as { limit?: string; offset?: string });
       const { tenantId } = user;
       const principals = await resolvePrincipals(user);
       const entries = Object.entries(READ_CAPABILITY_BY_TYPE) as [
@@ -195,7 +198,6 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         .filter(([, cap]) => heldCaps.has(cap))
         .map(([type]) => type) as PrincipalType[];
 
-      const { limit, offset } = parsePagination(req.query as { limit?: string; offset?: string });
       if (!allowedTypes.length) {
         return res.status(200).json({ grants: [], total: 0, limit, offset });
       }
@@ -304,18 +306,26 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         capability: SystemCapability;
       };
 
+      if (principalType === PrincipalType.ROLE && checkRoleExists) {
+        const exists = await checkRoleExists(principalId);
+        if (!exists) {
+          return res.status(400).json({ error: 'Role not found' });
+        }
+      }
+
       const { tenantId } = caller;
       const principals = await resolvePrincipals(caller);
 
       const manageCap = MANAGE_CAPABILITY_BY_TYPE[principalType];
-      const [hasManage, hasCap] = await Promise.all([
-        hasCapabilityForPrincipals({ principals, capability: manageCap, tenantId }),
-        hasCapabilityForPrincipals({ principals, capability, tenantId }),
-      ]);
-      if (!hasManage) {
+      const held = await getHeldCapabilities({
+        principals,
+        capabilities: [manageCap, capability],
+        tenantId,
+      });
+      if (!held.has(manageCap)) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
-      if (!hasCap) {
+      if (!held.has(capability)) {
         return res.status(403).json({ error: 'Cannot grant a capability you do not possess' });
       }
 
