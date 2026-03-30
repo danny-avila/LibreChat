@@ -70,20 +70,55 @@ router.get('/oauth/openid/check', (req, res) => {
   res.status(200).json({ message: 'OpenID check successful' });
 });
 
+/** PKCE challenge cache TTL: 5 minutes (enough for user to authenticate with IdP) */
+const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
+/** Regex pattern for valid PKCE challenges: 64 hex characters (SHA-256 hex digest) */
+const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/i;
+
 router.get('/oauth/openid', (req, res, next) => {
+  const state = randomState();
+  const codeChallenge = req.query.code_challenge;
+
+  /** Store PKCE challenge keyed by OAuth state for retrieval in callback */
+  if (typeof codeChallenge === 'string' && PKCE_CHALLENGE_PATTERN.test(codeChallenge)) {
+    const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+    cache.set(`pkce:${state}`, codeChallenge, PKCE_CHALLENGE_TTL);
+  }
+
   return passport.authenticate('openidAdmin', {
     session: false,
-    state: randomState(),
+    state,
   })(req, res, next);
 });
 
 router.get(
   '/oauth/openid/callback',
+  /** Capture OAuth state before passport consumes the query params */
+  (req, res, next) => {
+    req.oauthState = req.query.state;
+    next();
+  },
   passport.authenticate('openidAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/openid/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,
     session: false,
   }),
+  /** Retrieve PKCE challenge from cache using the OAuth state */
+  async (req, res, next) => {
+    try {
+      if (req.oauthState) {
+        const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+        const challenge = await cache.get(`pkce:${req.oauthState}`);
+        if (challenge) {
+          req.pkceChallenge = challenge;
+          await cache.delete(`pkce:${req.oauthState}`);
+        }
+      }
+    } catch (err) {
+      logger.warn('[admin/oauth/callback] Failed to retrieve PKCE challenge:', err);
+    }
+    next();
+  },
   requireAdminAccess,
   setBalanceConfig,
   middleware.checkDomainAllowed,
@@ -104,7 +139,7 @@ const EXCHANGE_CODE_PATTERN = /^[a-f0-9]{64}$/i;
  */
 router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
   try {
-    const { code } = req.body;
+    const { code, code_verifier: codeVerifier } = req.body;
 
     if (!code) {
       logger.warn('[admin/oauth/exchange] Missing authorization code');
@@ -124,7 +159,7 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
 
     const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
     const requestOrigin = resolveRequestOrigin(req);
-    const result = await exchangeAdminCode(cache, code, requestOrigin);
+    const result = await exchangeAdminCode(cache, code, requestOrigin, codeVerifier);
 
     if (!result) {
       return res.status(401).json({

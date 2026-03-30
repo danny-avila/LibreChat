@@ -53,6 +53,7 @@ function createOAuthHandler(redirectUri = domains.client) {
           token,
           refreshToken,
           new URL(redirectUri).origin,
+          req.pkceChallenge,
         );
 
         const callbackUrl = new URL(redirectUri);
