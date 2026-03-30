@@ -212,9 +212,27 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       expect(result.error).toBeUndefined();
     });
 
+    it('should exempt Claude 4+ PDFs via cross-region inference profile ID', async () => {
+      const pdfBuffer = createMockPdfBuffer(10);
+      const model = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, undefined, model);
+
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
     it('should exempt Nova PDFs from the 4.5MB limit', async () => {
       const pdfBuffer = createMockPdfBuffer(10);
       const model = 'amazon.nova-pro-v1:0';
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, undefined, model);
+
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should exempt Nova PDFs via cross-region inference profile ID', async () => {
+      const pdfBuffer = createMockPdfBuffer(10);
+      const model = 'us.amazon.nova-pro-v1:0';
       const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, undefined, model);
 
       expect(result.isValid).toBe(true);

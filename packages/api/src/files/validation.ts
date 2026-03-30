@@ -130,17 +130,20 @@ async function validateAnthropicPdf(
 }
 
 /**
- * Matches Bedrock Claude 4+ model identifiers.
- * Pattern: anthropic.claude-{family}-{version≥4}-{date}-v{n}:{rev}
- * e.g. "anthropic.claude-sonnet-4-20250514-v1:0"
+ * Matches Bedrock Claude 4+ model identifiers, including cross-region inference profile IDs.
+ * Pattern: [region.]anthropic.claude-{family}-{version≥4}-{date}-v{n}:{rev}
+ * e.g. "anthropic.claude-sonnet-4-20250514-v1:0" or "us.anthropic.claude-sonnet-4-20250514-v1:0"
  */
-const BEDROCK_CLAUDE_4_PLUS_RE = /anthropic\.claude-(?:sonnet|opus|haiku)-[4-9]\d*-/;
+const BEDROCK_CLAUDE_4_PLUS_RE = /(?:^|\.)anthropic\.claude-(?:sonnet|opus|haiku)-[4-9]\d*-/;
 const isBedrockClaude4Plus = (model?: string): boolean =>
   model != null && BEDROCK_CLAUDE_4_PLUS_RE.test(model);
 
-/** Matches Bedrock Nova model identifiers (e.g. "amazon.nova-pro-v1:0") */
+/**
+ * Matches Bedrock Nova model identifiers, including cross-region inference profile IDs.
+ * e.g. "amazon.nova-pro-v1:0" or "us.amazon.nova-pro-v1:0"
+ */
 const isBedrockNova = (model?: string): boolean =>
-  model != null && model.startsWith('amazon.nova-');
+  model != null && /(?:^|\.)amazon\.nova-/.test(model);
 
 const pdfMimeType = 'application/pdf';
 const docxMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
