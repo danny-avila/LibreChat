@@ -5,7 +5,11 @@ const passport = require('passport');
 const { ErrorTypes } = require('librechat-data-provider');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
-const { getBalanceConfig, isEmailDomainAllowed } = require('@librechat/api');
+const {
+  getBalanceConfig,
+  isEmailDomainAllowed,
+  resolveAppConfigForUser,
+} = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
@@ -193,9 +197,9 @@ async function setupSaml() {
           logger.debug('[samlStrategy] SAML profile:', profile);
 
           const userEmail = getEmail(profile) || '';
-          const appConfig = await getAppConfig();
 
-          if (!isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)) {
+          const baseConfig = await getAppConfig({ baseOnly: true });
+          if (!isEmailDomainAllowed(userEmail, baseConfig?.registration?.allowedDomains)) {
             logger.error(
               `[SAML Strategy] Authentication blocked - email domain not allowed [Email: ${userEmail}]`,
             );
@@ -221,6 +225,17 @@ async function setupSaml() {
             return done(null, false, {
               message: ErrorTypes.AUTH_FAILED,
             });
+          }
+
+          const appConfig = user?.tenantId
+            ? await resolveAppConfigForUser(getAppConfig, user)
+            : baseConfig;
+
+          if (!isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)) {
+            logger.error(
+              `[SAML Strategy] Authentication blocked - email domain not allowed [Email: ${userEmail}]`,
+            );
+            return done(null, false, { message: 'Email domain not allowed' });
           }
 
           const fullName = getFullName(profile);

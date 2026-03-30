@@ -1,6 +1,6 @@
 {
   "name": "librechat-data-provider",
-  "version": "0.8.401",
+  "version": "0.8.405",
   "description": "data services for librechat apps",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
@@ -18,6 +18,9 @@
       "types": "./dist/types/react-query/index.d.ts"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "clean": "rimraf dist",
     "build": "npm run clean && rollup -c --silent --bundleConfigAsCjs",

@@ -6,7 +6,6 @@ const convoSchema: Schema<IConversation> = new Schema(
   {
     conversationId: {
       type: String,
-      unique: true,
       required: true,
       index: true,
       meiliIndex: true,

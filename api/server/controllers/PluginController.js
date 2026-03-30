@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
+const { logger, scopedCacheKey } = require('@librechat/data-schemas');
 const { getToolkitKey, checkPluginAuth, filterUniquePlugins } = require('@librechat/api');
 const { getCachedTools, setCachedTools } = require('~/server/services/Config');
 const { availableTools, toolkits } = require('~/app/clients/tools');
@@ -9,13 +9,14 @@ const { getLogStores } = require('~/cache');
 const getAvailablePluginsController = async (req, res) => {
   try {
     const cache = getLogStores(CacheKeys.TOOL_CACHE);
-    const cachedPlugins = await cache.get(CacheKeys.PLUGINS);
+    const pluginsCacheKey = scopedCacheKey(CacheKeys.PLUGINS);
+    const cachedPlugins = await cache.get(pluginsCacheKey);
     if (cachedPlugins) {
       res.status(200).json(cachedPlugins);
       return;
     }
 
-    const appConfig = await getAppConfig({ role: req.user?.role });
+    const appConfig = await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId });
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
     const { filteredTools = [], includedTools = [] } = appConfig;
     /** @type {import('@librechat/api').LCManifestTool[]} */
@@ -37,7 +38,7 @@ const getAvailablePluginsController = async (req, res) => {
       plugins = plugins.filter((plugin) => !filteredTools.includes(plugin.pluginKey));
     }
 
-    await cache.set(CacheKeys.PLUGINS, plugins);
+    await cache.set(pluginsCacheKey, plugins);
     res.status(200).json(plugins);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -64,9 +65,11 @@ const getAvailableTools = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
     const cache = getLogStores(CacheKeys.TOOL_CACHE);
-    const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
+    const toolsCacheKey = scopedCacheKey(CacheKeys.TOOLS);
+    const cachedToolsArray = await cache.get(toolsCacheKey);
 
-    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
+    const appConfig =
+      req.config ?? (await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId }));
 
     // Return early if we have cached tools
     if (cachedToolsArray != null) {
@@ -114,7 +117,7 @@ const getAvailableTools = async (req, res) => {
     }
 
     const finalTools = filterUniquePlugins(toolsOutput);
-    await cache.set(CacheKeys.TOOLS, finalTools);
+    await cache.set(toolsCacheKey, finalTools);
 
     res.status(200).json(finalTools);
   } catch (error) {

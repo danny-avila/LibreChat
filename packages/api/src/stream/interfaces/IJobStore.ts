@@ -12,6 +12,7 @@ export type JobStatus = 'running' | 'complete' | 'error' | 'aborted';
 export interface SerializableJobData {
   streamId: string;
   userId: string;
+  tenantId?: string;
   status: JobStatus;
   createdAt: number;
   completedAt?: number;
@@ -149,6 +150,7 @@ export interface IJobStore {
     streamId: string,
     userId: string,
     conversationId?: string,
+    tenantId?: string,
   ): Promise<SerializableJobData>;
 
   /** Get a job by streamId (streamId === conversationId) */
@@ -186,7 +188,7 @@ export interface IJobStore {
    * @param userId - The user ID to query
    * @returns Array of conversation IDs with active jobs
    */
-  getActiveJobIdsByUser(userId: string): Promise<string[]>;
+  getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]>;
 
   // ===== Content State Methods =====
   // These methods manage volatile content state tied to each job.

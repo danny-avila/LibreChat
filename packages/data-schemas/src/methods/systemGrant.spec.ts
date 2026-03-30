@@ -2,8 +2,8 @@ import mongoose, { Types } from 'mongoose';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
-import type { SystemCapability } from '~/systemCapabilities';
-import { SystemCapabilities, CapabilityImplications } from '~/systemCapabilities';
+import type { SystemCapability } from '~/types/admin';
+import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
 import { createSystemGrantMethods } from './systemGrant';
 import systemGrantSchema from '~/schema/systemGrant';
 import logger from '~/config/winston';
@@ -699,6 +699,68 @@ describe('systemGrant methods', () => {
           principalId: 'not-valid',
         }),
       ).rejects.toThrow(TypeError);
+    });
+  });
+
+  describe('deleteGrantsForPrincipal', () => {
+    it('deletes all grants for a principal', async () => {
+      const groupId = new Types.ObjectId();
+
+      await methods.grantCapability({
+        principalType: PrincipalType.GROUP,
+        principalId: groupId,
+        capability: SystemCapabilities.READ_USERS,
+      });
+      await methods.grantCapability({
+        principalType: PrincipalType.GROUP,
+        principalId: groupId,
+        capability: SystemCapabilities.READ_CONFIGS,
+      });
+
+      await methods.deleteGrantsForPrincipal(PrincipalType.GROUP, groupId);
+
+      const remaining = await SystemGrant.countDocuments({
+        principalType: PrincipalType.GROUP,
+        principalId: groupId,
+      });
+      expect(remaining).toBe(0);
+    });
+
+    it('is a no-op for principal with no grants', async () => {
+      const groupId = new Types.ObjectId();
+
+      await expect(
+        methods.deleteGrantsForPrincipal(PrincipalType.GROUP, groupId),
+      ).resolves.not.toThrow();
+    });
+
+    it('does not affect other principals', async () => {
+      const groupA = new Types.ObjectId();
+      const groupB = new Types.ObjectId();
+
+      await methods.grantCapability({
+        principalType: PrincipalType.GROUP,
+        principalId: groupA,
+        capability: SystemCapabilities.READ_USERS,
+      });
+      await methods.grantCapability({
+        principalType: PrincipalType.GROUP,
+        principalId: groupB,
+        capability: SystemCapabilities.READ_USERS,
+      });
+
+      await methods.deleteGrantsForPrincipal(PrincipalType.GROUP, groupA);
+
+      const remainingA = await SystemGrant.countDocuments({
+        principalType: PrincipalType.GROUP,
+        principalId: groupA,
+      });
+      const remainingB = await SystemGrant.countDocuments({
+        principalType: PrincipalType.GROUP,
+        principalId: groupB,
+      });
+      expect(remainingA).toBe(0);
+      expect(remainingB).toBe(1);
     });
   });
 
