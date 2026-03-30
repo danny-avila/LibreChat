@@ -139,7 +139,6 @@ export async function exchangeAdminCode(
 ): Promise<AdminExchangeResponse | null> {
   const data = (await cache.get(code)) as AdminExchangeData | undefined;
 
-  /** Delete immediately - one-time use */
   await cache.delete(code);
 
   if (!data) {
@@ -152,7 +151,6 @@ export async function exchangeAdminCode(
     return null;
   }
 
-  /** PKCE verification: if a challenge was stored, the verifier must match */
   if (data.codeChallenge) {
     if (!codeVerifier || !verifyCodeChallenge(codeVerifier, data.codeChallenge)) {
       logger.warn('[adminExchange] PKCE code_verifier mismatch or missing');

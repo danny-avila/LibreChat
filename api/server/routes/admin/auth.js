@@ -104,7 +104,7 @@ router.get('/oauth/openid', async (req, res, next) => {
 router.get(
   '/oauth/openid/callback',
   (req, res, next) => {
-    req.oauthState = req.query.state;
+    req.oauthState = typeof req.query.state === 'string' ? req.query.state : undefined;
     next();
   },
   passport.authenticate('openidAdmin', {
