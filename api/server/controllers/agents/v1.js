@@ -201,9 +201,10 @@ const createAgentHandler = async (req, res) => {
     agentData.author = userId;
     agentData.tools = [];
 
+    const hasMCPTools = tools.some((t) => t?.includes(Constants.mcp_delimiter));
     const [availableTools, configServers] = await Promise.all([
       getCachedTools().then((t) => t ?? {}),
-      resolveConfigServers(req),
+      hasMCPTools ? resolveConfigServers(req) : Promise.resolve(undefined),
     ]);
     agentData.tools = await filterAuthorizedTools({
       tools,

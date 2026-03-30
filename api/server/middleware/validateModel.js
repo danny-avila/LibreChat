@@ -5,7 +5,7 @@ const { getEndpointsConfig } = require('~/server/services/Config');
 const { logViolation } = require('~/cache');
 
 const MAX_MODEL_STRING_LENGTH = 256;
-const MODEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:\-/@+ ]*$/;
+const MODEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@+ -]*$/;
 
 /**
  * Validates the model of the request.
