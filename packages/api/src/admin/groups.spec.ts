@@ -8,7 +8,7 @@ import { createAdminGroupsHandlers } from './groups';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
-  logger: { error: jest.fn(), warn: jest.fn() },
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
 describe('createAdminGroupsHandlers', () => {
@@ -809,7 +809,9 @@ describe('createAdminGroupsHandlers', () => {
         principalType: PrincipalType.GROUP,
         principalId: new Types.ObjectId(validId),
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId, {
+        tenantId: undefined,
+      });
     });
 
     it('cleans up Config, AclEntry, and SystemGrant on group delete', async () => {
@@ -825,7 +827,9 @@ describe('createAdminGroupsHandlers', () => {
         principalType: PrincipalType.GROUP,
         principalId: new Types.ObjectId(validId),
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId, {
+        tenantId: undefined,
+      });
     });
   });
 

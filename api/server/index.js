@@ -154,6 +154,7 @@ const startServer = async () => {
   app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/config', routes.adminConfig);
+  app.use('/api/admin/grants', routes.adminGrants);
   app.use('/api/admin/groups', routes.adminGroups);
   app.use('/api/admin/roles', routes.adminRoles);
   app.use('/api/actions', routes.actions);

@@ -85,6 +85,7 @@ export interface AdminGroupsDeps {
   deleteGrantsForPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
+    options?: { tenantId?: string },
   ) => Promise<void>;
 }
 
@@ -310,13 +311,14 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
        * grantPermission stores group principalId as ObjectId, so we must
        * cast here. deleteConfig and deleteGrantsForPrincipal normalize internally.
        */
+      const tenantId = req.user?.tenantId;
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.GROUP, id),
         deleteAclEntries({
           principalType: PrincipalType.GROUP,
           principalId: new Types.ObjectId(id),
         }),
-        deleteGrantsForPrincipal(PrincipalType.GROUP, id),
+        deleteGrantsForPrincipal(PrincipalType.GROUP, id, { tenantId }),
       ]);
       for (const result of cleanupResults) {
         if (result.status === 'rejected') {

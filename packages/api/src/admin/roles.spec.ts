@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { SystemRoles } from 'librechat-data-provider';
+import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type { IRole, IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -10,7 +10,7 @@ const { RoleConflictError } = jest.requireActual('@librechat/data-schemas');
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
-  logger: { error: jest.fn() },
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
 const validUserId = new Types.ObjectId().toString();
@@ -40,12 +40,14 @@ function createReqRes(
     params?: Record<string, string>;
     query?: Record<string, string>;
     body?: Record<string, unknown>;
+    user?: { _id: Types.ObjectId; role: string; tenantId?: string };
   } = {},
 ) {
   const req = {
     params: overrides.params ?? {},
     query: overrides.query ?? {},
     body: overrides.body ?? {},
+    user: overrides.user,
   } as unknown as ServerRequest;
 
   const json = jest.fn();
@@ -71,6 +73,9 @@ function createDeps(overrides: Partial<AdminRolesDeps> = {}): AdminRolesDeps {
     updateUsersRoleByIds: jest.fn().mockResolvedValue(undefined),
     listUsersByRole: jest.fn().mockResolvedValue([]),
     countUsersByRole: jest.fn().mockResolvedValue(0),
+    deleteConfig: jest.fn().mockResolvedValue(null),
+    deleteAclEntries: jest.fn().mockResolvedValue(undefined),
+    deleteGrantsForPrincipal: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -921,6 +926,81 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(deps.deleteRoleByName).toHaveBeenCalledWith('editor');
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('cleans up grants after successful deletion', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.deleteConfig).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor');
+      expect(deps.deleteAclEntries).toHaveBeenCalledWith({
+        principalType: PrincipalType.ROLE,
+        principalId: 'editor',
+      });
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor', {
+        tenantId: undefined,
+      });
+    });
+
+    it('passes tenantId to grant cleanup', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin', tenantId: 'tenant-1' },
+      });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor', {
+        tenantId: 'tenant-1',
+      });
+    });
+
+    it('does not clean up when role not found', async () => {
+      const deps = createDeps({ deleteRoleByName: jest.fn().mockResolvedValue(null) });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'nonexistent' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(deps.deleteConfig).not.toHaveBeenCalled();
+      expect(deps.deleteAclEntries).not.toHaveBeenCalled();
+      expect(deps.deleteGrantsForPrincipal).not.toHaveBeenCalled();
+    });
+
+    it('succeeds even when grant cleanup fails', async () => {
+      const deps = createDeps({
+        deleteGrantsForPrincipal: jest.fn().mockRejectedValue(new Error('cleanup failed')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('succeeds even when all cascade operations fail', async () => {
+      const deps = createDeps({
+        deleteConfig: jest.fn().mockRejectedValue(new Error('config cleanup failed')),
+        deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl cleanup failed')),
+        deleteGrantsForPrincipal: jest.fn().mockRejectedValue(new Error('grant cleanup failed')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
     });
