@@ -13,6 +13,7 @@ const getAvailablePluginsController = async (req, res) => {
     const includeSet = new Set(includedTools);
     const filterSet = new Set(filteredTools);
 
+    /** Whitelist and blacklist applied independently — a plugin in both lists is excluded. */
     const plugins = [];
     for (const plugin of uniquePlugins) {
       if (includeSet.size > 0 && !includeSet.has(plugin.pluginKey)) {
@@ -70,7 +71,7 @@ const getAvailableTools = async (req, res) => {
       toolsOutput.push(checkPluginAuth(plugin) ? { ...plugin, authenticated: true } : plugin);
     }
 
-    res.status(200).json(filterUniquePlugins(toolsOutput));
+    res.status(200).json(toolsOutput);
   } catch (error) {
     logger.error('[getAvailableTools]', error);
     res.status(500).json({ message: error.message });

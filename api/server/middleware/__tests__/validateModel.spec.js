@@ -71,6 +71,20 @@ describe('validateModel', () => {
       expect(handleError).toHaveBeenCalledWith(res, { text: 'Invalid model identifier' });
     });
 
+    it('trims whitespace before validation', async () => {
+      req.body.model = '  gpt-4o  ';
+      getModelsConfig.mockResolvedValue({ openAI: ['gpt-4o'] });
+      await validateModel(req, res, next);
+      expect(next).toHaveBeenCalled();
+      expect(handleError).not.toHaveBeenCalled();
+    });
+
+    it('rejects model with spaces in the middle', async () => {
+      req.body.model = 'gpt 4o';
+      await validateModel(req, res, next);
+      expect(handleError).toHaveBeenCalledWith(res, { text: 'Invalid model identifier' });
+    });
+
     it('accepts standard model IDs', async () => {
       const validModels = [
         'gpt-4o',

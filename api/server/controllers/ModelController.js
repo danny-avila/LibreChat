@@ -1,7 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
 
-/** @see loadModels — no result caching at this layer. */
 const getModelsConfig = (req) => loadModels(req);
 
 async function loadModels(req) {

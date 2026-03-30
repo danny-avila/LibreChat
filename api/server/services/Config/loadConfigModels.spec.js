@@ -77,6 +77,7 @@ describe('loadConfigModels', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fetchModels.mockReset();
+    require('~/models').getUserKeyValues.mockReset();
     process.env = { ...originalEnv };
 
     getAppConfig.mockResolvedValue({});
