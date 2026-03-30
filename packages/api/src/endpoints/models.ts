@@ -127,8 +127,8 @@ export async function fetchModels({
   }
 
   const cacheKey = !skipCache ? modelsCacheKey(baseURL ?? '', apiKey) : '';
-  if (!skipCache && cacheKey) {
-    const modelsCache = standardCache(CacheKeys.MODEL_QUERIES);
+  const modelsCache = !skipCache ? standardCache(CacheKeys.MODEL_QUERIES) : null;
+  if (modelsCache && cacheKey) {
     const cachedModels = await modelsCache.get(cacheKey);
     if (cachedModels) {
       return cachedModels as string[];
@@ -194,8 +194,7 @@ export async function fetchModels({
     logAxiosError({ message: logMessage, error: error as Error });
   }
 
-  if (!skipCache && cacheKey && models.length > 0) {
-    const modelsCache = standardCache(CacheKeys.MODEL_QUERIES);
+  if (modelsCache && cacheKey && models.length > 0) {
     await modelsCache.set(cacheKey, models, Time.TWO_MINUTES);
   }
 

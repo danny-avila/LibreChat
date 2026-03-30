@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
 
+/** Delegates to loadModels; per-endpoint caching handled by MODEL_QUERIES and getAppConfig. */
 const getModelsConfig = (req) => loadModels(req);
 
 async function loadModels(req) {

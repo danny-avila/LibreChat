@@ -5,16 +5,17 @@ import {
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import type { AgentCapabilities, TEndpointsConfig } from 'librechat-data-provider';
+import type { AgentCapabilities, TEndpointsConfig, TConfig } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 import { loadCustomEndpointsConfig } from '~/endpoints/custom';
 
-type PartialEndpointConfig = Record<string, Record<string, unknown> | false | null>;
-type MutableEndpointsConfig = Record<string, Record<string, unknown> | false | null | undefined>;
+type PartialEndpointEntry = Partial<TConfig> & Record<string, unknown>;
+type DefaultEndpointsResult = Record<string, PartialEndpointEntry | false | null>;
+type MutableEndpointsConfig = Record<string, PartialEndpointEntry | false | null | undefined>;
 
 export interface EndpointsConfigDeps {
   getAppConfig: (params: { role?: string | null; tenantId?: string }) => Promise<AppConfig>;
-  loadDefaultEndpointsConfig: (appConfig: AppConfig) => Promise<PartialEndpointConfig>;
+  loadDefaultEndpointsConfig: (appConfig: AppConfig) => Promise<DefaultEndpointsResult>;
 }
 
 export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
@@ -51,7 +52,7 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
         appConfig.endpoints[EModelEndpoint.assistants];
       mergedConfig[EModelEndpoint.assistants] = {
         ...mergedConfig[EModelEndpoint.assistants],
-        version,
+        version: typeof version === 'string' ? version : undefined,
         retrievalModels,
         disableBuilder,
         capabilities,
@@ -77,7 +78,7 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
         appConfig.endpoints[EModelEndpoint.azureAssistants];
       mergedConfig[EModelEndpoint.azureAssistants] = {
         ...mergedConfig[EModelEndpoint.azureAssistants],
-        version,
+        version: typeof version === 'string' ? version : undefined,
         retrievalModels,
         disableBuilder,
         capabilities,
@@ -85,17 +86,16 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
     }
 
     if (mergedConfig[EModelEndpoint.bedrock] && appConfig?.endpoints?.[EModelEndpoint.bedrock]) {
-      const bedrockEndpoint = appConfig.endpoints[EModelEndpoint.bedrock] as Record<
-        string,
-        unknown
-      >;
+      const { availableRegions } = appConfig.endpoints[EModelEndpoint.bedrock] as {
+        availableRegions?: string[];
+      };
       mergedConfig[EModelEndpoint.bedrock] = {
         ...mergedConfig[EModelEndpoint.bedrock],
-        availableRegions: bedrockEndpoint.availableRegions as string[] | undefined,
+        availableRegions,
       };
     }
 
-    return orderEndpointsConfig(mergedConfig as unknown as TEndpointsConfig);
+    return orderEndpointsConfig(mergedConfig as TEndpointsConfig);
   }
 
   async function checkCapability(

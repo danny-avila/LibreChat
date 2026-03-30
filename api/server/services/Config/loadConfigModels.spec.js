@@ -75,8 +75,7 @@ describe('loadConfigModels', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    jest.resetAllMocks();
-    jest.resetModules();
+    jest.clearAllMocks();
     process.env = { ...originalEnv };
 
     // Default mock for getAppConfig
@@ -342,6 +341,135 @@ describe('loadConfigModels', () => {
     );
 
     expect(result.FalsyFetchModel).toEqual(['defaultModel1', 'defaultModel2']);
+  });
+
+  describe('user-provided API key model fetching', () => {
+    it('fetches models using user-provided API key when key is stored', async () => {
+      const { getUserKeyValues } = require('~/models');
+      getUserKeyValues.mockResolvedValueOnce({
+        apiKey: 'sk-user-key',
+        baseURL: 'https://api.x.com/v1',
+      });
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'UserEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'user_provided',
+              models: { fetch: true, default: ['fallback-model'] },
+            },
+          ],
+        },
+      });
+      fetchModels.mockResolvedValue(['fetched-model-a', 'fetched-model-b']);
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(getUserKeyValues).toHaveBeenCalledWith({ userId: 'testUserId', name: 'UserEndpoint' });
+      expect(fetchModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiKey: 'sk-user-key',
+          baseURL: 'https://api.x.com/v1',
+          skipCache: true,
+        }),
+      );
+      expect(result.UserEndpoint).toEqual(['fetched-model-a', 'fetched-model-b']);
+    });
+
+    it('falls back to defaults when getUserKeyValues returns no apiKey', async () => {
+      const { getUserKeyValues } = require('~/models');
+      getUserKeyValues.mockResolvedValueOnce({ baseURL: 'https://api.x.com/v1' });
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'NoKeyEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.x.com/v1',
+              models: { fetch: true, default: ['default-model'] },
+            },
+          ],
+        },
+      });
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(fetchModels).not.toHaveBeenCalled();
+      expect(result.NoKeyEndpoint).toEqual(['default-model']);
+    });
+
+    it('falls back to defaults when getUserKeyValues throws', async () => {
+      const { getUserKeyValues } = require('~/models');
+      getUserKeyValues.mockRejectedValueOnce(new Error('DB connection timeout'));
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'ErrorEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.example.com/v1',
+              models: { fetch: true, default: ['fallback'] },
+            },
+          ],
+        },
+      });
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(fetchModels).not.toHaveBeenCalled();
+      expect(result.ErrorEndpoint).toEqual(['fallback']);
+    });
+
+    it('skips user key lookup when req.user.id is undefined', async () => {
+      const { getUserKeyValues } = require('~/models');
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'NoUserEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.x.com/v1',
+              models: { fetch: true, default: ['anon-model'] },
+            },
+          ],
+        },
+      });
+
+      const result = await loadConfigModels({ user: {} });
+
+      expect(getUserKeyValues).not.toHaveBeenCalled();
+      expect(result.NoUserEndpoint).toEqual(['anon-model']);
+    });
+
+    it('uses stored baseURL only when baseURL is user_provided', async () => {
+      const { getUserKeyValues } = require('~/models');
+      getUserKeyValues.mockResolvedValueOnce({ apiKey: 'sk-key' });
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'KeyOnly',
+              apiKey: 'user_provided',
+              baseURL: 'https://fixed-base.com/v1',
+              models: { fetch: true, default: ['default'] },
+            },
+          ],
+        },
+      });
+      fetchModels.mockResolvedValue(['model-from-fixed-base']);
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(fetchModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiKey: 'sk-key',
+          baseURL: 'https://fixed-base.com/v1',
+          skipCache: true,
+        }),
+      );
+      expect(result.KeyOnly).toEqual(['model-from-fixed-base']);
+    });
   });
 
   it('normalizes Ollama endpoint name to lowercase', async () => {

@@ -2,10 +2,10 @@ import { logger } from '@librechat/data-schemas';
 import { EModelEndpoint, extractEnvVariable, normalizeEndpointName } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { TModelsConfig, TEndpoint } from 'librechat-data-provider';
-import type { ServerRequest, GetUserKeyValuesFunction } from '~/types';
+import type { ServerRequest, GetUserKeyValuesFunction, UserKeyValues } from '~/types';
 import type { FetchModelsParams } from '~/endpoints/models';
-import { isUserProvided } from '~/utils';
 import { fetchModels as defaultFetchModels } from '~/endpoints/models';
+import { isUserProvided } from '~/utils';
 
 export interface LoadConfigModelsDeps {
   getAppConfig: (params: { role?: string | null; tenantId?: string }) => Promise<AppConfig>;
@@ -59,20 +59,81 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
     const uniqueKeyToEndpointsMap: Record<string, string[]> = {};
     const endpointsMap: Record<string, TEndpoint> = {};
 
+    interface ResolvedEndpoint {
+      name: string;
+      endpoint: TEndpoint;
+      apiKey: string;
+      baseURL: string;
+      apiKeyIsUserProvided: boolean;
+      baseURLIsUserProvided: boolean;
+    }
+
+    const resolved: ResolvedEndpoint[] = [];
+    const userKeyEndpoints: ResolvedEndpoint[] = [];
+
     for (let i = 0; i < customEndpoints.length; i++) {
       const endpoint = customEndpoints[i];
-      const { models, name: configName, baseURL, apiKey, headers: endpointHeaders } = endpoint;
+      const { name: configName, baseURL, apiKey } = endpoint;
       const name = normalizeEndpointName(configName);
       endpointsMap[name] = endpoint;
-
-      const API_KEY = extractEnvVariable(apiKey);
-      const BASE_URL = extractEnvVariable(baseURL);
-      const uniqueKey = `${BASE_URL}__${API_KEY}`;
-
       modelsConfig[name] = [];
 
-      const apiKeyIsUserProvided = isUserProvided(API_KEY);
-      const baseURLIsUserProvided = isUserProvided(BASE_URL);
+      const entry: ResolvedEndpoint = {
+        name,
+        endpoint,
+        apiKey: extractEnvVariable(apiKey),
+        baseURL: extractEnvVariable(baseURL),
+        apiKeyIsUserProvided: isUserProvided(extractEnvVariable(apiKey)),
+        baseURLIsUserProvided: isUserProvided(extractEnvVariable(baseURL)),
+      };
+      resolved.push(entry);
+
+      if (
+        endpoint.models?.fetch &&
+        (entry.apiKeyIsUserProvided || entry.baseURLIsUserProvided) &&
+        req.user?.id
+      ) {
+        userKeyEndpoints.push(entry);
+      }
+    }
+
+    const userKeyMap = new Map<string, UserKeyValues | null>();
+    if (userKeyEndpoints.length > 0 && req.user?.id) {
+      const userId = req.user.id;
+      const results = await Promise.allSettled(
+        userKeyEndpoints.map((e) => getUserKeyValues({ userId, name: e.name })),
+      );
+      for (let i = 0; i < userKeyEndpoints.length; i++) {
+        const settled = results[i];
+        if (settled.status === 'fulfilled') {
+          userKeyMap.set(userKeyEndpoints[i].name, settled.value);
+        } else {
+          const msg =
+            settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
+          if (msg.includes('NO_USER_KEY')) {
+            logger.debug(
+              `[loadConfigModels] No user key stored for endpoint "${userKeyEndpoints[i].name}"`,
+            );
+          } else {
+            logger.warn(
+              `[loadConfigModels] Failed to retrieve user key for "${userKeyEndpoints[i].name}": ${msg}`,
+            );
+          }
+          userKeyMap.set(userKeyEndpoints[i].name, null);
+        }
+      }
+    }
+
+    for (const {
+      name,
+      endpoint,
+      apiKey: API_KEY,
+      baseURL: BASE_URL,
+      apiKeyIsUserProvided,
+      baseURLIsUserProvided,
+    } of resolved) {
+      const { models, headers: endpointHeaders } = endpoint;
+      const uniqueKey = `${BASE_URL}__${API_KEY}`;
 
       if (models?.fetch && !apiKeyIsUserProvided && !baseURLIsUserProvided) {
         fetchPromisesMap[uniqueKey] =
@@ -92,33 +153,29 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
         continue;
       }
 
-      if (models?.fetch && (apiKeyIsUserProvided || baseURLIsUserProvided) && req.user?.id) {
-        try {
-          const userKeyValues = await getUserKeyValues({ userId: req.user.id, name });
-          const resolvedApiKey = apiKeyIsUserProvided ? userKeyValues?.apiKey : API_KEY;
-          const resolvedBaseURL = baseURLIsUserProvided ? userKeyValues?.baseURL : BASE_URL;
+      if (models?.fetch && userKeyMap.has(name)) {
+        const userKeyValues = userKeyMap.get(name);
+        const resolvedApiKey = apiKeyIsUserProvided ? userKeyValues?.apiKey : API_KEY;
+        const resolvedBaseURL = baseURLIsUserProvided ? userKeyValues?.baseURL : BASE_URL;
 
-          if (resolvedApiKey && resolvedBaseURL) {
-            const userFetchKey = `user:${req.user.id}:${name}`;
-            fetchPromisesMap[userFetchKey] =
-              fetchPromisesMap[userFetchKey] ||
-              fetchModels({
-                name,
-                apiKey: resolvedApiKey,
-                baseURL: resolvedBaseURL,
-                user: req.user.id,
-                userObject: req.user,
-                headers: endpointHeaders,
-                direct: endpoint.directEndpoint,
-                userIdQuery: models.userIdQuery,
-                skipCache: true,
-              });
-            uniqueKeyToEndpointsMap[userFetchKey] = uniqueKeyToEndpointsMap[userFetchKey] || [];
-            uniqueKeyToEndpointsMap[userFetchKey].push(name);
-            continue;
-          }
-        } catch {
-          logger.debug(`[loadConfigModels] No user key found for endpoint "${name}"`);
+        if (resolvedApiKey && resolvedBaseURL) {
+          const userFetchKey = `user:${req.user?.id}:${name}`;
+          fetchPromisesMap[userFetchKey] =
+            fetchPromisesMap[userFetchKey] ||
+            fetchModels({
+              name,
+              apiKey: resolvedApiKey,
+              baseURL: resolvedBaseURL,
+              user: req.user?.id,
+              userObject: req.user,
+              headers: endpointHeaders,
+              direct: endpoint.directEndpoint,
+              userIdQuery: models.userIdQuery,
+              skipCache: true,
+            });
+          uniqueKeyToEndpointsMap[userFetchKey] = uniqueKeyToEndpointsMap[userFetchKey] || [];
+          uniqueKeyToEndpointsMap[userFetchKey].push(name);
+          continue;
         }
       }
 
@@ -129,12 +186,16 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
       }
     }
 
-    const fetchedData = await Promise.all(Object.values(fetchPromisesMap));
+    const settledResults = await Promise.allSettled(Object.values(fetchPromisesMap));
     const uniqueKeys = Object.keys(fetchPromisesMap);
 
-    for (let i = 0; i < fetchedData.length; i++) {
+    for (let i = 0; i < settledResults.length; i++) {
       const currentKey = uniqueKeys[i];
-      const modelData = fetchedData[i];
+      const settled = settledResults[i];
+      if (settled.status === 'rejected') {
+        logger.warn(`[loadConfigModels] Model fetch failed for "${currentKey}":`, settled.reason);
+      }
+      const modelData = settled.status === 'fulfilled' ? settled.value : [];
       const associatedNames = uniqueKeyToEndpointsMap[currentKey];
 
       for (const name of associatedNames) {

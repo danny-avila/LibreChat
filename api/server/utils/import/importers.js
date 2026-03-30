@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
@@ -202,7 +202,9 @@ async function importLibreChatConvo(
 
     /* Endpoint configuration */
     let endpoint = jsonData.endpoint ?? options.endpoint ?? EModelEndpoint.openAI;
-    const endpointsConfig = await getEndpointsConfig({ user: { id: requestUserId } });
+    const endpointsConfig = await getEndpointsConfig({
+      user: { id: requestUserId, tenantId: getTenantId() },
+    });
     const endpointConfig = endpointsConfig?.[endpoint];
     if (!endpointConfig && endpointsConfig) {
       endpoint = Object.keys(endpointsConfig)[0];
