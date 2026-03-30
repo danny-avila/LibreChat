@@ -1198,4 +1198,102 @@ describe('systemGrant methods', () => {
       expect(grants).toEqual([]);
     });
   });
+
+  describe('getHeldCapabilities', () => {
+    const userId = new Types.ObjectId();
+
+    it('returns the subset of capabilities the principals hold', async () => {
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        capability: SystemCapabilities.READ_ROLES,
+      });
+
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+        capabilities: [
+          SystemCapabilities.READ_ROLES,
+          SystemCapabilities.READ_GROUPS,
+        ],
+      });
+
+      expect(held).toEqual(new Set([SystemCapabilities.READ_ROLES]));
+    });
+
+    it('returns empty set when no capabilities match', async () => {
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: new Types.ObjectId() }],
+        capabilities: [SystemCapabilities.MANAGE_ROLES],
+      });
+
+      expect(held.size).toBe(0);
+    });
+
+    it('returns empty set for empty principals', async () => {
+      const held = await methods.getHeldCapabilities({
+        principals: [],
+        capabilities: [SystemCapabilities.READ_ROLES],
+      });
+
+      expect(held.size).toBe(0);
+    });
+
+    it('returns empty set for empty capabilities', async () => {
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+        capabilities: [],
+      });
+
+      expect(held.size).toBe(0);
+    });
+
+    it('resolves implied capabilities via reverse implication map', async () => {
+      const implUser = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: implUser,
+        capability: SystemCapabilities.MANAGE_ROLES,
+      });
+
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: implUser }],
+        capabilities: [SystemCapabilities.READ_ROLES, SystemCapabilities.MANAGE_GROUPS],
+      });
+
+      expect(held).toEqual(new Set([SystemCapabilities.READ_ROLES]));
+    });
+
+    it('filters out PUBLIC principals', async () => {
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.PUBLIC, principalId: '' }],
+        capabilities: [SystemCapabilities.READ_ROLES],
+      });
+
+      expect(held.size).toBe(0);
+    });
+
+    it('respects tenant scoping', async () => {
+      const tenantUser = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: tenantUser,
+        capability: SystemCapabilities.READ_ROLES,
+        tenantId: 'tenant-a',
+      });
+
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: tenantUser }],
+        capabilities: [SystemCapabilities.READ_ROLES],
+        tenantId: 'tenant-a',
+      });
+      expect(held).toEqual(new Set([SystemCapabilities.READ_ROLES]));
+
+      const heldOther = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: tenantUser }],
+        capabilities: [SystemCapabilities.READ_ROLES],
+        tenantId: 'tenant-b',
+      });
+      expect(heldOther.size).toBe(0);
+    });
+  });
 });

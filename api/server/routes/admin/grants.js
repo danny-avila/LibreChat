@@ -18,6 +18,7 @@ const handlers = createAdminGrantsHandlers({
   revokeCapability: db.revokeCapability,
   getUserPrincipals: db.getUserPrincipals,
   hasCapabilityForPrincipals: db.hasCapabilityForPrincipals,
+  getHeldCapabilities: db.getHeldCapabilities,
   getCachedPrincipals,
 });
 
@@ -27,6 +28,7 @@ router.get('/', handlers.listGrants);
 router.get('/effective', handlers.getEffectiveCapabilities);
 router.get('/:principalType/:principalId', handlers.getPrincipalGrants);
 router.post('/', handlers.assignGrant);
+/** Callers must encodeURIComponent the capability (e.g. manage%3Aconfigs%3Aendpoints). */
 router.delete('/:principalType/:principalId/:capability', handlers.revokeGrant);
 
 module.exports = router;

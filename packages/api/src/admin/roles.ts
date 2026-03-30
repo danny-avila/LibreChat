@@ -105,14 +105,17 @@ export interface AdminRolesDeps {
     options?: { limit?: number; offset?: number },
   ) => Promise<IUser[]>;
   countUsersByRole: (roleName: string) => Promise<number>;
+  /** Removes the per-principal config override (keyed by type + name, not ObjectId). */
   deleteConfig: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
   ) => Promise<IConfig | null>;
+  /** Removes all ACL entries scoped to this principal. */
   deleteAclEntries: (filter: {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<void>;
+  /** Removes all system capability grants held by this principal. */
   deleteGrantsForPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,

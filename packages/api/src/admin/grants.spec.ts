@@ -60,6 +60,13 @@ function createDeps(overrides: Partial<AdminGrantsDeps> = {}): AdminGrantsDeps {
       { principalType: PrincipalType.ROLE, principalId: 'admin' },
     ]),
     hasCapabilityForPrincipals: jest.fn().mockResolvedValue(true),
+    getHeldCapabilities: jest.fn().mockResolvedValue(
+      new Set([
+        SystemCapabilities.READ_ROLES,
+        SystemCapabilities.READ_GROUPS,
+        SystemCapabilities.READ_USERS,
+      ]),
+    ),
     getCachedPrincipals: jest.fn().mockReturnValue(undefined),
     ...overrides,
   };
@@ -101,12 +108,9 @@ describe('createAdminGrantsHandlers', () => {
 
     it('passes principalTypes filter based on caller read permissions', async () => {
       const deps = createDeps({
-        hasCapabilityForPrincipals: jest.fn().mockImplementation(({ capability }) => {
-          if (capability === SystemCapabilities.READ_ROLES) {
-            return Promise.resolve(true);
-          }
-          return Promise.resolve(false);
-        }),
+        getHeldCapabilities: jest.fn().mockResolvedValue(
+          new Set([SystemCapabilities.READ_ROLES]),
+        ),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res } = createReqRes();
@@ -123,7 +127,7 @@ describe('createAdminGrantsHandlers', () => {
 
     it('returns empty grants when caller has no read permissions', async () => {
       const deps = createDeps({
-        hasCapabilityForPrincipals: jest.fn().mockResolvedValue(false),
+        getHeldCapabilities: jest.fn().mockResolvedValue(new Set()),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes();
@@ -159,7 +163,7 @@ describe('createAdminGrantsHandlers', () => {
 
       await handlers.listGrants(req, res);
 
-      expect(deps.hasCapabilityForPrincipals).toHaveBeenCalledWith(
+      expect(deps.getHeldCapabilities).toHaveBeenCalledWith(
         expect.objectContaining({ tenantId: 'tenant-1' }),
       );
       expect(deps.listGrants).toHaveBeenCalledWith(
@@ -206,13 +210,32 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.listGrants(req, res);
 
       expect(deps.getUserPrincipals).not.toHaveBeenCalled();
-      expect(deps.hasCapabilityForPrincipals).toHaveBeenCalledWith(
+      expect(deps.getHeldCapabilities).toHaveBeenCalledWith(
         expect.objectContaining({ principals: cachedPrincipals }),
       );
     });
   });
 
   describe('getEffectiveCapabilities', () => {
+    it('uses cached principals when available', async () => {
+      const cachedPrincipals = [
+        { principalType: PrincipalType.USER, principalId: new Types.ObjectId() },
+        { principalType: PrincipalType.ROLE, principalId: 'admin' },
+      ];
+      const deps = createDeps({
+        getCachedPrincipals: jest.fn().mockReturnValue(cachedPrincipals),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res } = createReqRes();
+
+      await handlers.getEffectiveCapabilities(req, res);
+
+      expect(deps.getUserPrincipals).not.toHaveBeenCalled();
+      expect(deps.getCapabilitiesForPrincipals).toHaveBeenCalledWith(
+        expect.objectContaining({ principals: cachedPrincipals }),
+      );
+    });
+
     it('returns expanded capabilities for the user', async () => {
       const manageRolesGrant = mockGrant({ capability: SystemCapabilities.MANAGE_ROLES });
       const deps = createDeps({
@@ -303,7 +326,6 @@ describe('createAdminGrantsHandlers', () => {
     it('returns empty capabilities when all principals lack principalId', async () => {
       const deps = createDeps({
         getUserPrincipals: jest.fn().mockResolvedValue([{ principalType: PrincipalType.PUBLIC }]),
-        getCapabilitiesForPrincipals: jest.fn().mockResolvedValue([]),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes();
@@ -312,9 +334,7 @@ describe('createAdminGrantsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ capabilities: [] });
-      expect(deps.getCapabilitiesForPrincipals).toHaveBeenCalledWith(
-        expect.objectContaining({ principals: [] }),
-      );
+      expect(deps.getCapabilitiesForPrincipals).not.toHaveBeenCalled();
     });
 
     it('deduplicates capabilities across principals', async () => {

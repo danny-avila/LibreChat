@@ -19,6 +19,12 @@ for (const [broad, implied] of Object.entries(CapabilityImplications)) {
 }
 
 export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
+  function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
+    return tenantId != null
+      ? { $and: [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }] }
+      : { tenantId: { $exists: false } };
+  }
+
   /**
    * Check if any of the given principals holds a specific capability.
    * Follows the same principal-resolution pattern as AclEntry:
@@ -57,6 +63,64 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
 
     const doc = await SystemGrant.exists(query);
     return doc != null;
+  }
+
+  /**
+   * Returns the subset of `capabilities` that any of the given principals hold.
+   * Single DB round-trip — replaces N parallel `hasCapabilityForPrincipals` calls.
+   */
+  async function getHeldCapabilities({
+    principals,
+    capabilities,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>;
+    capabilities: SystemCapability[];
+    tenantId?: string;
+  }): Promise<Set<SystemCapability>> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const principalsQuery = principals
+      .filter((p) => p.principalType !== PrincipalType.PUBLIC)
+      .map((p) => ({ principalType: p.principalType, principalId: p.principalId }));
+
+    if (!principalsQuery.length || !capabilities.length) {
+      return new Set();
+    }
+
+    const allCaps = new Set<string>();
+    for (const cap of capabilities) {
+      allCaps.add(cap);
+      const implied = reverseImplications[cap as keyof typeof reverseImplications];
+      if (implied) {
+        for (const imp of implied) {
+          allCaps.add(imp);
+        }
+      }
+    }
+
+    const docs = await SystemGrant.find(
+      {
+        $or: principalsQuery,
+        capability: { $in: [...allCaps] },
+        ...tenantCondition(tenantId),
+      },
+      { capability: 1, _id: 0 },
+    ).lean();
+
+    const held = new Set<string>(docs.map((d) => d.capability));
+    const result = new Set<SystemCapability>();
+    for (const cap of capabilities) {
+      if (held.has(cap)) {
+        result.add(cap);
+        continue;
+      }
+      const implied = reverseImplications[cap as keyof typeof reverseImplications];
+      if (implied?.some((imp) => held.has(imp))) {
+        result.add(cap);
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -174,12 +238,6 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     return await SystemGrant.find(filter).lean();
   }
 
-  function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
-    return tenantId != null
-      ? { $and: [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }] }
-      : { tenantId: { $exists: false } };
-  }
-
   async function listGrants(options?: {
     tenantId?: string;
     principalTypes?: PrincipalType[];
@@ -187,7 +245,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     offset?: number;
   }): Promise<ISystemGrant[]> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
-    const limit = options?.limit ?? 50;
+    const limit = Math.max(1, options?.limit ?? 50);
     const offset = options?.offset ?? 0;
     const filter: FilterQuery<ISystemGrant> = {
       ...(options?.principalTypes?.length && { principalType: { $in: options.principalTypes } }),
@@ -317,6 +375,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     seedSystemGrants,
     revokeCapability,
     hasCapabilityForPrincipals,
+    getHeldCapabilities,
     listGrants,
     countGrants,
     getCapabilitiesForPrincipal,
