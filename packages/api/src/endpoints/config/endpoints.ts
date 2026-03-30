@@ -9,7 +9,7 @@ import type { AgentCapabilities, TEndpointsConfig, TConfig } from 'librechat-dat
 import type { ServerRequest } from '~/types';
 import { loadCustomEndpointsConfig } from '~/endpoints/custom';
 
-type PartialEndpointEntry = Partial<TConfig> & Record<string, unknown>;
+type PartialEndpointEntry = Partial<TConfig>;
 type DefaultEndpointsResult = Record<string, PartialEndpointEntry | false | null>;
 type MutableEndpointsConfig = Record<string, PartialEndpointEntry | false | null | undefined>;
 
