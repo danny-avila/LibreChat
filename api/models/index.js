@@ -24,6 +24,8 @@ const {
   getGroupMembers,
   addUserToGroup,
   removeUserFromGroup,
+  resolvePendingMemberships,
+  removePendingEmail,
 } = require('./Group');
 
 const seedDatabase = async () => {
@@ -51,4 +53,6 @@ module.exports = {
   getGroupMembers,
   addUserToGroup,
   removeUserFromGroup,
+  resolvePendingMemberships,
+  removePendingEmail,
 };

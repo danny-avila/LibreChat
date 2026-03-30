@@ -583,6 +583,47 @@ const removeUserFromGroup = async (groupId, userId) => {
   }
 };
 
+/**
+ * Resolve pending email memberships for a user who just logged in.
+ * Finds all groups that have this email in pendingEmails, adds the user
+ * to each group, and removes the email from pendingEmails.
+ * Errors are caught per-group so one failure does not block the rest.
+ *
+ * @param {string} email - The user's email address (will be lowercased)
+ * @param {string} userId - The user's MongoDB ObjectId string
+ */
+const resolvePendingMemberships = async (email, userId) => {
+  if (!email || !userId) return;
+  const normalizedEmail = email.toLowerCase();
+  try {
+    const { Group } = require('../db/models');
+    if (!Group) return;
+    const groups = await Group.find({ pendingEmails: normalizedEmail }).lean();
+    if (!groups.length) return;
+    for (const group of groups) {
+      try {
+        await addUserToGroup(group._id.toString(), userId, userId);
+        await Group.findByIdAndUpdate(group._id, { $pull: { pendingEmails: normalizedEmail } });
+        logger.info(`[resolvePendingMemberships] Added ${email} to group ${group.name}`);
+      } catch (err) {
+        logger.error(`[resolvePendingMemberships] Failed to resolve group ${group._id}: ${err.message}`);
+      }
+    }
+  } catch (err) {
+    logger.error(`[resolvePendingMemberships] Outer error: ${err.message}`);
+  }
+};
+
+/**
+ * Remove a pending email from a group.
+ * @param {string} groupId - Group ID
+ * @param {string} email - Email to remove (case-insensitive)
+ */
+const removePendingEmail = async (groupId, email) => {
+  const { Group } = require('../db/models');
+  await Group.findByIdAndUpdate(groupId, { $pull: { pendingEmails: email.toLowerCase() } });
+};
+
 module.exports = {
   getGroups,
   getGroup,
@@ -598,4 +639,6 @@ module.exports = {
   getGroupMembers,
   addUserToGroup,
   removeUserFromGroup,
+  resolvePendingMemberships,
+  removePendingEmail,
 };
