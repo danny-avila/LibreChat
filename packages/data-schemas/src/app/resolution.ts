@@ -62,7 +62,7 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
     if (config.overrides && typeof config.overrides === 'object') {
       const remapped: AnyObject = {};
       for (const [key, value] of Object.entries(config.overrides)) {
-        remapped[OVERRIDE_KEY_MAP[key] ?? key] = value;
+        remapped[OVERRIDE_KEY_MAP[key as keyof typeof OVERRIDE_KEY_MAP] ?? key] = value;
       }
       merged = deepMerge(merged, remapped);
     }
