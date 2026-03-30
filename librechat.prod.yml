@@ -155,6 +155,8 @@ endpoints:
           - langgraph-agent
         fetch: true
       titleConvo: true
+      titleEndpoint: azureOpenAI
+      titleModel: "gpt-41-mini"
       modelDisplayLabel: "LangGraph Agents"
       streamRate: 25
       dropParams:
