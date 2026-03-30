@@ -33,6 +33,7 @@ export interface IGroup extends Document {
   createdBy?: Types.ObjectId;
   updatedBy?: Types.ObjectId;
   memberCount: number;
+  pendingEmails: string[];
   createdAt?: Date;
   updatedAt?: Date;
 

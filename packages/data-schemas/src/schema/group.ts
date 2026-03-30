@@ -139,6 +139,11 @@ const groupSchema = new Schema<IGroup>(
       default: 0,
       min: 0,
     },
+    pendingEmails: {
+      type: [String],
+      default: [],
+      lowercase: true,
+    },
   },
   {
     timestamps: true,
