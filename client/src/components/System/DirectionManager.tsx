@@ -20,9 +20,10 @@ export default function DirectionManager() {
       return;
     }
     document.documentElement.lang = storedLang;
-    if (isRTLLanguage(storedLang)) {
-      setChatDirection('RTL');
-    }
+    // Always sync direction to match stored language (handles RTL→LTR and LTR→RTL)
+    const direction = isRTLLanguage(storedLang) ? 'RTL' : 'LTR';
+    setChatDirection(direction);
+    document.documentElement.dir = direction.toLowerCase();
     if (!languageSTT) {
       const locale = getSpeechLocale(storedLang);
       setLanguageSTT(locale);

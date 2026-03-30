@@ -167,8 +167,8 @@ html {
   --surface-tertiary: var(--gray-700);
   --surface-tertiary-alt: var(--gray-700);
   --surface-dialog: var(--gray-850);
-  --surface-submit: var(--green-700);
-  --surface-submit-hover: var(--green-800);
+  --surface-submit: var(--brand-teal-500);
+  --surface-submit-hover: var(--brand-teal-600);
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
   --surface-chat: var(--gray-700);
@@ -3131,9 +3131,91 @@ button[aria-label*="إرسال"]:hover {
 /* ── Prompt starter cards — Moroccan accent border on hover ─────── */
 .prompt-starter-card {
   border-color: var(--border-medium);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 .prompt-starter-card:hover {
   border-color: var(--brand-teal-400);
-  box-shadow: 0 2px 12px rgba(12, 100, 120, 0.12);
+  box-shadow: 0 4px 16px rgba(12, 100, 120, 0.14);
+  background-color: var(--surface-secondary);
+}
+.dark .prompt-starter-card:hover {
+  border-color: var(--brand-teal-500);
+  box-shadow: 0 4px 16px rgba(13, 140, 130, 0.18);
+  background-color: var(--surface-tertiary);
+}
+
+/* ── Landing page — subtle warm paper texture under greeting ─────── */
+.atlaschat-landing-bg {
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%230c6478' fill-opacity='0.025'%3E%3Cpath d='M30 0l5 8.66-5 8.66-5-8.66zm0 42.68l5 8.66-5 8.66-5-8.66zM0 15l5 8.66-5 8.66-5-8.66zm60 0l5 8.66-5 8.66-5-8.66z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+.dark .atlaschat-landing-bg {
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%230d8c82' fill-opacity='0.04'%3E%3Cpath d='M30 0l5 8.66-5 8.66-5-8.66zm0 42.68l5 8.66-5 8.66-5-8.66zM0 15l5 8.66-5 8.66-5-8.66zm60 0l5 8.66-5 8.66-5-8.66z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* ── Sidebar — subtle top gradient accent line ───────────────────── */
+.sidebar-teal-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand-teal-600) 0%, var(--brand-gold-400) 60%, transparent 100%);
+  border-radius: 0 0 4px 4px;
+  opacity: 0.8;
+}
+
+/* ── Language toggle button — refined ───────────────────────────── */
+.lang-toggle-btn {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--brand-teal-700);
+  border: 1.5px solid var(--brand-teal-200);
+  border-radius: 8px;
+  background: transparent;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.lang-toggle-btn:hover {
+  background: var(--brand-teal-50);
+  border-color: var(--brand-teal-400);
+  color: var(--brand-teal-800);
+}
+.dark .lang-toggle-btn {
+  color: var(--brand-teal-300);
+  border-color: var(--brand-teal-700);
+}
+.dark .lang-toggle-btn:hover {
+  background: rgba(13, 140, 130, 0.12);
+  border-color: var(--brand-teal-500);
+}
+
+/* ── Input area — subtle teal focus ring ─────────────────────────── */
+textarea:focus,
+input[type="text"]:focus {
+  outline-color: var(--brand-teal-400) !important;
+}
+
+/* ── Sidebar active nav item — teal highlight ────────────────────── */
+[data-active="true"] svg,
+.nav-icon-btn[aria-selected="true"] svg {
+  color: var(--brand-teal-600) !important;
+}
+
+/* ── Primary buttons across the app ─────────────────────────────── */
+button[type="submit"],
+button.btn-primary {
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+button[type="submit"]:active,
+button.btn-primary:active {
+  transform: scale(0.98);
+}
+
+/* ── Teal selection highlight ────────────────────────────────────── */
+::selection {
+  background: var(--brand-teal-100);
+  color: var(--brand-teal-900);
+}
+.dark ::selection {
+  background: var(--brand-teal-800);
+  color: var(--brand-teal-100);
 }

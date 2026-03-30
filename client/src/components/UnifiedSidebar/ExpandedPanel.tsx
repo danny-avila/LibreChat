@@ -69,7 +69,7 @@ const LanguageToggleButton = memo(function LanguageToggleButton() {
           size="icon"
           variant="ghost"
           aria-label={`Switch to ${nextLangName}`}
-          className="h-9 w-9 rounded-lg text-xs font-bold text-text-secondary"
+          className="lang-toggle-btn h-9 w-9 rounded-lg text-xs"
           onClick={handleClick}
         >
           {nextLangLabel}
