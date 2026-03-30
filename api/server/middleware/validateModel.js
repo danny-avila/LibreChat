@@ -28,6 +28,8 @@ const validateModel = async (req, res, next) => {
     return handleError(res, { text: 'Invalid model identifier' });
   }
 
+  req.body.model = model;
+
   const endpointsConfig = await getEndpointsConfig(req);
   const endpointConfig = endpointsConfig?.[endpoint];
 
