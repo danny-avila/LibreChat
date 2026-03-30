@@ -585,6 +585,8 @@ class BaseClient {
       responseMessage.text = completion.join('');
     }
 
+    /** @type {(() => Promise<void>) | null} */
+    let reconcileTokenCount = null;
     if (tokenCountMap && this.recordTokenUsage && this.getTokenCountForResponse) {
       let completionTokens;
 
@@ -599,25 +601,38 @@ class BaseClient {
         responseMessage.tokenCount = usage[this.outputTokensKey];
         completionTokens = responseMessage.tokenCount;
       } else {
-        responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
-        completionTokens = responseMessage.tokenCount;
-        await this.recordTokenUsage({
-          usage,
-          promptTokens,
-          completionTokens,
-          balance: balanceConfig,
-          /** Note: When using agents, responseMessage.model is the agent ID, not the model */
-          model: this.model,
-          messageId: this.responseMessageId,
-        });
+        reconcileTokenCount = async () => {
+          const tokenCount = this.getTokenCountForResponse(responseMessage);
+          await this.recordTokenUsage({
+            usage,
+            promptTokens,
+            completionTokens: tokenCount,
+            balance: balanceConfig,
+            /** Note: When using agents, responseMessage.model is the agent ID, not the model */
+            model: this.model,
+            messageId: this.responseMessageId,
+          });
+          await this.updateMessageInDatabase({
+            messageId: this.responseMessageId,
+            tokenCount,
+          });
+          logger.debug('[BaseClient] Async response token reconciliation complete', {
+            messageId: responseMessage.messageId,
+            model: responseMessage.model,
+            promptTokens,
+            completionTokens: tokenCount,
+          });
+        };
       }
 
-      logger.debug('[BaseClient] Response token usage', {
-        messageId: responseMessage.messageId,
-        model: responseMessage.model,
-        promptTokens,
-        completionTokens,
-      });
+      if (completionTokens != null) {
+        logger.debug('[BaseClient] Response token usage', {
+          messageId: responseMessage.messageId,
+          model: responseMessage.model,
+          promptTokens,
+          completionTokens,
+        });
+      }
     }
 
     if (userMessagePromise) {
@@ -666,6 +681,13 @@ class BaseClient {
       saveOptions,
       user,
     );
+    if (reconcileTokenCount != null) {
+      void responseMessage.databasePromise
+        .then(() => reconcileTokenCount())
+        .catch((error) => {
+          logger.error('[BaseClient] Async token reconciliation failed', error);
+        });
+    }
     this.savedMessageIds.add(responseMessage.messageId);
     delete responseMessage.tokenCount;
     return responseMessage;

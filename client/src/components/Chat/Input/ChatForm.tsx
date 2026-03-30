@@ -3,7 +3,7 @@ import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
-import type { TConversation, TMessage } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import {
   useChatContext,
@@ -49,7 +49,6 @@ interface ChatFormProps {
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  getMessages: () => TMessage[] | undefined;
 }
 
 const ChatForm = memo(function ChatForm({
@@ -62,7 +61,6 @@ const ChatForm = memo(function ChatForm({
   setFilesLoading,
   newConversation,
   handleStopGenerating,
-  getMessages,
 }: ChatFormProps) {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -321,7 +319,7 @@ const ChatForm = memo(function ChatForm({
                     onBlur={handleTextareaBlur}
                     aria-label={localize('com_ui_message_input')}
                     onClick={handleFocusOrClick}
-                    style={{ height: 44, overflowY: 'auto' }}
+                    style={{ height: 44 }}
                     className={cn(
                       baseClasses,
                       removeFocusRings,
@@ -376,9 +374,7 @@ const ChatForm = memo(function ChatForm({
                 />
               )}
               <div className={cn('flex items-center gap-2', isRTL ? 'ml-2' : 'mr-2')}>
-                {endpoint && (
-                  <ContextTracker conversation={conversation} getMessages={getMessages} isSubmitting={isSubmitting} />
-                )}
+                {endpoint && <ContextTracker conversation={conversation} />}
                 {isSubmitting && showStopButton ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
                 ) : (
@@ -416,7 +412,6 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
     setFilesLoading,
     newConversation,
     handleStopGenerating,
-    getMessages,
   } = useChatContext();
 
   /**
@@ -456,10 +451,6 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
     [],
   );
 
-  const getMessagesRef = useRef(getMessages);
-  getMessagesRef.current = getMessages;
-  const stableGetMessages = useCallback(() => getMessagesRef.current(), []);
-
   return (
     <ChatForm
       index={index}
@@ -471,7 +462,6 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}
       handleStopGenerating={stableHandleStop}
-      getMessages={stableGetMessages}
     />
   );
 }

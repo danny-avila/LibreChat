@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants } from 'librechat-data-provider';
 import type { TConversation, TMessage, TModelSpec, TStartupConfig } from 'librechat-data-provider';
@@ -11,8 +11,6 @@ import { cn } from '~/utils';
 
 type ContextTrackerProps = {
   conversation: TConversation | null;
-  getMessages: () => TMessage[] | undefined;
-  isSubmitting: boolean;
 };
 
 type MessageWithTokenCount = TMessage & { tokenCount?: number };
@@ -68,44 +66,38 @@ const getSpecMaxContextTokens = (
   return maxContextTokens;
 };
 
-export default function ContextTracker({
-  conversation,
-  getMessages,
-  isSubmitting,
-}: ContextTrackerProps) {
+export default function ContextTracker({ conversation }: ContextTrackerProps) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { data: startupConfig } = useGetStartupConfig();
   const showContextTracker = useRecoilValue(store.showContextTracker);
   const conversationId = conversation?.conversationId ?? Constants.NEW_CONVO;
-  const [usedTokens, setUsedTokens] = useState<number>(() => getUsedTokens(getMessages()));
+  const subscribeToMessages = useCallback(
+    (onStoreChange: () => void) =>
+      queryClient.getQueryCache().subscribe((event) => {
+        const queryKey = event?.query?.queryKey;
+        if (!Array.isArray(queryKey) || queryKey[0] !== QueryKeys.messages) {
+          return;
+        }
+        if (queryKey[1] !== conversationId) {
+          return;
+        }
+        onStoreChange();
+      }),
+    [conversationId, queryClient],
+  );
 
-  useEffect(() => {
-    setUsedTokens(getUsedTokens(getMessages()));
-  }, [conversationId, getMessages]);
+  const getMessagesSnapshot = useCallback(
+    () => queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]),
+    [conversationId, queryClient],
+  );
 
-  useEffect(() => {
-    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      const queryKey = event?.query?.queryKey;
-      if (!Array.isArray(queryKey) || queryKey[0] !== QueryKeys.messages) {
-        return;
-      }
-
-      setUsedTokens(getUsedTokens(getMessages()));
-    });
-
-    return unsubscribe;
-  }, [getMessages, queryClient]);
-
-  const prevIsSubmitting = useRef(isSubmitting);
-  useEffect(() => {
-    if (prevIsSubmitting.current && !isSubmitting) {
-      // Messages from SSE don't include tokenCount (server strips it).
-      // Invalidate to refetch from API which includes tokenCount from DB.
-      queryClient.invalidateQueries({ queryKey: [QueryKeys.messages] });
-    }
-    prevIsSubmitting.current = isSubmitting;
-  }, [isSubmitting, queryClient]);
+  const messages = useSyncExternalStore(
+    subscribeToMessages,
+    getMessagesSnapshot,
+    getMessagesSnapshot,
+  );
+  const usedTokens = useMemo(() => getUsedTokens(messages), [messages]);
 
   const maxContextTokens =
     typeof conversation?.maxContextTokens === 'number' &&

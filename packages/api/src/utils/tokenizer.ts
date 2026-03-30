@@ -47,14 +47,29 @@ class Tokenizer {
 
 const TokenizerSingleton = new Tokenizer();
 
+export function resolveEncodingFromModel(model?: string): EncodingName {
+  if (typeof model === 'string' && model.toLowerCase().includes('claude')) {
+    return 'claude';
+  }
+  return 'o200k_base';
+}
+
 /**
  * Counts the number of tokens in a given text using ai-tokenizer with o200k_base encoding.
  * @param text - The text to count tokens in. Defaults to an empty string.
+ * @param modelOrEncoding - Optional model id or explicit encoding name.
  * @returns The number of tokens in the provided text.
  */
-export async function countTokens(text = ''): Promise<number> {
-  await TokenizerSingleton.initEncoding('o200k_base');
-  return TokenizerSingleton.getTokenCount(text, 'o200k_base');
+export async function countTokens(
+  text = '',
+  modelOrEncoding?: string | EncodingName,
+): Promise<number> {
+  const encoding =
+    modelOrEncoding === 'claude' || modelOrEncoding === 'o200k_base'
+      ? modelOrEncoding
+      : resolveEncodingFromModel(modelOrEncoding);
+  await TokenizerSingleton.initEncoding(encoding);
+  return TokenizerSingleton.getTokenCount(text, encoding);
 }
 
 export default TokenizerSingleton;
