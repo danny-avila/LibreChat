@@ -31,13 +31,20 @@ export async function validatePdf(
   fileSize: number,
   provider: Providers,
   configuredFileSizeLimit?: number,
+  model?: string,
 ): Promise<PDFValidationResult> {
   if (provider === Providers.ANTHROPIC) {
     return validateAnthropicPdf(pdfBuffer, fileSize, configuredFileSizeLimit);
   }
 
   if (provider === Providers.BEDROCK) {
-    return validateBedrockDocument(fileSize, 'application/pdf', pdfBuffer, configuredFileSizeLimit);
+    return validateBedrockDocument(
+      fileSize,
+      'application/pdf',
+      pdfBuffer,
+      configuredFileSizeLimit,
+      model,
+    );
   }
 
   if (isOpenAILikeProvider(provider)) {
@@ -123,12 +130,51 @@ async function validateAnthropicPdf(
 }
 
 /**
- * Validates a document against Bedrock's 4.5MB hard limit. PDF-specific header
- * checks run only when the MIME type is `application/pdf`.
+ * Matches Bedrock Claude 4+ model identifiers, including cross-region inference profile IDs.
+ * Pattern: [region.]anthropic.claude-{family}-{version≥4}-{date}-v{n}:{rev}
+ * e.g. "anthropic.claude-sonnet-4-20250514-v1:0" or "us.anthropic.claude-sonnet-4-20250514-v1:0"
+ */
+const BEDROCK_CLAUDE_4_PLUS_RE = /(?:^|\.)anthropic\.claude-(?:sonnet|opus|haiku)-[4-9]\d*-/;
+const isBedrockClaude4Plus = (model?: string): boolean =>
+  model != null && BEDROCK_CLAUDE_4_PLUS_RE.test(model);
+
+/**
+ * Matches Bedrock Nova model identifiers, including cross-region inference profile IDs.
+ * e.g. "amazon.nova-pro-v1:0" or "us.amazon.nova-pro-v1:0"
+ */
+const isBedrockNova = (model?: string): boolean =>
+  model != null && /(?:^|\.)amazon\.nova-/.test(model);
+
+const pdfMimeType = 'application/pdf';
+const docxMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/**
+ * Returns true when the given model + MIME type combination is exempt from
+ * Bedrock's default 4.5 MB per-document limit.
+ *
+ * Per AWS docs (https://docs.aws.amazon.com/bedrock/latest/userguide/inference-api-restrictions.html):
+ * - Claude 4+: PDFs are exempt from the 4.5 MB limit
+ * - Nova: PDFs and DOCX are exempt from the 4.5 MB limit
+ */
+const isExemptFromBedrockDocLimit = (model?: string, mimeType?: string): boolean => {
+  if (mimeType === pdfMimeType) {
+    return isBedrockClaude4Plus(model) || isBedrockNova(model);
+  }
+  if (mimeType === docxMimeType) {
+    return isBedrockNova(model);
+  }
+  return false;
+};
+
+/**
+ * Validates a document against Bedrock size limits. The default limit is 4.5 MB,
+ * but Claude 4+ (PDF) and Nova (PDF/DOCX) models are exempt per AWS docs.
+ * When exempt, falls back to a 32 MB request-level limit as a reasonable upper bound.
  * @param fileSize - The file size in bytes
  * @param mimeType - The MIME type of the document
  * @param fileBuffer - The file buffer (used for PDF header validation)
  * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
+ * @param model - Optional Bedrock model identifier for model-specific limit exceptions
  * @returns Promise that resolves to validation result
  */
 export async function validateBedrockDocument(
@@ -136,14 +182,13 @@ export async function validateBedrockDocument(
   mimeType: string,
   fileBuffer?: Buffer,
   configuredFileSizeLimit?: number,
+  model?: string,
 ): Promise<ValidationResult> {
   try {
-    /** Bedrock enforces a hard 4.5MB per-document limit at the API level; config can only lower it */
-    const providerLimit = mbToBytes(4.5);
-    const effectiveLimit =
-      configuredFileSizeLimit != null
-        ? Math.min(configuredFileSizeLimit, providerLimit)
-        : providerLimit;
+    const exempt = isExemptFromBedrockDocLimit(model, mimeType);
+    /** Default 4.5 MB; exempt models (Claude 4+ PDF, Nova PDF/DOCX) default to 32 MB when unconfigured */
+    const providerLimit = exempt ? mbToBytes(32) : mbToBytes(4.5);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
 
     if (fileSize > effectiveLimit) {
       const limitMB = (effectiveLimit / (1024 * 1024)).toFixed(1);
@@ -153,7 +198,7 @@ export async function validateBedrockDocument(
       };
     }
 
-    if (mimeType === 'application/pdf' && fileBuffer) {
+    if (mimeType === pdfMimeType && fileBuffer) {
       if (fileBuffer.length < 5) {
         return {
           isValid: false,
