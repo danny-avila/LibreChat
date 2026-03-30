@@ -6,8 +6,8 @@ import {
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { AgentCapabilities, TEndpointsConfig, TConfig } from 'librechat-data-provider';
-import type { ServerRequest } from '~/types';
-import { loadCustomEndpointsConfig } from '~/endpoints/custom';
+import type { ServerRequest, TCustomEndpointsConfig } from '~/types';
+import { loadCustomEndpointsConfig as defaultLoadCustomEndpoints } from '~/endpoints/custom';
 
 type PartialEndpointEntry = Partial<TConfig>;
 type DefaultEndpointsResult = Record<string, PartialEndpointEntry | false | null>;
@@ -16,10 +16,15 @@ type MutableEndpointsConfig = Record<string, PartialEndpointEntry | false | null
 export interface EndpointsConfigDeps {
   getAppConfig: (params: { role?: string | null; tenantId?: string }) => Promise<AppConfig>;
   loadDefaultEndpointsConfig: (appConfig: AppConfig) => Promise<DefaultEndpointsResult>;
+  loadCustomEndpointsConfig?: (custom: unknown) => TCustomEndpointsConfig | undefined;
 }
 
 export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
-  const { getAppConfig, loadDefaultEndpointsConfig } = deps;
+  const {
+    getAppConfig,
+    loadDefaultEndpointsConfig,
+    loadCustomEndpointsConfig = defaultLoadCustomEndpoints,
+  } = deps;
 
   async function getEndpointsConfig(req: ServerRequest): Promise<TEndpointsConfig> {
     const appConfig =

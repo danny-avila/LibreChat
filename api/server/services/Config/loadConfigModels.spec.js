@@ -76,9 +76,9 @@ describe('loadConfigModels', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    fetchModels.mockReset();
     process.env = { ...originalEnv };
 
-    // Default mock for getAppConfig
     getAppConfig.mockResolvedValue({});
   });
 
