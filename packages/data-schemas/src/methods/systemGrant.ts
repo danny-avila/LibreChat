@@ -1,5 +1,5 @@
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
-import type { Types, Model, ClientSession } from 'mongoose';
+import type { Types, Model, ClientSession, FilterQuery } from 'mongoose';
 import type { SystemCapability } from '~/types/admin';
 import type { ISystemGrant } from '~/types';
 import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
@@ -49,16 +49,11 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     const impliedBy = reverseImplications[capability as keyof typeof reverseImplications] ?? [];
     const capabilityQuery = impliedBy.length ? { $in: [capability, ...impliedBy] } : capability;
 
-    const query: Record<string, unknown> = {
+    const query: FilterQuery<ISystemGrant> = {
       $or: principalsQuery,
       capability: capabilityQuery,
+      ...tenantCondition(tenantId),
     };
-
-    if (tenantId != null) {
-      query.$and = [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }];
-    } else {
-      query.tenantId = { $exists: false };
-    }
 
     const doc = await SystemGrant.exists(query);
     return doc != null;
@@ -87,17 +82,12 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
 
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
 
-    const filter: Record<string, unknown> = {
+    const filter: FilterQuery<ISystemGrant> = {
       principalType,
       principalId: normalizedPrincipalId,
       capability,
+      tenantId: tenantId != null ? tenantId : { $exists: false },
     };
-
-    if (tenantId != null) {
-      filter.tenantId = tenantId;
-    } else {
-      filter.tenantId = { $exists: false };
-    }
 
     const update = {
       $set: {
@@ -149,17 +139,12 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
 
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
 
-    const filter: Record<string, unknown> = {
+    const filter: FilterQuery<ISystemGrant> = {
       principalType,
       principalId: normalizedPrincipalId,
       capability,
+      tenantId: tenantId != null ? tenantId : { $exists: false },
     };
-
-    if (tenantId != null) {
-      filter.tenantId = tenantId;
-    } else {
-      filter.tenantId = { $exists: false };
-    }
 
     const options = session ? { session } : {};
     await SystemGrant.deleteOne(filter, options);
@@ -180,26 +165,19 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }): Promise<ISystemGrant[]> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
 
-    const filter: Record<string, unknown> = {
+    const filter: FilterQuery<ISystemGrant> = {
       principalType,
       principalId: normalizePrincipalId(principalId, principalType),
+      ...tenantCondition(tenantId),
     };
-
-    if (tenantId != null) {
-      filter.$or = [{ tenantId }, { tenantId: { $exists: false } }];
-    } else {
-      filter.tenantId = { $exists: false };
-    }
 
     return await SystemGrant.find(filter).lean();
   }
 
-  function buildTenantFilter(filter: Record<string, unknown>, tenantId?: string): void {
-    if (tenantId != null) {
-      filter.$or = [{ tenantId }, { tenantId: { $exists: false } }];
-    } else {
-      filter.tenantId = { $exists: false };
-    }
+  function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
+    return tenantId != null
+      ? { $and: [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }] }
+      : { tenantId: { $exists: false } };
   }
 
   async function listGrants(options?: {
@@ -211,13 +189,10 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
-    const filter: Record<string, unknown> = {};
-
-    if (options?.principalTypes?.length) {
-      filter.principalType = { $in: options.principalTypes };
-    }
-
-    buildTenantFilter(filter, options?.tenantId);
+    const filter: FilterQuery<ISystemGrant> = {
+      ...(options?.principalTypes?.length && { principalType: { $in: options.principalTypes } }),
+      ...tenantCondition(options?.tenantId),
+    };
 
     return SystemGrant.find(filter)
       .sort({ principalType: 1, capability: 1 })
@@ -231,13 +206,10 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     principalTypes?: PrincipalType[];
   }): Promise<number> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
-    const filter: Record<string, unknown> = {};
-
-    if (options?.principalTypes?.length) {
-      filter.principalType = { $in: options.principalTypes };
-    }
-
-    buildTenantFilter(filter, options?.tenantId);
+    const filter: FilterQuery<ISystemGrant> = {
+      ...(options?.principalTypes?.length && { principalType: { $in: options.principalTypes } }),
+      ...tenantCondition(options?.tenantId),
+    };
 
     return SystemGrant.countDocuments(filter);
   }
@@ -265,13 +237,10 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       return [];
     }
 
-    const filter: Record<string, unknown> = { $or: principalsQuery };
-
-    if (tenantId != null) {
-      filter.$and = [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }];
-    } else {
-      filter.tenantId = { $exists: false };
-    }
+    const filter: FilterQuery<ISystemGrant> = {
+      $or: principalsQuery,
+      ...tenantCondition(tenantId),
+    };
 
     return await SystemGrant.find(filter).lean();
   }

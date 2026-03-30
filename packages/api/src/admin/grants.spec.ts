@@ -121,6 +121,23 @@ describe('createAdminGrantsHandlers', () => {
       );
     });
 
+    it('returns empty grants when caller has no read permissions', async () => {
+      const deps = createDeps({
+        hasCapabilityForPrincipals: jest.fn().mockResolvedValue(false),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+
+      await handlers.listGrants(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      const response = json.mock.calls[0][0];
+      expect(response.grants).toEqual([]);
+      expect(response.total).toBe(0);
+      expect(deps.listGrants).not.toHaveBeenCalled();
+      expect(deps.countGrants).not.toHaveBeenCalled();
+    });
+
     it('passes limit and offset from query params', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
@@ -877,16 +894,26 @@ describe('createAdminGrantsHandlers', () => {
     const validParams = {
       principalType: PrincipalType.ROLE,
       principalId: 'editor',
+      capability: SystemCapabilities.READ_USERS,
     };
-    const validQuery = { capability: SystemCapabilities.READ_USERS };
+
+    it('returns 200 idempotently even if the grant does not exist', async () => {
+      const deps = createDeps({
+        revokeCapability: jest.fn().mockResolvedValue(undefined),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: validParams });
+
+      await handlers.revokeGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true });
+    });
 
     it('revokes a grant and returns 200', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
-      const { req, res, status, json } = createReqRes({
-        params: validParams,
-        query: validQuery,
-      });
+      const { req, res, status, json } = createReqRes({ params: validParams });
 
       await handlers.revokeGrant(req, res);
 
@@ -906,7 +933,6 @@ describe('createAdminGrantsHandlers', () => {
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res } = createReqRes({
         params: validParams,
-        query: validQuery,
         user: { _id: new Types.ObjectId(), role: 'admin', tenantId: 'tenant-1' },
       });
 
@@ -920,12 +946,11 @@ describe('createAdminGrantsHandlers', () => {
       );
     });
 
-    it('accepts section-level config capability in query', async () => {
+    it('accepts encoded section-level config capability in path', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status } = createReqRes({
-        params: validParams,
-        query: { capability: 'manage:configs:endpoints' },
+        params: { ...validParams, capability: 'manage:configs:endpoints' },
       });
 
       await handlers.revokeGrant(req, res);
@@ -940,8 +965,11 @@ describe('createAdminGrantsHandlers', () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
-        params: { principalType: '', principalId: 'editor' },
-        query: validQuery,
+        params: {
+          principalType: '',
+          principalId: 'editor',
+          capability: SystemCapabilities.READ_USERS,
+        },
       });
 
       await handlers.revokeGrant(req, res);
@@ -954,8 +982,11 @@ describe('createAdminGrantsHandlers', () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
-        params: { principalType: PrincipalType.ROLE, principalId: '' },
-        query: validQuery,
+        params: {
+          principalType: PrincipalType.ROLE,
+          principalId: '',
+          capability: SystemCapabilities.READ_USERS,
+        },
       });
 
       await handlers.revokeGrant(req, res);
@@ -968,8 +999,7 @@ describe('createAdminGrantsHandlers', () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
-        params: validParams,
-        query: { capability: 'fake' },
+        params: { ...validParams, capability: 'fake' },
       });
 
       await handlers.revokeGrant(req, res);
@@ -978,11 +1008,11 @@ describe('createAdminGrantsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Invalid capability' });
     });
 
-    it('returns 400 for missing capability query param', async () => {
+    it('returns 400 for missing capability param', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
-        params: validParams,
+        params: { principalType: PrincipalType.ROLE, principalId: 'editor' },
       });
 
       await handlers.revokeGrant(req, res);
@@ -994,10 +1024,7 @@ describe('createAdminGrantsHandlers', () => {
     it('returns 401 when user is not authenticated', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
-      const { req, res, status, json } = createReqRes({
-        params: validParams,
-        query: validQuery,
-      });
+      const { req, res, status, json } = createReqRes({ params: validParams });
       (req as unknown as Record<string, unknown>).user = undefined;
 
       await handlers.revokeGrant(req, res);
@@ -1012,10 +1039,7 @@ describe('createAdminGrantsHandlers', () => {
         hasCapabilityForPrincipals: jest.fn().mockResolvedValue(false),
       });
       const handlers = createAdminGrantsHandlers(deps);
-      const { req, res, status, json } = createReqRes({
-        params: validParams,
-        query: validQuery,
-      });
+      const { req, res, status, json } = createReqRes({ params: validParams });
 
       await handlers.revokeGrant(req, res);
 
@@ -1028,8 +1052,11 @@ describe('createAdminGrantsHandlers', () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
-        params: { principalType: PrincipalType.USER, principalId: 'bad-id' },
-        query: validQuery,
+        params: {
+          principalType: PrincipalType.USER,
+          principalId: 'bad-id',
+          capability: SystemCapabilities.READ_USERS,
+        },
       });
 
       await handlers.revokeGrant(req, res);
@@ -1043,10 +1070,7 @@ describe('createAdminGrantsHandlers', () => {
         revokeCapability: jest.fn().mockRejectedValue(new Error('db error')),
       });
       const handlers = createAdminGrantsHandlers(deps);
-      const { req, res, status, json } = createReqRes({
-        params: validParams,
-        query: validQuery,
-      });
+      const { req, res, status, json } = createReqRes({ params: validParams });
 
       await handlers.revokeGrant(req, res);
 

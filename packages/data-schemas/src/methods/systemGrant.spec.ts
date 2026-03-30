@@ -1175,7 +1175,7 @@ describe('systemGrant methods', () => {
 
       const grants = await methods.getCapabilitiesForPrincipals({
         principals: [
-          { principalType: PrincipalType.PUBLIC },
+          { principalType: PrincipalType.PUBLIC, principalId: '' },
           { principalType: PrincipalType.USER, principalId: userId },
         ],
       });
@@ -1192,7 +1192,7 @@ describe('systemGrant methods', () => {
       });
 
       const grants = await methods.getCapabilitiesForPrincipals({
-        principals: [{ principalType: PrincipalType.PUBLIC }],
+        principals: [{ principalType: PrincipalType.PUBLIC, principalId: '' }],
       });
 
       expect(grants).toEqual([]);

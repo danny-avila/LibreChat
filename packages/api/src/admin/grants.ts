@@ -96,7 +96,9 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
     [PrincipalType.USER]: SystemCapabilities.READ_USERS,
   };
 
-  const VALID_PRINCIPAL_TYPES = new Set<string>(Object.keys(MANAGE_CAPABILITY_BY_TYPE));
+  const VALID_PRINCIPAL_TYPES = new Set(
+    Object.keys(MANAGE_CAPABILITY_BY_TYPE) as GrantPrincipalType[],
+  );
 
   function resolveUser(
     req: ServerRequest,
@@ -131,7 +133,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
   }
 
   function validatePrincipal(principalType: string, principalId: string): string | null {
-    if (!principalType || !VALID_PRINCIPAL_TYPES.has(principalType)) {
+    if (!principalType || !VALID_PRINCIPAL_TYPES.has(principalType as GrantPrincipalType)) {
       return 'Invalid principal type';
     }
     if (!principalId) {
@@ -182,6 +184,9 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         .map(([type]) => type) as PrincipalType[];
 
       const { limit, offset } = parsePagination(req.query as { limit?: string; offset?: string });
+      if (!allowedTypes.length) {
+        return res.status(200).json({ grants: [], total: 0, limit, offset });
+      }
       const [grants, total] = await Promise.all([
         listGrants({ tenantId, principalTypes: allowedTypes, limit, offset }),
         countGrants({ tenantId, principalTypes: allowedTypes }),
@@ -226,6 +231,11 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
 
   async function getPrincipalGrantsHandler(req: ServerRequest, res: Response) {
     try {
+      const user = resolveUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
       const { principalType, principalId } = req.params as {
         principalType: string;
         principalId: string;
@@ -234,11 +244,6 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       const principalError = validatePrincipal(principalType, principalId);
       if (principalError) {
         return res.status(400).json({ error: principalError });
-      }
-
-      const user = resolveUser(req);
-      if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
       }
 
       const { tenantId } = user;
@@ -270,6 +275,11 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
 
   async function assignGrantHandler(req: ServerRequest, res: Response) {
     try {
+      const caller = resolveUser(req);
+      if (!caller) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
       const bodyError = validateGrantBody(req.body as GrantRequestBody);
       if (bodyError) {
         return res.status(400).json({ error: bodyError });
@@ -280,11 +290,6 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         principalId: string;
         capability: SystemCapability;
       };
-
-      const caller = resolveUser(req);
-      if (!caller) {
-        return res.status(401).json({ error: 'Authentication required' });
-      }
 
       const { tenantId } = caller;
       const principals = await resolvePrincipals(caller);
@@ -322,11 +327,16 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
    */
   async function revokeGrantHandler(req: ServerRequest, res: Response) {
     try {
-      const { principalType, principalId } = req.params as {
+      const caller = resolveUser(req);
+      if (!caller) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const { principalType, principalId, capability } = req.params as {
         principalType: string;
         principalId: string;
+        capability?: string;
       };
-      const capability = (req.query as { capability?: string }).capability;
 
       const principalError = validatePrincipal(principalType, principalId);
       if (principalError) {
@@ -334,11 +344,6 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       }
       if (!capability || !isValidCapability(capability)) {
         return res.status(400).json({ error: 'Invalid capability' });
-      }
-
-      const caller = resolveUser(req);
-      if (!caller) {
-        return res.status(401).json({ error: 'Authentication required' });
       }
 
       const { tenantId } = caller;

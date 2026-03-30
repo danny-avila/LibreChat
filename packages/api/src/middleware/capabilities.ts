@@ -50,8 +50,6 @@ export type HasConfigCapabilityFn = (
   verb?: 'manage' | 'read',
 ) => Promise<boolean>;
 
-export type GetCachedPrincipalsFn = (user: CapabilityUser) => ResolvedPrincipal[] | undefined;
-
 /**
  * Per-request store for caching resolved principals and capability check results.
  * When running inside an Express request (via `capabilityContextMiddleware`),

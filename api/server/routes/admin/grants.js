@@ -27,6 +27,6 @@ router.get('/', handlers.listGrants);
 router.get('/effective', handlers.getEffectiveCapabilities);
 router.get('/:principalType/:principalId', handlers.getPrincipalGrants);
 router.post('/', handlers.assignGrant);
-router.delete('/:principalType/:principalId', handlers.revokeGrant);
+router.delete('/:principalType/:principalId/:capability', handlers.revokeGrant);
 
 module.exports = router;
