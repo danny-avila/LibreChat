@@ -52,16 +52,6 @@ afterEach(async () => {
 });
 
 function createApp(user) {
-  // Must re-require after mocks are set up; jest.resetModules is NOT
-  // called so the mock sticks across tests in this suite.
-  jest.isolateModules(() => {
-    // Patch ~/models to use our in-memory DB methods
-    jest.doMock('~/models', () => ({
-      ...db,
-      seedDatabase: jest.fn(),
-    }));
-  });
-
   const { createAdminGrantsHandlers, getCachedPrincipals } = require('@librechat/api');
 
   const handlers = createAdminGrantsHandlers({

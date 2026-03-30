@@ -280,6 +280,9 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     return await SystemGrant.find(filter).lean();
   }
 
+  const GRANTS_DEFAULT_LIMIT = 50;
+  const GRANTS_MAX_LIMIT = 200;
+
   async function listGrants(options?: {
     tenantId?: string;
     principalTypes?: PrincipalType[];
@@ -287,8 +290,6 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     offset?: number;
   }): Promise<ISystemGrant[]> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
-    const GRANTS_DEFAULT_LIMIT = 50;
-    const GRANTS_MAX_LIMIT = 200;
     const limit = Math.min(GRANTS_MAX_LIMIT, Math.max(1, options?.limit ?? GRANTS_DEFAULT_LIMIT));
     const offset = options?.offset ?? 0;
     const filter: FilterQuery<ISystemGrant> = {
