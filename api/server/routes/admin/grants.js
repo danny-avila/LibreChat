@@ -20,6 +20,7 @@ const handlers = createAdminGrantsHandlers({
   hasCapabilityForPrincipals: db.hasCapabilityForPrincipals,
   getHeldCapabilities: db.getHeldCapabilities,
   getCachedPrincipals,
+  checkRoleExists: async (name) => (await db.getRoleByName(name)) != null,
 });
 
 router.use(requireJwtAuth, requireAdminAccess);
@@ -28,7 +29,7 @@ router.get('/', handlers.listGrants);
 router.get('/effective', handlers.getEffectiveCapabilities);
 router.get('/:principalType/:principalId', handlers.getPrincipalGrants);
 router.post('/', handlers.assignGrant);
-/** Callers must encodeURIComponent the capability (e.g. manage%3Aconfigs%3Aendpoints). */
+/** Callers should encodeURIComponent the capability for client compatibility (e.g. manage%3Aconfigs%3Aendpoints). */
 router.delete('/:principalType/:principalId/:capability', handlers.revokeGrant);
 
 module.exports = router;
