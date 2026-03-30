@@ -80,23 +80,25 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }): Promise<Set<SystemCapability>> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const principalsQuery = principals
-      .filter((p) => p.principalType !== PrincipalType.PUBLIC)
-      .map((p) => ({ principalType: p.principalType, principalId: p.principalId }));
+      .filter(
+        (p): p is typeof p & { principalId: string | Types.ObjectId } =>
+          p.principalType !== PrincipalType.PUBLIC && p.principalId != null,
+      )
+      .map((p) => ({
+        principalType: p.principalType,
+        principalId: normalizePrincipalId(p.principalId, p.principalType as PrincipalType),
+      }));
 
     if (!principalsQuery.length || !capabilities.length) {
       return new Set();
     }
 
-    const allCaps = new Set<string>();
-    for (const cap of capabilities) {
-      allCaps.add(cap);
-      const implied = reverseImplications[cap as keyof typeof reverseImplications];
-      if (implied) {
-        for (const imp of implied) {
-          allCaps.add(imp);
-        }
-      }
-    }
+    const allCaps = new Set<string>([
+      ...capabilities,
+      ...capabilities.flatMap(
+        (cap) => reverseImplications[cap as keyof typeof reverseImplications] ?? [],
+      ),
+    ]);
 
     const docs = await SystemGrant.find(
       {

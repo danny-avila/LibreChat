@@ -1263,6 +1263,21 @@ describe('systemGrant methods', () => {
       expect(held).toEqual(new Set([SystemCapabilities.READ_ROLES]));
     });
 
+    it('excludes principals with undefined principalId', async () => {
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'admin',
+        capability: SystemCapabilities.READ_ROLES,
+      });
+
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.ROLE }],
+        capabilities: [SystemCapabilities.READ_ROLES],
+      });
+
+      expect(held.size).toBe(0);
+    });
+
     it('filters out PUBLIC principals', async () => {
       const held = await methods.getHeldCapabilities({
         principals: [{ principalType: PrincipalType.PUBLIC, principalId: '' }],
@@ -1294,6 +1309,12 @@ describe('systemGrant methods', () => {
         tenantId: 'tenant-b',
       });
       expect(heldOther.size).toBe(0);
+
+      const heldNoTenant = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: tenantUser }],
+        capabilities: [SystemCapabilities.READ_ROLES],
+      });
+      expect(heldNoTenant.size).toBe(0);
     });
   });
 });
