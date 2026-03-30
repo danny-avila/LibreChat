@@ -1,14 +1,15 @@
 const { SystemRoles } = require('librechat-data-provider');
-const { 
-  getGroups, 
-  getGroup, 
-  createGroup, 
-  updateGroup, 
+const {
+  getGroups,
+  getGroup,
+  createGroup,
+  updateGroup,
   deleteGroup,
   getAvailableUsers,
   getGroupMembers,
   addUserToGroup,
   removeUserFromGroup,
+  removePendingEmail,
 } = require('~/models');
 const { User } = require('~/db/models');
 const { logger } = require('@librechat/data-schemas');
@@ -463,6 +464,20 @@ const removeUserFromGroupHandler = async (req, res) => {
   }
 };
 
+/**
+ * Remove a pending email from a group
+ */
+const removePendingEmailHandler = async (req, res) => {
+  try {
+    const { id, email } = req.params;
+    await removePendingEmail(id, decodeURIComponent(email));
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error('Error removing pending email:', error);
+    res.status(500).json({ success: false, message: 'Failed to remove pending email' });
+  }
+};
+
 module.exports = {
   getGroupsHandler,
   getGroupHandler,
@@ -474,4 +489,5 @@ module.exports = {
   getGroupMembersHandler,
   addUserToGroupHandler,
   removeUserFromGroupHandler,
+  removePendingEmailHandler,
 };

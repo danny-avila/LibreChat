@@ -11,6 +11,7 @@ const {
   getGroupMembersHandler,
   addUserToGroupHandler,
   removeUserFromGroupHandler,
+  removePendingEmailHandler,
 } = require('~/server/controllers/GroupController');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { requireAdmin } = require('~/server/middleware/roles');
@@ -82,6 +83,7 @@ router.delete('/:id', deleteGroupHandler);
 router.get('/:id/members', getGroupMembersHandler);
 router.post('/:id/members', addUserToGroupHandler);
 router.delete('/:id/members/:userId', removeUserFromGroupHandler);
+router.delete('/:id/pending/:email', removePendingEmailHandler);
 // router.post('/:id/members/bulk', requireAdmin, validateBulkGroupAssignment, bulkAddUsersToGroupHandler);
 
 // Time window management endpoints
