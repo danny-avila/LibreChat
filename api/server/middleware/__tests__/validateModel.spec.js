@@ -49,7 +49,7 @@ describe('validateModel', () => {
     it('rejects non-string model', async () => {
       req.body.model = 12345;
       await validateModel(req, res, next);
-      expect(handleError).toHaveBeenCalledWith(res, { text: 'Invalid model identifier' });
+      expect(handleError).toHaveBeenCalledWith(res, { text: 'Model not provided' });
       expect(next).not.toHaveBeenCalled();
     });
 

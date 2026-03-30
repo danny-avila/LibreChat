@@ -17,16 +17,14 @@ const MODEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@+-]*$/;
  */
 const validateModel = async (req, res, next) => {
   const { endpoint } = req.body;
-  const model = typeof req.body.model === 'string' ? req.body.model.trim() : req.body.model;
-  if (!model) {
+  const rawModel = req.body.model;
+
+  if (!rawModel || typeof rawModel !== 'string') {
     return handleError(res, { text: 'Model not provided' });
   }
 
-  if (
-    typeof model !== 'string' ||
-    model.length > MAX_MODEL_STRING_LENGTH ||
-    !MODEL_PATTERN.test(model)
-  ) {
+  const model = rawModel.trim();
+  if (!model || model.length > MAX_MODEL_STRING_LENGTH || !MODEL_PATTERN.test(model)) {
     return handleError(res, { text: 'Invalid model identifier' });
   }
 
