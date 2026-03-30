@@ -52,7 +52,7 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
         appConfig.endpoints[EModelEndpoint.assistants];
       mergedConfig[EModelEndpoint.assistants] = {
         ...mergedConfig[EModelEndpoint.assistants],
-        version: typeof version === 'string' ? version : undefined,
+        version: version != null ? String(version) : undefined,
         retrievalModels,
         disableBuilder,
         capabilities,
@@ -78,7 +78,7 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
         appConfig.endpoints[EModelEndpoint.azureAssistants];
       mergedConfig[EModelEndpoint.azureAssistants] = {
         ...mergedConfig[EModelEndpoint.azureAssistants],
-        version: typeof version === 'string' ? version : undefined,
+        version: version != null ? String(version) : undefined,
         retrievalModels,
         disableBuilder,
         capabilities,
