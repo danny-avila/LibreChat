@@ -56,6 +56,24 @@ export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSy
   };
 
 // ---------------------------------------------------------------------------
+// Capability validation
+// ---------------------------------------------------------------------------
+
+const baseCapabilitySet = new Set<string>(Object.values(SystemCapabilities));
+const sectionCapPattern = /^(?:manage|read):configs:\w+$/;
+const assignCapPattern = /^assign:configs:(?:user|group|role)$/;
+
+/**
+ * Runtime validator for the full `SystemCapability` union:
+ * base capabilities, section-level config capabilities, and config assignment capabilities.
+ */
+export function isValidCapability(value: string): boolean {
+  return (
+    baseCapabilitySet.has(value) || sectionCapPattern.test(value) || assignCapPattern.test(value)
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Capability utility functions
 // ---------------------------------------------------------------------------
 

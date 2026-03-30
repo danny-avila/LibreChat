@@ -1,6 +1,6 @@
-import { SystemRoles } from 'librechat-data-provider';
+import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString, RoleConflictError } from '@librechat/data-schemas';
-import type { IRole, IUser, AdminMember } from '@librechat/data-schemas';
+import type { IRole, IUser, IConfig, AdminMember } from '@librechat/data-schemas';
 import type { FilterQuery, Types } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -105,6 +105,22 @@ export interface AdminRolesDeps {
     options?: { limit?: number; offset?: number },
   ) => Promise<IUser[]>;
   countUsersByRole: (roleName: string) => Promise<number>;
+  /** Removes the per-principal config override (keyed by type + name, not ObjectId). */
+  deleteConfig: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+  ) => Promise<IConfig | null>;
+  /** Removes all ACL entries scoped to this principal. */
+  deleteAclEntries: (filter: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+  }) => Promise<void>;
+  /** Removes all system capability grants held by this principal. */
+  deleteGrantsForPrincipal: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    options?: { tenantId?: string },
+  ) => Promise<void>;
 }
 
 export function createAdminRolesHandlers(deps: AdminRolesDeps) {
@@ -123,6 +139,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     updateUsersRoleByIds,
     listUsersByRole,
     countUsersByRole,
+    deleteConfig,
+    deleteAclEntries,
+    deleteGrantsForPrincipal,
   } = deps;
 
   async function listRolesHandler(req: ServerRequest, res: Response) {
@@ -367,6 +386,19 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       if (!deleted) {
         return res.status(404).json({ error: 'Role not found' });
       }
+
+      const tenantId = req.user?.tenantId;
+      const cleanupResults = await Promise.allSettled([
+        deleteConfig(PrincipalType.ROLE, name),
+        deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name }),
+        deleteGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }),
+      ]);
+      for (const result of cleanupResults) {
+        if (result.status === 'rejected') {
+          logger.error('[adminRoles] cascade cleanup failed for role:', name, result.reason);
+        }
+      }
+
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] deleteRole error:', error);
