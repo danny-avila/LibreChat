@@ -47,7 +47,13 @@ function createOAuthHandler(redirectUri = domains.client) {
         const refreshToken =
           req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token;
 
-        const exchangeCode = await generateAdminExchangeCode(cache, req.user, token, refreshToken);
+        const exchangeCode = await generateAdminExchangeCode(
+          cache,
+          req.user,
+          token,
+          refreshToken,
+          new URL(redirectUri).origin,
+        );
 
         const callbackUrl = new URL(redirectUri);
         callbackUrl.searchParams.set('code', exchangeCode);

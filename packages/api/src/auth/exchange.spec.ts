@@ -1,0 +1,100 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+jest.mock(
+  '@librechat/data-schemas',
+  () => ({
+    logger: {
+      info: jest.fn(),
+      warn: jest.fn(),
+    },
+  }),
+  { virtual: true },
+);
+
+import { exchangeAdminCode, generateAdminExchangeCode } from './exchange';
+
+describe('admin OAuth code exchange', () => {
+  const user = {
+    _id: 'user123',
+    email: 'admin@example.com',
+    name: 'Admin User',
+    username: 'admin',
+    role: 'ADMIN',
+    provider: 'openid',
+  } as any;
+
+  const createCache = () => {
+    const store = new Map();
+    const cache = {
+      set: jest.fn(async (key: string, value: unknown) => {
+        store.set(key, value);
+      }),
+      get: jest.fn(async (key: string) => store.get(key)),
+      delete: jest.fn(async (key: string) => {
+        store.delete(key);
+      }),
+    };
+
+    return { cache: cache as any, store, spies: cache };
+  };
+
+  it('exchanges code when request origin matches generated origin', async () => {
+    const { cache } = createCache();
+    const exchangeCode = await generateAdminExchangeCode(
+      cache,
+      user,
+      'jwt-token',
+      'refresh-token',
+      'https://admin.example.com',
+    );
+
+    const result = await exchangeAdminCode(cache, exchangeCode, 'https://admin.example.com');
+
+    expect(result).not.toBeNull();
+    expect(result!.token).toBe('jwt-token');
+    expect(result!.refreshToken).toBe('refresh-token');
+    expect(result!.user.email).toBe('admin@example.com');
+  });
+
+  it('rejects code exchange when request origin does not match generated origin', async () => {
+    const { cache, store, spies } = createCache();
+    const exchangeCode = await generateAdminExchangeCode(
+      cache,
+      user,
+      'jwt-token',
+      'refresh-token',
+      'https://admin.example.com',
+    );
+
+    const result = await exchangeAdminCode(cache, exchangeCode, 'https://evil.example.com');
+
+    expect(result).toBeNull();
+    expect(spies.delete).toHaveBeenCalledWith(exchangeCode);
+    expect(store.has(exchangeCode)).toBe(false);
+  });
+
+  it('allows exchange when no origin was stored (backward compat)', async () => {
+    const { cache } = createCache();
+    const exchangeCode = await generateAdminExchangeCode(cache, user, 'jwt-token', 'refresh-token');
+
+    const result = await exchangeAdminCode(cache, exchangeCode, 'https://any-origin.com');
+
+    expect(result).not.toBeNull();
+    expect(result!.token).toBe('jwt-token');
+  });
+
+  it('rejects code that has already been used (one-time use)', async () => {
+    const { cache } = createCache();
+    const exchangeCode = await generateAdminExchangeCode(
+      cache,
+      user,
+      'jwt-token',
+      'refresh-token',
+      'https://admin.example.com',
+    );
+
+    await exchangeAdminCode(cache, exchangeCode, 'https://admin.example.com');
+    const secondAttempt = await exchangeAdminCode(cache, exchangeCode, 'https://admin.example.com');
+
+    expect(secondAttempt).toBeNull();
+  });
+});

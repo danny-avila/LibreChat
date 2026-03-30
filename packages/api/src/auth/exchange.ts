@@ -37,6 +37,7 @@ export interface AdminExchangeData {
   user: AdminExchangeUser;
   token: string;
   refreshToken?: string;
+  origin?: string;
 }
 
 /**
@@ -81,6 +82,7 @@ export async function generateAdminExchangeCode(
   user: IUser,
   token: string,
   refreshToken?: string,
+  origin?: string,
 ): Promise<string> {
   const exchangeCode = crypto.randomBytes(32).toString('hex');
 
@@ -89,6 +91,7 @@ export async function generateAdminExchangeCode(
     user: serializeUserForExchange(user),
     token,
     refreshToken,
+    origin,
   };
 
   await cache.set(exchangeCode, data);
@@ -108,6 +111,7 @@ export async function generateAdminExchangeCode(
 export async function exchangeAdminCode(
   cache: Keyv,
   code: string,
+  requestOrigin?: string,
 ): Promise<AdminExchangeResponse | null> {
   const data = (await cache.get(code)) as AdminExchangeData | undefined;
 
@@ -116,6 +120,11 @@ export async function exchangeAdminCode(
 
   if (!data) {
     logger.warn('[adminExchange] Invalid or expired authorization code');
+    return null;
+  }
+
+  if (data.origin && data.origin !== requestOrigin) {
+    logger.warn('[adminExchange] Authorization code origin mismatch');
     return null;
   }
 

@@ -24,6 +24,24 @@ const setBalanceConfig = createSetBalanceConfig({
 
 const router = express.Router();
 
+function resolveRequestOrigin(req) {
+  const originHeader = req.get('origin');
+  if (originHeader) {
+    return originHeader;
+  }
+
+  const refererHeader = req.get('referer');
+  if (!refererHeader) {
+    return undefined;
+  }
+
+  try {
+    return new URL(refererHeader).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 router.post(
   '/login/local',
   middleware.logHeaders,
@@ -105,7 +123,8 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
     }
 
     const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-    const result = await exchangeAdminCode(cache, code);
+    const requestOrigin = resolveRequestOrigin(req);
+    const result = await exchangeAdminCode(cache, code, requestOrigin);
 
     if (!result) {
       return res.status(401).json({
