@@ -9,16 +9,6 @@ const methods = createMethods(mongoose, {
   getCache: getLogStores,
 });
 
-const { comparePassword } = require('./userMethods');
-const {
-  findFileById,
-  createFile,
-  updateFile,
-  deleteFile,
-  deleteFiles,
-  getFiles,
-  updateFileUsage,
-} = require('./File');
 const {
   getGroups,
   getGroup,
@@ -35,17 +25,6 @@ const {
   addUserToGroup,
   removeUserFromGroup,
 } = require('./Group');
-const {
-  getMessage,
-  getMessages,
-  saveMessage,
-  recordMessage,
-  updateMessage,
-  deleteMessagesSince,
-  deleteMessages,
-} = require('./Message');
-const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
-const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 
 const seedDatabase = async () => {
   await methods.initializeRoles();
@@ -57,14 +36,6 @@ const seedDatabase = async () => {
 module.exports = {
   ...methods,
   seedDatabase,
-  comparePassword,
-  findFileById,
-  createFile,
-  updateFile,
-  deleteFile,
-  deleteFiles,
-  getFiles,
-  updateFileUsage,
 
   getGroups,
   getGroup,
@@ -80,22 +51,4 @@ module.exports = {
   getGroupMembers,
   addUserToGroup,
   removeUserFromGroup,
-
-  getMessage,
-  getMessages,
-  saveMessage,
-  recordMessage,
-  updateMessage,
-  deleteMessagesSince,
-  deleteMessages,
-
-  getConvoTitle,
-  getConvo,
-  saveConvo,
-  deleteConvos,
-
-  getPreset,
-  getPresets,
-  savePreset,
-  deletePresets,
 };
