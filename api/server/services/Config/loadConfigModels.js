@@ -1,10 +1,12 @@
 const { isUserProvided, fetchModels } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
   EModelEndpoint,
   extractEnvVariable,
   normalizeEndpointName,
 } = require('librechat-data-provider');
 const { getAppConfig } = require('./app');
+const db = require('~/models');
 
 /**
  * Load config endpoints from the cached configuration object
@@ -72,7 +74,10 @@ async function loadConfigModels(req) {
 
     modelsConfig[name] = [];
 
-    if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
+    const apiKeyIsUserProvided = isUserProvided(API_KEY);
+    const baseURLIsUserProvided = isUserProvided(BASE_URL);
+
+    if (models.fetch && !apiKeyIsUserProvided && !baseURLIsUserProvided) {
       fetchPromisesMap[uniqueKey] =
         fetchPromisesMap[uniqueKey] ||
         fetchModels({
@@ -88,6 +93,36 @@ async function loadConfigModels(req) {
       uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];
       uniqueKeyToEndpointsMap[uniqueKey].push(name);
       continue;
+    }
+
+    if (models.fetch && (apiKeyIsUserProvided || baseURLIsUserProvided) && req.user?.id) {
+      try {
+        const userKeyValues = await db.getUserKeyValues({ userId: req.user.id, name });
+        const resolvedApiKey = apiKeyIsUserProvided ? userKeyValues?.apiKey : API_KEY;
+        const resolvedBaseURL = baseURLIsUserProvided ? userKeyValues?.baseURL : BASE_URL;
+
+        if (resolvedApiKey && resolvedBaseURL) {
+          const userFetchKey = `user:${req.user.id}:${name}`;
+          fetchPromisesMap[userFetchKey] =
+            fetchPromisesMap[userFetchKey] ||
+            fetchModels({
+              name,
+              apiKey: resolvedApiKey,
+              baseURL: resolvedBaseURL,
+              user: req.user.id,
+              userObject: req.user,
+              headers: endpointHeaders,
+              direct: endpoint.directEndpoint,
+              userIdQuery: models.userIdQuery,
+              skipCache: true,
+            });
+          uniqueKeyToEndpointsMap[userFetchKey] = uniqueKeyToEndpointsMap[userFetchKey] || [];
+          uniqueKeyToEndpointsMap[userFetchKey].push(name);
+          continue;
+        }
+      } catch {
+        logger.debug(`[loadConfigModels] No user key found for endpoint "${name}"`);
+      }
     }
 
     if (Array.isArray(models.default)) {

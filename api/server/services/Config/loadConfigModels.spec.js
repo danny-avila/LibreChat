@@ -7,6 +7,13 @@ jest.mock('@librechat/api', () => ({
   fetchModels: jest.fn(),
 }));
 jest.mock('./app');
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: { debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+}));
+jest.mock('~/models', () => ({
+  getUserKeyValues: jest.fn(),
+}));
 
 const exampleConfig = {
   endpoints: {

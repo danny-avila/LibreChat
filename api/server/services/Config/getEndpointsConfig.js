@@ -1,14 +1,11 @@
-const { scopedCacheKey } = require('@librechat/data-schemas');
 const { loadCustomEndpointsConfig } = require('@librechat/api');
 const {
-  CacheKeys,
   EModelEndpoint,
   isAgentsEndpoint,
   orderEndpointsConfig,
   defaultAgentCapabilities,
 } = require('librechat-data-provider');
 const loadDefaultEndpointsConfig = require('./loadDefaultEConfig');
-const getLogStores = require('~/cache/getLogStores');
 const { getAppConfig } = require('./app');
 
 /**
@@ -17,17 +14,6 @@ const { getAppConfig } = require('./app');
  * @returns {Promise<TEndpointsConfig>}
  */
 async function getEndpointsConfig(req) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const cacheKey = scopedCacheKey(CacheKeys.ENDPOINT_CONFIG);
-  const cachedEndpointsConfig = await cache.get(cacheKey);
-  if (cachedEndpointsConfig) {
-    if (cachedEndpointsConfig.gptPlugins) {
-      await cache.delete(cacheKey);
-    } else {
-      return cachedEndpointsConfig;
-    }
-  }
-
   const appConfig =
     req.config ?? (await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId }));
   const defaultEndpointsConfig = await loadDefaultEndpointsConfig(appConfig);
@@ -112,10 +98,7 @@ async function getEndpointsConfig(req) {
     };
   }
 
-  const endpointsConfig = orderEndpointsConfig(mergedConfig);
-
-  await cache.set(cacheKey, endpointsConfig);
-  return endpointsConfig;
+  return orderEndpointsConfig(mergedConfig);
 }
 
 /**
