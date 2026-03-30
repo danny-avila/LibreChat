@@ -957,7 +957,7 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.deleteGrantsForPrincipal).not.toHaveBeenCalled();
     });
 
-    it('succeeds even when cascade cleanup fails', async () => {
+    it('succeeds even when grant cleanup fails', async () => {
       const deps = createDeps({
         deleteGrantsForPrincipal: jest.fn().mockRejectedValue(new Error('cleanup failed')),
       });
