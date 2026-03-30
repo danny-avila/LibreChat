@@ -37,6 +37,8 @@ export interface AdminExchangeData {
   user: AdminExchangeUser;
   token: string;
   refreshToken?: string;
+  origin?: string;
+  codeChallenge?: string;
 }
 
 /**
@@ -69,11 +71,29 @@ export function serializeUserForExchange(user: IUser): AdminExchangeUser {
 }
 
 /**
+ * Verifies a PKCE code_verifier against a stored code_challenge.
+ * Uses hex-encoded SHA-256 comparison (not RFC 7636 S256 which uses base64url).
+ * @param verifier - The code_verifier provided during exchange
+ * @param challenge - The hex-encoded SHA-256 code_challenge stored during code generation
+ * @returns True if the verifier matches the challenge
+ */
+export function verifyCodeChallenge(verifier: string, challenge: string): boolean {
+  const computed = crypto.createHash('sha256').update(verifier).digest();
+  const storedBuf = Buffer.from(challenge, 'hex');
+  if (computed.length !== storedBuf.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(computed, storedBuf);
+}
+
+/**
  * Generates an exchange code and stores user data for admin panel OAuth flow.
  * @param cache - The Keyv cache instance for storing exchange data
  * @param user - The authenticated user object
  * @param token - The JWT access token
  * @param refreshToken - Optional refresh token for OpenID users
+ * @param origin - The admin panel origin (scheme://host:port) for origin binding
+ * @param codeChallenge - PKCE code_challenge (hex-encoded SHA-256 of code_verifier)
  * @returns The generated exchange code
  */
 export async function generateAdminExchangeCode(
@@ -81,6 +101,8 @@ export async function generateAdminExchangeCode(
   user: IUser,
   token: string,
   refreshToken?: string,
+  origin?: string,
+  codeChallenge?: string,
 ): Promise<string> {
   const exchangeCode = crypto.randomBytes(32).toString('hex');
 
@@ -89,6 +111,8 @@ export async function generateAdminExchangeCode(
     user: serializeUserForExchange(user),
     token,
     refreshToken,
+    origin,
+    codeChallenge,
   };
 
   await cache.set(exchangeCode, data);
@@ -103,20 +127,36 @@ export async function generateAdminExchangeCode(
  * The code is deleted immediately after retrieval (one-time use).
  * @param cache - The Keyv cache instance for retrieving exchange data
  * @param code - The authorization code to exchange
+ * @param requestOrigin - The origin of the requesting client for origin binding
+ * @param codeVerifier - PKCE code_verifier to verify against the stored code_challenge
  * @returns The exchange response with token, refreshToken, and user data, or null if invalid/expired
  */
 export async function exchangeAdminCode(
   cache: Keyv,
   code: string,
+  requestOrigin?: string,
+  codeVerifier?: string,
 ): Promise<AdminExchangeResponse | null> {
   const data = (await cache.get(code)) as AdminExchangeData | undefined;
 
-  /** Delete immediately - one-time use */
+  /** Delete before validation — ensures one-time use even if subsequent checks throw */
   await cache.delete(code);
 
   if (!data) {
     logger.warn('[adminExchange] Invalid or expired authorization code');
     return null;
+  }
+
+  if (data.origin && data.origin !== requestOrigin) {
+    logger.warn('[adminExchange] Authorization code origin mismatch');
+    return null;
+  }
+
+  if (data.codeChallenge) {
+    if (!codeVerifier || !verifyCodeChallenge(codeVerifier, data.codeChallenge)) {
+      logger.warn('[adminExchange] PKCE code_verifier mismatch or missing');
+      return null;
+    }
   }
 
   logger.info(`[adminExchange] Exchanged code for user: ${data.user?.email}`);
