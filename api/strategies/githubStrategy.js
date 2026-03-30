@@ -11,24 +11,36 @@ const getProfileDetails = ({ profile }) => ({
 });
 
 const githubLogin = socialLogin('github', getProfileDetails);
+const githubAdminLogin = socialLogin('github', getProfileDetails, { existingUsersOnly: true });
 
-module.exports = () =>
+const getGitHubConfig = (callbackURL) => ({
+  clientID: process.env.GITHUB_CLIENT_ID,
+  clientSecret: process.env.GITHUB_CLIENT_SECRET,
+  callbackURL,
+  proxy: false,
+  scope: ['user:email'],
+  ...(process.env.GITHUB_ENTERPRISE_BASE_URL && {
+    authorizationURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/login/oauth/authorize`,
+    tokenURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/login/oauth/access_token`,
+    userProfileURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/api/v3/user`,
+    userEmailURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/api/v3/user/emails`,
+    ...(process.env.GITHUB_ENTERPRISE_USER_AGENT && {
+      userAgent: process.env.GITHUB_ENTERPRISE_USER_AGENT,
+    }),
+  }),
+});
+
+const githubStrategy = () =>
   new GitHubStrategy(
-    {
-      clientID: process.env.GITHUB_CLIENT_ID,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET,
-      callbackURL: `${process.env.DOMAIN_SERVER}${process.env.GITHUB_CALLBACK_URL}`,
-      proxy: false,
-      scope: ['user:email'],
-      ...(process.env.GITHUB_ENTERPRISE_BASE_URL && {
-        authorizationURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/login/oauth/authorize`,
-        tokenURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/login/oauth/access_token`,
-        userProfileURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/api/v3/user`,
-        userEmailURL: `${process.env.GITHUB_ENTERPRISE_BASE_URL}/api/v3/user/emails`,
-        ...(process.env.GITHUB_ENTERPRISE_USER_AGENT && {
-          userAgent: process.env.GITHUB_ENTERPRISE_USER_AGENT,
-        }),
-      }),
-    },
+    getGitHubConfig(`${process.env.DOMAIN_SERVER}${process.env.GITHUB_CALLBACK_URL}`),
     githubLogin,
   );
+
+const githubAdminStrategy = () =>
+  new GitHubStrategy(
+    getGitHubConfig(`${process.env.DOMAIN_SERVER}/api/admin/oauth/github/callback`),
+    githubAdminLogin,
+  );
+
+module.exports = githubStrategy;
+module.exports.githubAdminLogin = githubAdminStrategy;
