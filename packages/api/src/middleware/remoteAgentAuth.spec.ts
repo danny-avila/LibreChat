@@ -84,6 +84,7 @@ function makeConfig(oidcOverrides?: object, apiKeyOverrides?: object): AppConfig
 function makeDeps(appConfig: AppConfig | null = makeConfig()) {
   return {
     findUser: jest.fn(),
+    updateUser: jest.fn(),
     getAppConfig: jest.fn().mockResolvedValue(appConfig),
     apiKeyMiddleware: jest.fn((_req: unknown, _res: unknown, next: () => void) => next()),
   };
@@ -454,4 +455,48 @@ describe('createRemoteAgentAuth', () => {
       expect(await captureEmailArg({ sub: 's3', upn: 'upn@corp.com' })).toBe('upn@corp.com');
     });
   });
+
+  describe('update user and migration scenarios', () => {
+    it('persists openidId binding when migration is needed', async () => {
+      const mockUpdateUser = jest.fn().mockResolvedValue(undefined);
+      setupOidcMocks({ sub: 'sub-new', email: 'existing@test.com' });
+      (findOpenIDUser as jest.Mock).mockResolvedValue({
+        user: { ...mockUser, openidId: undefined, role: 'user' },
+        error: null,
+        migration: true,
+      });
+
+      const deps = { ...makeDeps(), updateUser: mockUpdateUser };
+      await createRemoteAgentAuth(deps as any)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockUpdateUser).toHaveBeenCalledWith(
+        mockUser.id,
+        expect.objectContaining({ provider: 'openid', openidId: 'sub-new' }),
+      );
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('does not call updateUser when migration is false and role exists', async () => {
+      const mockUpdateUser = jest.fn();
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      (findOpenIDUser as jest.Mock).mockResolvedValue({
+        user: { ...mockUser, role: 'user' },
+        error: null,
+        migration: false,
+      });
+
+      const deps = { ...makeDeps(), updateUser: mockUpdateUser };
+      await createRemoteAgentAuth(deps as any)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockUpdateUser).not.toHaveBeenCalled();
+    });
+  })
 });
