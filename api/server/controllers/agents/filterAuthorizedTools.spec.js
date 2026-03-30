@@ -22,6 +22,10 @@ jest.mock('~/config', () => ({
   })),
 }));
 
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
+}));
+
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(),
 }));
@@ -223,7 +227,7 @@ describe('MCP Tool Authorization', () => {
         availableTools,
       });
 
-      expect(mockGetAllServerConfigs).toHaveBeenCalledWith('specific-user-id');
+      expect(mockGetAllServerConfigs).toHaveBeenCalledWith('specific-user-id', undefined);
     });
 
     test('should only call getAllServerConfigs once even with multiple MCP tools', async () => {
