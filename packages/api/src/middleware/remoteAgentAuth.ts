@@ -6,12 +6,14 @@ import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { JwtPayload } from 'jsonwebtoken';
 import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
+import { SystemRoles } from 'librechat-data-provider';
 import { isEnabled, math } from '~/utils';
 import { findOpenIDUser } from '../auth/openid';
 
 export interface RemoteAgentAuthDeps {
   apiKeyMiddleware: RequestHandler;
   findUser: UserMethods['findUser'];
+  updateUser: UserMethods['updateUser'];
   getAppConfig: () => Promise<AppConfig | null>;
 }
 
@@ -141,8 +143,9 @@ async function resolveUser(
   token: string,
   payload: JwtPayload,
   findUser: UserMethods['findUser'],
+  updateUser: UserMethods['updateUser'],
 ): Promise<IUser | null> {
-  const { user, error } = await findOpenIDUser({
+  const { user, error, migration } = await findOpenIDUser({
     findUser,
     email: getEmail(payload),
     openidId: payload.sub ?? '',
@@ -153,6 +156,23 @@ async function resolveUser(
   if (error != null || user == null) return null;
 
   user.id = String(user._id);
+
+  const updateData: Partial<IUser> = {};
+
+  if (migration) {
+    updateData.provider = 'openid';
+    updateData.openidId = payload.sub;
+  }
+
+  if (!user.role) {
+    user.role = SystemRoles.USER;
+    updateData.role = SystemRoles.USER;
+  }
+
+  if (Object.keys(updateData).length > 0) {
+    await updateUser(user.id, updateData);
+  }
+
   user.federatedTokens = { access_token: token, expires_at: payload.exp };
   return user;
 }
@@ -180,6 +200,7 @@ async function resolveUser(
 export function createRemoteAgentAuth({
   apiKeyMiddleware,
   findUser,
+  updateUser,
   getAppConfig,
 }: RemoteAgentAuthDeps): RequestHandler {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -202,7 +223,7 @@ export function createRemoteAgentAuth({
 
       try {
         const payload = await verifyOidcBearer(token, authConfig.oidc);
-        const user = await resolveUser(token, payload, findUser);
+        const user = await resolveUser(token, payload, findUser, updateUser);
 
         if (user == null) {
           logger.warn('[remoteAgentAuth] OIDC token valid but no matching LibreChat user');
