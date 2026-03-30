@@ -15,6 +15,7 @@ export * from './mcp/auth';
 export * from './mcp/zod';
 export * from './mcp/errors';
 export * from './mcp/cache';
+export * from './mcp/tools';
 /* Utilities */
 export * from './mcp/utils';
 export * from './utils';

@@ -4,12 +4,13 @@ const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-pr
 const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
 const { bulkSaveMessages, bulkSaveConvos: _bulkSaveConvos } = require('~/models');
-const getLogStores = require('~/cache/getLogStores');
 
-jest.mock('~/cache/getLogStores');
-const mockedCacheGet = jest.fn();
-getLogStores.mockImplementation(() => ({
-  get: mockedCacheGet,
+const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
+  [EModelEndpoint.openAI]: { userProvide: false },
+});
+
+jest.mock('~/server/services/Config', () => ({
+  getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
 }));
 
 // Mock the database methods
@@ -758,7 +759,7 @@ describe('importLibreChatConvo', () => {
   );
 
   it('should import conversation correctly', async () => {
-    mockedCacheGet.mockResolvedValue({
+    mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.openAI]: {},
     });
     const expectedNumberOfMessages = 6;
@@ -784,7 +785,7 @@ describe('importLibreChatConvo', () => {
   });
 
   it('should import linear, non-recursive thread correctly with correct endpoint', async () => {
-    mockedCacheGet.mockResolvedValue({
+    mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.azureOpenAI]: {},
     });
 
@@ -924,7 +925,7 @@ describe('importLibreChatConvo', () => {
   });
 
   it('should retain properties from the original conversation as well as new settings', async () => {
-    mockedCacheGet.mockResolvedValue({
+    mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.azureOpenAI]: {},
     });
     const requestUserId = 'user-123';
