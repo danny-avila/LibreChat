@@ -14,7 +14,7 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
     minMembers: params.minMembers,
-    includeInactive: params.includeInactive
+    includeInactive: params.includeInactive,
   });
 
   const handleApplyFilters = () => {
@@ -27,21 +27,22 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
       dateFrom: undefined,
       dateTo: undefined,
       minMembers: undefined,
-      includeInactive: false
+      includeInactive: false,
     };
     setLocalFilters(resetFilters);
     onFilterChange(resetFilters);
   };
 
-  const hasActiveFilters = params.dateFrom || params.dateTo || params.minMembers || params.includeInactive;
+  const hasActiveFilters =
+    params.dateFrom || params.dateTo || params.minMembers || params.includeInactive;
 
   return (
-    <div className="bg-white rounded-lg shadow border">
-      <div className="px-6 py-4 border-b">
+    <div className="rounded-lg border bg-white shadow">
+      <div className="border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Button
-              variant={showFilters ? "default" : "outline"}
+              variant={showFilters ? 'default' : 'outline'}
               size="sm"
               onClick={() => setShowFilters(!showFilters)}
               className="flex items-center space-x-2"
@@ -49,7 +50,7 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
               <Filter className="h-4 w-4" />
               <span>Filters</span>
               {hasActiveFilters && (
-                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                <span className="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
                   Active
                 </span>
               )}
@@ -77,7 +78,7 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
               onClick={handleResetFilters}
               className="text-gray-500 hover:text-gray-700"
             >
-              <X className="h-4 w-4 mr-1" />
+              <X className="mr-1 h-4 w-4" />
               Clear Filters
             </Button>
           )}
@@ -85,12 +86,12 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
       </div>
 
       {showFilters && (
-        <div className="px-6 py-4 bg-gray-50">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-gray-50 px-6 py-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {/* Date Range */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Calendar className="inline h-4 w-4 mr-1" />
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                <Calendar className="mr-1 inline h-4 w-4" />
                 Date From
               </label>
               <Input
@@ -102,8 +103,8 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Calendar className="inline h-4 w-4 mr-1" />
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                <Calendar className="mr-1 inline h-4 w-4" />
                 Date To
               </label>
               <Input
@@ -116,8 +117,8 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
 
             {/* Minimum Members */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Users className="inline h-4 w-4 mr-1" />
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                <Users className="mr-1 inline h-4 w-4" />
                 Minimum Members
               </label>
               <Input
@@ -125,25 +126,29 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
                 min="1"
                 placeholder="e.g., 5"
                 value={localFilters.minMembers || ''}
-                onChange={(e) => setLocalFilters({ 
-                  ...localFilters, 
-                  minMembers: e.target.value ? parseInt(e.target.value) : undefined 
-                })}
+                onChange={(e) =>
+                  setLocalFilters({
+                    ...localFilters,
+                    minMembers: e.target.value ? parseInt(e.target.value) : undefined,
+                  })
+                }
                 className="w-full"
               />
             </div>
 
             {/* Include Inactive */}
             <div className="flex items-end">
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label className="flex cursor-pointer items-center space-x-2">
                 <input
                   type="checkbox"
                   checked={localFilters.includeInactive || false}
-                  onChange={(e) => setLocalFilters({ ...localFilters, includeInactive: e.target.checked })}
+                  onChange={(e) =>
+                    setLocalFilters({ ...localFilters, includeInactive: e.target.checked })
+                  }
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm font-medium text-gray-700">
-                  <Activity className="inline h-4 w-4 mr-1" />
+                  <Activity className="mr-1 inline h-4 w-4" />
                   Include Inactive Groups
                 </span>
               </label>
@@ -162,7 +167,7 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
                 setLocalFilters({
                   ...localFilters,
                   dateFrom: lastWeek.toISOString().split('T')[0],
-                  dateTo: today.toISOString().split('T')[0]
+                  dateTo: today.toISOString().split('T')[0],
                 });
               }}
             >
@@ -177,7 +182,7 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
                 setLocalFilters({
                   ...localFilters,
                   dateFrom: lastMonth.toISOString().split('T')[0],
-                  dateTo: today.toISOString().split('T')[0]
+                  dateTo: today.toISOString().split('T')[0],
                 });
               }}
             >
@@ -192,7 +197,7 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
                 setLocalFilters({
                   ...localFilters,
                   dateFrom: thisMonth.toISOString().split('T')[0],
-                  dateTo: today.toISOString().split('T')[0]
+                  dateTo: today.toISOString().split('T')[0],
                 });
               }}
             >
@@ -208,7 +213,7 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
                 setLocalFilters({
                   ...localFilters,
                   dateFrom: lastMonth.toISOString().split('T')[0],
-                  dateTo: lastMonthEnd.toISOString().split('T')[0]
+                  dateTo: lastMonthEnd.toISOString().split('T')[0],
                 });
               }}
             >
@@ -226,18 +231,14 @@ const GroupStatsFilters: React.FC<GroupStatsFiltersProps> = ({ params, onFilterC
                   dateFrom: params.dateFrom,
                   dateTo: params.dateTo,
                   minMembers: params.minMembers,
-                  includeInactive: params.includeInactive
+                  includeInactive: params.includeInactive,
                 });
                 setShowFilters(false);
               }}
             >
               Cancel
             </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleApplyFilters}
-            >
+            <Button variant="default" size="sm" onClick={handleApplyFilters}>
               Apply Filters
             </Button>
           </div>

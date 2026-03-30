@@ -11,6 +11,7 @@ import {
   EmptyGroupPreview,
 } from '~/components/Groups';
 import { 
+  Statistics,
   UserLeaderboard, 
   GroupLeaderboard, 
   GroupStatsDetail, 
@@ -103,11 +104,11 @@ const dashboardRoutes = {
     },
     {
       path: 'statistics/*',
-      element: <div className="h-screen w-full"><UserLeaderboard /></div>,
+      element: <div className="h-screen w-full"><Statistics /></div>,
       children: [
         {
           index: true,
-          element: <EmptyStatsPreview />,
+          element: <Statistics />,
         },
         {
           path: 'users',

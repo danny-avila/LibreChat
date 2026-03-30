@@ -1,3 +1,6 @@
+// Main Statistics Component
+export { default as Statistics } from './Statistics';
+
 // User Statistics Components
 export { default as UserLeaderboard } from './Users/UserLeaderboard';
 export { default as UserStatsFilters } from './Users/UserStatsFilters';

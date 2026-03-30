@@ -100,7 +100,14 @@ const getUserLeaderboard = async (req, res) => {
               ]
             }
           },
-          totalCost: { $sum: { $abs: '$tokenValue' } },
+          totalCost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          },
           lastActivity: { $max: '$createdAt' },
           conversationIds: { $addToSet: '$conversationId' }
         }
@@ -154,7 +161,7 @@ const getUserLeaderboard = async (req, res) => {
           promptTokens: 1,
           completionTokens: 1,
           currentBalance: { $ifNull: ['$balance.tokenCredits', 0] },
-          totalCost: { $round: ['$totalCost', 2] },
+          totalCost: { $round: ['$totalCost', 4] },
           lastActivity: 1,
           joinDate: '$user.createdAt',
           conversationCount: { $size: '$conversationIds' },
@@ -234,7 +241,14 @@ const getUserLeaderboard = async (req, res) => {
         $group: {
           _id: null,
           totalTokensUsed: { $sum: { $abs: '$rawAmount' } },
-          totalCost: { $sum: { $abs: '$tokenValue' } },
+          totalCost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          },
           uniqueUsers: { $addToSet: '$user' }
         }
       }
@@ -243,7 +257,7 @@ const getUserLeaderboard = async (req, res) => {
     const summaryResult = await Transaction.aggregate(summaryPipeline);
     const summary = summaryResult.length > 0 ? {
       totalTokensUsed: summaryResult[0].totalTokensUsed,
-      totalCost: Math.round(summaryResult[0].totalCost * 100) / 100,
+      totalCost: Math.round(summaryResult[0].totalCost * 10000) / 10000,
       averagePerUser: totalUsers > 0 ? Math.round(summaryResult[0].totalTokensUsed / totalUsers) : 0,
       mostActiveUser: usersWithRank.length > 0 ? usersWithRank[0].email : null,
       dateRange: {
@@ -355,7 +369,14 @@ const getUserStatistics = async (req, res) => {
               ]
             }
           },
-          totalCost: { $sum: { $abs: '$tokenValue' } },
+          totalCost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          },
           conversationIds: { $addToSet: '$conversationId' }
         }
       },
@@ -364,7 +385,7 @@ const getUserStatistics = async (req, res) => {
           promptTokens: 1,
           completionTokens: 1,
           totalTokens: { $add: ['$promptTokens', '$completionTokens'] },
-          totalCost: { $round: ['$totalCost', 2] },
+          totalCost: { $round: ['$totalCost', 4] },
           conversationCount: { $size: '$conversationIds' }
         }
       }

@@ -154,7 +154,14 @@ const getGroupLeaderboard = async (req, res) => {
               ]
             }
           },
-          totalCost: { $sum: { $abs: '$tokenValue' } },
+          totalCost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          },
           lastActivity: { $max: '$createdAt' },
           uniqueMembers: { $addToSet: '$user' },
           conversationIds: { $addToSet: '$conversationId' }
@@ -192,7 +199,7 @@ const getGroupLeaderboard = async (req, res) => {
               0
             ]
           },
-          totalCost: { $round: ['$totalCost', 2] },
+          totalCost: { $round: ['$totalCost', 4] },
           timeWindowsActive: '$timeWindowsCount',
           lastActivity: 1,
           conversationCount: { $size: '$conversationIds' }
@@ -277,7 +284,14 @@ const getGroupLeaderboard = async (req, res) => {
         $group: {
           _id: null,
           totalTokensUsed: { $sum: { $abs: '$rawAmount' } },
-          totalCost: { $sum: { $abs: '$tokenValue' } },
+          totalCost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          },
           uniqueUsers: { $addToSet: '$user' }
         }
       }
@@ -388,7 +402,14 @@ const getGroupStatistics = async (req, res) => {
               ]
             }
           },
-          totalCost: { $sum: { $abs: '$tokenValue' } },
+          totalCost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          },
           conversationIds: { $addToSet: '$conversationId' },
           uniqueUsers: { $addToSet: '$user' }
         }
@@ -398,7 +419,7 @@ const getGroupStatistics = async (req, res) => {
           promptTokens: 1,
           completionTokens: 1,
           totalTokens: { $add: ['$promptTokens', '$completionTokens'] },
-          totalCost: { $round: ['$totalCost', 2] },
+          totalCost: { $round: ['$totalCost', 4] },
           conversationCount: { $size: '$conversationIds' },
           activeMemberCount: { $size: '$uniqueUsers' }
         }
@@ -421,7 +442,14 @@ const getGroupStatistics = async (req, res) => {
         $group: {
           _id: '$user',
           tokens: { $sum: { $abs: '$rawAmount' } },
-          cost: { $sum: { $abs: '$tokenValue' } },
+          cost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          },
           lastActivity: { $max: '$createdAt' }
         }
       },
@@ -500,7 +528,14 @@ const getGroupStatistics = async (req, res) => {
           $group: {
             _id: null,
             tokens: { $sum: { $abs: '$rawAmount' } },
-            cost: { $sum: { $abs: '$tokenValue' } }
+            cost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          }
           }
         }
       ]),
@@ -516,7 +551,14 @@ const getGroupStatistics = async (req, res) => {
           $group: {
             _id: null,
             tokens: { $sum: { $abs: '$rawAmount' } },
-            cost: { $sum: { $abs: '$tokenValue' } }
+            cost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          }
           }
         }
       ])
@@ -536,7 +578,14 @@ const getGroupStatistics = async (req, res) => {
         $group: {
           _id: '$model',
           usage: { $sum: { $abs: '$rawAmount' } },
-          cost: { $sum: { $abs: '$tokenValue' } }
+          cost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          }
         }
       },
       { $sort: { usage: -1 } },
@@ -734,7 +783,14 @@ const getGroupMemberStatistics = async (req, res) => {
               ]
             }
           },
-          cost: { $sum: { $abs: '$tokenValue' } },
+          cost: { 
+            $sum: { 
+              $multiply: [
+                { $abs: '$rawAmount' },
+                0.000005  // $5 per 1M tokens = $0.000005 per token
+              ]
+            }
+          },
           lastActivity: { $max: '$createdAt' },
           conversationIds: { $addToSet: '$conversationId' }
         }

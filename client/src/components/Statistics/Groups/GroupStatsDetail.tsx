@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
-import { 
-  ArrowLeft, 
-  Users, 
-  TrendingUp, 
-  DollarSign, 
-  Activity, 
-  Clock, 
+import {
+  ArrowLeft,
+  Users,
+  TrendingUp,
+  DollarSign,
+  Activity,
+  Clock,
   Calendar,
   BarChart,
   PieChart,
-  Zap,
-  AlertTriangle
 } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
 import { useGroupStatistics, useGroupMemberStatistics, GroupMemberStatistics } from '../hooks';
@@ -23,7 +21,11 @@ interface GroupMembersTableProps {
   isLoading: boolean;
 }
 
-const GroupMembersTable: React.FC<GroupMembersTableProps> = ({ members, groupTotalTokens, isLoading }) => {
+const GroupMembersTable: React.FC<GroupMembersTableProps> = ({
+  members,
+  groupTotalTokens,
+  isLoading,
+}) => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -35,7 +37,7 @@ const GroupMembersTable: React.FC<GroupMembersTableProps> = ({ members, groupTot
 
   if (members.length === 0) {
     return (
-      <div className="text-center py-8">
+      <div className="py-8 text-center">
         <Users className="mx-auto h-8 w-8 text-gray-400" />
         <p className="mt-2 text-gray-500">No member activity found</p>
       </div>
@@ -47,33 +49,30 @@ const GroupMembersTable: React.FC<GroupMembersTableProps> = ({ members, groupTot
       <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
               Member
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
               Tokens Used
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
               Cost
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Balance
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
               % of Group
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
               Last Activity
             </th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="divide-y divide-gray-200 bg-white">
           {members.map((member) => (
             <tr key={member.userId} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap">
+              <td className="whitespace-nowrap px-6 py-4">
                 <div className="flex items-center">
-                  <div className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
-                    <span className="text-white text-sm font-medium">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-purple-500">
+                    <span className="text-sm font-medium text-white">
                       {(member.email || 'U').charAt(0).toUpperCase()}
                     </span>
                   </div>
@@ -85,36 +84,25 @@ const GroupMembersTable: React.FC<GroupMembersTableProps> = ({ members, groupTot
                   </div>
                 </div>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap">
+              <td className="whitespace-nowrap px-6 py-4">
                 <div className="text-sm text-gray-900">{formatNumber(member.tokens)}</div>
                 <div className="text-xs text-gray-500">
                   {formatNumber(member.promptTokens)} + {formatNumber(member.completionTokens)}
                 </div>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap">
+              <td className="whitespace-nowrap px-6 py-4">
                 <div className="text-sm text-gray-900">{formatCurrency(member.cost)}</div>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className={`text-sm font-medium ${member.balance < 1000 ? 'text-red-600' : 'text-green-600'}`}>
-                  {formatNumber(member.balance)}
-                </div>
-                {member.balance < 1000 && (
-                  <div className="flex items-center text-xs text-red-600">
-                    <AlertTriangle className="h-3 w-3 mr-1" />
-                    Low balance
-                  </div>
-                )}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
+              <td className="whitespace-nowrap px-6 py-4">
                 <div className="text-sm text-gray-900">{member.percentageOfGroup}%</div>
-                <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
-                  <div 
-                    className="bg-blue-600 h-1 rounded-full" 
+                <div className="mt-1 h-1 w-full rounded-full bg-gray-200">
+                  <div
+                    className="h-1 rounded-full bg-blue-600"
                     style={{ width: `${Math.min(member.percentageOfGroup, 100)}%` }}
                   ></div>
                 </div>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
                 {formatRelativeTime(member.lastActivity)}
               </td>
             </tr>
@@ -135,23 +123,23 @@ const GroupStatsDetail: React.FC = () => {
     return <div>Group ID not found</div>;
   }
 
-  const { 
-    data: groupStats, 
-    isLoading: isLoadingStats, 
+  const {
+    data: groupStats,
+    isLoading: isLoadingStats,
     error: statsError,
-    refetch: refetchStats
+    refetch: refetchStats,
   } = useGroupStatistics(groupId, {
     ...dateRange,
-    includeMemberDetails: true
+    includeMemberDetails: true,
   });
 
-  const { 
-    data: membersData, 
+  const {
+    data: membersData,
     isLoading: isLoadingMembers,
-    error: membersError
+    error: membersError,
   } = useGroupMemberStatistics(groupId, {
     ...dateRange,
-    limit: 50
+    limit: 50,
   });
 
   const members = membersData?.members || [];
@@ -169,7 +157,7 @@ const GroupStatsDetail: React.FC = () => {
   if (statsError) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <div className="text-red-500 mb-4">Error loading group statistics</div>
+        <div className="mb-4 text-red-500">Error loading group statistics</div>
         <Button onClick={() => refetchStats()} variant="outline" size="sm">
           Try Again
         </Button>
@@ -194,12 +182,11 @@ const GroupStatsDetail: React.FC = () => {
           <ArrowLeft className="h-4 w-4" />
           <span>Back to Groups</span>
         </Button>
-        
+
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900">{groupStats.groupName}</h1>
-          <p className="text-gray-600 mt-1">
-            {groupStats.memberCount} members • 
-            {groupStats.isActive ? ' Active' : ' Inactive'} •
+          <p className="mt-1 text-gray-600">
+            {groupStats.memberCount} members •{groupStats.isActive ? ' Active' : ' Inactive'} •
             {groupStats.timeWindows.length > 0 && ` ${groupStats.timeWindows.length} time windows`}
           </p>
         </div>
@@ -212,8 +199,8 @@ const GroupStatsDetail: React.FC = () => {
       </div>
 
       {/* Quick Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-6 border">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className="rounded-lg border bg-white p-6 shadow">
           <div className="flex items-center">
             <TrendingUp className="h-8 w-8 text-blue-500" />
             <div className="ml-4">
@@ -225,7 +212,7 @@ const GroupStatsDetail: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6 border">
+        <div className="rounded-lg border bg-white p-6 shadow">
           <div className="flex items-center">
             <DollarSign className="h-8 w-8 text-green-500" />
             <div className="ml-4">
@@ -237,7 +224,7 @@ const GroupStatsDetail: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6 border">
+        <div className="rounded-lg border bg-white p-6 shadow">
           <div className="flex items-center">
             <Users className="h-8 w-8 text-purple-500" />
             <div className="ml-4">
@@ -249,7 +236,7 @@ const GroupStatsDetail: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6 border">
+        <div className="rounded-lg border bg-white p-6 shadow">
           <div className="flex items-center">
             <Activity className="h-8 w-8 text-orange-500" />
             <div className="ml-4">
@@ -263,41 +250,51 @@ const GroupStatsDetail: React.FC = () => {
       </div>
 
       {/* Usage Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Period Comparison */}
-        <div className="bg-white rounded-lg shadow border">
-          <div className="px-6 py-4 border-b">
-            <h3 className="text-lg font-medium text-gray-900 flex items-center">
-              <BarChart className="h-5 w-5 mr-2" />
+        <div className="rounded-lg border bg-white shadow">
+          <div className="border-b px-6 py-4">
+            <h3 className="flex items-center text-lg font-medium text-gray-900">
+              <BarChart className="mr-2 h-5 w-5" />
               Period Comparison
             </h3>
           </div>
           <div className="p-6">
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">This Month</span>
                 <div className="text-right">
-                  <div className="font-medium">{formatNumber(groupStats.periodComparison.thisMonth.tokens)} tokens</div>
-                  <div className="text-sm text-gray-500">{formatCurrency(groupStats.periodComparison.thisMonth.cost)}</div>
+                  <div className="font-medium">
+                    {formatNumber(groupStats.periodComparison.thisMonth.tokens)} tokens
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {formatCurrency(groupStats.periodComparison.thisMonth.cost)}
+                  </div>
                 </div>
               </div>
-              <div className="flex justify-between items-center">
+              <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Last Month</span>
                 <div className="text-right">
-                  <div className="font-medium">{formatNumber(groupStats.periodComparison.lastMonth.tokens)} tokens</div>
-                  <div className="text-sm text-gray-500">{formatCurrency(groupStats.periodComparison.lastMonth.cost)}</div>
+                  <div className="font-medium">
+                    {formatNumber(groupStats.periodComparison.lastMonth.tokens)} tokens
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {formatCurrency(groupStats.periodComparison.lastMonth.cost)}
+                  </div>
                 </div>
               </div>
-              <div className="pt-2 border-t">
-                <div className="flex justify-between items-center">
+              <div className="border-t pt-2">
+                <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-700">Growth</span>
-                  <span className={`font-medium ${
-                    groupStats.periodComparison.growth.startsWith('+') 
-                      ? 'text-green-600' 
-                      : groupStats.periodComparison.growth.startsWith('-')
-                      ? 'text-red-600'
-                      : 'text-gray-600'
-                  }`}>
+                  <span
+                    className={`font-medium ${
+                      groupStats.periodComparison.growth.startsWith('+')
+                        ? 'text-green-600'
+                        : groupStats.periodComparison.growth.startsWith('-')
+                          ? 'text-red-600'
+                          : 'text-gray-600'
+                    }`}
+                  >
                     {groupStats.periodComparison.growth}
                   </span>
                 </div>
@@ -305,45 +302,14 @@ const GroupStatsDetail: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* Balance Overview */}
-        <div className="bg-white rounded-lg shadow border">
-          <div className="px-6 py-4 border-b">
-            <h3 className="text-lg font-medium text-gray-900 flex items-center">
-              <Zap className="h-5 w-5 mr-2" />
-              Group Balance
-            </h3>
-          </div>
-          <div className="p-6">
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">Total Balance</span>
-                <span className="font-medium text-lg">{formatNumber(groupStats.groupBalance.totalBalance)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">Average per Member</span>
-                <span className="font-medium">{formatNumber(groupStats.groupBalance.averageBalance)}</span>
-              </div>
-              {groupStats.groupBalance.membersWithLowBalance > 0 && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 flex items-center">
-                    <AlertTriangle className="h-4 w-4 text-red-500 mr-1" />
-                    Low Balance Members
-                  </span>
-                  <span className="font-medium text-red-600">{groupStats.groupBalance.membersWithLowBalance}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Top Models */}
       {groupStats.topModels && groupStats.topModels.length > 0 && (
-        <div className="bg-white rounded-lg shadow border">
-          <div className="px-6 py-4 border-b">
-            <h3 className="text-lg font-medium text-gray-900 flex items-center">
-              <PieChart className="h-5 w-5 mr-2" />
+        <div className="rounded-lg border bg-white shadow">
+          <div className="border-b px-6 py-4">
+            <h3 className="flex items-center text-lg font-medium text-gray-900">
+              <PieChart className="mr-2 h-5 w-5" />
               Top Models Used
             </h3>
           </div>
@@ -353,13 +319,15 @@ const GroupStatsDetail: React.FC = () => {
                 <div key={model.model} className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className="flex-shrink-0">
-                      <div className="h-8 w-8 rounded bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
-                        <span className="text-white text-xs font-medium">#{index + 1}</span>
+                      <div className="flex h-8 w-8 items-center justify-center rounded bg-gradient-to-r from-blue-500 to-purple-500">
+                        <span className="text-xs font-medium text-white">#{index + 1}</span>
                       </div>
                     </div>
                     <div>
                       <div className="text-sm font-medium text-gray-900">{model.model}</div>
-                      <div className="text-xs text-gray-500">{formatNumber(model.usage)} tokens</div>
+                      <div className="text-xs text-gray-500">
+                        {formatNumber(model.usage)} tokens
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -375,36 +343,36 @@ const GroupStatsDetail: React.FC = () => {
 
       {/* Time Windows */}
       {groupStats.timeWindows && groupStats.timeWindows.length > 0 && (
-        <div className="bg-white rounded-lg shadow border">
-          <div className="px-6 py-4 border-b">
-            <h3 className="text-lg font-medium text-gray-900 flex items-center">
-              <Clock className="h-5 w-5 mr-2" />
+        <div className="rounded-lg border bg-white shadow">
+          <div className="border-b px-6 py-4">
+            <h3 className="flex items-center text-lg font-medium text-gray-900">
+              <Clock className="mr-2 h-5 w-5" />
               Time Windows
             </h3>
           </div>
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {groupStats.timeWindows.map((timeWindow, index) => (
-                <div key={index} className="border rounded-lg p-4">
+                <div key={index} className="rounded-lg border p-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium text-gray-900">{timeWindow.name}</h4>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      timeWindow.isActive 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        timeWindow.isActive
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
                       {timeWindow.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {timeWindow.windowType}
-                  </p>
+                  <p className="mt-1 text-sm text-gray-600">{timeWindow.windowType}</p>
                 </div>
               ))}
             </div>
             {groupStats.timeWindowCompliance && (
-              <div className="mt-4 pt-4 border-t">
-                <div className="flex justify-between items-center">
+              <div className="mt-4 border-t pt-4">
+                <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-700">Time Window Compliance</span>
                   <span className="font-medium text-green-600">
                     {formatPercentage(groupStats.timeWindowCompliance)}
@@ -417,29 +385,25 @@ const GroupStatsDetail: React.FC = () => {
       )}
 
       {/* Member Statistics */}
-      <div className="bg-white rounded-lg shadow border">
-        <div className="px-6 py-4 border-b">
+      <div className="rounded-lg border bg-white shadow">
+        <div className="border-b px-6 py-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-medium text-gray-900 flex items-center">
-              <Users className="h-5 w-5 mr-2" />
+            <h3 className="flex items-center text-lg font-medium text-gray-900">
+              <Users className="mr-2 h-5 w-5" />
               Member Statistics
             </h3>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowMembers(!showMembers)}
-            >
+            <Button variant="ghost" size="sm" onClick={() => setShowMembers(!showMembers)}>
               {showMembers ? 'Hide' : 'Show'} Members
             </Button>
           </div>
         </div>
-        
+
         {showMembers && (
           <div className="p-6">
-            <GroupMembersTable 
-              members={members} 
+            <GroupMembersTable
+              members={members}
               groupTotalTokens={groupTotalTokens}
-              isLoading={isLoadingMembers} 
+              isLoading={isLoadingMembers}
             />
           </div>
         )}

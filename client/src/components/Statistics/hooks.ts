@@ -12,7 +12,6 @@ export interface UserStatistics {
   totalTokens: number;
   promptTokens: number;
   completionTokens: number;
-  currentBalance: number;
   totalCost: number;
   lastActivity: string;
   joinDate: string;
@@ -24,7 +23,7 @@ export interface UserStatistics {
 export interface UserLeaderboardParams {
   page?: number;
   limit?: number;
-  sortBy?: 'totalTokens' | 'balance' | 'lastActivity' | 'joinDate' | 'totalCost';
+  sortBy?: 'totalTokens' | 'lastActivity' | 'joinDate' | 'totalCost';
   sortOrder?: 'asc' | 'desc';
   dateFrom?: string;
   dateTo?: string;
@@ -59,7 +58,6 @@ export interface DetailedUserStatistics {
   email: string;
   username?: string;
   joinDate: string;
-  currentBalance: number;
   totalUsage: {
     promptTokens: number;
     completionTokens: number;
@@ -187,9 +185,6 @@ export interface GroupStatistics {
   averagePerMember: number;
   averagePerActiveMember: number;
   totalCost: number;
-  groupBalance: number;
-  averageBalance: number;
-  membersWithLowBalance: number;
   timeWindowsActive: number;
   lastActivity: string;
   conversationCount: number;
@@ -253,15 +248,9 @@ export interface DetailedGroupStatistics {
       username?: string;
       tokens: number;
       cost: number;
-      balance: number;
       lastActivity: string;
       percentageOfGroup: number;
     }>;
-  };
-  groupBalance: {
-    totalBalance: number;
-    averageBalance: number;
-    membersWithLowBalance: number;
   };
   periodComparison: {
     thisMonth: { tokens: number; cost: number };
@@ -285,7 +274,6 @@ export interface GroupMemberStatistics {
   promptTokens: number;
   completionTokens: number;
   cost: number;
-  balance: number;
   lastActivity: string;
   conversationCount: number;
   percentageOfGroup: number;

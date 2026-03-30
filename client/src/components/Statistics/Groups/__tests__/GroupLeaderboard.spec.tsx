@@ -26,9 +26,7 @@ jest.mock('../GroupStatsFilters', () => {
   return function MockGroupStatsFilters({ onFilterChange }: any) {
     return (
       <div data-testid="group-stats-filters">
-        <button onClick={() => onFilterChange({ sortBy: 'memberCount' })}>
-          Change Filter
-        </button>
+        <button onClick={() => onFilterChange({ sortBy: 'memberCount' })}>Change Filter</button>
       </div>
     );
   };
@@ -37,22 +35,21 @@ jest.mock('../GroupStatsFilters', () => {
 const mockNavigate = jest.fn();
 (require('react-router-dom').useNavigate as jest.Mock).mockReturnValue(mockNavigate);
 
-const createQueryClient = () => new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: false,
+const createQueryClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
     },
-  },
-});
+  });
 
 const renderWithProviders = (component: React.ReactElement) => {
   const queryClient = createQueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        {component}
-      </BrowserRouter>
-    </QueryClientProvider>
+      <BrowserRouter>{component}</BrowserRouter>
+    </QueryClientProvider>,
   );
 };
 
@@ -69,7 +66,7 @@ describe('GroupLeaderboard', () => {
         completionTokens: 4000,
         averagePerMember: 2000,
         averagePerActiveMember: 2500,
-        totalCost: 0.50,
+        totalCost: 0.5,
         groupBalance: 15000,
         averageBalance: 3000,
         membersWithLowBalance: 1,
@@ -88,7 +85,7 @@ describe('GroupLeaderboard', () => {
         completionTokens: 3200,
         averagePerMember: 2667,
         averagePerActiveMember: 2667,
-        totalCost: 0.40,
+        totalCost: 0.4,
         groupBalance: 12000,
         averageBalance: 4000,
         membersWithLowBalance: 0,
@@ -96,7 +93,7 @@ describe('GroupLeaderboard', () => {
         lastActivity: '2024-01-01T09:00:00Z',
         conversationCount: 20,
         rank: 2,
-      }
+      },
     ],
     pagination: {
       currentPage: 1,
@@ -148,7 +145,7 @@ describe('GroupLeaderboard', () => {
     renderWithProviders(<GroupLeaderboard />);
 
     expect(screen.getByText('Error loading group leaderboard')).toBeInTheDocument();
-    
+
     const retryButton = screen.getByText('Try Again');
     fireEvent.click(retryButton);
     expect(mockRefetch).toHaveBeenCalled();
@@ -237,8 +234,8 @@ describe('GroupLeaderboard', () => {
         expect.objectContaining({
           sortBy: 'memberCount',
           sortOrder: 'desc',
-          page: 1
-        })
+          page: 1,
+        }),
       );
     });
   });
@@ -253,8 +250,8 @@ describe('GroupLeaderboard', () => {
     // Check that the component updates with new filter
     expect(hooks.useGroupLeaderboard).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        sortBy: 'memberCount'
-      })
+        sortBy: 'memberCount',
+      }),
     );
   });
 
@@ -289,8 +286,8 @@ describe('GroupLeaderboard', () => {
     await waitFor(() => {
       expect(hooks.useGroupLeaderboard).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          page: 2
-        })
+          page: 2,
+        }),
       );
     });
   });

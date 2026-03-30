@@ -469,8 +469,7 @@ const getGroupMembers = async (groupId) => {
  */
 const addUserToGroup = async (groupId, userId, assignedBy = null) => {
   try {
-    const models = require('~/db/models');
-    const { Group, User } = models;
+    const { Group, User } = require('../db/models');
     
     if (!Group || !User) {
       logger.warn('Required models not available');
@@ -483,10 +482,10 @@ const addUserToGroup = async (groupId, userId, assignedBy = null) => {
       throw new Error('Group not found');
     }
 
-    // Verify user exists and is Entra ID user
-    const user = await User.findOne({ _id: userId, provider: 'openid' });
+    // Verify user exists
+    const user = await User.findById(userId);
     if (!user) {
-      throw new Error('User not found or not an Entra ID user');
+      throw new Error('User not found');
     }
 
     // Check if user is already in group
@@ -512,11 +511,19 @@ const addUserToGroup = async (groupId, userId, assignedBy = null) => {
       { new: true }
     );
 
-    // Update group member count
+    // Update group members array and member count
     const memberCount = await User.countDocuments({
       'groupMemberships.groupId': groupId
     });
-    await Group.findByIdAndUpdate(groupId, { memberCount });
+    
+    // Add user to group's members array
+    await Group.findByIdAndUpdate(
+      groupId, 
+      { 
+        $addToSet: { members: userId },
+        memberCount: memberCount
+      }
+    );
 
     return { user: updatedUser, group };
   } catch (error) {
@@ -533,8 +540,7 @@ const addUserToGroup = async (groupId, userId, assignedBy = null) => {
  */
 const removeUserFromGroup = async (groupId, userId) => {
   try {
-    const models = require('~/db/models');
-    const { Group, User } = models;
+    const { Group, User } = require('../db/models');
     
     if (!Group || !User) {
       logger.warn('Required models not available');
@@ -556,11 +562,19 @@ const removeUserFromGroup = async (groupId, userId) => {
       throw new Error('User not found');
     }
 
-    // Update group member count
+    // Update group members array and member count
     const memberCount = await User.countDocuments({
       'groupMemberships.groupId': groupId
     });
-    await Group.findByIdAndUpdate(groupId, { memberCount });
+    
+    // Remove user from group's members array
+    await Group.findByIdAndUpdate(
+      groupId,
+      {
+        $pull: { members: userId },
+        memberCount: memberCount
+      }
+    );
 
     return updatedUser;
   } catch (error) {

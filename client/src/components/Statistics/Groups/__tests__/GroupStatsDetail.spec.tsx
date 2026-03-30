@@ -25,11 +25,7 @@ jest.mock('~/utils', () => ({
 // Mock UI components
 jest.mock('@librechat/client', () => ({
   Button: ({ children, onClick, variant, size, className, disabled }: any) => (
-    <button 
-      onClick={onClick} 
-      className={`${variant} ${size} ${className}`}
-      disabled={disabled}
-    >
+    <button onClick={onClick} className={`${variant} ${size} ${className}`} disabled={disabled}>
       {children}
     </button>
   ),
@@ -40,22 +36,24 @@ const mockNavigate = jest.fn();
 const mockUseParams = require('react-router-dom').useParams as jest.Mock;
 (require('react-router-dom').useNavigate as jest.Mock).mockReturnValue(mockNavigate);
 
-const createQueryClient = () => new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: false,
+const createQueryClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
     },
-  },
-});
+  });
 
-const renderWithProviders = (component: React.ReactElement, route = '/d/statistics/groups/group1') => {
+const renderWithProviders = (
+  component: React.ReactElement,
+  route = '/d/statistics/groups/group1',
+) => {
   const queryClient = createQueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[route]}>
-        {component}
-      </MemoryRouter>
-    </QueryClientProvider>
+      <MemoryRouter initialEntries={[route]}>{component}</MemoryRouter>
+    </QueryClientProvider>,
   );
 };
 
@@ -76,13 +74,13 @@ describe('GroupStatsDetail', () => {
         name: 'Weekend',
         windowType: 'weekly',
         isActive: false,
-      }
+      },
     ],
     totalUsage: {
       promptTokens: 6000,
       completionTokens: 4000,
       totalTokens: 10000,
-      totalCost: 0.50,
+      totalCost: 0.5,
       conversationCount: 25,
       activeMemberCount: 4,
     },
@@ -115,8 +113,8 @@ describe('GroupStatsDetail', () => {
           balance: 800,
           lastActivity: '2024-01-01T09:00:00Z',
           percentageOfGroup: 25,
-        }
-      ]
+        },
+      ],
     },
     groupBalance: {
       totalBalance: 15000,
@@ -124,23 +122,23 @@ describe('GroupStatsDetail', () => {
       membersWithLowBalance: 1,
     },
     periodComparison: {
-      thisMonth: { tokens: 6000, cost: 0.30 },
-      lastMonth: { tokens: 4000, cost: 0.20 },
+      thisMonth: { tokens: 6000, cost: 0.3 },
+      lastMonth: { tokens: 4000, cost: 0.2 },
       growth: '+50.0%',
     },
     topModels: [
       {
         model: 'gpt-4',
         usage: 8000,
-        cost: 0.40,
+        cost: 0.4,
         percentage: 80,
       },
       {
         model: 'gpt-3.5-turbo',
         usage: 2000,
-        cost: 0.10,
+        cost: 0.1,
         percentage: 20,
-      }
+      },
     ],
     timeWindowCompliance: 0.87,
   };
@@ -175,7 +173,7 @@ describe('GroupStatsDetail', () => {
         conversationCount: 8,
         percentageOfGroup: 25,
         rank: 2,
-      }
+      },
     ],
     groupTotals: {
       totalTokens: 10000,
@@ -227,7 +225,7 @@ describe('GroupStatsDetail', () => {
     renderWithProviders(<GroupStatsDetail />);
 
     expect(screen.getByText('Error loading group statistics')).toBeInTheDocument();
-    
+
     const retryButton = screen.getByText('Try Again');
     fireEvent.click(retryButton);
     expect(mockRefetch).toHaveBeenCalled();
@@ -316,7 +314,7 @@ describe('GroupStatsDetail', () => {
     renderWithProviders(<GroupStatsDetail />);
 
     expect(screen.getByText('Member Statistics')).toBeInTheDocument();
-    
+
     // Check table content
     expect(screen.getByText('user1@test.com')).toBeInTheDocument();
     expect(screen.getByText('user2@test.com')).toBeInTheDocument();
@@ -338,7 +336,7 @@ describe('GroupStatsDetail', () => {
 
     const toggleButton = screen.getByText('Hide Members');
     fireEvent.click(toggleButton);
-    
+
     // Members table should be hidden
     expect(screen.queryByText('user1@test.com')).not.toBeInTheDocument();
     expect(screen.getByText('Show Members')).toBeInTheDocument();

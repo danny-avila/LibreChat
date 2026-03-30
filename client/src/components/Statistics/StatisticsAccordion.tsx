@@ -8,8 +8,6 @@ export default function StatisticsAccordion() {
   const navigate = useNavigate();
   const userStatsLink = useCustomLink('/d/statistics/users');
   const groupStatsLink = useCustomLink('/d/statistics/groups');
-  const overviewLink = useCustomLink('/d/statistics/overview');
-
   const handleUserStats = (e: React.MouseEvent<HTMLButtonElement>) => {
     userStatsLink(e as unknown as React.MouseEvent<HTMLAnchorElement>);
   };
@@ -18,23 +16,9 @@ export default function StatisticsAccordion() {
     groupStatsLink(e as unknown as React.MouseEvent<HTMLAnchorElement>);
   };
 
-  const handleOverview = (e: React.MouseEvent<HTMLButtonElement>) => {
-    overviewLink(e as unknown as React.MouseEvent<HTMLAnchorElement>);
-  };
-
   return (
     <div className="flex h-full w-full flex-col space-y-2 p-2">
       <div className="flex flex-col space-y-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full justify-start bg-transparent hover:bg-surface-hover"
-          onClick={handleOverview}
-        >
-          <BarChart3 className="mr-2 h-4 w-4" />
-          Overview Dashboard
-        </Button>
-        
         <Button
           variant="outline"
           size="sm"
@@ -55,13 +39,13 @@ export default function StatisticsAccordion() {
           Group Statistics
         </Button>
 
-        <div className="border-t border-border-light my-2"></div>
+        <div className="my-2 border-t border-border-light"></div>
 
-        <div className="text-xs text-text-secondary font-semibold px-2 py-1">
+        <div className="px-2 py-1 text-xs font-semibold text-text-secondary">
           Analytics & Reports
         </div>
 
-        <div className="text-xs text-text-secondary px-2">
+        <div className="px-2 text-xs text-text-secondary">
           <p>View detailed usage statistics, token consumption, and platform analytics.</p>
         </div>
       </div>

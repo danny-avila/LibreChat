@@ -8,11 +8,7 @@ import { GroupLeaderboardParams } from '../../hooks';
 // Mock the UI components
 jest.mock('@librechat/client', () => ({
   Button: ({ children, onClick, variant, size, className, disabled }: any) => (
-    <button 
-      onClick={onClick} 
-      className={`${variant} ${size} ${className}`}
-      disabled={disabled}
-    >
+    <button onClick={onClick} className={`${variant} ${size} ${className}`} disabled={disabled}>
       {children}
     </button>
   ),
@@ -35,12 +31,12 @@ jest.mock('@librechat/client', () => ({
 
 describe('GroupStatsFilters', () => {
   const mockOnFilterChange = jest.fn();
-  
+
   const defaultParams: GroupLeaderboardParams = {
     page: 1,
     limit: 20,
     sortBy: 'totalTokens',
-    sortOrder: 'desc'
+    sortOrder: 'desc',
   };
 
   const paramsWithFilters: GroupLeaderboardParams = {
@@ -48,7 +44,7 @@ describe('GroupStatsFilters', () => {
     dateFrom: '2024-01-01',
     dateTo: '2024-01-31',
     minMembers: 5,
-    includeInactive: true
+    includeInactive: true,
   };
 
   beforeEach(() => {
@@ -56,12 +52,7 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should render with default state', () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     expect(screen.getByText('Filters')).toBeInTheDocument();
     expect(screen.getByText('per page')).toBeInTheDocument();
@@ -69,27 +60,17 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should show active filters badge when filters are applied', () => {
-    render(
-      <GroupStatsFilters 
-        params={paramsWithFilters} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={paramsWithFilters} onFilterChange={mockOnFilterChange} />);
 
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText('Clear Filters')).toBeInTheDocument();
   });
 
   it('should toggle filter panel visibility', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     const filtersButton = screen.getByText('Filters');
-    
+
     // Initially filters panel should not be visible
     expect(screen.queryByText('Date From')).not.toBeInTheDocument();
 
@@ -107,12 +88,7 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should handle page size changes', () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     const pageSizeSelect = screen.getByDisplayValue('20');
     fireEvent.change(pageSizeSelect, { target: { value: '50' } });
@@ -121,12 +97,7 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should handle date range input', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
@@ -145,17 +116,12 @@ describe('GroupStatsFilters', () => {
       dateFrom: '2024-01-01',
       dateTo: '2024-01-31',
       minMembers: undefined,
-      includeInactive: false
+      includeInactive: false,
     });
   });
 
   it('should handle minimum members input', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
@@ -171,17 +137,12 @@ describe('GroupStatsFilters', () => {
       dateFrom: undefined,
       dateTo: undefined,
       minMembers: 10,
-      includeInactive: false
+      includeInactive: false,
     });
   });
 
   it('should handle include inactive checkbox', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
@@ -197,17 +158,12 @@ describe('GroupStatsFilters', () => {
       dateFrom: undefined,
       dateTo: undefined,
       minMembers: undefined,
-      includeInactive: true
+      includeInactive: true,
     });
   });
 
   it('should handle quick date range presets', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
@@ -223,7 +179,7 @@ describe('GroupStatsFilters', () => {
     // Verify local state was updated (dates should be set)
     const dateFromInput = screen.getByLabelText(/Date From/i) as HTMLInputElement;
     const dateToInput = screen.getByLabelText(/Date To/i) as HTMLInputElement;
-    
+
     expect(dateFromInput.value).toBeTruthy();
     expect(dateToInput.value).toBeTruthy();
 
@@ -238,12 +194,7 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should handle "Last 30 days" preset', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
@@ -257,12 +208,7 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should handle "This month" preset', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
@@ -275,12 +221,7 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should handle "Last month" preset', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
@@ -293,12 +234,7 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should reset filters when clear button is clicked', async () => {
-    render(
-      <GroupStatsFilters 
-        params={paramsWithFilters} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={paramsWithFilters} onFilterChange={mockOnFilterChange} />);
 
     const clearButton = screen.getByText('Clear Filters');
     fireEvent.click(clearButton);
@@ -307,17 +243,12 @@ describe('GroupStatsFilters', () => {
       dateFrom: undefined,
       dateTo: undefined,
       minMembers: undefined,
-      includeInactive: false
+      includeInactive: false,
     });
   });
 
   it('should cancel filter changes', async () => {
-    render(
-      <GroupStatsFilters 
-        params={paramsWithFilters} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={paramsWithFilters} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
@@ -336,12 +267,7 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should populate initial filter values from params', () => {
-    render(
-      <GroupStatsFilters 
-        params={paramsWithFilters} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={paramsWithFilters} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
@@ -350,7 +276,9 @@ describe('GroupStatsFilters', () => {
     const dateFromInput = screen.getByDisplayValue('2024-01-01') as HTMLInputElement;
     const dateToInput = screen.getByDisplayValue('2024-01-31') as HTMLInputElement;
     const minMembersInput = screen.getByDisplayValue('5') as HTMLInputElement;
-    const includeInactiveCheckbox = screen.getByLabelText(/Include Inactive Groups/i) as HTMLInputElement;
+    const includeInactiveCheckbox = screen.getByLabelText(
+      /Include Inactive Groups/i,
+    ) as HTMLInputElement;
 
     expect(dateFromInput.value).toBe('2024-01-01');
     expect(dateToInput.value).toBe('2024-01-31');
@@ -359,18 +287,13 @@ describe('GroupStatsFilters', () => {
   });
 
   it('should handle empty minimum members input', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
 
     const minMembersInput = screen.getByPlaceholderText('e.g., 5');
-    
+
     // Enter a value then clear it
     fireEvent.change(minMembersInput, { target: { value: '10' } });
     fireEvent.change(minMembersInput, { target: { value: '' } });
@@ -383,26 +306,21 @@ describe('GroupStatsFilters', () => {
       dateFrom: undefined,
       dateTo: undefined,
       minMembers: undefined,
-      includeInactive: false
+      includeInactive: false,
     });
   });
 
   it('should handle numeric input validation for minimum members', async () => {
-    render(
-      <GroupStatsFilters 
-        params={defaultParams} 
-        onFilterChange={mockOnFilterChange} 
-      />
-    );
+    render(<GroupStatsFilters params={defaultParams} onFilterChange={mockOnFilterChange} />);
 
     // Show filters panel
     fireEvent.click(screen.getByText('Filters'));
 
     const minMembersInput = screen.getByPlaceholderText('e.g., 5');
-    
+
     // Try to enter non-numeric value
     fireEvent.change(minMembersInput, { target: { value: 'abc' } });
-    
+
     // Input should reject non-numeric values due to type="number"
     expect((minMembersInput as HTMLInputElement).type).toBe('number');
   });
