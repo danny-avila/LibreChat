@@ -312,7 +312,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     principals,
     tenantId,
   }: {
-    principals: Array<{ principalType: string; principalId: string | Types.ObjectId }>;
+    principals: Array<{ principalType: PrincipalType; principalId: string | Types.ObjectId }>;
     tenantId?: string;
   }): Promise<ISystemGrant[]> {
     if (!principals.length) {
@@ -324,7 +324,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       .filter((p) => p.principalType !== PrincipalType.PUBLIC)
       .map((p) => ({
         principalType: p.principalType,
-        principalId: normalizePrincipalId(p.principalId, p.principalType as PrincipalType),
+        principalId: normalizePrincipalId(p.principalId, p.principalType),
       }));
 
     if (!principalsQuery.length) {

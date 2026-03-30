@@ -1117,12 +1117,12 @@ describe('systemGrant methods', () => {
   describe('getCapabilitiesForPrincipals', () => {
     it('returns grants across multiple principals in a single query', async () => {
       const userId = new Types.ObjectId();
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.USER,
         principalId: userId,
         capability: SystemCapabilities.READ_USERS,
       });
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'editor',
         capability: SystemCapabilities.READ_ROLES,
@@ -1141,7 +1141,7 @@ describe('systemGrant methods', () => {
     });
 
     it('returns empty array for empty principals list', async () => {
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'admin',
         capability: SystemCapabilities.ACCESS_ADMIN,
@@ -1153,12 +1153,12 @@ describe('systemGrant methods', () => {
 
     it('returns only matching principals, not all grants', async () => {
       const userId = new Types.ObjectId();
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.USER,
         principalId: userId,
         capability: SystemCapabilities.READ_USERS,
       });
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'unrelated',
         capability: SystemCapabilities.MANAGE_ROLES,
@@ -1173,12 +1173,12 @@ describe('systemGrant methods', () => {
     });
 
     it('returns multiple grants for the same principal', async () => {
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'admin',
         capability: SystemCapabilities.ACCESS_ADMIN,
       });
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'admin',
         capability: SystemCapabilities.MANAGE_ROLES,
@@ -1192,12 +1192,12 @@ describe('systemGrant methods', () => {
     });
 
     it('excludes tenant-scoped grants when no tenantId provided', async () => {
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'admin',
         capability: SystemCapabilities.ACCESS_ADMIN,
       });
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'admin',
         capability: SystemCapabilities.MANAGE_USERS,
@@ -1213,12 +1213,12 @@ describe('systemGrant methods', () => {
     });
 
     it('includes both platform and tenant grants when tenantId provided', async () => {
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'admin',
         capability: SystemCapabilities.ACCESS_ADMIN,
       });
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'admin',
         capability: SystemCapabilities.MANAGE_USERS,
@@ -1235,7 +1235,7 @@ describe('systemGrant methods', () => {
 
     it('filters out PUBLIC principals before querying', async () => {
       const userId = new Types.ObjectId();
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.USER,
         principalId: userId,
         capability: SystemCapabilities.READ_USERS,
@@ -1253,7 +1253,7 @@ describe('systemGrant methods', () => {
     });
 
     it('returns empty array when all principals are PUBLIC', async () => {
-      await SystemGrant.create({
+      await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'admin',
         capability: SystemCapabilities.ACCESS_ADMIN,
@@ -1380,6 +1380,38 @@ describe('systemGrant methods', () => {
         capabilities: [SystemCapabilities.READ_ROLES],
       });
       expect(heldNoTenant.size).toBe(0);
+    });
+
+    it('resolves extended capability when principal holds the parent base capability', async () => {
+      const extUser = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: extUser,
+        capability: SystemCapabilities.MANAGE_CONFIGS,
+      });
+
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: extUser }],
+        capabilities: ['manage:configs:endpoints' as SystemCapability],
+      });
+
+      expect(held).toEqual(new Set(['manage:configs:endpoints']));
+    });
+
+    it('does not resolve extended capability when principal holds a different verb parent', async () => {
+      const readOnlyUser = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: readOnlyUser,
+        capability: SystemCapabilities.READ_CONFIGS,
+      });
+
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: readOnlyUser }],
+        capabilities: ['manage:configs:endpoints' as SystemCapability],
+      });
+
+      expect(held.size).toBe(0);
     });
   });
 });
