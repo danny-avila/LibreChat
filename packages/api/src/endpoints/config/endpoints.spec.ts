@@ -1,14 +1,16 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import { createEndpointsConfigService } from './endpoints';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { EndpointsConfigDeps } from './endpoints';
 import type { ServerRequest } from '~/types';
 
+function appConfig(partial: Record<string, unknown>): AppConfig {
+  return partial as unknown as AppConfig;
+}
+
 function createMockDeps(overrides: Partial<EndpointsConfigDeps> = {}): EndpointsConfigDeps {
   return {
-    getAppConfig: jest.fn().mockResolvedValue({
-      endpoints: {},
-    } as Partial<AppConfig>),
+    getAppConfig: jest.fn().mockResolvedValue(appConfig({ endpoints: {} })),
     loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
       [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
     }),
@@ -18,10 +20,7 @@ function createMockDeps(overrides: Partial<EndpointsConfigDeps> = {}): Endpoints
 }
 
 function fakeReq(overrides: Partial<ServerRequest> = {}): ServerRequest {
-  return {
-    user: { id: 'u1', role: 'USER' },
-    ...overrides,
-  } as ServerRequest;
+  return { user: { id: 'u1', role: 'USER' }, ...overrides } as ServerRequest;
 }
 
 describe('createEndpointsConfigService', () => {
@@ -36,7 +35,6 @@ describe('createEndpointsConfigService', () => {
         }),
       });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
-
       const result = await getEndpointsConfig(fakeReq());
 
       expect(result?.[EModelEndpoint.openAI]).toBeDefined();
@@ -45,14 +43,13 @@ describe('createEndpointsConfigService', () => {
 
     it('adds azureOpenAI when configured', async () => {
       const deps = createMockDeps({
-        getAppConfig: jest.fn().mockResolvedValue({
-          endpoints: {
-            [EModelEndpoint.azureOpenAI]: { modelNames: ['gpt-4'] },
-          },
-        } as Partial<AppConfig>),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: { [EModelEndpoint.azureOpenAI]: { modelNames: ['gpt-4'] } },
+          }),
+        ),
       });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
-
       const result = await getEndpointsConfig(fakeReq());
 
       expect(result?.[EModelEndpoint.azureOpenAI]).toEqual(
@@ -62,14 +59,13 @@ describe('createEndpointsConfigService', () => {
 
     it('adds azureAssistants when azure has assistants config', async () => {
       const deps = createMockDeps({
-        getAppConfig: jest.fn().mockResolvedValue({
-          endpoints: {
-            [EModelEndpoint.azureOpenAI]: { assistants: true },
-          },
-        } as Partial<AppConfig>),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: { [EModelEndpoint.azureOpenAI]: { assistants: true } },
+          }),
+        ),
       });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
-
       const result = await getEndpointsConfig(fakeReq());
 
       expect(result?.[EModelEndpoint.azureAssistants]).toEqual(
@@ -79,14 +75,13 @@ describe('createEndpointsConfigService', () => {
 
     it('enables anthropic when vertex AI is configured', async () => {
       const deps = createMockDeps({
-        getAppConfig: jest.fn().mockResolvedValue({
-          endpoints: {
-            [EModelEndpoint.anthropic]: { vertexConfig: { enabled: true } },
-          },
-        } as Partial<AppConfig>),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: { [EModelEndpoint.anthropic]: { vertexConfig: { enabled: true } } },
+          }),
+        ),
       });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
-
       const result = await getEndpointsConfig(fakeReq());
 
       expect(result?.[EModelEndpoint.anthropic]).toEqual(
@@ -99,24 +94,25 @@ describe('createEndpointsConfigService', () => {
         loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
           [EModelEndpoint.assistants]: { userProvide: false, order: 0 },
         }),
-        getAppConfig: jest.fn().mockResolvedValue({
-          endpoints: {
-            [EModelEndpoint.assistants]: {
-              disableBuilder: true,
-              capabilities: ['code_interpreter'],
-              version: 2,
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              [EModelEndpoint.assistants]: {
+                disableBuilder: true,
+                capabilities: [AgentCapabilities.execute_code],
+                version: 2,
+              },
             },
-          },
-        } as Partial<AppConfig>),
+          }),
+        ),
       });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
-
       const result = await getEndpointsConfig(fakeReq());
-
       const assistants = result?.[EModelEndpoint.assistants];
+
       expect(assistants?.version).toBe('2');
       expect(assistants?.disableBuilder).toBe(true);
-      expect(assistants?.capabilities).toEqual(['code_interpreter']);
+      expect(assistants?.capabilities).toEqual([AgentCapabilities.execute_code]);
     });
 
     it('merges agents config with allowedProviders', async () => {
@@ -124,17 +120,18 @@ describe('createEndpointsConfigService', () => {
         loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
           [EModelEndpoint.agents]: { userProvide: false, order: 0 },
         }),
-        getAppConfig: jest.fn().mockResolvedValue({
-          endpoints: {
-            [EModelEndpoint.agents]: {
-              allowedProviders: ['openAI', 'anthropic'],
-              capabilities: ['code_interpreter'],
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              [EModelEndpoint.agents]: {
+                allowedProviders: ['openAI', 'anthropic'],
+                capabilities: [AgentCapabilities.execute_code],
+              },
             },
-          },
-        } as Partial<AppConfig>),
+          }),
+        ),
       });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
-
       const result = await getEndpointsConfig(fakeReq());
 
       expect(result?.[EModelEndpoint.agents]?.allowedProviders).toEqual(['openAI', 'anthropic']);
@@ -145,14 +142,15 @@ describe('createEndpointsConfigService', () => {
         loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
           [EModelEndpoint.bedrock]: { userProvide: false, order: 0 },
         }),
-        getAppConfig: jest.fn().mockResolvedValue({
-          endpoints: {
-            [EModelEndpoint.bedrock]: { availableRegions: ['us-east-1', 'eu-west-1'] },
-          },
-        } as Partial<AppConfig>),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              [EModelEndpoint.bedrock]: { availableRegions: ['us-east-1', 'eu-west-1'] },
+            },
+          }),
+        ),
       });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
-
       const result = await getEndpointsConfig(fakeReq());
 
       expect(result?.[EModelEndpoint.bedrock]?.availableRegions).toEqual([
@@ -166,7 +164,7 @@ describe('createEndpointsConfigService', () => {
       const deps = createMockDeps({ getAppConfig: mockGetAppConfig });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
 
-      await getEndpointsConfig(fakeReq({ config: { endpoints: {} } as AppConfig }));
+      await getEndpointsConfig(fakeReq({ config: appConfig({ endpoints: {} }) }));
 
       expect(mockGetAppConfig).not.toHaveBeenCalled();
     });
