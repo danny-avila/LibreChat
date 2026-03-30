@@ -88,11 +88,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       updatedAt: new Date(),
     }) as unknown as IMongoFile;
 
-  const createMockDocFile = (
-    sizeInMB: number,
-    mimeType: string,
-    filename: string,
-  ): IMongoFile =>
+  const createMockDocFile = (sizeInMB: number, mimeType: string, filename: string): IMongoFile =>
     ({
       _id: new Types.ObjectId(),
       user: new Types.ObjectId(),
@@ -135,6 +131,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Number),
         Providers.OPENAI,
         configuredLimit,
+        undefined,
       );
     });
 
@@ -162,6 +159,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Buffer),
         expect.any(Number),
         Providers.OPENAI,
+        undefined,
         undefined,
       );
     });
@@ -195,6 +193,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Buffer),
         expect.any(Number),
         Providers.OPENAI,
+        undefined,
         undefined,
       );
     });
@@ -235,6 +234,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Number),
         Providers.ANTHROPIC,
         configuredLimit,
+        undefined,
       );
     });
 
@@ -274,6 +274,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Number),
         Providers.GOOGLE,
         configuredLimit,
+        undefined,
       );
     });
 
@@ -313,6 +314,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Buffer),
         expect.any(Number),
         Providers.OPENAI,
+        undefined,
         undefined,
       );
     });
@@ -407,6 +409,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Number),
         Providers.OPENAI,
         mbToBytes(5),
+        undefined,
       );
     });
 
@@ -441,6 +444,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Number),
         Providers.OPENAI,
         mbToBytes(50),
+        undefined,
       );
     });
 
@@ -480,6 +484,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Number),
         Providers.OPENAI,
         mbToBytes(10),
+        undefined,
       );
       expect(mockedValidatePdf).toHaveBeenNthCalledWith(
         2,
@@ -487,6 +492,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         expect.any(Number),
         Providers.OPENAI,
         mbToBytes(10),
+        undefined,
       );
     });
   });
