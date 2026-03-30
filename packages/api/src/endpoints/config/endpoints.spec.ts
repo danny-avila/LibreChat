@@ -1,4 +1,8 @@
-import { AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
+import {
+  AgentCapabilities,
+  EModelEndpoint,
+  defaultAgentCapabilities,
+} from 'librechat-data-provider';
 import { createEndpointsConfigService } from './endpoints';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { EndpointsConfigDeps } from './endpoints';
@@ -167,6 +171,70 @@ describe('createEndpointsConfigService', () => {
       await getEndpointsConfig(fakeReq({ config: appConfig({ endpoints: {} }) }));
 
       expect(mockGetAppConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('checkCapability', () => {
+    it('returns true when agents endpoint has the requested capability', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              [EModelEndpoint.agents]: {
+                capabilities: [AgentCapabilities.execute_code],
+              },
+            },
+          }),
+        ),
+      });
+      const { checkCapability } = createEndpointsConfigService(deps);
+
+      const result = await checkCapability(
+        fakeReq({ body: { endpoint: EModelEndpoint.agents } }),
+        AgentCapabilities.execute_code,
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it('returns false when agents endpoint lacks the requested capability', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              [EModelEndpoint.agents]: {
+                capabilities: [AgentCapabilities.execute_code],
+              },
+            },
+          }),
+        ),
+      });
+      const { checkCapability } = createEndpointsConfigService(deps);
+
+      const result = await checkCapability(
+        fakeReq({ body: { endpoint: EModelEndpoint.agents } }),
+        AgentCapabilities.file_search,
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it('falls back to defaultAgentCapabilities for non-agents endpoints', async () => {
+      const deps = createMockDeps();
+      const { checkCapability } = createEndpointsConfigService(deps);
+
+      const result = await checkCapability(
+        fakeReq({ body: { endpoint: EModelEndpoint.openAI } }),
+        defaultAgentCapabilities[0],
+      );
+
+      expect(result).toBe(true);
     });
   });
 });

@@ -15,9 +15,10 @@ const getAvailablePluginsController = async (req, res) => {
 
     const plugins = [];
     for (const plugin of uniquePlugins) {
-      if (
-        includeSet.size > 0 ? !includeSet.has(plugin.pluginKey) : filterSet.has(plugin.pluginKey)
-      ) {
+      if (includeSet.size > 0 && !includeSet.has(plugin.pluginKey)) {
+        continue;
+      }
+      if (filterSet.has(plugin.pluginKey)) {
         continue;
       }
       plugins.push(checkPluginAuth(plugin) ? { ...plugin, authenticated: true } : plugin);
@@ -49,15 +50,16 @@ const getAvailableTools = async (req, res) => {
     }
 
     const uniquePlugins = filterUniquePlugins(availableTools);
-    const toolDefKeys = toolDefinitions ? new Set(Object.keys(toolDefinitions)) : null;
+    const toolDefKeysList = toolDefinitions ? Object.keys(toolDefinitions) : null;
+    const toolDefKeys = toolDefKeysList ? new Set(toolDefKeysList) : null;
 
     const toolsOutput = [];
     for (const plugin of uniquePlugins) {
       const isToolDefined = toolDefKeys?.has(plugin.pluginKey) === true;
       const isToolkit =
         plugin.toolkit === true &&
-        toolDefKeys != null &&
-        [...toolDefKeys].some(
+        toolDefKeysList != null &&
+        toolDefKeysList.some(
           (key) => getToolkitKey({ toolkits, toolName: key }) === plugin.pluginKey,
         );
 
