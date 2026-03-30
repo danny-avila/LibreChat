@@ -18,7 +18,7 @@ const {
   resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { findUser, createUser, updateUser } = require('~/models');
+const { findUser, createUser, updateUser, resolvePendingMemberships } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -695,6 +695,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   }
 
   user = await updateUser(user._id, user);
+  await resolvePendingMemberships(email, user._id.toString());
 
   logger.info(
     `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
