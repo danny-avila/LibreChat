@@ -19,6 +19,7 @@ const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = {
   mcpServers: 'mcpConfig',
   interface: 'interfaceConfig',
+  turnstile: 'turnstileConfig',
 };
 
 function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0): T {

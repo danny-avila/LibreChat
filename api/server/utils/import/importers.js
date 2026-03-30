@@ -194,6 +194,7 @@ async function importLibreChatConvo(
   jsonData,
   requestUserId,
   builderFactory = createImportBatchBuilder,
+  userRole,
 ) {
   try {
     /** @type {ImportBatchBuilder} */
@@ -203,7 +204,7 @@ async function importLibreChatConvo(
     /* Endpoint configuration */
     let endpoint = jsonData.endpoint ?? options.endpoint ?? EModelEndpoint.openAI;
     const endpointsConfig = await getEndpointsConfig({
-      user: { id: requestUserId, tenantId: getTenantId() },
+      user: { id: requestUserId, role: userRole, tenantId: getTenantId() },
     });
     const endpointConfig = endpointsConfig?.[endpoint];
     if (!endpointConfig && endpointsConfig) {

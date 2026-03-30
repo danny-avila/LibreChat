@@ -106,6 +106,34 @@ describe('mergeConfigOverrides', () => {
     expect(iface.sidePanel).toBe(true);
   });
 
+  it('remaps all renamed YAML keys (exhaustiveness check)', () => {
+    const base = {
+      mcpConfig: null,
+      interfaceConfig: { endpointsMenu: true },
+      turnstileConfig: {},
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig(
+        {
+          mcpServers: { srv: { url: 'http://mcp' } },
+          interface: { endpointsMenu: false },
+          turnstile: { siteKey: 'key-123' },
+        },
+        10,
+      ),
+    ];
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+
+    expect(result.mcpConfig).toEqual({ srv: { url: 'http://mcp' } });
+    expect((result.interfaceConfig as Record<string, unknown>).endpointsMenu).toBe(false);
+    expect((result.turnstileConfig as Record<string, unknown>).siteKey).toBe('key-123');
+
+    expect(result.mcpServers).toBeUndefined();
+    expect(result.interface).toBeUndefined();
+    expect(result.turnstile).toBeUndefined();
+  });
+
   it('remaps YAML-level keys to AppConfig equivalents', () => {
     const configs = [
       fakeConfig(

@@ -7,22 +7,20 @@ const { getAppConfig } = require('~/server/services/Config');
 const getAvailablePluginsController = async (req, res) => {
   try {
     const appConfig = await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId });
-    /** @type {{ filteredTools: string[], includedTools: string[] }} */
     const { filteredTools = [], includedTools = [] } = appConfig;
-    /** @type {import('@librechat/api').LCManifestTool[]} */
-    const pluginManifest = availableTools;
 
-    const uniquePlugins = filterUniquePlugins(pluginManifest);
-    const authenticatedPlugins = uniquePlugins.map((plugin) =>
-      checkPluginAuth(plugin) ? { ...plugin, authenticated: true } : plugin,
-    );
+    const uniquePlugins = filterUniquePlugins(availableTools);
+    const includeSet = new Set(includedTools);
+    const filterSet = new Set(filteredTools);
 
-    let plugins = authenticatedPlugins;
-
-    if (includedTools.length > 0) {
-      plugins = plugins.filter((plugin) => includedTools.includes(plugin.pluginKey));
-    } else {
-      plugins = plugins.filter((plugin) => !filteredTools.includes(plugin.pluginKey));
+    const plugins = [];
+    for (const plugin of uniquePlugins) {
+      if (
+        includeSet.size > 0 ? !includeSet.has(plugin.pluginKey) : filterSet.has(plugin.pluginKey)
+      ) {
+        continue;
+      }
+      plugins.push(checkPluginAuth(plugin) ? { ...plugin, authenticated: true } : plugin);
     }
 
     res.status(200).json(plugins);
@@ -31,18 +29,6 @@ const getAvailablePluginsController = async (req, res) => {
   }
 };
 
-/**
- * Retrieves and returns a list of available tools, either from a cache or by reading a plugin manifest file.
- *
- * This function first attempts to retrieve the list of tools from a cache. If the tools are not found in the cache,
- * it reads a plugin manifest file, filters for unique plugins, and determines if each plugin is authenticated.
- * Only plugins that are marked as available in the application's local state are included in the final list.
- * The resulting list of tools is then cached and sent to the client.
- *
- * @param {object} req - The request object, containing information about the HTTP request.
- * @param {object} res - The response object, used to send back the desired HTTP response.
- * @returns {Promise<void>} A promise that resolves when the function has completed.
- */
 const getAvailableTools = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -54,7 +40,6 @@ const getAvailableTools = async (req, res) => {
     const appConfig =
       req.config ?? (await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId }));
 
-    /** @type {Record<string, FunctionTool> | null} */
     let toolDefinitions = await getCachedTools();
 
     if (toolDefinitions == null && appConfig?.availableTools != null) {
@@ -63,21 +48,16 @@ const getAvailableTools = async (req, res) => {
       toolDefinitions = appConfig.availableTools;
     }
 
-    /** @type {import('@librechat/api').LCManifestTool[]} */
-    const pluginManifest = availableTools;
-
-    /** @type {TPlugin[]} */
-    const uniquePlugins = filterUniquePlugins(pluginManifest);
-    const authenticatedPlugins = uniquePlugins.map((plugin) =>
-      checkPluginAuth(plugin) ? { ...plugin, authenticated: true } : plugin,
-    );
+    const uniquePlugins = filterUniquePlugins(availableTools);
+    const toolDefKeys = toolDefinitions ? new Set(Object.keys(toolDefinitions)) : null;
 
     const toolsOutput = [];
-    for (const plugin of authenticatedPlugins) {
-      const isToolDefined = toolDefinitions?.[plugin.pluginKey] !== undefined;
+    for (const plugin of uniquePlugins) {
+      const isToolDefined = toolDefKeys?.has(plugin.pluginKey) === true;
       const isToolkit =
         plugin.toolkit === true &&
-        Object.keys(toolDefinitions ?? {}).some(
+        toolDefKeys != null &&
+        [...toolDefKeys].some(
           (key) => getToolkitKey({ toolkits, toolName: key }) === plugin.pluginKey,
         );
 
@@ -85,7 +65,7 @@ const getAvailableTools = async (req, res) => {
         continue;
       }
 
-      toolsOutput.push(plugin);
+      toolsOutput.push(checkPluginAuth(plugin) ? { ...plugin, authenticated: true } : plugin);
     }
 
     res.status(200).json(filterUniquePlugins(toolsOutput));
