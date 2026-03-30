@@ -1,11 +1,25 @@
 import { logger } from '@librechat/data-schemas';
-import { EModelEndpoint, extractEnvVariable, normalizeEndpointName } from 'librechat-data-provider';
+import {
+  ErrorTypes,
+  EModelEndpoint,
+  extractEnvVariable,
+  normalizeEndpointName,
+} from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { TModelsConfig, TEndpoint } from 'librechat-data-provider';
 import type { ServerRequest, GetUserKeyValuesFunction, UserKeyValues } from '~/types';
 import type { FetchModelsParams } from '~/endpoints/models';
 import { fetchModels as defaultFetchModels } from '~/endpoints/models';
 import { isUserProvided } from '~/utils';
+
+interface ResolvedEndpoint {
+  name: string;
+  endpoint: TEndpoint;
+  apiKey: string;
+  baseURL: string;
+  apiKeyIsUserProvided: boolean;
+  baseURLIsUserProvided: boolean;
+}
 
 export interface LoadConfigModelsDeps {
   getAppConfig: (params: { role?: string | null; tenantId?: string }) => Promise<AppConfig>;
@@ -59,15 +73,6 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
     const uniqueKeyToEndpointsMap: Record<string, string[]> = {};
     const endpointsMap: Record<string, TEndpoint> = {};
 
-    interface ResolvedEndpoint {
-      name: string;
-      endpoint: TEndpoint;
-      apiKey: string;
-      baseURL: string;
-      apiKeyIsUserProvided: boolean;
-      baseURLIsUserProvided: boolean;
-    }
-
     const resolved: ResolvedEndpoint[] = [];
     const userKeyEndpoints: ResolvedEndpoint[] = [];
 
@@ -78,13 +83,15 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
       endpointsMap[name] = endpoint;
       modelsConfig[name] = [];
 
+      const resolvedApiKey = extractEnvVariable(apiKey);
+      const resolvedBaseURL = extractEnvVariable(baseURL);
       const entry: ResolvedEndpoint = {
         name,
         endpoint,
-        apiKey: extractEnvVariable(apiKey),
-        baseURL: extractEnvVariable(baseURL),
-        apiKeyIsUserProvided: isUserProvided(extractEnvVariable(apiKey)),
-        baseURLIsUserProvided: isUserProvided(extractEnvVariable(baseURL)),
+        apiKey: resolvedApiKey,
+        baseURL: resolvedBaseURL,
+        apiKeyIsUserProvided: isUserProvided(resolvedApiKey),
+        baseURLIsUserProvided: isUserProvided(resolvedBaseURL),
       };
       resolved.push(entry);
 
@@ -110,7 +117,9 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
         } else {
           const msg =
             settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
-          if (msg.includes('NO_USER_KEY')) {
+          const isKeyNotFound =
+            msg.includes(ErrorTypes.NO_USER_KEY) || msg.includes(ErrorTypes.INVALID_USER_KEY);
+          if (isKeyNotFound) {
             logger.debug(
               `[loadConfigModels] No user key stored for endpoint "${userKeyEndpoints[i].name}"`,
             );

@@ -399,8 +399,9 @@ describe('loadConfigModels', () => {
       expect(result.NoKeyEndpoint).toEqual(['default-model']);
     });
 
-    it('falls back to defaults when getUserKeyValues throws', async () => {
+    it('falls back to defaults and logs warn when getUserKeyValues throws infra error', async () => {
       const { getUserKeyValues } = require('~/models');
+      const { logger } = require('@librechat/data-schemas');
       getUserKeyValues.mockRejectedValueOnce(new Error('DB connection timeout'));
       getAppConfig.mockResolvedValue({
         endpoints: {
@@ -419,6 +420,38 @@ describe('loadConfigModels', () => {
 
       expect(fetchModels).not.toHaveBeenCalled();
       expect(result.ErrorEndpoint).toEqual(['fallback']);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Failed to retrieve user key for "ErrorEndpoint": DB connection timeout',
+        ),
+      );
+      expect(logger.debug).not.toHaveBeenCalledWith(expect.stringContaining('No user key stored'));
+    });
+
+    it('logs debug (not warn) for NO_USER_KEY errors', async () => {
+      const { getUserKeyValues } = require('~/models');
+      const { logger } = require('@librechat/data-schemas');
+      getUserKeyValues.mockRejectedValueOnce(new Error(JSON.stringify({ type: 'no_user_key' })));
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'MissingKeyEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.example.com/v1',
+              models: { fetch: true, default: ['default-model'] },
+            },
+          ],
+        },
+      });
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(result.MissingKeyEndpoint).toEqual(['default-model']);
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('No user key stored'));
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('Failed to retrieve user key'),
+      );
     });
 
     it('skips user key lookup when req.user.id is undefined', async () => {
