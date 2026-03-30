@@ -237,10 +237,6 @@ endpoints:
         fetch: false
       titleConvo: true
       titleModel: 'mixtral-8x7b-32768'
-      # titleModel also accepts "auto" to dynamically select the cheapest available GPT model.
-      # When set to "auto", models are ranked by tier (nano < mini < standard) then version
-      # (newer preferred). On failure, the next cheapest model is tried, falling back to the
-      # conversation's own model if all ranked models fail.
       modelDisplayLabel: 'groq'
 
     # Mistral AI Example
