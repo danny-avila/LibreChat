@@ -15,7 +15,7 @@ function fakeConfig(overrides: Record<string, unknown>, priority: number): IConf
 }
 
 const baseConfig = {
-  interface: { endpointsMenu: true, sidePanel: true },
+  interfaceConfig: { endpointsMenu: true, sidePanel: true },
   registration: { enabled: true },
   endpoints: ['openAI'],
 } as unknown as AppConfig;
@@ -33,7 +33,7 @@ describe('mergeConfigOverrides', () => {
   it('deep merges a single override into base', () => {
     const configs = [fakeConfig({ interface: { endpointsMenu: false } }, 10)];
     const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
-    const iface = result.interface as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
     expect(iface.endpointsMenu).toBe(false);
     expect(iface.sidePanel).toBe(true);
   });
@@ -65,7 +65,7 @@ describe('mergeConfigOverrides', () => {
   it('handles null override values', () => {
     const configs = [fakeConfig({ interface: { endpointsMenu: null } }, 10)];
     const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
-    const iface = result.interface as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
     expect(iface.endpointsMenu).toBeNull();
   });
 
@@ -101,8 +101,27 @@ describe('mergeConfigOverrides', () => {
       fakeConfig({ interface: { sidePanel: true } }, 100),
     ];
     const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
-    const iface = result.interface as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
     expect(iface.endpointsMenu).toBe(true);
     expect(iface.sidePanel).toBe(true);
+  });
+
+  it('remaps YAML-level keys to AppConfig equivalents', () => {
+    const configs = [
+      fakeConfig(
+        {
+          mcpServers: { 'test-server': { type: 'streamable-http', url: 'https://example.com' } },
+        },
+        10,
+      ),
+    ];
+    const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
+    const mcpConfig = result.mcpConfig as Record<string, unknown>;
+    expect(mcpConfig).toBeDefined();
+    expect(mcpConfig['test-server']).toEqual({
+      type: 'streamable-http',
+      url: 'https://example.com',
+    });
+    expect(result.mcpServers).toBeUndefined();
   });
 });

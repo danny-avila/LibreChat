@@ -5,6 +5,16 @@ type AnyObject = { [key: string]: unknown };
 const MAX_MERGE_DEPTH = 10;
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
+/**
+ * Maps YAML-level override keys (TCustomConfig) to their AppConfig equivalents.
+ * Overrides are stored with YAML keys but merged into the already-processed AppConfig
+ * where some fields have been renamed by AppService.
+ */
+const OVERRIDE_KEY_MAP: Record<string, string> = {
+  mcpServers: 'mcpConfig',
+  interface: 'interfaceConfig',
+};
+
 function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0): T {
   const result = { ...target } as AnyObject;
   for (const key of Object.keys(source)) {
@@ -46,7 +56,11 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
   let merged = { ...baseConfig };
   for (const config of sorted) {
     if (config.overrides && typeof config.overrides === 'object') {
-      merged = deepMerge(merged, config.overrides as AnyObject);
+      const remapped: AnyObject = {};
+      for (const [key, value] of Object.entries(config.overrides)) {
+        remapped[OVERRIDE_KEY_MAP[key] ?? key] = value;
+      }
+      merged = deepMerge(merged, remapped);
     }
   }
 
