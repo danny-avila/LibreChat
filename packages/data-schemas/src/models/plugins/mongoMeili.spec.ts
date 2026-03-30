@@ -11,9 +11,10 @@ const mockUpdateDocuments = jest.fn();
 const mockDeleteDocument = jest.fn();
 const mockDeleteDocuments = jest.fn();
 const mockGetDocument = jest.fn();
+const mockUpdateSettings = jest.fn();
 const mockIndex = jest.fn().mockReturnValue({
   getRawInfo: jest.fn(),
-  updateSettings: jest.fn(),
+  updateSettings: mockUpdateSettings,
   addDocuments: mockAddDocuments,
   addDocumentsInBatches: mockAddDocumentsInBatches,
   updateDocuments: mockUpdateDocuments,
@@ -32,7 +33,7 @@ jest.mock('meilisearch', () => {
   };
 });
 
-describe('Meilisearch Mongoose plugin', () => {
+describe('MeiliSearch Mongoose plugin', () => {
   const OLD_ENV = process.env;
 
   let mongoServer: MongoMemoryServer;
@@ -64,6 +65,13 @@ describe('Meilisearch Mongoose plugin', () => {
     await mongoServer.stop();
 
     process.env = OLD_ENV;
+  });
+
+  describe('MeiliSearch index settings', () => {
+    test('model creation handles updateSettings errors gracefully', () => {
+      mockUpdateSettings.mockRejectedValueOnce(new Error('Settings update failed'));
+      expect(() => createConversationModel(mongoose)).not.toThrow();
+    });
   });
 
   test('saving conversation indexes w/ meilisearch', async () => {

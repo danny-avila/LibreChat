@@ -40,6 +40,14 @@ const convoSchema: Schema<IConversation> = new Schema(
       type: String,
       index: true,
     },
+    createdAt: {
+      type: Date,
+      meiliIndex: true,
+    },
+    updatedAt: {
+      type: Date,
+      meiliIndex: true,
+    },
   },
   { timestamps: true },
 );

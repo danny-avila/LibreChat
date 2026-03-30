@@ -416,7 +416,10 @@ const createMeiliMongooseModel = ({
         return next();
       }
 
-      const object = this.preprocessObjectForIndex!();
+      if (typeof this.preprocessObjectForIndex !== 'function') {
+        return next();
+      }
+      const object = this.preprocessObjectForIndex();
       const maxRetries = 3;
       let retryCount = 0;
 
@@ -492,10 +495,12 @@ const createMeiliMongooseModel = ({
      * otherwise, it adds the document to the index.
      */
     postSaveHook(this: DocumentWithMeiliIndex, next: CallbackWithoutResultAndOptionalError): void {
-      if (this._meiliIndex) {
-        this.updateObjectToMeili!(next);
+      if (this._meiliIndex && typeof this.updateObjectToMeili === 'function') {
+        this.updateObjectToMeili(next);
+      } else if (typeof this.addObjectToMeili === 'function') {
+        this.addObjectToMeili(next);
       } else {
-        this.addObjectToMeili!(next);
+        next();
       }
     }
 
@@ -509,8 +514,8 @@ const createMeiliMongooseModel = ({
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
     ): void {
-      if (this._meiliIndex) {
-        this.updateObjectToMeili!(next);
+      if (this._meiliIndex && typeof this.updateObjectToMeili === 'function') {
+        this.updateObjectToMeili(next);
       } else {
         next();
       }
@@ -526,8 +531,8 @@ const createMeiliMongooseModel = ({
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
     ): void {
-      if (this._meiliIndex) {
-        this.deleteObjectFromMeili!(next);
+      if (this._meiliIndex && typeof this.deleteObjectFromMeili === 'function') {
+        this.deleteObjectFromMeili(next);
       } else {
         next();
       }
@@ -586,7 +591,8 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       await index.getRawInfo();
       logger.debug(`[mongoMeili] Index ${indexName} already exists`);
     } catch (error) {
-      const errorCode = (error as { code?: string })?.code;
+      const typedError = error as { code?: string };
+      const errorCode = typedError ? typedError.code : undefined;
       if (errorCode === 'index_not_found') {
         try {
           logger.info(`[mongoMeili] Creating new index: ${indexName}`);
@@ -598,7 +604,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
           logger.debug(`[mongoMeili] Index ${indexName} creation task:`, task);
           if (task.status !== 'succeeded') {
             const taskError = task.error as MeiliSearchErrorInfo | null;
-            if (taskError?.code === 'index_already_exists') {
+            if (taskError && taskError.code === 'index_already_exists') {
               logger.debug(`[mongoMeili] Index ${indexName} was created by another instance`);
             } else {
               logger.warn(`[mongoMeili] Index ${indexName} creation failed:`, taskError);
@@ -621,8 +627,9 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     try {
       await index.updateSettings({
         filterableAttributes: ['user'],
+        sortableAttributes: ['createdAt', 'updatedAt'],
       });
-      logger.debug(`[mongoMeili] Updated index ${indexName} settings to make 'user' filterable`);
+      logger.debug(`[mongoMeili] Updated index ${indexName} settings to make 'user' filterable and timestamps sortable`);
     } catch (settingsError) {
       logger.error(`[mongoMeili] Error updating index settings for ${indexName}:`, settingsError);
     }
@@ -647,15 +654,27 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   // Register Mongoose hooks
   schema.post('save', function (doc: DocumentWithMeiliIndex, next) {
-    doc.postSaveHook?.(next);
+    if (typeof doc.postSaveHook === 'function') {
+      doc.postSaveHook(next);
+    } else {
+      next();
+    }
   });
 
   schema.post('updateOne', function (doc: DocumentWithMeiliIndex, next) {
-    doc.postUpdateHook?.(next);
+    if (typeof doc.postUpdateHook === 'function') {
+      doc.postUpdateHook(next);
+    } else {
+      next();
+    }
   });
 
   schema.post('deleteOne', function (doc: DocumentWithMeiliIndex, next) {
-    doc.postRemoveHook?.(next);
+    if (typeof doc.postRemoveHook === 'function') {
+      doc.postRemoveHook(next);
+    } else {
+      next();
+    }
   });
 
   // Pre-deleteMany hook: remove corresponding documents from MeiliSearch when multiple documents are deleted.
@@ -740,6 +759,10 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       return next();
     }
 
-    doc.postSaveHook?.(next);
+    if (typeof doc.postSaveHook === 'function') {
+      doc.postSaveHook(next);
+    } else {
+      next();
+    }
   });
 }
