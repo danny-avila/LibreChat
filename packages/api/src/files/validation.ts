@@ -183,17 +183,9 @@ export async function validateBedrockDocument(
 ): Promise<ValidationResult> {
   try {
     const exempt = isExemptFromBedrockDocLimit(model, mimeType);
-    /** Default 4.5 MB limit; exempt models default to 32 MB (Bedrock max request payload) when unconfigured */
+    /** Default 4.5 MB; exempt models (Claude 4+ PDF, Nova PDF/DOCX) default to 32 MB when unconfigured */
     const providerLimit = exempt ? mbToBytes(32) : mbToBytes(4.5);
-    /**
-     * Exempt models: fileConfig can override the 32 MB default in either direction.
-     * Non-exempt models: fileConfig can only restrict below the hard 4.5 MB Bedrock API limit.
-     */
-    const effectiveLimit = exempt
-      ? (configuredFileSizeLimit ?? providerLimit)
-      : configuredFileSizeLimit != null
-        ? Math.min(configuredFileSizeLimit, providerLimit)
-        : providerLimit;
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
 
     if (fileSize > effectiveLimit) {
       const limitMB = (effectiveLimit / (1024 * 1024)).toFixed(1);

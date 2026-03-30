@@ -173,13 +173,13 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       expect(result.error).toContain('2.0MB');
     });
 
-    it('should clamp to 4.5MB hard limit even when config is higher for non-exempt models', async () => {
+    it('should allow configured limit higher than 4.5MB default', async () => {
       const configuredLimit = mbToBytes(512);
       const pdfBuffer = createMockPdfBuffer(5);
       const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, configuredLimit);
 
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('4.5MB');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
     });
 
     it('should reject PDFs with invalid header', async () => {
@@ -279,7 +279,7 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       expect(result.error).toBeUndefined();
     });
 
-    it('should clamp to 4.5MB for non-exempt models even with high configuredFileSizeLimit', async () => {
+    it('should allow configuredFileSizeLimit higher than 4.5MB for non-exempt models', async () => {
       const configuredLimit = mbToBytes(100);
       const pdfBuffer = createMockPdfBuffer(5);
       const model = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
@@ -291,8 +291,8 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
         model,
       );
 
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('4.5MB');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
     });
   });
 
@@ -322,7 +322,7 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       expect(result.error).toContain('4.5MB');
     });
 
-    it('should clamp to 4.5MB even when config is higher for non-exempt non-PDF', async () => {
+    it('should allow configured limit higher than 4.5MB for non-PDF', async () => {
       const fileSize = 5 * 1024 * 1024;
       const configuredLimit = mbToBytes(512);
       const result = await validateBedrockDocument(
@@ -332,8 +332,8 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
         configuredLimit,
       );
 
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('4.5MB');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
     });
 
     it('should use configured limit when lower than provider limit for non-PDF', async () => {
