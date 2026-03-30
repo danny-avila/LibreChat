@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { EModelEndpoint, defaultModels } from 'librechat-data-provider';
+import { Time, EModelEndpoint, defaultModels } from 'librechat-data-provider';
 import {
   fetchModels,
   splitAndTrim,
@@ -46,6 +46,11 @@ mockedAxios.get.mockResolvedValue({
   data: {
     data: [{ id: 'model-1' }, { id: 'model-2' }],
   },
+});
+
+beforeEach(() => {
+  mockCacheGet.mockReset().mockResolvedValue(undefined);
+  mockCacheSet.mockReset().mockResolvedValue(true);
 });
 
 describe('fetchModels', () => {
@@ -399,6 +404,37 @@ describe('fetchModels with Ollama specific logic', () => {
     expect(models).toEqual(['model-1', 'model-2']);
     expect(mockedAxios.get).toHaveBeenCalledWith('https://api.test.com/models', expect.any(Object));
   });
+
+  it('writes Ollama models to cache with TTL', async () => {
+    mockCacheGet.mockReset().mockResolvedValue(undefined);
+    mockCacheSet.mockReset().mockResolvedValue(true);
+
+    await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.ollama.test.com',
+      name: 'OllamaAPI',
+    });
+
+    expect(mockCacheSet).toHaveBeenCalledWith(
+      expect.any(String),
+      ['Ollama-Base', 'Ollama-Advanced'],
+      Time.TWO_MINUTES,
+    );
+  });
+
+  it('returns Ollama models from cache without hitting server', async () => {
+    mockCacheGet.mockReset().mockResolvedValue(['cached-ollama-model']);
+    mockCacheSet.mockReset().mockResolvedValue(true);
+
+    const models = await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.ollama.test.com',
+      name: 'OllamaAPI',
+    });
+
+    expect(models).toEqual(['cached-ollama-model']);
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+  });
 });
 
 describe('fetchModels URL construction with trailing slashes', () => {
@@ -652,7 +688,7 @@ describe('fetchModels caching behavior', () => {
     expect(mockCacheSet).toHaveBeenCalledWith(
       expect.any(String),
       ['cached-model-1', 'cached-model-2'],
-      120000,
+      Time.TWO_MINUTES,
     );
   });
 

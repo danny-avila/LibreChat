@@ -11,8 +11,10 @@ const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
  * Overrides are stored with YAML keys but merged into the already-processed AppConfig
  * where some fields have been renamed by AppService.
  *
- * When AppService renames a field, add the mapping here — the compiler
- * enforces that keys come from TCustomConfig and values from AppConfig.
+ * When AppService renames a field, add the mapping here. Map entries are
+ * type-checked: keys must be valid TCustomConfig fields, values must be
+ * valid AppConfig fields. The runtime lookup casts string keys to satisfy
+ * strict indexing — unknown keys safely fall through via the ?? fallback.
  */
 const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = {
   mcpServers: 'mcpConfig',
