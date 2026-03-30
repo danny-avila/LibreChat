@@ -22,7 +22,7 @@ import {
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
-import { formatDate } from '~/utils';
+import { formatFileDate } from '~/utils';
 import store from '~/store';
 
 const PAGE_SIZE = 25;
@@ -227,7 +227,7 @@ export default function SharedLinks() {
             </Button>
           );
         },
-        cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
+        cell: ({ row }) => formatFileDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
         meta: {
           size: '10%',
           mobileSize: '20%',

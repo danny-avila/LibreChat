@@ -25,6 +25,8 @@ const auth = require('./auth');
 const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
+const groups = require('./groups');
+const statistics = require('./statistics');
 const mcp = require('./mcp');
 
 module.exports = {
@@ -55,5 +57,7 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
+  groups,
+  statistics,
   mcp,
 };

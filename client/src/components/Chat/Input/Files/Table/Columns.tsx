@@ -14,7 +14,7 @@ import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { SortFilterHeader } from './SortFilterHeader';
-import { formatDate, getFileType } from '~/utils';
+import { formatFileDate, getFileType } from '~/utils';
 
 const contextMap: Record<any, TranslationKeys> = {
   [FileContext.avatar]: 'com_ui_avatar',
@@ -113,7 +113,7 @@ export const columns: ColumnDef<TFile>[] = [
     },
     cell: ({ row }) => {
       const isSmallScreen = useMediaQuery('(max-width: 768px)');
-      return formatDate(row.original.updatedAt?.toString() ?? '', isSmallScreen);
+      return formatFileDate(row.original.updatedAt?.toString() ?? '', isSmallScreen);
     },
   },
   {

@@ -116,11 +116,11 @@ export const getFileType = (
 };
 
 /**
- * Format a date string to a human readable format
+ * Format a date string to a human readable format for file display
  * @example
- * formatDate('2020-01-01T00:00:00.000Z') // '1 Jan 2020'
+ * formatFileDate('2020-01-01T00:00:00.000Z') // '1 Jan 2020'
  */
-export function formatDate(dateString: string, isSmallScreen = false) {
+export function formatFileDate(dateString: string, isSmallScreen = false) {
   if (!dateString) {
     return '';
   }

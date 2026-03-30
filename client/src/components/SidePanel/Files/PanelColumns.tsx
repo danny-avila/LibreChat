@@ -5,7 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import PanelFileCell from './PanelFileCell';
 import { useLocalize } from '~/hooks';
-import { formatDate } from '~/utils';
+import { formatFileDate } from '~/utils';
 
 export const columns: ColumnDef<TFile | undefined>[] = [
   {
@@ -48,7 +48,7 @@ export const columns: ColumnDef<TFile | undefined>[] = [
     },
     cell: ({ row }) => (
       <span className="flex justify-end text-xs">
-        {formatDate(row.original?.updatedAt?.toString() ?? '')}
+        {formatFileDate(row.original?.updatedAt?.toString() ?? '')}
       </span>
     ),
   },

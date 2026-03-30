@@ -14,6 +14,7 @@ const {
   messageUserLimiter,
   validateConvoAccess,
 } = require('~/server/middleware');
+const validateTimeWindows = require('~/server/middleware/validateTimeWindows');
 
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
@@ -36,6 +37,7 @@ if (isEnabled(LIMIT_MESSAGE_USER)) {
 }
 
 router.use(validateConvoAccess);
+router.use(validateTimeWindows);
 
 router.use([`/${EModelEndpoint.azureOpenAI}`, `/${EModelEndpoint.openAI}`], openAI);
 router.use(`/${EModelEndpoint.anthropic}`, anthropic);

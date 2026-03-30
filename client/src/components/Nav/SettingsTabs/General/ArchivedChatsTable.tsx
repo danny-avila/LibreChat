@@ -24,7 +24,7 @@ import {
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
-import { formatDate } from '~/utils';
+import { formatFileDate } from '~/utils';
 import store from '~/store';
 
 const DEFAULT_PARAMS: ConversationListParams = {
@@ -194,7 +194,7 @@ export default function ArchivedChatsTable({
             </Button>
           );
         },
-        cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
+        cell: ({ row }) => formatFileDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
         meta: {
           size: isSmallScreen ? '30%' : '35%',
           mobileSize: '30%',

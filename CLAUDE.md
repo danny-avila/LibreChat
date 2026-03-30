@@ -140,3 +140,17 @@ npm run list-users
 - Frontend proxy configured to forward API calls to backend on port 3080
 - Redis required for rate limiting and caching features
 - MeiliSearch optional but recommended for search functionality
+
+### Testing Configuration
+- **For testing, use custom ports to avoid conflicts:**
+  - Backend testing server: port 3081 (instead of default 3080)
+  - Frontend testing server: port 3091 (instead of default 5173)
+- Kill any running background processes on default ports before testing
+- Group Management feature requires data-schemas rebuild after schema changes: `npm run build:data-schemas`
+
+## Test Login Credentials Policy
+- Playwright tests use environment variables for login credentials
+- Set TEST_EMAIL and TEST_PASSWORD environment variables when running tests
+- Example: `TEST_EMAIL=admin@test.com TEST_PASSWORD=password123 npm run e2e`
+- Use real login instead of mocking authentication in Playwright tests
+- NEVER hardcode credentials in test files

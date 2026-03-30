@@ -10,6 +10,7 @@ const {
 } = require('~/server/middleware');
 const validateConvoAccess = require('~/server/middleware/validate/convoAccess');
 const validateAssistant = require('~/server/middleware/assistants/validate');
+const validateTimeWindows = require('~/server/middleware/validateTimeWindows');
 const chatController = require('~/server/controllers/assistants/chatV1');
 
 router.post('/abort', handleAbort());
@@ -28,6 +29,7 @@ router.post(
   buildEndpointOption,
   validateAssistant,
   validateConvoAccess,
+  validateTimeWindows,
   setHeaders,
   chatController,
 );

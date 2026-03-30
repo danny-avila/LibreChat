@@ -3,7 +3,7 @@ import { PlusIcon } from 'lucide-react';
 import { Button, Checkbox, DotsIcon, FileIcon } from '@librechat/client';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
-import { formatDate, getFileType } from '~/utils';
+import { formatFileDate, getFileType } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export const fileTableColumns: ColumnDef<TFile>[] = [
@@ -103,7 +103,7 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
       const localize = useLocalize();
       return 'Modified';
     },
-    cell: ({ row }) => formatDate(row.original.updatedAt),
+    cell: ({ row }) => formatFileDate(row.original.updatedAt),
   },
   {
     accessorKey: 'actions',

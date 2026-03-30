@@ -1,6 +1,6 @@
 import { Schema } from 'mongoose';
 import { SystemRoles } from 'librechat-data-provider';
-import { IUser } from '~/types';
+import { IUser, IGroupMembership, IEffectiveTimeWindow } from '~/types';
 
 // Session sub-schema
 const SessionSchema = new Schema(
@@ -19,6 +19,73 @@ const BackupCodeSchema = new Schema(
     codeHash: { type: String, required: true },
     used: { type: Boolean, default: false },
     usedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
+// Group membership sub-schema
+const GroupMembershipSchema = new Schema<IGroupMembership>(
+  {
+    groupId: { 
+      type: Schema.Types.ObjectId, 
+      ref: 'Group',
+      required: true,
+    },
+    assignedAt: { 
+      type: Date, 
+      default: Date.now,
+      required: true,
+    },
+    assignedBy: { 
+      type: Schema.Types.ObjectId, 
+      ref: 'User',
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
+// Effective time window sub-schema (cached data)
+const EffectiveTimeWindowSchema = new Schema<IEffectiveTimeWindow>(
+  {
+    groupId: { 
+      type: Schema.Types.ObjectId, 
+      ref: 'Group',
+      required: true,
+    },
+    groupName: { 
+      type: String, 
+      required: true,
+    },
+    windowType: {
+      type: String,
+      required: true,
+      enum: ['daily', 'weekly', 'date_range', 'exception'],
+    },
+    startTime: { 
+      type: String, 
+      required: true,
+    },
+    endTime: { 
+      type: String, 
+      required: true,
+    },
+    daysOfWeek: {
+      type: [Number],
+      default: [],
+    },
+    startDate: Date,
+    endDate: Date,
+    timezone: { 
+      type: String, 
+      required: true, 
+      default: 'UTC',
+    },
+    isActive: { 
+      type: Boolean, 
+      required: true, 
+      default: true,
+    },
   },
   { _id: false },
 );
@@ -138,8 +205,25 @@ const userSchema = new Schema<IUser>(
       },
       default: {},
     },
+    // Time-based access control fields
+    groupMemberships: {
+      type: [GroupMembershipSchema],
+      default: [],
+    },
+    effectiveTimeWindows: {
+      type: [EffectiveTimeWindowSchema],
+      default: [],
+    },
+    lastAccessValidation: {
+      type: Date,
+    },
   },
   { timestamps: true },
 );
+
+// Add indexes for group membership queries
+userSchema.index({ 'groupMemberships.groupId': 1 });
+userSchema.index({ 'groupMemberships.assignedAt': -1 });
+userSchema.index({ lastAccessValidation: 1 });
 
 export default userSchema;

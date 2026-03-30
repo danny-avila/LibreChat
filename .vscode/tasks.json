@@ -1,0 +1,373 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "🧪 Run All Tests",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "test:api"],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": ["$jest-junit"]
+    },
+    {
+      "label": "🔧 Run API Tests",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "test:ci"],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}/api"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$jest-junit"]
+    },
+    {
+      "label": "⚛️ Run Client Tests",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "test:ci"],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}/client"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$jest-junit"]
+    },
+    {
+      "label": "🔐 Run Epic 3 Time Window Tests",
+      "type": "shell",
+      "command": "npx",
+      "args": [
+        "jest",
+        "--runInBand",
+        "--verbose",
+        "--coverage",
+        "--testNamePattern=Epic 3",
+        "--testPathPattern=(TimeWindowAccessControl|AccessControlIntegration|TimeWindowEdgeCases|AdminBypassTimeWindows|SessionTimeWindowManagement|TimeWindowAccessControlFlow)"
+      ],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}/api",
+        "env": {
+          "NODE_ENV": "test"
+        }
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$jest-junit"]
+    },
+    {
+      "label": "🏗️ Run Time Window Component Tests",
+      "type": "shell",
+      "command": "npx",
+      "args": [
+        "jest",
+        "--runInBand",
+        "--verbose",
+        "--coverage",
+        "--testPathPattern=TimeWindow(Controller|Service|Form|List|Manager)"
+      ],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "NODE_ENV": "test"
+        }
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$jest-junit"]
+    },
+    {
+      "label": "📊 Run Tests with Coverage",
+      "type": "shell",
+      "command": "npx",
+      "args": [
+        "jest",
+        "--coverage",
+        "--coverageReporters=text",
+        "--coverageReporters=html",
+        "--coverageDirectory=coverage",
+        "--runInBand"
+      ],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}/api",
+        "env": {
+          "NODE_ENV": "test"
+        }
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$jest-junit"]
+    },
+    {
+      "label": "🎭 Run E2E Tests",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "e2e"],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "TEST_EMAIL": "${input:testEmail}",
+          "TEST_PASSWORD": "${input:testPassword}"
+        }
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🎭 Run E2E Tests (Headed)",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "e2e:headed"],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "TEST_EMAIL": "${input:testEmail}",
+          "TEST_PASSWORD": "${input:testPassword}"
+        }
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔥 Watch API Tests",
+      "type": "shell",
+      "command": "npx",
+      "args": ["jest", "--watch", "--verbose"],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}/api",
+        "env": {
+          "NODE_ENV": "test"
+        }
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "isBackground": true,
+      "problemMatcher": ["$jest-junit"]
+    },
+    {
+      "label": "🔥 Watch Client Tests",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "test"],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}/client"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "isBackground": true,
+      "problemMatcher": ["$jest-junit"]
+    },
+    {
+      "label": "🏗️ Build Data Schemas",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "build:data-schemas"],
+      "group": "build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🏗️ Build All Packages",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "build:packages"],
+      "group": "build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": [],
+      "dependsOn": ["🏗️ Build Data Schemas"]
+    },
+    {
+      "label": "🚀 Start Backend Dev",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "backend:dev"],
+      "group": "build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "🚀 Start Frontend Dev",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "frontend:dev"],
+      "group": "build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "🧹 Clean Coverage",
+      "type": "shell",
+      "command": "rm",
+      "args": ["-rf", "coverage"],
+      "options": {
+        "cwd": "${workspaceFolder}/api"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "📖 Open Coverage Report",
+      "type": "shell",
+      "command": "open",
+      "args": ["coverage/index.html"],
+      "options": {
+        "cwd": "${workspaceFolder}/api"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔍 Lint Code",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "lint"],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$eslint-stylish"]
+    },
+    {
+      "label": "🔧 Fix Lint Issues",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "lint:fix"],
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$eslint-stylish"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testEmail",
+      "description": "Test email for E2E tests",
+      "default": "admin@test.com",
+      "type": "promptString"
+    },
+    {
+      "id": "testPassword",
+      "description": "Test password for E2E tests",
+      "default": "password123",
+      "type": "promptString"
+    }
+  ]
+}

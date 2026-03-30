@@ -63,6 +63,256 @@
       "runtimeArgs": ["run", "build:api"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal"
+    },
+    {
+      "name": "🧪 Run All Tests",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "test:api"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "NODE_ENV": "test",
+        "CI": "true"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🔧 Run API Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/api/node_modules/.bin/jest",
+      "args": [
+        "--runInBand",
+        "--verbose",
+        "--coverage"
+      ],
+      "cwd": "${workspaceFolder}/api",
+      "env": {
+        "NODE_ENV": "test",
+        "CI": "true"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "⚛️ Run Client Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/client/node_modules/.bin/jest",
+      "args": [
+        "--runInBand",
+        "--verbose",
+        "--coverage"
+      ],
+      "cwd": "${workspaceFolder}/client",
+      "env": {
+        "NODE_ENV": "development",
+        "CI": "true"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🔐 Run Epic 3 Access Control Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/api/node_modules/.bin/jest",
+      "args": [
+        "--runInBand",
+        "--verbose",
+        "--coverage",
+        "--testNamePattern=Epic 3",
+        "--testPathPattern=(TimeWindowAccessControl|AccessControlIntegration|TimeWindowEdgeCases|AdminBypassTimeWindows|SessionTimeWindowManagement|TimeWindowAccessControlFlow)"
+      ],
+      "cwd": "${workspaceFolder}/api",
+      "env": {
+        "NODE_ENV": "test",
+        "CI": "true"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🏗️ Run Time Window Component Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/api/node_modules/.bin/jest",
+      "args": [
+        "--runInBand",
+        "--verbose",
+        "--coverage",
+        "--testPathPattern=TimeWindow(Controller|Service|Form|List|Manager)"
+      ],
+      "cwd": "${workspaceFolder}/api",
+      "env": {
+        "NODE_ENV": "test",
+        "CI": "true"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🎯 Run Single Test File",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/api/node_modules/.bin/jest",
+      "args": [
+        "${relativeFile}",
+        "--runInBand",
+        "--verbose"
+      ],
+      "cwd": "${workspaceFolder}/api",
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🔍 Debug Single Test File",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/api/node_modules/.bin/jest",
+      "args": [
+        "${relativeFile}",
+        "--runInBand",
+        "--verbose",
+        "--detectOpenHandles"
+      ],
+      "cwd": "${workspaceFolder}/api",
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "sourceMaps": true,
+      "stopOnEntry": false
+    },
+    {
+      "name": "🎭 Run E2E Tests",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "playwright",
+        "test",
+        "--config=e2e/playwright.config.local.ts"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "NODE_ENV": "test",
+        "TEST_EMAIL": "${input:testEmail}",
+        "TEST_PASSWORD": "${input:testPassword}"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🎭 Run E2E Tests (Headed)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "playwright",
+        "test",
+        "--config=e2e/playwright.config.local.ts",
+        "--headed"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "NODE_ENV": "test",
+        "TEST_EMAIL": "${input:testEmail}",
+        "TEST_PASSWORD": "${input:testPassword}"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🔥 Run Tests in Watch Mode",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/api/node_modules/.bin/jest",
+      "args": [
+        "--watch",
+        "--verbose"
+      ],
+      "cwd": "${workspaceFolder}/api",
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "📊 Run Tests with Coverage Report",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/api/node_modules/.bin/jest",
+      "args": [
+        "--coverage",
+        "--coverageReporters=text",
+        "--coverageReporters=html",
+        "--coverageDirectory=coverage",
+        "--runInBand"
+      ],
+      "cwd": "${workspaceFolder}/api",
+      "env": {
+        "NODE_ENV": "test",
+        "CI": "true"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🚫 Run Failed Tests Only",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/api/node_modules/.bin/jest",
+      "args": [
+        "--onlyFailures",
+        "--verbose"
+      ],
+      "cwd": "${workspaceFolder}/api",
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🧪 Run Client Tests in Watch Mode",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/client/node_modules/.bin/jest",
+      "args": [
+        "--watch",
+        "--verbose"
+      ],
+      "cwd": "${workspaceFolder}/client",
+      "env": {
+        "NODE_ENV": "development"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "🔧 Run Specific API Test Pattern",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/api/node_modules/.bin/jest",
+      "args": [
+        "--runInBand",
+        "--verbose",
+        "--testNamePattern=${input:testPattern}"
+      ],
+      "cwd": "${workspaceFolder}/api",
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
     }
   ],
   "compounds": [
@@ -85,6 +335,46 @@
         "group": "Main",
         "order": 2
       }
+    },
+    {
+      "name": "🧪 Run All Test Suites",
+      "configurations": ["🔧 Run API Tests", "⚛️ Run Client Tests"],
+      "stopAll": true,
+      "presentation": {
+        "hidden": false,
+        "group": "Testing",
+        "order": 1
+      }
+    },
+    {
+      "name": "🔐 Epic 3 Complete Test Suite",
+      "configurations": ["🔐 Run Epic 3 Access Control Tests", "🏗️ Run Time Window Component Tests"],
+      "stopAll": true,
+      "presentation": {
+        "hidden": false,
+        "group": "Testing",
+        "order": 2
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testEmail",
+      "description": "Test email for E2E tests",
+      "default": "admin@test.com",
+      "type": "promptString"
+    },
+    {
+      "id": "testPassword",
+      "description": "Test password for E2E tests",
+      "default": "password123",
+      "type": "promptString"
+    },
+    {
+      "id": "testPattern",
+      "description": "Test name pattern to run",
+      "default": "Epic 3",
+      "type": "promptString"
     }
   ]
 }

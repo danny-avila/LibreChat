@@ -2,7 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { SystemRoles } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { ArrowLeft, MessageSquareQuote } from 'lucide-react';
+import { ArrowLeft, MessageSquareQuote, Users } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -51,6 +51,7 @@ export default function DashBreadcrumb() {
 
   const chatLinkHandler = useCustomLink('/c/' + lastConversationId, clickCallback);
   const promptsLinkHandler = useCustomLink('/d/prompts');
+  const groupsLinkHandler = useCustomLink('/d/groups');
 
   const isPromptsPath = useMemo(
     () => promptsPathPattern.test(location.pathname),
@@ -102,6 +103,21 @@ export default function DashBreadcrumb() {
               {localize('com_ui_prompts')}
             </BreadcrumbLink>
           </BreadcrumbItem>
+          {user?.role === SystemRoles.ADMIN && (
+            <>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem className="hover:dark:text-white">
+                <BreadcrumbLink
+                  href="/d/groups"
+                  className="flex flex-row items-center gap-1"
+                  onClick={groupsLinkHandler}
+                >
+                  <Users className="h-4 w-4 dark:text-gray-300" aria-hidden="true" />
+                  Groups
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+            </>
+          )}
         </BreadcrumbList>
       </Breadcrumb>
       <div className="flex items-center justify-center gap-2">

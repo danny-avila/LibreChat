@@ -1,4 +1,5 @@
 import { Document, Types } from 'mongoose';
+import { IGroupMembership, IEffectiveTimeWindow } from './group';
 
 export interface IUser extends Document {
   name?: string;
@@ -33,6 +34,10 @@ export interface IUser extends Document {
   personalization?: {
     memories?: boolean;
   };
+  // Time-based access control fields
+  groupMemberships?: IGroupMembership[];
+  effectiveTimeWindows?: IEffectiveTimeWindow[];
+  lastAccessValidation?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }

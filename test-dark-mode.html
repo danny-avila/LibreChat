@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dark Mode Dropdown Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles to simulate the issue */
+        .select-content {
+            background-color: var(--popover-bg, white);
+            color: var(--popover-foreground, black);
+        }
+        
+        /* Fix attempt 1: Basic dark mode */
+        .select-content-fixed-1 {
+            background-color: white;
+            color: black;
+        }
+        .dark .select-content-fixed-1 {
+            background-color: rgb(31 41 55); /* gray-800 */
+            color: white;
+        }
+        
+        /* Fix attempt 2: Using !important */
+        .select-content-fixed-2 {
+            background-color: white !important;
+            color: black !important;
+        }
+        .dark .select-content-fixed-2 {
+            background-color: rgb(31 41 55) !important; /* gray-800 */
+            color: white !important;
+        }
+        
+        /* Simulating the Radix UI portal behavior */
+        .select-dropdown {
+            position: absolute;
+            z-index: 50;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 4px;
+            margin-top: 4px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        
+        .select-item {
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .select-item:hover {
+            background-color: rgba(0, 0, 0, 0.1);
+        }
+        
+        .dark .select-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-900 text-black dark:text-white p-8">
+    <h1 class="text-2xl font-bold mb-8">Dark Mode Dropdown Test</h1>
+    
+    <!-- Toggle dark mode button -->
+    <button onclick="toggleDarkMode()" class="mb-8 px-4 py-2 bg-blue-500 text-white rounded">
+        Toggle Dark Mode
+    </button>
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- Original (Broken) -->
+        <div class="space-y-4">
+            <h2 class="text-lg font-semibold">Original (Broken)</h2>
+            <div class="relative">
+                <button onclick="toggleDropdown('dropdown1')" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-left">
+                    Select Window Type
+                </button>
+                <div id="dropdown1" class="hidden select-dropdown select-content">
+                    <div class="select-item">Daily - Same time every day</div>
+                    <div class="select-item">Weekly - Specific days of the week</div>
+                    <div class="select-item">Date Range - Specific date period</div>
+                    <div class="select-item">Exception - Block access on specific dates</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Fix 1: Basic Dark Mode -->
+        <div class="space-y-4">
+            <h2 class="text-lg font-semibold">Fix 1: Basic Dark Mode</h2>
+            <div class="relative">
+                <button onclick="toggleDropdown('dropdown2')" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-left">
+                    Select Window Type
+                </button>
+                <div id="dropdown2" class="hidden select-dropdown select-content-fixed-1">
+                    <div class="select-item">Daily - Same time every day</div>
+                    <div class="select-item">Weekly - Specific days of the week</div>
+                    <div class="select-item">Date Range - Specific date period</div>
+                    <div class="select-item">Exception - Block access on specific dates</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Fix 2: Using !important -->
+        <div class="space-y-4">
+            <h2 class="text-lg font-semibold">Fix 2: Using !important</h2>
+            <div class="relative">
+                <button onclick="toggleDropdown('dropdown3')" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-left">
+                    Select Window Type
+                </button>
+                <div id="dropdown3" class="hidden select-dropdown select-content-fixed-2">
+                    <div class="select-item">Daily - Same time every day</div>
+                    <div class="select-item">Weekly - Specific days of the week</div>
+                    <div class="select-item">Date Range - Specific date period</div>
+                    <div class="select-item">Exception - Block access on specific dates</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function toggleDarkMode() {
+            document.documentElement.classList.toggle('dark');
+        }
+        
+        function toggleDropdown(id) {
+            const dropdown = document.getElementById(id);
+            dropdown.classList.toggle('hidden');
+            
+            // Close other dropdowns
+            ['dropdown1', 'dropdown2', 'dropdown3'].forEach(otherId => {
+                if (otherId !== id) {
+                    document.getElementById(otherId).classList.add('hidden');
+                }
+            });
+        }
+        
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdowns = ['dropdown1', 'dropdown2', 'dropdown3'];
+            dropdowns.forEach(id => {
+                const dropdown = document.getElementById(id);
+                const button = dropdown.previousElementSibling;
+                if (!dropdown.contains(event.target) && !button.contains(event.target)) {
+                    dropdown.classList.add('hidden');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
