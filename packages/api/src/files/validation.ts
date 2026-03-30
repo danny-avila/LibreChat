@@ -129,15 +129,18 @@ async function validateAnthropicPdf(
   }
 }
 
-/** Matches Bedrock Claude 4+ model identifiers (e.g. "anthropic.claude-sonnet-4-20250514-v1:0") */
+/**
+ * Matches Bedrock Claude 4+ model identifiers.
+ * Pattern: anthropic.claude-{family}-{version≥4}-{date}-v{n}:{rev}
+ * e.g. "anthropic.claude-sonnet-4-20250514-v1:0"
+ */
+const BEDROCK_CLAUDE_4_PLUS_RE = /anthropic\.claude-(?:sonnet|opus|haiku)-[4-9]\d*-/;
 const isBedrockClaude4Plus = (model?: string): boolean =>
-  model != null &&
-  /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
-    model,
-  );
+  model != null && BEDROCK_CLAUDE_4_PLUS_RE.test(model);
 
 /** Matches Bedrock Nova model identifiers (e.g. "amazon.nova-pro-v1:0") */
-const isBedrockNova = (model?: string): boolean => model != null && model.includes('amazon.nova');
+const isBedrockNova = (model?: string): boolean =>
+  model != null && model.startsWith('amazon.nova-');
 
 const pdfMimeType = 'application/pdf';
 const docxMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -180,9 +183,17 @@ export async function validateBedrockDocument(
 ): Promise<ValidationResult> {
   try {
     const exempt = isExemptFromBedrockDocLimit(model, mimeType);
-    /** Default 4.5 MB limit; exempt models fall back to 32 MB (Bedrock max request payload) */
+    /** Default 4.5 MB limit; exempt models default to 32 MB (Bedrock max request payload) when unconfigured */
     const providerLimit = exempt ? mbToBytes(32) : mbToBytes(4.5);
-    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+    /**
+     * Exempt models: fileConfig can override the 32 MB default in either direction.
+     * Non-exempt models: fileConfig can only restrict below the hard 4.5 MB Bedrock API limit.
+     */
+    const effectiveLimit = exempt
+      ? (configuredFileSizeLimit ?? providerLimit)
+      : configuredFileSizeLimit != null
+        ? Math.min(configuredFileSizeLimit, providerLimit)
+        : providerLimit;
 
     if (fileSize > effectiveLimit) {
       const limitMB = (effectiveLimit / (1024 * 1024)).toFixed(1);
