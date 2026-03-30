@@ -6,7 +6,6 @@ import { useNavScrolling, useLocalize, useAuthContext } from '~/hooks';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
 import { useMessagesInfiniteQuery } from '~/data-provider';
 import { useFileMapContext } from '~/Providers';
-import { buildTree } from '~/utils';
 import store from '~/store';
 
 export default function Search() {
@@ -43,9 +42,20 @@ export default function Search() {
   });
 
   const messages = useMemo(() => {
-    const msgs = searchMessages?.pages.flatMap((page) => page.messages) || [];
-    const dataTree = buildTree({ messages: msgs, fileMap });
-    return dataTree?.length === 0 ? null : (dataTree ?? null);
+    const msgs =
+      searchMessages?.pages.flatMap((page) =>
+        page.messages.map((message) => {
+          if (!message.files || !fileMap) {
+            return message;
+          }
+          return {
+            ...message,
+            files: message.files.map((file) => fileMap[file.file_id ?? ''] ?? file),
+          };
+        }),
+      ) || [];
+
+    return msgs.length === 0 ? null : msgs;
   }, [fileMap, searchMessages?.pages]);
 
   useEffect(() => {
@@ -53,6 +63,17 @@ export default function Search() {
       showToast({ message: 'An error occurred during search', status: 'error' });
     }
   }, [isError, searchQuery, showToast]);
+
+  const resultsCount = messages?.length ?? 0;
+  const resultsAnnouncement = useMemo(() => {
+    if (resultsCount === 0) {
+      return localize('com_ui_nothing_found');
+    }
+    if (resultsCount === 1) {
+      return localize('com_ui_result_found', { count: resultsCount });
+    }
+    return localize('com_ui_results_found', { count: resultsCount });
+  }, [resultsCount, localize]);
 
   const isSearchLoading = search.isTyping || isLoading || isFetchingNextPage;
 
@@ -70,6 +91,9 @@ export default function Search() {
 
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
+      <div className="sr-only" role="alert" aria-atomic="true">
+        {resultsAnnouncement}
+      </div>
       {(messages && messages.length === 0) || messages == null ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">

@@ -1,8 +1,8 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { FC } from 'react';
 import type { TModelSelectProps } from '~/common';
-import { GoogleSettings, PluginSettings } from './MultiView';
 import AssistantsSettings from './Assistants';
+import { GoogleSettings } from './MultiView';
 import AnthropicSettings from './Anthropic';
 import BedrockSettings from './Bedrock';
 import OpenAISettings from './OpenAI';
@@ -23,7 +23,6 @@ export const getSettings = () => {
     settings,
     multiViewSettings: {
       [EModelEndpoint.google]: GoogleSettings,
-      [EModelEndpoint.gptPlugins]: PluginSettings,
     },
   };
 };

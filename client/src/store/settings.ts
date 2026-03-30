@@ -6,10 +6,7 @@ import type { TOptionSettings } from '~/common';
 // Static atoms without localStorage
 const staticAtoms = {
   abortScroll: atom<boolean>({ key: 'abortScroll', default: false }),
-  showFiles: atom<boolean>({ key: 'showFiles', default: false }),
   optionSettings: atom<TOptionSettings>({ key: 'optionSettings', default: {} }),
-  showPluginStoreDialog: atom<boolean>({ key: 'showPluginStoreDialog', default: false }),
-  showAgentSettings: atom<boolean>({ key: 'showAgentSettings', default: false }),
   currentSettingsView: atom<SettingsViews>({
     key: 'currentSettingsView',
     default: SettingsViews.default,
@@ -20,18 +17,21 @@ const staticAtoms = {
 const localStorageAtoms = {
   // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
-  hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
-  fontSize: atomWithLocalStorage('fontSize', 'text-base'),
+  sidebarExpanded: atomWithLocalStorage(
+    'unifiedSidebarExpanded',
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches ? false : true,
+  ),
   enableUserMsgMarkdown: atomWithLocalStorage<boolean>(
     LocalStorageKeys.ENABLE_USER_MSG_MARKDOWN,
     true,
   ),
+  keepScreenAwake: atomWithLocalStorage('keepScreenAwake', true),
 
   // Chat settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
   maximizeChatSpace: atomWithLocalStorage('maximizeChatSpace', false),
   chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
-  showCode: atomWithLocalStorage(LocalStorageKeys.SHOW_ANALYSIS_CODE, true),
+  autoExpandTools: atomWithLocalStorage(LocalStorageKeys.AUTO_EXPAND_TOOLS, false),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),
   showScrollButton: atomWithLocalStorage('showScrollButton', true),
   forkSetting: atomWithLocalStorage('forkSetting', ''),

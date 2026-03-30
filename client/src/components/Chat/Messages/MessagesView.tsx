@@ -1,23 +1,27 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
+import { MessagesViewProvider } from '~/Providers';
+import { fontSizeAtom } from '~/store/fontSize';
 import MultiMessage from './MultiMessage';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function MessagesView({
+function MessagesViewContent({
   messagesTree: _messagesTree,
 }: {
   messagesTree?: TMessage[] | null;
 }) {
   const localize = useLocalize();
-  const fontSize = useRecoilValue(store.fontSize);
+  const fontSize = useAtomValue(fontSizeAtom);
   const { screenshotTargetRef } = useScreenshot();
   const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
+  const scrollToBottomRef = useRef<HTMLButtonElement>(null);
 
   const {
     conversation,
@@ -44,7 +48,7 @@ export default function MessagesView({
               width: '100%',
             }}
           >
-            <div className="flex flex-col pb-9 dark:bg-transparent">
+            <div className="flex flex-col pb-9 pt-14 dark:bg-transparent">
               {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
                 <div
                   className={cn(
@@ -84,11 +88,20 @@ export default function MessagesView({
             classNames="scroll-animation"
             unmountOnExit={true}
             appear={true}
+            nodeRef={scrollToBottomRef}
           >
-            <ScrollToBottom scrollHandler={handleSmoothToRef} />
+            <ScrollToBottom ref={scrollToBottomRef} scrollHandler={handleSmoothToRef} />
           </CSSTransition>
         </div>
       </div>
     </>
+  );
+}
+
+export default function MessagesView({ messagesTree }: { messagesTree?: TMessage[] | null }) {
+  return (
+    <MessagesViewProvider>
+      <MessagesViewContent messagesTree={messagesTree} />
+    </MessagesViewProvider>
   );
 }

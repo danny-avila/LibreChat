@@ -1,7 +1,13 @@
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
-const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const {
+  sendEvent,
+  countTokens,
+  checkBalance,
+  getBalanceConfig,
+  getModelMaxTokens,
+} = require('@librechat/api');
 const {
   Time,
   Constants,
@@ -26,24 +32,27 @@ const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
-const { getTransactions } = require('~/models/Transaction');
-const { checkBalance } = require('~/models/balanceMethods');
-const { getConvo } = require('~/models/Conversation');
-const getLogStores = require('~/cache/getLogStores');
-const { countTokens } = require('~/server/utils');
-const { getModelMaxTokens } = require('~/utils');
+const {
+  getConvo,
+  getMultiplier,
+  getTransactions,
+  findBalanceByUser,
+  createAutoRefillTransaction,
+} = require('~/models');
+const { logViolation, getLogStores } = require('~/cache');
 const { getOpenAIClient } = require('./helpers');
 
 /**
  * @route POST /
  * @desc Chat with an assistant
  * @access Public
- * @param {Express.Request} req - The request object, containing the request data.
+ * @param {ServerRequest} req - The request object, containing the request data.
  * @param {Express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
 const chatV2 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
+  const appConfig = req.config;
 
   /** @type {{files: MongoFile[]}} */
   const {
@@ -62,7 +71,7 @@ const chatV2 = async (req, res) => {
     clientTimestamp,
   } = req.body;
 
-  /** @type {OpenAIClient} */
+  /** @type {OpenAI} */
   let openai;
   /** @type {string|undefined} - the current thread id */
   let thread_id = _thread_id;
@@ -126,8 +135,8 @@ const chatV2 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      const balance = req.app?.locals?.balance;
-      if (!balance?.enabled) {
+      const balanceConfig = getBalanceConfig(appConfig);
+      if (!balanceConfig?.enabled) {
         return;
       }
       const transactions =
@@ -149,23 +158,25 @@ const chatV2 = async (req, res) => {
       // Count tokens up to the current context window
       promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
 
-      await checkBalance({
-        req,
-        res,
-        txData: {
-          model,
-          user: req.user.id,
-          tokenType: 'prompt',
-          amount: promptTokens,
+      await checkBalance(
+        {
+          req,
+          res,
+          txData: {
+            model,
+            user: req.user.id,
+            tokenType: 'prompt',
+            amount: promptTokens,
+          },
         },
-      });
+        { findBalanceByUser, getMultiplier, createAutoRefillTransaction, logViolation },
+      );
     };
 
-    const { openai: _openai, client } = await getOpenAIClient({
+    const { openai: _openai } = await getOpenAIClient({
       req,
       res,
       endpointOption,
-      initAppClient: true,
     });
 
     openai = _openai;
@@ -374,9 +385,9 @@ const chatV2 = async (req, res) => {
       };
 
       /** @type {undefined | TAssistantEndpoint} */
-      const config = req.app.locals[endpoint] ?? {};
+      const config = appConfig.endpoints?.[endpoint] ?? {};
       /** @type {undefined | TBaseEndpoint} */
-      const allConfig = req.app.locals.all;
+      const allConfig = appConfig.endpoints?.all;
 
       const streamRunManager = new StreamRunManager({
         req,
@@ -454,7 +465,6 @@ const chatV2 = async (req, res) => {
         text,
         responseText: response.text,
         conversationId,
-        client,
       });
     }
 

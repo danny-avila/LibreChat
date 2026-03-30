@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "sourceMap": true,
+    "inlineSources": true,
+    "removeComments": false,
+    "preserveConstEnums": true,
+    "declarationMap": true
+  },
+  "exclude": ["node_modules", "dist", "types", "src/**/*.test.ts", "src/**/*.spec.ts"]
+}

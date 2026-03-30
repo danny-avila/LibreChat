@@ -1,15 +1,22 @@
-import { LockIcon, Trash } from 'lucide-react';
 import React, { useState, useCallback } from 'react';
+import { LockIcon, Trash } from 'lucide-react';
+import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
 import {
-  Input,
-  Button,
-  Spinner,
-  OGDialog,
+  InputOTPSeparator,
   OGDialogContent,
   OGDialogTrigger,
   OGDialogHeader,
+  InputOTPGroup,
   OGDialogTitle,
+  InputOTPSlot,
+  OGDialog,
+  InputOTP,
+  Spinner,
+  Button,
+  Label,
+  Input,
 } from '@librechat/client';
+import type { TDeleteUserRequest } from 'librechat-data-provider';
 import { useDeleteUserMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { LocalizeFunction } from '~/common';
@@ -20,16 +27,27 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
   const localize = useLocalize();
   const { user, logout } = useAuthContext();
   const { mutate: deleteUser, isLoading: isDeleting } = useDeleteUserMutation({
-    onMutate: () => logout(),
+    onSuccess: () => logout(),
   });
 
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
   const [isLocked, setIsLocked] = useState(true);
+  const [otpToken, setOtpToken] = useState('');
+  const [useBackup, setUseBackup] = useState(false);
+
+  const needs2FA = !!user?.twoFactorEnabled;
 
   const handleDeleteUser = () => {
-    if (!isLocked) {
-      deleteUser(undefined);
+    if (isLocked) {
+      return;
     }
+
+    let payload: TDeleteUserRequest | undefined;
+    if (needs2FA && otpToken.trim()) {
+      payload = useBackup ? { backupCode: otpToken.trim() } : { token: otpToken.trim() };
+    }
+
+    deleteUser(payload);
   };
 
   const handleInputChange = useCallback(
@@ -41,15 +59,17 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
     [user?.email],
   );
 
+  const otpReady = !needs2FA || otpToken.length === (useBackup ? 8 : 6);
+
   return (
     <>
       <OGDialog open={isDialogOpen} onOpenChange={setDialogOpen}>
         <div className="flex items-center justify-between">
-          <span>{localize('com_nav_delete_account')}</span>
+          <Label id="delete-account-label">{localize('com_nav_delete_account')}</Label>
           <OGDialogTrigger asChild>
             <Button
+              aria-labelledby="delete-account-label"
               variant="destructive"
-              className="flex items-center justify-center rounded-lg transition-colors duration-200"
               onClick={() => setDialogOpen(true)}
               disabled={disabled}
             >
@@ -78,7 +98,60 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
                 (e) => handleInputChange(e.target.value),
               )}
             </div>
-            {renderDeleteButton(handleDeleteUser, isDeleting, isLocked, localize)}
+            {needs2FA && (
+              <div className="mb-4 space-y-3">
+                <Label className="text-sm font-medium">
+                  {localize('com_ui_2fa_verification_required')}
+                </Label>
+                <div className="flex justify-center">
+                  <InputOTP
+                    value={otpToken}
+                    onChange={setOtpToken}
+                    maxLength={useBackup ? 8 : 6}
+                    pattern={useBackup ? REGEXP_ONLY_DIGITS_AND_CHARS : REGEXP_ONLY_DIGITS}
+                    className="gap-2"
+                  >
+                    {useBackup ? (
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} />
+                        <InputOTPSlot index={1} />
+                        <InputOTPSlot index={2} />
+                        <InputOTPSlot index={3} />
+                        <InputOTPSlot index={4} />
+                        <InputOTPSlot index={5} />
+                        <InputOTPSlot index={6} />
+                        <InputOTPSlot index={7} />
+                      </InputOTPGroup>
+                    ) : (
+                      <>
+                        <InputOTPGroup>
+                          <InputOTPSlot index={0} />
+                          <InputOTPSlot index={1} />
+                          <InputOTPSlot index={2} />
+                        </InputOTPGroup>
+                        <InputOTPSeparator />
+                        <InputOTPGroup>
+                          <InputOTPSlot index={3} />
+                          <InputOTPSlot index={4} />
+                          <InputOTPSlot index={5} />
+                        </InputOTPGroup>
+                      </>
+                    )}
+                  </InputOTP>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseBackup(!useBackup);
+                    setOtpToken('');
+                  }}
+                  className="text-sm text-primary hover:underline"
+                >
+                  {useBackup ? localize('com_ui_use_2fa_code') : localize('com_ui_use_backup_code')}
+                </button>
+              </div>
+            )}
+            {renderDeleteButton(handleDeleteUser, isDeleting, isLocked || !otpReady, localize)}
           </div>
         </OGDialogContent>
       </OGDialog>
@@ -122,12 +195,12 @@ const renderDeleteButton = (
       <>
         {isLocked ? (
           <>
-            <LockIcon className="size-5" />
+            <LockIcon className="size-5" aria-hidden="true" />
             <span className="ml-2">{localize('com_ui_locked')}</span>
           </>
         ) : (
           <>
-            <Trash className="size-5" />
+            <Trash className="size-5" aria-hidden="true" />
             <span className="ml-2">{localize('com_nav_delete_account_button')}</span>
           </>
         )}

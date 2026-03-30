@@ -12,11 +12,7 @@ interface LogContentProps {
   attachments?: TAttachment[];
 }
 
-type ImageAttachment = TFile &
-  TAttachmentMetadata & {
-    height: number;
-    width: number;
-  };
+type ImageAttachment = TFile & TAttachmentMetadata;
 
 const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, attachments }) => {
   const localize = useLocalize();
@@ -35,12 +31,8 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     const nonImageAtts: TAttachment[] = [];
 
     attachments?.forEach((attachment) => {
-      const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
-      const isImage =
-        imageExtRegex.test(attachment.filename) &&
-        width != null &&
-        height != null &&
-        filepath != null;
+      const { filepath = null } = attachment as TFile & TAttachmentMetadata;
+      const isImage = imageExtRegex.test(attachment.filename ?? '') && filepath != null;
       if (isImage) {
         imageAtts.push(attachment as ImageAttachment);
       } else {
@@ -56,21 +48,32 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
 
   const renderAttachment = (file: TAttachment) => {
     const now = new Date();
-    const expiresAt = typeof file.expiresAt === 'number' ? new Date(file.expiresAt) : null;
+    const expiresAt =
+      'expiresAt' in file && typeof file.expiresAt === 'number' ? new Date(file.expiresAt) : null;
     const isExpired = expiresAt ? isAfter(now, expiresAt) : false;
+    const filename = file.filename || '';
 
     if (isExpired) {
-      return `${file.filename} ${localize('com_download_expired')}`;
+      return `${filename} ${localize('com_download_expired')}`;
     }
+
+    const fileData = file as TFile & TAttachmentMetadata;
+    const filepath = file.filepath || '';
 
     // const expirationText = expiresAt
     //   ? ` ${localize('com_download_expires', { 0: format(expiresAt, 'MM/dd/yy HH:mm') })}`
     //   : ` ${localize('com_click_to_download')}`;
 
     return (
-      <LogLink href={file.filepath} filename={file.filename}>
+      <LogLink
+        href={filepath}
+        filename={filename}
+        file_id={fileData.file_id}
+        user={fileData.user}
+        source={fileData.source}
+      >
         {'- '}
-        {file.filename} {localize('com_click_to_download')}
+        {filename} {localize('com_click_to_download')}
       </LogLink>
     );
   };
@@ -89,18 +92,15 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
           ))}
         </div>
       )}
-      {imageAttachments?.map((attachment, index) => {
-        const { width, height, filepath } = attachment;
-        return (
-          <Image
-            key={index}
-            altText={attachment.filename}
-            imagePath={filepath}
-            height={height}
-            width={width}
-          />
-        );
-      })}
+      {imageAttachments?.map((attachment) => (
+        <Image
+          width={attachment.width}
+          height={attachment.height}
+          key={attachment.filepath}
+          altText={attachment.filename}
+          imagePath={attachment.filepath}
+        />
+      ))}
     </>
   );
 };

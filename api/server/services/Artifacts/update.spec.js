@@ -89,9 +89,9 @@ describe('replaceArtifactContent', () => {
   };
 
   test('should replace content within artifact boundaries', () => {
-    const original = 'console.log(\'hello\')';
+    const original = "console.log('hello')";
     const artifact = createTestArtifact(original);
-    const updated = 'console.log(\'updated\')';
+    const updated = "console.log('updated')";
 
     const result = replaceArtifactContent(artifact.text, artifact, original, updated);
     expect(result).toContain(updated);
@@ -316,5 +316,446 @@ console.log(greeting);`;
     // Should not have extra newlines
     expect(result).not.toContain('\n\n```');
     expect(result).not.toContain('```\n\n');
+  });
+
+  describe('incomplete artifacts', () => {
+    test('should handle incomplete artifacts (missing closing ::: and ```)', () => {
+      const original = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pomodoro</title>
+<meta name="description" content="A single-file Pomodoro timer with logs, charts, sounds, and dark mode." />
+<style>
+  :root{`;
+
+      const prefix = `Awesome idea! I'll deliver a complete single-file HTML app called "Pomodoro" with:
+- Custom session/break durations
+
+You can save this as pomodoro.html and open it directly in your browser.
+
+`;
+
+      // This simulates the real incomplete artifact case - no closing ``` or :::
+      const incompleteArtifact = `${ARTIFACT_START}{identifier="pomodoro-single-file-app" type="text/html" title="Pomodoro — Single File App"}
+\`\`\`
+${original}`;
+
+      const fullText = prefix + incompleteArtifact;
+      const message = { text: fullText };
+      const artifacts = findAllArtifacts(message);
+
+      expect(artifacts).toHaveLength(1);
+      expect(artifacts[0].end).toBe(fullText.length);
+
+      const updated = original.replace('Pomodoro</title>', 'Pomodoro</title>UPDATED');
+      const result = replaceArtifactContent(fullText, artifacts[0], original, updated);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('UPDATED');
+      expect(result).toContain(prefix);
+      // Should not have added closing markers
+      expect(result).not.toMatch(/:::\s*$/);
+    });
+
+    test('should handle incomplete artifacts with only opening code block', () => {
+      const original = 'function hello() { console.log("world"); }';
+      const incompleteArtifact = `${ARTIFACT_START}{id="test"}\n\`\`\`\n${original}`;
+
+      const message = { text: incompleteArtifact };
+      const artifacts = findAllArtifacts(message);
+
+      expect(artifacts).toHaveLength(1);
+
+      const updated = 'function hello() { console.log("UPDATED"); }';
+      const result = replaceArtifactContent(incompleteArtifact, artifacts[0], original, updated);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('UPDATED');
+    });
+
+    test('should handle incomplete artifacts without code blocks', () => {
+      const original = 'Some plain text content';
+      const incompleteArtifact = `${ARTIFACT_START}{id="test"}\n${original}`;
+
+      const message = { text: incompleteArtifact };
+      const artifacts = findAllArtifacts(message);
+
+      expect(artifacts).toHaveLength(1);
+
+      const updated = 'Some UPDATED text content';
+      const result = replaceArtifactContent(incompleteArtifact, artifacts[0], original, updated);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('UPDATED');
+    });
+  });
+
+  describe('regression tests for edge cases', () => {
+    test('should still handle complete artifacts correctly', () => {
+      // Ensure we didn't break normal artifact handling
+      const original = 'console.log("test");';
+      const artifact = createArtifactText({ content: original });
+
+      const message = { text: artifact };
+      const artifacts = findAllArtifacts(message);
+
+      expect(artifacts).toHaveLength(1);
+
+      const updated = 'console.log("updated");';
+      const result = replaceArtifactContent(artifact, artifacts[0], original, updated);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain(updated);
+      expect(result).toContain(ARTIFACT_END);
+      expect(result).toMatch(/```\nconsole\.log\("updated"\);\n```/);
+    });
+
+    test('should handle multiple complete artifacts', () => {
+      // Ensure multiple artifacts still work
+      const content1 = 'First artifact';
+      const content2 = 'Second artifact';
+      const text = `${createArtifactText({ content: content1 })}\n\n${createArtifactText({ content: content2 })}`;
+
+      const message = { text };
+      const artifacts = findAllArtifacts(message);
+
+      expect(artifacts).toHaveLength(2);
+
+      // Update first artifact
+      const result1 = replaceArtifactContent(text, artifacts[0], content1, 'First UPDATED');
+      expect(result1).not.toBeNull();
+      expect(result1).toContain('First UPDATED');
+      expect(result1).toContain(content2);
+
+      // Update second artifact
+      const result2 = replaceArtifactContent(text, artifacts[1], content2, 'Second UPDATED');
+      expect(result2).not.toBeNull();
+      expect(result2).toContain(content1);
+      expect(result2).toContain('Second UPDATED');
+    });
+
+    test('should not mistake ::: at position 0 for artifact end in complete artifacts', () => {
+      // This tests the specific fix - ensuring contentEnd=0 doesn't break complete artifacts
+      const original = 'test content';
+      // Create an artifact that will have ::: at position 0 when substring'd
+      const artifact = `${ARTIFACT_START}\n\`\`\`\n${original}\n\`\`\`\n${ARTIFACT_END}`;
+
+      const message = { text: artifact };
+      const artifacts = findAllArtifacts(message);
+
+      expect(artifacts).toHaveLength(1);
+
+      const updated = 'updated content';
+      const result = replaceArtifactContent(artifact, artifacts[0], original, updated);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain(updated);
+      expect(result).toContain(ARTIFACT_END);
+    });
+
+    test('should handle empty artifacts', () => {
+      // Edge case: empty artifact
+      const artifact = `${ARTIFACT_START}\n${ARTIFACT_END}`;
+
+      const message = { text: artifact };
+      const artifacts = findAllArtifacts(message);
+
+      expect(artifacts).toHaveLength(1);
+
+      // Trying to replace non-existent content should return null
+      const result = replaceArtifactContent(artifact, artifacts[0], 'something', 'updated');
+      expect(result).toBeNull();
+    });
+
+    test('should preserve whitespace and formatting in complete artifacts', () => {
+      const original = `  function test() {
+    return {
+      value: 42
+    };
+  }`;
+      const artifact = createArtifactText({ content: original });
+
+      const message = { text: artifact };
+      const artifacts = findAllArtifacts(message);
+
+      const updated = `  function test() {
+    return {
+      value: 100
+    };
+  }`;
+      const result = replaceArtifactContent(artifact, artifacts[0], original, updated);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('value: 100');
+      // Should preserve exact formatting
+      expect(result).toMatch(
+        /```\n {2}function test\(\) \{\n {4}return \{\n {6}value: 100\n {4}\};\n {2}\}\n```/,
+      );
+    });
+
+    test('should handle code blocks with language identifiers (```svg, ```html, etc.)', () => {
+      const svgContent = `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="200" fill="#4A90A4"/>
+  <rect x="50" y="50" width="100" height="100" fill="#FFFFFF"/>
+</svg>`;
+
+      /** Artifact with language identifier in code block */
+      const artifactText = `${ARTIFACT_START}{identifier="test-svg" type="image/svg+xml" title="Test SVG"}
+\`\`\`svg
+${svgContent}
+\`\`\`
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+      expect(artifacts).toHaveLength(1);
+
+      const updatedSvg = svgContent.replace('#FFFFFF', '#131313');
+      const result = replaceArtifactContent(artifactText, artifacts[0], svgContent, updatedSvg);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('#131313');
+      expect(result).not.toContain('#FFFFFF');
+      expect(result).toMatch(/```svg\n/);
+    });
+
+    test('should handle code blocks with complex language identifiers', () => {
+      const htmlContent = `<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body>Hello</body>
+</html>`;
+
+      const artifactText = `${ARTIFACT_START}{identifier="test-html" type="text/html" title="Test HTML"}
+\`\`\`html
+${htmlContent}
+\`\`\`
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      const updatedHtml = htmlContent.replace('Hello', 'Updated');
+      const result = replaceArtifactContent(artifactText, artifacts[0], htmlContent, updatedHtml);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('Updated');
+      expect(result).toMatch(/```html\n/);
+    });
+  });
+
+  describe('code block edge cases', () => {
+    test('should handle code block without language identifier (```\\n)', () => {
+      const content = 'const x = 1;\nconst y = 2;';
+      const artifactText = `${ARTIFACT_START}{identifier="test" type="text/plain" title="Test"}
+\`\`\`
+${content}
+\`\`\`
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      const result = replaceArtifactContent(artifactText, artifacts[0], content, 'updated');
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('updated');
+      expect(result).toMatch(/```\nupdated\n```/);
+    });
+
+    test('should handle various language identifiers', () => {
+      const languages = [
+        'javascript',
+        'typescript',
+        'python',
+        'jsx',
+        'tsx',
+        'css',
+        'json',
+        'xml',
+        'markdown',
+        'md',
+      ];
+
+      for (const lang of languages) {
+        const content = `test content for ${lang}`;
+        const artifactText = `${ARTIFACT_START}{identifier="test-${lang}" type="text/plain" title="Test"}
+\`\`\`${lang}
+${content}
+\`\`\`
+${ARTIFACT_END}`;
+
+        const message = { text: artifactText };
+        const artifacts = findAllArtifacts(message);
+        expect(artifacts).toHaveLength(1);
+
+        const result = replaceArtifactContent(artifactText, artifacts[0], content, 'updated');
+
+        expect(result).not.toBeNull();
+        expect(result).toContain('updated');
+        expect(result).toMatch(new RegExp(`\`\`\`${lang}\\n`));
+      }
+    });
+
+    test('should handle single character language identifier', () => {
+      const content = 'single char lang';
+      const artifactText = `${ARTIFACT_START}{identifier="test" type="text/plain" title="Test"}
+\`\`\`r
+${content}
+\`\`\`
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      const result = replaceArtifactContent(artifactText, artifacts[0], content, 'updated');
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('updated');
+      expect(result).toMatch(/```r\n/);
+    });
+
+    test('should handle code block with content that looks like code fence', () => {
+      const content = 'Line 1\nSome text with ``` backticks in middle\nLine 3';
+      const artifactText = `${ARTIFACT_START}{identifier="test" type="text/plain" title="Test"}
+\`\`\`text
+${content}
+\`\`\`
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      const result = replaceArtifactContent(artifactText, artifacts[0], content, 'updated');
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('updated');
+    });
+
+    test('should handle code block with trailing whitespace in language line', () => {
+      const content = 'whitespace test';
+      /** Note: trailing spaces after 'python' */
+      const artifactText = `${ARTIFACT_START}{identifier="test" type="text/plain" title="Test"}
+\`\`\`python   
+${content}
+\`\`\`
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      const result = replaceArtifactContent(artifactText, artifacts[0], content, 'updated');
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('updated');
+    });
+
+    test('should handle react/jsx content with complex syntax', () => {
+      const jsxContent = `function App() {
+  const [count, setCount] = useState(0);
+  return (
+    <div className="app">
+      <h1>Count: {count}</h1>
+      <button onClick={() => setCount(c => c + 1)}>
+        Increment
+      </button>
+    </div>
+  );
+}`;
+
+      const artifactText = `${ARTIFACT_START}{identifier="react-app" type="application/vnd.react" title="React App"}
+\`\`\`jsx
+${jsxContent}
+\`\`\`
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      const updatedJsx = jsxContent.replace('Increment', 'Click me');
+      const result = replaceArtifactContent(artifactText, artifacts[0], jsxContent, updatedJsx);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('Click me');
+      expect(result).not.toContain('Increment');
+      expect(result).toMatch(/```jsx\n/);
+    });
+
+    test('should handle mermaid diagram content', () => {
+      const mermaidContent = `graph TD
+    A[Start] --> B{Is it?}
+    B -->|Yes| C[OK]
+    B -->|No| D[End]`;
+
+      const artifactText = `${ARTIFACT_START}{identifier="diagram" type="application/vnd.mermaid" title="Flow"}
+\`\`\`mermaid
+${mermaidContent}
+\`\`\`
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      const updatedMermaid = mermaidContent.replace('Start', 'Begin');
+      const result = replaceArtifactContent(
+        artifactText,
+        artifacts[0],
+        mermaidContent,
+        updatedMermaid,
+      );
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('Begin');
+      expect(result).toMatch(/```mermaid\n/);
+    });
+
+    test('should handle artifact without code block (plain text)', () => {
+      const content = 'Just plain text without code fences';
+      const artifactText = `${ARTIFACT_START}{identifier="plain" type="text/plain" title="Plain"}
+${content}
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      const result = replaceArtifactContent(
+        artifactText,
+        artifacts[0],
+        content,
+        'updated plain text',
+      );
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('updated plain text');
+      expect(result).not.toContain('```');
+    });
+
+    test('should handle multiline content with various newline patterns', () => {
+      const content = `Line 1
+Line 2
+
+Line 4 after empty line
+  Indented line
+    Double indented`;
+
+      const artifactText = `${ARTIFACT_START}{identifier="test" type="text/plain" title="Test"}
+\`\`\`
+${content}
+\`\`\`
+${ARTIFACT_END}`;
+
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      const updated = content.replace('Line 1', 'First Line');
+      const result = replaceArtifactContent(artifactText, artifacts[0], content, updated);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('First Line');
+      expect(result).toContain('  Indented line');
+      expect(result).toContain('    Double indented');
+    });
   });
 });

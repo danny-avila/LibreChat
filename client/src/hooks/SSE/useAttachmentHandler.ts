@@ -1,7 +1,12 @@
 import { useSetRecoilState } from 'recoil';
 import type { QueryClient } from '@tanstack/react-query';
 import { QueryKeys, Tools } from 'librechat-data-provider';
-import type { TAttachment, EventSubmission, MemoriesResponse } from 'librechat-data-provider';
+import type {
+  MemoriesResponse,
+  EventSubmission,
+  TAttachment,
+  TFile,
+} from 'librechat-data-provider';
 import { handleMemoryArtifact } from '~/utils/memory';
 import store from '~/store';
 
@@ -11,9 +16,24 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
   return ({ data }: { data: TAttachment; submission: EventSubmission }) => {
     const { messageId } = data;
 
-    if (queryClient && data?.filepath && !data.filepath.startsWith('/api/files')) {
-      queryClient.setQueryData([QueryKeys.files], (oldData: TAttachment[] | undefined) => {
-        return [data, ...(oldData || [])];
+    const fileData = data as TFile;
+    if (
+      queryClient &&
+      fileData?.file_id &&
+      fileData?.filepath &&
+      !fileData.filepath.includes('/api/files')
+    ) {
+      queryClient.setQueryData([QueryKeys.files], (oldData: TFile[] | undefined) => {
+        if (!oldData) {
+          return [fileData];
+        }
+        const existingIndex = oldData.findIndex((file) => file.file_id === fileData.file_id);
+        if (existingIndex > -1) {
+          const updated = [...oldData];
+          updated[existingIndex] = { ...oldData[existingIndex], ...fileData };
+          return updated;
+        }
+        return [fileData, ...oldData];
       });
     }
 

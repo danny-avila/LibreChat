@@ -8,13 +8,12 @@ import {
   retrievalMimeTypes,
   excelFileTypes,
   excelMimeTypes,
-  fileConfigSchema,
   mergeFileConfig,
   mbToBytes,
 } from '../src/file-config';
 
 describe('MIME Type Regex Patterns', () => {
-  const unsupportedMimeTypes = ['text/x-unknown', 'application/unknown', 'image/bmp', 'audio/mp3'];
+  const unsupportedMimeTypes = ['text/x-unknown', 'application/unknown', 'image/bmp'];
 
   // Testing general supported MIME types
   fullMimeTypesList.forEach((mimeType) => {
@@ -126,8 +125,6 @@ describe('mergeFileConfig', () => {
   test('merges minimal update correctly', () => {
     const result = mergeFileConfig(dynamicConfigs.minimalUpdate);
     expect(result.serverFileSizeLimit).toEqual(mbToBytes(1024));
-    const parsedResult = fileConfigSchema.safeParse(result);
-    expect(parsedResult.success).toBeTruthy();
   });
 
   test('overrides default endpoint with full new configuration', () => {
@@ -136,8 +133,6 @@ describe('mergeFileConfig', () => {
     expect(result.endpoints.default.supportedMimeTypes).toEqual(
       expect.arrayContaining([new RegExp('^video/.*$')]),
     );
-    const parsedResult = fileConfigSchema.safeParse(result);
-    expect(parsedResult.success).toBeTruthy();
   });
 
   test('adds new endpoint configuration correctly', () => {
@@ -147,8 +142,6 @@ describe('mergeFileConfig', () => {
     expect(result.endpoints.newEndpoint.supportedMimeTypes).toEqual(
       expect.arrayContaining([new RegExp('^application/json$')]),
     );
-    const parsedResult = fileConfigSchema.safeParse(result);
-    expect(parsedResult.success).toBeTruthy();
   });
 
   test('disables an endpoint and sets numeric fields to 0 and empties supportedMimeTypes', () => {

@@ -16,6 +16,7 @@ interface DropdownProps {
   iconOnly?: boolean;
   renderValue?: (option: Option) => React.ReactNode;
   ariaLabel?: string;
+  'aria-labelledby'?: string;
   portal?: boolean;
 }
 
@@ -37,6 +38,7 @@ const Dropdown: React.FC<DropdownProps> = ({
   iconOnly = false,
   renderValue,
   ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
   portal = true,
 }) => {
   const handleChange = (value: string) => {
@@ -72,11 +74,12 @@ const Dropdown: React.FC<DropdownProps> = ({
         store={selectProps}
         className={cn(
           'focus:ring-offset-ring-offset relative inline-flex items-center justify-between rounded-xl border border-input bg-background px-3 py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-accent hover:text-accent-foreground focus:ring-ring-primary',
-          iconOnly ? 'h-full w-10' : 'w-fit gap-2',
+          iconOnly ? 'size-10' : 'w-fit gap-2',
           className,
         )}
         data-testid={testId}
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
       >
         <div className="flex w-full items-center gap-2">
           {icon}
@@ -98,7 +101,13 @@ const Dropdown: React.FC<DropdownProps> = ({
       <Select.SelectPopover
         portal={portal}
         store={selectProps}
-        className={cn('popover-ui', sizeClasses, className, 'max-h-[80vh] overflow-y-auto')}
+        className={cn(
+          'popover-ui z-40',
+          sizeClasses,
+          className,
+          'max-h-[80vh] overflow-y-auto',
+          '[pointer-events:auto]', // Override body's pointer-events:none when in modal
+        )}
       >
         {options.map((item, index) => {
           if (isDivider(item)) {

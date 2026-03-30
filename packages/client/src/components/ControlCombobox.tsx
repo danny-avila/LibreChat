@@ -108,7 +108,7 @@ function ControlCombobox({
           'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
           'text-text-primary hover:bg-surface-tertiary',
           'border border-border-light',
-          isCollapsed ? 'h-10 w-10' : 'h-10 w-full rounded-xl px-3 py-2 text-sm',
+          isCollapsed ? 'h-9 w-9' : 'h-9 w-full rounded-xl px-3 py-2 text-sm',
           className,
         )}
       >
@@ -134,7 +134,7 @@ function ControlCombobox({
         gutter={4}
         portal
         className={cn(
-          'animate-popover z-50 overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          'animate-popover z-40 overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
         )}
         style={{ width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }}
       >

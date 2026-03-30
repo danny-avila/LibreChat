@@ -1,10 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
-const { bulkSaveConvos: _bulkSaveConvos } = require('~/models/Conversation');
 const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
-const { bulkSaveMessages } = require('~/models/Message');
+const { bulkSaveMessages, bulkSaveConvos: _bulkSaveConvos } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
 jest.mock('~/cache/getLogStores');
@@ -14,10 +13,8 @@ getLogStores.mockImplementation(() => ({
 }));
 
 // Mock the database methods
-jest.mock('~/models/Conversation', () => ({
+jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
-}));
-jest.mock('~/models/Message', () => ({
   bulkSaveMessages: jest.fn(),
 }));
 
@@ -98,6 +95,660 @@ describe('importChatGptConvo', () => {
     });
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
+  });
+
+  it('should handle system messages without breaking parent-child relationships', async () => {
+    /**
+     * Test data that reproduces message graph "breaking" when it encounters a system message
+     */
+    const testData = [
+      {
+        title: 'System Message Parent Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['First user message'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'root-node',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['First assistant response'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'user-msg-1',
+            children: ['system-msg'],
+          },
+          'system-msg': {
+            id: 'system-msg',
+            message: {
+              id: 'system-msg',
+              author: { role: 'system' },
+              create_time: 1714585033.150442,
+              content: { content_type: 'text', parts: ['System message in middle'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'assistant-msg-1',
+            children: ['user-msg-2'],
+          },
+          'user-msg-2': {
+            id: 'user-msg-2',
+            message: {
+              id: 'user-msg-2',
+              author: { role: 'user' },
+              create_time: 1714585034.150442,
+              content: { content_type: 'text', parts: ['Second user message'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'system-msg',
+            children: ['assistant-msg-2'],
+          },
+          'assistant-msg-2': {
+            id: 'assistant-msg-2',
+            message: {
+              id: 'assistant-msg-2',
+              author: { role: 'assistant' },
+              create_time: 1714585035.150442,
+              content: { content_type: 'text', parts: ['Second assistant response'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'user-msg-2',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    /** 2 user messages + 2 assistant messages (system message should be skipped) */
+    const expectedMessages = 4;
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedMessages);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    const messageMap = new Map();
+    savedMessages.forEach((msg) => {
+      messageMap.set(msg.text, msg);
+    });
+
+    const firstUser = messageMap.get('First user message');
+    const firstAssistant = messageMap.get('First assistant response');
+    const secondUser = messageMap.get('Second user message');
+    const secondAssistant = messageMap.get('Second assistant response');
+
+    expect(firstUser).toBeDefined();
+    expect(firstAssistant).toBeDefined();
+    expect(secondUser).toBeDefined();
+    expect(secondAssistant).toBeDefined();
+    expect(firstUser.parentMessageId).toBe(Constants.NO_PARENT);
+    expect(firstAssistant.parentMessageId).toBe(firstUser.messageId);
+
+    // This is the key test: second user message should have first assistant as parent
+    // (not NO_PARENT which would indicate the system message broke the chain)
+    expect(secondUser.parentMessageId).toBe(firstAssistant.messageId);
+    expect(secondAssistant.parentMessageId).toBe(secondUser.messageId);
+  });
+
+  it('should maintain correct sender for user messages regardless of GPT-4 model', async () => {
+    /**
+     * Test data with GPT-4 model to ensure user messages keep 'user' sender
+     */
+    const testData = [
+      {
+        title: 'GPT-4 Sender Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['User message with GPT-4'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'root-node',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['Assistant response with GPT-4'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'user-msg-1',
+            children: ['user-msg-2'],
+          },
+          'user-msg-2': {
+            id: 'user-msg-2',
+            message: {
+              id: 'user-msg-2',
+              author: { role: 'user' },
+              create_time: 1714585033.150442,
+              content: { content_type: 'text', parts: ['Another user message with GPT-4o-mini'] },
+              metadata: { model_slug: 'gpt-4o-mini' },
+            },
+            parent: 'assistant-msg-1',
+            children: ['assistant-msg-2'],
+          },
+          'assistant-msg-2': {
+            id: 'assistant-msg-2',
+            message: {
+              id: 'assistant-msg-2',
+              author: { role: 'assistant' },
+              create_time: 1714585034.150442,
+              content: { content_type: 'text', parts: ['Assistant response with GPT-3.5'] },
+              metadata: { model_slug: 'gpt-3.5-turbo' },
+            },
+            parent: 'user-msg-2',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    const userMsg1 = savedMessages.find((msg) => msg.text === 'User message with GPT-4');
+    const assistantMsg1 = savedMessages.find((msg) => msg.text === 'Assistant response with GPT-4');
+    const userMsg2 = savedMessages.find(
+      (msg) => msg.text === 'Another user message with GPT-4o-mini',
+    );
+    const assistantMsg2 = savedMessages.find(
+      (msg) => msg.text === 'Assistant response with GPT-3.5',
+    );
+
+    expect(userMsg1.sender).toBe('user');
+    expect(userMsg1.isCreatedByUser).toBe(true);
+    expect(userMsg1.model).toBe('gpt-4');
+
+    expect(userMsg2.sender).toBe('user');
+    expect(userMsg2.isCreatedByUser).toBe(true);
+    expect(userMsg2.model).toBe('gpt-4o-mini');
+
+    expect(assistantMsg1.sender).toBe('GPT-4');
+    expect(assistantMsg1.isCreatedByUser).toBe(false);
+    expect(assistantMsg1.model).toBe('gpt-4');
+
+    expect(assistantMsg2.sender).toBe('GPT-3.5-turbo');
+    expect(assistantMsg2.isCreatedByUser).toBe(false);
+    expect(assistantMsg2.model).toBe('gpt-3.5-turbo');
+  });
+
+  it('should correctly extract and format model names from various model slugs', async () => {
+    /**
+     * Test data with various model slugs to test dynamic model identifier extraction
+     */
+    const testData = [
+      {
+        title: 'Dynamic Model Identifier Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['msg-1'],
+          },
+          'msg-1': {
+            id: 'msg-1',
+            message: {
+              id: 'msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['Test message'] },
+              metadata: {},
+            },
+            parent: 'root-node',
+            children: ['msg-2', 'msg-3', 'msg-4', 'msg-5', 'msg-6', 'msg-7', 'msg-8', 'msg-9'],
+          },
+          'msg-2': {
+            id: 'msg-2',
+            message: {
+              id: 'msg-2',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['GPT-4 response'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-3': {
+            id: 'msg-3',
+            message: {
+              id: 'msg-3',
+              author: { role: 'assistant' },
+              create_time: 1714585033.150442,
+              content: { content_type: 'text', parts: ['GPT-4o response'] },
+              metadata: { model_slug: 'gpt-4o' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-4': {
+            id: 'msg-4',
+            message: {
+              id: 'msg-4',
+              author: { role: 'assistant' },
+              create_time: 1714585034.150442,
+              content: { content_type: 'text', parts: ['GPT-4o-mini response'] },
+              metadata: { model_slug: 'gpt-4o-mini' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-5': {
+            id: 'msg-5',
+            message: {
+              id: 'msg-5',
+              author: { role: 'assistant' },
+              create_time: 1714585035.150442,
+              content: { content_type: 'text', parts: ['GPT-3.5-turbo response'] },
+              metadata: { model_slug: 'gpt-3.5-turbo' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-6': {
+            id: 'msg-6',
+            message: {
+              id: 'msg-6',
+              author: { role: 'assistant' },
+              create_time: 1714585036.150442,
+              content: { content_type: 'text', parts: ['GPT-4-turbo response'] },
+              metadata: { model_slug: 'gpt-4-turbo' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-7': {
+            id: 'msg-7',
+            message: {
+              id: 'msg-7',
+              author: { role: 'assistant' },
+              create_time: 1714585037.150442,
+              content: { content_type: 'text', parts: ['GPT-4-1106-preview response'] },
+              metadata: { model_slug: 'gpt-4-1106-preview' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-8': {
+            id: 'msg-8',
+            message: {
+              id: 'msg-8',
+              author: { role: 'assistant' },
+              create_time: 1714585038.150442,
+              content: { content_type: 'text', parts: ['Claude response'] },
+              metadata: { model_slug: 'claude-3-opus' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-9': {
+            id: 'msg-9',
+            message: {
+              id: 'msg-9',
+              author: { role: 'assistant' },
+              create_time: 1714585039.150442,
+              content: { content_type: 'text', parts: ['No model slug response'] },
+              metadata: {},
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    // Test various GPT model slug formats
+    const gpt4 = savedMessages.find((msg) => msg.text === 'GPT-4 response');
+    expect(gpt4.sender).toBe('GPT-4');
+    expect(gpt4.model).toBe('gpt-4');
+
+    const gpt4o = savedMessages.find((msg) => msg.text === 'GPT-4o response');
+    expect(gpt4o.sender).toBe('GPT-4o');
+    expect(gpt4o.model).toBe('gpt-4o');
+
+    const gpt4oMini = savedMessages.find((msg) => msg.text === 'GPT-4o-mini response');
+    expect(gpt4oMini.sender).toBe('GPT-4o-mini');
+    expect(gpt4oMini.model).toBe('gpt-4o-mini');
+
+    const gpt35Turbo = savedMessages.find((msg) => msg.text === 'GPT-3.5-turbo response');
+    expect(gpt35Turbo.sender).toBe('GPT-3.5-turbo');
+    expect(gpt35Turbo.model).toBe('gpt-3.5-turbo');
+
+    const gpt4Turbo = savedMessages.find((msg) => msg.text === 'GPT-4-turbo response');
+    expect(gpt4Turbo.sender).toBe('GPT-4-turbo');
+    expect(gpt4Turbo.model).toBe('gpt-4-turbo');
+
+    const gpt4Preview = savedMessages.find((msg) => msg.text === 'GPT-4-1106-preview response');
+    expect(gpt4Preview.sender).toBe('GPT-4-1106-preview');
+    expect(gpt4Preview.model).toBe('gpt-4-1106-preview');
+
+    // Test non-GPT model (should use the model slug as sender)
+    const claude = savedMessages.find((msg) => msg.text === 'Claude response');
+    expect(claude.sender).toBe('claude-3-opus');
+    expect(claude.model).toBe('claude-3-opus');
+
+    // Test missing model slug (should default to openAISettings.model.default)
+    const noModel = savedMessages.find((msg) => msg.text === 'No model slug response');
+    // When no model slug is provided, it defaults to gpt-4o-mini which gets formatted to GPT-4o-mini
+    expect(noModel.sender).toBe('GPT-4o-mini');
+    expect(noModel.model).toBe(openAISettings.model.default);
+
+    // Verify user message is unaffected
+    const userMsg = savedMessages.find((msg) => msg.text === 'Test message');
+    expect(userMsg.sender).toBe('user');
+    expect(userMsg.isCreatedByUser).toBe(true);
+  });
+
+  it('should merge thinking content into assistant message', async () => {
+    const testData = [
+      {
+        title: 'Thinking Content Test',
+        create_time: 1000,
+        update_time: 2000,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1,
+              content: { content_type: 'text', parts: ['What is 2+2?'] },
+              metadata: {},
+            },
+            parent: 'root-node',
+            children: ['thoughts-msg'],
+          },
+          'thoughts-msg': {
+            id: 'thoughts-msg',
+            message: {
+              id: 'thoughts-msg',
+              author: { role: 'assistant' },
+              create_time: 2,
+              content: {
+                content_type: 'thoughts',
+                thoughts: [
+                  { content: 'Let me think about this math problem.' },
+                  { content: 'Adding 2 and 2 together gives 4.' },
+                ],
+              },
+              metadata: {},
+            },
+            parent: 'user-msg-1',
+            children: ['reasoning-recap-msg'],
+          },
+          'reasoning-recap-msg': {
+            id: 'reasoning-recap-msg',
+            message: {
+              id: 'reasoning-recap-msg',
+              author: { role: 'assistant' },
+              create_time: 3,
+              content: {
+                content_type: 'reasoning_recap',
+                recap_text: 'Thought for 2 seconds',
+              },
+              metadata: {},
+            },
+            parent: 'thoughts-msg',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 4,
+              content: { content_type: 'text', parts: ['The answer is 4.'] },
+              metadata: {},
+            },
+            parent: 'reasoning-recap-msg',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    // Should only have 2 messages: user message and assistant response
+    // (thoughts and reasoning_recap should be merged/skipped)
+    expect(savedMessages).toHaveLength(2);
+
+    const userMsg = savedMessages.find((msg) => msg.text === 'What is 2+2?');
+    const assistantMsg = savedMessages.find((msg) => msg.text === 'The answer is 4.');
+
+    expect(userMsg).toBeDefined();
+    expect(assistantMsg).toBeDefined();
+
+    // Assistant message should have content array with thinking block
+    expect(assistantMsg.content).toBeDefined();
+    expect(assistantMsg.content).toHaveLength(2);
+    expect(assistantMsg.content[0].type).toBe('think');
+    expect(assistantMsg.content[0].think).toContain('Let me think about this math problem.');
+    expect(assistantMsg.content[0].think).toContain('Adding 2 and 2 together gives 4.');
+    expect(assistantMsg.content[1].type).toBe('text');
+    expect(assistantMsg.content[1].text).toBe('The answer is 4.');
+
+    // Verify parent-child relationship is correct (skips thoughts and reasoning_recap)
+    expect(assistantMsg.parentMessageId).toBe(userMsg.messageId);
+  });
+
+  it('should skip reasoning_recap and thoughts messages as separate entries', async () => {
+    const testData = [
+      {
+        title: 'Skip Thinking Messages Test',
+        create_time: 1000,
+        update_time: 2000,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1,
+              content: { content_type: 'text', parts: ['Hello'] },
+              metadata: {},
+            },
+            parent: 'root-node',
+            children: ['thoughts-msg'],
+          },
+          'thoughts-msg': {
+            id: 'thoughts-msg',
+            message: {
+              id: 'thoughts-msg',
+              author: { role: 'assistant' },
+              create_time: 2,
+              content: {
+                content_type: 'thoughts',
+                thoughts: [{ content: 'Thinking...' }],
+              },
+              metadata: {},
+            },
+            parent: 'user-msg-1',
+            children: ['reasoning-recap-msg'],
+          },
+          'reasoning-recap-msg': {
+            id: 'reasoning-recap-msg',
+            message: {
+              id: 'reasoning-recap-msg',
+              author: { role: 'assistant' },
+              create_time: 3,
+              content: {
+                content_type: 'reasoning_recap',
+                recap_text: 'Thought for 1 second',
+              },
+              metadata: {},
+            },
+            parent: 'thoughts-msg',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 4,
+              content: { content_type: 'text', parts: ['Hi there!'] },
+              metadata: {},
+            },
+            parent: 'reasoning-recap-msg',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    // Verify no messages have thoughts or reasoning_recap content types
+    const thoughtsMessages = savedMessages.filter(
+      (msg) =>
+        msg.text === '' || msg.text?.includes('Thinking...') || msg.text?.includes('Thought for'),
+    );
+    expect(thoughtsMessages).toHaveLength(0);
+
+    // Only user and assistant text messages should be saved
+    expect(savedMessages).toHaveLength(2);
+    expect(savedMessages.map((m) => m.text).sort()).toEqual(['Hello', 'Hi there!'].sort());
+  });
+
+  it('should set createdAt from ChatGPT create_time', async () => {
+    const testData = [
+      {
+        title: 'Timestamp Test',
+        create_time: 1000,
+        update_time: 2000,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1000,
+              content: { content_type: 'text', parts: ['Test message'] },
+              metadata: {},
+            },
+            parent: 'root-node',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 2000,
+              content: { content_type: 'text', parts: ['Response'] },
+              metadata: {},
+            },
+            parent: 'user-msg-1',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    const userMsg = savedMessages.find((msg) => msg.text === 'Test message');
+    const assistantMsg = savedMessages.find((msg) => msg.text === 'Response');
+
+    // Verify createdAt is set from create_time (converted from Unix timestamp)
+    expect(userMsg.createdAt).toEqual(new Date(1000 * 1000));
+    expect(assistantMsg.createdAt).toEqual(new Date(2000 * 1000));
   });
 });
 
@@ -623,12 +1274,9 @@ describe('processAssistantMessage', () => {
       results.push(duration);
     });
 
-    // Check if processing time increases exponentially
-    // In a ReDoS vulnerability, time would roughly double with each size increase
-    for (let i = 1; i < results.length; i++) {
-      const ratio = results[i] / results[i - 1];
-      expect(ratio).toBeLessThan(3); // Allow for CI environment variability while still catching ReDoS
-      console.log(`Size ${sizes[i]} processing time ratio: ${ratio}`);
+    // Each size should complete well under 100ms; a ReDoS would cause exponential blowup
+    for (let i = 0; i < results.length; i++) {
+      expect(results[i]).toBeLessThan(100);
     }
 
     // Also test with the exact payload from the security report
@@ -657,5 +1305,303 @@ describe('processAssistantMessage', () => {
 
     // The processing should complete quickly (under 100ms)
     expect(duration).toBeLessThan(100);
+  });
+});
+
+describe('importClaudeConvo', () => {
+  it('should import basic Claude conversation correctly', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Test Conversation',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello Claude' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z',
+            content: [{ type: 'text', text: 'Hello! How can I help you?' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'startConversation');
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.anthropic);
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(2);
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
+      'Test Conversation',
+      expect.any(Date),
+    );
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    // Check user message
+    const userMsg = savedMessages.find((msg) => msg.text === 'Hello Claude');
+    expect(userMsg.isCreatedByUser).toBe(true);
+    expect(userMsg.sender).toBe('user');
+    expect(userMsg.endpoint).toBe(EModelEndpoint.anthropic);
+
+    // Check assistant message
+    const assistantMsg = savedMessages.find((msg) => msg.text === 'Hello! How can I help you?');
+    expect(assistantMsg.isCreatedByUser).toBe(false);
+    expect(assistantMsg.sender).toBe('Claude');
+    expect(assistantMsg.parentMessageId).toBe(userMsg.messageId);
+  });
+
+  it('should merge thinking content into assistant message', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Thinking Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'What is 2+2?' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z',
+            content: [
+              { type: 'thinking', thinking: 'Let me calculate this simple math problem.' },
+              { type: 'text', text: 'The answer is 4.' },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    const assistantMsg = savedMessages.find((msg) => msg.text === 'The answer is 4.');
+
+    expect(assistantMsg.content).toBeDefined();
+    expect(assistantMsg.content).toHaveLength(2);
+    expect(assistantMsg.content[0].type).toBe('think');
+    expect(assistantMsg.content[0].think).toBe('Let me calculate this simple math problem.');
+    expect(assistantMsg.content[1].type).toBe('text');
+    expect(assistantMsg.content[1].text).toBe('The answer is 4.');
+  });
+
+  it('should not include model field (Claude exports do not contain model info)', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'No Model Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    // Model should not be explicitly set (will use ImportBatchBuilder default)
+    expect(savedMessages[0]).not.toHaveProperty('model');
+  });
+
+  it('should correct timestamp inversions (child before parent)', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Timestamp Inversion Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:05.000Z', // Later timestamp
+            content: [{ type: 'text', text: 'First message' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z', // Earlier timestamp (inverted)
+            content: [{ type: 'text', text: 'Second message' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    const firstMsg = savedMessages.find((msg) => msg.text === 'First message');
+    const secondMsg = savedMessages.find((msg) => msg.text === 'Second message');
+
+    // Second message should have timestamp adjusted to be after first
+    expect(new Date(secondMsg.createdAt).getTime()).toBeGreaterThan(
+      new Date(firstMsg.createdAt).getTime(),
+    );
+  });
+
+  it('should use conversation create_time for null message timestamps', async () => {
+    const convCreateTime = '2025-01-15T10:00:00.000Z';
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Null Timestamp Test',
+        created_at: convCreateTime,
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: null, // Null timestamp
+            content: [{ type: 'text', text: 'Message with null time' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    expect(savedMessages[0].createdAt).toEqual(new Date(convCreateTime));
+  });
+
+  it('should use text field as fallback when content array is empty', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Text Fallback Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            text: 'Fallback text content',
+            content: [], // Empty content array
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    expect(savedMessages[0].text).toBe('Fallback text content');
+  });
+
+  it('should skip empty messages', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Skip Empty Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Valid message' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z',
+            content: [], // Empty content
+            text: '', // Empty text
+          },
+          {
+            uuid: 'msg-3',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:03.000Z',
+            content: [{ type: 'text', text: 'Another valid message' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    // Should only save 2 messages (empty one skipped)
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('should use default name for unnamed conversations', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: '', // Empty name
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
+      'Imported Claude Chat',
+      expect.any(Date),
+    );
   });
 });

@@ -1,7 +1,51 @@
 const { Tool } = require('@langchain/core/tools');
-const { z } = require('zod');
 const { getEnvironmentVariable } = require('@langchain/core/utils/env');
 const fetch = require('node-fetch');
+
+const openWeatherJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['help', 'current_forecast', 'timestamp', 'daily_aggregation', 'overview'],
+      description: 'The action to perform',
+    },
+    city: {
+      type: 'string',
+      description: 'City name for geocoding if lat/lon not provided',
+    },
+    lat: {
+      type: 'number',
+      description: 'Latitude coordinate',
+    },
+    lon: {
+      type: 'number',
+      description: 'Longitude coordinate',
+    },
+    exclude: {
+      type: 'string',
+      description: 'Parts to exclude from the response',
+    },
+    units: {
+      type: 'string',
+      enum: ['Celsius', 'Kelvin', 'Fahrenheit'],
+      description: 'Temperature units',
+    },
+    lang: {
+      type: 'string',
+      description: 'Language code',
+    },
+    date: {
+      type: 'string',
+      description: 'Date in YYYY-MM-DD format for timestamp and daily_aggregation',
+    },
+    tz: {
+      type: 'string',
+      description: 'Timezone',
+    },
+  },
+  required: ['action'],
+};
 
 /**
  * Map user-friendly units to OpenWeather units.
@@ -66,17 +110,11 @@ class OpenWeather extends Tool {
     'Units: "Celsius", "Kelvin", or "Fahrenheit" (default: Celsius). ' +
     'For timestamp action, use "date" in YYYY-MM-DD format.';
 
-  schema = z.object({
-    action: z.enum(['help', 'current_forecast', 'timestamp', 'daily_aggregation', 'overview']),
-    city: z.string().optional(),
-    lat: z.number().optional(),
-    lon: z.number().optional(),
-    exclude: z.string().optional(),
-    units: z.enum(['Celsius', 'Kelvin', 'Fahrenheit']).optional(),
-    lang: z.string().optional(),
-    date: z.string().optional(), // For timestamp and daily_aggregation
-    tz: z.string().optional(),
-  });
+  schema = openWeatherJsonSchema;
+
+  static get jsonSchema() {
+    return openWeatherJsonSchema;
+  }
 
   constructor(fields = {}) {
     super();
@@ -232,7 +270,7 @@ class OpenWeather extends Tool {
 
       if (['current_forecast', 'timestamp', 'daily_aggregation', 'overview'].includes(action)) {
         if (typeof finalLat !== 'number' || typeof finalLon !== 'number') {
-          return 'Error: lat and lon are required and must be numbers for this action (or specify \'city\').';
+          return "Error: lat and lon are required and must be numbers for this action (or specify 'city').";
         }
       }
 
@@ -243,7 +281,7 @@ class OpenWeather extends Tool {
       let dt;
       if (action === 'timestamp') {
         if (!date) {
-          return 'Error: For timestamp action, a \'date\' in YYYY-MM-DD format is required.';
+          return "Error: For timestamp action, a 'date' in YYYY-MM-DD format is required.";
         }
         dt = this.convertDateToUnix(date);
       }

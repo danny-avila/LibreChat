@@ -209,24 +209,19 @@ describe('access middleware', () => {
         permissions: {
           [PermissionTypes.AGENTS]: {
             [Permissions.USE]: true,
-            [Permissions.SHARED_GLOBAL]: false,
+            [Permissions.SHARE]: false,
           },
         },
       } as unknown as IRole;
 
       defaultParams.getRoleByName.mockResolvedValue(mockRole);
 
-      const checkObject = {
-        projectIds: ['project1'],
-        removeProjectIds: ['project2'],
-      };
+      const checkObject = { id: 'agent123' };
 
       const result = await checkAccess({
         ...defaultParams,
-        permissions: [Permissions.USE, Permissions.SHARED_GLOBAL],
-        bodyProps: {
-          [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
-        } as Record<Permissions, string[]>,
+        permissions: [Permissions.USE, Permissions.SHARE],
+        bodyProps: { [Permissions.SHARE]: ['id'] } as Record<Permissions, string[]>,
         checkObject,
       });
       expect(result).toBe(true);
@@ -237,24 +232,19 @@ describe('access middleware', () => {
         name: 'user',
         permissions: {
           [PermissionTypes.AGENTS]: {
-            [Permissions.SHARED_GLOBAL]: false,
+            [Permissions.SHARE]: false,
           },
         },
       } as unknown as IRole;
 
       defaultParams.getRoleByName.mockResolvedValue(mockRole);
 
-      const checkObject = {
-        projectIds: ['project1'],
-        // missing removeProjectIds
-      };
+      const checkObject = {};
 
       const result = await checkAccess({
         ...defaultParams,
-        permissions: [Permissions.SHARED_GLOBAL],
-        bodyProps: {
-          [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
-        } as Record<Permissions, string[]>,
+        permissions: [Permissions.SHARE],
+        bodyProps: {} as Record<Permissions, string[]>,
         checkObject,
       });
       expect(result).toBe(false);
@@ -337,23 +327,18 @@ describe('access middleware', () => {
           [PermissionTypes.AGENTS]: {
             [Permissions.USE]: true,
             [Permissions.CREATE]: true,
-            [Permissions.SHARED_GLOBAL]: false,
+            [Permissions.SHARE]: false,
           },
         },
       } as unknown as IRole;
 
       mockGetRoleByName.mockResolvedValue(mockRole);
-      mockReq.body = {
-        projectIds: ['project1'],
-        removeProjectIds: ['project2'],
-      };
+      mockReq.body = { id: 'agent123' };
 
       const middleware = generateCheckAccess({
         permissionType: PermissionTypes.AGENTS,
-        permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARED_GLOBAL],
-        bodyProps: {
-          [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
-        } as Record<Permissions, string[]>,
+        permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARE],
+        bodyProps: { [Permissions.SHARE]: ['id'] } as Record<Permissions, string[]>,
         getRoleByName: mockGetRoleByName,
       });
 
@@ -490,7 +475,7 @@ describe('access middleware', () => {
           [PermissionTypes.PROMPTS]: {
             [Permissions.USE]: true,
             [Permissions.CREATE]: true,
-            [Permissions.SHARED_GLOBAL]: false,
+            [Permissions.SHARE]: false,
           },
         },
       } as unknown as IRole;

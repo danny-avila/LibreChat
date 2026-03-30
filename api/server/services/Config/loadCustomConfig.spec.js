@@ -48,16 +48,28 @@ const axios = require('axios');
 const { loadYaml } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const loadCustomConfig = require('./loadCustomConfig');
-const getLogStores = require('~/cache/getLogStores');
 
 describe('loadCustomConfig', () => {
-  const mockSet = jest.fn();
-  const mockCache = { set: mockSet };
+  const originalExit = process.exit;
+  const mockExit = jest.fn((code) => {
+    throw new Error(`process.exit called with "${code}"`);
+  });
+
+  beforeAll(() => {
+    process.exit = mockExit;
+  });
+
+  afterAll(() => {
+    process.exit = originalExit;
+  });
 
   beforeEach(() => {
     jest.resetAllMocks();
+    // Re-apply the exit mock implementation after resetAllMocks
+    mockExit.mockImplementation((code) => {
+      throw new Error(`process.exit called with "${code}"`);
+    });
     delete process.env.CONFIG_PATH;
-    getLogStores.mockReturnValue(mockCache);
   });
 
   it('should return null and log error if remote config fetch fails', async () => {
@@ -94,26 +106,43 @@ describe('loadCustomConfig', () => {
     const result = await loadCustomConfig();
 
     expect(result).toEqual(mockConfig);
-    expect(mockSet).toHaveBeenCalledWith(expect.anything(), mockConfig);
   });
 
   it('should return null and log if config schema validation fails', async () => {
     const invalidConfig = { invalidField: true };
     process.env.CONFIG_PATH = 'invalidConfig.yaml';
+    process.env.CONFIG_BYPASS_VALIDATION = 'true';
     loadYaml.mockReturnValueOnce(invalidConfig);
 
     const result = await loadCustomConfig();
 
     expect(result).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'CONFIG_BYPASS_VALIDATION is enabled. Continuing with default configuration despite validation errors.',
+    );
+    delete process.env.CONFIG_BYPASS_VALIDATION;
+  });
+
+  it('should call process.exit(1) when config validation fails without bypass', async () => {
+    const invalidConfig = { invalidField: true };
+    process.env.CONFIG_PATH = 'invalidConfig.yaml';
+    loadYaml.mockReturnValueOnce(invalidConfig);
+
+    await expect(loadCustomConfig()).rejects.toThrow('process.exit called with "1"');
+    expect(logger.error).toHaveBeenCalledWith(
+      'Exiting due to invalid configuration. Set CONFIG_BYPASS_VALIDATION=true to bypass this check.',
+    );
   });
 
   it('should handle and return null on YAML parse error for a string response from remote', async () => {
     process.env.CONFIG_PATH = 'http://example.com/config.yaml';
+    process.env.CONFIG_BYPASS_VALIDATION = 'true';
     axios.get.mockResolvedValue({ data: 'invalidYAMLContent' });
 
     const result = await loadCustomConfig();
 
     expect(result).toBeNull();
+    delete process.env.CONFIG_BYPASS_VALIDATION;
   });
 
   it('should return the custom config object for a valid remote config file', async () => {
@@ -134,7 +163,6 @@ describe('loadCustomConfig', () => {
     axios.get.mockResolvedValue({ data: mockConfig });
     const result = await loadCustomConfig();
     expect(result).toEqual(mockConfig);
-    expect(mockSet).toHaveBeenCalledWith(expect.anything(), mockConfig);
   });
 
   it('should return null if the remote config file is not found', async () => {
@@ -168,7 +196,6 @@ describe('loadCustomConfig', () => {
     process.env.CONFIG_PATH = 'validConfig.yaml';
     loadYaml.mockReturnValueOnce(mockConfig);
     await loadCustomConfig();
-    expect(mockSet).not.toHaveBeenCalled();
   });
 
   it('should log the loaded custom config', async () => {

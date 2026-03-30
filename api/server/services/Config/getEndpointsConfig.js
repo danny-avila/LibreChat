@@ -1,3 +1,5 @@
+const { scopedCacheKey } = require('@librechat/data-schemas');
+const { loadCustomEndpointsConfig } = require('@librechat/api');
 const {
   CacheKeys,
   EModelEndpoint,
@@ -6,8 +8,8 @@ const {
   defaultAgentCapabilities,
 } = require('librechat-data-provider');
 const loadDefaultEndpointsConfig = require('./loadDefaultEConfig');
-const loadConfigEndpoints = require('./loadConfigEndpoints');
 const getLogStores = require('~/cache/getLogStores');
+const { getAppConfig } = require('./app');
 
 /**
  *
@@ -16,19 +18,55 @@ const getLogStores = require('~/cache/getLogStores');
  */
 async function getEndpointsConfig(req) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const cachedEndpointsConfig = await cache.get(CacheKeys.ENDPOINT_CONFIG);
+  const cacheKey = scopedCacheKey(CacheKeys.ENDPOINT_CONFIG);
+  const cachedEndpointsConfig = await cache.get(cacheKey);
   if (cachedEndpointsConfig) {
-    return cachedEndpointsConfig;
+    if (cachedEndpointsConfig.gptPlugins) {
+      await cache.delete(cacheKey);
+    } else {
+      return cachedEndpointsConfig;
+    }
   }
 
-  const defaultEndpointsConfig = await loadDefaultEndpointsConfig(req);
-  const customConfigEndpoints = await loadConfigEndpoints(req);
+  const appConfig =
+    req.config ?? (await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId }));
+  const defaultEndpointsConfig = await loadDefaultEndpointsConfig(appConfig);
+  const customEndpointsConfig = loadCustomEndpointsConfig(appConfig?.endpoints?.custom);
 
   /** @type {TEndpointsConfig} */
-  const mergedConfig = { ...defaultEndpointsConfig, ...customConfigEndpoints };
-  if (mergedConfig[EModelEndpoint.assistants] && req.app.locals?.[EModelEndpoint.assistants]) {
+  const mergedConfig = {
+    ...defaultEndpointsConfig,
+    ...customEndpointsConfig,
+  };
+
+  if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]) {
+    /** @type {Omit<TConfig, 'order'>} */
+    mergedConfig[EModelEndpoint.azureOpenAI] = {
+      userProvide: false,
+    };
+  }
+
+  // Enable Anthropic endpoint when Vertex AI is configured in YAML
+  if (appConfig.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig?.enabled) {
+    /** @type {Omit<TConfig, 'order'>} */
+    mergedConfig[EModelEndpoint.anthropic] = {
+      userProvide: false,
+    };
+  }
+
+  if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
+    /** @type {Omit<TConfig, 'order'>} */
+    mergedConfig[EModelEndpoint.azureAssistants] = {
+      userProvide: false,
+    };
+  }
+
+  if (
+    mergedConfig[EModelEndpoint.assistants] &&
+    appConfig?.endpoints?.[EModelEndpoint.assistants]
+  ) {
     const { disableBuilder, retrievalModels, capabilities, version, ..._rest } =
-      req.app.locals[EModelEndpoint.assistants];
+      appConfig.endpoints[EModelEndpoint.assistants];
 
     mergedConfig[EModelEndpoint.assistants] = {
       ...mergedConfig[EModelEndpoint.assistants],
@@ -38,9 +76,9 @@ async function getEndpointsConfig(req) {
       capabilities,
     };
   }
-  if (mergedConfig[EModelEndpoint.agents] && req.app.locals?.[EModelEndpoint.agents]) {
+  if (mergedConfig[EModelEndpoint.agents] && appConfig?.endpoints?.[EModelEndpoint.agents]) {
     const { disableBuilder, capabilities, allowedProviders, ..._rest } =
-      req.app.locals[EModelEndpoint.agents];
+      appConfig.endpoints[EModelEndpoint.agents];
 
     mergedConfig[EModelEndpoint.agents] = {
       ...mergedConfig[EModelEndpoint.agents],
@@ -52,10 +90,10 @@ async function getEndpointsConfig(req) {
 
   if (
     mergedConfig[EModelEndpoint.azureAssistants] &&
-    req.app.locals?.[EModelEndpoint.azureAssistants]
+    appConfig?.endpoints?.[EModelEndpoint.azureAssistants]
   ) {
     const { disableBuilder, retrievalModels, capabilities, version, ..._rest } =
-      req.app.locals[EModelEndpoint.azureAssistants];
+      appConfig.endpoints[EModelEndpoint.azureAssistants];
 
     mergedConfig[EModelEndpoint.azureAssistants] = {
       ...mergedConfig[EModelEndpoint.azureAssistants],
@@ -66,8 +104,8 @@ async function getEndpointsConfig(req) {
     };
   }
 
-  if (mergedConfig[EModelEndpoint.bedrock] && req.app.locals?.[EModelEndpoint.bedrock]) {
-    const { availableRegions } = req.app.locals[EModelEndpoint.bedrock];
+  if (mergedConfig[EModelEndpoint.bedrock] && appConfig?.endpoints?.[EModelEndpoint.bedrock]) {
+    const { availableRegions } = appConfig.endpoints[EModelEndpoint.bedrock];
     mergedConfig[EModelEndpoint.bedrock] = {
       ...mergedConfig[EModelEndpoint.bedrock],
       availableRegions,
@@ -76,7 +114,7 @@ async function getEndpointsConfig(req) {
 
   const endpointsConfig = orderEndpointsConfig(mergedConfig);
 
-  await cache.set(CacheKeys.ENDPOINT_CONFIG, endpointsConfig);
+  await cache.set(cacheKey, endpointsConfig);
   return endpointsConfig;
 }
 
@@ -86,7 +124,7 @@ async function getEndpointsConfig(req) {
  * @returns {Promise<boolean>}
  */
 const checkCapability = async (req, capability) => {
-  const isAgents = isAgentsEndpoint(req.body?.original_endpoint || req.body?.endpoint);
+  const isAgents = isAgentsEndpoint(req.body?.endpointType || req.body?.endpoint);
   const endpointsConfig = await getEndpointsConfig(req);
   const capabilities =
     isAgents || endpointsConfig?.[EModelEndpoint.agents]?.capabilities != null

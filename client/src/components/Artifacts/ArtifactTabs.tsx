@@ -1,31 +1,28 @@
 import { useRef, useEffect } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
+import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
+import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
+import { useCodeState } from '~/Providers/EditorContext';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
-import { useAutoScroll } from '~/hooks/Artifacts/useAutoScroll';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
 import { useGetStartupConfig } from '~/data-provider';
 import { ArtifactPreview } from './ArtifactPreview';
-import { useEditorContext } from '~/Providers';
-import { cn } from '~/utils';
 
 export default function ArtifactTabs({
   artifact,
-  isMermaid,
-  editorRef,
   previewRef,
-  isSubmitting,
+  isSharedConvo,
 }: {
   artifact: Artifact;
-  isMermaid: boolean;
-  isSubmitting: boolean;
-  editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
+  isSharedConvo?: boolean;
 }) {
-  const { currentCode, setCurrentCode } = useEditorContext();
+  const { currentCode, setCurrentCode } = useCodeState();
   const { data: startupConfig } = useGetStartupConfig();
+  const monacoRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const lastIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (artifact.id !== lastIdRef.current) {
       setCurrentCode(undefined);
@@ -33,31 +30,23 @@ export default function ArtifactTabs({
     lastIdRef.current = artifact.id;
   }, [setCurrentCode, artifact.id]);
 
-  const content = artifact.content ?? '';
-  const contentRef = useRef<HTMLDivElement>(null);
-  useAutoScroll({ ref: contentRef, content, isSubmitting });
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
+
   return (
-    <>
+    <div className="flex h-full w-full flex-col">
       <Tabs.Content
-        ref={contentRef}
         value="code"
         id="artifacts-code"
-        className={cn('flex-grow overflow-auto')}
+        className="h-full w-full flex-grow overflow-auto"
+        tabIndex={-1}
       >
-        <ArtifactCodeEditor
-          files={files}
-          fileKey={fileKey}
-          template={template}
-          artifact={artifact}
-          editorRef={editorRef}
-          sharedProps={sharedProps}
-          isSubmitting={isSubmitting}
-        />
+        <ArtifactCodeEditor artifact={artifact} monacoRef={monacoRef} readOnly={isSharedConvo} />
       </Tabs.Content>
+
       <Tabs.Content
         value="preview"
-        className={cn('flex-grow overflow-auto', isMermaid ? 'bg-[#282C34]' : 'bg-white')}
+        className="h-full w-full flex-grow overflow-hidden"
+        tabIndex={-1}
       >
         <ArtifactPreview
           files={files}
@@ -69,6 +58,6 @@ export default function ArtifactTabs({
           startupConfig={startupConfig}
         />
       </Tabs.Content>
-    </>
+    </div>
   );
 }

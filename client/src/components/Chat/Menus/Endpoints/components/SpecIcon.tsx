@@ -1,7 +1,8 @@
 import React, { memo } from 'react';
+import { getEndpointField } from 'librechat-data-provider';
 import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
-import { getModelSpecIconURL, getIconKey, getEndpointField } from '~/utils';
+import { getModelSpecIconURL, getIconKey } from '~/utils';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
 

@@ -29,6 +29,23 @@ export default function NavToggle({
   const topBarRotation = side === 'right' ? `-${rotation}` : rotation;
   const bottomBarRotation = side === 'right' ? rotation : `-${rotation}`;
 
+  let sidebarLabel;
+  let actionKey;
+
+  if (side === 'left') {
+    sidebarLabel = localize('com_ui_chat_history');
+  } else {
+    sidebarLabel = localize('com_nav_control_panel');
+  }
+
+  if (navVisible) {
+    actionKey = 'com_ui_close_var';
+  } else {
+    actionKey = 'com_ui_open_var';
+  }
+
+  const ariaDescription = localize(actionKey, { 0: sidebarLabel });
+
   return (
     <div
       className={cn(
@@ -42,15 +59,13 @@ export default function NavToggle({
     >
       <TooltipAnchor
         side={side === 'right' ? 'left' : 'right'}
-        aria-label={side === 'left' ? localize('com_ui_chat_history') : localize('com_ui_controls')}
+        aria-label={ariaDescription}
         aria-expanded={navVisible}
         aria-controls={side === 'left' ? 'chat-history-nav' : 'controls-nav'}
         id={`toggle-${side}-nav`}
         onClick={onToggle}
         role="button"
-        description={
-          navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')
-        }
+        description={ariaDescription}
         className="flex items-center justify-center"
         tabIndex={0}
       >

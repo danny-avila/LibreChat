@@ -1,13 +1,11 @@
-import React, { useRef, useState, useMemo, useEffect } from 'react';
-import copy from 'copy-to-clipboard';
-import { InfoIcon } from 'lucide-react';
+import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import { Tools } from 'librechat-data-provider';
-import { Clipboard, CheckMark } from '@librechat/client';
 import type { CodeBarProps } from '~/common';
+import FloatingCodeBar from '~/components/Messages/Content/FloatingCodeBar';
 import ResultSwitcher from '~/components/Messages/Content/ResultSwitcher';
 import { useToolCallsMapContext, useMessageContext } from '~/Providers';
 import { LogContent } from '~/components/Chat/Messages/Content/Parts';
-import RunCode from '~/components/Messages/Content/RunCode';
+import CodeBar from '~/components/Messages/Content/CodeBar';
 import { useLocalize } from '~/hooks';
 import cn from '~/utils/cn';
 
@@ -19,57 +17,6 @@ type CodeBlockProps = Pick<
   classProp?: string;
 };
 
-const CodeBar: React.FC<CodeBarProps> = React.memo(
-  ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true }) => {
-    const localize = useLocalize();
-    const [isCopied, setIsCopied] = useState(false);
-    return (
-      <div className="relative flex items-center justify-between rounded-tl-md rounded-tr-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200 dark:bg-gray-700">
-        <span className="">{lang}</span>
-        {plugin === true ? (
-          <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-white/50" />
-        ) : (
-          <div className="flex items-center justify-center gap-4">
-            {allowExecution === true && (
-              <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
-            )}
-            <button
-              type="button"
-              className={cn(
-                'ml-auto flex gap-2',
-                error === true ? 'h-4 w-4 items-start text-white/50' : '',
-              )}
-              onClick={async () => {
-                const codeString = codeRef.current?.textContent;
-                if (codeString != null) {
-                  setIsCopied(true);
-                  copy(codeString.trim(), { format: 'text/plain' });
-
-                  setTimeout(() => {
-                    setIsCopied(false);
-                  }, 3000);
-                }
-              }}
-            >
-              {isCopied ? (
-                <>
-                  <CheckMark className="h-[18px] w-[18px]" />
-                  {error === true ? '' : localize('com_ui_copied')}
-                </>
-              ) : (
-                <>
-                  <Clipboard />
-                  {error === true ? '' : localize('com_ui_copy_code')}
-                </>
-              )}
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  },
-);
-
 const CodeBlock: React.FC<CodeBlockProps> = ({
   lang,
   blockIndex,
@@ -79,7 +26,13 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   plugin = null,
   error,
 }) => {
+  const localize = useLocalize();
   const codeRef = useRef<HTMLElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const codeBarRef = useRef<HTMLDivElement>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isCodeBarVisible, setIsCodeBarVisible] = useState(true);
+
   const toolCallsMap = useToolCallsMapContext();
   const { messageId, partIndex } = useMessageContext();
   const key = allowExecution
@@ -97,37 +50,76 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     }
   }, [fetchedToolCalls]);
 
-  const currentToolCall = useMemo(() => toolCalls?.[currentIndex], [toolCalls, currentIndex]);
-
-  const next = () => {
-    if (!toolCalls) {
+  useEffect(() => {
+    const el = codeBarRef.current;
+    if (!el) {
       return;
     }
-    if (currentIndex < toolCalls.length - 1) {
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsCodeBarVisible(entry.isIntersecting),
+      { root: null, threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleFocus = useCallback(() => setIsHovered(true), []);
+
+  const handleBlur = useCallback((e: React.FocusEvent) => {
+    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+      setIsHovered(false);
+    }
+  }, []);
+
+  const handleMouseEnter = useCallback(() => setIsHovered(true), []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (!containerRef.current?.contains(document.activeElement)) {
+      setIsHovered(false);
+    }
+  }, []);
+
+  const currentToolCall = useMemo(() => toolCalls?.[currentIndex], [toolCalls, currentIndex]);
+
+  const next = useCallback(() => {
+    if (toolCalls && currentIndex < toolCalls.length - 1) {
       setCurrentIndex(currentIndex + 1);
     }
-  };
+  }, [toolCalls, currentIndex]);
 
-  const previous = () => {
+  const previous = useCallback(() => {
     if (currentIndex > 0) {
       setCurrentIndex(currentIndex - 1);
     }
-  };
+  }, [currentIndex]);
 
   const isNonCode = !!(plugin === true || error === true);
   const language = isNonCode ? 'json' : lang;
+  const showFloating = isHovered && !isCodeBarVisible;
 
   return (
-    <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
-      <CodeBar
-        lang={lang}
-        error={error}
-        codeRef={codeRef}
-        blockIndex={blockIndex}
-        plugin={plugin === true}
-        allowExecution={allowExecution}
-      />
-      <div className={cn(classProp, 'overflow-y-auto p-4')}>
+    <div
+      ref={containerRef}
+      className="relative w-full overflow-hidden rounded-xl border border-border-light text-xs"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+    >
+      <div ref={codeBarRef}>
+        <CodeBar
+          lang={lang}
+          error={error}
+          codeRef={codeRef}
+          blockIndex={blockIndex}
+          plugin={plugin === true}
+          allowExecution={allowExecution}
+        />
+      </div>
+      <div
+        className={cn(classProp, 'overflow-y-auto bg-surface-chat p-4 dark:bg-surface-primary-alt')}
+      >
         <code
           ref={codeRef}
           className={cn(
@@ -137,15 +129,22 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
           {codeChildren}
         </code>
       </div>
+      <FloatingCodeBar
+        lang={lang}
+        error={error}
+        codeRef={codeRef}
+        blockIndex={blockIndex}
+        plugin={plugin === true}
+        allowExecution={allowExecution}
+        isVisible={showFloating}
+      />
       {allowExecution === true && toolCalls && toolCalls.length > 0 && (
         <>
-          <div className="bg-gray-700 p-4 text-xs">
-            <div
-              className="prose flex flex-col-reverse text-white"
-              style={{
-                color: 'white',
-              }}
-            >
+          <div className="border-t border-border-light bg-surface-primary-alt p-4 text-xs dark:bg-transparent">
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+              {localize('com_ui_output')}
+            </div>
+            <div className="flex flex-col-reverse text-text-primary">
               <pre className="shrink-0">
                 <LogContent
                   output={(currentToolCall?.result as string | undefined) ?? ''}

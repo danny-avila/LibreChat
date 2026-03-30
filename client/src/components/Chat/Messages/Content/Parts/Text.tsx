@@ -2,7 +2,7 @@ import { memo, useMemo, ReactElement } from 'react';
 import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
-import { useChatContext, useMessageContext } from '~/Providers';
+import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -17,15 +17,10 @@ type ContentType =
   | ReactElement<React.ComponentProps<typeof MarkdownLite>>
   | ReactElement;
 
-const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => {
-  const { messageId } = useMessageContext();
-  const { isSubmitting, latestMessage } = useChatContext();
+const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: TextPartProps) {
+  const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
-  const isLatestMessage = useMemo(
-    () => messageId === latestMessage?.messageId,
-    [messageId, latestMessage?.messageId],
-  );
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
@@ -51,5 +46,6 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
     </div>
   );
 });
+TextPart.displayName = 'TextPart';
 
 export default TextPart;

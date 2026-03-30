@@ -1,8 +1,9 @@
+const bcrypt = require('bcryptjs');
 const { logger } = require('@librechat/data-schemas');
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
-const { isEnabled, checkEmailConfig } = require('~/server/utils');
-const { findUser, comparePassword, updateUser } = require('~/models');
+const { isEnabled, checkEmailConfig, comparePassword } = require('@librechat/api');
+const { findUser, updateUser } = require('~/models');
 const { loginSchema } = require('./validators');
 
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
@@ -22,7 +23,7 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: validationError });
     }
 
-    const user = await findUser({ email: email.trim() });
+    const user = await findUser({ email: email.trim() }, '+password');
     if (!user) {
       logError('Passport Local Strategy - User Not Found', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
@@ -35,7 +36,7 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: 'Email does not exist.' });
     }
 
-    const isMatch = await comparePassword(user, password);
+    const isMatch = await comparePassword(user, password, { compare: bcrypt.compare });
     if (!isMatch) {
       logError('Passport Local Strategy - Password does not match', { isMatch });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);

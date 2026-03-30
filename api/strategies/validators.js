@@ -1,5 +1,7 @@
 const { z } = require('zod');
 
+const MIN_PASSWORD_LENGTH = parseInt(process.env.MIN_PASSWORD_LENGTH, 10) || 8;
+
 const allowedCharactersRegex = new RegExp(
   '^[' +
     'a-zA-Z0-9_.@#$%&*()' + // Basic Latin characters and symbols
@@ -32,7 +34,7 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z
     .string()
-    .min(8)
+    .min(MIN_PASSWORD_LENGTH)
     .max(128)
     .refine((value) => value.trim().length > 0, {
       message: 'Password cannot be only spaces',
@@ -50,14 +52,14 @@ const registerSchema = z
     email: z.string().email(),
     password: z
       .string()
-      .min(8)
+      .min(MIN_PASSWORD_LENGTH)
       .max(128)
       .refine((value) => value.trim().length > 0, {
         message: 'Password cannot be only spaces',
       }),
     confirm_password: z
       .string()
-      .min(8)
+      .min(MIN_PASSWORD_LENGTH)
       .max(128)
       .refine((value) => value.trim().length > 0, {
         message: 'Password cannot be only spaces',

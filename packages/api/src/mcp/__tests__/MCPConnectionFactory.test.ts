@@ -1,0 +1,927 @@
+import { logger } from '@librechat/data-schemas';
+import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { FlowStateManager } from '~/flow/manager';
+import type { MCPOAuthTokens } from '~/mcp/oauth';
+import type * as t from '~/mcp/types';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPConnection } from '~/mcp/connection';
+import { MCPOAuthHandler } from '~/mcp/oauth';
+import { processMCPEnv } from '~/utils';
+
+jest.mock('~/mcp/connection');
+jest.mock('~/mcp/oauth');
+jest.mock('~/utils');
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
+const mockLogger = logger as jest.Mocked<typeof logger>;
+const mockProcessMCPEnv = processMCPEnv as jest.MockedFunction<typeof processMCPEnv>;
+const mockMCPConnection = MCPConnection as jest.MockedClass<typeof MCPConnection>;
+const mockMCPOAuthHandler = MCPOAuthHandler as jest.Mocked<typeof MCPOAuthHandler>;
+
+describe('MCPConnectionFactory', () => {
+  let mockUser: IUser | undefined;
+  let mockServerConfig: t.MCPOptions;
+  let mockFlowManager: jest.Mocked<FlowStateManager<MCPOAuthTokens | null>>;
+  let mockConnectionInstance: jest.Mocked<MCPConnection>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUser = {
+      id: 'user123',
+      email: 'test@example.com',
+    } as IUser;
+
+    mockServerConfig = {
+      command: 'node',
+      args: ['server.js'],
+      initTimeout: 5000,
+    } as t.MCPOptions;
+
+    mockFlowManager = {
+      initFlow: jest.fn().mockResolvedValue(undefined),
+      createFlow: jest.fn(),
+      createFlowWithHandler: jest.fn(),
+      getFlowState: jest.fn(),
+      deleteFlow: jest.fn().mockResolvedValue(true),
+    } as unknown as jest.Mocked<FlowStateManager<MCPOAuthTokens | null>>;
+
+    mockConnectionInstance = {
+      connect: jest.fn(),
+      isConnected: jest.fn(),
+      setOAuthTokens: jest.fn(),
+      on: jest.fn().mockReturnValue(mockConnectionInstance),
+      once: jest.fn().mockReturnValue(mockConnectionInstance),
+      off: jest.fn().mockReturnValue(mockConnectionInstance),
+      removeListener: jest.fn().mockReturnValue(mockConnectionInstance),
+      emit: jest.fn(),
+    } as unknown as jest.Mocked<MCPConnection>;
+
+    mockMCPConnection.mockImplementation(() => mockConnectionInstance);
+    mockProcessMCPEnv.mockReturnValue(mockServerConfig);
+  });
+
+  describe('static create method', () => {
+    it('should create a basic connection without OAuth', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(basicOptions);
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith({
+        options: mockServerConfig,
+        dbSourced: undefined,
+      });
+      expect(mockMCPConnection).toHaveBeenCalledWith({
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+        userId: undefined,
+        oauthTokens: null,
+        useSSRFProtection: false,
+      });
+      expect(mockConnectionInstance.connect).toHaveBeenCalled();
+    });
+
+    it('should create a connection with OAuth', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const mockTokens: MCPOAuthTokens = {
+        access_token: 'access123',
+        refresh_token: 'refresh123',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(mockTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(basicOptions, oauthOptions);
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith({
+        options: mockServerConfig,
+        user: mockUser,
+        dbSourced: undefined,
+      });
+      expect(mockMCPConnection).toHaveBeenCalledWith({
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+        userId: 'user123',
+        oauthTokens: mockTokens,
+        useSSRFProtection: false,
+      });
+    });
+  });
+
+  describe('OAuth token handling', () => {
+    it('should return null when no findToken method is provided', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      const oauthOptions: t.OAuthConnectionOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        tokenMethods: {
+          findToken: undefined as unknown as TokenMethods['findToken'],
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await MCPConnectionFactory.create(basicOptions, oauthOptions);
+
+      expect(mockFlowManager.createFlowWithHandler).not.toHaveBeenCalled();
+    });
+
+    it('should handle token retrieval errors gracefully', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('Token fetch failed'));
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(basicOptions, oauthOptions);
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockMCPConnection).toHaveBeenCalledWith({
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+        userId: 'user123',
+        oauthTokens: null,
+        useSSRFProtection: false,
+      });
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('No existing tokens found or error loading tokens'),
+        expect.any(Error),
+      );
+    });
+  });
+
+  describe('OAuth event handling', () => {
+    it('should handle oauthRequired event for returnOnOAuth scenario', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: {
+          ...mockServerConfig,
+          url: 'https://api.example.com',
+          type: 'sse' as const,
+        } as t.SSEOptions,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        returnOnOAuth: true,
+        oauthStart: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'random-state',
+          clientInfo: { client_id: 'client123' },
+        },
+      };
+
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      // createFlow runs as a background monitor — simulate it staying pending
+      mockFlowManager.createFlow.mockReturnValue(new Promise(() => {}));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail due to connection not established
+      }
+
+      expect(oauthRequiredHandler!).toBeDefined();
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalledWith(
+        'test-server',
+        'https://api.example.com',
+        'user123',
+        {},
+        undefined,
+        undefined,
+      );
+
+      // initFlow must be awaited BEFORE the redirect to guarantee state is stored
+      expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
+        'flow123',
+        'mcp_oauth',
+        expect.objectContaining(mockFlowData.flowMetadata),
+      );
+      const initCallOrder = mockFlowManager.initFlow.mock.invocationCallOrder[0];
+      const oauthStartCallOrder = (oauthOptions.oauthStart as jest.Mock).mock
+        .invocationCallOrder[0];
+      expect(initCallOrder).toBeLessThan(oauthStartCallOrder);
+
+      expect(oauthOptions.oauthStart).toHaveBeenCalledWith('https://auth.example.com');
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({
+          message: 'OAuth flow initiated - return early',
+        }),
+      );
+    });
+
+    it('should skip new OAuth flow initiation when a PENDING flow already exists (returnOnOAuth)', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+        user: mockUser,
+      };
+
+      const oauthOptions: t.OAuthConnectionOptions = {
+        user: mockUser,
+        useOAuth: true,
+        returnOnOAuth: true,
+        oauthStart: jest.fn(),
+        flowManager: mockFlowManager,
+      };
+
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        type: 'mcp_oauth',
+        metadata: { codeVerifier: 'existing-verifier' },
+        createdAt: Date.now(),
+      });
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(mockFlowManager.deleteFlow).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'OAuth flow initiated - return early' }),
+      );
+    });
+
+    it('should emit oauthFailed when initFlow fails to store flow state (returnOnOAuth)', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: {
+          ...mockServerConfig,
+          url: 'https://api.example.com',
+          type: 'sse' as const,
+        } as t.SSEOptions,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        returnOnOAuth: true,
+        oauthStart: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'state123',
+        },
+      };
+
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockFlowManager.initFlow.mockRejectedValue(new Error('Store write failed'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      // initFlow failed, so oauthStart should NOT have been called (redirect never happens)
+      expect(oauthOptions.oauthStart).not.toHaveBeenCalled();
+      // createFlow should NOT have been called since initFlow failed first
+      expect(mockFlowManager.createFlow).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'OAuth initiation failed' }),
+      );
+      expect(mockLogger.error).toHaveBeenCalled();
+    });
+
+    it('should log warnings when background createFlow monitor rejects (returnOnOAuth)', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: {
+          ...mockServerConfig,
+          url: 'https://api.example.com',
+          type: 'sse' as const,
+        } as t.SSEOptions,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        returnOnOAuth: true,
+        oauthStart: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'state123',
+        },
+      };
+
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      // Simulate the background monitor timing out
+      mockFlowManager.createFlow.mockRejectedValue(new Error('mcp_oauth flow timed out'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      // Allow the .catch handler on createFlow to execute
+      await Promise.resolve();
+
+      // initFlow should have succeeded and redirect should have happened
+      expect(mockFlowManager.initFlow).toHaveBeenCalled();
+      expect(oauthOptions.oauthStart).toHaveBeenCalledWith('https://auth.example.com');
+      // The background monitor error should be logged, not silently swallowed
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('OAuth flow monitor ended'),
+        expect.any(Error),
+      );
+    });
+
+    it('should call initFlow before createFlow in blocking OAuth path (non-returnOnOAuth)', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        oauthEnd: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'random-state',
+          clientInfo: { client_id: 'client123' },
+          metadata: {
+            token_endpoint: 'https://auth.example.com/token',
+            authorization_endpoint: 'https://auth.example.com/authorize',
+          },
+        },
+      };
+
+      const mockTokens: MCPOAuthTokens = {
+        access_token: 'access123',
+        refresh_token: 'refresh123',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      // processMCPEnv must return config with url so handleOAuthRequired proceeds
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue(mockTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      // initFlow must be called BEFORE oauthStart and createFlow
+      expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
+        'flow123',
+        'mcp_oauth',
+        expect.objectContaining(mockFlowData.flowMetadata),
+      );
+      const initCallOrder = mockFlowManager.initFlow.mock.invocationCallOrder[0];
+      const oauthStartCallOrder = (oauthOptions.oauthStart as jest.Mock).mock
+        .invocationCallOrder[0];
+      const createCallOrder = mockFlowManager.createFlow.mock.invocationCallOrder[0];
+      expect(initCallOrder).toBeLessThan(oauthStartCallOrder);
+      expect(initCallOrder).toBeLessThan(createCallOrder);
+
+      // createFlow should receive {} since initFlow already persisted metadata
+      expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
+        'flow123',
+        'mcp_oauth',
+        {},
+        undefined,
+      );
+    });
+
+    it('should delete stale flow and create new OAuth flow when existing flow is COMPLETED', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+        user: mockUser,
+      };
+
+      const oauthOptions: t.OAuthConnectionOptions = {
+        user: mockUser,
+        useOAuth: true,
+        returnOnOAuth: true,
+        oauthStart: jest.fn(),
+        flowManager: mockFlowManager,
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'user123:test-server',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'test-state',
+          codeVerifier: 'new-code-verifier-xyz',
+          clientInfo: { client_id: 'test-client' },
+          metadata: {
+            authorization_endpoint: 'https://auth.example.com/authorize',
+            token_endpoint: 'https://auth.example.com/token',
+            issuer: 'https://api.example.com',
+          },
+        },
+      };
+
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'COMPLETED',
+        type: 'mcp_oauth',
+        metadata: { codeVerifier: 'old-verifier' },
+        createdAt: Date.now() - 60000,
+      });
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockFlowManager.deleteFlow.mockResolvedValue(true);
+      // createFlow runs as a background monitor — simulate it staying pending
+      mockFlowManager.createFlow.mockReturnValue(new Promise(() => {}));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('user123:test-server', 'mcp_oauth');
+
+      // initFlow must be called after deleteFlow and before createFlow
+      const deleteCallOrder = mockFlowManager.deleteFlow.mock.invocationCallOrder[0];
+      const initCallOrder = mockFlowManager.initFlow.mock.invocationCallOrder[0];
+      const createCallOrder = mockFlowManager.createFlow.mock.invocationCallOrder[0];
+      expect(deleteCallOrder).toBeLessThan(initCallOrder);
+      expect(initCallOrder).toBeLessThan(createCallOrder);
+
+      expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
+        'user123:test-server',
+        'mcp_oauth',
+        expect.objectContaining({
+          codeVerifier: 'new-code-verifier-xyz',
+        }),
+      );
+
+      // createFlow finds the existing PENDING state written by initFlow,
+      // so metadata arg is unused (passed as {})
+      expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
+        'user123:test-server',
+        'mcp_oauth',
+        {},
+        undefined,
+      );
+    });
+  });
+
+  describe('connection retry logic', () => {
+    it('should establish connection successfully', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig, // Use default 5000ms timeout
+      };
+
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(basicOptions);
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockConnectionInstance.connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle OAuth errors during connection attempts', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const oauthError = new Error('Non-200 status code (401)');
+      (oauthError as unknown as Record<string, unknown>).isOAuthError = true;
+
+      mockConnectionInstance.connect.mockRejectedValue(oauthError);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(MCPConnectionFactory.create(basicOptions, oauthOptions)).rejects.toThrow(
+        'Non-200 status code (401)',
+      );
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('OAuth required, stopping connection attempts'),
+      );
+    });
+  });
+
+  describe('isOAuthError method', () => {
+    it('should identify OAuth errors by message content', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const error401 = new Error('401 Unauthorized');
+
+      mockConnectionInstance.connect.mockRejectedValue(error401);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(MCPConnectionFactory.create(basicOptions, oauthOptions)).rejects.toThrow('401');
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('OAuth required, stopping connection attempts'),
+      );
+    });
+  });
+
+  describe('discoverTools static method', () => {
+    const mockTools = [
+      { name: 'tool1', description: 'First tool', inputSchema: { type: 'object' } },
+      { name: 'tool2', description: 'Second tool', inputSchema: { type: 'object' } },
+    ];
+
+    it('should discover tools from a successfully connected server', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      mockConnectionInstance.fetchTools = jest.fn().mockResolvedValue(mockTools);
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions);
+
+      expect(result.tools).toEqual(mockTools);
+      expect(result.oauthRequired).toBe(false);
+      expect(result.oauthUrl).toBeNull();
+      expect(result.connection).toBe(mockConnectionInstance);
+    });
+
+    it('should forward user context to processMCPEnv for non-OAuth discovery', async () => {
+      const serverConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://my-mcp.server.com?key={{MY_CUSTOM_KEY}}',
+      } as t.MCPOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig,
+      };
+
+      const userContext = {
+        user: mockUser,
+        customUserVars: { MY_CUSTOM_KEY: 'c527bd0abc123' },
+        connectionTimeout: 10000,
+      };
+
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      mockConnectionInstance.fetchTools = jest.fn().mockResolvedValue(mockTools);
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions, userContext);
+
+      expect(result.tools).toEqual(mockTools);
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: mockUser,
+          options: serverConfig,
+          customUserVars: { MY_CUSTOM_KEY: 'c527bd0abc123' },
+        }),
+      );
+    });
+
+    it('should detect OAuth required without generating URL in discovery mode', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: {
+          ...mockServerConfig,
+          url: 'https://api.example.com',
+          type: 'sse' as const,
+        } as t.SSEOptions,
+      };
+
+      const mockOAuthStart = jest.fn().mockResolvedValue(undefined);
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser as unknown as IUser,
+        flowManager: mockFlowManager,
+        oauthStart: mockOAuthStart,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+      mockConnectionInstance.disconnect = jest.fn().mockResolvedValue(undefined);
+
+      let oauthHandler: (() => void) | undefined;
+      mockConnectionInstance.once.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthHandler = handler as () => void;
+        }
+        return mockConnectionInstance;
+      });
+
+      mockConnectionInstance.connect.mockImplementation(async () => {
+        if (oauthHandler) {
+          oauthHandler();
+        }
+        throw new Error('OAuth required');
+      });
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions, oauthOptions);
+
+      expect(result.connection).toBeNull();
+      expect(result.tools).toBeNull();
+      expect(result.oauthRequired).toBe(true);
+      expect(result.oauthUrl).toBeNull();
+      expect(mockOAuthStart).not.toHaveBeenCalled();
+    });
+
+    it('should fast-fail discovery when non-OAuth server returns 401', async () => {
+      const basicOptions = {
+        serverName: 'github',
+        serverConfig: {
+          ...mockServerConfig,
+          url: 'https://api.githubcopilot.com/mcp/',
+          type: 'streamable-http' as const,
+          initTimeout: 30000,
+        } as t.StreamableHTTPOptions,
+      };
+
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+      mockConnectionInstance.disconnect = jest.fn().mockResolvedValue(undefined);
+
+      let oauthHandler: (() => void) | undefined;
+      mockConnectionInstance.once.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthHandler = handler as () => void;
+        }
+        return mockConnectionInstance;
+      });
+
+      mockConnectionInstance.connect.mockImplementation(async () => {
+        if (oauthHandler) {
+          oauthHandler();
+        }
+        throw Object.assign(new Error('unauthorized'), { code: 401 });
+      });
+
+      const start = Date.now();
+      const result = await MCPConnectionFactory.discoverTools(basicOptions);
+      const elapsed = Date.now() - start;
+
+      expect(elapsed).toBeLessThan(5000);
+      expect(result.tools).toBeNull();
+      expect(result.oauthRequired).toBe(true);
+      expect(result.oauthUrl).toBeNull();
+      expect(result.connection).toBeNull();
+    });
+
+    it('should return null tools when discovery fails completely', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.connect.mockRejectedValue(new Error('Connection failed'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+      mockConnectionInstance.disconnect = jest.fn().mockResolvedValue(undefined);
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions);
+
+      expect(result.tools).toBeNull();
+      expect(result.connection).toBeNull();
+      expect(result.oauthRequired).toBe(false);
+    });
+
+    it('should handle disconnect errors gracefully during cleanup', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.connect.mockRejectedValue(new Error('Connection failed'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+      mockConnectionInstance.disconnect = jest
+        .fn()
+        .mockRejectedValue(new Error('Disconnect failed'));
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions);
+
+      expect(result.tools).toBeNull();
+      expect(mockLogger.debug).toHaveBeenCalled();
+    });
+  });
+});

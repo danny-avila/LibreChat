@@ -1,11 +1,11 @@
-const { encryptV3 } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { encryptV3, logger } = require('@librechat/data-schemas');
 const {
-  verifyTOTP,
-  getTOTPSecret,
-  verifyBackupCode,
-  generateTOTPSecret,
+  verifyOTPOrBackupCode,
   generateBackupCodes,
+  generateTOTPSecret,
+  verifyBackupCode,
+  getTOTPSecret,
+  verifyTOTP,
 } = require('~/server/services/twoFactorService');
 const { getUserById, updateUser } = require('~/models');
 
@@ -14,24 +14,42 @@ const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
 /**
  * Enable 2FA for the user by generating a new TOTP secret and backup codes.
  * The secret is encrypted and stored, and 2FA is marked as disabled until confirmed.
+ * If 2FA is already enabled, requires OTP or backup code verification to re-enroll.
  */
 const enable2FA = async (req, res) => {
   try {
     const userId = req.user.id;
+    const existingUser = await getUserById(
+      userId,
+      '+totpSecret +backupCodes _id twoFactorEnabled email',
+    );
+
+    if (existingUser && existingUser.twoFactorEnabled) {
+      const { token, backupCode } = req.body;
+      const result = await verifyOTPOrBackupCode({
+        user: existingUser,
+        token,
+        backupCode,
+        persistBackupUse: false,
+      });
+
+      if (!result.verified) {
+        const msg = result.message ?? 'TOTP token or backup code is required to re-enroll 2FA';
+        return res.status(result.status ?? 400).json({ message: msg });
+      }
+    }
+
     const secret = generateTOTPSecret();
     const { plainCodes, codeObjects } = await generateBackupCodes();
-
-    // Encrypt the secret with v3 encryption before saving.
     const encryptedSecret = encryptV3(secret);
 
-    // Update the user record: store the secret & backup codes and set twoFactorEnabled to false.
     const user = await updateUser(userId, {
-      totpSecret: encryptedSecret,
-      backupCodes: codeObjects,
-      twoFactorEnabled: false,
+      pendingTotpSecret: encryptedSecret,
+      pendingBackupCodes: codeObjects,
     });
 
-    const otpauthUrl = `otpauth://totp/${safeAppTitle}:${user.email}?secret=${secret}&issuer=${safeAppTitle}`;
+    const email = user.email || (existingUser && existingUser.email) || '';
+    const otpauthUrl = `otpauth://totp/${safeAppTitle}:${email}?secret=${secret}&issuer=${safeAppTitle}`;
 
     return res.status(200).json({ otpauthUrl, backupCodes: plainCodes });
   } catch (err) {
@@ -47,13 +65,14 @@ const verify2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token, backupCode } = req.body;
-    const user = await getUserById(userId);
+    const user = await getUserById(userId, '+totpSecret +pendingTotpSecret +backupCodes _id');
+    const secretSource = user?.pendingTotpSecret ?? user?.totpSecret;
 
-    if (!user || !user.totpSecret) {
+    if (!user || !secretSource) {
       return res.status(400).json({ message: '2FA not initiated' });
     }
 
-    const secret = await getTOTPSecret(user.totpSecret);
+    const secret = await getTOTPSecret(secretSource);
     let isVerified = false;
 
     if (token) {
@@ -79,15 +98,28 @@ const confirm2FA = async (req, res) => {
   try {
     const userId = req.user.id;
     const { token } = req.body;
-    const user = await getUserById(userId);
+    const user = await getUserById(
+      userId,
+      '+totpSecret +pendingTotpSecret +pendingBackupCodes _id',
+    );
+    const secretSource = user?.pendingTotpSecret ?? user?.totpSecret;
 
-    if (!user || !user.totpSecret) {
+    if (!user || !secretSource) {
       return res.status(400).json({ message: '2FA not initiated' });
     }
 
-    const secret = await getTOTPSecret(user.totpSecret);
+    const secret = await getTOTPSecret(secretSource);
     if (await verifyTOTP(secret, token)) {
-      await updateUser(userId, { twoFactorEnabled: true });
+      const update = {
+        totpSecret: user.pendingTotpSecret ?? user.totpSecret,
+        twoFactorEnabled: true,
+        pendingTotpSecret: null,
+        pendingBackupCodes: [],
+      };
+      if (user.pendingBackupCodes?.length) {
+        update.backupCodes = user.pendingBackupCodes;
+      }
+      await updateUser(userId, update);
       return res.status(200).json();
     }
     return res.status(400).json({ message: 'Invalid token.' });
@@ -99,11 +131,33 @@ const confirm2FA = async (req, res) => {
 
 /**
  * Disable 2FA by clearing the stored secret and backup codes.
+ * Requires verification with either TOTP token or backup code if 2FA is fully enabled.
  */
 const disable2FA = async (req, res) => {
   try {
     const userId = req.user.id;
-    await updateUser(userId, { totpSecret: null, backupCodes: [], twoFactorEnabled: false });
+    const { token, backupCode } = req.body;
+    const user = await getUserById(userId, '+totpSecret +backupCodes _id twoFactorEnabled');
+
+    if (!user || !user.totpSecret) {
+      return res.status(400).json({ message: '2FA is not setup for this user' });
+    }
+
+    if (user.twoFactorEnabled) {
+      const result = await verifyOTPOrBackupCode({ user, token, backupCode });
+
+      if (!result.verified) {
+        const msg = result.message ?? 'Either token or backup code is required to disable 2FA';
+        return res.status(result.status ?? 400).json({ message: msg });
+      }
+    }
+    await updateUser(userId, {
+      totpSecret: null,
+      backupCodes: [],
+      twoFactorEnabled: false,
+      pendingTotpSecret: null,
+      pendingBackupCodes: [],
+    });
     return res.status(200).json();
   } catch (err) {
     logger.error('[disable2FA]', err);
@@ -113,10 +167,28 @@ const disable2FA = async (req, res) => {
 
 /**
  * Regenerate backup codes for the user.
+ * Requires OTP or backup code verification if 2FA is already enabled.
  */
 const regenerateBackupCodes = async (req, res) => {
   try {
     const userId = req.user.id;
+    const user = await getUserById(userId, '+totpSecret +backupCodes _id twoFactorEnabled');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.twoFactorEnabled) {
+      const { token, backupCode } = req.body;
+      const result = await verifyOTPOrBackupCode({ user, token, backupCode });
+
+      if (!result.verified) {
+        const msg =
+          result.message ?? 'TOTP token or backup code is required to regenerate backup codes';
+        return res.status(result.status ?? 400).json({ message: msg });
+      }
+    }
+
     const { plainCodes, codeObjects } = await generateBackupCodes();
     await updateUser(userId, { backupCodes: codeObjects });
     return res.status(200).json({

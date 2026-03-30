@@ -1,6 +1,5 @@
-import 'test/matchMedia.mock';
 import { render, fireEvent } from '@testing-library/react';
-import '@testing-library/jest-dom/extend-expect';
+import '@testing-library/jest-dom';
 import DialogTemplate from './DialogTemplate';
 import { Dialog } from '@radix-ui/react-dialog';
 import { Provider } from 'jotai';
@@ -39,7 +38,8 @@ describe('DialogTemplate', () => {
     expect(getByText('Main Content')).toBeInTheDocument();
     expect(getByText('Button')).toBeInTheDocument();
     expect(getByText('Left Button')).toBeInTheDocument();
-    expect(getByText('Cancel')).toBeInTheDocument();
+    // Cancel text is hardcoded in DialogTemplate as 'cancel'
+    expect(getByText('cancel')).toBeInTheDocument();
     expect(getByText('Select')).toBeInTheDocument();
   });
 
@@ -60,7 +60,7 @@ describe('DialogTemplate', () => {
     expect(queryByText('Main Content')).not.toBeInTheDocument();
     expect(queryByText('Button')).not.toBeInTheDocument();
     expect(queryByText('Left Button')).not.toBeInTheDocument();
-    expect(queryByText('Cancel')).not.toBeInTheDocument();
+    expect(queryByText('cancel')).not.toBeInTheDocument();
     expect(queryByText('Select')).not.toBeInTheDocument();
   });
 

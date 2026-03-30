@@ -10,9 +10,12 @@ export default function useSearchEnabled(isAuthenticated: boolean) {
 
   useEffect(() => {
     if (searchEnabledQuery.data === true) {
-      setSearch((prev) => ({ ...prev, enabled: searchEnabledQuery.data }));
+      setSearch((prev) => ({ ...prev, enabled: true }));
+    } else if (searchEnabledQuery.data === false) {
+      setSearch((prev) => ({ ...prev, enabled: false }));
     } else if (searchEnabledQuery.isError) {
       logger.error('Failed to get search enabled: ', searchEnabledQuery.error);
+      setSearch((prev) => ({ ...prev, enabled: false }));
     }
   }, [searchEnabledQuery.data, searchEnabledQuery.error, searchEnabledQuery.isError, setSearch]);
 

@@ -6,9 +6,11 @@ export interface ISharedLink extends Document {
   user?: string;
   messages?: Types.ObjectId[];
   shareId?: string;
+  targetMessageId?: string;
   isPublic: boolean;
   createdAt?: Date;
   updatedAt?: Date;
+  tenantId?: string;
 }
 
 const shareSchema: Schema<ISharedLink> = new Schema(
@@ -30,12 +32,23 @@ const shareSchema: Schema<ISharedLink> = new Schema(
       type: String,
       index: true,
     },
+    targetMessageId: {
+      type: String,
+      required: false,
+      index: true,
+    },
     isPublic: {
       type: Boolean,
       default: true,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );
+
+shareSchema.index({ conversationId: 1, user: 1, targetMessageId: 1, tenantId: 1 });
 
 export default shareSchema;

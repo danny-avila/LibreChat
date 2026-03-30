@@ -3,9 +3,34 @@ const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
-jest.mock('~/server/services/Config/loadCustomConfig', () => {
-  return jest.fn(() => Promise.resolve({}));
-});
+jest.mock('~/server/services/Config', () => ({
+  loadCustomConfig: jest.fn(() => Promise.resolve({})),
+  getAppConfig: jest.fn().mockResolvedValue({
+    paths: {
+      uploads: '/tmp',
+      dist: '/tmp/dist',
+      fonts: '/tmp/fonts',
+      assets: '/tmp/assets',
+    },
+    fileStrategy: 'local',
+    imageOutputType: 'PNG',
+  }),
+  setCachedTools: jest.fn(),
+}));
+
+jest.mock('~/app/clients/tools', () => ({
+  createOpenAIImageTools: jest.fn(() => []),
+  createYouTubeTools: jest.fn(() => []),
+  manifestToolMap: {},
+  toolkits: [],
+}));
+
+jest.mock('~/config', () => ({
+  createMCPServersRegistry: jest.fn(),
+  createMCPManager: jest.fn().mockResolvedValue({
+    getAppToolFunctions: jest.fn().mockResolvedValue({}),
+  }),
+}));
 
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
@@ -31,6 +56,22 @@ describe('Server Configuration', () => {
   });
 
   beforeAll(async () => {
+    // Create the required directories and files for the test
+    const fs = require('fs');
+    const path = require('path');
+
+    const dirs = ['/tmp/dist', '/tmp/fonts', '/tmp/assets'];
+    dirs.forEach((dir) => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    });
+
+    fs.writeFileSync(
+      path.join('/tmp/dist', 'index.html'),
+      '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>',
+    );
+
     mongoServer = await MongoMemoryServer.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0'; // Use a random available port
@@ -57,6 +98,40 @@ describe('Server Configuration', () => {
     expect(response.headers['cache-control']).toBe('no-cache, no-store, must-revalidate');
     expect(response.headers['pragma']).toBe('no-cache');
     expect(response.headers['expires']).toBe('0');
+  });
+
+  it('should return 404 JSON for undefined API routes', async () => {
+    const response = await request(app).get('/api/nonexistent');
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ message: 'Endpoint not found' });
+  });
+
+  it('should return 404 JSON for nested undefined API routes', async () => {
+    const response = await request(app).get('/api/nonexistent/nested/path');
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ message: 'Endpoint not found' });
+  });
+
+  it('should return 404 JSON for non-GET methods on undefined API routes', async () => {
+    const post = await request(app).post('/api/nonexistent');
+    expect(post.status).toBe(404);
+    expect(post.body).toEqual({ message: 'Endpoint not found' });
+
+    const del = await request(app).delete('/api/nonexistent');
+    expect(del.status).toBe(404);
+    expect(del.body).toEqual({ message: 'Endpoint not found' });
+  });
+
+  it('should return 404 JSON for the /api root path', async () => {
+    const response = await request(app).get('/api');
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ message: 'Endpoint not found' });
+  });
+
+  it('should serve SPA HTML for non-API unmatched routes', async () => {
+    const response = await request(app).get('/this/does/not/exist');
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toMatch(/html/);
   });
 
   it('should return 500 for unknown errors via ErrorController', async () => {
@@ -92,7 +167,7 @@ async function healthCheckPoll(app, retries = 0) {
     if (response.status === 200) {
       return; // App is healthy
     }
-  } catch (error) {
+  } catch {
     // Ignore connection errors during polling
   }
 

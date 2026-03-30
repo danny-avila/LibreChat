@@ -1,10 +1,10 @@
-import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useDeleteFilesMutation } from '~/data-provider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
-import { EditorProvider, SidePanelProvider } from '~/Providers';
+import { EditorProvider, ArtifactsProvider } from '~/Providers';
+import { useDeleteFilesMutation } from '~/data-provider';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { useSetFilesToDelete } from '~/hooks';
@@ -47,36 +47,26 @@ export default function Presentation({ children }: { children: React.ReactNode }
     mutateAsync({ files });
   }, [mutateAsync]);
 
-  const defaultLayout = useMemo(() => {
-    const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
-    return typeof resizableLayout === 'string' ? JSON.parse(resizableLayout) : undefined;
-  }, []);
-  const defaultCollapsed = useMemo(() => {
-    const collapsedPanels = localStorage.getItem('react-resizable-panels:collapsed');
-    return typeof collapsedPanels === 'string' ? JSON.parse(collapsedPanels) : true;
-  }, []);
-  const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
+  const artifactsElement = useMemo(() => {
+    if (artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0) {
+      return (
+        <ArtifactsProvider>
+          <EditorProvider>
+            <Artifacts />
+          </EditorProvider>
+        </ArtifactsProvider>
+      );
+    }
+    return null;
+  }, [artifactsVisibility, artifacts]);
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
-      <SidePanelProvider>
-        <SidePanelGroup
-          defaultLayout={defaultLayout}
-          fullPanelCollapse={fullCollapse}
-          defaultCollapsed={defaultCollapsed}
-          artifacts={
-            artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0 ? (
-              <EditorProvider>
-                <Artifacts />
-              </EditorProvider>
-            ) : null
-          }
-        >
-          <main className="flex h-full flex-col overflow-y-auto" role="main">
-            {children}
-          </main>
-        </SidePanelGroup>
-      </SidePanelProvider>
+      <SidePanelGroup artifacts={artifactsElement}>
+        <main className="flex h-full flex-col overflow-y-auto" role="main">
+          {children}
+        </main>
+      </SidePanelGroup>
     </DragDropWrapper>
   );
 }

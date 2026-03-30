@@ -1,9 +1,8 @@
 import { forwardRef } from 'react';
-import type { ForwardedRef } from 'react';
 import { CheckIcon } from 'lucide-react';
-import { Spinner, DialogButton } from '@librechat/client';
-import HoverCardSettings from './HoverCardSettings';
+import { Spinner, DialogButton, InfoHoverCard, ESide } from '@librechat/client';
 import type { TDangerButtonProps } from '~/common';
+import type { ForwardedRef } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -37,7 +36,7 @@ const DangerButton = (props: TDangerButtonProps, ref: ForwardedRef<HTMLButtonEle
       {showText && (
         <div className={`flex items-center ${infoDescriptionCode ? 'space-x-2' : ''}`}>
           <div>{localize(infoTextCode)}</div>
-          {infoDescriptionCode && <HoverCardSettings side="bottom" text={infoDescriptionCode} />}
+          {infoDescriptionCode && <InfoHoverCard side={ESide.Bottom} text={infoDescriptionCode} />}
         </div>
       )}
       <DialogButton
@@ -56,7 +55,7 @@ const DangerButton = (props: TDangerButtonProps, ref: ForwardedRef<HTMLButtonEle
             id={`${id}-text`}
             data-testid={dataTestIdConfirm}
           >
-            {renderMutation(<CheckIcon className="h-5 w-5" />)}
+            {renderMutation(<CheckIcon className="h-5 w-5" aria-hidden="true" />)}
             {mutation && mutation.isLoading ? null : localize(confirmActionTextCode)}
           </div>
         ) : (

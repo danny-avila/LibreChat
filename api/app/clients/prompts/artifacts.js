@@ -3,6 +3,7 @@ const { EModelEndpoint, ArtifactModes } = require('librechat-data-provider');
 const { generateShadcnPrompt } = require('~/app/clients/prompts/shadcn-docs/generate');
 const { components } = require('~/app/clients/prompts/shadcn-docs/components');
 
+/** @deprecated */
 // eslint-disable-next-line no-unused-vars
 const artifactsPromptV1 = dedent`The assistant can create and reference artifacts during conversations.
   
@@ -115,6 +116,7 @@ Here are some examples of correct usage of artifacts:
     </assistant_response>
   </example>
 </examples>`;
+
 const artifactsPrompt = dedent`The assistant can create and reference artifacts during conversations.
   
 Artifacts are for substantial, self-contained content that users might modify or reuse, displayed in a separate UI window for clarity.
@@ -165,6 +167,10 @@ Artifacts are for substantial, self-contained content that users might modify or
     - SVG: "image/svg+xml"
       - The user interface will render the Scalable Vector Graphics (SVG) image within the artifact tags.
       - The assistant should specify the viewbox of the SVG rather than defining a width/height
+    - Markdown: "text/markdown" or "text/md"
+      - The user interface will render Markdown content placed within the artifact tags.
+      - Supports standard Markdown syntax including headers, lists, links, images, code blocks, tables, and more.
+      - Both "text/markdown" and "text/md" are accepted as valid MIME types for Markdown content.
     - Mermaid Diagrams: "application/vnd.mermaid"
       - The user interface will render Mermaid diagrams placed within the artifact tags.
     - React Components: "application/vnd.react"
@@ -366,6 +372,10 @@ Artifacts are for substantial, self-contained content that users might modify or
     - SVG: "image/svg+xml"
       - The user interface will render the Scalable Vector Graphics (SVG) image within the artifact tags.
       - The assistant should specify the viewbox of the SVG rather than defining a width/height
+    - Markdown: "text/markdown" or "text/md"
+      - The user interface will render Markdown content placed within the artifact tags.
+      - Supports standard Markdown syntax including headers, lists, links, images, code blocks, tables, and more.
+      - Both "text/markdown" and "text/md" are accepted as valid MIME types for Markdown content.
     - Mermaid Diagrams: "application/vnd.mermaid"
       - The user interface will render Mermaid diagrams placed within the artifact tags.
     - React Components: "application/vnd.react"

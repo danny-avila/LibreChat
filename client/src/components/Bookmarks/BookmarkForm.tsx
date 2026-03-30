@@ -38,6 +38,8 @@ const BookmarkForm = ({
     control,
     formState: { errors },
   } = useForm<TConversationTagRequest>({
+    mode: 'onBlur',
+    reValidateMode: 'onChange',
     defaultValues: {
       tag: bookmark?.tag ?? '',
       description: bookmark?.description ?? '',
@@ -70,7 +72,7 @@ const BookmarkForm = ({
     }
     const allTags =
       queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
-    if (allTags.some((tag) => tag.tag === data.tag)) {
+    if (allTags.some((tag) => tag.tag === data.tag && tag.tag !== bookmark?.tag)) {
       showToast({
         message: localize('com_ui_bookmarks_create_exists'),
         status: 'warning',
@@ -83,62 +85,81 @@ const BookmarkForm = ({
   };
 
   return (
-    <form
-      ref={formRef}
-      className="mt-6"
-      aria-label="Bookmark form"
-      method="POST"
-      onSubmit={handleSubmit(onSubmit)}
-    >
-      <div className="flex w-full flex-col items-center gap-2">
-        <div className="grid w-full items-center gap-2">
-          <Label htmlFor="bookmark-tag" className="text-left text-sm font-medium">
+    <form ref={formRef} aria-label="Bookmark form" method="POST" onSubmit={handleSubmit(onSubmit)}>
+      <div className="space-y-4">
+        {/* Tag name input */}
+        <div className="space-y-2">
+          <Label htmlFor="bookmark-tag" className="text-sm font-medium text-text-primary">
             {localize('com_ui_bookmarks_title')}
           </Label>
           <Input
             type="text"
             id="bookmark-tag"
-            aria-label="Bookmark"
+            aria-label={localize('com_ui_bookmarks_title')}
             {...register('tag', {
-              required: 'tag is required',
+              required: localize('com_ui_field_required'),
               maxLength: {
                 value: 128,
-                message: localize('com_auth_password_max_length'),
+                message: localize('com_ui_field_max_length', {
+                  field: localize('com_ui_bookmarks_title'),
+                  length: 128,
+                }),
               },
               validate: (value) => {
                 return (
                   value === bookmark?.tag ||
                   bookmarks.every((bookmark) => bookmark.tag !== value) ||
-                  'tag must be unique'
+                  localize('com_ui_bookmarks_tag_exists')
                 );
               },
             })}
+            className="w-full"
             aria-invalid={!!errors.tag}
-            placeholder="Bookmark"
+            placeholder={localize('com_ui_enter_name')}
+            aria-describedby={errors.tag ? 'bookmark-tag-error' : undefined}
           />
-          {errors.tag && <span className="text-sm text-red-500">{errors.tag.message}</span>}
+          {errors.tag && (
+            <span id="bookmark-tag-error" role="alert" className="text-sm text-red-500">
+              {errors.tag.message}
+            </span>
+          )}
         </div>
 
-        <div className="mt-4 grid w-full items-center gap-2">
-          <Label htmlFor="bookmark-description" className="text-left text-sm font-medium">
+        {/* Description textarea */}
+        <div className="space-y-2">
+          <Label
+            id="bookmark-description-label"
+            htmlFor="bookmark-description"
+            className="text-sm font-medium text-text-primary"
+          >
             {localize('com_ui_bookmarks_description')}
           </Label>
           <TextareaAutosize
             {...register('description', {
               maxLength: {
                 value: 1048,
-                message: 'Maximum 1048 characters',
+                message: localize('com_ui_field_max_length', {
+                  field: localize('com_ui_bookmarks_description'),
+                  length: 1048,
+                }),
               },
             })}
             id="bookmark-description"
             disabled={false}
+            placeholder={localize('com_ui_enter_description')}
             className={cn(
-              'flex h-10 max-h-[250px] min-h-[100px] w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none',
+              'min-h-[100px] w-full resize-none rounded-lg border border-border-light',
+              'bg-transparent px-3 py-2 text-sm text-text-primary',
+              'placeholder:text-text-tertiary',
+              'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy',
             )}
+            aria-labelledby="bookmark-description-label"
           />
         </div>
+
+        {/* Add to conversation checkbox */}
         {conversationId != null && conversationId && (
-          <div className="mt-2 flex w-full items-center">
+          <div className="flex items-center gap-2">
             <Controller
               name="addToConversation"
               control={control}
@@ -147,24 +168,23 @@ const BookmarkForm = ({
                   {...field}
                   checked={field.value}
                   onCheckedChange={field.onChange}
-                  className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
+                  className="size-4 cursor-pointer"
                   value={field.value?.toString()}
+                  aria-label={localize('com_ui_bookmarks_add_to_conversation')}
                 />
               )}
             />
             <button
               type="button"
               aria-label={localize('com_ui_bookmarks_add_to_conversation')}
-              className="form-check-label w-full cursor-pointer text-text-primary"
+              className="cursor-pointer text-sm text-text-primary"
               onClick={() =>
                 setValue('addToConversation', !(getValues('addToConversation') ?? false), {
                   shouldDirty: true,
                 })
               }
             >
-              <div className="flex select-none items-center">
-                {localize('com_ui_bookmarks_add_to_conversation')}
-              </div>
+              {localize('com_ui_bookmarks_add_to_conversation')}
             </button>
           </div>
         )}

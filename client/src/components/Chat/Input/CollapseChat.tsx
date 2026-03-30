@@ -41,9 +41,9 @@ const CollapseChat = ({
             )}
           >
             {isCollapsed ? (
-              <ChevronUp className="h-full w-full" />
+              <ChevronUp className="h-full w-full" aria-hidden="true" />
             ) : (
-              <ChevronDown className="h-full w-full" />
+              <ChevronDown className="h-full w-full" aria-hidden="true" />
             )}
           </button>
         }
@@ -52,4 +52,4 @@ const CollapseChat = ({
   );
 };
 
-export default CollapseChat;
+export default React.memo(CollapseChat);

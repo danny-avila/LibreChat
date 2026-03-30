@@ -1,7 +1,18 @@
-const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const { getEnvironmentVariable } = require('@langchain/core/utils/env');
-const { logger } = require('~/config');
+
+const traversaalSearchJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        "A properly written sentence to be interpreted by an AI to search the web according to the user's request.",
+    },
+  },
+  required: ['query'],
+};
 
 /**
  * Tool for the Traversaal AI search API, Ares.
@@ -17,15 +28,13 @@ class TraversaalSearch extends Tool {
     Useful for when you need to answer questions about current events. Input should be a search query.`;
     this.description_for_model =
       '\'Please create a specific sentence for the AI to understand and use as a query to search the web based on the user\'s request. For example, "Find information about the highest mountains in the world." or "Show me the latest news articles about climate change and its impact on polar ice caps."\'';
-    this.schema = z.object({
-      query: z
-        .string()
-        .describe(
-          'A properly written sentence to be interpreted by an AI to search the web according to the user\'s request.',
-        ),
-    });
+    this.schema = traversaalSearchJsonSchema;
 
     this.apiKey = fields?.TRAVERSAAL_API_KEY ?? this.getApiKey();
+  }
+
+  static get jsonSchema() {
+    return traversaalSearchJsonSchema;
   }
 
   getApiKey() {
@@ -38,7 +47,6 @@ class TraversaalSearch extends Tool {
     return apiKey;
   }
 
-  // eslint-disable-next-line no-unused-vars
   async _call({ query }, _runManager) {
     const body = {
       query: [query],

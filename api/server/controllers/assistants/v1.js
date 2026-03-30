@@ -1,15 +1,14 @@
 const fs = require('fs').promises;
 const { logger } = require('@librechat/data-schemas');
 const { FileContext } = require('librechat-data-provider');
+const { deleteFileByFilter, updateAssistantDoc, getAssistants } = require('~/models');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
-const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap } = require('~/app/clients/tools');
-const { deleteFileByFilter } = require('~/models/File');
 
 /**
  * Create an assistant.
@@ -31,7 +30,7 @@ const createAssistant = async (req, res) => {
     delete assistantData.conversation_starters;
     delete assistantData.append_current_datetime;
 
-    const toolDefinitions = await getCachedTools({ includeGlobal: true });
+    const toolDefinitions = (await getCachedTools()) ?? {};
 
     assistantData.tools = tools
       .map((tool) => {
@@ -136,7 +135,7 @@ const patchAssistant = async (req, res) => {
       ...updateData
     } = req.body;
 
-    const toolDefinitions = await getCachedTools({ includeGlobal: true });
+    const toolDefinitions = (await getCachedTools()) ?? {};
 
     updateData.tools = (updateData.tools ?? [])
       .map((tool) => {
@@ -258,8 +257,9 @@ function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
  */
 const getAssistantDocuments = async (req, res) => {
   try {
-    const endpoint = req.query;
-    const assistantsConfig = req.app.locals[endpoint];
+    const appConfig = req.config;
+    const endpoint = req.query?.endpoint;
+    const assistantsConfig = appConfig.endpoints?.[endpoint];
     const documents = await getAssistants(
       {},
       {
@@ -296,6 +296,7 @@ const getAssistantDocuments = async (req, res) => {
  */
 const uploadAssistantAvatar = async (req, res) => {
   try {
+    const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { assistant_id } = req.params;
     if (!assistant_id) {
@@ -337,7 +338,7 @@ const uploadAssistantAvatar = async (req, res) => {
     const metadata = {
       ..._metadata,
       avatar: image.filepath,
-      avatar_source: req.app.locals.fileStrategy,
+      avatar_source: appConfig.fileStrategy,
     };
 
     const promises = [];
@@ -347,7 +348,7 @@ const uploadAssistantAvatar = async (req, res) => {
         {
           avatar: {
             filepath: image.filepath,
-            source: req.app.locals.fileStrategy,
+            source: appConfig.fileStrategy,
           },
           user: req.user.id,
         },

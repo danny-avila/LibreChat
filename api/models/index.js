@@ -1,6 +1,14 @@
 const mongoose = require('mongoose');
 const { createMethods } = require('@librechat/data-schemas');
-const methods = createMethods(mongoose);
+const { matchModelName, findMatchingPattern } = require('@librechat/api');
+const getLogStores = require('~/cache/getLogStores');
+
+const methods = createMethods(mongoose, {
+  matchModelName,
+  findMatchingPattern,
+  getCache: getLogStores,
+});
+
 const { comparePassword } = require('./userMethods');
 const {
   findFileById,
@@ -39,8 +47,16 @@ const {
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
 
+const seedDatabase = async () => {
+  await methods.initializeRoles();
+  await methods.seedDefaultRoles();
+  await methods.ensureDefaultCategories();
+  await methods.seedSystemGrants();
+};
+
 module.exports = {
   ...methods,
+  seedDatabase,
   comparePassword,
   findFileById,
   createFile,

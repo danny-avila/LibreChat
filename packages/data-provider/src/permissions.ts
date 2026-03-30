@@ -37,16 +37,35 @@ export enum PermissionTypes {
    */
   WEB_SEARCH = 'WEB_SEARCH',
   /**
+   * Type for People Picker Permissions
+   */
+  PEOPLE_PICKER = 'PEOPLE_PICKER',
+  /**
+   * Type for Marketplace Permissions
+   */
+  MARKETPLACE = 'MARKETPLACE',
+  /**
    * Type for using the "File Search" feature
    */
   FILE_SEARCH = 'FILE_SEARCH',
+  /**
+   * Type for using the "File Citations" feature in agents
+   */
+  FILE_CITATIONS = 'FILE_CITATIONS',
+  /**
+   * Type for MCP Server Permissions
+   */
+  MCP_SERVERS = 'MCP_SERVERS',
+  /**
+   * Type for Remote Agent (API) Permissions
+   */
+  REMOTE_AGENTS = 'REMOTE_AGENTS',
 }
 
 /**
  * Enum for Role-Based Access Control Constants
  */
 export enum Permissions {
-  SHARED_GLOBAL = 'SHARED_GLOBAL',
   USE = 'USE',
   CREATE = 'CREATE',
   UPDATE = 'UPDATE',
@@ -55,13 +74,18 @@ export enum Permissions {
   SHARE = 'SHARE',
   /** Can disable if desired */
   OPT_OUT = 'OPT_OUT',
+  VIEW_USERS = 'VIEW_USERS',
+  VIEW_GROUPS = 'VIEW_GROUPS',
+  VIEW_ROLES = 'VIEW_ROLES',
+  /** Can share resources publicly (with everyone) */
+  SHARE_PUBLIC = 'SHARE_PUBLIC',
 }
 
 export const promptPermissionsSchema = z.object({
-  [Permissions.SHARED_GLOBAL]: z.boolean().default(false),
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
-  // [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
 });
 export type TPromptPermissions = z.infer<typeof promptPermissionsSchema>;
 
@@ -80,10 +104,10 @@ export const memoryPermissionsSchema = z.object({
 export type TMemoryPermissions = z.infer<typeof memoryPermissionsSchema>;
 
 export const agentPermissionsSchema = z.object({
-  [Permissions.SHARED_GLOBAL]: z.boolean().default(false),
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
-  // [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
 });
 export type TAgentPermissions = z.infer<typeof agentPermissionsSchema>;
 
@@ -107,10 +131,43 @@ export const webSearchPermissionsSchema = z.object({
 });
 export type TWebSearchPermissions = z.infer<typeof webSearchPermissionsSchema>;
 
+export const peoplePickerPermissionsSchema = z.object({
+  [Permissions.VIEW_USERS]: z.boolean().default(true),
+  [Permissions.VIEW_GROUPS]: z.boolean().default(true),
+  [Permissions.VIEW_ROLES]: z.boolean().default(true),
+});
+export type TPeoplePickerPermissions = z.infer<typeof peoplePickerPermissionsSchema>;
+
+export const marketplacePermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(false),
+});
+export type TMarketplacePermissions = z.infer<typeof marketplacePermissionsSchema>;
+
 export const fileSearchPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
 });
 export type TFileSearchPermissions = z.infer<typeof fileSearchPermissionsSchema>;
+
+export const fileCitationsPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+});
+export type TFileCitationsPermissions = z.infer<typeof fileCitationsPermissionsSchema>;
+
+export const mcpServersPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+  [Permissions.CREATE]: z.boolean().default(true),
+  [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
+});
+export type TMcpServersPermissions = z.infer<typeof mcpServersPermissionsSchema>;
+
+export const remoteAgentsPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(false),
+  [Permissions.CREATE]: z.boolean().default(false),
+  [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
+});
+export type TRemoteAgentsPermissions = z.infer<typeof remoteAgentsPermissionsSchema>;
 
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
@@ -122,5 +179,10 @@ export const permissionsSchema = z.object({
   [PermissionTypes.TEMPORARY_CHAT]: temporaryChatPermissionsSchema,
   [PermissionTypes.RUN_CODE]: runCodePermissionsSchema,
   [PermissionTypes.WEB_SEARCH]: webSearchPermissionsSchema,
+  [PermissionTypes.PEOPLE_PICKER]: peoplePickerPermissionsSchema,
+  [PermissionTypes.MARKETPLACE]: marketplacePermissionsSchema,
   [PermissionTypes.FILE_SEARCH]: fileSearchPermissionsSchema,
+  [PermissionTypes.FILE_CITATIONS]: fileCitationsPermissionsSchema,
+  [PermissionTypes.MCP_SERVERS]: mcpServersPermissionsSchema,
+  [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema,
 });

@@ -1,105 +1,49 @@
+import {
+  AuthType,
+  SafeSearchTypes,
+  SearchCategories,
+  extractVariableName,
+} from 'librechat-data-provider';
+import { webSearchAuth } from '@librechat/data-schemas';
 import type {
-  ScraperTypes,
   RerankerTypes,
   TCustomConfig,
   SearchProviders,
+  ScraperProviders,
   TWebSearchConfig,
 } from 'librechat-data-provider';
-import {
-  SearchCategories,
-  SafeSearchTypes,
-  extractVariableName,
-  AuthType,
-} from 'librechat-data-provider';
-
-export function loadWebSearchConfig(
-  config: TCustomConfig['webSearch'],
-): TCustomConfig['webSearch'] {
-  const serperApiKey = config?.serperApiKey ?? '${SERPER_API_KEY}';
-  const searxngInstanceUrl = config?.searxngInstanceUrl ?? '${SEARXNG_INSTANCE_URL}';
-  const searxngApiKey = config?.searxngApiKey ?? '${SEARXNG_API_KEY}';
-  const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
-  const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
-  const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
-  const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
-  const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
-
-  return {
-    ...config,
-    safeSearch,
-    jinaApiKey,
-    cohereApiKey,
-    serperApiKey,
-    searxngInstanceUrl,
-    searxngApiKey,
-    firecrawlApiKey,
-    firecrawlApiUrl,
-  };
-}
-
-export type TWebSearchKeys =
-  | 'serperApiKey'
-  | 'searxngInstanceUrl'
-  | 'searxngApiKey'
-  | 'firecrawlApiKey'
-  | 'firecrawlApiUrl'
-  | 'jinaApiKey'
-  | 'cohereApiKey';
-
-export type TWebSearchCategories =
-  | SearchCategories.PROVIDERS
-  | SearchCategories.SCRAPERS
-  | SearchCategories.RERANKERS;
-
-export const webSearchAuth = {
-  providers: {
-    serper: {
-      serperApiKey: 1 as const,
-    },
-    searxng: {
-      searxngInstanceUrl: 1 as const,
-      /** Optional (0) */
-      searxngApiKey: 0 as const,
-    },
-  },
-  scrapers: {
-    firecrawl: {
-      firecrawlApiKey: 1 as const,
-      /** Optional (0) */
-      firecrawlApiUrl: 0 as const,
-    },
-  },
-  rerankers: {
-    jina: { jinaApiKey: 1 as const },
-    cohere: { cohereApiKey: 1 as const },
-  },
-};
+import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
+import { isSSRFTarget, resolveHostnameSSRF } from '../auth';
 
 /**
- * Extracts all API keys from the webSearchAuth configuration object
+ * URL-type keys in TWebSearchKeys (not API keys or version strings).
+ * Must stay in sync with URL-typed fields in webSearchAuth (packages/data-schemas).
  */
-export function getWebSearchKeys(): TWebSearchKeys[] {
-  const keys: TWebSearchKeys[] = [];
+const WEB_SEARCH_URL_KEYS = new Set<TWebSearchKeys>([
+  'searxngInstanceUrl',
+  'firecrawlApiUrl',
+  'jinaApiUrl',
+]);
 
-  // Iterate through each category (providers, scrapers, rerankers)
-  for (const category of Object.keys(webSearchAuth)) {
-    const categoryObj = webSearchAuth[category as TWebSearchCategories];
-
-    // Iterate through each service within the category
-    for (const service of Object.keys(categoryObj)) {
-      const serviceObj = categoryObj[service as keyof typeof categoryObj];
-
-      // Extract the API keys from the service
-      for (const key of Object.keys(serviceObj)) {
-        keys.push(key as TWebSearchKeys);
-      }
-    }
+/**
+ * Returns true if the URL should be blocked for SSRF risk.
+ * Fail-closed: unparseable URLs and non-HTTP(S) schemes return true.
+ */
+async function isSSRFUrl(url: string): Promise<boolean> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return true;
   }
-
-  return keys;
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return true;
+  }
+  if (isSSRFTarget(parsed.hostname)) {
+    return true;
+  }
+  return resolveHostnameSSRF(parsed.hostname);
 }
-
-export const webSearchKeys: TWebSearchKeys[] = getWebSearchKeys();
 
 export function extractWebSearchEnvVars({
   keys,
@@ -175,8 +119,8 @@ export async function loadWebSearchAuth({
     let specificService: ServiceType | undefined;
     if (category === SearchCategories.PROVIDERS && webSearchConfig?.searchProvider) {
       specificService = webSearchConfig.searchProvider as unknown as ServiceType;
-    } else if (category === SearchCategories.SCRAPERS && webSearchConfig?.scraperType) {
-      specificService = webSearchConfig.scraperType as unknown as ServiceType;
+    } else if (category === SearchCategories.SCRAPERS && webSearchConfig?.scraperProvider) {
+      specificService = webSearchConfig.scraperProvider as unknown as ServiceType;
     } else if (category === SearchCategories.RERANKERS && webSearchConfig?.rerankerType) {
       specificService = webSearchConfig.rerankerType as unknown as ServiceType;
     }
@@ -236,12 +180,27 @@ export async function loadWebSearchAuth({
           const field = allAuthFields[j];
           const value = authValues[field];
           const originalKey = allKeys[j];
-          if (originalKey) authResult[originalKey] = value;
+
           if (!optionalSet.has(field) && !value) {
             allFieldsAuthenticated = false;
             break;
           }
-          if (!isUserProvided && process.env[field] !== value) {
+
+          const isFieldUserProvided = value != null && process.env[field] !== value;
+          const isUrlKey = originalKey != null && WEB_SEARCH_URL_KEYS.has(originalKey);
+          let contributed = false;
+
+          if (isUrlKey && isFieldUserProvided && (await isSSRFUrl(value))) {
+            if (!optionalSet.has(field)) {
+              allFieldsAuthenticated = false;
+              break;
+            }
+          } else if (originalKey) {
+            authResult[originalKey] = value;
+            contributed = true;
+          }
+
+          if (!isUserProvided && isFieldUserProvided && contributed) {
             isUserProvided = true;
           }
         }
@@ -252,7 +211,7 @@ export async function loadWebSearchAuth({
         if (category === SearchCategories.PROVIDERS) {
           authResult.searchProvider = service as SearchProviders;
         } else if (category === SearchCategories.SCRAPERS) {
-          authResult.scraperType = service as ScraperTypes;
+          authResult.scraperProvider = service as ScraperProviders;
         } else if (category === SearchCategories.RERANKERS) {
           authResult.rerankerType = service as RerankerTypes;
         }

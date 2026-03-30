@@ -1,10 +1,8 @@
 const { duplicateAgent } = require('../v1');
-const { getAgent, createAgent } = require('~/models/Agent');
-const { getActions } = require('~/models/Action');
+const { getAgent, createAgent, getActions } = require('~/models');
 const { nanoid } = require('nanoid');
 
-jest.mock('~/models/Agent');
-jest.mock('~/models/Action');
+jest.mock('~/models');
 jest.mock('nanoid');
 
 describe('duplicateAgent', () => {
@@ -158,7 +156,7 @@ describe('duplicateAgent', () => {
     });
   });
 
-  it('should handle tool_resources.ocr correctly', async () => {
+  it('should convert `tool_resources.ocr` to `tool_resources.context`', async () => {
     const mockAgent = {
       id: 'agent_123',
       name: 'Test Agent',
@@ -178,7 +176,7 @@ describe('duplicateAgent', () => {
     expect(createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         tool_resources: {
-          ocr: { enabled: true, config: 'test' },
+          context: { enabled: true, config: 'test' },
         },
       }),
     );

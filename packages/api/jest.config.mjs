@@ -1,9 +1,28 @@
 export default {
   collectCoverageFrom: ['src/**/*.{js,jsx,ts,tsx}', '!<rootDir>/node_modules/'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
-  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '\\.dev\\.ts$',
+    '\\.helper\\.ts$',
+    '\\.helper\\.d\\.ts$',
+    '/__tests__/helpers/',
+    '\\.manual\\.spec\\.[jt]sx?$',
+  ],
   coverageReporters: ['text', 'cobertura'],
   testResultsProcessor: 'jest-junit',
+  transform: {
+    '\\.[jt]sx?$': [
+      'babel-jest',
+      {
+        presets: [
+          ['@babel/preset-env', { targets: { node: 'current' } }],
+          '@babel/preset-typescript',
+        ],
+      },
+    ],
+  },
   moduleNameMapper: {
     '^@src/(.*)$': '<rootDir>/src/$1',
     '~/(.*)': '<rootDir>/src/$1',
@@ -16,6 +35,7 @@ export default {
   //     lines: 57,
   //   },
   // },
+  maxWorkers: '50%',
   restoreMocks: true,
   testTimeout: 15000,
 };

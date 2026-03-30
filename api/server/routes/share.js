@@ -19,9 +19,7 @@ const allowSharedLinks =
   process.env.ALLOW_SHARED_LINKS === undefined || isEnabled(process.env.ALLOW_SHARED_LINKS);
 
 if (allowSharedLinks) {
-  const allowSharedLinksPublic =
-    process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
-    isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC);
+  const allowSharedLinksPublic = isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC);
   router.get(
     '/:shareId',
     allowSharedLinksPublic ? (req, res, next) => next() : requireJwtAuth,
@@ -99,7 +97,8 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
 
 router.post('/:conversationId', requireJwtAuth, async (req, res) => {
   try {
-    const created = await createSharedLink(req.user.id, req.params.conversationId);
+    const { targetMessageId } = req.body;
+    const created = await createSharedLink(req.user.id, req.params.conversationId, targetMessageId);
     if (created) {
       res.status(200).json(created);
     } else {

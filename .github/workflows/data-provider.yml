@@ -1,4 +1,4 @@
-name: Node.js Package
+name: Publish `librechat-data-provider` to NPM
 
 on:
   push:
@@ -6,6 +6,16 @@ on:
       - main
     paths:
       - 'packages/data-provider/package.json'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual publish requested'
+
+permissions:
+  id-token: write  # Required for OIDC trusted publishing
+  contents: read
 
 jobs:
   build:
@@ -14,21 +24,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 16
+          node-version: 20
       - run: cd packages/data-provider && npm ci
       - run: cd packages/data-provider && npm run build
 
   publish-npm:
     needs: build
     runs-on: ubuntu-latest
+    environment: publish  # Must match npm trusted publisher config
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 16
+          node-version: 20
           registry-url: 'https://registry.npmjs.org'
+      
+      - name: Update npm for OIDC support
+        run: npm install -g npm@latest  # Must be 11.5.1+ for provenance
+      
       - run: cd packages/data-provider && npm ci
       - run: cd packages/data-provider && npm run build
-      - run: cd packages/data-provider && npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+      - run: cd packages/data-provider && npm publish --provenance

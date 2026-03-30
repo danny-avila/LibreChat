@@ -1,12 +1,19 @@
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
-const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const {
+  sendEvent,
+  countTokens,
+  checkBalance,
+  getBalanceConfig,
+  getModelMaxTokens,
+} = require('@librechat/api');
 const {
   Time,
   Constants,
   RunStatus,
   CacheKeys,
+  VisionModes,
   ContentTypes,
   EModelEndpoint,
   ViolationTypes,
@@ -25,16 +32,19 @@ const {
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
 const { sendResponse } = require('~/server/middleware/error');
-const { getTransactions } = require('~/models/Transaction');
-const { checkBalance } = require('~/models/balanceMethods');
-const { getConvo } = require('~/models/Conversation');
-const getLogStores = require('~/cache/getLogStores');
-const { countTokens } = require('~/server/utils');
-const { getModelMaxTokens } = require('~/utils');
+const {
+  createAutoRefillTransaction,
+  findBalanceByUser,
+  getTransactions,
+  getMultiplier,
+  getConvo,
+} = require('~/models');
+const { logViolation, getLogStores } = require('~/cache');
 const { getOpenAIClient } = require('./helpers');
 
 /**
@@ -47,6 +57,7 @@ const { getOpenAIClient } = require('./helpers');
  * @returns {void}
  */
 const chatV1 = async (req, res) => {
+  const appConfig = req.config;
   logger.debug('[/assistants/chat/] req.body', req.body);
 
   const {
@@ -65,7 +76,7 @@ const chatV1 = async (req, res) => {
     clientTimestamp,
   } = req.body;
 
-  /** @type {OpenAIClient} */
+  /** @type {OpenAI} */
   let openai;
   /** @type {string|undefined} - the current thread id */
   let thread_id = _thread_id;
@@ -251,8 +262,8 @@ const chatV1 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      const balance = req.app?.locals?.balance;
-      if (!balance?.enabled) {
+      const balanceConfig = getBalanceConfig(appConfig);
+      if (!balanceConfig?.enabled) {
         return;
       }
       const transactions =
@@ -274,23 +285,25 @@ const chatV1 = async (req, res) => {
       // Count tokens up to the current context window
       promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
 
-      await checkBalance({
-        req,
-        res,
-        txData: {
-          model,
-          user: req.user.id,
-          tokenType: 'prompt',
-          amount: promptTokens,
+      await checkBalance(
+        {
+          req,
+          res,
+          txData: {
+            model,
+            user: req.user.id,
+            tokenType: 'prompt',
+            amount: promptTokens,
+          },
         },
-      });
+        { findBalanceByUser, getMultiplier, createAutoRefillTransaction, logViolation },
+      );
     };
 
-    const { openai: _openai, client } = await getOpenAIClient({
+    const { openai: _openai } = await getOpenAIClient({
       req,
       res,
       endpointOption,
-      initAppClient: true,
     });
 
     openai = _openai;
@@ -365,7 +378,15 @@ const chatV1 = async (req, res) => {
         role: 'user',
         content: '',
       };
-      const files = await client.addImageURLs(visionMessage, attachments);
+      const { files, image_urls } = await encodeAndFormat(
+        req,
+        attachments,
+        {
+          endpoint: EModelEndpoint.assistants,
+        },
+        VisionModes.generative,
+      );
+      visionMessage.image_urls = image_urls.length ? image_urls : undefined;
       if (!visionMessage.image_urls?.length) {
         return;
       }
@@ -610,7 +631,6 @@ const chatV1 = async (req, res) => {
         text,
         responseText: response.text,
         conversationId,
-        client,
       });
     }
 

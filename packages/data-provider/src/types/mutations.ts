@@ -109,7 +109,6 @@ export type DeleteActionOptions = MutationOptions<void, DeleteActionVariables>;
 export type AgentAvatarVariables = {
   agent_id: string;
   formData: FormData;
-  postCreation?: boolean;
 };
 
 export type UpdateAgentActionVariables = {
@@ -274,6 +273,8 @@ export type UpdatePermVars<T> = {
 export type UpdatePromptPermVars = UpdatePermVars<p.TPromptPermissions>;
 export type UpdateMemoryPermVars = UpdatePermVars<p.TMemoryPermissions>;
 export type UpdateAgentPermVars = UpdatePermVars<p.TAgentPermissions>;
+export type UpdatePeoplePickerPermVars = UpdatePermVars<p.TPeoplePickerPermissions>;
+export type UpdateMCPServersPermVars = UpdatePermVars<p.TMcpServersPermissions>;
 
 export type UpdatePermResponse = r.TRole;
 
@@ -294,6 +295,38 @@ export type UpdateMemoryPermOptions = MutationOptions<
 export type UpdateAgentPermOptions = MutationOptions<
   UpdatePermResponse,
   UpdateAgentPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdatePeoplePickerPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdatePeoplePickerPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdateMCPServersPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateMCPServersPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdateRemoteAgentsPermVars = UpdatePermVars<p.TRemoteAgentsPermissions>;
+
+export type UpdateRemoteAgentsPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateRemoteAgentsPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdateMarketplacePermVars = UpdatePermVars<p.TMarketplacePermissions>;
+
+export type UpdateMarketplacePermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateMarketplacePermVars,
   unknown,
   types.TError | null | undefined
 >;
@@ -353,6 +386,20 @@ export type TEditArtifactResponse = Pick<types.TMessage, 'content' | 'text' | 'c
 export type EditArtifactOptions = MutationOptions<
   TEditArtifactResponse,
   TEditArtifactRequest,
+  unknown,
+  Error
+>;
+
+export type TBranchMessageRequest = {
+  messageId: string;
+  agentId: string;
+};
+
+export type TBranchMessageResponse = types.TMessage;
+
+export type BranchMessageOptions = MutationOptions<
+  TBranchMessageResponse,
+  TBranchMessageRequest,
   unknown,
   Error
 >;

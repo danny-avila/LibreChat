@@ -1,5 +1,4 @@
-import { memo, useMemo, useState } from 'react';
-import { useRecoilState } from 'recoil';
+import { memo, useMemo, useCallback } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -7,15 +6,69 @@ import type {
   TAttachment,
   Agents,
 } from 'librechat-data-provider';
-import { ThinkingButton } from '~/components/Artifacts/Thinking';
+import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
+import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
+import { EditTextPart, EmptyText } from './Parts';
 import MemoryArtifacts from './MemoryArtifacts';
-import Sources from '~/components/Web/Sources';
-import { mapAttachments } from '~/utils/map';
-import { EditTextPart } from './Parts';
-import { useLocalize } from '~/hooks';
-import store from '~/store';
+import ToolCallGroup from './ToolCallGroup';
+import Container from './Container';
 import Part from './Part';
+
+type PartWithContextProps = {
+  part: TMessageContentParts;
+  idx: number;
+  isLastPart: boolean;
+  messageId: string;
+  conversationId?: string | null;
+  nextType?: string;
+  isSubmitting: boolean;
+  isLatestMessage?: boolean;
+  isCreatedByUser: boolean;
+  isLast: boolean;
+  partAttachments: TAttachment[] | undefined;
+};
+
+const PartWithContext = memo(function PartWithContext({
+  part,
+  idx,
+  isLastPart,
+  messageId,
+  conversationId,
+  nextType,
+  isSubmitting,
+  isLatestMessage,
+  isCreatedByUser,
+  isLast,
+  partAttachments,
+}: PartWithContextProps) {
+  const contextValue = useMemo(
+    () => ({
+      messageId,
+      isExpanded: true as const,
+      conversationId,
+      partIndex: idx,
+      nextType,
+      isSubmitting,
+      isLatestMessage,
+    }),
+    [messageId, conversationId, idx, nextType, isSubmitting, isLatestMessage],
+  );
+
+  return (
+    <MessageContext.Provider value={contextValue}>
+      <Part
+        part={part}
+        attachments={partAttachments}
+        isSubmitting={isSubmitting}
+        key={`part-${messageId}-${idx}`}
+        isCreatedByUser={isCreatedByUser}
+        isLast={isLastPart}
+        showCursor={isLastPart && isLast}
+      />
+    </MessageContext.Provider>
+  );
+});
 
 type ContentPartsProps = {
   content: Array<TMessageContentParts | undefined> | undefined;
@@ -26,6 +79,7 @@ type ContentPartsProps = {
   isCreatedByUser: boolean;
   isLast: boolean;
   isSubmitting: boolean;
+  isLatestMessage?: boolean;
   edit?: boolean;
   enterEdit?: (cancel?: boolean) => void | null | undefined;
   siblingIdx?: number;
@@ -35,138 +89,161 @@ type ContentPartsProps = {
     | undefined;
 };
 
-const ContentParts = memo(
-  ({
-    content,
-    messageId,
-    conversationId,
-    attachments,
-    searchResults,
-    isCreatedByUser,
-    isLast,
-    isSubmitting,
-    edit,
-    enterEdit,
-    siblingIdx,
-    setSiblingIdx,
-  }: ContentPartsProps) => {
-    const localize = useLocalize();
-    const [showThinking, setShowThinking] = useRecoilState<boolean>(store.showThinking);
-    const [isExpanded, setIsExpanded] = useState(showThinking);
-    const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
+/**
+ * ContentParts renders message content parts, handling both sequential and parallel layouts.
+ *
+ * For 90% of messages (single-agent, no parallel execution), this renders sequentially.
+ * For multi-agent parallel execution, it uses ParallelContentRenderer to show columns.
+ */
+const ContentParts = memo(function ContentParts({
+  edit,
+  isLast,
+  content,
+  messageId,
+  enterEdit,
+  siblingIdx,
+  attachments,
+  isSubmitting,
+  setSiblingIdx,
+  searchResults,
+  conversationId,
+  isCreatedByUser,
+  isLatestMessage,
+}: ContentPartsProps) {
+  const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
+  const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
-    const hasReasoningParts = useMemo(() => {
-      const hasThinkPart = content?.some((part) => part?.type === ContentTypes.THINK) ?? false;
-      const allThinkPartsHaveContent =
-        content?.every((part) => {
-          if (part?.type !== ContentTypes.THINK) {
-            return true;
-          }
-
-          if (typeof part.think === 'string') {
-            const cleanedContent = part.think.replace(/<\/?think>/g, '').trim();
-            return cleanedContent.length > 0;
-          }
-
-          return false;
-        }) ?? false;
-
-      return hasThinkPart && allThinkPartsHaveContent;
-    }, [content]);
-
-    if (!content) {
-      return null;
-    }
-    if (edit === true && enterEdit && setSiblingIdx) {
+  const renderPart = useCallback(
+    (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+      const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
       return (
-        <>
-          {content.map((part, idx) => {
-            if (!part) {
-              return null;
-            }
-            const isTextPart =
-              part?.type === ContentTypes.TEXT ||
-              typeof (part as unknown as Agents.MessageContentText)?.text !== 'string';
-            const isThinkPart =
-              part?.type === ContentTypes.THINK ||
-              typeof (part as unknown as Agents.ReasoningDeltaUpdate)?.think !== 'string';
-            if (!isTextPart && !isThinkPart) {
-              return null;
-            }
-
-            return (
-              <EditTextPart
-                index={idx}
-                part={part as Agents.MessageContentText | Agents.ReasoningDeltaUpdate}
-                messageId={messageId}
-                isSubmitting={isSubmitting}
-                enterEdit={enterEdit}
-                siblingIdx={siblingIdx ?? null}
-                setSiblingIdx={setSiblingIdx}
-                key={`edit-${messageId}-${idx}`}
-              />
-            );
-          })}
-        </>
+        <PartWithContext
+          key={`provider-${messageId}-${idx}`}
+          idx={idx}
+          part={part}
+          isLast={isLast}
+          messageId={messageId}
+          isLastPart={isLastPart}
+          conversationId={conversationId}
+          isLatestMessage={isLatestMessage}
+          isCreatedByUser={isCreatedByUser}
+          nextType={content?.[idx + 1]?.type}
+          isSubmitting={effectiveIsSubmitting}
+          partAttachments={attachmentMap[toolCallId]}
+        />
       );
-    }
+    },
+    [
+      attachmentMap,
+      content,
+      conversationId,
+      effectiveIsSubmitting,
+      isCreatedByUser,
+      isLast,
+      isLatestMessage,
+      messageId,
+    ],
+  );
 
+  // Early return: no content
+  if (!content) {
+    return null;
+  }
+
+  // Edit mode: render editable text parts
+  if (edit === true && enterEdit && setSiblingIdx) {
     return (
       <>
-        <SearchContext.Provider value={{ searchResults }}>
-          <MemoryArtifacts attachments={attachments} />
-          <Sources />
-          {hasReasoningParts && (
-            <div className="mb-5">
-              <ThinkingButton
-                isExpanded={isExpanded}
-                onClick={() =>
-                  setIsExpanded((prev) => {
-                    const val = !prev;
-                    setShowThinking(val);
-                    return val;
-                  })
-                }
-                label={
-                  isSubmitting && isLast ? localize('com_ui_thinking') : localize('com_ui_thoughts')
-                }
-              />
-            </div>
-          )}
-          {content
-            .filter((part) => part)
-            .map((part, idx) => {
-              const toolCallId =
-                (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-              const attachments = attachmentMap[toolCallId];
+        {content.map((part, idx) => {
+          if (!part) {
+            return null;
+          }
+          const isTextPart =
+            part?.type === ContentTypes.TEXT ||
+            typeof (part as unknown as Agents.MessageContentText)?.text === 'string';
+          const isThinkPart =
+            part?.type === ContentTypes.THINK ||
+            typeof (part as unknown as Agents.ReasoningDeltaUpdate)?.think === 'string';
+          if (!isTextPart && !isThinkPart) {
+            return null;
+          }
 
-              return (
-                <MessageContext.Provider
-                  key={`provider-${messageId}-${idx}`}
-                  value={{
-                    messageId,
-                    isExpanded,
-                    conversationId,
-                    partIndex: idx,
-                    nextType: content[idx + 1]?.type,
-                  }}
-                >
-                  <Part
-                    part={part}
-                    attachments={attachments}
-                    isSubmitting={isSubmitting}
-                    key={`part-${messageId}-${idx}`}
-                    isCreatedByUser={isCreatedByUser}
-                    isLast={idx === content.length - 1}
-                    showCursor={idx === content.length - 1 && isLast}
-                  />
-                </MessageContext.Provider>
-              );
-            })}
-        </SearchContext.Provider>
+          const isToolCall = part.type === ContentTypes.TOOL_CALL || part['tool_call_ids'] != null;
+          if (isToolCall) {
+            return null;
+          }
+
+          return (
+            <EditTextPart
+              index={idx}
+              part={part as Agents.MessageContentText | Agents.ReasoningDeltaUpdate}
+              messageId={messageId}
+              isSubmitting={isSubmitting}
+              enterEdit={enterEdit}
+              siblingIdx={siblingIdx ?? null}
+              setSiblingIdx={setSiblingIdx}
+              key={`edit-${messageId}-${idx}`}
+            />
+          );
+        })}
       </>
     );
-  },
-);
+  }
+
+  const showEmptyCursor = content.length === 0 && effectiveIsSubmitting;
+  const lastContentIdx = content.length - 1;
+
+  // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
+  const hasParallelContent = content.some((part) => part?.groupId != null);
+  if (hasParallelContent) {
+    return (
+      <ParallelContentRenderer
+        content={content}
+        messageId={messageId}
+        conversationId={conversationId}
+        attachments={attachments}
+        searchResults={searchResults}
+        isSubmitting={effectiveIsSubmitting}
+        renderPart={renderPart}
+      />
+    );
+  }
+
+  // Sequential content: render parts in order (90% of cases)
+  const sequentialParts: PartWithIndex[] = [];
+  content.forEach((part, idx) => {
+    if (part) {
+      sequentialParts.push({ part, idx });
+    }
+  });
+  const groupedParts = groupSequentialToolCalls(sequentialParts);
+
+  return (
+    <SearchContext.Provider value={{ searchResults }}>
+      <MemoryArtifacts attachments={attachments} />
+      {showEmptyCursor && (
+        <Container>
+          <EmptyText />
+        </Container>
+      )}
+      {groupedParts.map((group) => {
+        if (group.type === 'single') {
+          const { part, idx } = group.part;
+          return renderPart(part, idx, idx === lastContentIdx);
+        }
+        return (
+          <ToolCallGroup
+            key={`tool-group-${group.parts[0].idx}`}
+            parts={group.parts}
+            isSubmitting={effectiveIsSubmitting}
+            isLast={group.parts.some((p) => p.idx === lastContentIdx)}
+            renderPart={renderPart}
+            lastContentIdx={lastContentIdx}
+          />
+        );
+      })}
+    </SearchContext.Provider>
+  );
+});
 
 export default ContentParts;

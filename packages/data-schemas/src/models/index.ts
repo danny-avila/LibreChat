@@ -5,12 +5,14 @@ import { createBalanceModel } from './balance';
 import { createConversationModel } from './convo';
 import { createMessageModel } from './message';
 import { createAgentModel } from './agent';
+import { createAgentApiKeyModel } from './agentApiKey';
+import { createAgentCategoryModel } from './agentCategory';
+import { createMCPServerModel } from './mcpServer';
 import { createRoleModel } from './role';
 import { createActionModel } from './action';
 import { createAssistantModel } from './assistant';
 import { createFileModel } from './file';
 import { createBannerModel } from './banner';
-import { createProjectModel } from './project';
 import { createKeyModel } from './key';
 import { createPluginAuthModel } from './pluginAuth';
 import { createTransactionModel } from './transaction';
@@ -21,7 +23,11 @@ import { createConversationTagModel } from './conversationTag';
 import { createSharedLinkModel } from './sharedLink';
 import { createToolCallModel } from './toolCall';
 import { createMemoryModel } from './memory';
+import { createAccessRoleModel } from './accessRole';
+import { createAclEntryModel } from './aclEntry';
+import { createSystemGrantModel } from './systemGrant';
 import { createGroupModel } from './group';
+import { createConfigModel } from './config';
 
 /**
  * Creates all database models for all collections
@@ -35,12 +41,14 @@ export function createModels(mongoose: typeof import('mongoose')) {
     Conversation: createConversationModel(mongoose),
     Message: createMessageModel(mongoose),
     Agent: createAgentModel(mongoose),
+    AgentApiKey: createAgentApiKeyModel(mongoose),
+    AgentCategory: createAgentCategoryModel(mongoose),
+    MCPServer: createMCPServerModel(mongoose),
     Role: createRoleModel(mongoose),
     Action: createActionModel(mongoose),
     Assistant: createAssistantModel(mongoose),
     File: createFileModel(mongoose),
     Banner: createBannerModel(mongoose),
-    Project: createProjectModel(mongoose),
     Key: createKeyModel(mongoose),
     PluginAuth: createPluginAuthModel(mongoose),
     Transaction: createTransactionModel(mongoose),
@@ -51,6 +59,10 @@ export function createModels(mongoose: typeof import('mongoose')) {
     SharedLink: createSharedLinkModel(mongoose),
     ToolCall: createToolCallModel(mongoose),
     MemoryEntry: createMemoryModel(mongoose),
+    AccessRole: createAccessRoleModel(mongoose),
+    AclEntry: createAclEntryModel(mongoose),
+    SystemGrant: createSystemGrantModel(mongoose),
     Group: createGroupModel(mongoose),
+    Config: createConfigModel(mongoose),
   };
 }

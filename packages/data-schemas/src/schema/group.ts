@@ -57,7 +57,7 @@ const TimeWindowSchema = new Schema<ITimeWindow>(
       default: true,
     },
   },
-  { 
+  {
     timestamps: true,
     _id: true,
   }
@@ -73,12 +73,46 @@ const groupSchema = new Schema<IGroup>(
       trim: true,
       minlength: [2, 'Group name must be at least 2 characters'],
       maxlength: [50, 'Group name cannot exceed 50 characters'],
+      index: true,
     },
     description: {
       type: String,
       trim: true,
       maxlength: [500, 'Description cannot exceed 500 characters'],
       default: '',
+    },
+    email: {
+      type: String,
+      required: false,
+      index: true,
+    },
+    avatar: {
+      type: String,
+      required: false,
+    },
+    memberIds: [
+      {
+        type: String,
+        required: false,
+      },
+    ],
+    source: {
+      type: String,
+      enum: ['local', 'entra'],
+      default: 'local',
+    },
+    /** External ID (e.g., Entra ID) */
+    idOnTheSource: {
+      type: String,
+      sparse: true,
+      index: true,
+      required: function (this: IGroup) {
+        return this.source !== 'local';
+      },
+    },
+    tenantId: {
+      type: String,
+      index: true,
     },
     isActive: {
       type: Boolean,
@@ -94,7 +128,6 @@ const groupSchema = new Schema<IGroup>(
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
@@ -107,7 +140,7 @@ const groupSchema = new Schema<IGroup>(
       min: 0,
     },
   },
-  { 
+  {
     timestamps: true,
     collection: 'groups',
   }
@@ -118,6 +151,14 @@ groupSchema.index({ name: 1 }, { unique: true });
 groupSchema.index({ isActive: 1 });
 groupSchema.index({ 'timeWindows.isActive': 1 });
 groupSchema.index({ createdAt: -1 });
+groupSchema.index(
+  { idOnTheSource: 1, source: 1, tenantId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { idOnTheSource: { $exists: true } },
+  },
+);
+groupSchema.index({ memberIds: 1 });
 
 // Pre-save middleware to update memberCount
 groupSchema.methods.updateMemberCount = async function() {

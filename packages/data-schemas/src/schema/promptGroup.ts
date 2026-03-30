@@ -1,21 +1,6 @@
-import { Schema, Document, Types } from 'mongoose';
+import { Schema } from 'mongoose';
 import { Constants } from 'librechat-data-provider';
-
-export interface IPromptGroup {
-  name: string;
-  numberOfGenerations: number;
-  oneliner: string;
-  category: string;
-  projectIds: Types.ObjectId[];
-  productionId: Types.ObjectId;
-  author: Types.ObjectId;
-  authorName: string;
-  command?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-export interface IPromptGroupDocument extends IPromptGroup, Document {}
+import type { IPromptGroupDocument } from '~/types';
 
 const promptGroupSchema = new Schema<IPromptGroupDocument>(
   {
@@ -36,12 +21,6 @@ const promptGroupSchema = new Schema<IPromptGroupDocument>(
       type: String,
       default: '',
       index: true,
-    },
-    projectIds: {
-      type: [Schema.Types.ObjectId],
-      ref: 'Project',
-      index: true,
-      default: [],
     },
     productionId: {
       type: Schema.Types.ObjectId,
@@ -74,12 +53,16 @@ const promptGroupSchema = new Schema<IPromptGroupDocument>(
         `Command cannot be longer than ${Constants.COMMANDS_MAX_LENGTH} characters`,
       ],
     }, // Casting here bypasses the type error for the command field.
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,
   },
 );
 
-promptGroupSchema.index({ createdAt: 1, updatedAt: 1 });
+promptGroupSchema.index({ numberOfGenerations: -1, updatedAt: -1, _id: 1 });
 
 export default promptGroupSchema;

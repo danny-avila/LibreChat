@@ -1,5 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-import { FileSources } from 'librechat-data-provider';
+import { FileContext, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '~/types';
 
 const file: Schema<IMongoFile> = new Schema(
@@ -13,6 +13,10 @@ const file: Schema<IMongoFile> = new Schema(
     conversationId: {
       type: String,
       ref: 'Conversation',
+      index: true,
+    },
+    messageId: {
+      type: String,
       index: true,
     },
     file_id: {
@@ -74,6 +78,10 @@ const file: Schema<IMongoFile> = new Schema(
       type: Date,
       expires: 3600, // 1 hour in seconds
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -81,5 +89,9 @@ const file: Schema<IMongoFile> = new Schema(
 );
 
 file.index({ createdAt: 1, updatedAt: 1 });
+file.index(
+  { filename: 1, conversationId: 1, context: 1, tenantId: 1 },
+  { unique: true, partialFilterExpression: { context: FileContext.execute_code } },
+);
 
 export default file;
