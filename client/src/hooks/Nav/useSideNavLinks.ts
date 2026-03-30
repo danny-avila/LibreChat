@@ -16,7 +16,7 @@ import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
-import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
+import { PromptsAccordion } from '~/components/Prompts';
 import GroupsAccordion from '~/components/Groups/GroupsAccordion';
 import StatisticsAccordion from '~/components/Statistics/StatisticsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
