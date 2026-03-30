@@ -30,7 +30,7 @@ function resolveRequestOrigin(req) {
     try {
       return new URL(originHeader).origin;
     } catch {
-      return originHeader;
+      return undefined;
     }
   }
 
@@ -115,17 +115,21 @@ router.get(
   }),
   /** Retrieve PKCE challenge from cache using the OAuth state */
   async (req, res, next) => {
+    if (!req.oauthState) {
+      return next();
+    }
     try {
-      if (req.oauthState) {
-        const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-        const challenge = await cache.get(`pkce:${req.oauthState}`);
-        if (challenge) {
-          req.pkceChallenge = challenge;
-          await cache.delete(`pkce:${req.oauthState}`);
-        }
+      const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+      const challenge = await cache.get(`pkce:${req.oauthState}`);
+      if (challenge) {
+        req.pkceChallenge = challenge;
+        await cache.delete(`pkce:${req.oauthState}`);
       }
     } catch (err) {
-      logger.warn('[admin/oauth/callback] Failed to retrieve PKCE challenge:', err);
+      logger.error('[admin/oauth/callback] Failed to retrieve PKCE challenge, aborting:', err);
+      return res.redirect(
+        `${getAdminPanelUrl()}/auth/openid/callback?error=pkce_retrieval_failed&error_description=Failed+to+retrieve+PKCE+challenge`,
+      );
     }
     next();
   },

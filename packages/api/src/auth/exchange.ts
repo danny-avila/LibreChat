@@ -79,12 +79,7 @@ export function serializeUserForExchange(user: IUser): AdminExchangeUser {
  */
 export function verifyCodeChallenge(verifier: string, challenge: string): boolean {
   const computed = crypto.createHash('sha256').update(verifier).digest();
-  let storedBuf: Buffer;
-  try {
-    storedBuf = Buffer.from(challenge, 'hex');
-  } catch {
-    return false;
-  }
+  const storedBuf = Buffer.from(challenge, 'hex');
   if (computed.length !== storedBuf.length) {
     return false;
   }
