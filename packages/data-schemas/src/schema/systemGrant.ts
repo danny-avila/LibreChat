@@ -66,6 +66,6 @@ systemGrantSchema.index(
 );
 
 systemGrantSchema.index({ capability: 1, tenantId: 1 });
-systemGrantSchema.index({ principalType: 1, capability: 1 });
+systemGrantSchema.index({ principalType: 1, capability: 1, tenantId: 1 });
 
 export default systemGrantSchema;

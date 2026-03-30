@@ -306,13 +306,6 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         capability: SystemCapability;
       };
 
-      if (principalType === PrincipalType.ROLE && checkRoleExists) {
-        const exists = await checkRoleExists(principalId);
-        if (!exists) {
-          return res.status(400).json({ error: 'Role not found' });
-        }
-      }
-
       const { tenantId } = caller;
       const principals = await resolvePrincipals(caller);
 
@@ -327,6 +320,13 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
       }
       if (!held.has(capability)) {
         return res.status(403).json({ error: 'Cannot grant a capability you do not possess' });
+      }
+
+      if (principalType === PrincipalType.ROLE && checkRoleExists) {
+        const exists = await checkRoleExists(principalId);
+        if (!exists) {
+          return res.status(400).json({ error: 'Role not found' });
+        }
       }
 
       const grant = await grantCapability({

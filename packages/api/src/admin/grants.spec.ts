@@ -976,6 +976,19 @@ describe('createAdminGrantsHandlers', () => {
       expect(status).toHaveBeenCalledWith(201);
     });
 
+    it('returns 500 when checkRoleExists throws', async () => {
+      const deps = createDeps({
+        checkRoleExists: jest.fn().mockRejectedValue(new Error('db error')),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: validBody });
+
+      await handlers.assignGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to assign grant' });
+    });
+
     it('returns 500 when grantCapability returns null', async () => {
       const deps = createDeps({
         grantCapability: jest.fn().mockResolvedValue(null),
