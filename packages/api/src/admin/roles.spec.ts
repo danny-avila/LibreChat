@@ -40,12 +40,14 @@ function createReqRes(
     params?: Record<string, string>;
     query?: Record<string, string>;
     body?: Record<string, unknown>;
+    user?: { _id: Types.ObjectId; role: string; tenantId?: string };
   } = {},
 ) {
   const req = {
     params: overrides.params ?? {},
     query: overrides.query ?? {},
     body: overrides.body ?? {},
+    user: overrides.user,
   } as unknown as ServerRequest;
 
   const json = jest.fn();
@@ -941,7 +943,29 @@ describe('createAdminRolesHandlers', () => {
         principalType: PrincipalType.ROLE,
         principalId: 'editor',
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor');
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(
+        PrincipalType.ROLE,
+        'editor',
+        undefined,
+      );
+    });
+
+    it('passes tenantId to grant cleanup', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin', tenantId: 'tenant-1' },
+      });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(
+        PrincipalType.ROLE,
+        'editor',
+        'tenant-1',
+      );
     });
 
     it('does not clean up when role not found', async () => {

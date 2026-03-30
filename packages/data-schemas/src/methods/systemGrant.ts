@@ -392,18 +392,39 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Delete all system grants for a principal.
+   * Delete system grants for a principal.
    * Used for cascade cleanup when a principal (group, role) is deleted.
+   *
+   * When `tenantId` is provided, only grants scoped to that tenant (plus
+   * platform-level grants without a tenantId) are removed. When omitted,
+   * ALL grants for the principal are removed regardless of tenant — this
+   * matches the current role-deletion path which is also tenant-unaware.
    */
   async function deleteGrantsForPrincipal(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    session?: ClientSession,
+    sessionOrTenantId?: ClientSession | string,
+    maybeSession?: ClientSession,
   ): Promise<void> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
+
+    let tenantId: string | undefined;
+    let session: ClientSession | undefined;
+    if (typeof sessionOrTenantId === 'string') {
+      tenantId = sessionOrTenantId;
+      session = maybeSession;
+    } else {
+      session = sessionOrTenantId;
+    }
+
+    const filter: FilterQuery<ISystemGrant> = {
+      principalType,
+      principalId: normalizedPrincipalId,
+      ...(tenantId != null && tenantCondition(tenantId)),
+    };
     const options = session ? { session } : {};
-    await SystemGrant.deleteMany({ principalType, principalId: normalizedPrincipalId }, options);
+    await SystemGrant.deleteMany(filter, options);
   }
 
   return {
