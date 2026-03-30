@@ -43,6 +43,7 @@ const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
+const { selectTitleModels } = require('~/server/utils/titleModelSelector');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { checkCapability } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
@@ -1087,86 +1088,96 @@ class AgentClient extends BaseClient {
       }
     }
 
+    const isAutoSelect =
+      endpointConfig &&
+      endpointConfig.titleModel &&
+      endpointConfig.titleModel.toLowerCase() === 'auto';
+
     if (
       endpointConfig &&
       endpointConfig.titleModel &&
-      endpointConfig.titleModel !== Constants.CURRENT_MODEL
+      endpointConfig.titleModel !== Constants.CURRENT_MODEL &&
+      !isAutoSelect
     ) {
       clientOptions.model = endpointConfig.titleModel;
     }
 
-    const options = await titleProviderConfig.getOptions({
-      req,
-      res,
-      optionsOnly: true,
-      overrideEndpoint: endpoint,
-      overrideModel: clientOptions.model,
-      endpointOption: { model_parameters: clientOptions },
-    });
-
-    let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
-    if (
-      endpoint === EModelEndpoint.azureOpenAI &&
-      options.llmConfig?.azureOpenAIApiInstanceName == null
-    ) {
-      provider = Providers.OPENAI;
-    } else if (
-      endpoint === EModelEndpoint.azureOpenAI &&
-      options.llmConfig?.azureOpenAIApiInstanceName != null &&
-      provider !== Providers.AZURE
-    ) {
-      provider = Providers.AZURE;
-    }
-
-    /** @type {import('@librechat/agents').ClientOptions} */
-    clientOptions = { ...options.llmConfig };
-    if (options.configOptions) {
-      clientOptions.configuration = options.configOptions;
-    }
-
-    if (clientOptions.maxTokens != null) {
-      delete clientOptions.maxTokens;
-    }
-    if (clientOptions?.modelKwargs?.max_completion_tokens != null) {
-      delete clientOptions.modelKwargs.max_completion_tokens;
-    }
-    if (clientOptions?.modelKwargs?.max_output_tokens != null) {
-      delete clientOptions.modelKwargs.max_output_tokens;
-    }
-
-    clientOptions = Object.assign(
-      Object.fromEntries(
-        Object.entries(clientOptions).filter(([key]) => !omitTitleOptions.has(key)),
-      ),
-    );
-
-    if (
-      provider === Providers.GOOGLE &&
-      (endpointConfig?.titleMethod === TitleMethod.FUNCTIONS ||
-        endpointConfig?.titleMethod === TitleMethod.STRUCTURED)
-    ) {
-      clientOptions.json = true;
-    }
-
-    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
-     *  non-custom endpoints, needs consideration of varying provider header configs.
+    /**
+     * Resolve provider options and generate a title for a given model.
+     * @param {string} model - The model name to use for title generation.
+     * @returns {Promise<{title: string, clientOptions: import('@librechat/agents').ClientOptions}>}
      */
-    if (clientOptions?.configuration?.defaultHeaders != null) {
-      clientOptions.configuration.defaultHeaders = resolveHeaders({
-        headers: clientOptions.configuration.defaultHeaders,
-        user: createSafeUser(this.options.req?.user),
-        body: {
-          messageId: this.responseMessageId,
-          conversationId: this.conversationId,
-          parentMessageId: this.parentMessageId,
-        },
-      });
-    }
+    const attemptTitleGeneration = async (model) => {
+      /** @type {import('@librechat/agents').ClientOptions} */
+      let attemptClientOptions = { model };
 
-    try {
+      const options = await titleProviderConfig.getOptions({
+        req,
+        res,
+        optionsOnly: true,
+        overrideEndpoint: endpoint,
+        overrideModel: model,
+        endpointOption: { model_parameters: attemptClientOptions },
+      });
+
+      let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
+      if (
+        endpoint === EModelEndpoint.azureOpenAI &&
+        options.llmConfig?.azureOpenAIApiInstanceName == null
+      ) {
+        provider = Providers.OPENAI;
+      } else if (
+        endpoint === EModelEndpoint.azureOpenAI &&
+        options.llmConfig?.azureOpenAIApiInstanceName != null &&
+        provider !== Providers.AZURE
+      ) {
+        provider = Providers.AZURE;
+      }
+
+      attemptClientOptions = { ...options.llmConfig };
+      if (options.configOptions) {
+        attemptClientOptions.configuration = options.configOptions;
+      }
+
+      if (attemptClientOptions.maxTokens != null) {
+        delete attemptClientOptions.maxTokens;
+      }
+      if (attemptClientOptions?.modelKwargs?.max_completion_tokens != null) {
+        delete attemptClientOptions.modelKwargs.max_completion_tokens;
+      }
+      if (attemptClientOptions?.modelKwargs?.max_output_tokens != null) {
+        delete attemptClientOptions.modelKwargs.max_output_tokens;
+      }
+
+      attemptClientOptions = Object.assign(
+        Object.fromEntries(
+          Object.entries(attemptClientOptions).filter(([key]) => !omitTitleOptions.has(key)),
+        ),
+      );
+
+      if (
+        provider === Providers.GOOGLE &&
+        (endpointConfig?.titleMethod === TitleMethod.FUNCTIONS ||
+          endpointConfig?.titleMethod === TitleMethod.STRUCTURED)
+      ) {
+        attemptClientOptions.json = true;
+      }
+
+      if (attemptClientOptions?.configuration?.defaultHeaders != null) {
+        attemptClientOptions.configuration.defaultHeaders = resolveHeaders({
+          headers: attemptClientOptions.configuration.defaultHeaders,
+          user: createSafeUser(this.options.req?.user),
+          body: {
+            messageId: this.responseMessageId,
+            conversationId: this.conversationId,
+            parentMessageId: this.parentMessageId,
+          },
+        });
+      }
+
       const titleResult = await this.run.generateTitle({
         provider,
-        clientOptions,
+        clientOptions: attemptClientOptions,
         inputText: text,
         contentParts: this.contentParts,
         titleMethod: endpointConfig?.titleMethod,
@@ -1186,6 +1197,16 @@ class AgentClient extends BaseClient {
         },
       });
 
+      return { title: titleResult.title, clientOptions: attemptClientOptions };
+    };
+
+    /**
+     * Record token usage and return the sanitized title.
+     * @param {string} title - The raw title.
+     * @param {import('@librechat/agents').ClientOptions} usedClientOptions - The options used.
+     * @returns {Promise<string>}
+     */
+    const finalizeTitleResult = async (title, usedClientOptions) => {
       const collectedUsage = collectedMetadata.map((item) => {
         let input_tokens, output_tokens;
 
@@ -1210,7 +1231,7 @@ class AgentClient extends BaseClient {
       await this.recordCollectedUsage({
         collectedUsage,
         context: 'title',
-        model: clientOptions.model,
+        model: usedClientOptions.model,
         balance: balanceConfig,
         transactions: transactionsConfig,
       }).catch((err) => {
@@ -1220,7 +1241,63 @@ class AgentClient extends BaseClient {
         );
       });
 
-      return sanitizeTitle(titleResult.title);
+      return sanitizeTitle(title);
+    };
+
+    if (isAutoSelect) {
+      const rankedModels = selectTitleModels(appConfig, endpoint);
+      const agentModel = agent.model || agent.model_parameters.model;
+
+      if (rankedModels.length === 0) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #titleConvo] Auto-select: no rankable models found, falling back to agent model',
+        );
+        clientOptions.model = agentModel;
+      } else {
+        for (let i = 0; i < rankedModels.length; i++) {
+          const model = rankedModels[i];
+          try {
+            logger.debug(
+              `[api/server/controllers/agents/client.js #titleConvo] Auto-select: trying model "${model}" (attempt ${i + 1}/${rankedModels.length})`,
+            );
+            const result = await attemptTitleGeneration(model);
+            return await finalizeTitleResult(result.title, result.clientOptions);
+          } catch (err) {
+            logger.warn(
+              `[api/server/controllers/agents/client.js #titleConvo] Auto-select: model "${model}" failed, trying next`,
+              err.message,
+            );
+          }
+        }
+
+        // All ranked models failed; fall back to agent model if not already tried
+        if (!rankedModels.includes(agentModel)) {
+          try {
+            logger.debug(
+              `[api/server/controllers/agents/client.js #titleConvo] Auto-select exhausted, falling back to agent model "${agentModel}"`,
+            );
+            const result = await attemptTitleGeneration(agentModel);
+            return await finalizeTitleResult(result.title, result.clientOptions);
+          } catch (err) {
+            logger.error(
+              '[api/server/controllers/agents/client.js #titleConvo] Auto-select: agent model fallback also failed',
+              err,
+            );
+            return;
+          }
+        }
+
+        logger.error(
+          '[api/server/controllers/agents/client.js #titleConvo] Auto-select: all models failed',
+        );
+        return;
+      }
+    }
+
+    // Standard (non-auto) path
+    try {
+      const result = await attemptTitleGeneration(clientOptions.model);
+      return await finalizeTitleResult(result.title, result.clientOptions);
     } catch (err) {
       logger.error('[api/server/controllers/agents/client.js #titleConvo] Error', err);
       return;

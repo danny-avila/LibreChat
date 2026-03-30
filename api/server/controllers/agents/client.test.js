@@ -1611,4 +1611,225 @@ describe('AgentClient - titleConvo', () => {
       expect(mockProcessMemory).not.toHaveBeenCalled();
     });
   });
+
+  describe('titleConvo - auto model selection', () => {
+    let client;
+    let mockRun;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      mockRun = {
+        generateTitle: jest.fn().mockResolvedValue({ title: 'Auto Title' }),
+      };
+
+      mockAgent = {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.azureOpenAI,
+        provider: EModelEndpoint.azureOpenAI,
+        model: 'gpt-4o',
+        model_parameters: { model: 'gpt-4o' },
+      };
+
+      process.env.AZURE_OPENAI_API_KEY = 'test-azure-key';
+
+      mockReq = {
+        user: { id: 'user-123' },
+        body: {
+          model: 'gpt-4o',
+          endpoint: EModelEndpoint.azureOpenAI,
+          key: null,
+        },
+        config: {
+          endpoints: {
+            [EModelEndpoint.azureOpenAI]: {
+              titleConvo: true,
+              titleModel: 'auto',
+              titleMethod: 'completion',
+              modelNames: ['gpt-4o', 'gpt-4o-mini', 'gpt-41', 'gpt-41-mini'],
+              modelGroupMap: {
+                'gpt-4o': { group: 'eastus', deploymentName: 'gpt-4o' },
+                'gpt-4o-mini': { group: 'eastus', deploymentName: 'gpt-4o-mini' },
+                'gpt-41': { group: 'eastus', deploymentName: 'gpt-41' },
+                'gpt-41-mini': { group: 'eastus', deploymentName: 'gpt-41-mini' },
+              },
+              groupMap: {
+                eastus: {
+                  apiKey: '${AZURE_OPENAI_API_KEY}',
+                  instanceName: 'test-instance',
+                  version: '2024-10-21',
+                  models: {
+                    'gpt-4o': { deploymentName: 'gpt-4o' },
+                    'gpt-4o-mini': { deploymentName: 'gpt-4o-mini' },
+                    'gpt-41': { deploymentName: 'gpt-41' },
+                    'gpt-41-mini': { deploymentName: 'gpt-41-mini' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+        endpointTokenConfig: {},
+      };
+
+      const AgentClient = require('./client');
+      client = new AgentClient(mockOptions);
+      client.run = mockRun;
+      client.responseMessageId = 'response-123';
+      client.conversationId = 'convo-123';
+      client.contentParts = [{ type: 'text', text: 'Test content' }];
+      client.recordCollectedUsage = jest.fn().mockResolvedValue();
+    });
+
+    afterEach(() => {
+      delete process.env.AZURE_OPENAI_API_KEY;
+    });
+
+    it('should use the cheapest model when titleModel is "auto"', async () => {
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      await client.titleConvo({ text, abortController });
+
+      const call = mockRun.generateTitle.mock.calls[0][0];
+      // gpt-41-mini is cheapest (mini tier, highest version)
+      expect(call.clientOptions.model).toBe('gpt-41-mini');
+    });
+
+    it('should try next model when cheapest fails', async () => {
+      mockRun.generateTitle
+        .mockRejectedValueOnce(new Error('Model unavailable'))
+        .mockResolvedValueOnce({ title: 'Fallback Title' });
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      expect(result).toBe('Fallback Title');
+      expect(mockRun.generateTitle).toHaveBeenCalledTimes(2);
+      // First attempt: gpt-41-mini (cheapest)
+      expect(mockRun.generateTitle.mock.calls[0][0].clientOptions.model).toBe('gpt-41-mini');
+      // Second attempt: gpt-4o-mini (next cheapest)
+      expect(mockRun.generateTitle.mock.calls[1][0].clientOptions.model).toBe('gpt-4o-mini');
+    });
+
+    it('should fall back to agent model when all auto-selected models fail', async () => {
+      // Set agent model to something NOT in the ranked list
+      mockAgent.model = 'o3-mini';
+      mockAgent.model_parameters.model = 'o3-mini';
+      // Add the agent model to Azure config so provider resolution works
+      mockReq.config.endpoints[EModelEndpoint.azureOpenAI].modelGroupMap['o3-mini'] = {
+        group: 'eastus',
+        deploymentName: 'o3-mini',
+      };
+      mockReq.config.endpoints[EModelEndpoint.azureOpenAI].groupMap.eastus.models['o3-mini'] = {
+        deploymentName: 'o3-mini',
+      };
+
+      mockRun.generateTitle
+        .mockRejectedValueOnce(new Error('gpt-41-mini unavailable'))
+        .mockRejectedValueOnce(new Error('gpt-4o-mini unavailable'))
+        .mockRejectedValueOnce(new Error('gpt-41 unavailable'))
+        .mockRejectedValueOnce(new Error('gpt-4o unavailable'))
+        .mockResolvedValueOnce({ title: 'Agent Model Title' });
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      expect(result).toBe('Agent Model Title');
+      // 4 auto models + 1 fallback to agent model
+      expect(mockRun.generateTitle).toHaveBeenCalledTimes(5);
+      const lastCall = mockRun.generateTitle.mock.calls[4][0];
+      expect(lastCall.clientOptions.model).toBe('o3-mini');
+    });
+
+    it('should return undefined when all models including agent fallback fail', async () => {
+      mockRun.generateTitle.mockRejectedValue(new Error('All models broken'));
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should not retry with agent model if it was already tried in auto list', async () => {
+      // Agent model is gpt-4o which is in the auto list
+      mockRun.generateTitle.mockRejectedValue(new Error('All models broken'));
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      await client.titleConvo({ text, abortController });
+
+      // Should be exactly 4 calls (the 4 ranked models), no duplicate agent fallback
+      // since gpt-4o (agent model) is already in the ranked list
+      expect(mockRun.generateTitle).toHaveBeenCalledTimes(4);
+    });
+
+    it('should use explicit titleModel when not "auto"', async () => {
+      mockReq.config.endpoints[EModelEndpoint.azureOpenAI].titleModel = 'gpt-4o-mini';
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      await client.titleConvo({ text, abortController });
+
+      const call = mockRun.generateTitle.mock.calls[0][0];
+      expect(call.clientOptions.model).toBe('gpt-4o-mini');
+      // Should only be called once (no retry logic for explicit model)
+      expect(mockRun.generateTitle).toHaveBeenCalledTimes(1);
+    });
+
+    it('should fall back to current behavior when no GPT models found for auto', async () => {
+      mockReq.config.endpoints[EModelEndpoint.azureOpenAI].modelNames = [
+        'claude-3-haiku',
+        'gemini-pro',
+      ];
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      await client.titleConvo({ text, abortController });
+
+      // Should fall back to agent model since no GPT models are rankable
+      const call = mockRun.generateTitle.mock.calls[0][0];
+      expect(call.clientOptions.model).toBe('gpt-4o');
+      expect(mockRun.generateTitle).toHaveBeenCalledTimes(1);
+    });
+
+    it('should record usage with the model that succeeded', async () => {
+      mockRun.generateTitle
+        .mockRejectedValueOnce(new Error('Model unavailable'))
+        .mockResolvedValueOnce({ title: 'Success Title' });
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      await client.titleConvo({ text, abortController });
+
+      expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'gpt-4o-mini', // Second model (the one that succeeded)
+          context: 'title',
+        }),
+      );
+    });
+  });
 });
