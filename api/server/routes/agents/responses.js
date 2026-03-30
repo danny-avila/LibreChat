@@ -41,7 +41,7 @@ const router = express.Router();
 
 const apiKeyMiddleware = createRequireApiKeyAuth({
   validateAgentApiKey: db.validateAgentApiKey,
-  findUser: db.findUser
+  findUser: db.findUser,
 });
 
 const requireRemoteAgentAuth = createRemoteAgentAuth({

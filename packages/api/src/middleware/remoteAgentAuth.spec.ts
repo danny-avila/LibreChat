@@ -467,7 +467,7 @@ describe('createRemoteAgentAuth', () => {
       });
 
       const deps = { ...makeDeps(), updateUser: mockUpdateUser };
-      await createRemoteAgentAuth(deps as any)(
+      await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
         makeRes().res,
         mockNext,
@@ -490,7 +490,7 @@ describe('createRemoteAgentAuth', () => {
       });
 
       const deps = { ...makeDeps(), updateUser: mockUpdateUser };
-      await createRemoteAgentAuth(deps as any)(
+      await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
         makeRes().res,
         mockNext,
@@ -498,5 +498,5 @@ describe('createRemoteAgentAuth', () => {
 
       expect(mockUpdateUser).not.toHaveBeenCalled();
     });
-  })
+  });
 });
