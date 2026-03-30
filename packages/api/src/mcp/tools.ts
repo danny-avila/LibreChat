@@ -71,7 +71,7 @@ export function createMCPToolCacheService(deps: ToolCacheDeps) {
       if (!count) {
         return;
       }
-      const cachedTools = await getCachedTools();
+      const cachedTools = (await getCachedTools()) ?? {};
       const mergedTools: LCAvailableTools = { ...cachedTools, ...appTools };
       await setCachedTools(mergedTools);
       logger.debug(`Merged ${count} app-level tools`);
