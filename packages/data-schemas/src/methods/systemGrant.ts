@@ -194,13 +194,52 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     return await SystemGrant.find(filter).lean();
   }
 
-  async function listAllGrants(tenantId?: string): Promise<ISystemGrant[]> {
+  function buildTenantFilter(filter: Record<string, unknown>, tenantId?: string): void {
+    if (tenantId != null) {
+      filter.$or = [{ tenantId }, { tenantId: { $exists: false } }];
+    } else {
+      filter.tenantId = { $exists: false };
+    }
+  }
+
+  async function listGrants(options?: {
+    tenantId?: string;
+    principalTypes?: PrincipalType[];
+    limit?: number;
+    offset?: number;
+  }): Promise<ISystemGrant[]> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
-    const filter: Record<string, unknown> =
-      tenantId != null
-        ? { $or: [{ tenantId }, { tenantId: { $exists: false } }] }
-        : { tenantId: { $exists: false } };
-    return await SystemGrant.find(filter).lean();
+    const limit = options?.limit ?? 50;
+    const offset = options?.offset ?? 0;
+    const filter: Record<string, unknown> = {};
+
+    if (options?.principalTypes?.length) {
+      filter.principalType = { $in: options.principalTypes };
+    }
+
+    buildTenantFilter(filter, options?.tenantId);
+
+    return SystemGrant.find(filter)
+      .sort({ principalType: 1, capability: 1 })
+      .skip(offset)
+      .limit(limit)
+      .lean();
+  }
+
+  async function countGrants(options?: {
+    tenantId?: string;
+    principalTypes?: PrincipalType[];
+  }): Promise<number> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const filter: Record<string, unknown> = {};
+
+    if (options?.principalTypes?.length) {
+      filter.principalType = { $in: options.principalTypes };
+    }
+
+    buildTenantFilter(filter, options?.tenantId);
+
+    return SystemGrant.countDocuments(filter);
   }
 
   async function getCapabilitiesForPrincipals({
@@ -215,10 +254,16 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     }
 
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
-    const principalsQuery = principals.map((p) => ({
-      principalType: p.principalType,
-      principalId: normalizePrincipalId(p.principalId, p.principalType as PrincipalType),
-    }));
+    const principalsQuery = principals
+      .filter((p) => p.principalType !== PrincipalType.PUBLIC)
+      .map((p) => ({
+        principalType: p.principalType,
+        principalId: normalizePrincipalId(p.principalId, p.principalType as PrincipalType),
+      }));
+
+    if (!principalsQuery.length) {
+      return [];
+    }
 
     const filter: Record<string, unknown> = { $or: principalsQuery };
 
@@ -303,7 +348,8 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     seedSystemGrants,
     revokeCapability,
     hasCapabilityForPrincipals,
-    listAllGrants,
+    listGrants,
+    countGrants,
     getCapabilitiesForPrincipal,
     getCapabilitiesForPrincipals,
     deleteGrantsForPrincipal,

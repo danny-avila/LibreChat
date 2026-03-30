@@ -50,6 +50,8 @@ export type HasConfigCapabilityFn = (
   verb?: 'manage' | 'read',
 ) => Promise<boolean>;
 
+export type GetCachedPrincipalsFn = (user: CapabilityUser) => ResolvedPrincipal[] | undefined;
+
 /**
  * Per-request store for caching resolved principals and capability check results.
  * When running inside an Express request (via `capabilityContextMiddleware`),
@@ -73,6 +75,20 @@ export function capabilityContextMiddleware(
     );
   }
   capabilityStore.run({ principals: new Map(), results: new Map() }, next);
+}
+
+/**
+ * Reads principals from the per-request ALS cache without side effects.
+ * Returns `undefined` when called outside a request context or before
+ * `requireCapability` has populated the cache for this user.
+ */
+export function getCachedPrincipals(user: CapabilityUser): ResolvedPrincipal[] | undefined {
+  const store = capabilityStore.getStore();
+  if (!store) {
+    return undefined;
+  }
+  const key = `${user.id}:${user.role}:${user.tenantId ?? ''}`;
+  return store.principals.get(key);
 }
 
 /**
