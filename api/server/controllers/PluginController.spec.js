@@ -130,7 +130,7 @@ describe('PluginController', () => {
       expect(responseData[0].pluginKey).toBe('key1');
     });
 
-    it('should apply filteredTools even when includedTools is set', async () => {
+    it('should ignore filteredTools when includedTools is set', async () => {
       const mockPlugins = [
         { name: 'Plugin1', pluginKey: 'key1', description: 'First' },
         { name: 'Plugin2', pluginKey: 'key2', description: 'Second' },
@@ -147,8 +147,8 @@ describe('PluginController', () => {
       await getAvailablePluginsController(mockReq, mockRes);
 
       const responseData = mockRes.json.mock.calls[0][0];
-      expect(responseData).toHaveLength(1);
-      expect(responseData[0].pluginKey).toBe('key1');
+      expect(responseData).toHaveLength(2);
+      expect(responseData.map((p) => p.pluginKey)).toEqual(['key1', 'key2']);
     });
   });
 
