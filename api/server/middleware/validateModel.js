@@ -1,7 +1,12 @@
 const { handleError } = require('@librechat/api');
 const { ViolationTypes } = require('librechat-data-provider');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { getEndpointsConfig } = require('~/server/services/Config');
 const { logViolation } = require('~/cache');
+
+const MAX_MODEL_STRING_LENGTH = 256;
+const MODEL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:\-/@+ ]*$/;
+
 /**
  * Validates the model of the request.
  *
@@ -14,6 +19,21 @@ const validateModel = async (req, res, next) => {
   const { model, endpoint } = req.body;
   if (!model) {
     return handleError(res, { text: 'Model not provided' });
+  }
+
+  if (
+    typeof model !== 'string' ||
+    model.length > MAX_MODEL_STRING_LENGTH ||
+    !MODEL_PATTERN.test(model)
+  ) {
+    return handleError(res, { text: 'Invalid model identifier' });
+  }
+
+  const endpointsConfig = await getEndpointsConfig(req);
+  const endpointConfig = endpointsConfig?.[endpoint];
+
+  if (endpointConfig?.userProvide) {
+    return next();
   }
 
   const modelsConfig = await getModelsConfig(req);
