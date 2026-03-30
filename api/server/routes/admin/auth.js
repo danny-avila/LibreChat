@@ -122,6 +122,10 @@ router.get(
       if (challenge) {
         req.pkceChallenge = challenge;
         await cache.delete(`pkce:${req.oauthState}`);
+      } else {
+        logger.warn(
+          '[admin/oauth/callback] State present but no PKCE challenge found; PKCE will not be enforced for this request',
+        );
       }
     } catch (err) {
       logger.error('[admin/oauth/callback] Failed to retrieve PKCE challenge, aborting:', err);
@@ -146,7 +150,7 @@ const EXCHANGE_CODE_PATTERN = /^[a-f0-9]{64}$/;
  * The code is one-time-use and expires in 30 seconds.
  *
  * POST /api/admin/oauth/exchange
- * Body: { code: string }
+ * Body: { code: string, code_verifier?: string }
  * Response: { token: string, refreshToken: string, user: object }
  */
 router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
@@ -171,7 +175,7 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
 
     if (
       codeVerifier !== undefined &&
-      (typeof codeVerifier !== 'string' || codeVerifier.length > 512)
+      (typeof codeVerifier !== 'string' || codeVerifier.length < 1 || codeVerifier.length > 512)
     ) {
       logger.warn('[admin/oauth/exchange] Invalid code_verifier format');
       return res.status(400).json({

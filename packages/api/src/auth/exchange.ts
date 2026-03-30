@@ -139,6 +139,7 @@ export async function exchangeAdminCode(
 ): Promise<AdminExchangeResponse | null> {
   const data = (await cache.get(code)) as AdminExchangeData | undefined;
 
+  /** Delete before validation — ensures one-time use even if subsequent checks throw */
   await cache.delete(code);
 
   if (!data) {
