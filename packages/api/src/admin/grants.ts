@@ -55,6 +55,7 @@ export interface AdminGrantsDeps {
   getUserPrincipals: (params: {
     userId: string;
     role?: string | null;
+    tenantId?: string;
   }) => Promise<ResolvedPrincipal[]>;
   hasCapabilityForPrincipals: (params: {
     principals: ResolvedPrincipal[];
@@ -137,7 +138,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         return cached;
       }
     }
-    return getUserPrincipals({ userId: user.userId, role: user.role });
+    return getUserPrincipals({ userId: user.userId, role: user.role, tenantId: user.tenantId });
   }
 
   function validatePrincipal(principalType: string, principalId: string): string | null {
