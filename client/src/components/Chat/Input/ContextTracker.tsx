@@ -100,10 +100,12 @@ export default function ContextTracker({
   const prevIsSubmitting = useRef(isSubmitting);
   useEffect(() => {
     if (prevIsSubmitting.current && !isSubmitting) {
-      setUsedTokens(getUsedTokens(getMessages()));
+      // Messages from SSE don't include tokenCount (server strips it).
+      // Invalidate to refetch from API which includes tokenCount from DB.
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.messages] });
     }
     prevIsSubmitting.current = isSubmitting;
-  }, [isSubmitting, getMessages]);
+  }, [isSubmitting, queryClient]);
 
   const maxContextTokens =
     typeof conversation?.maxContextTokens === 'number' &&
