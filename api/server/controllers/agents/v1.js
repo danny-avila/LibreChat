@@ -38,6 +38,7 @@ const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { filterFile } = require('~/server/services/Files/process');
 const { getCachedTools } = require('~/server/services/Config');
+const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -101,9 +102,16 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
  * @param {string} params.userId - Requesting user ID for MCP server access check
  * @param {Record<string, unknown>} params.availableTools - Global non-MCP tool cache
  * @param {string[]} [params.existingTools] - Tools already persisted on the agent document
+ * @param {Record<string, unknown>} [params.configServers] - Config-source MCP servers resolved from appConfig overrides
  * @returns {Promise<string[]>} Only the authorized subset of tools
  */
-const filterAuthorizedTools = async ({ tools, userId, availableTools, existingTools }) => {
+const filterAuthorizedTools = async ({
+  tools,
+  userId,
+  availableTools,
+  existingTools,
+  configServers,
+}) => {
   const filteredTools = [];
   let mcpServerConfigs;
   let registryUnavailable = false;
@@ -121,7 +129,8 @@ const filterAuthorizedTools = async ({ tools, userId, availableTools, existingTo
 
     if (mcpServerConfigs === undefined) {
       try {
-        mcpServerConfigs = (await getMCPServersRegistry().getAllServerConfigs(userId)) ?? {};
+        mcpServerConfigs =
+          (await getMCPServersRegistry().getAllServerConfigs(userId, configServers)) ?? {};
       } catch (e) {
         logger.warn(
           '[filterAuthorizedTools] MCP registry unavailable, filtering all MCP tools',
@@ -192,8 +201,17 @@ const createAgentHandler = async (req, res) => {
     agentData.author = userId;
     agentData.tools = [];
 
-    const availableTools = (await getCachedTools()) ?? {};
-    agentData.tools = await filterAuthorizedTools({ tools, userId, availableTools });
+    const hasMCPTools = tools.some((t) => t?.includes(Constants.mcp_delimiter));
+    const [availableTools, configServers] = await Promise.all([
+      getCachedTools().then((t) => t ?? {}),
+      hasMCPTools ? resolveConfigServers(req) : Promise.resolve(undefined),
+    ]);
+    agentData.tools = await filterAuthorizedTools({
+      tools,
+      userId,
+      availableTools,
+      configServers,
+    });
 
     const agent = await db.createAgent(agentData);
 
@@ -376,11 +394,15 @@ const updateAgentHandler = async (req, res) => {
       );
 
       if (newMCPTools.length > 0) {
-        const availableTools = (await getCachedTools()) ?? {};
+        const [availableTools, configServers] = await Promise.all([
+          getCachedTools().then((t) => t ?? {}),
+          resolveConfigServers(req),
+        ]);
         const approvedNew = await filterAuthorizedTools({
           tools: newMCPTools,
           userId: req.user.id,
           availableTools,
+          configServers,
         });
         const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
         if (rejectedSet.size > 0) {
@@ -533,12 +555,16 @@ const duplicateAgentHandler = async (req, res) => {
     newAgentData.actions = agentActions;
 
     if (newAgentData.tools?.length) {
-      const availableTools = (await getCachedTools()) ?? {};
+      const [availableTools, configServers] = await Promise.all([
+        getCachedTools().then((t) => t ?? {}),
+        resolveConfigServers(req),
+      ]);
       newAgentData.tools = await filterAuthorizedTools({
         tools: newAgentData.tools,
         userId,
         availableTools,
         existingTools: newAgentData.tools,
+        configServers,
       });
     }
 
@@ -873,12 +899,16 @@ const revertAgentVersionHandler = async (req, res) => {
     let updatedAgent = await db.revertAgentVersion({ id }, version_index);
 
     if (updatedAgent.tools?.length) {
-      const availableTools = (await getCachedTools()) ?? {};
+      const [availableTools, configServers] = await Promise.all([
+        getCachedTools().then((t) => t ?? {}),
+        resolveConfigServers(req),
+      ]);
       const filteredTools = await filterAuthorizedTools({
         tools: updatedAgent.tools,
         userId: req.user.id,
         availableTools,
         existingTools: updatedAgent.tools,
+        configServers,
       });
       if (filteredTools.length !== updatedAgent.tools.length) {
         updatedAgent = await db.updateAgent(

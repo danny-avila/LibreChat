@@ -267,7 +267,11 @@ router.post(
   async (req, res) => {
     try {
       /* TODO: optimize to return imported conversations and add manually */
-      await importConversations({ filepath: req.file.path, requestUserId: req.user.id });
+      await importConversations({
+        filepath: req.file.path,
+        requestUserId: req.user.id,
+        userRole: req.user.role,
+      });
       res.status(201).json({ message: 'Conversation(s) imported successfully' });
     } catch (error) {
       logger.error('Error processing file', error);

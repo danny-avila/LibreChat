@@ -22,6 +22,10 @@ jest.mock('~/config', () => ({
   })),
 }));
 
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
+}));
+
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(),
 }));
@@ -223,7 +227,27 @@ describe('MCP Tool Authorization', () => {
         availableTools,
       });
 
-      expect(mockGetAllServerConfigs).toHaveBeenCalledWith('specific-user-id');
+      expect(mockGetAllServerConfigs).toHaveBeenCalledWith('specific-user-id', undefined);
+    });
+
+    test('should pass configServers to getAllServerConfigs and allow config-override servers', async () => {
+      const configServers = {
+        'config-override-server': { type: 'sse', url: 'https://override.example.com' },
+      };
+      mockGetAllServerConfigs.mockResolvedValue({
+        'config-override-server': configServers['config-override-server'],
+      });
+
+      const result = await filterAuthorizedTools({
+        tools: [`tool${d}config-override-server`, `tool${d}unauthorizedServer`],
+        userId,
+        availableTools,
+        configServers,
+      });
+
+      expect(mockGetAllServerConfigs).toHaveBeenCalledWith(userId, configServers);
+      expect(result).toContain(`tool${d}config-override-server`);
+      expect(result).not.toContain(`tool${d}unauthorizedServer`);
     });
 
     test('should only call getAllServerConfigs once even with multiple MCP tools', async () => {

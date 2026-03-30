@@ -5,7 +5,6 @@ import { createAppConfigService } from './service';
 interface TestConfig extends AppConfig {
   restricted?: boolean;
   x?: string;
-  interface?: { endpointsMenu?: boolean; [key: string]: boolean | undefined };
 }
 
 /**
@@ -35,7 +34,7 @@ function createMockCache(namespace = 'app_config') {
 
 function createDeps(overrides = {}) {
   const cache = createMockCache();
-  const baseConfig = { interface: { endpointsMenu: true }, endpoints: ['openAI'] };
+  const baseConfig = { interfaceConfig: { endpointsMenu: true }, endpoints: ['openAI'] };
 
   return {
     loadBaseConfig: jest.fn().mockResolvedValue(baseConfig),
@@ -133,9 +132,8 @@ describe('createAppConfigService', () => {
 
       const config = await getAppConfig({ role: 'ADMIN' });
 
-      // Test data uses mock fields that don't exist on AppConfig to verify merge behavior
       const merged = config as TestConfig;
-      expect(merged.interface?.endpointsMenu).toBe(false);
+      expect(merged.interfaceConfig?.endpointsMenu).toBe(false);
       expect(merged.endpoints).toEqual(['openAI']);
     });
 
