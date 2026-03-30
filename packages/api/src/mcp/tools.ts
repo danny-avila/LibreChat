@@ -9,7 +9,7 @@ export interface MCPToolInput {
   inputSchema?: JsonSchemaType;
 }
 
-export interface ToolCacheDeps {
+export interface MCPToolCacheDeps {
   getCachedTools: (options?: {
     userId?: string;
     serverName?: string;
@@ -20,7 +20,7 @@ export interface ToolCacheDeps {
   ) => Promise<boolean>;
 }
 
-export function createMCPToolCacheService(deps: ToolCacheDeps) {
+export function createMCPToolCacheService(deps: MCPToolCacheDeps) {
   const { getCachedTools, setCachedTools } = deps;
 
   async function updateMCPServerTools(params: {

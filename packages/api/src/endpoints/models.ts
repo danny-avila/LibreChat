@@ -137,7 +137,11 @@ export async function fetchModels({
 
   if (name && name.toLowerCase().startsWith(KnownEndpoints.ollama)) {
     try {
-      return await fetchOllamaModels(baseURL ?? '', { headers, user: userObject });
+      const ollamaModels = await fetchOllamaModels(baseURL ?? '', { headers, user: userObject });
+      if (modelsCache && cacheKey && ollamaModels.length > 0) {
+        await modelsCache.set(cacheKey, ollamaModels, Time.TWO_MINUTES);
+      }
+      return ollamaModels;
     } catch (ollamaError) {
       const logMessage =
         'Failed to fetch models from Ollama API. Attempting to fetch via OpenAI-compatible endpoint.';

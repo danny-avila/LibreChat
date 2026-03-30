@@ -1,3 +1,4 @@
+import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 
 type AnyObject = { [key: string]: unknown };
@@ -9,8 +10,11 @@ const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
  * Maps YAML-level override keys (TCustomConfig) to their AppConfig equivalents.
  * Overrides are stored with YAML keys but merged into the already-processed AppConfig
  * where some fields have been renamed by AppService.
+ *
+ * When AppService renames a field, add the mapping here — the compiler
+ * enforces that keys come from TCustomConfig and values from AppConfig.
  */
-const OVERRIDE_KEY_MAP: Record<string, string> = {
+const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = {
   mcpServers: 'mcpConfig',
   interface: 'interfaceConfig',
 };
