@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { Keyv } from 'keyv';
 
 jest.mock(
   '@librechat/data-schemas',
@@ -21,23 +22,12 @@ describe('admin OAuth code exchange', () => {
     username: 'admin',
     role: 'ADMIN',
     provider: 'openid',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
+  };
 
   const createCache = () => {
-    const store = new Map();
-    const cache = {
-      set: jest.fn(async (key: string, value: unknown, _ttl?: number) => {
-        store.set(key, value);
-      }),
-      get: jest.fn(async (key: string) => store.get(key)),
-      delete: jest.fn(async (key: string) => {
-        store.delete(key);
-      }),
-    };
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return { cache: cache as any, store, spies: cache };
+    const cache = new Keyv();
+    const deleteSpy = jest.spyOn(cache, 'delete');
+    return { cache, deleteSpy };
   };
 
   describe('origin binding', () => {
@@ -60,7 +50,7 @@ describe('admin OAuth code exchange', () => {
     });
 
     it('rejects code exchange when request origin does not match generated origin', async () => {
-      const { cache, store, spies } = createCache();
+      const { cache, deleteSpy } = createCache();
       const exchangeCode = await generateAdminExchangeCode(
         cache,
         user,
@@ -72,8 +62,8 @@ describe('admin OAuth code exchange', () => {
       const result = await exchangeAdminCode(cache, exchangeCode, 'https://evil.example.com');
 
       expect(result).toBeNull();
-      expect(spies.delete).toHaveBeenCalledWith(exchangeCode);
-      expect(store.has(exchangeCode)).toBe(false);
+      expect(deleteSpy).toHaveBeenCalledWith(exchangeCode);
+      await expect(cache.get(exchangeCode)).resolves.toBeUndefined();
     });
 
     it('rejects code exchange when origin is stored but request has no origin', async () => {
