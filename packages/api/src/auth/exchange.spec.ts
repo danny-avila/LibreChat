@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { Keyv } from 'keyv';
+import type { IUser } from '@librechat/data-schemas';
 
 jest.mock(
   '@librechat/data-schemas',
@@ -22,7 +23,7 @@ describe('admin OAuth code exchange', () => {
     username: 'admin',
     role: 'ADMIN',
     provider: 'openid',
-  };
+  } as unknown as IUser;
 
   const createCache = () => {
     const cache = new Keyv();
