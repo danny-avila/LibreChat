@@ -542,6 +542,74 @@ describe('systemGrant methods', () => {
       });
     });
 
+    describe('hierarchical config capabilities', () => {
+      it('manage:configs satisfies manage:configs:<section>', async () => {
+        const userId = new Types.ObjectId();
+        await methods.grantCapability({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          capability: SystemCapabilities.MANAGE_CONFIGS,
+        });
+
+        const result = await methods.hasCapabilityForPrincipals({
+          principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+          capability: 'manage:configs:endpoints' as SystemCapability,
+        });
+        expect(result).toBe(true);
+      });
+
+      it('manage:configs satisfies read:configs:<section> transitively', async () => {
+        const userId = new Types.ObjectId();
+        await methods.grantCapability({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          capability: SystemCapabilities.MANAGE_CONFIGS,
+        });
+
+        const result = await methods.hasCapabilityForPrincipals({
+          principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+          capability: 'read:configs:endpoints' as SystemCapability,
+        });
+        expect(result).toBe(true);
+      });
+
+      it('read:configs satisfies read:configs:<section> but NOT manage:configs:<section>', async () => {
+        const userId = new Types.ObjectId();
+        await methods.grantCapability({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          capability: SystemCapabilities.READ_CONFIGS,
+        });
+
+        const readResult = await methods.hasCapabilityForPrincipals({
+          principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+          capability: 'read:configs:endpoints' as SystemCapability,
+        });
+        expect(readResult).toBe(true);
+
+        const manageResult = await methods.hasCapabilityForPrincipals({
+          principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+          capability: 'manage:configs:endpoints' as SystemCapability,
+        });
+        expect(manageResult).toBe(false);
+      });
+
+      it('assign:configs satisfies assign:configs:<target>', async () => {
+        const userId = new Types.ObjectId();
+        await methods.grantCapability({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          capability: SystemCapabilities.ASSIGN_CONFIGS,
+        });
+
+        const result = await methods.hasCapabilityForPrincipals({
+          principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+          capability: 'assign:configs:user' as SystemCapability,
+        });
+        expect(result).toBe(true);
+      });
+    });
+
     describe('tenant scoping', () => {
       it('tenant-scoped grant does not match platform-level query', async () => {
         const userId = new Types.ObjectId();
@@ -1211,10 +1279,7 @@ describe('systemGrant methods', () => {
 
       const held = await methods.getHeldCapabilities({
         principals: [{ principalType: PrincipalType.USER, principalId: userId }],
-        capabilities: [
-          SystemCapabilities.READ_ROLES,
-          SystemCapabilities.READ_GROUPS,
-        ],
+        capabilities: [SystemCapabilities.READ_ROLES, SystemCapabilities.READ_GROUPS],
       });
 
       expect(held).toEqual(new Set([SystemCapabilities.READ_ROLES]));

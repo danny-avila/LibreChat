@@ -18,6 +18,33 @@ for (const [broad, implied] of Object.entries(CapabilityImplications)) {
   }
 }
 
+const baseCapabilityValues = new Set<string>(Object.values(SystemCapabilities));
+
+/**
+ * For a section/assignment capability like `manage:configs:endpoints` or
+ * `assign:configs:user`, returns all base capabilities that subsume it:
+ * the direct parent (`manage:configs`) plus any that imply the parent
+ * via `reverseImplications` (`manage:configs` has no reverse, but
+ * `read:configs` is implied by `manage:configs`—so `read:configs:endpoints`
+ * is satisfied by holding `manage:configs`).
+ */
+function getParentCapabilities(capability: string): string[] {
+  const lastColon = capability.lastIndexOf(':');
+  if (lastColon === -1) {
+    return [];
+  }
+  const parent = capability.slice(0, lastColon);
+  if (!baseCapabilityValues.has(parent)) {
+    return [];
+  }
+  const parents = [parent];
+  const implied = reverseImplications[parent as keyof typeof reverseImplications];
+  if (implied) {
+    parents.push(...implied);
+  }
+  return parents;
+}
+
 export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
     return tenantId != null
@@ -53,7 +80,9 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     }
 
     const impliedBy = reverseImplications[capability as keyof typeof reverseImplications] ?? [];
-    const capabilityQuery = impliedBy.length ? { $in: [capability, ...impliedBy] } : capability;
+    const parents = getParentCapabilities(capability);
+    const allMatches = [capability, ...impliedBy, ...parents];
+    const capabilityQuery = allMatches.length > 1 ? { $in: allMatches } : capability;
 
     const query: FilterQuery<ISystemGrant> = {
       $or: principalsQuery,
@@ -98,6 +127,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       ...capabilities.flatMap(
         (cap) => reverseImplications[cap as keyof typeof reverseImplications] ?? [],
       ),
+      ...capabilities.flatMap(getParentCapabilities),
     ]);
 
     const docs = await SystemGrant.find(
@@ -118,6 +148,10 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       }
       const implied = reverseImplications[cap as keyof typeof reverseImplications];
       if (implied?.some((imp) => held.has(imp))) {
+        result.add(cap);
+        continue;
+      }
+      if (getParentCapabilities(cap).some((p) => held.has(p))) {
         result.add(cap);
       }
     }
