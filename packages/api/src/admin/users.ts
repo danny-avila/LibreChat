@@ -28,7 +28,7 @@ export interface AdminUsersDeps {
    * Thin data-layer delete — removes the User document only.
    * Full cascade of user-owned resources (conversations, messages, files, tokens, etc.)
    * is handled by `UserController.deleteUserController` in the self-delete flow.
-   * This admin endpoint currently cascades Config, AclEntries, and SystemGrants.
+   * This admin endpoint currently cascades Config and AclEntries.
    * A future iteration should consolidate the full cascade into a shared service function.
    */
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
@@ -40,22 +40,10 @@ export interface AdminUsersDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<void>;
-  deleteGrantsForPrincipal: (
-    principalType: PrincipalType,
-    principalId: string | Types.ObjectId,
-    options?: { tenantId?: string },
-  ) => Promise<void>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps) {
-  const {
-    findUsers,
-    countUsers,
-    deleteUserById,
-    deleteConfig,
-    deleteAclEntries,
-    deleteGrantsForPrincipal,
-  } = deps;
+  const { findUsers, countUsers, deleteUserById, deleteConfig, deleteAclEntries } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
     try {
@@ -171,11 +159,9 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       }
 
       const objectId = new Types.ObjectId(id);
-      const tenantId = req.user?.tenantId;
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.USER, id),
         deleteAclEntries({ principalType: PrincipalType.USER, principalId: objectId }),
-        deleteGrantsForPrincipal(PrincipalType.USER, id, { tenantId }),
       ]);
       for (const r of cleanupResults) {
         if (r.status === 'rejected') {
