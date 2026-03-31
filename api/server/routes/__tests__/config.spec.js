@@ -51,7 +51,7 @@ const mockUser = {
 };
 
 afterEach(() => {
-  jest.clearAllMocks();
+  jest.resetAllMocks();
   delete process.env.APP_TITLE;
   delete process.env.CHECK_BALANCE;
   delete process.env.START_BALANCE;
@@ -98,6 +98,24 @@ describe('GET /api/config', () => {
       await request(app).get('/api/config');
 
       expect(mockGetAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-abc' });
+    });
+
+    it('should map tenant-scoped config fields in unauthenticated response', async () => {
+      const tenantConfig = {
+        ...baseAppConfig,
+        registration: { socialLogins: ['saml'] },
+        turnstileConfig: { siteKey: 'tenant-key' },
+      };
+      mockGetAppConfig.mockResolvedValue(tenantConfig);
+      mockGetTenantId.mockReturnValue('tenant-abc');
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.socialLogins).toEqual(['saml']);
+      expect(response.body.turnstile).toEqual({ siteKey: 'tenant-key' });
+      expect(response.body).not.toHaveProperty('modelSpecs');
     });
 
     it('should return minimal payload without authenticated-only fields', async () => {
