@@ -98,13 +98,31 @@ describe('MessageIcon arePropsEqual', () => {
     ).toBe(false);
   });
 
-  it('returns false when iconData reference changes', () => {
+  it('returns true when iconData reference changes but fields are identical', () => {
     const iconData1 = { ...baseIconData };
     const iconData2 = { ...baseIconData };
     expect(
       arePropsEqual(
         { iconData: iconData1, agent: makeAgent() },
         { iconData: iconData2, agent: makeAgent() },
+      ),
+    ).toBe(true);
+  });
+
+  it('returns false when iconData endpoint changes', () => {
+    expect(
+      arePropsEqual(
+        { iconData: { ...baseIconData, endpoint: 'agents' } },
+        { iconData: { ...baseIconData, endpoint: 'openAI' } },
+      ),
+    ).toBe(false);
+  });
+
+  it('returns false when iconData iconURL changes', () => {
+    expect(
+      arePropsEqual(
+        { iconData: { ...baseIconData, iconURL: '/a.png' } },
+        { iconData: { ...baseIconData, iconURL: '/b.png' } },
       ),
     ).toBe(false);
   });

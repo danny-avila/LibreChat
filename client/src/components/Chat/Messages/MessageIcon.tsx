@@ -14,13 +14,24 @@ type MessageIconProps = {
 };
 
 /**
- * Compares only the fields MessageIcon actually renders: display name and avatar path.
- * `iconData` is compared by reference — MessageRender stabilizes it via useMemo with
- * primitive dependencies. `agent.id` / `assistant.id` are intentionally omitted because
+ * Compares only the fields MessageIcon actually renders.
+ * `agent.id` / `assistant.id` are intentionally omitted because
  * this component renders display properties only, not identity-derived content.
  */
 export function arePropsEqual(prev: MessageIconProps, next: MessageIconProps): boolean {
-  if (prev.iconData !== next.iconData) {
+  if (prev.iconData?.endpoint !== next.iconData?.endpoint) {
+    return false;
+  }
+  if (prev.iconData?.model !== next.iconData?.model) {
+    return false;
+  }
+  if (prev.iconData?.iconURL !== next.iconData?.iconURL) {
+    return false;
+  }
+  if (prev.iconData?.modelLabel !== next.iconData?.modelLabel) {
+    return false;
+  }
+  if (prev.iconData?.isCreatedByUser !== next.iconData?.isCreatedByUser) {
     return false;
   }
   if (prev.agent?.name !== next.agent?.name) {
