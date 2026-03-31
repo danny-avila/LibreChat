@@ -81,17 +81,31 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
     });
 
-    const oauthHandler = () => {
-      logger.info(
-        `${this.logPrefix} [Discovery] OAuth required; skipping URL generation in discovery mode`,
-      );
-      oauthRequired = true;
-      connection.emit('oauthFailed', new Error('OAuth required during tool discovery'));
-    };
-
-    // Register unconditionally: non-OAuth servers that return 401 also emit 'oauthRequired',
-    // and without this listener, connectClient()'s oauthHandledPromise hangs for 30s+.
-    connection.once('oauthRequired', oauthHandler);
+    let cleanupOAuthHandlers: (() => void) | undefined;
+    if (this.useOAuth) {
+      // Delegate to the real OAuth handler that initiates the flow and
+      // presents the authorization URL to the user. This is required for
+      // servers that need authentication before tool discovery (e.g.
+      // Cloudflare MCP Portal).
+      cleanupOAuthHandlers = this.handleOAuthEvents(connection);
+      connection.once('oauthRequired', () => {
+        logger.info(
+          `${this.logPrefix} [Discovery] OAuth required; delegating to handleOAuthEvents`,
+        );
+        oauthRequired = true;
+      });
+    } else {
+      // Non-OAuth servers: fail fast to prevent connectClient()'s
+      // oauthHandledPromise from hanging for 30s+.
+      const oauthHandler = () => {
+        logger.info(
+          `${this.logPrefix} [Discovery] OAuth required; skipping (non-OAuth server)`,
+        );
+        oauthRequired = true;
+        connection.emit('oauthFailed', new Error('OAuth required during tool discovery'));
+      };
+      connection.once('oauthRequired', oauthHandler);
+    }
 
     try {
       const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
@@ -103,7 +117,7 @@ export class MCPConnectionFactory {
 
       if (await connection.isConnected()) {
         const tools = await connection.fetchTools();
-        connection.removeListener('oauthRequired', oauthHandler);
+        cleanupOAuthHandlers?.();
         return { tools, connection, oauthRequired: false, oauthUrl: null };
       }
     } catch {
@@ -115,7 +129,7 @@ export class MCPConnectionFactory {
 
     try {
       const tools = await this.attemptUnauthenticatedToolListing();
-      connection.removeListener('oauthRequired', oauthHandler);
+      cleanupOAuthHandlers?.();
       if (tools && tools.length > 0) {
         logger.info(
           `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
@@ -133,7 +147,7 @@ export class MCPConnectionFactory {
       logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed:`, listError);
     }
 
-    connection.removeListener('oauthRequired', oauthHandler);
+    cleanupOAuthHandlers?.();
 
     try {
       await connection.disconnect();
