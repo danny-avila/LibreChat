@@ -17,7 +17,6 @@ const handlers = createAdminUsersHandlers({
   deleteUserById: db.deleteUserById,
   deleteConfig: db.deleteConfig,
   deleteAclEntries: db.deleteAclEntries,
-  deleteGrantsForPrincipal: db.deleteGrantsForPrincipal,
 });
 
 router.use(requireJwtAuth, requireAdminAccess);

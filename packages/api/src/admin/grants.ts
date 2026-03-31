@@ -2,7 +2,6 @@ import { PrincipalType } from 'librechat-data-provider';
 import {
   logger,
   isValidCapability,
-  isValidObjectIdString,
   SystemCapabilities,
   expandImplications,
 } from '@librechat/data-schemas';
@@ -75,7 +74,8 @@ export interface AdminGrantsDeps {
   checkRoleExists?: (roleId: string) => Promise<boolean>;
 }
 
-export type GrantPrincipalType = PrincipalType.ROLE | PrincipalType.GROUP | PrincipalType.USER;
+/** Currently ROLE-only; Record/Set structure preserved for future principal-type expansion. */
+export type GrantPrincipalType = PrincipalType.ROLE;
 
 /** Creates admin grant handlers with dependency injection for the /api/admin/grants routes. */
 export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
@@ -95,14 +95,10 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
 
   const MANAGE_CAPABILITY_BY_TYPE: Record<GrantPrincipalType, SystemCapability> = {
     [PrincipalType.ROLE]: SystemCapabilities.MANAGE_ROLES,
-    [PrincipalType.GROUP]: SystemCapabilities.MANAGE_GROUPS,
-    [PrincipalType.USER]: SystemCapabilities.MANAGE_USERS,
   };
 
   const READ_CAPABILITY_BY_TYPE: Record<GrantPrincipalType, SystemCapability> = {
     [PrincipalType.ROLE]: SystemCapabilities.READ_ROLES,
-    [PrincipalType.GROUP]: SystemCapabilities.READ_GROUPS,
-    [PrincipalType.USER]: SystemCapabilities.READ_USERS,
   };
 
   const VALID_PRINCIPAL_TYPES = new Set(
@@ -147,9 +143,6 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
     }
     if (!principalId) {
       return 'Principal ID is required';
-    }
-    if (principalType !== PrincipalType.ROLE && !isValidObjectIdString(principalId)) {
-      return 'Invalid principalId format';
     }
     return null;
   }
@@ -335,14 +328,8 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         return res.status(403).json({ error: 'Cannot grant a capability you do not possess' });
       }
 
-      /*
-       * Role existence is validated when checkRoleExists is provided.
-       * GROUP and USER principals are ObjectId-validated by validatePrincipal
-       * but not existence-checked — orphan grants for deleted principals are
-       * accepted as a trade-off. Cascade cleanup on group/user deletion
-       * (deleteGrantsForPrincipal) handles the removal path.
-       */
-      if (principalType === PrincipalType.ROLE && checkRoleExists) {
+      /** Reject grants targeting non-existent roles when the dep is provided. */
+      if (checkRoleExists) {
         const exists = await checkRoleExists(principalId);
         if (!exists) {
           return res.status(400).json({ error: 'Role not found' });
