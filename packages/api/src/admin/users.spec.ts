@@ -58,7 +58,6 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
       .mockResolvedValue({ deletedCount: 1, message: 'User was deleted successfully.' }),
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
-    deleteGrantsForPrincipal: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -417,7 +416,7 @@ describe('createAdminUsersHandlers', () => {
       expect(deps.countUsers).not.toHaveBeenCalled();
     });
 
-    it('cascades cleanup of Config, AclEntries, and SystemGrants', async () => {
+    it('cascades cleanup of Config and AclEntries', async () => {
       const result: UserDeleteResult = {
         deletedCount: 1,
         message: 'User was deleted successfully.',
@@ -433,24 +432,6 @@ describe('createAdminUsersHandlers', () => {
       expect(deps.deleteAclEntries).toHaveBeenCalledWith({
         principalType: PrincipalType.USER,
         principalId: expect.any(Types.ObjectId),
-      });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.USER, validUserId, {
-        tenantId: undefined,
-      });
-    });
-
-    it('scopes grant cleanup to the caller tenantId', async () => {
-      const deps = createDeps();
-      const handlers = createAdminUsersHandlers(deps);
-      const { req, res } = createReqRes({
-        params: { id: validUserId },
-        user: { _id: new Types.ObjectId(), role: 'admin', tenantId: 'tenant-xyz' },
-      });
-
-      await handlers.deleteUser(req, res);
-
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.USER, validUserId, {
-        tenantId: 'tenant-xyz',
       });
     });
 
@@ -483,7 +464,6 @@ describe('createAdminUsersHandlers', () => {
       expect(status).toHaveBeenCalledWith(404);
       expect(deps.deleteConfig).not.toHaveBeenCalled();
       expect(deps.deleteAclEntries).not.toHaveBeenCalled();
-      expect(deps.deleteGrantsForPrincipal).not.toHaveBeenCalled();
     });
 
     it('returns 400 for invalid ObjectId', async () => {

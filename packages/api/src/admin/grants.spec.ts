@@ -456,10 +456,8 @@ describe('createAdminGrantsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ grants });
     });
 
-    it('returns grants for a group principal', async () => {
-      const deps = createDeps({
-        getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([]),
-      });
+    it('returns 400 for group principal type', async () => {
+      const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
         params: { principalType: PrincipalType.GROUP, principalId: validObjectId },
@@ -467,15 +465,12 @@ describe('createAdminGrantsHandlers', () => {
 
       await handlers.getPrincipalGrants(req, res);
 
-      expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith({ grants: [] });
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid principal type' });
     });
 
-    it('returns grants for a user principal', async () => {
-      const grants = [mockGrant({ principalType: PrincipalType.USER, principalId: validObjectId })];
-      const deps = createDeps({
-        getCapabilitiesForPrincipal: jest.fn().mockResolvedValue(grants),
-      });
+    it('returns 400 for user principal type', async () => {
+      const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
         params: { principalType: PrincipalType.USER, principalId: validObjectId },
@@ -483,17 +478,8 @@ describe('createAdminGrantsHandlers', () => {
 
       await handlers.getPrincipalGrants(req, res);
 
-      expect(deps.hasCapabilityForPrincipals).toHaveBeenCalledWith(
-        expect.objectContaining({ capability: SystemCapabilities.READ_USERS }),
-      );
-      expect(deps.getCapabilitiesForPrincipal).toHaveBeenCalledWith(
-        expect.objectContaining({
-          principalType: PrincipalType.USER,
-          principalId: validObjectId,
-        }),
-      );
-      expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith({ grants });
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid principal type' });
     });
 
     it('passes tenantId to dep calls', async () => {
@@ -542,33 +528,7 @@ describe('createAdminGrantsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Principal ID is required' });
     });
 
-    it('returns 400 for non-ObjectId group principalId', async () => {
-      const deps = createDeps();
-      const handlers = createAdminGrantsHandlers(deps);
-      const { req, res, status, json } = createReqRes({
-        params: { principalType: PrincipalType.GROUP, principalId: 'not-an-objectid' },
-      });
-
-      await handlers.getPrincipalGrants(req, res);
-
-      expect(status).toHaveBeenCalledWith(400);
-      expect(json).toHaveBeenCalledWith({ error: 'Invalid principalId format' });
-    });
-
-    it('returns 400 for non-ObjectId user principalId', async () => {
-      const deps = createDeps();
-      const handlers = createAdminGrantsHandlers(deps);
-      const { req, res, status, json } = createReqRes({
-        params: { principalType: PrincipalType.USER, principalId: 'not-an-objectid' },
-      });
-
-      await handlers.getPrincipalGrants(req, res);
-
-      expect(status).toHaveBeenCalledWith(400);
-      expect(json).toHaveBeenCalledWith({ error: 'Invalid principalId format' });
-    });
-
-    it('accepts string principalId for role type without ObjectId validation', async () => {
+    it('accepts string principalId for role type', async () => {
       const deps = createDeps({
         getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([]),
       });
@@ -792,13 +752,13 @@ describe('createAdminGrantsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Invalid capability' });
     });
 
-    it('returns 400 for invalid ObjectId on group principalId', async () => {
+    it('returns 400 for group principal type', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
         body: {
           principalType: PrincipalType.GROUP,
-          principalId: 'not-an-objectid',
+          principalId: validObjectId,
           capability: SystemCapabilities.READ_USERS,
         },
       });
@@ -806,7 +766,7 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.assignGrant(req, res);
 
       expect(status).toHaveBeenCalledWith(400);
-      expect(json).toHaveBeenCalledWith({ error: 'Invalid principalId format' });
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid principal type' });
     });
 
     it('returns 401 when user is not authenticated', async () => {
@@ -899,16 +859,10 @@ describe('createAdminGrantsHandlers', () => {
       );
     });
 
-    it('checks MANAGE_GROUPS for group principal type', async () => {
-      const deps = createDeps({
-        getHeldCapabilities: jest
-          .fn()
-          .mockResolvedValue(
-            new Set([SystemCapabilities.MANAGE_GROUPS, SystemCapabilities.READ_USERS]),
-          ),
-      });
+    it('rejects group principal type before checking capabilities', async () => {
+      const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
-      const { req, res } = createReqRes({
+      const { req, res, status, json } = createReqRes({
         body: {
           principalType: PrincipalType.GROUP,
           principalId: validObjectId,
@@ -918,23 +872,15 @@ describe('createAdminGrantsHandlers', () => {
 
       await handlers.assignGrant(req, res);
 
-      expect(deps.getHeldCapabilities).toHaveBeenCalledWith(
-        expect.objectContaining({
-          capabilities: expect.arrayContaining([SystemCapabilities.MANAGE_GROUPS]),
-        }),
-      );
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid principal type' });
+      expect(deps.getHeldCapabilities).not.toHaveBeenCalled();
     });
 
-    it('checks MANAGE_USERS for user principal type', async () => {
-      const deps = createDeps({
-        getHeldCapabilities: jest
-          .fn()
-          .mockResolvedValue(
-            new Set([SystemCapabilities.MANAGE_USERS, SystemCapabilities.READ_USERS]),
-          ),
-      });
+    it('rejects user principal type before checking capabilities', async () => {
+      const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
-      const { req, res } = createReqRes({
+      const { req, res, status, json } = createReqRes({
         body: {
           principalType: PrincipalType.USER,
           principalId: validObjectId,
@@ -944,11 +890,9 @@ describe('createAdminGrantsHandlers', () => {
 
       await handlers.assignGrant(req, res);
 
-      expect(deps.getHeldCapabilities).toHaveBeenCalledWith(
-        expect.objectContaining({
-          capabilities: expect.arrayContaining([SystemCapabilities.MANAGE_USERS]),
-        }),
-      );
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid principal type' });
+      expect(deps.getHeldCapabilities).not.toHaveBeenCalled();
     });
 
     it('returns 400 when role does not exist', async () => {
@@ -1174,13 +1118,13 @@ describe('createAdminGrantsHandlers', () => {
       expect(deps.revokeCapability).not.toHaveBeenCalled();
     });
 
-    it('returns 400 for invalid user ObjectId', async () => {
+    it('returns 400 for group principal type', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({
         params: {
-          principalType: PrincipalType.USER,
-          principalId: 'bad-id',
+          principalType: PrincipalType.GROUP,
+          principalId: validObjectId,
           capability: SystemCapabilities.READ_USERS,
         },
       });
@@ -1188,7 +1132,24 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.revokeGrant(req, res);
 
       expect(status).toHaveBeenCalledWith(400);
-      expect(json).toHaveBeenCalledWith({ error: 'Invalid principalId format' });
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid principal type' });
+    });
+
+    it('returns 400 for user principal type', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: {
+          principalType: PrincipalType.USER,
+          principalId: validObjectId,
+          capability: SystemCapabilities.READ_USERS,
+        },
+      });
+
+      await handlers.revokeGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid principal type' });
     });
 
     it('returns 500 on unexpected error', async () => {
