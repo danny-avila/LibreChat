@@ -18,7 +18,10 @@ interface:
 
   # Disable temporary chats (we need to retain data for OPRA)
   temporaryChat: false
-  
+
+  # Enable model selector for agents
+  modelSelect: true
+
   # Turn everything on for kitchensink
   agents:
     use: true
@@ -67,7 +70,18 @@ endpoints:
 
   agents:
     capabilities:
+      - "hide_sequential_outputs"
+      - "programmatic_tools"
+      - "end_after_tools"
+      - "deferred_tools"
+      - "execute_code"
+      - "file_search"
+      - "web_search"
+      - "artifacts"
+      - "actions"
       - "context"
+      - "tools"
+      - "chain"
       - "ocr"
 
 # We explicitly spec our models (since we only have a few models and this makes the selector simpler)
