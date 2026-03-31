@@ -110,6 +110,23 @@ describe('checkBalance', () => {
       );
     });
 
+    it('should not include auto-refill fields when config is partial', async () => {
+      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 5000 });
+      const deps = createMockDeps({
+        findBalanceByUser: jest.fn().mockResolvedValue(null),
+        balanceConfig: { startBalance: 5000, autoRefillEnabled: true },
+        upsertBalanceFields,
+      });
+      const { req, res } = createMockReqRes();
+
+      await checkBalance({ req, res, txData: baseTxData }, deps);
+
+      expect(upsertBalanceFields).toHaveBeenCalledWith('user-1', {
+        user: 'user-1',
+        tokenCredits: 5000,
+      });
+    });
+
     it('should throw a TOKEN_BALANCE violation when lazy-initialized balance is less than token cost', async () => {
       const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 50 });
       const deps = createMockDeps({
@@ -128,9 +145,16 @@ describe('checkBalance', () => {
         user: 'user-1',
         tokenCredits: 50,
       });
+      expect(deps.logViolation).toHaveBeenCalledWith(
+        req,
+        res,
+        ViolationTypes.TOKEN_BALANCE,
+        expect.objectContaining({ balance: 50, tokenCost: 100 }),
+        0,
+      );
     });
 
-    it('should use the DB-returned balance instead of the raw config constant', async () => {
+    it('should use DB-returned tokenCredits over raw startBalance config constant', async () => {
       const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 3000 });
       const deps = createMockDeps({
         findBalanceByUser: jest.fn().mockResolvedValue(null),
@@ -140,7 +164,6 @@ describe('checkBalance', () => {
       });
       const { req, res } = createMockReqRes();
 
-      // DB returned 3000 (not 5000), so 3000 < 4000 should throw
       await expect(
         checkBalance({ req, res, txData: { ...baseTxData, amount: 4000 } }, deps),
       ).rejects.toThrow();
