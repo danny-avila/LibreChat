@@ -9,6 +9,12 @@ jest.mock('~/server/services/Config/ldap', () => ({
   getLdapConfig: jest.fn(() => null),
 }));
 
+const mockGetTenantId = jest.fn(() => undefined);
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  getTenantId: (...args) => mockGetTenantId(...args),
+}));
+
 const request = require('supertest');
 const express = require('express');
 const configRoute = require('../config');
@@ -52,17 +58,46 @@ afterEach(() => {
   delete process.env.SANDPACK_BUNDLER_URL;
   delete process.env.SANDPACK_STATIC_BUNDLER_URL;
   delete process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
+  delete process.env.ALLOW_REGISTRATION;
+  delete process.env.ALLOW_SOCIAL_LOGIN;
+  delete process.env.ALLOW_PASSWORD_RESET;
+  delete process.env.DOMAIN_SERVER;
+  delete process.env.GOOGLE_CLIENT_ID;
+  delete process.env.GOOGLE_CLIENT_SECRET;
+  delete process.env.OPENID_CLIENT_ID;
+  delete process.env.OPENID_CLIENT_SECRET;
+  delete process.env.OPENID_ISSUER;
+  delete process.env.OPENID_SESSION_SECRET;
+  delete process.env.GITHUB_CLIENT_ID;
+  delete process.env.GITHUB_CLIENT_SECRET;
+  delete process.env.DISCORD_CLIENT_ID;
+  delete process.env.DISCORD_CLIENT_SECRET;
+  delete process.env.SAML_ENTRY_POINT;
+  delete process.env.SAML_ISSUER;
+  delete process.env.SAML_CERT;
+  delete process.env.SAML_SESSION_SECRET;
 });
 
 describe('GET /api/config', () => {
   describe('unauthenticated (no req.user)', () => {
-    it('should call getAppConfig with baseOnly: true', async () => {
+    it('should call getAppConfig with baseOnly when no tenant context', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetTenantId.mockReturnValue(undefined);
       const app = createApp(null);
 
       await request(app).get('/api/config');
 
       expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+    });
+
+    it('should call getAppConfig with tenantId when tenant context is present', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetTenantId.mockReturnValue('tenant-abc');
+      const app = createApp(null);
+
+      await request(app).get('/api/config');
+
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-abc' });
     });
 
     it('should return minimal payload without authenticated-only fields', async () => {
@@ -127,21 +162,45 @@ describe('GET /api/config', () => {
       expect(response.body).toHaveProperty('emailLoginEnabled');
       expect(response.body).toHaveProperty('serverDomain');
     });
+
+    it('should return 500 when getAppConfig throws', async () => {
+      mockGetAppConfig.mockRejectedValue(new Error('Config service failure'));
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(500);
+      expect(response.body).toHaveProperty('error');
+    });
   });
 
   describe('authenticated (req.user exists)', () => {
     it('should call getAppConfig with role, userId, and tenantId', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetTenantId.mockReturnValue('fallback-tenant');
       const app = createApp(mockUser);
 
       await request(app).get('/api/config');
 
-      expect(mockGetAppConfig).toHaveBeenCalledWith(
-        expect.objectContaining({
-          role: 'USER',
-          userId: 'user123',
-        }),
-      );
+      expect(mockGetAppConfig).toHaveBeenCalledWith({
+        role: 'USER',
+        userId: 'user123',
+        tenantId: 'fallback-tenant',
+      });
+    });
+
+    it('should prefer user tenantId over getTenantId fallback', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetTenantId.mockReturnValue('fallback-tenant');
+      const app = createApp({ ...mockUser, tenantId: 'user-tenant' });
+
+      await request(app).get('/api/config');
+
+      expect(mockGetAppConfig).toHaveBeenCalledWith({
+        role: 'USER',
+        userId: 'user123',
+        tenantId: 'user-tenant',
+      });
     });
 
     it('should include modelSpecs, balance, and webSearch', async () => {
@@ -198,6 +257,16 @@ describe('GET /api/config', () => {
           startBalance: 50000,
         }),
       );
+    });
+
+    it('should return 500 when getAppConfig throws', async () => {
+      mockGetAppConfig.mockRejectedValue(new Error('Config service failure'));
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(500);
+      expect(response.body).toHaveProperty('error');
     });
   });
 });

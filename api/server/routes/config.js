@@ -19,16 +19,12 @@ const publicSharedLinksEnabled =
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 
-/**
- * Builds the shared payload fields common to both authenticated and unauthenticated responses.
- * These are derived from environment variables and static configuration only.
- */
-function buildSharedPayload() {
-  const isBirthday = () => {
-    const today = new Date();
-    return today.getMonth() === 1 && today.getDate() === 11;
-  };
+function isBirthday() {
+  const today = new Date();
+  return today.getMonth() === 1 && today.getDate() === 11;
+}
 
+function buildSharedPayload() {
   const isOpenIdEnabled =
     !!process.env.OPENID_CLIENT_ID &&
     !!process.env.OPENID_CLIENT_SECRET &&
@@ -40,6 +36,8 @@ function buildSharedPayload() {
     !!process.env.SAML_ISSUER &&
     !!process.env.SAML_CERT &&
     !!process.env.SAML_SESSION_SECRET;
+
+  const ldap = getLdapConfig();
 
   /** @type {Partial<TStartupConfig>} */
   const payload = {
@@ -62,7 +60,7 @@ function buildSharedPayload() {
     samlImageUrl: process.env.SAML_IMAGE_URL,
     serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
     emailLoginEnabled,
-    registrationEnabled: isEnabled(process.env.ALLOW_REGISTRATION),
+    registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
     socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
     emailEnabled:
       (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
@@ -86,10 +84,8 @@ function buildSharedPayload() {
     payload.minPasswordLength = minPasswordLength;
   }
 
-  const ldap = getLdapConfig();
   if (ldap) {
     payload.ldap = ldap;
-    payload.registrationEnabled = !ldap.enabled && payload.registrationEnabled;
   }
 
   if (typeof process.env.CUSTOM_FOOTER === 'string') {
@@ -99,29 +95,20 @@ function buildSharedPayload() {
   return payload;
 }
 
-/**
- * Adds web search config fields to the payload if configured.
- */
-function addWebSearchConfig(payload, appConfig) {
-  const webSearchConfig = appConfig?.webSearch;
-  if (
-    webSearchConfig != null &&
-    (webSearchConfig.searchProvider ||
-      webSearchConfig.scraperProvider ||
-      webSearchConfig.rerankerType)
-  ) {
-    payload.webSearch = {};
+function buildWebSearchConfig(appConfig) {
+  const ws = appConfig?.webSearch;
+  if (!ws) {
+    return undefined;
   }
-
-  if (webSearchConfig?.searchProvider) {
-    payload.webSearch.searchProvider = webSearchConfig.searchProvider;
+  const { searchProvider, scraperProvider, rerankerType } = ws;
+  if (!searchProvider && !scraperProvider && !rerankerType) {
+    return undefined;
   }
-  if (webSearchConfig?.scraperProvider) {
-    payload.webSearch.scraperProvider = webSearchConfig.scraperProvider;
-  }
-  if (webSearchConfig?.rerankerType) {
-    payload.webSearch.rerankerType = webSearchConfig.rerankerType;
-  }
+  return {
+    ...(searchProvider && { searchProvider }),
+    ...(scraperProvider && { scraperProvider }),
+    ...(rerankerType && { rerankerType }),
+  };
 }
 
 router.get('/', async function (req, res) {
@@ -129,17 +116,16 @@ router.get('/', async function (req, res) {
     const sharedPayload = buildSharedPayload();
 
     if (!req.user) {
-      // Unauthenticated: minimal payload for login/register pages
-      const baseConfig = await getAppConfig({ baseOnly: true });
+      const tenantId = getTenantId();
+      const baseConfig = await getAppConfig(tenantId ? { tenantId } : { baseOnly: true });
 
-      /** @type {TStartupConfig} */
+      /** @type {Partial<TStartupConfig>} */
       const payload = {
         ...sharedPayload,
         socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
         turnstile: baseConfig?.turnstileConfig,
       };
 
-      // Only include privacy policy and terms of service from interface config (for login footer)
       const interfaceConfig = baseConfig?.interfaceConfig;
       if (interfaceConfig?.privacyPolicy || interfaceConfig?.termsOfService) {
         payload.interface = {};
@@ -154,7 +140,6 @@ router.get('/', async function (req, res) {
       return res.status(200).send(payload);
     }
 
-    // Authenticated: full payload with per-user overrides
     const appConfig = await getAppConfig({
       role: req.user.role,
       userId: req.user.id,
@@ -182,7 +167,10 @@ router.get('/', async function (req, res) {
         : 0,
     };
 
-    addWebSearchConfig(payload, appConfig);
+    const webSearch = buildWebSearchConfig(appConfig);
+    if (webSearch) {
+      payload.webSearch = webSearch;
+    }
 
     return res.status(200).send(payload);
   } catch (err) {
