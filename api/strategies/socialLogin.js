@@ -6,7 +6,8 @@ const { getAppConfig } = require('~/server/services/Config');
 const { findUser } = require('~/models');
 
 const socialLogin =
-  (provider, getProfileDetails) => async (accessToken, refreshToken, idToken, profile, cb) => {
+  (provider, getProfileDetails, options = {}) =>
+  async (accessToken, refreshToken, idToken, profile, cb) => {
     try {
       const { email, id, avatarUrl, username, name, emailVerified } = getProfileDetails({
         idToken,
@@ -65,6 +66,13 @@ const socialLogin =
         error.code = ErrorTypes.AUTH_FAILED;
         error.provider = existingUser.provider;
         return cb(error);
+      }
+
+      if (options.existingUsersOnly) {
+        logger.error(
+          `[${provider}Login] Admin auth blocked - user does not exist [Email: ${email}]`,
+        );
+        return cb(null, false, { message: 'User does not exist' });
       }
 
       const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);
