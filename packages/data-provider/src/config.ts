@@ -335,6 +335,7 @@ const remoteApiAuthSchema = z.object({
       issuer: z.string(),
       audience: z.string().optional(),
       jwksUri: z.string().optional(),
+      scope: z.string().optional(),
     })
     .optional(),
 });

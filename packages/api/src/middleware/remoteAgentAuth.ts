@@ -159,7 +159,7 @@ async function resolveUser(
 
   const updateData: Partial<IUser> = {};
 
-  if (migration) {
+  if (migration && payload.sub != null) {
     updateData.provider = 'openid';
     updateData.openidId = payload.sub;
   }
@@ -195,6 +195,7 @@ async function resolveUser(
  *           issuer: <issuer>
  *           jwksUri: <jwksUri>
  *           audience: <audience>
+ *           scope: <scope>
  * ```
  */
 export function createRemoteAgentAuth({
@@ -223,6 +224,20 @@ export function createRemoteAgentAuth({
 
       try {
         const payload = await verifyOidcBearer(token, authConfig.oidc);
+
+        if (authConfig.oidc.scope != null) {
+          const rawScope = payload['scp'] ?? payload['scope'];
+          const tokenScopes: string[] = Array.isArray(rawScope)
+            ? rawScope
+            : ((rawScope as string | undefined)?.split(' ') ?? []);
+          if (!tokenScopes.includes(authConfig.oidc.scope)) {
+            logger.warn(`[remoteAgentAuth] Token missing required scope: ${authConfig.oidc.scope}`);
+            if (apiKeyEnabled) return apiKeyMiddleware(req, res, next);
+            res.status(401).json({ error: 'Unauthorized' });
+            return;
+          }
+        }
+
         const user = await resolveUser(token, payload, findUser, updateUser);
 
         if (user == null) {
