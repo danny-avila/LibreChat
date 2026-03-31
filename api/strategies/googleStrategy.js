@@ -13,25 +13,22 @@ const getProfileDetails = ({ profile }) => ({
 const googleLogin = socialLogin('google', getProfileDetails);
 const googleAdminLogin = socialLogin('google', getProfileDetails, { existingUsersOnly: true });
 
+const getGoogleConfig = (callbackURL) => ({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL,
+  proxy: true,
+});
+
 const googleStrategy = () =>
   new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: `${process.env.DOMAIN_SERVER}${process.env.GOOGLE_CALLBACK_URL}`,
-      proxy: true,
-    },
+    getGoogleConfig(`${process.env.DOMAIN_SERVER}${process.env.GOOGLE_CALLBACK_URL}`),
     googleLogin,
   );
 
 const googleAdminStrategy = () =>
   new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: `${process.env.DOMAIN_SERVER}/api/admin/oauth/google/callback`,
-      proxy: true,
-    },
+    getGoogleConfig(`${process.env.DOMAIN_SERVER}/api/admin/oauth/google/callback`),
     googleAdminLogin,
   );
 

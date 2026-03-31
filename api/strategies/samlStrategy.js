@@ -321,13 +321,14 @@ function getBaseSamlConfig() {
 
 async function setupSaml() {
   try {
+    const baseConfig = getBaseSamlConfig();
     const samlConfig = {
-      ...getBaseSamlConfig(),
+      ...baseConfig,
       callbackUrl: process.env.SAML_CALLBACK_URL,
     };
 
     passport.use('saml', new SamlStrategy(samlConfig, createSamlCallback(false)));
-    setupSamlAdmin();
+    setupSamlAdmin(baseConfig);
   } catch (err) {
     logger.error('[samlStrategy]', err);
   }
@@ -336,11 +337,12 @@ async function setupSaml() {
 /**
  * Sets up the SAML strategy specifically for admin authentication.
  * Rejects users that don't already exist.
+ * @param {object} [baseConfig] - Pre-parsed base SAML config to avoid redundant cert parsing.
  */
-function setupSamlAdmin() {
+function setupSamlAdmin(baseConfig) {
   try {
     const samlAdminConfig = {
-      ...getBaseSamlConfig(),
+      ...(baseConfig ?? getBaseSamlConfig()),
       callbackUrl: `${process.env.DOMAIN_SERVER}/api/admin/oauth/saml/callback`,
     };
 

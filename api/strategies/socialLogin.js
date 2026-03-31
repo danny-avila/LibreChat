@@ -72,10 +72,7 @@ const socialLogin =
         logger.error(
           `[${provider}Login] Admin auth blocked - user does not exist [Email: ${email}]`,
         );
-        const error = new Error(ErrorTypes.AUTH_FAILED);
-        error.code = ErrorTypes.AUTH_FAILED;
-        error.message = 'User does not exist';
-        return cb(error);
+        return cb(null, false, { message: 'User does not exist' });
       }
 
       const ALLOW_SOCIAL_REGISTRATION = isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION);

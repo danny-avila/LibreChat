@@ -1,10 +1,8 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const passport = require('passport');
-const { randomState } = require('openid-client');
-const { logger } = require('@librechat/data-schemas');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { SystemCapabilities } = require('@librechat/data-schemas');
 const { getAdminPanelUrl, exchangeAdminCode, createSetBalanceConfig } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
@@ -149,7 +147,7 @@ function retrievePkceChallenge(provider) {
  * ────────────────────────────────────────────── */
 
 router.get('/oauth/openid', async (req, res, next) => {
-  const state = randomState();
+  const state = generateState();
   const stored = await storePkceChallenge(state, req.query.code_challenge, 'openid');
   if (!stored) {
     return res.redirect(
