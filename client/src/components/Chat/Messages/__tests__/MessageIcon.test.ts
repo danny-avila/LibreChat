@@ -113,6 +113,8 @@ describe('MessageIcon arePropsEqual', () => {
     expect(arePropsEqual({ iconData: baseIconData }, { iconData: baseIconData })).toBe(true);
   });
 
+  // avatarURL and display strings both remain '' in both states — nothing renders differently,
+  // so suppressing the re-render is correct even though the agent prop went from undefined to defined.
   it('returns true when agent transitions from undefined to object with undefined display fields', () => {
     const agentNoFields = makeAgent({ name: undefined, avatar: undefined });
     expect(
@@ -121,5 +123,14 @@ describe('MessageIcon arePropsEqual', () => {
         { iconData: baseIconData, agent: agentNoFields },
       ),
     ).toBe(true);
+  });
+
+  it('returns false when agent transitions from defined to undefined', () => {
+    expect(
+      arePropsEqual(
+        { iconData: baseIconData, agent: makeAgent() },
+        { iconData: baseIconData, agent: undefined },
+      ),
+    ).toBe(false);
   });
 });
