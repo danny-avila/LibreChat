@@ -19,121 +19,170 @@ const publicSharedLinksEnabled =
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 
-router.get('/', async function (req, res) {
+/**
+ * Builds the shared payload fields common to both authenticated and unauthenticated responses.
+ * These are derived from environment variables and static configuration only.
+ */
+function buildSharedPayload() {
   const isBirthday = () => {
     const today = new Date();
     return today.getMonth() === 1 && today.getDate() === 11;
   };
 
+  const isOpenIdEnabled =
+    !!process.env.OPENID_CLIENT_ID &&
+    !!process.env.OPENID_CLIENT_SECRET &&
+    !!process.env.OPENID_ISSUER &&
+    !!process.env.OPENID_SESSION_SECRET;
+
+  const isSamlEnabled =
+    !!process.env.SAML_ENTRY_POINT &&
+    !!process.env.SAML_ISSUER &&
+    !!process.env.SAML_CERT &&
+    !!process.env.SAML_SESSION_SECRET;
+
+  /** @type {Partial<TStartupConfig>} */
+  const payload = {
+    appTitle: process.env.APP_TITLE || 'LibreChat',
+    discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
+    facebookLoginEnabled: !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
+    githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
+    googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
+    appleLoginEnabled:
+      !!process.env.APPLE_CLIENT_ID &&
+      !!process.env.APPLE_TEAM_ID &&
+      !!process.env.APPLE_KEY_ID &&
+      !!process.env.APPLE_PRIVATE_KEY_PATH,
+    openidLoginEnabled: isOpenIdEnabled,
+    openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
+    openidImageUrl: process.env.OPENID_IMAGE_URL,
+    openidAutoRedirect: isEnabled(process.env.OPENID_AUTO_REDIRECT),
+    samlLoginEnabled: !isOpenIdEnabled && isSamlEnabled,
+    samlLabel: process.env.SAML_BUTTON_LABEL,
+    samlImageUrl: process.env.SAML_IMAGE_URL,
+    serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
+    emailLoginEnabled,
+    registrationEnabled: isEnabled(process.env.ALLOW_REGISTRATION),
+    socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
+    emailEnabled:
+      (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
+      !!process.env.EMAIL_USERNAME &&
+      !!process.env.EMAIL_PASSWORD &&
+      !!process.env.EMAIL_FROM,
+    passwordResetEnabled,
+    showBirthdayIcon:
+      isBirthday() ||
+      isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
+      process.env.SHOW_BIRTHDAY_ICON === '',
+    helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
+    sharedLinksEnabled,
+    publicSharedLinksEnabled,
+    analyticsGtmId: process.env.ANALYTICS_GTM_ID,
+    openidReuseTokens,
+  };
+
+  const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
+  if (minPasswordLength && !isNaN(minPasswordLength)) {
+    payload.minPasswordLength = minPasswordLength;
+  }
+
   const ldap = getLdapConfig();
+  if (ldap) {
+    payload.ldap = ldap;
+    payload.registrationEnabled = !ldap.enabled && payload.registrationEnabled;
+  }
 
+  if (typeof process.env.CUSTOM_FOOTER === 'string') {
+    payload.customFooter = process.env.CUSTOM_FOOTER;
+  }
+
+  return payload;
+}
+
+/**
+ * Adds web search config fields to the payload if configured.
+ */
+function addWebSearchConfig(payload, appConfig) {
+  const webSearchConfig = appConfig?.webSearch;
+  if (
+    webSearchConfig != null &&
+    (webSearchConfig.searchProvider ||
+      webSearchConfig.scraperProvider ||
+      webSearchConfig.rerankerType)
+  ) {
+    payload.webSearch = {};
+  }
+
+  if (webSearchConfig?.searchProvider) {
+    payload.webSearch.searchProvider = webSearchConfig.searchProvider;
+  }
+  if (webSearchConfig?.scraperProvider) {
+    payload.webSearch.scraperProvider = webSearchConfig.scraperProvider;
+  }
+  if (webSearchConfig?.rerankerType) {
+    payload.webSearch.rerankerType = webSearchConfig.rerankerType;
+  }
+}
+
+router.get('/', async function (req, res) {
   try {
+    const sharedPayload = buildSharedPayload();
+
+    if (!req.user) {
+      // Unauthenticated: minimal payload for login/register pages
+      const baseConfig = await getAppConfig({ baseOnly: true });
+
+      /** @type {TStartupConfig} */
+      const payload = {
+        ...sharedPayload,
+        socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
+        turnstile: baseConfig?.turnstileConfig,
+      };
+
+      // Only include privacy policy and terms of service from interface config (for login footer)
+      const interfaceConfig = baseConfig?.interfaceConfig;
+      if (interfaceConfig?.privacyPolicy || interfaceConfig?.termsOfService) {
+        payload.interface = {};
+        if (interfaceConfig.privacyPolicy) {
+          payload.interface.privacyPolicy = interfaceConfig.privacyPolicy;
+        }
+        if (interfaceConfig.termsOfService) {
+          payload.interface.termsOfService = interfaceConfig.termsOfService;
+        }
+      }
+
+      return res.status(200).send(payload);
+    }
+
+    // Authenticated: full payload with per-user overrides
     const appConfig = await getAppConfig({
-      role: req.user?.role,
-      tenantId: req.user?.tenantId || getTenantId(),
+      role: req.user.role,
+      userId: req.user.id,
+      tenantId: req.user.tenantId || getTenantId(),
     });
-
-    const isOpenIdEnabled =
-      !!process.env.OPENID_CLIENT_ID &&
-      !!process.env.OPENID_CLIENT_SECRET &&
-      !!process.env.OPENID_ISSUER &&
-      !!process.env.OPENID_SESSION_SECRET;
-
-    const isSamlEnabled =
-      !!process.env.SAML_ENTRY_POINT &&
-      !!process.env.SAML_ISSUER &&
-      !!process.env.SAML_CERT &&
-      !!process.env.SAML_SESSION_SECRET;
 
     const balanceConfig = getBalanceConfig(appConfig);
 
     /** @type {TStartupConfig} */
     const payload = {
-      appTitle: process.env.APP_TITLE || 'LibreChat',
+      ...sharedPayload,
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
-      discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
-      facebookLoginEnabled:
-        !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
-      githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
-      googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
-      appleLoginEnabled:
-        !!process.env.APPLE_CLIENT_ID &&
-        !!process.env.APPLE_TEAM_ID &&
-        !!process.env.APPLE_KEY_ID &&
-        !!process.env.APPLE_PRIVATE_KEY_PATH,
-      openidLoginEnabled: isOpenIdEnabled,
-      openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
-      openidImageUrl: process.env.OPENID_IMAGE_URL,
-      openidAutoRedirect: isEnabled(process.env.OPENID_AUTO_REDIRECT),
-      samlLoginEnabled: !isOpenIdEnabled && isSamlEnabled,
-      samlLabel: process.env.SAML_BUTTON_LABEL,
-      samlImageUrl: process.env.SAML_IMAGE_URL,
-      serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
-      emailLoginEnabled,
-      registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
-      socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
-      emailEnabled:
-        (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-        !!process.env.EMAIL_USERNAME &&
-        !!process.env.EMAIL_PASSWORD &&
-        !!process.env.EMAIL_FROM,
-      passwordResetEnabled,
-      showBirthdayIcon:
-        isBirthday() ||
-        isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
-        process.env.SHOW_BIRTHDAY_ICON === '',
-      helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
       modelSpecs: appConfig?.modelSpecs,
       balance: balanceConfig,
-      sharedLinksEnabled,
-      publicSharedLinksEnabled,
-      analyticsGtmId: process.env.ANALYTICS_GTM_ID,
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
       sharePointFilePickerEnabled,
       sharePointBaseUrl: process.env.SHAREPOINT_BASE_URL,
       sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
       sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
-      openidReuseTokens,
       conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
         ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
         : 0,
     };
 
-    const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
-    if (minPasswordLength && !isNaN(minPasswordLength)) {
-      payload.minPasswordLength = minPasswordLength;
-    }
-
-    const webSearchConfig = appConfig?.webSearch;
-    if (
-      webSearchConfig != null &&
-      (webSearchConfig.searchProvider ||
-        webSearchConfig.scraperProvider ||
-        webSearchConfig.rerankerType)
-    ) {
-      payload.webSearch = {};
-    }
-
-    if (webSearchConfig?.searchProvider) {
-      payload.webSearch.searchProvider = webSearchConfig.searchProvider;
-    }
-    if (webSearchConfig?.scraperProvider) {
-      payload.webSearch.scraperProvider = webSearchConfig.scraperProvider;
-    }
-    if (webSearchConfig?.rerankerType) {
-      payload.webSearch.rerankerType = webSearchConfig.rerankerType;
-    }
-
-    if (ldap) {
-      payload.ldap = ldap;
-    }
-
-    if (typeof process.env.CUSTOM_FOOTER === 'string') {
-      payload.customFooter = process.env.CUSTOM_FOOTER;
-    }
+    addWebSearchConfig(payload, appConfig);
 
     return res.status(200).send(payload);
   } catch (err) {
