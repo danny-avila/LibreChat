@@ -440,11 +440,7 @@ describe('createAdminUsersHandlers', () => {
     });
 
     it('scopes grant cleanup to the caller tenantId', async () => {
-      const result: UserDeleteResult = {
-        deletedCount: 1,
-        message: 'User was deleted successfully.',
-      };
-      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+      const deps = createDeps();
       const handlers = createAdminUsersHandlers(deps);
       const { req, res } = createReqRes({
         params: { id: validUserId },
