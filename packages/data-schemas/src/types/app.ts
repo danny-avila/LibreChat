@@ -8,6 +8,7 @@ import type {
   EModelEndpoint,
   TVertexAIConfig,
   TAgentsEndpoint,
+  CloudFrontConfig,
   TCustomEndpoints,
   TAssistantEndpoint,
   TAnthropicEndpoint,
@@ -61,10 +62,17 @@ export interface AppConfig {
   summarization?: SummarizationConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
-  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
-  fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
+  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */
+  fileStrategy:
+    | FileSources.local
+    | FileSources.s3
+    | FileSources.firebase
+    | FileSources.azure_blob
+    | FileSources.cloudfront;
   /** File strategies configuration */
   fileStrategies?: TCustomConfig['fileStrategies'];
+  /** CloudFront CDN configuration */
+  cloudfront?: CloudFrontConfig;
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */
