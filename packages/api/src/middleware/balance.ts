@@ -12,7 +12,11 @@ import type { BalanceUpdateFields } from '~/types';
 import { getBalanceConfig } from '~/app/config';
 
 export interface BalanceMiddlewareOptions {
-  getAppConfig: (options?: { role?: string; refresh?: boolean }) => Promise<AppConfig>;
+  getAppConfig: (options?: {
+    role?: string;
+    tenantId?: string;
+    refresh?: boolean;
+  }) => Promise<AppConfig>;
   findBalanceByUser: (userId: string) => Promise<IBalance | null>;
   upsertBalanceFields: (userId: string, fields: IBalanceUpdate) => Promise<IBalance | null>;
 }
@@ -92,7 +96,10 @@ export function createSetBalanceConfig({
   return async (req: ServerRequest, res: ServerResponse, next: NextFunction): Promise<void> => {
     try {
       const user = req.user as IUser & { _id: string | ObjectId };
-      const appConfig = await getAppConfig({ role: user?.role });
+      const appConfig = await getAppConfig({
+        role: user?.role,
+        tenantId: user?.tenantId,
+      });
       const balanceConfig = getBalanceConfig(appConfig);
       if (!balanceConfig?.enabled) {
         return next();

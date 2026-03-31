@@ -84,12 +84,12 @@ export function encodeHeaderValue(value: string): string {
  */
 export function createSafeUser(
   user: IUser | null | undefined,
-): Partial<SafeUser> & { federatedTokens?: unknown } {
+): Partial<SafeUser> & { federatedTokens?: IUser['federatedTokens'] } {
   if (!user) {
     return {};
   }
 
-  const safeUser: Partial<SafeUser> & { federatedTokens?: unknown } = {};
+  const safeUser: Partial<SafeUser> & { federatedTokens?: IUser['federatedTokens'] } = {};
   for (const field of ALLOWED_USER_FIELDS) {
     if (field in user) {
       safeUser[field] = user[field];

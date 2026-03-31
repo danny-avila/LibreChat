@@ -19,6 +19,7 @@ const {
   buildWebSearchContext,
   buildImageToolContext,
   buildToolClassification,
+  buildOAuthToolCallName,
 } = require('@librechat/api');
 const {
   Time,
@@ -59,6 +60,7 @@ const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { resolveConfigServers } = require('~/server/services/MCP');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
@@ -513,6 +515,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   const flowManager = getFlowStateManager(flowsCache);
+  const configServers = await resolveConfigServers(req);
   const pendingOAuthServers = new Set();
 
   const createOAuthEmitter = (serverName) => {
@@ -521,7 +524,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       const stepId = 'step_oauth_login_' + serverName;
       const toolCall = {
         id: flowId,
-        name: serverName,
+        name: buildOAuthToolCallName(serverName),
         type: 'tool_call_chunk',
       };
 
@@ -578,6 +581,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       oauthStart,
       flowManager,
       serverName,
+      configServers,
       userMCPAuthMap,
     });
 
@@ -665,6 +669,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         const result = await reinitMCPServer({
           user: req.user,
           serverName,
+          configServers,
           userMCPAuthMap,
           flowManager,
           returnOnOAuth: false,

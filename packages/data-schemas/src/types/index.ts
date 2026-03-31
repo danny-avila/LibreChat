@@ -28,6 +28,10 @@ export * from './accessRole';
 export * from './aclEntry';
 export * from './systemGrant';
 export * from './group';
+/* Config */
+export * from './config';
+/* Admin */
+export * from './admin';
 /* Web */
 export * from './web';
 /* MCP Servers */

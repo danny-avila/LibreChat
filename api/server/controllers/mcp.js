@@ -14,6 +14,7 @@ const {
   isMCPInspectionFailedError,
 } = require('@librechat/api');
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
+const { resolveConfigServers, resolveAllMcpConfigs } = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 
@@ -57,7 +58,7 @@ function handleMCPError(error, res) {
 }
 
 /**
- * Get all MCP tools available to the user
+ * Get all MCP tools available to the user.
  */
 const getMCPTools = async (req, res) => {
   try {
@@ -67,10 +68,10 @@ const getMCPTools = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const mcpConfig = await getMCPServersRegistry().getAllServerConfigs(userId);
-    const configuredServers = mcpConfig ? Object.keys(mcpConfig) : [];
+    const mcpConfig = await resolveAllMcpConfigs(userId, req.user);
+    const configuredServers = Object.keys(mcpConfig);
 
-    if (!mcpConfig || Object.keys(mcpConfig).length == 0) {
+    if (!configuredServers.length) {
       return res.status(200).json({ servers: {} });
     }
 
@@ -115,14 +116,11 @@ const getMCPTools = async (req, res) => {
       try {
         const serverTools = serverToolsMap.get(serverName);
 
-        // Get server config once
         const serverConfig = mcpConfig[serverName];
-        const rawServerConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
 
-        // Initialize server object with all server-level data
         const server = {
           name: serverName,
-          icon: rawServerConfig?.iconPath || '',
+          icon: serverConfig?.iconPath || '',
           authenticated: true,
           authConfig: [],
           tools: [],
@@ -183,7 +181,7 @@ const getMCPServersList = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const serverConfigs = await getMCPServersRegistry().getAllServerConfigs(userId);
+    const serverConfigs = await resolveAllMcpConfigs(userId, req.user);
     return res.json(redactAllServerSecrets(serverConfigs));
   } catch (error) {
     logger.error('[getMCPServersList]', error);
@@ -237,7 +235,12 @@ const getMCPServerById = async (req, res) => {
     if (!serverName) {
       return res.status(400).json({ message: 'Server name is required' });
     }
-    const parsedConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
+    const configServers = await resolveConfigServers(req);
+    const parsedConfig = await getMCPServersRegistry().getServerConfig(
+      serverName,
+      userId,
+      configServers,
+    );
 
     if (!parsedConfig) {
       return res.status(404).json({ message: 'MCP server not found' });
