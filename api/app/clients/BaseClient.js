@@ -523,6 +523,8 @@ class BaseClient {
           getMultiplier: db.getMultiplier,
           findBalanceByUser: db.findBalanceByUser,
           createAutoRefillTransaction: db.createAutoRefillTransaction,
+          balanceConfig,
+          upsertBalanceFields: db.upsertBalanceFields,
         },
       );
     }
