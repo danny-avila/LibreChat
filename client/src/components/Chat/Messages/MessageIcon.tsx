@@ -1,4 +1,4 @@
-import React, { useMemo, memo } from 'react';
+import { useMemo, memo } from 'react';
 import { getEndpointField } from 'librechat-data-provider';
 import type { Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
@@ -13,7 +13,13 @@ type MessageIconProps = {
   agent?: Agent;
 };
 
-function arePropsEqual(prev: MessageIconProps, next: MessageIconProps): boolean {
+/**
+ * Compares only the fields MessageIcon actually renders: display name and avatar path.
+ * `iconData` is compared by reference — MessageRender stabilizes it via useMemo with
+ * primitive dependencies. `agent.id` / `assistant.id` are intentionally omitted because
+ * this component renders display properties only, not identity-derived content.
+ */
+export function arePropsEqual(prev: MessageIconProps, next: MessageIconProps): boolean {
   if (prev.iconData !== next.iconData) {
     return false;
   }
@@ -36,20 +42,11 @@ const MessageIcon = memo(({ iconData, assistant, agent }: MessageIconProps) => {
   logger.log('icon_data', iconData, assistant, agent);
   const { data: endpointsConfig } = useGetEndpointsQuery();
 
-  const agentName = useMemo(() => agent?.name ?? '', [agent]);
-  const agentAvatar = useMemo(() => agent?.avatar?.filepath ?? '', [agent]);
-  const assistantName = useMemo(() => assistant?.name ?? '', [assistant]);
-  const assistantAvatar = useMemo(() => assistant?.metadata?.avatar ?? '', [assistant]);
-
-  const avatarURL = useMemo(() => {
-    let result = '';
-    if (assistant) {
-      result = assistantAvatar;
-    } else if (agent) {
-      result = agentAvatar;
-    }
-    return result;
-  }, [assistant, agent, assistantAvatar, agentAvatar]);
+  const agentName = agent?.name ?? '';
+  const agentAvatar = agent?.avatar?.filepath ?? '';
+  const assistantName = assistant?.name ?? '';
+  const assistantAvatar = assistant?.metadata?.avatar ?? '';
+  const avatarURL = assistant ? assistantAvatar : agent ? agentAvatar : '';
 
   const iconURL = iconData?.iconURL;
   const endpoint = useMemo(
