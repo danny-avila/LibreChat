@@ -1118,6 +1118,23 @@ describe('createAdminGrantsHandlers', () => {
       expect(deps.revokeCapability).not.toHaveBeenCalled();
     });
 
+    it('returns 400 for group principal type', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: {
+          principalType: PrincipalType.GROUP,
+          principalId: validObjectId,
+          capability: SystemCapabilities.READ_USERS,
+        },
+      });
+
+      await handlers.revokeGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid principal type' });
+    });
+
     it('returns 400 for user principal type', async () => {
       const deps = createDeps();
       const handlers = createAdminGrantsHandlers(deps);

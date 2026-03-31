@@ -74,6 +74,7 @@ export interface AdminGrantsDeps {
   checkRoleExists?: (roleId: string) => Promise<boolean>;
 }
 
+/** Currently ROLE-only; Record/Set structure preserved for future principal-type expansion. */
 export type GrantPrincipalType = PrincipalType.ROLE;
 
 /** Creates admin grant handlers with dependency injection for the /api/admin/grants routes. */
@@ -327,6 +328,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
         return res.status(403).json({ error: 'Cannot grant a capability you do not possess' });
       }
 
+      /** Reject grants targeting non-existent roles when the dep is provided. */
       if (checkRoleExists) {
         const exists = await checkRoleExists(principalId);
         if (!exists) {
