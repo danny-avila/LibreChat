@@ -47,6 +47,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
   async function findUsers(
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
   ): Promise<IUser[]> {
     const User = mongoose.models.User as mongoose.Model<IUser>;
     const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
@@ -54,7 +55,16 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return await query.lean();
+    if (options?.sort != null) {
+      query.sort(options.sort);
+    }
+    if (options?.offset != null) {
+      query.skip(options.offset);
+    }
+    if (options?.limit != null && options.limit > 0) {
+      query.limit(options.limit);
+    }
+    return (await query.lean()) as IUser[];
   }
 
   /**
