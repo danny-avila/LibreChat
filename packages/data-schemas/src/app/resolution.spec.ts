@@ -1,3 +1,4 @@
+import { INTERFACE_PERMISSION_FIELDS, PermissionTypes } from 'librechat-data-provider';
 import { mergeConfigOverrides } from './resolution';
 import type { AppConfig, IConfig } from '~/types';
 
@@ -30,7 +31,7 @@ describe('mergeConfigOverrides', () => {
     expect(mergeConfigOverrides(baseConfig, undefined as unknown as IConfig[])).toBe(baseConfig);
   });
 
-  it('deep merges a single override into base', () => {
+  it('deep merges interface UI fields into interfaceConfig', () => {
     const configs = [fakeConfig({ interface: { endpointsMenu: false } }, 10)];
     const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
     const iface = result.interfaceConfig as Record<string, unknown>;
@@ -134,6 +135,104 @@ describe('mergeConfigOverrides', () => {
     expect(result.turnstile).toBeUndefined();
   });
 
+  it('strips interface permission fields from overrides', () => {
+    const base = {
+      interfaceConfig: { endpointsMenu: true, sidePanel: true },
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig(
+        {
+          interface: {
+            endpointsMenu: false,
+            prompts: false,
+            agents: { use: false },
+            marketplace: { use: false },
+          },
+        },
+        10,
+      ),
+    ];
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
+
+    // UI field should be merged
+    expect(iface.endpointsMenu).toBe(false);
+    // Boolean permission fields should be stripped
+    expect(iface.prompts).toBeUndefined();
+    // Object permission fields with only permission sub-keys should be stripped
+    expect(iface.agents).toBeUndefined();
+    expect(iface.marketplace).toBeUndefined();
+    // Untouched base field preserved
+    expect(iface.sidePanel).toBe(true);
+  });
+
+  it('preserves UI sub-keys in composite permission fields like mcpServers', () => {
+    const base = {
+      interfaceConfig: {},
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig(
+        {
+          interface: {
+            mcpServers: {
+              use: true,
+              create: false,
+              share: false,
+              public: false,
+              placeholder: 'Search MCP servers...',
+              trustCheckbox: { label: 'I trust this server' },
+            },
+          },
+        },
+        10,
+      ),
+    ];
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
+    const mcp = iface.mcpServers as Record<string, unknown>;
+
+    // UI sub-keys preserved
+    expect(mcp.placeholder).toBe('Search MCP servers...');
+    expect(mcp.trustCheckbox).toEqual({ label: 'I trust this server' });
+    // Permission sub-keys stripped
+    expect(mcp.use).toBeUndefined();
+    expect(mcp.create).toBeUndefined();
+    expect(mcp.share).toBeUndefined();
+    expect(mcp.public).toBeUndefined();
+  });
+
+  it('strips peoplePicker permission sub-keys (users, groups, roles)', () => {
+    const base = {
+      interfaceConfig: {},
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig({ interface: { peoplePicker: { users: false, groups: true, roles: true } } }, 10),
+    ];
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
+
+    // All sub-keys are permission bits → entire field stripped
+    expect(iface.peoplePicker).toBeUndefined();
+  });
+
+  it('drops interface entirely when only permission fields are present', () => {
+    const base = {
+      interfaceConfig: { endpointsMenu: true },
+    } as unknown as AppConfig;
+
+    const configs = [fakeConfig({ interface: { prompts: false, agents: false } }, 10)];
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
+
+    // Base should be unchanged
+    expect(iface.endpointsMenu).toBe(true);
+    expect(iface.prompts).toBeUndefined();
+    expect(iface.agents).toBeUndefined();
+  });
+
   it('remaps YAML-level keys to AppConfig equivalents', () => {
     const configs = [
       fakeConfig(
@@ -151,5 +250,40 @@ describe('mergeConfigOverrides', () => {
       url: 'https://example.com',
     });
     expect(result.mcpServers).toBeUndefined();
+  });
+});
+
+describe('INTERFACE_PERMISSION_FIELDS', () => {
+  it('contains all expected permission fields', () => {
+    const expected = [
+      'prompts',
+      'agents',
+      'bookmarks',
+      'memories',
+      'multiConvo',
+      'temporaryChat',
+      'runCode',
+      'webSearch',
+      'fileSearch',
+      'fileCitations',
+      'peoplePicker',
+      'marketplace',
+      'mcpServers',
+      'remoteAgents',
+    ];
+    for (const field of expected) {
+      expect(INTERFACE_PERMISSION_FIELDS.has(field)).toBe(true);
+    }
+  });
+
+  it('has one entry per PermissionType — no duplicates or missing', () => {
+    expect(INTERFACE_PERMISSION_FIELDS.size).toBe(Object.values(PermissionTypes).length);
+  });
+
+  it('does not contain UI-only fields', () => {
+    const uiFields = ['endpointsMenu', 'modelSelect', 'parameters', 'presets', 'sidePanel'];
+    for (const field of uiFields) {
+      expect(INTERFACE_PERMISSION_FIELDS.has(field)).toBe(false);
+    }
   });
 });
