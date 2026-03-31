@@ -499,4 +499,62 @@ describe('createRemoteAgentAuth', () => {
       expect(mockUpdateUser).not.toHaveBeenCalled();
     });
   });
+
+  describe('scope validation', () => {
+    it('returns 401 when required scope is missing from token', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', scope: 'openid profile' });
+
+      const deps = makeDeps(makeConfig({ scope: 'remote_agent' }, { enabled: false }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+    });
+
+    it('passes when required scope is present in token', async () => {
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        scope: 'openid profile remote_agent',
+      });
+      (findOpenIDUser as jest.Mock).mockResolvedValue({
+        user: { ...mockUser },
+        error: null,
+        migration: false,
+      });
+
+      const deps = makeDeps(makeConfig({ scope: 'remote_agent' }));
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('passes when scope is not configured (backward compat)', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' }); // no scope claim at all
+      (findOpenIDUser as jest.Mock).mockResolvedValue({
+        user: { ...mockUser },
+        error: null,
+        migration: false,
+      });
+
+      const deps = makeDeps(makeConfig({ scope: undefined }));
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockNext).toHaveBeenCalled();
+    });
+  });
 });
