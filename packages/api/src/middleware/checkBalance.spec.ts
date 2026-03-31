@@ -1,4 +1,6 @@
 import { ViolationTypes } from 'librechat-data-provider';
+import type { Response } from 'express';
+import type { ServerRequest } from '~/types/http';
 import type { CheckBalanceDeps } from './checkBalance';
 import { checkBalance } from './checkBalance';
 
@@ -19,10 +21,8 @@ describe('checkBalance', () => {
     ...overrides,
   });
 
-  const createMockReqRes = () => ({
-    req: { user: { id: 'user-1' } } as unknown as Parameters<typeof checkBalance>[0]['req'],
-    res: {} as unknown as Parameters<typeof checkBalance>[0]['res'],
-  });
+  const req = { user: { id: 'user-1' } } as ServerRequest;
+  const res = {} as Response;
 
   const baseTxData = {
     user: 'user-1',
@@ -34,7 +34,6 @@ describe('checkBalance', () => {
 
   it('should return true when user has sufficient balance', async () => {
     const deps = createMockDeps();
-    const { req, res } = createMockReqRes();
 
     const result = await checkBalance({ req, res, txData: baseTxData }, deps);
     expect(result).toBe(true);
@@ -45,7 +44,6 @@ describe('checkBalance', () => {
       findBalanceByUser: jest.fn().mockResolvedValue({ tokenCredits: 10 }),
       getMultiplier: jest.fn().mockReturnValue(1),
     });
-    const { req, res } = createMockReqRes();
 
     await expect(
       checkBalance({ req, res, txData: { ...baseTxData, amount: 100 } }, deps),
@@ -68,7 +66,6 @@ describe('checkBalance', () => {
         balanceConfig: { startBalance: 5000 },
         upsertBalanceFields,
       });
-      const { req, res } = createMockReqRes();
 
       const result = await checkBalance({ req, res, txData: baseTxData }, deps);
 
@@ -92,7 +89,6 @@ describe('checkBalance', () => {
         },
         upsertBalanceFields,
       });
-      const { req, res } = createMockReqRes();
 
       await checkBalance({ req, res, txData: baseTxData }, deps);
 
@@ -117,7 +113,6 @@ describe('checkBalance', () => {
         balanceConfig: { startBalance: 5000, autoRefillEnabled: true },
         upsertBalanceFields,
       });
-      const { req, res } = createMockReqRes();
 
       await checkBalance({ req, res, txData: baseTxData }, deps);
 
@@ -135,7 +130,6 @@ describe('checkBalance', () => {
         balanceConfig: { startBalance: 50 },
         upsertBalanceFields,
       });
-      const { req, res } = createMockReqRes();
 
       await expect(
         checkBalance({ req, res, txData: { ...baseTxData, amount: 100 } }, deps),
@@ -162,7 +156,6 @@ describe('checkBalance', () => {
         balanceConfig: { startBalance: 5000 },
         upsertBalanceFields,
       });
-      const { req, res } = createMockReqRes();
 
       await expect(
         checkBalance({ req, res, txData: { ...baseTxData, amount: 4000 } }, deps),
@@ -181,7 +174,6 @@ describe('checkBalance', () => {
       const deps = createMockDeps({
         findBalanceByUser: jest.fn().mockResolvedValue(null),
       });
-      const { req, res } = createMockReqRes();
 
       await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
       expect(deps.logViolation).toHaveBeenCalledWith(
@@ -199,7 +191,6 @@ describe('checkBalance', () => {
         balanceConfig: {},
         upsertBalanceFields: jest.fn(),
       });
-      const { req, res } = createMockReqRes();
 
       await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
       expect(deps.upsertBalanceFields).not.toHaveBeenCalled();
@@ -217,7 +208,6 @@ describe('checkBalance', () => {
         findBalanceByUser: jest.fn().mockResolvedValue(null),
         balanceConfig: { startBalance: 5000 },
       });
-      const { req, res } = createMockReqRes();
 
       await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
       expect(deps.logViolation).toHaveBeenCalledWith(
@@ -237,7 +227,6 @@ describe('checkBalance', () => {
         balanceConfig: { startBalance: 0 },
         upsertBalanceFields,
       });
-      const { req, res } = createMockReqRes();
 
       await expect(
         checkBalance({ req, res, txData: { ...baseTxData, amount: 100 } }, deps),
@@ -256,7 +245,6 @@ describe('checkBalance', () => {
         balanceConfig: { startBalance: 5000 },
         upsertBalanceFields,
       });
-      const { req, res } = createMockReqRes();
 
       await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
       expect(deps.logViolation).toHaveBeenCalledWith(
