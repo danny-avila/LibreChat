@@ -1,7 +1,7 @@
 import { ViolationTypes } from 'librechat-data-provider';
 import type { Response } from 'express';
-import type { ServerRequest } from '~/types/http';
 import type { CheckBalanceDeps } from './checkBalance';
+import type { ServerRequest } from '~/types/http';
 import { checkBalance } from './checkBalance';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -236,6 +236,13 @@ describe('checkBalance', () => {
         user: 'user-1',
         tokenCredits: 0,
       });
+      expect(deps.logViolation).toHaveBeenCalledWith(
+        req,
+        res,
+        ViolationTypes.TOKEN_BALANCE,
+        expect.objectContaining({ balance: 0, tokenCost: 100 }),
+        0,
+      );
     });
 
     it('should fall back to balance: 0 when upsertBalanceFields rejects', async () => {
