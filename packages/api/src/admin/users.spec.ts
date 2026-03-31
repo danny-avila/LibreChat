@@ -32,7 +32,7 @@ function createReqRes(
   overrides: {
     params?: Record<string, string>;
     query?: Record<string, string | string[]>;
-    user?: { _id?: Types.ObjectId; id?: string; role?: string };
+    user?: { _id?: Types.ObjectId; id?: string; role?: string; tenantId?: string };
   } = {},
 ) {
   const req = {
@@ -436,6 +436,25 @@ describe('createAdminUsersHandlers', () => {
       });
       expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.USER, validUserId, {
         tenantId: undefined,
+      });
+    });
+
+    it('scopes grant cleanup to the caller tenantId', async () => {
+      const result: UserDeleteResult = {
+        deletedCount: 1,
+        message: 'User was deleted successfully.',
+      };
+      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({
+        params: { id: validUserId },
+        user: { _id: new Types.ObjectId(), role: 'admin', tenantId: 'tenant-xyz' },
+      });
+
+      await handlers.deleteUser(req, res);
+
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.USER, validUserId, {
+        tenantId: 'tenant-xyz',
       });
     });
 
