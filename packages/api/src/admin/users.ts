@@ -43,6 +43,7 @@ export interface AdminUsersDeps {
   deleteGrantsForPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
+    options?: { tenantId?: string },
   ) => Promise<void>;
 }
 
@@ -112,7 +113,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       const users = await findUsers(
         { $or: [{ name: regex }, { email: regex }, { username: regex }] },
         '_id name email username avatar',
-        { limit: searchLimit },
+        { limit: searchLimit, sort: { name: 1 } },
       );
 
       const results: AdminUserSearchResult[] = users.map((u) => ({
@@ -170,10 +171,11 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       }
 
       const objectId = new Types.ObjectId(id);
+      const tenantId = req.user?.tenantId;
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.USER, id),
         deleteAclEntries({ principalType: PrincipalType.USER, principalId: objectId }),
-        deleteGrantsForPrincipal(PrincipalType.USER, id),
+        deleteGrantsForPrincipal(PrincipalType.USER, id, { tenantId }),
       ]);
       for (const r of cleanupResults) {
         if (r.status === 'rejected') {
