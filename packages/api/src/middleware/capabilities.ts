@@ -191,6 +191,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
           return;
         }
 
+        logger.warn(`[requireCapability] Forbidden: user ${id} missing capability '${capability}'`);
         res.status(403).json({ message: 'Forbidden' });
       } catch (err) {
         logger.error(`[requireCapability] Error checking capability: ${capability}`, err);

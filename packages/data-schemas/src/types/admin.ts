@@ -111,10 +111,24 @@ export type AdminMember = {
   joinedAt?: string;
 };
 
+/** Full user info returned by the admin user list endpoint. */
+export type AdminUserListItem = {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  avatar: string;
+  role: string;
+  provider: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 /** Minimal user info returned by user search endpoints. */
 export type AdminUserSearchResult = {
-  userId: string;
+  id: string;
   name: string;
   email: string;
+  username?: string;
   avatarUrl?: string;
 };
