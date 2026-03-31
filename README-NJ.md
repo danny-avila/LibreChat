@@ -181,3 +181,6 @@ Guardrail configs are managed per-environment through the AWS console. To manage
 ### Secrets Manager Connection String
 
 The connection string for DocumentDB lives in AWS Secrets Manager under the name `ai-assistant/docdb/uri`. If the DocumentDB secret is rotated, it must be updated here for LibreChat to maintain connection.
+
+## Updating the New Updates widget
+The purpose of this widget is surfacing new updates and changes to the user. Information can be updated in `client/src/nj/components/NewUpdatesWidget.tsx`, and the env var `VITE_DISPLAY_UPDATE_WIDGET` must be set to `true`. 

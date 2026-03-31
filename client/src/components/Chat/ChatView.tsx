@@ -84,7 +84,7 @@ function ChatView({ index = 0 }: { index?: number }) {
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
             <div className="relative flex h-full w-full flex-col">
-              <Header />
+              <Header index={index} isLandingPage={isLandingPage} />
               <>
                 <div
                   className={cn(

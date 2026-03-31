@@ -13,10 +13,11 @@ import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 import NewJerseyLogo from '~/nj/components/NewJerseyLogo';
+import NewUpdatesWidget from '~/nj/components/NewUpdatesWidget';
 
 const defaultInterface = getConfigDefaults().interface;
 
-function Header() {
+function Header({ index = 0, isLandingPage = false }: { index?: number; isLandingPage?: boolean }) {
   const { data: startupConfig } = useGetStartupConfig();
   const navVisible = useRecoilValue(store.sidebarExpanded);
 
@@ -46,7 +47,7 @@ function Header() {
     <div className="via-presentation/70 md:from-presentation/80 md:via-presentation/50 2xl:from-presentation/0 absolute top-0 z-10 flex h-[52px] w-full items-center justify-between bg-gradient-to-b from-presentation to-transparent p-2 font-semibold text-text-primary 2xl:via-transparent">
       <div className="hide-scrollbar flex w-full items-center justify-between gap-2 overflow-x-auto">
         <div className="mx-1 flex items-center">
-          <NewJerseyLogo />
+          <NewJerseyLogo index={index} />
           <OpenSidebar className="md:hidden" />
           {!(navVisible && isSmallScreen) && (
             <div
@@ -84,6 +85,7 @@ function Header() {
       </div>
       {/* Empty div for spacing */}
       <div />
+      {isLandingPage && <NewUpdatesWidget />}
     </div>
   );
 }
