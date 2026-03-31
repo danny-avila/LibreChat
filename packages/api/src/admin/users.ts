@@ -4,6 +4,7 @@ import { logger, isValidObjectIdString } from '@librechat/data-schemas';
 import type {
   IUser,
   IConfig,
+  AdminUserListItem,
   AdminUserSearchResult,
   UserDeleteResult,
 } from '@librechat/data-schemas';
@@ -63,7 +64,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         countUsers(),
       ]);
 
-      const mapped = users.map((u) => ({
+      const mapped: AdminUserListItem[] = users.map((u) => ({
         id: u._id?.toString() ?? '',
         name: u.name ?? '',
         username: u.username ?? '',
@@ -71,8 +72,8 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         avatar: u.avatar ?? '',
         role: u.role ?? 'USER',
         provider: u.provider ?? 'local',
-        createdAt: u.createdAt ? new Date(u.createdAt).toISOString() : undefined,
-        updatedAt: u.updatedAt ? new Date(u.updatedAt).toISOString() : undefined,
+        createdAt: u.createdAt?.toISOString(),
+        updatedAt: u.updatedAt?.toISOString(),
       }));
 
       return res.status(200).json({ users: mapped, total, limit, offset });
@@ -84,7 +85,10 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
 
   async function searchUsersHandler(req: ServerRequest, res: Response) {
     try {
-      const { q: query, limit = '20' } = req.query as { q?: string; limit?: string };
+      const rawQ = req.query.q;
+      const rawLimit = req.query.limit;
+      const query = typeof rawQ === 'string' ? rawQ : undefined;
+      const limitStr = typeof rawLimit === 'string' ? rawLimit : '20';
       const trimmed = query?.trim() ?? '';
 
       if (!trimmed) {
@@ -101,9 +105,9 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
           .json({ error: `Query must not exceed ${MAX_SEARCH_LENGTH} characters` });
       }
 
-      const searchLimit = Math.min(Math.max(1, parseInt(limit) || 20), 50);
+      const searchLimit = Math.min(Math.max(1, parseInt(limitStr, 10) || 20), 50);
       const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(escaped, 'i');
+      const regex = new RegExp(`^${escaped}`, 'i');
 
       const users = await findUsers(
         { $or: [{ name: regex }, { email: regex }, { username: regex }] },
@@ -112,14 +116,16 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       );
 
       const results: AdminUserSearchResult[] = users.map((u) => ({
-        userId: u._id?.toString() ?? '',
+        id: u._id?.toString() ?? '',
         name: u.name ?? '',
         email: u.email ?? '',
         username: u.username,
         avatarUrl: u.avatar,
       }));
 
-      return res.status(200).json({ users: results });
+      return res
+        .status(200)
+        .json({ users: results, total: results.length, capped: results.length >= searchLimit });
     } catch (error) {
       logger.error('[adminUsers] searchUsers error:', error);
       return res.status(500).json({ error: 'Failed to search users' });

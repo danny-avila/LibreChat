@@ -31,7 +31,7 @@ function mockUser(overrides: Partial<IUser> = {}): IUser {
 function createReqRes(
   overrides: {
     params?: Record<string, string>;
-    query?: Record<string, string>;
+    query?: Record<string, string | string[]>;
     user?: { _id?: Types.ObjectId; id?: string; role?: string };
   } = {},
 ) {
@@ -89,9 +89,10 @@ describe('createAdminUsersHandlers', () => {
       expect(response.users[0]).toHaveProperty('role');
     });
 
-    it('passes pagination params to findUsers', async () => {
+    it('passes pagination params to findUsers and unfiltered count', async () => {
       const findUsers = jest.fn().mockResolvedValue([]);
-      const deps = createDeps({ findUsers });
+      const countUsers = jest.fn().mockResolvedValue(0);
+      const deps = createDeps({ findUsers, countUsers });
       const handlers = createAdminUsersHandlers(deps);
       const { req, res } = createReqRes({ query: { limit: '10', offset: '20' } });
 
@@ -102,6 +103,7 @@ describe('createAdminUsersHandlers', () => {
         offset: 20,
         sort: { createdAt: -1 },
       });
+      expect(countUsers).toHaveBeenCalledWith();
     });
 
     it('returns empty list when no users', async () => {
@@ -116,8 +118,21 @@ describe('createAdminUsersHandlers', () => {
       expect(json.mock.calls[0][0].total).toBe(0);
     });
 
-    it('returns 500 on error', async () => {
+    it('returns 500 when findUsers throws', async () => {
       const deps = createDeps({ findUsers: jest.fn().mockRejectedValue(new Error('db down')) });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes();
+
+      await handlers.listUsers(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to list users' });
+    });
+
+    it('returns 500 when countUsers throws', async () => {
+      const deps = createDeps({
+        countUsers: jest.fn().mockRejectedValue(new Error('count failed')),
+      });
       const handlers = createAdminUsersHandlers(deps);
       const { req, res, status, json } = createReqRes();
 
@@ -129,7 +144,7 @@ describe('createAdminUsersHandlers', () => {
   });
 
   describe('searchUsers', () => {
-    it('returns matching users with username', async () => {
+    it('returns matching users with total and capped flag', async () => {
       const users = [mockUser()];
       const deps = createDeps({ findUsers: jest.fn().mockResolvedValue(users) });
       const handlers = createAdminUsersHandlers(deps);
@@ -140,13 +155,28 @@ describe('createAdminUsersHandlers', () => {
       expect(status).toHaveBeenCalledWith(200);
       const response = json.mock.calls[0][0];
       expect(response.users).toHaveLength(1);
-      expect(response.users[0]).toHaveProperty('userId');
+      expect(response.total).toBe(1);
+      expect(response.capped).toBe(false);
+      expect(response.users[0]).toHaveProperty('id');
       expect(response.users[0]).toHaveProperty('name');
       expect(response.users[0]).toHaveProperty('email');
       expect(response.users[0]).toHaveProperty('username');
     });
 
-    it('searches name, email, and username fields', async () => {
+    it('sets capped to true when results hit the limit', async () => {
+      const users = Array.from({ length: 20 }, () => mockUser());
+      const deps = createDeps({ findUsers: jest.fn().mockResolvedValue(users) });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, json } = createReqRes({ query: { q: 'test' } });
+
+      await handlers.searchUsers(req, res);
+
+      const response = json.mock.calls[0][0];
+      expect(response.total).toBe(20);
+      expect(response.capped).toBe(true);
+    });
+
+    it('searches name, email, and username with anchored prefix regex', async () => {
       const findUsers = jest.fn().mockResolvedValue([]);
       const deps = createDeps({ findUsers });
       const handlers = createAdminUsersHandlers(deps);
@@ -159,6 +189,7 @@ describe('createAdminUsersHandlers', () => {
       expect(filter.$or[0]).toHaveProperty('name');
       expect(filter.$or[1]).toHaveProperty('email');
       expect(filter.$or[2]).toHaveProperty('username');
+      expect(filter.$or[0].name.source).toBe('^test');
     });
 
     it('projects username in the field selection', async () => {
@@ -183,7 +214,7 @@ describe('createAdminUsersHandlers', () => {
 
       const filter = findUsers.mock.calls[0][0];
       expect(filter.$or[0].name).toBeInstanceOf(RegExp);
-      expect(filter.$or[0].name.source).toBe('test\\.user\\+1');
+      expect(filter.$or[0].name.source).toBe('^test\\.user\\+1');
     });
 
     it('returns 400 when query is missing', async () => {
@@ -241,6 +272,17 @@ describe('createAdminUsersHandlers', () => {
       expect(json).toHaveBeenCalledWith(
         expect.objectContaining({ error: expect.stringContaining('200') }),
       );
+    });
+
+    it('treats array query param as missing', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ query: { q: ['foo', 'bar'] } });
+
+      await handlers.searchUsers(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Query parameter "q" is required' });
     });
 
     it('passes limit to findUsers', async () => {
