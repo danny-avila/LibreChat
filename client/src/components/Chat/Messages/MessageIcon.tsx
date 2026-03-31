@@ -46,7 +46,12 @@ const MessageIcon = memo(({ iconData, assistant, agent }: MessageIconProps) => {
   const agentAvatar = agent?.avatar?.filepath ?? '';
   const assistantName = assistant?.name ?? '';
   const assistantAvatar = assistant?.metadata?.avatar ?? '';
-  const avatarURL = assistant ? assistantAvatar : agent ? agentAvatar : '';
+  let avatarURL = '';
+  if (assistant) {
+    avatarURL = assistantAvatar;
+  } else if (agent) {
+    avatarURL = agentAvatar;
+  }
 
   const iconURL = iconData?.iconURL;
   const endpoint = useMemo(
