@@ -58,10 +58,14 @@ jest.mocked(fs).existsSync = jest.fn();
 jest.mocked(fs).statSync = jest.fn();
 jest.mocked(fs).readFileSync = jest.fn();
 
-// To capture the verify callback from the strategy, we grab it from the mock constructor
+// To capture the verify callback from the strategy, we grab it from the mock constructor.
+// setupSaml() registers both 'saml' (regular) and 'samlAdmin' strategies, so we capture
+// only the first callback per setupSaml() call (the regular one).
 let verifyCallback;
 SamlStrategy.mockImplementation((options, verify) => {
-  verifyCallback = verify;
+  if (!verifyCallback) {
+    verifyCallback = verify;
+  }
   return { name: 'saml', options, verify };
 });
 
@@ -219,6 +223,8 @@ describe('setupSaml', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Reset so the mock captures the regular (non-admin) callback on next setupSaml() call
+    verifyCallback = null;
 
     // Configure mocks
     const { findUser, createUser, updateUser } = require('~/models');
