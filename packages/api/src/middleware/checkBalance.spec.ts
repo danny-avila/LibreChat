@@ -62,7 +62,7 @@ describe('checkBalance', () => {
 
   describe('lazy balance initialization', () => {
     it('should create balance record when no record exists and startBalance is configured', async () => {
-      const upsertBalanceFields = jest.fn().mockResolvedValue({});
+      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 5000 });
       const deps = createMockDeps({
         findBalanceByUser: jest.fn().mockResolvedValue(null),
         balanceConfig: { startBalance: 5000 },
@@ -79,8 +79,39 @@ describe('checkBalance', () => {
       });
     });
 
-    it('should throw when lazy-initialized balance is less than token cost', async () => {
-      const upsertBalanceFields = jest.fn().mockResolvedValue({});
+    it('should include auto-refill fields when configured', async () => {
+      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 5000 });
+      const deps = createMockDeps({
+        findBalanceByUser: jest.fn().mockResolvedValue(null),
+        balanceConfig: {
+          startBalance: 5000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 1,
+          refillIntervalUnit: 'days',
+          refillAmount: 1000,
+        },
+        upsertBalanceFields,
+      });
+      const { req, res } = createMockReqRes();
+
+      await checkBalance({ req, res, txData: baseTxData }, deps);
+
+      expect(upsertBalanceFields).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({
+          user: 'user-1',
+          tokenCredits: 5000,
+          autoRefillEnabled: true,
+          refillIntervalValue: 1,
+          refillIntervalUnit: 'days',
+          refillAmount: 1000,
+          lastRefill: expect.any(Date),
+        }),
+      );
+    });
+
+    it('should throw a TOKEN_BALANCE violation when lazy-initialized balance is less than token cost', async () => {
+      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 50 });
       const deps = createMockDeps({
         findBalanceByUser: jest.fn().mockResolvedValue(null),
         getMultiplier: jest.fn().mockReturnValue(1),
@@ -99,7 +130,31 @@ describe('checkBalance', () => {
       });
     });
 
-    it('should return canSpend: false when no record and no balanceConfig', async () => {
+    it('should use the DB-returned balance instead of the raw config constant', async () => {
+      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 3000 });
+      const deps = createMockDeps({
+        findBalanceByUser: jest.fn().mockResolvedValue(null),
+        getMultiplier: jest.fn().mockReturnValue(1),
+        balanceConfig: { startBalance: 5000 },
+        upsertBalanceFields,
+      });
+      const { req, res } = createMockReqRes();
+
+      // DB returned 3000 (not 5000), so 3000 < 4000 should throw
+      await expect(
+        checkBalance({ req, res, txData: { ...baseTxData, amount: 4000 } }, deps),
+      ).rejects.toThrow();
+
+      expect(deps.logViolation).toHaveBeenCalledWith(
+        req,
+        res,
+        ViolationTypes.TOKEN_BALANCE,
+        expect.objectContaining({ balance: 3000, tokenCost: 4000 }),
+        0,
+      );
+    });
+
+    it('should throw a TOKEN_BALANCE violation when no record and no balanceConfig', async () => {
       const deps = createMockDeps({
         findBalanceByUser: jest.fn().mockResolvedValue(null),
       });
@@ -115,7 +170,7 @@ describe('checkBalance', () => {
       );
     });
 
-    it('should return canSpend: false when no record and startBalance is undefined', async () => {
+    it('should throw a TOKEN_BALANCE violation when no record and startBalance is undefined', async () => {
       const deps = createMockDeps({
         findBalanceByUser: jest.fn().mockResolvedValue(null),
         balanceConfig: {},
@@ -125,21 +180,34 @@ describe('checkBalance', () => {
 
       await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
       expect(deps.upsertBalanceFields).not.toHaveBeenCalled();
+      expect(deps.logViolation).toHaveBeenCalledWith(
+        req,
+        res,
+        ViolationTypes.TOKEN_BALANCE,
+        expect.objectContaining({ balance: 0 }),
+        0,
+      );
     });
 
-    it('should not lazy-init when upsertBalanceFields is not provided', async () => {
+    it('should throw a TOKEN_BALANCE violation when upsertBalanceFields is not provided', async () => {
       const deps = createMockDeps({
         findBalanceByUser: jest.fn().mockResolvedValue(null),
         balanceConfig: { startBalance: 5000 },
-        // upsertBalanceFields not provided
       });
       const { req, res } = createMockReqRes();
 
       await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
+      expect(deps.logViolation).toHaveBeenCalledWith(
+        req,
+        res,
+        ViolationTypes.TOKEN_BALANCE,
+        expect.objectContaining({ balance: 0 }),
+        0,
+      );
     });
 
     it('should handle startBalance of 0', async () => {
-      const upsertBalanceFields = jest.fn().mockResolvedValue({});
+      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 0 });
       const deps = createMockDeps({
         findBalanceByUser: jest.fn().mockResolvedValue(null),
         getMultiplier: jest.fn().mockReturnValue(1),
@@ -152,11 +220,29 @@ describe('checkBalance', () => {
         checkBalance({ req, res, txData: { ...baseTxData, amount: 100 } }, deps),
       ).rejects.toThrow();
 
-      // startBalance: 0 is != null, so lazy init should still occur
       expect(upsertBalanceFields).toHaveBeenCalledWith('user-1', {
         user: 'user-1',
         tokenCredits: 0,
       });
+    });
+
+    it('should fall back to balance: 0 when upsertBalanceFields rejects', async () => {
+      const upsertBalanceFields = jest.fn().mockRejectedValue(new Error('DB unavailable'));
+      const deps = createMockDeps({
+        findBalanceByUser: jest.fn().mockResolvedValue(null),
+        balanceConfig: { startBalance: 5000 },
+        upsertBalanceFields,
+      });
+      const { req, res } = createMockReqRes();
+
+      await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
+      expect(deps.logViolation).toHaveBeenCalledWith(
+        req,
+        res,
+        ViolationTypes.TOKEN_BALANCE,
+        expect.objectContaining({ balance: 0 }),
+        0,
+      );
     });
   });
 });

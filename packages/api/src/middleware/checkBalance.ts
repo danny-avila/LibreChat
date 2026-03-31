@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { ViolationTypes } from 'librechat-data-provider';
+import type { BalanceConfig, IBalanceUpdate } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types/http';
 import type { Response } from 'express';
 
@@ -38,10 +39,10 @@ export interface CheckBalanceDeps {
     errorMessage: Record<string, unknown>,
     score: number,
   ) => Promise<void>;
-  /** Optional: balance config for lazy initialization when no record exists */
-  balanceConfig?: { startBalance?: number };
-  /** Optional: upsert function for lazy initialization when no record exists */
-  upsertBalanceFields?: (userId: string, fields: Record<string, unknown>) => Promise<unknown>;
+  /** Balance config for lazy initialization when no record exists */
+  balanceConfig?: BalanceConfig;
+  /** Upsert function for lazy initialization when no record exists */
+  upsertBalanceFields?: (userId: string, fields: IBalanceUpdate) => Promise<BalanceRecord | null>;
 }
 
 function addIntervalToDate(date: Date, value: number, unit: TimeUnit): Date {
@@ -93,12 +94,31 @@ async function checkBalanceRecord(
         user,
         startBalance: deps.balanceConfig.startBalance,
       });
-      await deps.upsertBalanceFields(user, {
-        user,
-        tokenCredits: deps.balanceConfig.startBalance,
-      });
-      const balance = deps.balanceConfig.startBalance;
-      return { canSpend: balance >= tokenCost, balance, tokenCost };
+      try {
+        const fields: IBalanceUpdate = {
+          user,
+          tokenCredits: deps.balanceConfig.startBalance,
+        };
+        const config = deps.balanceConfig;
+        if (
+          config.autoRefillEnabled &&
+          config.refillIntervalValue != null &&
+          config.refillIntervalUnit != null &&
+          config.refillAmount != null
+        ) {
+          fields.autoRefillEnabled = config.autoRefillEnabled;
+          fields.refillIntervalValue = config.refillIntervalValue;
+          fields.refillIntervalUnit = config.refillIntervalUnit;
+          fields.refillAmount = config.refillAmount;
+          fields.lastRefill = new Date();
+        }
+        const created = await deps.upsertBalanceFields(user, fields);
+        const balance = created?.tokenCredits ?? deps.balanceConfig.startBalance;
+        return { canSpend: balance >= tokenCost, balance, tokenCost };
+      } catch (error) {
+        logger.error('[Balance.check] Failed to lazy-initialize balance record', { user, error });
+        return { canSpend: false, balance: 0, tokenCost };
+      }
     }
     logger.debug('[Balance.check] No balance record found for user', { user });
     return { canSpend: false, balance: 0, tokenCost };
