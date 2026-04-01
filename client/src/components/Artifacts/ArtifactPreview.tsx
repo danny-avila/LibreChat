@@ -39,12 +39,15 @@ export const ArtifactPreview = memo(function ({
     };
   }, [currentCode, files, fileKey]);
 
-  const options: typeof sharedOptions = useMemo(() => {
+  const options: SandpackProviderProps['options'] = useMemo(() => {
+    const baseOptions = template === 'static' ? {} : sharedOptions;
+
     if (!startupConfig) {
-      return sharedOptions;
+      return baseOptions;
     }
+
     return {
-      ...sharedOptions,
+      ...baseOptions,
       bundlerURL: template === 'static' ? startupConfig.staticBundlerURL : startupConfig.bundlerURL,
     };
   }, [startupConfig, template]);
