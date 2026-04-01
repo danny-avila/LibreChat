@@ -19,7 +19,7 @@ jobs:
           username: ${{ secrets.AWS_ACCESS_KEY_ID }}
           password: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Build and push
+      - name: Build and push kitchensink
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -29,7 +29,7 @@ jobs:
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/librechat-dev:${{ github.sha }}
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/librechat-dev:latest
 
-      - name: Build and push
+      - name: Build and push ollama
         uses: docker/build-push-action@v6
         with:
           context: .
