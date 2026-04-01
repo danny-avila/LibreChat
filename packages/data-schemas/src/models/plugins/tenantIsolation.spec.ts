@@ -452,6 +452,31 @@ describe('applyTenantIsolation', () => {
       expect(doc!.tenantId).toBe('tenant-a');
     });
 
+    it('no-ops when update contains only tenantId', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.updateOne({ name: 'guarded' }, { $set: { tenantId: 'tenant-a' } }),
+      );
+
+      const doc = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOne({ name: 'guarded' }).lean(),
+      );
+      expect(doc).not.toBeNull();
+      expect(doc!.name).toBe('guarded');
+      expect(doc!.tenantId).toBe('tenant-a');
+    });
+
+    it('no-ops when top-level update contains only tenantId', async () => {
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOneAndUpdate(
+          { name: 'guarded' },
+          { tenantId: 'tenant-a' } as Record<string, string>,
+          { new: true },
+        ).lean(),
+      );
+
+      expect(result).toBeNull();
+    });
+
     it('blocks tenantId in replaceOne replacement document', async () => {
       await expect(
         tenantStorage.run({ tenantId: 'tenant-a' }, async () =>

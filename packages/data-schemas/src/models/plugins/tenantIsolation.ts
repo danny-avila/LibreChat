@@ -116,6 +116,12 @@ export function applyTenantIsolation(schema: Schema): void {
       return;
     }
     sanitizeTenantIdMutation(this.getUpdate() as UpdateQuery<unknown> | null);
+
+    const update = this.getUpdate() as Record<string, unknown> | null;
+    if (update && Object.keys(update).length === 0) {
+      this.where({ _id: { $in: [] } });
+      this.setOptions({ upsert: false });
+    }
   };
 
   const replaceGuard = function (this: Query<unknown, unknown>) {
