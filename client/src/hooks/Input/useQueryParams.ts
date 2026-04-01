@@ -3,7 +3,6 @@ import { useRecoilValue } from 'recoil';
 import { useSearchParams } from 'react-router-dom';
 import { QueryClient, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
-import { startupConfigKey } from '~/data-provider';
 import type {
   AgentListResponse,
   TEndpointsConfig,
@@ -20,8 +19,8 @@ import {
   logger,
 } from '~/utils';
 import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from '~/hooks';
+import { startupConfigKey, useGetAgentByIdQuery } from '~/data-provider';
 import { useChatContext, useChatFormContext } from '~/Providers';
-import { useGetAgentByIdQuery } from '~/data-provider';
 import store from '~/store';
 
 const injectAgentIntoAgentsMap = (queryClient: QueryClient, agent: any) => {

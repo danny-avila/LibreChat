@@ -22,8 +22,8 @@ import {
   buildDefaultConvo,
   logger,
 } from '~/utils';
-import { startupConfigKey } from '~/data-provider';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
+import { startupConfigKey } from '~/data-provider';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {

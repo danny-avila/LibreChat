@@ -5,8 +5,8 @@ import {
   alternateName,
   EModelEndpoint,
   PermissionTypes,
-  getConfigDefaults,
   getEndpointField,
+  getConfigDefaults,
 } from 'librechat-data-provider';
 import type {
   TEndpointsConfig,
