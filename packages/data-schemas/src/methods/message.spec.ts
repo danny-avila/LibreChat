@@ -972,6 +972,7 @@ describe('Message Operations', () => {
 
       const doc = await Message.findOne({ messageId }).lean();
       expect(doc).not.toBeNull();
+      expect(doc?.text).toBe('Bulk tenant test');
       expect(doc?.tenantId).toBeUndefined();
     });
 
@@ -988,6 +989,7 @@ describe('Message Operations', () => {
 
       const doc = await Message.findOne({ messageId }).lean();
       expect(doc).not.toBeNull();
+      expect(doc?.text).toBe('Record tenant test');
       expect(doc?.tenantId).toBeUndefined();
     });
 
