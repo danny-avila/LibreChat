@@ -93,6 +93,35 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
     });
 
+    it('should register fallback oauthRequired handler for non-OAuth connections', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await MCPConnectionFactory.create(basicOptions);
+
+      expect(mockConnectionInstance.once).toHaveBeenCalledWith(
+        'oauthRequired',
+        expect.any(Function),
+      );
+
+      const onceCall = (mockConnectionInstance.once as jest.Mock).mock.calls.find(
+        ([event]: [string]) => event === 'oauthRequired',
+      );
+      expect(onceCall).toBeDefined();
+
+      const handler = onceCall![1] as () => void;
+      handler();
+
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'Server does not use OAuth' }),
+      );
+    });
+
     it('should create a connection with OAuth', async () => {
       const basicOptions = {
         serverName: 'test-server',
