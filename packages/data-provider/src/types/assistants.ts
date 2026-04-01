@@ -583,6 +583,20 @@ export type TContentData = StreamContentData & {
 
 export const actionDelimiter = '_action_';
 export const actionDomainSeparator = '---';
+
+/**
+ * Checks whether a tool name is an OpenAPI action tool.
+ * Guards against cross-delimiter collision where an MCP tool name ending in
+ * `_action` joined with `_mcp_<server>` produces a false `_action_` substring.
+ */
+export function isActionTool(toolName: string): boolean {
+  if (!toolName.includes(actionDelimiter)) {
+    return false;
+  }
+  const idx = toolName.indexOf(actionDelimiter);
+  const afterDelimiter = toolName.slice(idx + actionDelimiter.length);
+  return !afterDelimiter.startsWith('mcp_');
+}
 export const hostImageIdSuffix = '_host_copy';
 export const hostImageNamePrefix = 'host_copy_';
 
