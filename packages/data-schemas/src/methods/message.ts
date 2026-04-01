@@ -85,8 +85,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      const { tenantId: _t, ...paramsWithoutTenant } = params;
       const update: Record<string, unknown> = {
-        ...params,
+        ...paramsWithoutTenant,
         user: userId,
         messageId: params.newMessageId || params.messageId,
       };
