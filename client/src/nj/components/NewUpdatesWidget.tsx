@@ -98,15 +98,14 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
 
       <div className="mb-4">
         <p className="mb-3 text-sm">
-          The new updates widget is live! Here&apos;s a link to the Guide Page to prove
-          functionality.
+          Please check out the latest updates at the new Release Notes page!
         </p>
         <Link
-          to={{ pathname: '/nj/guide' }}
+          to={{ pathname: '/nj/release-notes' }}
           onClick={handleLinkClick}
           className="inline-flex items-center gap-1 text-sm underline hover:decoration-2"
         >
-          Guide Page
+          Release Notes
         </Link>
       </div>
 
