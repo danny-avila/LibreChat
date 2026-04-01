@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
-import { Menu, Rocket } from 'lucide-react';
+import { Menu, Rocket, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useForm, FormProvider } from 'react-hook-form';
 import { Button, Skeleton, useToastContext } from '@librechat/client';
@@ -65,18 +65,15 @@ const VersionsPanel = React.memo(
     const isProductionVersion = selectedPrompt?._id === group?.productionId;
 
     return (
-      <div
-        className="flex h-full w-full flex-col overflow-hidden bg-surface-primary"
-        style={{ maxHeight: 'calc(100vh - 100px)' }}
-      >
+      <div className="flex h-full w-full flex-col overflow-hidden">
         {canEdit && (
-          <div className="shrink-0 border-b border-border-light px-4 py-3">
+          <div className="shrink-0 border-b border-border-medium px-4 py-2">
             <Button
               variant="submit"
               size="sm"
               aria-label={localize('com_ui_make_production')}
               className={cn(
-                'w-full gap-2 transition-all duration-200',
+                'w-full gap-1.5 transition-all duration-200',
                 isProductionVersion &&
                   'border border-green-500/30 bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-950/30 dark:text-green-400 dark:hover:bg-green-950/50',
               )}
@@ -106,7 +103,7 @@ const VersionsPanel = React.memo(
             </Button>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="flex-1 overflow-y-auto px-4 py-2">
           {isLoadingPrompts &&
             Array.from({ length: 6 }).map((_, index: number) => (
               <div key={index} className="my-2">
@@ -115,7 +112,7 @@ const VersionsPanel = React.memo(
             ))}
           {!isLoadingPrompts && prompts.length > 0 && (
             <>
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between">
                 <h2 className="text-sm font-medium text-text-secondary">
                   {localize('com_ui_versions')}
                 </h2>
@@ -180,13 +177,13 @@ const HeaderActions = React.memo(
 
 HeaderActions.displayName = 'HeaderActions';
 
-const PromptForm = () => {
+const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { hasAccess } = usePromptGroupsContext();
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
-  const promptId = params.promptId || '';
+  const promptId = promptIdProp || params.promptId || '';
 
   const editorMode = useRecoilValue(store.promptsEditorMode);
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
@@ -197,7 +194,6 @@ const PromptForm = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [showSidePanel, setShowSidePanel] = useState(false);
-  const sidePanelWidth = '320px';
 
   // Reset selection when navigating to a different prompt group
   useEffect(() => {
@@ -335,7 +331,7 @@ const PromptForm = () => {
 
   useEffect(() => {
     handleLoadingComplete();
-  }, [params.promptId, editorMode, group?.productionId, prompts, handleLoadingComplete]);
+  }, [promptId, editorMode, group?.productionId, prompts, handleLoadingComplete]);
 
   useEffect(() => {
     setValue('prompt', selectedPrompt ? selectedPrompt.prompt : '', { shouldDirty: false });
@@ -436,10 +432,7 @@ const PromptForm = () => {
 
   // Show read-only view if user doesn't have edit permission
   if (!canEdit && !permissionsLoading && groupsQuery.data) {
-    const fetchedPrompt = findPromptGroup(
-      groupsQuery.data,
-      (group) => group._id === params.promptId,
-    );
+    const fetchedPrompt = findPromptGroup(groupsQuery.data, (group) => group._id === promptId);
     if (!fetchedPrompt && !canView) {
       return <NoPromptGroup />;
     }
@@ -457,22 +450,23 @@ const PromptForm = () => {
 
   return (
     <FormProvider {...methods}>
-      <form className="mt-4 flex w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
+      <form className="flex w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
         <h1 className="sr-only">{localize('com_ui_edit_prompt_page')}</h1>
         <div className="relative w-full">
           <div className="h-full w-full">
             <div className="flex h-full">
               <div className="flex-1 overflow-hidden px-4">
                 {/* Header: Title + Actions */}
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="mb-3 mt-2 flex items-center justify-between gap-2">
                   {isLoadingGroup ? (
-                    <Skeleton className="h-10 w-48 font-bold sm:text-xl md:h-12 md:text-2xl" />
+                    <Skeleton className="h-9 w-48" />
                   ) : (
                     <>
                       <div className="flex min-w-0 flex-1 items-center gap-2">
                         <PromptName
                           name={groupName}
                           isLoading={updateGroupMutation.isLoading}
+                          isError={updateGroupMutation.isError}
                           onSave={(value) => {
                             if (!canEdit || !group._id) {
                               return;
@@ -513,7 +507,7 @@ const PromptForm = () => {
 
                 {/* Mobile Actions Row */}
                 {!isLoadingGroup && group && (
-                  <div className="mb-4 sm:hidden">
+                  <div className="mb-3 sm:hidden">
                     <HeaderActions
                       group={group}
                       canEdit={canEdit}
@@ -528,7 +522,7 @@ const PromptForm = () => {
                 {isLoadingPrompts ? (
                   <Skeleton className="h-96" aria-live="polite" />
                 ) : (
-                  <div className="mb-2 flex h-full flex-col gap-4">
+                  <div className="mb-2 flex h-full flex-col gap-3">
                     <PromptEditor
                       name="prompt"
                       isEditing={isEditing}
@@ -551,7 +545,7 @@ const PromptForm = () => {
 
               {/* Versions Sidebar - Advanced Mode Only */}
               {editorMode === PromptsEditorMode.ADVANCED && (
-                <div className="hidden w-72 shrink-0 border-l border-border-light lg:block xl:w-80">
+                <div className="hidden w-72 shrink-0 border-l border-border-medium lg:block xl:w-80">
                   <VersionsPanel
                     group={group}
                     prompts={prompts}
@@ -567,56 +561,57 @@ const PromptForm = () => {
           </div>
 
           {/* Mobile Overlay */}
-          {showSidePanel && (
+          <div
+            className={cn(
+              'absolute inset-0 z-40 bg-black/20 transition-opacity duration-300',
+              showSidePanel ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
+            )}
+          >
             <button
               type="button"
-              className="absolute inset-0 z-40 cursor-default bg-black/20"
-              style={{ transition: 'opacity 0.3s ease-in-out' }}
+              className="h-full w-full cursor-default"
               onClick={() => setShowSidePanel(false)}
               aria-label={localize('com_ui_close_menu')}
+              tabIndex={showSidePanel ? 0 : -1}
             />
-          )}
+          </div>
 
           {/* Mobile Versions Panel */}
           <div
             ref={sidePanelRef}
-            className="absolute inset-y-0 right-0 z-50 lg:hidden"
-            style={{
-              width: sidePanelWidth,
-              transform: `translateX(${showSidePanel ? '0' : '100%'})`,
-              transition: 'transform 0.3s ease-in-out',
-              willChange: 'transform',
-            }}
+            className={cn(
+              'absolute inset-y-0 right-0 z-50 w-80 border-l border-border-medium bg-surface-primary-alt shadow-xl transition-transform duration-300 ease-in-out lg:hidden',
+              showSidePanel ? 'translate-x-0' : 'translate-x-full',
+            )}
             role="dialog"
             aria-modal="true"
             aria-label={localize('com_ui_versions')}
+            {...{ inert: !showSidePanel ? '' : undefined }}
           >
-            <div className="h-full bg-surface-primary shadow-xl">
-              <div className="flex items-center justify-between border-b border-border-light px-4 py-3">
-                <h2 className="text-lg font-semibold text-text-primary">
-                  {localize('com_ui_versions')}
-                </h2>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowSidePanel(false)}
-                  aria-label={localize('com_ui_close')}
-                >
-                  <span className="sr-only">{localize('com_ui_close')}</span>
-                  &times;
-                </Button>
-              </div>
-              <VersionsPanel
-                group={group}
-                prompts={prompts}
-                selectionIndex={selectionIndex}
-                selectedPrompt={selectedPrompt}
-                isLoadingPrompts={isLoadingPrompts}
-                canEdit={canEdit}
-                setSelectionIndex={setSelectionIndex}
-              />
+            <div className="flex items-center justify-between border-b border-border-medium px-4 py-2">
+              <h2 className="text-sm font-semibold text-text-primary">
+                {localize('com_ui_versions')}
+              </h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowSidePanel(false)}
+                aria-label={localize('com_ui_close')}
+                className="size-8"
+              >
+                <X className="size-4" aria-hidden="true" />
+              </Button>
             </div>
+            <VersionsPanel
+              group={group}
+              prompts={prompts}
+              selectionIndex={selectionIndex}
+              selectedPrompt={selectedPrompt}
+              isLoadingPrompts={isLoadingPrompts}
+              canEdit={canEdit}
+              setSelectionIndex={setSelectionIndex}
+            />
           </div>
         </div>
       </form>
