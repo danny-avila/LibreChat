@@ -50,6 +50,10 @@ export const useLoginUserMutation = (
     onSuccess: (...args) => {
       options?.onSuccess?.(...args);
     },
+    onError: (...args) => {
+      setQueriesEnabled(true);
+      options?.onError?.(...args);
+    },
   });
 };
 
