@@ -168,6 +168,7 @@ export function createConversationMethods(
 
       const messages = await getMessages({ conversationId }, '_id');
       const update: Record<string, unknown> = { ...convo, messages, user: userId };
+      delete update.tenantId;
 
       if (newConversationId) {
         update.conversationId = newConversationId;
@@ -220,14 +221,20 @@ export function createConversationMethods(
   async function bulkSaveConvos(conversations: Array<Record<string, unknown>>) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      const bulkOps = conversations.map((convo) => ({
-        updateOne: {
-          filter: { conversationId: convo.conversationId, user: convo.user },
-          update: convo,
-          upsert: true,
-          timestamps: false,
-        },
-      }));
+      const bulkOps = conversations.map((convo) => {
+        const { tenantId: _tenantId, ...convoWithoutTenant } = convo;
+        return {
+          updateOne: {
+            filter: {
+              conversationId: convoWithoutTenant.conversationId,
+              user: convoWithoutTenant.user,
+            },
+            update: convoWithoutTenant,
+            upsert: true,
+            timestamps: false,
+          },
+        };
+      });
 
       const result = await tenantSafeBulkWrite(Conversation, bulkOps);
       return result;
