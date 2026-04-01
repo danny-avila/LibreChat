@@ -17,11 +17,13 @@ const {
   ContentTypes,
   excludedKeys,
   EModelEndpoint,
+  mergeFileConfig,
   isParamEndpoint,
   isAgentsEndpoint,
   isEphemeralAgentId,
   supportsBalanceCheck,
   isBedrockDocumentType,
+  getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -1160,6 +1162,17 @@ class BaseClient {
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
 
+    const mergedFileConfig = this.options.req?.config?.fileConfig
+      ? mergeFileConfig(this.options.req.config.fileConfig)
+      : null;
+    const endpointFileConfig = mergedFileConfig
+      ? getEndpointFileConfig({
+          fileConfig: mergedFileConfig,
+          endpoint: provider,
+          endpointType: this.options.endpointType,
+        })
+      : null;
+
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
@@ -1185,6 +1198,13 @@ class BaseClient {
         allFiles.push(file);
       } else if (file.type.startsWith('audio/')) {
         categorizedAttachments.audios.push(file);
+        allFiles.push(file);
+      } else if (
+        mergedFileConfig &&
+        endpointFileConfig?.supportedMimeTypes &&
+        mergedFileConfig.checkType(file.type, endpointFileConfig.supportedMimeTypes)
+      ) {
+        categorizedAttachments.documents.push(file);
         allFiles.push(file);
       }
     }
