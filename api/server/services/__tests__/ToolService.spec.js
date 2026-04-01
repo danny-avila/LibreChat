@@ -2,6 +2,7 @@ const {
   Tools,
   Constants,
   EModelEndpoint,
+  isActionTool,
   actionDelimiter,
   AgentCapabilities,
   defaultAgentCapabilities,
@@ -143,6 +144,24 @@ describe('ToolService - Action Capability Gating', () => {
     });
   });
 
+  describe('isActionTool — cross-delimiter collision guard', () => {
+    it('should identify real action tools', () => {
+      expect(isActionTool(`get_weather${actionDelimiter}api_example_com`)).toBe(true);
+      expect(isActionTool(`fetch_data${actionDelimiter}my---domain---com`)).toBe(true);
+    });
+
+    it('should reject MCP tools whose name ends with _action', () => {
+      expect(isActionTool(`get_action${Constants.mcp_delimiter}myserver`)).toBe(false);
+      expect(isActionTool(`fetch_action${Constants.mcp_delimiter}server_name`)).toBe(false);
+      expect(isActionTool(`retrieve_action${Constants.mcp_delimiter}srv`)).toBe(false);
+    });
+
+    it('should reject tools without the action delimiter', () => {
+      expect(isActionTool('calculator')).toBe(false);
+      expect(isActionTool(`web_search${Constants.mcp_delimiter}myserver`)).toBe(false);
+    });
+  });
+
   describe('loadAgentTools (definitionsOnly=true) — action tool filtering', () => {
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = 'calculator';
@@ -181,6 +200,25 @@ describe('ToolService - Action Capability Gating', () => {
       const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
       expect(callArgs.tools).toContain(regularTool);
       expect(callArgs.tools).toContain(actionToolName);
+    });
+
+    it('should not filter MCP tools whose name contains _action (cross-delimiter collision)', async () => {
+      const mcpToolWithAction = `get_action${Constants.mcp_delimiter}myserver`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [regularTool, mcpToolWithAction] },
+        definitionsOnly: true,
+      });
+
+      expect(mockLoadToolDefinitions).toHaveBeenCalledTimes(1);
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).toContain(mcpToolWithAction);
+      expect(callArgs.tools).toContain(regularTool);
     });
 
     it('should return actionsEnabled in the result', async () => {
