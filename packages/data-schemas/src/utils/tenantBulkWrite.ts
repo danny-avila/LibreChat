@@ -67,13 +67,25 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
   }
 
   if ('updateOne' in op) {
-    const { filter, ...rest } = op.updateOne;
-    return { updateOne: { ...rest, filter: { ...filter, tenantId } } };
+    const { filter, update, ...rest } = op.updateOne;
+    return {
+      updateOne: {
+        ...rest,
+        filter: { ...filter, tenantId },
+        update: stripTenantIdFromUpdate(update),
+      },
+    };
   }
 
   if ('updateMany' in op) {
-    const { filter, ...rest } = op.updateMany;
-    return { updateMany: { ...rest, filter: { ...filter, tenantId } } };
+    const { filter, update, ...rest } = op.updateMany;
+    return {
+      updateMany: {
+        ...rest,
+        filter: { ...filter, tenantId },
+        update: stripTenantIdFromUpdate(update),
+      },
+    };
   }
 
   if ('deleteOne' in op) {
@@ -106,4 +118,37 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
     '[tenantSafeBulkWrite] Unknown bulk op type, passing through without tenant injection',
   );
   return op;
+}
+
+/**
+ * Strips `tenantId` from a bulk-write update document.
+ * Handles both plain objects (Mongoose wraps into `$set`) and explicit operator objects.
+ */
+function stripTenantIdFromUpdate(
+  update: AnyBulkWriteOperation extends { updateOne: { update: infer U } } ? U : never,
+): typeof update {
+  const u = update as Record<string, unknown>;
+
+  if ('tenantId' in u) {
+    const { tenantId: _, ...rest } = u;
+    return rest as typeof update;
+  }
+
+  const operators = ['$set', '$unset', '$setOnInsert', '$rename'] as const;
+  let modified = false;
+  const result = { ...u };
+
+  for (const op of operators) {
+    const payload = result[op] as Record<string, unknown> | undefined;
+    if (payload && 'tenantId' in payload) {
+      const { tenantId: _, ...rest } = payload;
+      result[op] = Object.keys(rest).length > 0 ? rest : undefined;
+      if (result[op] === undefined) {
+        delete result[op];
+      }
+      modified = true;
+    }
+  }
+
+  return modified ? (result as typeof update) : update;
 }
