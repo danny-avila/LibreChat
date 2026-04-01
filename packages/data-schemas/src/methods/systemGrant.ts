@@ -3,6 +3,7 @@ import type { Types, Model, ClientSession, FilterQuery } from 'mongoose';
 import type { SystemCapability } from '~/types/admin';
 import type { ISystemGrant } from '~/types';
 import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { normalizePrincipalId } from '~/utils/principal';
 import logger from '~/config/winston';
 
@@ -379,7 +380,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
             upsert: true,
           },
         }));
-        await SystemGrant.bulkWrite(ops, { ordered: false });
+        await tenantSafeBulkWrite(SystemGrant, ops, { ordered: false });
         return;
       } catch (err) {
         if (attempt < maxRetries) {
