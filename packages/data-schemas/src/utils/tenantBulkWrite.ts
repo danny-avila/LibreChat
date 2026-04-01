@@ -1,4 +1,4 @@
-import type { AnyBulkWriteOperation, Model, MongooseBulkWriteOptions } from 'mongoose';
+import type { AnyBulkWriteOperation, Model, MongooseBulkWriteOptions, UpdateQuery } from 'mongoose';
 import type { BulkWriteResult } from 'mongodb';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import logger from '~/config/winston';
@@ -49,7 +49,22 @@ export async function tenantSafeBulkWrite<T>(
     return model.bulkWrite(ops, options);
   }
 
-  const injected = ops.map((op) => injectTenantId(op, tenantId));
+  const injected = ops
+    .map((op) => injectTenantId(op, tenantId))
+    .filter((op): op is AnyBulkWriteOperation => op != null);
+
+  if (injected.length === 0) {
+    return {
+      insertedCount: 0,
+      matchedCount: 0,
+      modifiedCount: 0,
+      deletedCount: 0,
+      upsertedCount: 0,
+      upsertedIds: {},
+      insertedIds: {},
+    } as unknown as BulkWriteResult;
+  }
+
   return model.bulkWrite(injected, options);
 }
 
@@ -57,7 +72,7 @@ export async function tenantSafeBulkWrite<T>(
  * Injects `tenantId` into a single bulk-write operation.
  * Returns a new operation object — does not mutate the original.
  */
-function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWriteOperation {
+function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWriteOperation | null {
   if ('insertOne' in op) {
     return {
       insertOne: {
@@ -68,24 +83,20 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
 
   if ('updateOne' in op) {
     const { filter, update, ...rest } = op.updateOne;
-    return {
-      updateOne: {
-        ...rest,
-        filter: { ...filter, tenantId },
-        update: stripTenantIdFromUpdate(update),
-      },
-    };
+    const stripped = stripTenantIdFromUpdate(update);
+    if (stripped == null || Object.keys(stripped as Record<string, unknown>).length === 0) {
+      return null;
+    }
+    return { updateOne: { ...rest, filter: { ...filter, tenantId }, update: stripped } };
   }
 
   if ('updateMany' in op) {
     const { filter, update, ...rest } = op.updateMany;
-    return {
-      updateMany: {
-        ...rest,
-        filter: { ...filter, tenantId },
-        update: stripTenantIdFromUpdate(update),
-      },
-    };
+    const stripped = stripTenantIdFromUpdate(update);
+    if (stripped == null || Object.keys(stripped as Record<string, unknown>).length === 0) {
+      return null;
+    }
+    return { updateMany: { ...rest, filter: { ...filter, tenantId }, update: stripped } };
   }
 
   if ('deleteOne' in op) {
@@ -124,9 +135,7 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
  * Strips `tenantId` from a bulk-write update document.
  * Handles both plain objects (Mongoose wraps into `$set`) and explicit operator objects.
  */
-function stripTenantIdFromUpdate(
-  update: AnyBulkWriteOperation extends { updateOne: { update: infer U } } ? U : never,
-): typeof update {
+function stripTenantIdFromUpdate(update: UpdateQuery<Record<string, unknown>>): typeof update {
   const u = update as Record<string, unknown>;
 
   if ('tenantId' in u) {

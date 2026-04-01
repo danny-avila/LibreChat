@@ -275,6 +275,107 @@ describe('tenantSafeBulkWrite', () => {
     });
   });
 
+  describe('tenantId stripping from update documents', () => {
+    it('strips top-level tenantId from updateOne plain-object update', async () => {
+      const Model = createTestModel('stripPlain');
+
+      await runAsSystem(async () => {
+        await Model.create({ name: 'target', value: 1, tenantId: 'tenant-a' });
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await tenantSafeBulkWrite(Model, [
+          {
+            updateOne: {
+              filter: { name: 'target' },
+              update: { value: 99, tenantId: 'cross-tenant' } as Record<string, unknown>,
+              upsert: true,
+            },
+          },
+        ]);
+      });
+
+      const doc = await runAsSystem(async () => Model.findOne({ name: 'target' }).lean());
+      expect(doc?.value).toBe(99);
+      expect(doc?.tenantId).toBe('tenant-a');
+    });
+
+    it('strips tenantId from $set in updateOne', async () => {
+      const Model = createTestModel('stripSet');
+
+      await runAsSystem(async () => {
+        await Model.create({ name: 'target', value: 1, tenantId: 'tenant-a' });
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await tenantSafeBulkWrite(Model, [
+          {
+            updateOne: {
+              filter: { name: 'target' },
+              update: { $set: { value: 50, tenantId: 'cross-tenant' } },
+            },
+          },
+        ]);
+      });
+
+      const doc = await runAsSystem(async () => Model.findOne({ name: 'target' }).lean());
+      expect(doc?.value).toBe(50);
+      expect(doc?.tenantId).toBe('tenant-a');
+    });
+
+    it('strips tenantId from $unset in updateMany', async () => {
+      const Model = createTestModel('stripUnset');
+
+      await runAsSystem(async () => {
+        await Model.create([
+          { name: 'batch', value: 1, tenantId: 'tenant-a' },
+          { name: 'batch', value: 2, tenantId: 'tenant-a' },
+        ]);
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await tenantSafeBulkWrite(Model, [
+          {
+            updateMany: {
+              filter: { name: 'batch' },
+              update: { $unset: { tenantId: 1 }, $set: { value: 0 } },
+            },
+          },
+        ]);
+      });
+
+      const docs = await runAsSystem(async () => Model.find({ name: 'batch' }).lean());
+      expect(docs).toHaveLength(2);
+      for (const doc of docs) {
+        expect(doc.value).toBe(0);
+        expect(doc.tenantId).toBe('tenant-a');
+      }
+    });
+
+    it('handles update where tenantId is the only field in $set', async () => {
+      const Model = createTestModel('stripOnlyField');
+
+      await runAsSystem(async () => {
+        await Model.create({ name: 'target', value: 5, tenantId: 'tenant-a' });
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await tenantSafeBulkWrite(Model, [
+          {
+            updateOne: {
+              filter: { name: 'target' },
+              update: { $set: { tenantId: 'cross-tenant' } },
+            },
+          },
+        ]);
+      });
+
+      const doc = await runAsSystem(async () => Model.findOne({ name: 'target' }).lean());
+      expect(doc?.tenantId).toBe('tenant-a');
+      expect(doc?.value).toBe(5);
+    });
+  });
+
   describe('edge cases', () => {
     it('handles empty ops array', async () => {
       const Model = createTestModel('emptyOps');
