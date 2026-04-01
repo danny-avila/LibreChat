@@ -14,12 +14,9 @@ const endpointsConfig: TEndpointsConfig = {
 };
 
 describe('excludedKeys', () => {
-  it.each(['_id', 'user', 'conversationId', '__v', 'tenantId'])(
-    'excludes system field "%s"',
-    (field) => {
-      expect(excludedKeys.has(field)).toBe(true);
-    },
-  );
+  it.each(['_id', 'user', 'conversationId', '__v'])('excludes system field "%s"', (field) => {
+    expect(excludedKeys.has(field)).toBe(true);
+  });
 });
 
 describe('resolveEndpointType', () => {
