@@ -562,6 +562,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
 
           {/* Mobile Overlay */}
           <div
+            aria-hidden={!showSidePanel}
             className={cn(
               'absolute inset-0 z-40 bg-black/20 transition-opacity duration-300',
               showSidePanel ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
@@ -586,7 +587,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
             role="dialog"
             aria-modal="true"
             aria-label={localize('com_ui_versions')}
-            {...{ inert: !showSidePanel ? '' : undefined }}
+            inert={!showSidePanel ? '' : undefined}
           >
             <div className="flex items-center justify-between border-b border-border-medium px-4 py-2">
               <h2 className="text-sm font-semibold text-text-primary">

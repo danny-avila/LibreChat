@@ -1,4 +1,4 @@
-import { useState, memo, useRef, useCallback, useId, useMemo, useEffect } from 'react';
+import { useState, memo, useRef, useCallback, useId, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Ellipsis, Eye, SquarePen, Trash, EarthIcon, User } from 'lucide-react';
@@ -65,17 +65,12 @@ function ChatGroupItem({
     },
   });
 
-  const deleteGroupRef = useRef(deleteGroup);
-  useEffect(() => {
-    deleteGroupRef.current = deleteGroup;
-  }, [deleteGroup]);
-
   const handleDelete = useCallback(() => {
     if (!group._id) {
       return;
     }
-    deleteGroupRef.current.mutate({ id: group._id });
-  }, [group._id]);
+    deleteGroup.mutate({ id: group._id });
+  }, [group._id, deleteGroup]);
 
   const onCardClick = useCallback(() => {
     if (!isChatRoute) {
@@ -131,7 +126,7 @@ function ChatGroupItem({
       });
     }
     return items;
-  }, [localize, canEdit, canDelete, group._id, navigate, promptPath]);
+  }, [localize, canEdit, canDelete, group._id, navigate]);
 
   return (
     <>

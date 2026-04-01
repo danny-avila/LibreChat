@@ -16,6 +16,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
   const inputRef = useRef<HTMLInputElement>(null);
   const wasLoadingRef = useRef(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  /** Prevents duplicate saves when Enter/Escape already called commitName before blur fires */
   const skipBlurRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(name);
