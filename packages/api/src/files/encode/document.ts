@@ -43,25 +43,8 @@ export async function encodeAndFormatDocuments(
   const isBedrock = provider === Providers.BEDROCK;
   const isDocSupported = isDocumentSupportedProvider(provider);
 
-  const documentFiles = files.filter((file) => {
-    if (isBedrock && isBedrockDocumentType(file.type)) {
-      return true;
-    }
-    return file.type === 'application/pdf' || file.type?.startsWith('application/');
-  });
-
-  if (!documentFiles.length) {
-    return result;
-  }
-
   const results = await Promise.allSettled(
-    documentFiles.map((file) => {
-      const isProcessable = isBedrock
-        ? isBedrockDocumentType(file.type)
-        : file.type === 'application/pdf' && isDocSupported;
-      if (!isProcessable) {
-        return Promise.resolve(null);
-      }
+    files.map((file) => {
       return getFileStream(req, file, encodingMethods, getStrategyFunctions);
     }),
   );
@@ -164,6 +147,44 @@ export async function encodeAndFormatDocuments(
           file: {
             filename: file.filename,
             file_data: `data:application/pdf;base64,${content}`,
+          },
+        });
+      }
+      result.files.push(metadata);
+    } else if (isDocSupported) {
+      if (provider === Providers.ANTHROPIC) {
+        const document: AnthropicDocumentBlock = {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: mimeType,
+            data: content,
+          },
+        };
+
+        if (file.filename) {
+          document.context = `File: "${file.filename}"`;
+        }
+
+        result.documents.push(document);
+      } else if (useResponsesApi) {
+        result.documents.push({
+          type: 'input_file',
+          filename: file.filename,
+          file_data: `data:${mimeType};base64,${content}`,
+        });
+      } else if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+        result.documents.push({
+          type: 'media',
+          mimeType,
+          data: content,
+        });
+      } else if (isOpenAILikeProvider(provider) && provider != Providers.AZURE) {
+        result.documents.push({
+          type: 'file',
+          file: {
+            filename: file.filename,
+            file_data: `data:${mimeType};base64,${content}`,
           },
         });
       }
