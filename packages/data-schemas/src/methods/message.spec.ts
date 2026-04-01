@@ -949,8 +949,11 @@ describe('Message Operations', () => {
         { messageId, conversationId, text: 'Tenant test', tenantId: 'malicious-tenant' },
       );
 
+      expect(result).not.toBeNull();
       expect(result).toBeDefined();
       const doc = await Message.findOne({ messageId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.text).toBe('Tenant test');
       expect(doc?.tenantId).toBeUndefined();
     });
 

@@ -918,6 +918,8 @@ describe('Conversation Operations', () => {
 
       expect(result).not.toBeNull();
       const doc = await Conversation.findOne({ conversationId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.title).toBe('Tenant Test');
       expect(doc?.tenantId).toBeUndefined();
     });
 
@@ -935,6 +937,7 @@ describe('Conversation Operations', () => {
 
       const doc = await Conversation.findOne({ conversationId }).lean();
       expect(doc).not.toBeNull();
+      expect(doc?.title).toBe('Bulk Tenant Test');
       expect(doc?.tenantId).toBeUndefined();
     });
   });

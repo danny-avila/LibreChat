@@ -167,8 +167,8 @@ export function createConversationMethods(
       }
 
       const messages = await getMessages({ conversationId }, '_id');
-      const { tenantId: _tenantId, ...convoWithoutTenant } = convo;
-      const update: Record<string, unknown> = { ...convoWithoutTenant, messages, user: userId };
+      const update: Record<string, unknown> = { ...convo, messages, user: userId };
+      delete update.tenantId;
 
       if (newConversationId) {
         update.conversationId = newConversationId;

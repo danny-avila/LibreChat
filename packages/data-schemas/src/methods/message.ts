@@ -85,12 +85,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const { tenantId: _tenantId, ...messageWithoutTenant } = params;
       const update: Record<string, unknown> = {
-        ...messageWithoutTenant,
+        ...params,
         user: userId,
         messageId: params.newMessageId || params.messageId,
       };
+      delete update.tenantId;
 
       if (isTemporary) {
         try {
@@ -198,15 +198,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const { tenantId: _tenantId, ...restWithoutTenant } = rest;
-      const message = {
+      const message: Record<string, unknown> = {
         user,
         endpoint,
         messageId,
         conversationId,
         parentMessageId,
-        ...restWithoutTenant,
+        ...rest,
       };
+      delete message.tenantId;
 
       return await Message.findOneAndUpdate({ user, messageId }, message, {
         upsert: true,
