@@ -3,6 +3,7 @@
  * Tests that recordCollectedUsage is called correctly for token spending
  */
 
+const mockProcessStream = jest.fn().mockResolvedValue(undefined);
 const mockSpendTokens = jest.fn().mockResolvedValue({});
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue({});
 const mockRecordCollectedUsage = jest
@@ -35,7 +36,7 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   writeSSE: jest.fn(),
   createRun: jest.fn().mockResolvedValue({
-    processStream: jest.fn().mockResolvedValue(undefined),
+    processStream: mockProcessStream,
   }),
   createChunk: jest.fn().mockReturnValue({}),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
@@ -290,12 +291,11 @@ describe('OpenAIChatCompletionController', () => {
 
   describe('recursionLimit resolution', () => {
     it('should pass resolveRecursionLimit result to processStream config', async () => {
-      const { createRun, resolveRecursionLimit } = require('@librechat/api');
+      const { resolveRecursionLimit } = require('@librechat/api');
       resolveRecursionLimit.mockReturnValue(75);
 
       await OpenAIChatCompletionController(req, res);
 
-      const mockProcessStream = createRun.mock.results[0].value.processStream;
       expect(mockProcessStream).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ recursionLimit: 75 }),
