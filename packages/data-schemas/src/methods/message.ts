@@ -90,7 +90,6 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         user: userId,
         messageId: params.newMessageId || params.messageId,
       };
-      delete update.tenantId;
 
       if (isTemporary) {
         try {
@@ -159,17 +158,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const bulkOps = messages.map((message) => {
-        const { tenantId: _tenantId, ...messageWithoutTenant } = message;
-        return {
-          updateOne: {
-            filter: { messageId: messageWithoutTenant.messageId },
-            update: messageWithoutTenant,
-            timestamps: !overrideTimestamp,
-            upsert: true,
-          },
-        };
-      });
+      const bulkOps = messages.map((message) => ({
+        updateOne: {
+          filter: { messageId: message.messageId },
+          update: message,
+          timestamps: !overrideTimestamp,
+          upsert: true,
+        },
+      }));
       const result = await tenantSafeBulkWrite(Message, bulkOps);
       return result;
     } catch (err) {
@@ -198,7 +194,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const message: Record<string, unknown> = {
+      const message = {
         user,
         endpoint,
         messageId,
@@ -206,7 +202,6 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         parentMessageId,
         ...rest,
       };
-      delete message.tenantId;
 
       return await Message.findOneAndUpdate({ user, messageId }, message, {
         upsert: true,
@@ -244,7 +239,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const { messageId, tenantId: _tenantId, ...update } = message;
+      const { messageId, ...update } = message;
       const updatedMessage = await Message.findOneAndUpdate({ messageId, user: userId }, update, {
         new: true,
       });

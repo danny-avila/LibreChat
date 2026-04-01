@@ -4,6 +4,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { IConversation } from '../types';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ConversationMethods, createConversationMethods } from './conversation';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -923,22 +924,34 @@ describe('Conversation Operations', () => {
       expect(doc?.tenantId).toBeUndefined();
     });
 
-    it('bulkSaveConvos should not write caller-supplied tenantId to documents', async () => {
+    it('bulkSaveConvos should not overwrite tenantId via update payload', async () => {
       const conversationId = uuidv4();
-      await methods.bulkSaveConvos([
-        {
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await Conversation.create({
           conversationId,
           user: 'user123',
-          title: 'Bulk Tenant Test',
-          tenantId: 'malicious-tenant',
+          title: 'Original',
           endpoint: EModelEndpoint.openAI,
-        },
-      ]);
+        });
+      });
 
-      const doc = await Conversation.findOne({ conversationId }).lean();
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await methods.bulkSaveConvos([
+          {
+            conversationId,
+            user: 'user123',
+            title: 'Updated',
+            tenantId: 'malicious-tenant',
+            endpoint: EModelEndpoint.openAI,
+          },
+        ]);
+      });
+
+      const doc = await runAsSystem(async () => Conversation.findOne({ conversationId }).lean());
       expect(doc).not.toBeNull();
-      expect(doc?.title).toBe('Bulk Tenant Test');
-      expect(doc?.tenantId).toBeUndefined();
+      expect(doc?.title).toBe('Updated');
+      expect(doc?.tenantId).toBe('real-tenant');
     });
   });
 });
