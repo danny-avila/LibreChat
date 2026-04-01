@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import { TooltipAnchor } from '@librechat/client';
 import { getConfigDefaults } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
+
+const defaultInterface = getConfigDefaults().interface;
 import {
   renderModelSpecs,
   renderEndpoints,
@@ -122,7 +124,7 @@ function ModelSelectorContent() {
 }
 
 export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
-  const interfaceConfig = startupConfig?.interface ?? getConfigDefaults().interface;
+  const interfaceConfig = startupConfig?.interface ?? defaultInterface;
   const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
 
   // Hide the selector when modelSelect is false and there are no model specs to show

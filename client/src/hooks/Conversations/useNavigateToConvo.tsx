@@ -22,6 +22,7 @@ import {
   buildDefaultConvo,
   logger,
 } from '~/utils';
+import { startupConfigKey } from '~/data-provider';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
 import store from '~/store';
 
@@ -41,7 +42,7 @@ const useNavigateToConvo = (index = 0) => {
         return;
       }
 
-      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
       applyModelSpecEffects({
         startupConfig,
         specName: conversation?.spec,
