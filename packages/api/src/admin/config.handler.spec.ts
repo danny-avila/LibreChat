@@ -535,6 +535,63 @@ describe('createAdminConfigHandlers', () => {
     });
   });
 
+  describe('upsertConfigOverrides — empty-overrides scope creation', () => {
+    it('creates config document when overrides is empty but priority is provided', async () => {
+      const upsertConfig = jest.fn().mockResolvedValue({
+        _id: 'c1',
+        principalType: 'role',
+        principalId: 'admin',
+        overrides: {},
+        configVersion: 1,
+      });
+      const { handlers } = createHandlers({ upsertConfig });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      expect(res.body).toHaveProperty('config');
+      expect(res.body?.config).toHaveProperty('_id', 'c1');
+      expect(upsertConfig).toHaveBeenCalledWith('role', 'admin', expect.anything(), {}, 5);
+    });
+
+    it('returns no-op message when overrides is empty and no priority is provided', async () => {
+      const upsertConfig = jest.fn();
+      const { handlers } = createHandlers({ upsertConfig });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {} },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toHaveProperty('message', 'No actionable override sections provided');
+      expect(upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('skips per-section permission checks when overrides is empty with priority', async () => {
+      const hasConfigCapability = jest.fn().mockResolvedValue(true);
+      const { handlers } = createHandlers({ hasConfigCapability });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 3 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      // Should only be called once for the general manage check, not for any sections
+      expect(hasConfigCapability).toHaveBeenCalledTimes(1);
+      expect(hasConfigCapability).toHaveBeenCalledWith(expect.anything(), null, 'manage');
+    });
+  });
+
   // ── Invariant tests: rules that must hold across ALL handlers ──────
 
   const MUTATION_HANDLERS: Array<{
