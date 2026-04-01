@@ -560,7 +560,7 @@ describe('createAdminConfigHandlers', () => {
     });
 
     it('returns no-op message when overrides is empty and no priority is provided', async () => {
-      const upsertConfig = jest.fn();
+      const upsertConfig = jest.fn().mockResolvedValue(null);
       const { handlers } = createHandlers({ upsertConfig });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -575,7 +575,7 @@ describe('createAdminConfigHandlers', () => {
       expect(upsertConfig).not.toHaveBeenCalled();
     });
 
-    it('skips per-section permission checks when overrides is empty with priority', async () => {
+    it('calls general manage check exactly once when overrides is empty with priority', async () => {
       const hasConfigCapability = jest.fn().mockResolvedValue(true);
       const { handlers } = createHandlers({ hasConfigCapability });
       const req = mockReq({
@@ -586,9 +586,39 @@ describe('createAdminConfigHandlers', () => {
 
       await handlers.upsertConfigOverrides(req, res);
 
-      // Should only be called once for the general manage check, not for any sections
       expect(hasConfigCapability).toHaveBeenCalledTimes(1);
       expect(hasConfigCapability).toHaveBeenCalledWith(expect.anything(), null, 'manage');
+      expect(res.statusCode).toBe(201);
+      expect(res.body).toHaveProperty('config');
+    });
+
+    it('returns 403 for empty overrides with priority when user lacks MANAGE_CONFIGS', async () => {
+      const { handlers } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('returns 401 for empty overrides with priority when unauthenticated', async () => {
+      const { handlers } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+        user: undefined,
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(401);
     });
   });
 
