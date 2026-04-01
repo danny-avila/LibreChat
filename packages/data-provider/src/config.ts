@@ -454,6 +454,12 @@ export const anthropicEndpointSchema = baseEndpointSchema.merge(
     vertex: vertexAISchema.optional(),
     /** Optional: List of available models */
     models: z.array(z.string()).optional(),
+    /** Additional parameters passed to getLLMConfig (same pattern as custom endpoints) */
+    addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+    /** Parameters excluded from the Anthropic client; e.g. web_search when using LibreChat search tools */
+    dropParams: z.array(z.string()).optional(),
+    /** Default parameters applied when model options omit a value */
+    defaultParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   }),
 );
 

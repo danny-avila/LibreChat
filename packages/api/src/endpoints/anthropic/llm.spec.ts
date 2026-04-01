@@ -1535,6 +1535,17 @@ describe('getLLMConfig', () => {
           }
         });
       });
+
+      it('should omit native web_search tool when dropParams includes web_search', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-3-opus',
+            web_search: true,
+          },
+          dropParams: ['web_search'],
+        });
+        expect(result.tools).toEqual([]);
+      });
     });
 
     describe('Parameter Precedence and Override Logic', () => {
