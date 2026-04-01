@@ -161,28 +161,32 @@ export abstract class UserConnectionManager {
 
     try {
       const registry = MCPServersRegistry.getInstance();
-      connection = await MCPConnectionFactory.create(
-        {
-          serverConfig: config,
-          serverName: serverName,
-          dbSourced: isUserSourced(config),
-          useSSRFProtection: registry.shouldEnableSSRFProtection(),
-          allowedDomains: registry.getAllowedDomains(),
-        },
-        {
-          useOAuth: true,
-          user: user,
-          customUserVars: customUserVars,
-          flowManager: flowManager,
-          tokenMethods: tokenMethods,
-          signal: signal,
-          oauthStart: oauthStart,
-          oauthEnd: oauthEnd,
-          returnOnOAuth: returnOnOAuth,
-          requestBody: requestBody,
-          connectionTimeout: connectionTimeout,
-        },
-      );
+      const basic: t.BasicConnectionOptions = {
+        serverConfig: config,
+        serverName: serverName,
+        dbSourced: isUserSourced(config),
+        useSSRFProtection: registry.shouldEnableSSRFProtection(),
+        allowedDomains: registry.getAllowedDomains(),
+      };
+
+      const useOAuth = Boolean(config.requiresOAuth || config.oauthMetadata);
+      const oauthOptions: t.OAuthConnectionOptions | t.UserConnectionContext = useOAuth
+        ? {
+            useOAuth: true as const,
+            user,
+            customUserVars,
+            flowManager: flowManager!,
+            tokenMethods,
+            signal,
+            oauthStart,
+            oauthEnd,
+            returnOnOAuth,
+            requestBody,
+            connectionTimeout,
+          }
+        : { user, customUserVars, requestBody, connectionTimeout };
+
+      connection = await MCPConnectionFactory.create(basic, oauthOptions);
 
       if (!(await connection?.isConnected())) {
         throw new Error('Failed to establish connection after initialization attempt.');
