@@ -292,7 +292,7 @@ describe('OpenAIChatCompletionController', () => {
   describe('recursionLimit resolution', () => {
     it('should pass resolveRecursionLimit result to processStream config', async () => {
       const { resolveRecursionLimit } = require('@librechat/api');
-      resolveRecursionLimit.mockReturnValue(75);
+      resolveRecursionLimit.mockReturnValueOnce(75);
 
       await OpenAIChatCompletionController(req, res);
 

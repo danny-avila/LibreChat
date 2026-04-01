@@ -49,4 +49,14 @@ describe('resolveRecursionLimit', () => {
     const config = { recursionLimit: 50, maxRecursionLimit: 200 } as TAgentsEndpoint;
     expect(resolveRecursionLimit(config, { recursion_limit: 150 })).toBe(150);
   });
+
+  it('allows agent to override downward below yaml default', () => {
+    const config = { recursionLimit: 100 } as TAgentsEndpoint;
+    expect(resolveRecursionLimit(config, { recursion_limit: 30 })).toBe(30);
+  });
+
+  it('does not cap when agent.recursion_limit equals maxRecursionLimit', () => {
+    const config = { recursionLimit: 50, maxRecursionLimit: 150 } as TAgentsEndpoint;
+    expect(resolveRecursionLimit(config, { recursion_limit: 150 })).toBe(150);
+  });
 });
