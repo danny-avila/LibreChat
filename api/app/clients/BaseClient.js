@@ -1162,16 +1162,17 @@ class BaseClient {
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
 
-    const mergedFileConfig = this.options.req?.config?.fileConfig
-      ? mergeFileConfig(this.options.req.config.fileConfig)
-      : null;
-    const endpointFileConfig = mergedFileConfig
-      ? getEndpointFileConfig({
-          fileConfig: mergedFileConfig,
-          endpoint: provider,
-          endpointType: this.options.endpointType,
-        })
-      : null;
+    if (!this._mergedFileConfig && this.options.req?.config?.fileConfig) {
+      this._mergedFileConfig = mergeFileConfig(this.options.req.config.fileConfig);
+      this._endpointFileConfig = getEndpointFileConfig({
+        fileConfig: this._mergedFileConfig,
+        endpoint: provider,
+        endpointType: this.options.endpointType,
+      });
+    }
+
+    const mergedFileConfig = this._mergedFileConfig ?? null;
+    const endpointFileConfig = this._endpointFileConfig ?? null;
 
     for (const file of attachments) {
       /** @type {FileSources} */
@@ -1200,6 +1201,7 @@ class BaseClient {
         categorizedAttachments.audios.push(file);
         allFiles.push(file);
       } else if (
+        file.type &&
         mergedFileConfig &&
         endpointFileConfig?.supportedMimeTypes &&
         mergedFileConfig.checkType(file.type, endpointFileConfig.supportedMimeTypes)
