@@ -4,6 +4,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { IConversation } from '../types';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ConversationMethods, createConversationMethods } from './conversation';
+import { tenantStorage } from '~/config/tenantContext';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -925,20 +926,22 @@ describe('Conversation Operations', () => {
 
     it('bulkSaveConvos should not write caller-supplied tenantId to documents', async () => {
       const conversationId = uuidv4();
-      await methods.bulkSaveConvos([
-        {
-          conversationId,
-          user: 'user123',
-          title: 'Bulk Tenant Test',
-          tenantId: 'malicious-tenant',
-          endpoint: EModelEndpoint.openAI,
-        },
-      ]);
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await methods.bulkSaveConvos([
+          {
+            conversationId,
+            user: 'user123',
+            title: 'Bulk Tenant Test',
+            tenantId: 'malicious-tenant',
+            endpoint: EModelEndpoint.openAI,
+          },
+        ]);
+      });
 
       const doc = await Conversation.findOne({ conversationId }).lean();
       expect(doc).not.toBeNull();
       expect(doc?.title).toBe('Bulk Tenant Test');
-      expect(doc?.tenantId).toBeUndefined();
+      expect(doc?.tenantId).toBe('real-tenant');
     });
   });
 });
