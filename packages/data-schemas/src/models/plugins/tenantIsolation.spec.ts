@@ -389,16 +389,18 @@ describe('applyTenantIsolation', () => {
       ).rejects.toThrow('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
     });
 
-    it('strips same-tenant tenantId from $setOnInsert', async () => {
+    it('strips same-tenant tenantId from $setOnInsert on upsert', async () => {
+      const uniqueName = `upsert-soi-${Date.now()}`;
       await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
-        TestModel.updateMany(
-          { name: 'guarded' },
-          { $setOnInsert: { tenantId: 'tenant-a' }, $set: { name: 'setOnInsert-same' } },
+        TestModel.updateOne(
+          { name: uniqueName },
+          { $setOnInsert: { tenantId: 'tenant-a', name: uniqueName } },
+          { upsert: true },
         ),
       );
 
       const doc = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
-        TestModel.findOne({ name: 'setOnInsert-same' }).lean(),
+        TestModel.findOne({ name: uniqueName }).lean(),
       );
       expect(doc).not.toBeNull();
       expect(doc!.tenantId).toBe('tenant-a');

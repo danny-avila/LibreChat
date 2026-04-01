@@ -30,14 +30,13 @@ const VALUE_OPERATORS = ['$set', '$setOnInsert'] as const;
 const STRIP_OPERATORS = ['$unset', '$rename'] as const;
 
 /**
- * Self-healing guard: silently strips `tenantId` from update payloads when it
- * matches the current tenant (or no tenant context is active). Throws only on
- * cross-tenant mutations — the real security invariant.
+ * Strips `tenantId` from update payloads when it matches the current tenant
+ * (or no context is active). Throws on cross-tenant mutations.
  *
- * `$unset` and `$rename` always strip: unsetting/renaming tenantId is never valid
- * (the query filter already scopes the operation, and the field must stay intact).
+ * `$unset`/`$rename` always strip — unsetting/renaming tenantId is never valid.
+ * Empty operator objects are removed after stripping to avoid MongoDB errors.
  */
-function assertNoTenantIdMutation(update: UpdateQuery<unknown> | null): void {
+function sanitizeTenantIdMutation(update: UpdateQuery<unknown> | null): void {
   if (!update) {
     return;
   }
@@ -50,7 +49,13 @@ function assertNoTenantIdMutation(update: UpdateQuery<unknown> | null): void {
       if (currentTenantId && payload.tenantId !== currentTenantId) {
         throw new Error('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
       }
+      if (!currentTenantId && isStrict()) {
+        logger.warn(`[TenantIsolation] Stripping tenantId from ${op} without tenant context`);
+      }
       delete payload.tenantId;
+      if (Object.keys(payload).length === 0) {
+        delete (update as Record<string, unknown>)[op];
+      }
     }
   }
 
@@ -58,12 +63,18 @@ function assertNoTenantIdMutation(update: UpdateQuery<unknown> | null): void {
     const payload = update[op] as Record<string, unknown> | undefined;
     if (payload && 'tenantId' in payload) {
       delete payload.tenantId;
+      if (Object.keys(payload).length === 0) {
+        delete (update as Record<string, unknown>)[op];
+      }
     }
   }
 
   if ('tenantId' in update) {
     if (currentTenantId && update.tenantId !== currentTenantId) {
       throw new Error('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
+    }
+    if (!currentTenantId && isStrict()) {
+      logger.warn('[TenantIsolation] Stripping top-level tenantId without tenant context');
     }
     delete (update as Record<string, unknown>).tenantId;
   }
@@ -104,7 +115,7 @@ export function applyTenantIsolation(schema: Schema): void {
     if (tenantId === SYSTEM_TENANT_ID) {
       return;
     }
-    assertNoTenantIdMutation(this.getUpdate() as UpdateQuery<unknown> | null);
+    sanitizeTenantIdMutation(this.getUpdate() as UpdateQuery<unknown> | null);
   };
 
   const replaceGuard = function (this: Query<unknown, unknown>) {
