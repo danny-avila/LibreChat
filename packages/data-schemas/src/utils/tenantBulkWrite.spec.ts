@@ -408,6 +408,27 @@ describe('tenantSafeBulkWrite', () => {
       expect(result.modifiedCount).toBe(1);
     });
 
+    it('strips tenantId from updates even without tenant context', async () => {
+      const Model = createTestModel('noCtxStrip');
+
+      await runAsSystem(async () => {
+        await Model.create({ name: 'no-ctx-strip', value: 1, tenantId: 'original' });
+      });
+
+      await tenantSafeBulkWrite(Model, [
+        {
+          updateOne: {
+            filter: { name: 'no-ctx-strip' },
+            update: { $set: { value: 50, tenantId: 'injected' } },
+          },
+        },
+      ]);
+
+      const doc = await runAsSystem(async () => Model.findOne({ name: 'no-ctx-strip' }).lean());
+      expect(doc?.value).toBe(50);
+      expect(doc?.tenantId).toBe('original');
+    });
+
     it('throws in strict mode', async () => {
       process.env.TENANT_ISOLATION_STRICT = 'true';
       _resetBulkWriteStrictCache();

@@ -36,67 +36,76 @@ export async function tenantSafeBulkWrite<T>(
 ): Promise<BulkWriteResult> {
   const tenantId = getTenantId();
 
+  // Strip tenantId from update documents unconditionally — application code
+  // must never control tenantId via update payloads regardless of context.
+  const sanitized = ops.map(sanitizeBulkOp).filter((op): op is AnyBulkWriteOperation => op != null);
+
   if (!tenantId) {
     if (isStrict()) {
       throw new Error(
         `[TenantIsolation] bulkWrite on ${model.modelName} attempted without tenant context in strict mode`,
       );
     }
-    return model.bulkWrite(ops, options);
+    return sanitized.length > 0 ? model.bulkWrite(sanitized, options) : emptyBulkResult();
   }
 
   if (tenantId === SYSTEM_TENANT_ID) {
-    return model.bulkWrite(ops, options);
+    return sanitized.length > 0 ? model.bulkWrite(sanitized, options) : emptyBulkResult();
   }
 
-  const injected = ops
-    .map((op) => injectTenantId(op, tenantId))
-    .filter((op): op is AnyBulkWriteOperation => op != null);
+  const injected = sanitized.map((op) => injectTenantId(op, tenantId));
+  return injected.length > 0 ? model.bulkWrite(injected, options) : emptyBulkResult();
+}
 
-  if (injected.length === 0) {
-    return {
-      insertedCount: 0,
-      matchedCount: 0,
-      modifiedCount: 0,
-      deletedCount: 0,
-      upsertedCount: 0,
-      upsertedIds: {},
-      insertedIds: {},
-    } as unknown as BulkWriteResult;
+function emptyBulkResult(): BulkWriteResult {
+  return {
+    insertedCount: 0,
+    matchedCount: 0,
+    modifiedCount: 0,
+    deletedCount: 0,
+    upsertedCount: 0,
+    upsertedIds: {},
+    insertedIds: {},
+  } as unknown as BulkWriteResult;
+}
+
+/** Strips tenantId from update documents. Returns null if the op becomes empty. */
+function sanitizeBulkOp(op: AnyBulkWriteOperation): AnyBulkWriteOperation | null {
+  if ('updateOne' in op) {
+    const { update, ...rest } = op.updateOne;
+    const stripped = stripTenantIdFromUpdate(update as Record<string, unknown>);
+    return Object.keys(stripped).length === 0 ? null : { updateOne: { ...rest, update: stripped } };
   }
 
-  return model.bulkWrite(injected, options);
+  if ('updateMany' in op) {
+    const { update, ...rest } = op.updateMany;
+    const stripped = stripTenantIdFromUpdate(update as Record<string, unknown>);
+    return Object.keys(stripped).length === 0
+      ? null
+      : { updateMany: { ...rest, update: stripped } };
+  }
+
+  return op;
 }
 
 /**
  * Injects `tenantId` into a single bulk-write operation.
  * Returns a new operation object — does not mutate the original.
  */
-function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWriteOperation | null {
+/** Injects tenantId into filters and documents. Assumes update payloads are already sanitized. */
+function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWriteOperation {
   if ('insertOne' in op) {
-    return {
-      insertOne: {
-        document: { ...op.insertOne.document, tenantId },
-      },
-    };
+    return { insertOne: { document: { ...op.insertOne.document, tenantId } } };
   }
 
   if ('updateOne' in op) {
-    const { filter, update, ...rest } = op.updateOne;
-    const stripped = stripTenantIdFromUpdate(update as Record<string, unknown>);
-    if (Object.keys(stripped).length === 0) {
-      return null;
-    }
-    return { updateOne: { ...rest, filter: { ...filter, tenantId }, update: stripped } };
+    const { filter, ...rest } = op.updateOne;
+    return { updateOne: { ...rest, filter: { ...filter, tenantId } } };
   }
 
   if ('updateMany' in op) {
-    const { filter, update, ...rest } = op.updateMany;
-    const stripped = stripTenantIdFromUpdate(update as Record<string, unknown>);
-    if (Object.keys(stripped).length === 0) {
-      return null;
-    }
-    return { updateMany: { ...rest, filter: { ...filter, tenantId }, update: stripped } };
+    const { filter, ...rest } = op.updateMany;
+    return { updateMany: { ...rest, filter: { ...filter, tenantId } } };
   }
 
   if ('deleteOne' in op) {
