@@ -15,6 +15,7 @@ const {
   createErrorResponse,
   recordCollectedUsage,
   getTransactionsConfig,
+  resolveRecursionLimit,
   createToolExecuteHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
@@ -194,10 +195,8 @@ const OpenAIChatCompletionController = async (req, res) => {
     const conversationId = request.conversation_id ?? nanoid();
     const parentMessageId = request.parent_message_id ?? null;
 
-    // Build allowed providers set
-    const allowedProviders = new Set(
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
-    );
+    const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+    const allowedProviders = new Set(agentsEConfig?.allowedProviders);
 
     // Create tool loader
     const loadTools = createToolLoader(abortController.signal);
@@ -491,18 +490,6 @@ const OpenAIChatCompletionController = async (req, res) => {
       throw new Error('Failed to create agent run');
     }
 
-    // Process the stream
-    const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
-    let recursionLimit = agentsEConfig?.recursionLimit ?? 50;
-
-    if (agent.recursion_limit && typeof agent.recursion_limit === 'number') {
-      recursionLimit = agent.recursion_limit;
-    }
-
-    if (agentsEConfig?.maxRecursionLimit && recursionLimit > agentsEConfig.maxRecursionLimit) {
-      recursionLimit = agentsEConfig.maxRecursionLimit;
-    }
-
     const config = {
       runName: 'AgentRun',
       configurable: {
@@ -515,7 +502,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         },
         ...(userMCPAuthMap != null && { userMCPAuthMap }),
       },
-      recursionLimit,
+      recursionLimit: resolveRecursionLimit(agentsEConfig, agent),
       signal: abortController.signal,
       streamMode: 'values',
       version: 'v2',
