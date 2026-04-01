@@ -7,6 +7,7 @@ import {
 } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type {
+  DocumentBlock,
   AnthropicDocumentBlock,
   StrategyFunctions,
   DocumentResult,
@@ -15,16 +16,83 @@ import type {
 import { validatePdf, validateBedrockDocument } from '~/files/validation';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 
+const ANTHROPIC_CITATION_TYPES = new Set([
+  'application/pdf',
+  'text/plain',
+  'text/html',
+  'text/markdown',
+]);
+
 /**
- * Processes and encodes document files for various providers
- * @param req - Express request object
- * @param files - Array of file objects to process
- * @param params - Object containing provider, endpoint, and other options
- * @param params.provider - The provider name
- * @param params.endpoint - Optional endpoint name for file config lookup
- * @param params.useResponsesApi - Whether to use responses API format
- * @param getStrategyFunctions - Function to get strategy functions
- * @returns Promise that resolves to documents and file metadata
+ * Formats a base64-encoded document into the appropriate provider-specific block.
+ * Returns `null` when the provider has no matching handler.
+ */
+function formatDocumentBlock(
+  provider: Providers,
+  mimeType: string,
+  content: string,
+  filename: string | undefined,
+  useResponsesApi: boolean | undefined,
+): DocumentBlock | null {
+  if (provider === Providers.ANTHROPIC) {
+    const document: AnthropicDocumentBlock = {
+      type: 'document',
+      source: {
+        type: 'base64',
+        media_type: mimeType,
+        data: content,
+      },
+    };
+
+    if (ANTHROPIC_CITATION_TYPES.has(mimeType)) {
+      document.citations = { enabled: true };
+    }
+
+    if (filename) {
+      document.context = `File: "${filename}"`;
+    }
+
+    return document;
+  }
+
+  if (useResponsesApi) {
+    return {
+      type: 'input_file',
+      filename,
+      file_data: `data:${mimeType};base64,${content}`,
+    };
+  }
+
+  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+    return {
+      type: 'media',
+      mimeType,
+      data: content,
+    };
+  }
+
+  if (isOpenAILikeProvider(provider) && provider !== Providers.AZURE) {
+    return {
+      type: 'file',
+      file: {
+        filename,
+        file_data: `data:${mimeType};base64,${content}`,
+      },
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Encodes and formats document files for various providers.
+ *
+ * Callers are responsible for pre-filtering `files` to types the endpoint accepts
+ * (e.g., via `supportedMimeTypes` in `processAttachments`). This function processes
+ * every file it receives and dispatches to the appropriate provider format:
+ * - **Bedrock**: Only encodes types in `bedrockDocumentFormats`; all others are skipped.
+ * - **PDF**: Validated via `validatePdf` before encoding.
+ * - **Generic types**: Encoded with a provider-specific size check.
  */
 export async function encodeAndFormatDocuments(
   req: ServerRequest,
@@ -113,82 +181,36 @@ export async function encodeAndFormatDocuments(
         throw new Error(`PDF validation failed: ${validation.error}`);
       }
 
-      if (provider === Providers.ANTHROPIC) {
-        const document: AnthropicDocumentBlock = {
-          type: 'document',
-          source: {
-            type: 'base64',
-            media_type: 'application/pdf',
-            data: content,
-          },
-          citations: { enabled: true },
-        };
-
-        if (file.filename) {
-          document.context = `File: "${file.filename}"`;
-        }
-
-        result.documents.push(document);
-      } else if (useResponsesApi) {
-        result.documents.push({
-          type: 'input_file',
-          filename: file.filename,
-          file_data: `data:application/pdf;base64,${content}`,
-        });
-      } else if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-        result.documents.push({
-          type: 'media',
-          mimeType: 'application/pdf',
-          data: content,
-        });
-      } else if (isOpenAILikeProvider(provider) && provider != Providers.AZURE) {
-        result.documents.push({
-          type: 'file',
-          file: {
-            filename: file.filename,
-            file_data: `data:application/pdf;base64,${content}`,
-          },
-        });
+      const block = formatDocumentBlock(
+        provider,
+        mimeType,
+        content,
+        file.filename,
+        useResponsesApi,
+      );
+      if (block) {
+        result.documents.push(block);
+        result.files.push(metadata);
       }
-      result.files.push(metadata);
-    } else if (isDocSupported) {
-      if (provider === Providers.ANTHROPIC) {
-        const document: AnthropicDocumentBlock = {
-          type: 'document',
-          source: {
-            type: 'base64',
-            media_type: mimeType,
-            data: content,
-          },
-        };
-
-        if (file.filename) {
-          document.context = `File: "${file.filename}"`;
-        }
-
-        result.documents.push(document);
-      } else if (useResponsesApi) {
-        result.documents.push({
-          type: 'input_file',
-          filename: file.filename,
-          file_data: `data:${mimeType};base64,${content}`,
-        });
-      } else if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-        result.documents.push({
-          type: 'media',
-          mimeType,
-          data: content,
-        });
-      } else if (isOpenAILikeProvider(provider) && provider != Providers.AZURE) {
-        result.documents.push({
-          type: 'file',
-          file: {
-            filename: file.filename,
-            file_data: `data:${mimeType};base64,${content}`,
-          },
-        });
+    } else if (isDocSupported && !isBedrock) {
+      const fileBuffer = Buffer.from(content, 'base64');
+      if (configuredFileSizeLimit && fileBuffer.length > configuredFileSizeLimit) {
+        throw new Error(
+          `File size (${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB) exceeds the configured limit for ${provider}`,
+        );
       }
-      result.files.push(metadata);
+
+      const block = formatDocumentBlock(
+        provider,
+        mimeType,
+        content,
+        file.filename,
+        useResponsesApi,
+      );
+      if (block) {
+        result.documents.push(block);
+        result.files.push(metadata);
+      }
     }
   }
 
