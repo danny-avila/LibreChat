@@ -23,6 +23,7 @@ import Root from './Root';
 import NewJerseyInfoTemplate from '~/nj/components/info/NewJerseyInfoTemplate';
 import NewJerseyAboutPage from '~/nj/components/info/NewJerseyAboutPage';
 import NewJerseyGuidePage from '~/nj/components/info/NewJerseyGuidePage';
+import NewJerseyReleaseNotes from '~/nj/components/info/NewJerseyReleaseNotes';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -146,6 +147,10 @@ export const router = createBrowserRouter(
                 {
                   path: 'guide',
                   Component: NewJerseyGuidePage,
+                },
+                {
+                  path: 'release-notes',
+                  Component: NewJerseyReleaseNotes,
                 },
               ],
             },

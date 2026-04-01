@@ -62,11 +62,32 @@
   --font-size-xl: 1.25rem;
   --markdown-font-size: 1rem;
 
-  /* Special colors for New Jersey */
+  /* Special colors for NJ */
   --jersey-blue: #0c5295;
   --info-lighter: #e7f6f8;
   --info: #00bde3;
 }
+
+/*NJ-specific markdown overrides*/
+.prose.prose-nj {
+  --tw-prose-body: var(--text-primary);
+  --tw-prose-bullets: var(--text-primary);
+}
+
+/*NJ-specific markdown customizations*/
+.prose.prose-nj h2,
+.prose.prose-nj ul {
+  margin-bottom: 1.5rem;
+}
+
+.prose.prose-nj h3 {
+  margin-top: 1.5rem;
+}
+.prose.prose-nj h3,
+.prose.prose-nj h4 {
+  margin-bottom: 0.75rem;
+}
+
 html {
   --brand-purple: #ab68ff;
   --presentation: #fcfcfb; /* Custom for NJ */

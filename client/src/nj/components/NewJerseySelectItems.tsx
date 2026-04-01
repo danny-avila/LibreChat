@@ -29,6 +29,13 @@ export function NewJerseySelectItems() {
         About the AI Assistant
       </Menu.MenuItem>
 
+      <Menu.MenuItem onClick={() => navigate('nj/release-notes')} className="select-item text-sm">
+        <svg className="usa-icon usa-icon--size-2" aria-hidden="true" focusable="false" role="img">
+          <use href={`${icons}#construction`} />
+        </svg>
+        Release Notes
+      </Menu.MenuItem>
+
       <DropdownMenuSeparator />
 
       <Menu.MenuItem

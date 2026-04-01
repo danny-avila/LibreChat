@@ -22,6 +22,16 @@ const upcomingFeaturesFAQs: FAQ[] = [
           .
         </li>
         <li className="mb-2">
+          To hear specifically about release features, check out our{' '}
+          <a
+            href="/nj/release-notes"
+            className="font-normal text-primary underline hover:decoration-2"
+          >
+            Release Notes
+          </a>{' '}
+          page.
+        </li>
+        <li className="mb-2">
           In the immediate future, the team is thinking about more features to support responsible
           and safe AI use. We are also writing how-to guides for effective prompting and sharing AI
           use cases.
