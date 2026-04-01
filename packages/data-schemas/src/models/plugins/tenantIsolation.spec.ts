@@ -406,6 +406,23 @@ describe('applyTenantIsolation', () => {
       expect(doc!.tenantId).toBe('tenant-a');
     });
 
+    it('strips same-tenant tenantId from $set via findByIdAndUpdate', async () => {
+      const doc = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOne({ name: 'guarded' }).lean(),
+      );
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findByIdAndUpdate(
+          doc!._id,
+          { $set: { tenantId: 'tenant-a', name: 'byId-same' } },
+          { new: true },
+        ).lean(),
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.name).toBe('byId-same');
+      expect(result!.tenantId).toBe('tenant-a');
+    });
+
     it('allows updates that do not touch tenantId', async () => {
       const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
         TestModel.findOneAndUpdate(
