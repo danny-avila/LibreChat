@@ -1,5 +1,6 @@
 import dedent from 'dedent';
 import { shadcnComponents } from 'librechat-data-provider';
+import type { TStartupConfig } from 'librechat-data-provider';
 import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,
@@ -141,6 +142,25 @@ export function getProps(type: string): Partial<SandpackProviderProps> {
 export const sharedOptions: SandpackProviderProps['options'] = {
   externalResources: ['https://cdn.tailwindcss.com/3.4.17'],
 };
+
+/** Static template loads Tailwind via `<script>` in sharedFiles index.html;
+ * externalResources causes "Unable to determine file type" since the CDN URL has no extension. */
+export function buildSandpackOptions(
+  template: SandpackProviderProps['template'],
+  startupConfig?: TStartupConfig,
+): SandpackProviderProps['options'] {
+  const baseOptions: SandpackProviderProps['options'] =
+    template === 'static' ? { ...sharedOptions, externalResources: [] } : sharedOptions;
+
+  if (!startupConfig) {
+    return baseOptions;
+  }
+
+  return {
+    ...baseOptions,
+    bundlerURL: template === 'static' ? startupConfig.staticBundlerURL : startupConfig.bundlerURL,
+  };
+}
 
 export const sharedFiles = {
   '/lib/utils.ts': shadcnComponents.utils,
