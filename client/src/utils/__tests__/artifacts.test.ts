@@ -1,4 +1,4 @@
-import { buildSandpackOptions, sharedOptions } from '../artifacts';
+import { buildSandpackOptions } from '../artifacts';
 
 describe('buildSandpackOptions', () => {
   it('omits externalResources for static template', () => {
@@ -8,7 +8,7 @@ describe('buildSandpackOptions', () => {
 
   it('includes externalResources for react-ts template', () => {
     const options = buildSandpackOptions('react-ts');
-    expect(options?.externalResources).toEqual(sharedOptions?.externalResources);
+    expect(options?.externalResources).toEqual(['https://cdn.tailwindcss.com/3.4.17']);
   });
 
   it('uses staticBundlerURL when template is static and config is provided', () => {
@@ -26,7 +26,7 @@ describe('buildSandpackOptions', () => {
     >[1];
     const options = buildSandpackOptions('react-ts', config);
     expect(options?.bundlerURL).toBe('https://bundler.example.com');
-    expect(options?.externalResources).toEqual(sharedOptions?.externalResources);
+    expect(options?.externalResources).toEqual(['https://cdn.tailwindcss.com/3.4.17']);
   });
 
   it('returns base options without bundlerURL when no config is provided', () => {
