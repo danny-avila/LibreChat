@@ -907,4 +907,38 @@ describe('Conversation Operations', () => {
       expect(result?.nextCursor).toBeNull(); // No next page
     });
   });
+
+  describe('tenantId stripping', () => {
+    it('saveConvo should not write caller-supplied tenantId to the document', async () => {
+      const conversationId = uuidv4();
+      const result = await saveConvo(
+        { userId: 'user123' },
+        { conversationId, tenantId: 'malicious-tenant', title: 'Tenant Test' },
+      );
+
+      expect(result).not.toBeNull();
+      const doc = await Conversation.findOne({ conversationId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.title).toBe('Tenant Test');
+      expect(doc?.tenantId).toBeUndefined();
+    });
+
+    it('bulkSaveConvos should not write caller-supplied tenantId to documents', async () => {
+      const conversationId = uuidv4();
+      await methods.bulkSaveConvos([
+        {
+          conversationId,
+          user: 'user123',
+          title: 'Bulk Tenant Test',
+          tenantId: 'malicious-tenant',
+          endpoint: EModelEndpoint.openAI,
+        },
+      ]);
+
+      const doc = await Conversation.findOne({ conversationId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.title).toBe('Bulk Tenant Test');
+      expect(doc?.tenantId).toBeUndefined();
+    });
+  });
 });
