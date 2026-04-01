@@ -376,6 +376,34 @@ describe('tenantSafeBulkWrite', () => {
     });
   });
 
+  describe('mixed top-level and operator tenantId', () => {
+    it('strips both top-level and $set tenantId when both are present', async () => {
+      const Model = createTestModel('stripBoth');
+
+      await runAsSystem(async () => {
+        await Model.create({ name: 'target', value: 1, tenantId: 'tenant-a' });
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await tenantSafeBulkWrite(Model, [
+          {
+            updateOne: {
+              filter: { name: 'target' },
+              update: {
+                tenantId: 'top-cross',
+                $set: { value: 99, tenantId: 'set-cross' },
+              } as Record<string, unknown>,
+            },
+          },
+        ]);
+      });
+
+      const doc = await runAsSystem(async () => Model.findOne({ name: 'target' }).lean());
+      expect(doc?.value).toBe(99);
+      expect(doc?.tenantId).toBe('tenant-a');
+    });
+  });
+
   describe('edge cases', () => {
     it('handles empty ops array', async () => {
       const Model = createTestModel('emptyOps');

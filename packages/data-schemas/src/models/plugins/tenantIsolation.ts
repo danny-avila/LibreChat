@@ -49,9 +49,6 @@ function sanitizeTenantIdMutation(update: UpdateQuery<unknown> | null): void {
       if (currentTenantId && payload.tenantId !== currentTenantId) {
         throw new Error('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
       }
-      if (!currentTenantId && isStrict()) {
-        logger.warn(`[TenantIsolation] Stripping tenantId from ${op} without tenant context`);
-      }
       delete payload.tenantId;
       if (Object.keys(payload).length === 0) {
         delete (update as Record<string, unknown>)[op];
@@ -72,9 +69,6 @@ function sanitizeTenantIdMutation(update: UpdateQuery<unknown> | null): void {
   if ('tenantId' in update) {
     if (currentTenantId && update.tenantId !== currentTenantId) {
       throw new Error('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
-    }
-    if (!currentTenantId && isStrict()) {
-      logger.warn('[TenantIsolation] Stripping top-level tenantId without tenant context');
     }
     delete (update as Record<string, unknown>).tenantId;
   }
