@@ -492,6 +492,17 @@ const OpenAIChatCompletionController = async (req, res) => {
     }
 
     // Process the stream
+    const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+    let recursionLimit = agentsEConfig?.recursionLimit ?? 50;
+
+    if (agent.recursion_limit && typeof agent.recursion_limit === 'number') {
+      recursionLimit = agent.recursion_limit;
+    }
+
+    if (agentsEConfig?.maxRecursionLimit && recursionLimit > agentsEConfig.maxRecursionLimit) {
+      recursionLimit = agentsEConfig.maxRecursionLimit;
+    }
+
     const config = {
       runName: 'AgentRun',
       configurable: {
@@ -504,6 +515,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         },
         ...(userMCPAuthMap != null && { userMCPAuthMap }),
       },
+      recursionLimit,
       signal: abortController.signal,
       streamMode: 'values',
       version: 'v2',
