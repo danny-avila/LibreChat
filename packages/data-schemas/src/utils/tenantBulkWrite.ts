@@ -1,4 +1,4 @@
-import type { AnyBulkWriteOperation, Model, MongooseBulkWriteOptions, UpdateQuery } from 'mongoose';
+import type { AnyBulkWriteOperation, Model, MongooseBulkWriteOptions } from 'mongoose';
 import type { BulkWriteResult } from 'mongodb';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import logger from '~/config/winston';
@@ -83,8 +83,8 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
 
   if ('updateOne' in op) {
     const { filter, update, ...rest } = op.updateOne;
-    const stripped = stripTenantIdFromUpdate(update);
-    if (stripped == null || Object.keys(stripped as Record<string, unknown>).length === 0) {
+    const stripped = stripTenantIdFromUpdate(update as Record<string, unknown>);
+    if (Object.keys(stripped).length === 0) {
       return null;
     }
     return { updateOne: { ...rest, filter: { ...filter, tenantId }, update: stripped } };
@@ -92,8 +92,8 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
 
   if ('updateMany' in op) {
     const { filter, update, ...rest } = op.updateMany;
-    const stripped = stripTenantIdFromUpdate(update);
-    if (stripped == null || Object.keys(stripped as Record<string, unknown>).length === 0) {
+    const stripped = stripTenantIdFromUpdate(update as Record<string, unknown>);
+    if (Object.keys(stripped).length === 0) {
       return null;
     }
     return { updateMany: { ...rest, filter: { ...filter, tenantId }, update: stripped } };
@@ -135,7 +135,7 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
  * Strips `tenantId` from a bulk-write update document.
  * Handles both plain objects (Mongoose wraps into `$set`) and explicit operator objects.
  */
-function stripTenantIdFromUpdate(update: UpdateQuery<Record<string, unknown>>): typeof update {
+function stripTenantIdFromUpdate(update: Record<string, unknown>): Record<string, unknown> {
   const u = update as Record<string, unknown>;
 
   if ('tenantId' in u) {
