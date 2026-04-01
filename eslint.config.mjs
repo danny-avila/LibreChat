@@ -345,9 +345,8 @@ export default [
     },
   },
   {
-    // **New Data-schemas configuration block**
+    // **Data-schemas — shared rules for all TS files**
     files: ['./packages/data-schemas/**/*.ts'],
-    ignores: ['**/*.spec.ts', '**/*.test.ts'],
     languageOptions: {
       parser: tsParser,
       ecmaVersion: 'latest',
@@ -366,10 +365,18 @@ export default [
           destructuredArrayIgnorePattern: '^_',
         },
       ],
+    },
+  },
+  {
+    // **Data-schemas — ban raw bulkWrite/collection.* in production code**
+    // Tests and the tenantSafeBulkWrite wrapper itself are excluded.
+    files: ['./packages/data-schemas/**/*.ts'],
+    ignores: ['**/*.spec.ts', '**/*.test.ts', '**/utils/tenantBulkWrite.ts'],
+    rules: {
       'no-restricted-syntax': [
         'error',
         {
-          selector: "CallExpression[callee.property.name='bulkWrite'][callee.object.property.name!='model']",
+          selector: "CallExpression[callee.property.name='bulkWrite']",
           message:
             'Use tenantSafeBulkWrite() instead of Model.bulkWrite() — Mongoose middleware does not fire for bulkWrite, so the tenant isolation plugin cannot intercept it.',
         },
@@ -377,29 +384,6 @@ export default [
           selector: "MemberExpression[property.name='collection'][parent.type='MemberExpression']",
           message:
             'Avoid Model.collection.* — raw driver calls bypass all Mongoose middleware including tenant isolation. Use Mongoose model methods or tenantSafeBulkWrite() instead.',
-        },
-      ],
-    },
-  },
-  {
-    // Data-schemas test files — allow raw driver/bulkWrite for test fixtures
-    files: ['./packages/data-schemas/**/*.spec.ts', './packages/data-schemas/**/*.test.ts'],
-    languageOptions: {
-      parser: tsParser,
-      ecmaVersion: 'latest',
-      sourceType: 'module',
-      parserOptions: {
-        project: './packages/data-schemas/tsconfig.json',
-      },
-    },
-    rules: {
-      '@typescript-eslint/no-unused-vars': [
-        'warn',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-          destructuredArrayIgnorePattern: '^_',
         },
       ],
     },

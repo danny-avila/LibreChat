@@ -156,7 +156,7 @@ function stripTenantIdFromUpdate(update: Record<string, unknown>): Record<string
   let result: Record<string, unknown> | null = null;
 
   if ('tenantId' in update) {
-    const { tenantId: _, ...rest } = update;
+    const { tenantId: _tenantId, ...rest } = update;
     result = rest;
   }
 
@@ -167,7 +167,7 @@ function stripTenantIdFromUpdate(update: Record<string, unknown>): Record<string
       if (!result) {
         result = { ...update };
       }
-      const { tenantId: _, ...rest } = payload;
+      const { tenantId: _tenantId, ...rest } = payload;
       if (Object.keys(rest).length > 0) {
         result[op] = rest;
       } else {

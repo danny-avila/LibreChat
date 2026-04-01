@@ -350,7 +350,9 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Seed the ADMIN role with all system capabilities (no tenantId — single-instance mode).
+   * Seed the ADMIN role with all system capabilities.
+   * Context-agnostic: caller provides tenant context (e.g., `runAsSystem()` for
+   * startup, `tenantStorage.run()` for future per-tenant provisioning).
    * Idempotent and concurrency-safe: uses bulkWrite with ordered:false so parallel
    * server instances (K8s rolling deploy, PM2 cluster) do not race on E11000.
    * Retries up to 3 times with exponential backoff on transient failures.
