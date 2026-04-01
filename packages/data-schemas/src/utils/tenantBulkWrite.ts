@@ -18,16 +18,23 @@ export function _resetBulkWriteStrictCache(): void {
  * Tenant-safe wrapper around Mongoose `Model.bulkWrite()`.
  *
  * Mongoose's `bulkWrite` does not trigger schema-level middleware hooks, so the
- * `applyTenantIsolation` plugin cannot intercept it. This wrapper injects the
- * current ALS tenant context into every operation's filter and/or document
- * before delegating to the native `bulkWrite`.
+ * `applyTenantIsolation` plugin cannot intercept it. This wrapper:
+ *
+ * 1. **Sanitizes** every update document by stripping `tenantId` unconditionally
+ *    (both top-level and inside `$set`/`$unset`/`$setOnInsert`/`$rename`).
+ * 2. **Injects** `tenantId` into operation filters and insert documents when a
+ *    tenant context is active.
+ *
+ * Unlike the Mongoose middleware guard (`sanitizeTenantIdMutation`), which throws
+ * on cross-tenant values, this wrapper strips silently. Throwing mid-batch would
+ * abort the entire write for one bad field; the filter injection already scopes
+ * every operation to the correct tenant.
  *
  * Behavior:
- * - **tenantId present** (normal request): injects `{ tenantId }` into every
- *   operation filter (updateOne, deleteOne, replaceOne) and document (insertOne).
- * - **SYSTEM_TENANT_ID**: skips injection (cross-tenant system operation).
+ * - **tenantId present** (normal request): sanitize + inject into filters/documents.
+ * - **SYSTEM_TENANT_ID**: sanitize only, skip injection (cross-tenant system op).
  * - **No tenantId + strict mode**: throws (fail-closed, same as the plugin).
- * - **No tenantId + non-strict**: passes through without injection (backward compat).
+ * - **No tenantId + non-strict**: sanitize only, no injection (backward compat).
  */
 export async function tenantSafeBulkWrite<T>(
   model: Model<T>,
@@ -46,28 +53,27 @@ export async function tenantSafeBulkWrite<T>(
         `[TenantIsolation] bulkWrite on ${model.modelName} attempted without tenant context in strict mode`,
       );
     }
-    return sanitized.length > 0 ? model.bulkWrite(sanitized, options) : emptyBulkResult();
+    return sanitized.length > 0 ? model.bulkWrite(sanitized, options) : EMPTY_BULK_RESULT;
   }
 
   if (tenantId === SYSTEM_TENANT_ID) {
-    return sanitized.length > 0 ? model.bulkWrite(sanitized, options) : emptyBulkResult();
+    return sanitized.length > 0 ? model.bulkWrite(sanitized, options) : EMPTY_BULK_RESULT;
   }
 
   const injected = sanitized.map((op) => injectTenantId(op, tenantId));
-  return injected.length > 0 ? model.bulkWrite(injected, options) : emptyBulkResult();
+  return injected.length > 0 ? model.bulkWrite(injected, options) : EMPTY_BULK_RESULT;
 }
 
-function emptyBulkResult(): BulkWriteResult {
-  return {
-    insertedCount: 0,
-    matchedCount: 0,
-    modifiedCount: 0,
-    deletedCount: 0,
-    upsertedCount: 0,
-    upsertedIds: {},
-    insertedIds: {},
-  } as unknown as BulkWriteResult;
-}
+/** Returned when all ops are dropped after sanitization. Single shared instance. */
+const EMPTY_BULK_RESULT = Object.freeze({
+  insertedCount: 0,
+  matchedCount: 0,
+  modifiedCount: 0,
+  deletedCount: 0,
+  upsertedCount: 0,
+  upsertedIds: {},
+  insertedIds: {},
+}) as unknown as BulkWriteResult;
 
 /** Strips tenantId from update documents. Returns null if the op becomes empty. */
 function sanitizeBulkOp(op: AnyBulkWriteOperation): AnyBulkWriteOperation | null {
@@ -89,10 +95,10 @@ function sanitizeBulkOp(op: AnyBulkWriteOperation): AnyBulkWriteOperation | null
 }
 
 /**
- * Injects `tenantId` into a single bulk-write operation.
+ * Injects tenantId into every operation's filter and document.
+ * Assumes update payloads have already been sanitized by `sanitizeBulkOp`.
  * Returns a new operation object — does not mutate the original.
  */
-/** Injects tenantId into filters and documents. Assumes update payloads are already sanitized. */
 function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWriteOperation {
   if ('insertOne' in op) {
     return { insertOne: { document: { ...op.insertOne.document, tenantId } } };
@@ -140,33 +146,35 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
   return op;
 }
 
+const MUTATION_OPS = ['$set', '$unset', '$setOnInsert', '$rename'] as const;
+
 /**
- * Strips `tenantId` from a bulk-write update document.
- * Handles both plain objects (Mongoose wraps into `$set`) and explicit operator objects.
+ * Strips `tenantId` from a bulk-write update document — both top-level
+ * and inside mutation operators. Allocates only when stripping is needed.
  */
 function stripTenantIdFromUpdate(update: Record<string, unknown>): Record<string, unknown> {
-  const u = update as Record<string, unknown>;
+  let result: Record<string, unknown> | null = null;
 
-  if ('tenantId' in u) {
-    const { tenantId: _, ...rest } = u;
-    return rest as typeof update;
+  if ('tenantId' in update) {
+    const { tenantId: _, ...rest } = update;
+    result = rest;
   }
 
-  const operators = ['$set', '$unset', '$setOnInsert', '$rename'] as const;
-  let modified = false;
-  const result = { ...u };
-
-  for (const op of operators) {
-    const payload = result[op] as Record<string, unknown> | undefined;
+  for (const op of MUTATION_OPS) {
+    const source = result ?? update;
+    const payload = source[op] as Record<string, unknown> | undefined;
     if (payload && 'tenantId' in payload) {
+      if (!result) {
+        result = { ...update };
+      }
       const { tenantId: _, ...rest } = payload;
-      result[op] = Object.keys(rest).length > 0 ? rest : undefined;
-      if (result[op] === undefined) {
+      if (Object.keys(rest).length > 0) {
+        result[op] = rest;
+      } else {
         delete result[op];
       }
-      modified = true;
     }
   }
 
-  return modified ? (result as typeof update) : update;
+  return result ?? update;
 }

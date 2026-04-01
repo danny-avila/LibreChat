@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
 import { createMessageMethods } from './message';
-import { tenantStorage } from '~/config/tenantContext';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -958,24 +958,34 @@ describe('Message Operations', () => {
       expect(doc?.tenantId).toBeUndefined();
     });
 
-    it('bulkSaveMessages should not write caller-supplied tenantId to documents', async () => {
+    it('bulkSaveMessages should not overwrite tenantId via update payload', async () => {
       const messageId = uuidv4();
       const conversationId = uuidv4();
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await Message.create({
+          messageId,
+          conversationId,
+          user: 'user123',
+          text: 'Original',
+        });
+      });
+
       await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
         await bulkSaveMessages([
           {
             messageId,
             conversationId,
             user: 'user123',
-            text: 'Bulk tenant test',
+            text: 'Updated',
             tenantId: 'malicious-tenant',
           },
         ]);
       });
 
-      const doc = await Message.findOne({ messageId }).lean();
+      const doc = await runAsSystem(async () => Message.findOne({ messageId }).lean());
       expect(doc).not.toBeNull();
-      expect(doc?.text).toBe('Bulk tenant test');
+      expect(doc?.text).toBe('Updated');
       expect(doc?.tenantId).toBe('real-tenant');
     });
 

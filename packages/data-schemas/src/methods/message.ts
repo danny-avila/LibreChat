@@ -194,7 +194,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const message: Record<string, unknown> = {
+      const message = {
         user,
         endpoint,
         messageId,
