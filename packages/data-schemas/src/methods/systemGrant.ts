@@ -3,6 +3,7 @@ import type { Types, Model, ClientSession, FilterQuery } from 'mongoose';
 import type { SystemCapability } from '~/types/admin';
 import type { ISystemGrant } from '~/types';
 import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { normalizePrincipalId } from '~/utils/principal';
 import logger from '~/config/winston';
 
@@ -349,7 +350,9 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Seed the ADMIN role with all system capabilities (no tenantId — single-instance mode).
+   * Seed the ADMIN role with all system capabilities.
+   * Context-agnostic: caller provides tenant context (e.g., `runAsSystem()` for
+   * startup, `tenantStorage.run()` for future per-tenant provisioning).
    * Idempotent and concurrency-safe: uses bulkWrite with ordered:false so parallel
    * server instances (K8s rolling deploy, PM2 cluster) do not race on E11000.
    * Retries up to 3 times with exponential backoff on transient failures.
@@ -379,7 +382,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
             upsert: true,
           },
         }));
-        await SystemGrant.bulkWrite(ops, { ordered: false });
+        await tenantSafeBulkWrite(SystemGrant, ops, { ordered: false });
         return;
       } catch (err) {
         if (attempt < maxRetries) {

@@ -48,7 +48,6 @@ export const excludedKeys = new Set([
   'isArchived',
   'tags',
   'user',
-  'tenantId',
   '__v',
   '_id',
   'tools',
