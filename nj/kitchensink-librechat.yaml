@@ -27,7 +27,7 @@ interface:
     use: true
     create: true
     share: true
-    public: false
+    public: true
   bookmarks: true
   endpointsMenu: true
   fileCitations: true
@@ -50,12 +50,12 @@ interface:
     use: true
     create: true
     share: true
-    public: false
+    public: true
   remoteAgents: 
     use: true
     create: true
     share: true
-    public: false
+    public: true
 
 endpoints:
   bedrock:
