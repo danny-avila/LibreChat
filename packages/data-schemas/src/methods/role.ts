@@ -385,7 +385,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     if (!name || typeof name !== 'string' || !name.trim()) {
       throw new Error('Role name is required');
     }
-    const trimmed = name.trim();
+    const trimmed = name.trim().toUpperCase();
     if (isSystemRoleName(trimmed)) {
       throw new RoleConflictError(`Cannot create role with reserved system name: ${name}`);
     }
@@ -495,10 +495,62 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     return await User.countDocuments({ role: roleName });
   }
 
+  async function normalizeRoleNames(): Promise<number> {
+    const Role = mongoose.models.Role as Model<IRole>;
+    const User = mongoose.models.User as Model<IUser>;
+
+    const allRoles = await Role.find({}).select('name').lean();
+    const nonUpperRoles = allRoles.filter(
+      (r) => r.name !== r.name.toUpperCase() && !systemRoleValues.has(r.name),
+    );
+
+    if (nonUpperRoles.length === 0) {
+      return 0;
+    }
+
+    const upperMap = new Map<string, string[]>();
+    for (const r of allRoles) {
+      const upper = r.name.toUpperCase();
+      const existing = upperMap.get(upper) ?? [];
+      existing.push(r.name);
+      upperMap.set(upper, existing);
+    }
+
+    let migratedCount = 0;
+    for (const role of nonUpperRoles) {
+      const upperName = role.name.toUpperCase();
+      const variants = upperMap.get(upperName) ?? [];
+      if (variants.length > 1) {
+        logger.warn(
+          `[normalizeRoleNames] Skipping "${role.name}": collision with ${variants.filter((v) => v !== role.name).join(', ')}`,
+        );
+        continue;
+      }
+
+      try {
+        await Role.updateOne({ name: role.name }, { $set: { name: upperName } });
+        await User.updateMany({ role: role.name }, { $set: { role: upperName } });
+        const cache = deps.getCache?.(CacheKeys.ROLES);
+        if (cache) {
+          await cache.set(role.name, null);
+        }
+        logger.info(`[normalizeRoleNames] Renamed role "${role.name}" → "${upperName}"`);
+        migratedCount++;
+      } catch (error) {
+        logger.error(
+          `[normalizeRoleNames] Failed to rename "${role.name}": ${(error as Error).message}`,
+        );
+      }
+    }
+
+    return migratedCount;
+  }
+
   return {
     listRoles,
     countRoles,
     initializeRoles,
+    normalizeRoleNames,
     getRoleByName,
     updateRoleByName,
     updateAccessPermissions,

@@ -157,11 +157,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function getRoleHandler(req: ServerRequest, res: Response) {
     try {
-      const { name } = req.params as RoleNameParams;
-      const paramError = validateNameParam(name);
+      const { name: rawName } = req.params as RoleNameParams;
+      const paramError = validateNameParam(rawName);
       if (paramError) {
         return res.status(400).json({ error: paramError });
       }
+      const name = rawName.toUpperCase();
       const role = await getRoleByName(name);
       if (!role) {
         return res.status(404).json({ error: 'Role not found' });
@@ -195,7 +196,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(400).json({ error: 'permissions must be an object' });
       }
       const roleData: Partial<IRole> = {
-        name: (name as string).trim(),
+        name: (name as string).trim().toUpperCase(),
         permissions: permissions ?? {},
       };
       if (description !== undefined) {
@@ -260,11 +261,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function updateRoleHandler(req: ServerRequest, res: Response) {
     try {
-      const { name } = req.params as RoleNameParams;
-      const paramError = validateNameParam(name);
+      const { name: rawName } = req.params as RoleNameParams;
+      const paramError = validateNameParam(rawName);
       if (paramError) {
         return res.status(400).json({ error: paramError });
       }
+      const name = rawName.toUpperCase();
       const body = req.body as { name?: string; description?: string };
       const nameError = validateRoleName(body.name, false);
       if (nameError) {
@@ -275,7 +277,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(400).json({ error: descError });
       }
 
-      const trimmedName = body.name?.trim() ?? '';
+      const trimmedName = body.name?.trim().toUpperCase() ?? '';
       const isRename = trimmedName !== '' && trimmedName !== name;
 
       if (isRename && isSystemRoleName(name)) {
@@ -341,11 +343,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
    */
   async function updateRolePermissionsHandler(req: ServerRequest, res: Response) {
     try {
-      const { name } = req.params as RoleNameParams;
-      const paramError = validateNameParam(name);
+      const { name: rawName } = req.params as RoleNameParams;
+      const paramError = validateNameParam(rawName);
       if (paramError) {
         return res.status(400).json({ error: paramError });
       }
+      const name = rawName.toUpperCase();
       const { permissions } = req.body as {
         permissions: Record<string, Record<string, boolean>>;
       };
@@ -373,11 +376,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function deleteRoleHandler(req: ServerRequest, res: Response) {
     try {
-      const { name } = req.params as RoleNameParams;
-      const paramError = validateNameParam(name);
+      const { name: rawName } = req.params as RoleNameParams;
+      const paramError = validateNameParam(rawName);
       if (paramError) {
         return res.status(400).json({ error: paramError });
       }
+      const name = rawName.toUpperCase();
       if (isSystemRoleName(name)) {
         return res.status(403).json({ error: 'Cannot delete system role' });
       }
@@ -408,11 +412,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function getRoleMembersHandler(req: ServerRequest, res: Response) {
     try {
-      const { name } = req.params as RoleNameParams;
-      const paramError = validateNameParam(name);
+      const { name: rawName } = req.params as RoleNameParams;
+      const paramError = validateNameParam(rawName);
       if (paramError) {
         return res.status(400).json({ error: paramError });
       }
+      const name = rawName.toUpperCase();
       const existing = await getRoleByName(name);
       if (!existing) {
         return res.status(404).json({ error: 'Role not found' });
@@ -439,11 +444,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function addRoleMemberHandler(req: ServerRequest, res: Response) {
     try {
-      const { name } = req.params as RoleNameParams;
-      const paramError = validateNameParam(name);
+      const { name: rawName } = req.params as RoleNameParams;
+      const paramError = validateNameParam(rawName);
       if (paramError) {
         return res.status(400).json({ error: paramError });
       }
+      const name = rawName.toUpperCase();
       const { userId } = req.body as { userId: string };
 
       if (!userId || typeof userId !== 'string') {
@@ -507,11 +513,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
 
   async function removeRoleMemberHandler(req: ServerRequest, res: Response) {
     try {
-      const { name, userId } = req.params as RoleMemberParams;
-      const paramError = validateNameParam(name);
+      const { name: rawName, userId } = req.params as RoleMemberParams;
+      const paramError = validateNameParam(rawName);
       if (paramError) {
         return res.status(400).json({ error: paramError });
       }
+      const name = rawName.toUpperCase();
       if (!isValidObjectIdString(userId)) {
         return res.status(400).json({ error: 'Invalid user ID format' });
       }
