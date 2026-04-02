@@ -73,6 +73,10 @@ class BaseClient {
     this.currentMessages = [];
     /** @type {import('librechat-data-provider').VisionModes | undefined} */
     this.visionMode;
+    /** @type {import('librechat-data-provider').FileConfig | undefined} */
+    this._mergedFileConfig;
+    /** @type {import('librechat-data-provider').EndpointFileConfig | undefined} */
+    this._endpointFileConfig;
   }
 
   setOptions() {
@@ -1172,9 +1176,6 @@ class BaseClient {
       });
     }
 
-    const mergedFileConfig = this._mergedFileConfig ?? null;
-    const endpointFileConfig = this._endpointFileConfig ?? null;
-
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
@@ -1203,9 +1204,9 @@ class BaseClient {
         allFiles.push(file);
       } else if (
         file.type &&
-        mergedFileConfig &&
-        endpointFileConfig?.supportedMimeTypes &&
-        mergedFileConfig.checkType(file.type, endpointFileConfig.supportedMimeTypes)
+        this._mergedFileConfig &&
+        this._endpointFileConfig?.supportedMimeTypes &&
+        this._mergedFileConfig.checkType(file.type, this._endpointFileConfig.supportedMimeTypes)
       ) {
         categorizedAttachments.documents.push(file);
         allFiles.push(file);
