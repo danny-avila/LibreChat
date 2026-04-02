@@ -170,6 +170,14 @@ describe('ToolService - Action Capability Gating', () => {
       expect(isActionTool('calculator')).toBe(false);
       expect(isActionTool(`web_search${Constants.mcp_delimiter}myserver`)).toBe(false);
     });
+
+    it('known limitation: non-RFC domain with _mcp_ substring yields false negative', () => {
+      // RFC 952/1123 prohibit underscores in hostnames, so this is not expected in practice.
+      // Encoded domain `api_mcp_internal_com` places `_mcp_` after `_action_`, which
+      // the guard interprets as the MCP suffix.
+      const edgeCaseTool = `getData${actionDelimiter}api_mcp_internal_com`;
+      expect(isActionTool(edgeCaseTool)).toBe(false);
+    });
   });
 
   describe('loadAgentTools (definitionsOnly=true) — action tool filtering', () => {

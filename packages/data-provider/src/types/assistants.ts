@@ -588,10 +588,20 @@ const mcpDelimiter = '_mcp_';
 
 /**
  * Checks whether a tool name is an OpenAPI action tool.
- * Guards against cross-delimiter collision where an MCP tool name containing
- * `_action` joined with `_mcp_<server>` produces a false `_action_` substring.
- * Only rejects when `_mcp_` appears after `_action_` (the MCP suffix position);
- * `_mcp_` before `_action_` is part of the operationId and is valid.
+ *
+ * Action format: `operationId_action_normalizedDomain`
+ * MCP format:    `toolName_mcp_serverName`
+ *
+ * Cross-delimiter collision: an MCP tool like `get_action_mcp_srv` contains
+ * `_action_` as a false positive. Guarded by checking whether `_mcp_` appears
+ * after `_action_`. In the collision case the `_mcp_` suffix always follows
+ * `_action_`; in a valid action tool whose operationId contains `_mcp_`, the
+ * `_mcp_` precedes `_action_`.
+ *
+ * Theoretical limitation: a non-RFC-compliant domain containing literal
+ * underscores that form `_mcp_` (e.g. `api_mcp_internal.com`) would produce
+ * a false negative. RFC 952/1123 prohibit underscores in hostnames, so this
+ * is not expected in practice.
  */
 export function isActionTool(toolName: string): boolean {
   const actionIdx = toolName.indexOf(actionDelimiter);
