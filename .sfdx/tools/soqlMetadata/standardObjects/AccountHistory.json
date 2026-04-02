@@ -1,0 +1,875 @@
+{
+  "fields": [
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Account History ID",
+      "name": "Id",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "id"
+    },
+    {
+      "aggregatable": false,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Deleted",
+      "name": "IsDeleted",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Account ID",
+      "name": "AccountId",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [
+        "Account"
+      ],
+      "relationshipName": "Account",
+      "sortable": true,
+      "type": "reference"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Created By ID",
+      "name": "CreatedById",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [
+        "User"
+      ],
+      "relationshipName": "CreatedBy",
+      "sortable": true,
+      "type": "reference"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": false,
+      "inlineHelpText": null,
+      "label": "Created Date",
+      "name": "CreatedDate",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Changed Field",
+      "name": "Field",
+      "nillable": false,
+      "picklistValues": [
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Account Merged",
+          "validFor": null,
+          "value": "accountMerged"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Account Name",
+          "validFor": null,
+          "value": "Name"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Account Name",
+          "validFor": null,
+          "value": "TextName"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Account Number",
+          "validFor": null,
+          "value": "AccountNumber"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Account Owner",
+          "validFor": null,
+          "value": "Owner"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Account Site",
+          "validFor": null,
+          "value": "Site"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Account Source",
+          "validFor": null,
+          "value": "AccountSource"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Annual Revenue",
+          "validFor": null,
+          "value": "AnnualRevenue"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Billing Address",
+          "validFor": null,
+          "value": "BillingAddress"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Billing City",
+          "validFor": null,
+          "value": "BillingCity"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Billing Country",
+          "validFor": null,
+          "value": "BillingCountry"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Billing Geocode Accuracy",
+          "validFor": null,
+          "value": "BillingGeocodeAccuracy"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Billing Latitude",
+          "validFor": null,
+          "value": "BillingLatitude"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Billing Longitude",
+          "validFor": null,
+          "value": "BillingLongitude"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Billing State/Province",
+          "validFor": null,
+          "value": "BillingState"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Billing Street",
+          "validFor": null,
+          "value": "BillingStreet"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Billing Zip/Postal Code",
+          "validFor": null,
+          "value": "BillingPostalCode"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Clean Status",
+          "validFor": null,
+          "value": "CleanStatus"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Created.",
+          "validFor": null,
+          "value": "created"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Created by lead convert",
+          "validFor": null,
+          "value": "accountCreatedFromLead"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "D&B Company",
+          "validFor": null,
+          "value": "DandbCompany"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Data.com Key",
+          "validFor": null,
+          "value": "Jigsaw"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Description",
+          "validFor": null,
+          "value": "Description"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "D-U-N-S Number",
+          "validFor": null,
+          "value": "DunsNumber"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Employees",
+          "validFor": null,
+          "value": "NumberOfEmployees"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Fax",
+          "validFor": null,
+          "value": "Fax"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Feed event",
+          "validFor": null,
+          "value": "feedEvent"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Individual Merged",
+          "validFor": null,
+          "value": "individualMerged"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Industry",
+          "validFor": null,
+          "value": "Industry"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Lead converted to Account",
+          "validFor": null,
+          "value": "accountUpdatedByLead"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Lead converted to Person Account",
+          "validFor": null,
+          "value": "personAccountUpdatedByLead"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "NAICS Code",
+          "validFor": null,
+          "value": "NaicsCode"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "NAICS Description",
+          "validFor": null,
+          "value": "NaicsDesc"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Operating Hours",
+          "validFor": null,
+          "value": "OperatingHours"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Owner (Accepted)",
+          "validFor": null,
+          "value": "ownerAccepted"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Owner (Assignment)",
+          "validFor": null,
+          "value": "ownerAssignment"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Ownership",
+          "validFor": null,
+          "value": "Ownership"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Parent Account",
+          "validFor": null,
+          "value": "Parent"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Phone",
+          "validFor": null,
+          "value": "Phone"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Rating",
+          "validFor": null,
+          "value": "Rating"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Record locked.",
+          "validFor": null,
+          "value": "locked"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Record unlocked.",
+          "validFor": null,
+          "value": "unlocked"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Shipping Address",
+          "validFor": null,
+          "value": "ShippingAddress"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Shipping City",
+          "validFor": null,
+          "value": "ShippingCity"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Shipping Country",
+          "validFor": null,
+          "value": "ShippingCountry"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Shipping Geocode Accuracy",
+          "validFor": null,
+          "value": "ShippingGeocodeAccuracy"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Shipping Latitude",
+          "validFor": null,
+          "value": "ShippingLatitude"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Shipping Longitude",
+          "validFor": null,
+          "value": "ShippingLongitude"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Shipping State/Province",
+          "validFor": null,
+          "value": "ShippingState"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Shipping Street",
+          "validFor": null,
+          "value": "ShippingStreet"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Shipping Zip/Postal Code",
+          "validFor": null,
+          "value": "ShippingPostalCode"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "SIC Code",
+          "validFor": null,
+          "value": "Sic"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "SIC Description",
+          "validFor": null,
+          "value": "SicDesc"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Ticker Symbol",
+          "validFor": null,
+          "value": "TickerSymbol"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Tradestyle",
+          "validFor": null,
+          "value": "Tradestyle"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Type",
+          "validFor": null,
+          "value": "Type"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Website",
+          "validFor": null,
+          "value": "Website"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Year Started",
+          "validFor": null,
+          "value": "YearStarted"
+        }
+      ],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "picklist"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Datatype",
+      "name": "DataType",
+      "nillable": true,
+      "picklistValues": [
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Address"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "AnyType"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "AutoNumber"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Base64"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "BitVector"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Boolean"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Content"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Currency"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "DataCategoryGroupReference"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "DateOnly"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "DateTime"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Division"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Double"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "DynamicEnum"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Email"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "EncryptedBase64"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "EncryptedText"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "EntityId"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "EnumOrId"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "ExternalId"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Fax"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "File"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "HtmlMultiLineText"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "HtmlStringPlusClob"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "InetAddress"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Json"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Location"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "MultiEnum"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "MultiLineText"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Namespace"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Percent"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "PersonName"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Phone"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Raw"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "RecordType"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "SfdcEncryptedText"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "SimpleNamespace"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "StringPlusClob"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Switchable_PersonName"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Text"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "TimeOnly"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "Url"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": null,
+          "validFor": null,
+          "value": "YearQuarter"
+        }
+      ],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "picklist"
+    },
+    {
+      "aggregatable": false,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": false,
+      "groupable": false,
+      "inlineHelpText": null,
+      "label": "Old Value",
+      "name": "OldValue",
+      "nillable": true,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "anyType"
+    },
+    {
+      "aggregatable": false,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": false,
+      "groupable": false,
+      "inlineHelpText": null,
+      "label": "New Value",
+      "name": "NewValue",
+      "nillable": true,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "anyType"
+    }
+  ],
+  "label": "Account History",
+  "childRelationships": [],
+  "custom": false,
+  "name": "AccountHistory",
+  "queryable": true
+}

@@ -1,0 +1,78 @@
+[
+  {
+    "name": "Account",
+    "custom": false
+  },
+  {
+    "name": "AccountHistory",
+    "custom": false
+  },
+  {
+    "name": "Asset",
+    "custom": false
+  },
+  {
+    "name": "Attachment",
+    "custom": false
+  },
+  {
+    "name": "Case",
+    "custom": false
+  },
+  {
+    "name": "Contact",
+    "custom": false
+  },
+  {
+    "name": "Contract",
+    "custom": false
+  },
+  {
+    "name": "Domain",
+    "custom": false
+  },
+  {
+    "name": "Lead",
+    "custom": false
+  },
+  {
+    "name": "Note",
+    "custom": false
+  },
+  {
+    "name": "Opportunity",
+    "custom": false
+  },
+  {
+    "name": "Order",
+    "custom": false
+  },
+  {
+    "name": "Pricebook2",
+    "custom": false
+  },
+  {
+    "name": "PricebookEntry",
+    "custom": false
+  },
+  {
+    "name": "Product2",
+    "custom": false
+  },
+  {
+    "name": "RecordType",
+    "custom": false
+  },
+  {
+    "name": "Report",
+    "custom": false
+  },
+  {
+    "name": "Task",
+    "custom": false
+  },
+  {
+    "name": "User",
+    "custom": false
+  }
+]

@@ -68,7 +68,7 @@ export default function ResponsibleInfoAlert() {
         </a>
         , as a{' '}
         <a
-          href="https://stateofnewjersey.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/ledetail/CLIP.RAIPP.WBT/latestversion"
+          href="https://stateofnewjersey.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/learningeventdetail/curra000000000004900"
           className="underline hover:decoration-2"
           target="_blank"
           rel="noreferrer"
@@ -78,7 +78,7 @@ export default function ResponsibleInfoAlert() {
         </a>{' '}
         or an{' '}
         <a
-          href="https://stateofnewjersey-external.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/ledetail/CLIP.RAIPP.WBT/latestversion"
+          href="https://stateofnewjersey-external.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/learningeventdetail/curra000000000004900"
           className="underline hover:decoration-2"
           target="_blank"
           rel="noreferrer"

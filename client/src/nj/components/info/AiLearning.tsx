@@ -13,7 +13,7 @@ export default function AiLearning() {
         <p className="mb-2">
           Responsible Use of GenAI training - Available on the Learning Management System (for {''}
           <a
-            href="https://stateofnewjersey.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/ledetail/CLIP.RAIPP.WBT/latestversion"
+            href="https://stateofnewjersey.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/learningeventdetail/curra000000000004900"
             className="underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"
@@ -23,7 +23,7 @@ export default function AiLearning() {
           </a>{' '}
           and{' '}
           <a
-            href="https://stateofnewjersey-external.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/ledetail/CLIP.RAIPP.WBT/latestversion"
+            href="https://stateofnewjersey-external.sabacloud.com/Saba/Web_spf/NA9P2PRD001/common/learningeventdetail/curra000000000004900"
             className="underline hover:decoration-2"
             target="_blank"
             rel="noreferrer"

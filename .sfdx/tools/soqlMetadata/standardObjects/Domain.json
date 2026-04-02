@@ -1,0 +1,293 @@
+{
+  "fields": [
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Domain ID",
+      "name": "Id",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "id"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Domain Type",
+      "name": "DomainType",
+      "nillable": false,
+      "picklistValues": [
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Domain Name System (DNS)",
+          "validFor": null,
+          "value": "DNS"
+        }
+      ],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "picklist"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": false,
+      "inlineHelpText": null,
+      "label": "Domain Name",
+      "name": "Domain",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "aggregatable": false,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": false,
+      "inlineHelpText": null,
+      "label": "Allow Strict Transport Security preloading",
+      "name": "OptionsHstsPreload",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": false,
+      "type": "boolean"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": false,
+      "inlineHelpText": null,
+      "label": "CNAME Target",
+      "name": "CnameTarget",
+      "nillable": true,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Current HTTPS Option",
+      "name": "HttpsOption",
+      "nillable": true,
+      "picklistValues": [
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Content Delivery Network (CDN) partner of Salesforce",
+          "validFor": null,
+          "value": "CdnPartner"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Salesforce Cloud",
+          "validFor": null,
+          "value": "SitesRuntime"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Domain is served by an external host",
+          "validFor": null,
+          "value": "ExternalHttps"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "No HTTPS (Temporary)",
+          "validFor": null,
+          "value": "NoHttps"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Experience Cloud Sites Force.com Domain",
+          "validFor": null,
+          "value": "Community"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Experience Cloud Sites Domain",
+          "validFor": null,
+          "value": "CommunityAlt"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Salesforce Sites Domain",
+          "validFor": null,
+          "value": "SitesAlt"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "Salesforce Sites Force.com Domain",
+          "validFor": null,
+          "value": "Sites"
+        },
+        {
+          "active": true,
+          "defaultValue": false,
+          "label": "My Domain",
+          "validFor": null,
+          "value": "OrgDomain"
+        }
+      ],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "picklist"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": false,
+      "inlineHelpText": null,
+      "label": "Created Date",
+      "name": "CreatedDate",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Created By ID",
+      "name": "CreatedById",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [
+        "User"
+      ],
+      "relationshipName": "CreatedBy",
+      "sortable": true,
+      "type": "reference"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": false,
+      "inlineHelpText": null,
+      "label": "Last Modified Date",
+      "name": "LastModifiedDate",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": true,
+      "inlineHelpText": null,
+      "label": "Last Modified By ID",
+      "name": "LastModifiedById",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [
+        "User"
+      ],
+      "relationshipName": "LastModifiedBy",
+      "sortable": true,
+      "type": "reference"
+    },
+    {
+      "aggregatable": true,
+      "custom": false,
+      "defaultValue": null,
+      "extraTypeInfo": null,
+      "filterable": true,
+      "groupable": false,
+      "inlineHelpText": null,
+      "label": "System Modstamp",
+      "name": "SystemModstamp",
+      "nillable": false,
+      "picklistValues": [],
+      "referenceTo": [],
+      "relationshipName": null,
+      "sortable": true,
+      "type": "datetime"
+    }
+  ],
+  "label": "Domain",
+  "childRelationships": [
+    {
+      "cascadeDelete": true,
+      "childSObject": "DomainSite",
+      "deprecatedAndHidden": false,
+      "field": "DomainId",
+      "junctionIdListNames": [],
+      "junctionReferenceTo": [],
+      "relationshipName": "DomainSites",
+      "restrictedDelete": false
+    },
+    {
+      "cascadeDelete": false,
+      "childSObject": "ManagedContentChannel",
+      "deprecatedAndHidden": false,
+      "field": "Domain",
+      "junctionIdListNames": [],
+      "junctionReferenceTo": [],
+      "relationshipName": null,
+      "restrictedDelete": true
+    }
+  ],
+  "custom": false,
+  "name": "Domain",
+  "queryable": true
+}
