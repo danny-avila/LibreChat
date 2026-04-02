@@ -113,8 +113,16 @@ export async function encodeAndFormatDocuments(
   const isBedrock = provider === Providers.BEDROCK;
   const isDocSupported = isDocumentSupportedProvider(provider);
 
+  const processableFiles = isBedrock
+    ? files.filter((file) => isBedrockDocumentType(file.type))
+    : files;
+
+  if (!processableFiles.length) {
+    return result;
+  }
+
   const results = await Promise.allSettled(
-    files.map((file) => {
+    processableFiles.map((file) => {
       return getFileStream(req, file, encodingMethods, getStrategyFunctions);
     }),
   );
