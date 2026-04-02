@@ -292,6 +292,7 @@ const Part = memo(function Part({
           isLast={isLast}
           hideAttachments={hideAttachments}
           onExpand={onToolExpand}
+          toolCallId={toolCall.id}
         />
       );
     } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
