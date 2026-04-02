@@ -6,9 +6,12 @@ import {
   DEFAULT_TOOL_TOKEN_MULTIPLIER,
 } from '@librechat/agents';
 import { CacheKeys, Time } from 'librechat-data-provider';
-import { standardCache } from '~/cache';
-import type { Keyv } from 'keyv';
+
 import type { GenericTool, LCTool, TokenCounter, ClientOptions } from '@librechat/agents';
+import type { Keyv } from 'keyv';
+
+import { logger } from '@librechat/data-schemas';
+import { standardCache } from '~/cache';
 
 /** Module-level cache instance, lazily initialized. */
 let toolTokenCache: Keyv | undefined;
@@ -20,10 +23,6 @@ function getCache(): Keyv {
   return toolTokenCache;
 }
 
-/**
- * Builds a lightweight fingerprint from tool names.
- * Sorted and deduplicated to ensure stability regardless of tool ordering.
- */
 export function getToolFingerprint(tools?: GenericTool[], toolDefinitions?: LCTool[]): string {
   const names = new Set<string>();
 
@@ -52,9 +51,6 @@ export function getToolFingerprint(tools?: GenericTool[], toolDefinitions?: LCTo
   return sorted.join(',') + '|' + sorted.length;
 }
 
-/**
- * Determines the provider-specific token multiplier for tool schemas.
- */
 function getToolTokenMultiplier(provider: Providers, clientOptions?: ClientOptions): number {
   const isAnthropic =
     provider !== Providers.BEDROCK &&
@@ -65,10 +61,6 @@ function getToolTokenMultiplier(provider: Providers, clientOptions?: ClientOptio
   return isAnthropic ? ANTHROPIC_TOOL_TOKEN_MULTIPLIER : DEFAULT_TOOL_TOKEN_MULTIPLIER;
 }
 
-/**
- * Computes tool schema tokens from scratch using the provided token counter.
- * Mirrors the logic in AgentContext.calculateInstructionTokens().
- */
 export function computeToolSchemaTokens(
   tools: GenericTool[] | undefined,
   toolDefinitions: LCTool[] | undefined,
@@ -119,10 +111,10 @@ export function computeToolSchemaTokens(
 }
 
 /**
- * Returns cached tool schema tokens if the fingerprint matches,
- * otherwise computes them, caches the result (fire-and-forget), and returns.
- *
- * Returns 0 if there are no tools (no caching needed).
+ * Returns cached tool schema tokens or computes them on miss.
+ * Returns 0 if there are no tools.
+ * Cache errors are non-fatal — falls through to compute on read failure,
+ * logs on write failure.
  */
 export async function getOrComputeToolTokens({
   tools,
@@ -142,12 +134,18 @@ export async function getOrComputeToolTokens({
     return 0;
   }
 
-  const cacheKey = `${provider}:${fingerprint}`;
+  const multiplier = getToolTokenMultiplier(provider, clientOptions);
+  const multiplierKey = multiplier === ANTHROPIC_TOOL_TOKEN_MULTIPLIER ? 'anthropic' : 'default';
+  const cacheKey = `${provider}:${multiplierKey}:${fingerprint}`;
   const cache = getCache();
 
-  const cached = (await cache.get(cacheKey)) as number | undefined;
-  if (cached != null && cached > 0) {
-    return cached;
+  try {
+    const cached = (await cache.get(cacheKey)) as number | undefined;
+    if (cached != null && cached > 0) {
+      return cached;
+    }
+  } catch (err) {
+    logger.debug('[toolTokens] Cache read failed, computing fresh', err);
   }
 
   const tokens = computeToolSchemaTokens(
@@ -159,9 +157,8 @@ export async function getOrComputeToolTokens({
   );
 
   if (tokens > 0) {
-    /** Fire-and-forget write — don't block the run on cache persistence */
-    cache.set(cacheKey, tokens).catch(() => {
-      /* swallow cache write errors */
+    cache.set(cacheKey, tokens).catch((err: unknown) => {
+      logger.debug('[toolTokens] Cache write failed', err);
     });
   }
 

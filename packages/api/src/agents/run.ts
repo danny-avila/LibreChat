@@ -863,7 +863,6 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
-    /** Resolve cached or computed tool schema tokens */
     let toolSchemaTokens: number | undefined;
     if (tokenCounter) {
       toolSchemaTokens = await getOrComputeToolTokens({
