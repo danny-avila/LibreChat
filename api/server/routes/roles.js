@@ -111,8 +111,8 @@ const createPermissionUpdateHandler = (permissionKey) => {
  */
 router.get('/:roleName', async (req, res) => {
   const { roleName: _r } = req.params;
-  // TODO: TEMP, use a better parsing for roleName
-  const roleName = _r.toUpperCase();
+  const systemRoleNames = new Set(Object.values(SystemRoles));
+  const roleName = systemRoleNames.has(_r.toUpperCase()) ? _r.toUpperCase() : _r;
 
   try {
     let hasReadRoles = false;
@@ -121,7 +121,8 @@ router.get('/:roleName', async (req, res) => {
     } catch (err) {
       logger.warn(`[GET /roles/:roleName] capability check failed: ${err.message}`);
     }
-    if (!hasReadRoles && (roleName === SystemRoles.ADMIN || !roleDefaults[roleName])) {
+    const isOwnRole = req.user?.role === roleName;
+    if (!hasReadRoles && !isOwnRole && (roleName === SystemRoles.ADMIN || !roleDefaults[roleName])) {
       return res.status(403).send({ message: 'Unauthorized' });
     }
 
