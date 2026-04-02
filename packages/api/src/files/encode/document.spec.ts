@@ -56,13 +56,16 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
   });
 
   /** Helper to create a mock request with file config */
-  const createMockRequest = (fileSizeLimit?: number): Partial<AppConfig> => ({
+  const createMockRequest = (
+    fileSizeLimit?: number,
+    provider: string = Providers.OPENAI,
+  ): Partial<AppConfig> => ({
     config:
       fileSizeLimit !== undefined
         ? {
             fileConfig: {
               endpoints: {
-                [Providers.OPENAI]: {
+                [provider]: {
                   fileSizeLimit,
                 },
               },
@@ -826,8 +829,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       );
 
       expect(result.documents).toHaveLength(1);
-      const doc = result.documents[0] as { citations?: unknown };
-      expect(doc).not.toHaveProperty('citations');
+      expect(result.documents[0]).not.toHaveProperty('citations');
     });
 
     it('should format text/csv for OpenAI responses API', async () => {
@@ -937,17 +939,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
     });
 
     it('should throw when generic file exceeds configured size limit', async () => {
-      const req = {
-        config: {
-          fileConfig: {
-            endpoints: {
-              [Providers.ANTHROPIC]: {
-                fileSizeLimit: 1,
-              },
-            },
-          },
-        },
-      } as unknown as ServerRequest;
+      const req = createMockRequest(1, Providers.ANTHROPIC) as ServerRequest;
       const file = createMockDocFile(2, 'text/plain', 'large.txt');
 
       const largeContent = Buffer.alloc(2 * 1024 * 1024).toString('base64');

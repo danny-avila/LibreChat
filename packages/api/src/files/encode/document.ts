@@ -55,7 +55,7 @@ function formatDocumentBlock(
     return document;
   }
 
-  const resolvedFilename = filename || 'document';
+  const resolvedFilename = filename ?? 'document';
 
   if (useResponsesApi) {
     return {
@@ -121,6 +121,8 @@ export async function encodeAndFormatDocuments(
     return result;
   }
 
+  const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, { provider, endpoint });
+
   const results = await Promise.allSettled(
     processableFiles.map((file) => {
       return getFileStream(req, file, encodingMethods, getStrategyFunctions);
@@ -143,7 +145,6 @@ export async function encodeAndFormatDocuments(
       continue;
     }
 
-    const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, { provider, endpoint });
     const mimeType = file.type ?? '';
 
     if (isBedrock && isBedrockDocumentType(mimeType)) {
@@ -203,10 +204,11 @@ export async function encodeAndFormatDocuments(
         result.files.push(metadata);
       }
     } else if (isDocSupported && !isBedrock) {
-      const fileBuffer = Buffer.from(content, 'base64');
-      if (configuredFileSizeLimit && fileBuffer.length > configuredFileSizeLimit) {
+      const paddingChars = content.endsWith('==') ? 2 : content.endsWith('=') ? 1 : 0;
+      const decodedByteCount = Math.floor((content.length * 3) / 4) - paddingChars;
+      if (configuredFileSizeLimit && decodedByteCount > configuredFileSizeLimit) {
         throw new Error(
-          `File size (${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB) exceeds the configured limit for ${provider}`,
+          `File size (~${(decodedByteCount / 1024 / 1024).toFixed(1)}MB) exceeds the configured limit for ${provider}`,
         );
       }
 
