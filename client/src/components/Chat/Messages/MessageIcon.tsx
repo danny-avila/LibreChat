@@ -19,32 +19,27 @@ type MessageIconProps = {
  * this component renders display properties only, not identity-derived content.
  */
 export function arePropsEqual(prev: MessageIconProps, next: MessageIconProps): boolean {
-  if (prev.iconData?.endpoint !== next.iconData?.endpoint) {
-    return false;
-  }
-  if (prev.iconData?.model !== next.iconData?.model) {
-    return false;
-  }
-  if (prev.iconData?.iconURL !== next.iconData?.iconURL) {
-    return false;
-  }
-  if (prev.iconData?.modelLabel !== next.iconData?.modelLabel) {
-    return false;
-  }
-  if (prev.iconData?.isCreatedByUser !== next.iconData?.isCreatedByUser) {
-    return false;
-  }
-  if (prev.agent?.name !== next.agent?.name) {
-    return false;
-  }
-  if (prev.agent?.avatar?.filepath !== next.agent?.avatar?.filepath) {
-    return false;
-  }
-  if (prev.assistant?.name !== next.assistant?.name) {
-    return false;
-  }
-  if (prev.assistant?.metadata?.avatar !== next.assistant?.metadata?.avatar) {
-    return false;
+  const checks: [string, unknown, unknown][] = [
+    ['iconData.endpoint', prev.iconData?.endpoint, next.iconData?.endpoint],
+    ['iconData.model', prev.iconData?.model, next.iconData?.model],
+    ['iconData.iconURL', prev.iconData?.iconURL, next.iconData?.iconURL],
+    ['iconData.modelLabel', prev.iconData?.modelLabel, next.iconData?.modelLabel],
+    ['iconData.isCreatedByUser', prev.iconData?.isCreatedByUser, next.iconData?.isCreatedByUser],
+    ['agent.name', prev.agent?.name, next.agent?.name],
+    ['agent.avatar.filepath', prev.agent?.avatar?.filepath, next.agent?.avatar?.filepath],
+    ['assistant.name', prev.assistant?.name, next.assistant?.name],
+    [
+      'assistant.metadata.avatar',
+      prev.assistant?.metadata?.avatar,
+      next.assistant?.metadata?.avatar,
+    ],
+  ];
+
+  for (const [field, prevVal, nextVal] of checks) {
+    if (prevVal !== nextVal) {
+      logger.log('icon_memo_diff', `field "${field}" changed:`, prevVal, '→', nextVal);
+      return false;
+    }
   }
   return true;
 }
