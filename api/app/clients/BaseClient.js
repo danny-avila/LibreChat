@@ -17,11 +17,13 @@ const {
   ContentTypes,
   excludedKeys,
   EModelEndpoint,
+  mergeFileConfig,
   isParamEndpoint,
   isAgentsEndpoint,
   isEphemeralAgentId,
   supportsBalanceCheck,
   isBedrockDocumentType,
+  getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -71,6 +73,10 @@ class BaseClient {
     this.currentMessages = [];
     /** @type {import('librechat-data-provider').VisionModes | undefined} */
     this.visionMode;
+    /** @type {import('librechat-data-provider').FileConfig | undefined} */
+    this._mergedFileConfig;
+    /** @type {import('librechat-data-provider').EndpointFileConfig | undefined} */
+    this._endpointFileConfig;
   }
 
   setOptions() {
@@ -1160,6 +1166,16 @@ class BaseClient {
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
 
+    if (!this._mergedFileConfig && this.options.req?.config?.fileConfig) {
+      this._mergedFileConfig = mergeFileConfig(this.options.req.config.fileConfig);
+      const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
+      this._endpointFileConfig = getEndpointFileConfig({
+        fileConfig: this._mergedFileConfig,
+        endpoint,
+        endpointType: this.options.endpointType,
+      });
+    }
+
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
@@ -1185,6 +1201,14 @@ class BaseClient {
         allFiles.push(file);
       } else if (file.type.startsWith('audio/')) {
         categorizedAttachments.audios.push(file);
+        allFiles.push(file);
+      } else if (
+        file.type &&
+        this._mergedFileConfig &&
+        this._endpointFileConfig?.supportedMimeTypes &&
+        this._mergedFileConfig.checkType(file.type, this._endpointFileConfig.supportedMimeTypes)
+      ) {
+        categorizedAttachments.documents.push(file);
         allFiles.push(file);
       }
     }
