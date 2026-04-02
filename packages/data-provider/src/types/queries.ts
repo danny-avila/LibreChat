@@ -172,6 +172,13 @@ export type AccessRole = {
 
 export type AccessRolesResponse = AccessRole[];
 
+export type ListRolesResponse = {
+  roles: Array<{ _id: string; name: string; description?: string }>;
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 export interface MCPServerStatus {
   requiresOAuth: boolean;
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';

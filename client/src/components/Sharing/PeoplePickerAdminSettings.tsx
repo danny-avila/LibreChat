@@ -2,7 +2,13 @@ import { useMemo, useEffect, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import {
+  Permissions,
+  SystemRoles,
+  roleDefaults,
+  PermissionTypes,
+  isSystemRoleName,
+} from 'librechat-data-provider';
 import {
   Button,
   Switch,
@@ -14,7 +20,11 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
-import { useUpdatePeoplePickerPermissionsMutation } from '~/data-provider';
+import {
+  useGetRole,
+  useListRoles,
+  useUpdatePeoplePickerPermissionsMutation,
+} from '~/data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
 
 type FormValues = {
@@ -81,15 +91,28 @@ const PeoplePickerAdminSettings = () => {
   });
 
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.USER);
+  const [selectedRole, setSelectedRole] = useState<string>(SystemRoles.USER);
+  const { data: roleList } = useListRoles({
+    enabled: user?.role === SystemRoles.ADMIN,
+  });
+  const isSelectedCustomRole = !isSystemRoleName(selectedRole);
+  const { data: customRoleData = null } = useGetRole(selectedRole, {
+    enabled: isSelectedCustomRole,
+  });
 
   const defaultValues = useMemo(() => {
+    if (isSelectedCustomRole && customRoleData?.permissions) {
+      return customRoleData.permissions[PermissionTypes.PEOPLE_PICKER];
+    }
     const rolePerms = roles?.[selectedRole]?.permissions;
     if (rolePerms) {
       return rolePerms[PermissionTypes.PEOPLE_PICKER];
     }
-    return roleDefaults[selectedRole].permissions[PermissionTypes.PEOPLE_PICKER];
-  }, [roles, selectedRole]);
+    const defaults = isSystemRoleName(selectedRole)
+      ? roleDefaults[selectedRole as SystemRoles]
+      : roleDefaults[SystemRoles.USER];
+    return defaults.permissions[PermissionTypes.PEOPLE_PICKER];
+  }, [roles, selectedRole, isSelectedCustomRole, customRoleData]);
 
   const {
     reset,
@@ -104,13 +127,20 @@ const PeoplePickerAdminSettings = () => {
   });
 
   useEffect(() => {
-    const value = roles?.[selectedRole]?.permissions?.[PermissionTypes.PEOPLE_PICKER];
-    if (value) {
-      reset(value);
+    if (isSelectedCustomRole && customRoleData?.permissions?.[PermissionTypes.PEOPLE_PICKER]) {
+      reset(customRoleData.permissions[PermissionTypes.PEOPLE_PICKER]);
     } else {
-      reset(roleDefaults[selectedRole].permissions[PermissionTypes.PEOPLE_PICKER]);
+      const value = roles?.[selectedRole]?.permissions?.[PermissionTypes.PEOPLE_PICKER];
+      if (value) {
+        reset(value);
+      } else {
+        const defaults = isSystemRoleName(selectedRole)
+          ? roleDefaults[selectedRole as SystemRoles]
+          : roleDefaults[SystemRoles.USER];
+        reset(defaults.permissions[PermissionTypes.PEOPLE_PICKER]);
+      }
     }
-  }, [roles, selectedRole, reset]);
+  }, [roles, selectedRole, reset, isSelectedCustomRole, customRoleData]);
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -138,20 +168,14 @@ const PeoplePickerAdminSettings = () => {
     mutate({ roleName: selectedRole, updates: data });
   };
 
-  const roleDropdownItems = [
-    {
-      label: SystemRoles.USER,
-      onClick: () => {
-        setSelectedRole(SystemRoles.USER);
-      },
-    },
-    {
-      label: SystemRoles.ADMIN,
-      onClick: () => {
-        setSelectedRole(SystemRoles.ADMIN);
-      },
-    },
+  const availableRoleNames = roleList?.roles?.map((r) => r.name) ?? [
+    SystemRoles.USER,
+    SystemRoles.ADMIN,
   ];
+  const roleDropdownItems = availableRoleNames.map((role) => ({
+    label: role,
+    onClick: () => setSelectedRole(role),
+  }));
 
   return (
     <OGDialog>
@@ -179,7 +203,7 @@ const PeoplePickerAdminSettings = () => {
               isOpen={isRoleMenuOpen}
               setIsOpen={setIsRoleMenuOpen}
               trigger={
-                <Ariakit.MenuButton className="inline-flex w-1/4 items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
+                <Ariakit.MenuButton className="inline-flex min-w-[6rem] items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
                   {selectedRole}
                 </Ariakit.MenuButton>
               }

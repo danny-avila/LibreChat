@@ -64,13 +64,20 @@ jest.mock('~/data-provider', () => ({
     error: null,
   })),
   useGetRole: jest.fn(() => ({ data: null })),
+  useListRoles: jest.fn(() => ({ data: undefined })),
 }));
 
 const authConfig: TAuthConfig = { loginRedirect: '/login', test: true };
 
 function TestConsumer() {
   const ctx = useAuthContext();
-  return <div data-testid="consumer" data-authenticated={ctx.isAuthenticated} />;
+  return (
+    <div
+      data-testid="consumer"
+      data-authenticated={ctx.isAuthenticated}
+      data-roles={JSON.stringify(ctx.roles ?? {})}
+    />
+  );
 }
 
 function renderProvider() {
@@ -442,6 +449,132 @@ describe('AuthContextProvider — logout error handling', () => {
 
     expect(replaceSpy).not.toHaveBeenCalled();
     expect(getByTestId('consumer').getAttribute('data-authenticated')).toBe('false');
+    jest.useRealTimers();
+  });
+});
+
+describe('AuthContextProvider — custom role detection and fetching', () => {
+  const mockUseGetRole = jest.requireMock('~/data-provider').useGetRole;
+  const staffPermissions = {
+    name: 'STAFF',
+    permissions: { PROMPTS: { USE: true, CREATE: false } },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    sessionStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('calls useGetRole with the custom role name and enabled: true for custom role users', () => {
+    jest.useFakeTimers();
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'STAFF' }, token: 'tok' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    const staffCalls = mockUseGetRole.mock.calls.filter(
+      ([name]: [string]) => name === 'STAFF',
+    );
+    expect(staffCalls.length).toBeGreaterThan(0);
+    const lastStaffCall = staffCalls[staffCalls.length - 1];
+    expect(lastStaffCall[1]).toEqual(expect.objectContaining({ enabled: true }));
+
+    jest.useRealTimers();
+  });
+
+  it('calls useGetRole with enabled: false for USER role users', () => {
+    jest.useFakeTimers();
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'tok' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    const nonSystemCalls = mockUseGetRole.mock.calls.filter(
+      ([name]: [string]) => name !== 'USER' && name !== 'ADMIN',
+    );
+    for (const call of nonSystemCalls) {
+      expect(call[1]).toEqual(expect.objectContaining({ enabled: false }));
+    }
+
+    jest.useRealTimers();
+  });
+
+  it('calls useGetRole with enabled: false for ADMIN role users', () => {
+    jest.useFakeTimers();
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'ADMIN' }, token: 'tok' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    const nonSystemCalls = mockUseGetRole.mock.calls.filter(
+      ([name]: [string]) => name !== 'USER' && name !== 'ADMIN',
+    );
+    for (const call of nonSystemCalls) {
+      expect(call[1]).toEqual(expect.objectContaining({ enabled: false }));
+    }
+
+    jest.useRealTimers();
+  });
+
+  it('includes custom role data in the roles context map when loaded', () => {
+    jest.useFakeTimers();
+    mockUseGetRole.mockImplementation((name: string, opts?: { enabled?: boolean }) => {
+      if (name === 'STAFF' && opts?.enabled) {
+        return { data: staffPermissions };
+      }
+      return { data: null };
+    });
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'STAFF' }, token: 'tok' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    mockUseGetRole.mockReturnValue({ data: null });
     jest.useRealTimers();
   });
 });

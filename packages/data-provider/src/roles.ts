@@ -111,6 +111,12 @@ const defaultRolesSchema = z.object({
   }),
 });
 
+/** Case-insensitive check for reserved system role names (USER, ADMIN). */
+export function isSystemRoleName(name: string): boolean {
+  const upper = name.toUpperCase();
+  return upper === SystemRoles.USER || upper === SystemRoles.ADMIN;
+}
+
 export const roleDefaults = defaultRolesSchema.parse({
   [SystemRoles.ADMIN]: {
     name: SystemRoles.ADMIN,

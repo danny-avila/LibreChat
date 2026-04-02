@@ -866,6 +866,10 @@ export function getRandomPrompts(
 }
 
 /* Roles */
+export function listRoles(): Promise<q.ListRolesResponse> {
+  return request.get(endpoints.adminRoles());
+}
+
 export function getRole(roleName: string): Promise<r.TRole> {
   return request.get(endpoints.getRole(roleName));
 }

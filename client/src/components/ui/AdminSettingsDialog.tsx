@@ -2,7 +2,13 @@ import { useMemo, useEffect, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import {
+  Permissions,
+  SystemRoles,
+  roleDefaults,
+  PermissionTypes,
+  isSystemRoleName,
+} from 'librechat-data-provider';
 import {
   OGDialog,
   OGDialogTitle,
@@ -14,6 +20,7 @@ import {
 } from '@librechat/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import type { TranslationKeys } from '~/hooks/useLocalize';
+import { useGetRole, useListRoles } from '~/data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
 
 type FormValues = Record<Permissions, boolean>;
@@ -34,7 +41,7 @@ export interface AdminSettingsDialogProps {
   menuId: string;
   /** Mutation function and loading state from the permission update hook */
   mutation: {
-    mutate: (data: { roleName: SystemRoles; updates: Record<Permissions, boolean> }) => void;
+    mutate: (data: { roleName: string; updates: Record<Permissions, boolean> }) => void;
     isLoading: boolean;
   };
   /** Whether to show the admin access warning when ADMIN role and USE permission is displayed (default: true) */
@@ -112,14 +119,27 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
   const { mutate, isLoading } = mutation;
 
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.USER);
+  const [selectedRole, setSelectedRole] = useState<string>(SystemRoles.USER);
+  const { data: roleList } = useListRoles({
+    enabled: user?.role === SystemRoles.ADMIN,
+  });
+  const isSelectedCustomRole = !isSystemRoleName(selectedRole);
+  const { data: customRoleData = null } = useGetRole(selectedRole, {
+    enabled: isSelectedCustomRole,
+  });
 
   const defaultValues = useMemo(() => {
+    if (isSelectedCustomRole && customRoleData?.permissions) {
+      return customRoleData.permissions[permissionType];
+    }
     if (roles?.[selectedRole]?.permissions) {
       return roles[selectedRole]?.permissions[permissionType];
     }
-    return roleDefaults[selectedRole].permissions[permissionType];
-  }, [roles, selectedRole, permissionType]);
+    const defaults = isSystemRoleName(selectedRole)
+      ? roleDefaults[selectedRole as SystemRoles]
+      : roleDefaults[SystemRoles.USER];
+    return defaults.permissions[permissionType];
+  }, [roles, selectedRole, permissionType, isSelectedCustomRole, customRoleData]);
 
   const {
     reset,
@@ -134,12 +154,17 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
   });
 
   useEffect(() => {
-    if (roles?.[selectedRole]?.permissions?.[permissionType]) {
+    if (isSelectedCustomRole && customRoleData?.permissions?.[permissionType]) {
+      reset(customRoleData.permissions[permissionType]);
+    } else if (roles?.[selectedRole]?.permissions?.[permissionType]) {
       reset(roles[selectedRole]?.permissions[permissionType]);
     } else {
-      reset(roleDefaults[selectedRole].permissions[permissionType]);
+      const defaults = isSystemRoleName(selectedRole)
+        ? roleDefaults[selectedRole as SystemRoles]
+        : roleDefaults[SystemRoles.USER];
+      reset(defaults.permissions[permissionType]);
     }
-  }, [roles, selectedRole, reset, permissionType]);
+  }, [roles, selectedRole, reset, permissionType, isSelectedCustomRole, customRoleData]);
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -149,20 +174,14 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
     mutate({ roleName: selectedRole, updates: data });
   };
 
-  const roleDropdownItems = [
-    {
-      label: SystemRoles.USER,
-      onClick: () => {
-        setSelectedRole(SystemRoles.USER);
-      },
-    },
-    {
-      label: SystemRoles.ADMIN,
-      onClick: () => {
-        setSelectedRole(SystemRoles.ADMIN);
-      },
-    },
+  const availableRoleNames = roleList?.roles?.map((r) => r.name) ?? [
+    SystemRoles.USER,
+    SystemRoles.ADMIN,
   ];
+  const roleDropdownItems = availableRoleNames.map((role) => ({
+    label: role,
+    onClick: () => setSelectedRole(role),
+  }));
 
   const defaultTrigger = (
     <Button
@@ -199,7 +218,7 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
               isOpen={isRoleMenuOpen}
               setIsOpen={setIsRoleMenuOpen}
               trigger={
-                <Ariakit.MenuButton className="inline-flex w-1/4 items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
+                <Ariakit.MenuButton className="inline-flex min-w-[6rem] items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
                   {selectedRole}
                 </Ariakit.MenuButton>
               }
