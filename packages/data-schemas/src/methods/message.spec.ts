@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
 import { createMessageMethods } from './message';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -21,6 +22,7 @@ let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
 let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
+let recordMessage: ReturnType<typeof createMessageMethods>['recordMessage'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -38,6 +40,7 @@ beforeAll(async () => {
   bulkSaveMessages = methods.bulkSaveMessages;
   updateMessageText = methods.updateMessageText;
   deleteMessagesSince = methods.deleteMessagesSince;
+  recordMessage = methods.recordMessage;
 
   await mongoose.connect(mongoUri);
 });
@@ -935,6 +938,88 @@ describe('Message Operations', () => {
 
       // All messages should be returned
       expect(result?.messages).toHaveLength(5);
+    });
+  });
+
+  describe('tenantId stripping', () => {
+    it('saveMessage should not write caller-supplied tenantId to the document', async () => {
+      const messageId = uuidv4();
+      const conversationId = uuidv4();
+      const result = await saveMessage(
+        { userId: 'user123' },
+        { messageId, conversationId, text: 'Tenant test', tenantId: 'malicious-tenant' },
+      );
+
+      expect(result).not.toBeNull();
+      expect(result).toBeDefined();
+      const doc = await Message.findOne({ messageId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.text).toBe('Tenant test');
+      expect(doc?.tenantId).toBeUndefined();
+    });
+
+    it('bulkSaveMessages should not overwrite tenantId via update payload', async () => {
+      const messageId = uuidv4();
+      const conversationId = uuidv4();
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await Message.create({
+          messageId,
+          conversationId,
+          user: 'user123',
+          text: 'Original',
+        });
+      });
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await bulkSaveMessages([
+          {
+            messageId,
+            conversationId,
+            user: 'user123',
+            text: 'Updated',
+            tenantId: 'malicious-tenant',
+          },
+        ]);
+      });
+
+      const doc = await runAsSystem(async () => Message.findOne({ messageId }).lean());
+      expect(doc).not.toBeNull();
+      expect(doc?.text).toBe('Updated');
+      expect(doc?.tenantId).toBe('real-tenant');
+    });
+
+    it('recordMessage should not write caller-supplied tenantId to the document', async () => {
+      const messageId = uuidv4();
+      const conversationId = uuidv4();
+      await recordMessage({
+        user: 'user123',
+        messageId,
+        conversationId,
+        text: 'Record tenant test',
+        tenantId: 'malicious-tenant',
+      });
+
+      const doc = await Message.findOne({ messageId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.text).toBe('Record tenant test');
+      expect(doc?.tenantId).toBeUndefined();
+    });
+
+    it('updateMessage should not write caller-supplied tenantId to the document', async () => {
+      const messageId = uuidv4();
+      const conversationId = uuidv4();
+      await saveMessage({ userId: 'user123' }, { messageId, conversationId, text: 'Original' });
+
+      await updateMessage('user123', {
+        messageId,
+        text: 'Updated',
+        tenantId: 'malicious-tenant',
+      });
+
+      const doc = await Message.findOne({ messageId }).lean();
+      expect(doc?.text).toBe('Updated');
+      expect(doc?.tenantId).toBeUndefined();
     });
   });
 });

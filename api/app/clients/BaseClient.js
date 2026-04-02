@@ -17,11 +17,13 @@ const {
   ContentTypes,
   excludedKeys,
   EModelEndpoint,
+  mergeFileConfig,
   isParamEndpoint,
   isAgentsEndpoint,
   isEphemeralAgentId,
   supportsBalanceCheck,
   isBedrockDocumentType,
+  getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -32,7 +34,6 @@ class BaseClient {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
     this.sender = options.sender ?? 'AI';
-    this.contextStrategy = null;
     this.currentDateString = new Date().toLocaleDateString('en-us', {
       year: 'numeric',
       month: 'long',
@@ -72,6 +73,10 @@ class BaseClient {
     this.currentMessages = [];
     /** @type {import('librechat-data-provider').VisionModes | undefined} */
     this.visionMode;
+    /** @type {import('librechat-data-provider').FileConfig | undefined} */
+    this._mergedFileConfig;
+    /** @type {import('librechat-data-provider').EndpointFileConfig | undefined} */
+    this._endpointFileConfig;
   }
 
   setOptions() {
@@ -487,7 +492,12 @@ class BaseClient {
         }
         delete userMessage.image_urls;
       }
-      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
+      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
+        (err) => {
+          logger.error('[BaseClient] Failed to save user message:', err);
+          return {};
+        },
+      );
       this.savedMessageIds.add(userMessage.messageId);
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
@@ -519,6 +529,8 @@ class BaseClient {
           getMultiplier: db.getMultiplier,
           findBalanceByUser: db.findBalanceByUser,
           createAutoRefillTransaction: db.createAutoRefillTransaction,
+          balanceConfig,
+          upsertBalanceFields: db.upsertBalanceFields,
         },
       );
     }
@@ -727,21 +739,30 @@ class BaseClient {
    * @param {string | null} user
    */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
+    // Snapshot options before any await; disposeClient may set client.options = null
+    // while this method is suspended at an I/O boundary, but the local reference
+    // remains valid (disposeClient nulls the property, not the object itself).
+    const options = this.options;
+    if (!options) {
+      logger.error('[BaseClient] saveMessageToDatabase: client disposed before save, skipping');
+      return {};
+    }
+
     if (this.user && user !== this.user) {
       throw new Error('User mismatch.');
     }
 
-    const hasAddedConvo = this.options?.req?.body?.addedConvo != null;
+    const hasAddedConvo = options?.req?.body?.addedConvo != null;
     const reqCtx = {
-      userId: this.options?.req?.user?.id,
-      isTemporary: this.options?.req?.body?.isTemporary,
-      interfaceConfig: this.options?.req?.config?.interfaceConfig,
+      userId: options?.req?.user?.id,
+      isTemporary: options?.req?.body?.isTemporary,
+      interfaceConfig: options?.req?.config?.interfaceConfig,
     };
     const savedMessage = await db.saveMessage(
       reqCtx,
       {
         ...message,
-        endpoint: this.options.endpoint,
+        endpoint: options.endpoint,
         unfinished: false,
         user,
         ...(hasAddedConvo && { addedConvo: true }),
@@ -755,20 +776,20 @@ class BaseClient {
 
     const fieldsToKeep = {
       conversationId: message.conversationId,
-      endpoint: this.options.endpoint,
-      endpointType: this.options.endpointType,
+      endpoint: options.endpoint,
+      endpointType: options.endpointType,
       ...endpointOptions,
     };
 
     const existingConvo =
       this.fetchedConvo === true
         ? null
-        : await db.getConvo(this.options?.req?.user?.id, message.conversationId);
+        : await db.getConvo(options?.req?.user?.id, message.conversationId);
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
     const hasNonEphemeralAgent =
-      isAgentsEndpoint(this.options.endpoint) &&
+      isAgentsEndpoint(options.endpoint) &&
       endpointOptions?.agent_id &&
       !isEphemeralAgentId(endpointOptions.agent_id);
     if (hasNonEphemeralAgent) {
@@ -1072,6 +1093,7 @@ class BaseClient {
         provider: this.options.agent?.provider ?? this.options.endpoint,
         endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
         useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+        model: this.modelOptions?.model ?? this.model,
       },
       getStrategyFunctions,
     );
@@ -1144,6 +1166,16 @@ class BaseClient {
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
 
+    if (!this._mergedFileConfig && this.options.req?.config?.fileConfig) {
+      this._mergedFileConfig = mergeFileConfig(this.options.req.config.fileConfig);
+      const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
+      this._endpointFileConfig = getEndpointFileConfig({
+        fileConfig: this._mergedFileConfig,
+        endpoint,
+        endpointType: this.options.endpointType,
+      });
+    }
+
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
@@ -1169,6 +1201,14 @@ class BaseClient {
         allFiles.push(file);
       } else if (file.type.startsWith('audio/')) {
         categorizedAttachments.audios.push(file);
+        allFiles.push(file);
+      } else if (
+        file.type &&
+        this._mergedFileConfig &&
+        this._endpointFileConfig?.supportedMimeTypes &&
+        this._mergedFileConfig.checkType(file.type, this._endpointFileConfig.supportedMimeTypes)
+      ) {
+        categorizedAttachments.documents.push(file);
         allFiles.push(file);
       }
     }

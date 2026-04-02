@@ -18,7 +18,7 @@ export async function dropSupersededPromptGroupIndexes(
 
   let collection;
   try {
-    collection = connection.db.collection(collectionName);
+    collection = connection.db!.collection(collectionName);
   } catch {
     result.skipped.push(
       ...SUPERSEDED_PROMPT_GROUP_INDEXES.map(

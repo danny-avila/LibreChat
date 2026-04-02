@@ -15,6 +15,7 @@ const {
   findOpenIDUser,
   getBalanceConfig,
   isEmailDomainAllowed,
+  resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
@@ -468,9 +469,10 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     Object.assign(userinfo, providerUserinfo);
   }
 
-  const appConfig = await getAppConfig();
   const email = getOpenIdEmail(userinfo);
-  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+
+  const baseConfig = await getAppConfig({ baseOnly: true });
+  if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
     logger.error(
       `[OpenID Strategy] Authentication blocked - email domain not allowed [Identifier: ${email}]`,
     );
@@ -489,6 +491,15 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
   if (error) {
     throw new Error(ErrorTypes.AUTH_FAILED);
+  }
+
+  const appConfig = user?.tenantId ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
+
+  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+    logger.error(
+      `[OpenID Strategy] Authentication blocked - email domain not allowed [Identifier: ${email}]`,
+    );
+    throw new Error('Email domain not allowed');
   }
 
   const fullName = getFullName(userinfo);

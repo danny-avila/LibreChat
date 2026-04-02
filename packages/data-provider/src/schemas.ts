@@ -635,11 +635,15 @@ export const tMessageSchema = z.object({
       calibrationRatio: z
         .number()
         .optional()
-        .describe('EMA ratio of provider-reported vs local token estimates; seeds the pruner on subsequent runs'),
+        .describe(
+          'EMA ratio of provider-reported vs local token estimates; seeds the pruner on subsequent runs',
+        ),
       encoding: z
         .string()
         .optional()
-        .describe('Tokenizer encoding used when this ratio was computed (e.g. "claude", "o200k_base")'),
+        .describe(
+          'Tokenizer encoding used when this ratio was computed (e.g. "claude", "o200k_base")',
+        ),
     })
     .optional(),
 });
@@ -918,6 +922,30 @@ export const tQueryParamsSchema = tConversationSchema
       endpoint: extendedModelEndpointSchema.nullable(),
     }),
   );
+
+/** Narrowed preset schema for use in model specs — omits system/DB/deprecated fields */
+export const tModelSpecPresetSchema = tPresetSchema.omit({
+  conversationId: true,
+  presetId: true,
+  title: true,
+  defaultPreset: true,
+  order: true,
+  isArchived: true,
+  user: true,
+  messages: true,
+  tags: true,
+  file_ids: true,
+  expiredAt: true,
+  parentMessageId: true,
+  resendImages: true,
+  chatGptLabel: true,
+  presetOverride: true,
+  greeting: true,
+  iconURL: true,
+  spec: true,
+});
+
+export type TModelSpecPreset = z.infer<typeof tModelSpecPresetSchema>;
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 

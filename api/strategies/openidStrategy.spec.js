@@ -3,6 +3,8 @@ const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
+const { resolveAppConfigForUser, isEnabled } = require('@librechat/api');
+const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
 
 // --- Mocks ---
@@ -28,6 +30,7 @@ jest.mock('@librechat/api', () => ({
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),
+  resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
 }));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
@@ -140,7 +143,6 @@ describe('setupOpenId', () => {
   beforeEach(async () => {
     // Clear previous mock calls and reset implementations
     jest.clearAllMocks();
-    const { isEnabled } = require('@librechat/api');
     isEnabled.mockImplementation(jest.requireActual('@librechat/api').isEnabled);
 
     // Reset environment variables needed by the strategy
@@ -194,22 +196,26 @@ describe('setupOpenId', () => {
   });
 
   describe('clientMetadata construction in setupOpenId', () => {
-    it('sets token_endpoint_auth_method to none for PKCE without a client secret', async () => {
-      const openidClient = require('openid-client');
+    let openidClient;
+
+    beforeEach(() => {
+      openidClient = require('openid-client');
       openidClient.discovery.mockClear();
+    });
+
+    it('sets token_endpoint_auth_method to none for PKCE without a client secret', async () => {
       process.env.OPENID_USE_PKCE = 'true';
       delete process.env.OPENID_CLIENT_SECRET;
 
       await setupOpenId();
 
       const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
-      expect(metadata.client_secret).toBeUndefined();
       expect(metadata.token_endpoint_auth_method).toBe('none');
+      expect(metadata.client_secret).toBeUndefined();
     });
 
     it('leaves token_endpoint_auth_method unset for secret-based clients without nonce', async () => {
-      const openidClient = require('openid-client');
-      openidClient.discovery.mockClear();
+      process.env.OPENID_USE_PKCE = 'false';
       process.env.OPENID_CLIENT_SECRET = 'my-secret';
 
       await setupOpenId();
@@ -219,9 +225,8 @@ describe('setupOpenId', () => {
       expect(metadata.token_endpoint_auth_method).toBeUndefined();
     });
 
-    it('sets client_secret_post when nonce generation is enabled for secret-based clients', async () => {
-      const openidClient = require('openid-client');
-      openidClient.discovery.mockClear();
+    it('sets client_secret and client_secret_post when nonce generation is enabled', async () => {
+      process.env.OPENID_USE_PKCE = 'false';
       process.env.OPENID_GENERATE_NONCE = 'true';
       process.env.OPENID_CLIENT_SECRET = 'my-secret';
 
@@ -232,9 +237,7 @@ describe('setupOpenId', () => {
       expect(metadata.token_endpoint_auth_method).toBe('client_secret_post');
     });
 
-    it('treats a whitespace-only client secret as absent', async () => {
-      const openidClient = require('openid-client');
-      openidClient.discovery.mockClear();
+    it('treats whitespace-only secret as absent', async () => {
       process.env.OPENID_USE_PKCE = 'true';
       process.env.OPENID_CLIENT_SECRET = '   ';
 
@@ -245,9 +248,7 @@ describe('setupOpenId', () => {
       expect(metadata.token_endpoint_auth_method).toBe('none');
     });
 
-    it('does not force a public-client auth method when PKCE and a client secret are both configured', async () => {
-      const openidClient = require('openid-client');
-      openidClient.discovery.mockClear();
+    it('does not force an auth method when PKCE and a client secret are both configured without nonce', async () => {
       process.env.OPENID_USE_PKCE = 'true';
       process.env.OPENID_CLIENT_SECRET = 'my-secret';
 
@@ -1886,6 +1887,54 @@ describe('setupOpenId', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('OPENID_EMAIL_CLAIM="nonexistent_claim" not present in userinfo'),
       );
+    });
+  });
+
+  describe('Tenant-scoped config', () => {
+    it('should call resolveAppConfigForUser for tenant user', async () => {
+      const existingUser = {
+        _id: 'openid-tenant-user',
+        provider: 'openid',
+        openidId: '1234',
+        email: 'test@example.com',
+        tenantId: 'tenant-d',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existingUser);
+
+      await validate(tokenset);
+
+      expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, existingUser);
+    });
+
+    it('should use baseConfig for new user without calling resolveAppConfigForUser', async () => {
+      findUser.mockResolvedValue(null);
+
+      await validate(tokenset);
+
+      expect(resolveAppConfigForUser).not.toHaveBeenCalled();
+      expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+    });
+
+    it('should block login when tenant config restricts the domain', async () => {
+      const { isEmailDomainAllowed } = require('@librechat/api');
+      const existingUser = {
+        _id: 'openid-tenant-blocked',
+        provider: 'openid',
+        openidId: '1234',
+        email: 'test@example.com',
+        tenantId: 'tenant-restrict',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existingUser);
+      resolveAppConfigForUser.mockResolvedValue({
+        registration: { allowedDomains: ['other.com'] },
+      });
+      isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+      const { user, details } = await validate(tokenset);
+      expect(user).toBe(false);
+      expect(details).toEqual({ message: 'Email domain not allowed' });
     });
   });
 });

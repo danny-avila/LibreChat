@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
-import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
-import { useMessagesConversation } from '~/Providers';
-import UIResourceCarousel from '../Chat/Messages/Content/UIResourceCarousel';
 import type { UIResource } from 'librechat-data-provider';
+import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
+import UIResourceCarousel from '../Chat/Messages/Content/UIResourceCarousel';
+import { useOptionalMessagesConversation } from '~/Providers';
 
 interface MCPUIResourceCarouselProps {
   node: {
@@ -12,16 +12,11 @@ interface MCPUIResourceCarouselProps {
   };
 }
 
-/**
- * Component that renders multiple MCP UI resources in a carousel.
- * Works in both main app and share view.
- */
+/** Renders multiple MCP UI resources in a carousel. Works in chat, share, and search views. */
 export function MCPUIResourceCarousel(props: MCPUIResourceCarouselProps) {
-  const { conversation } = useMessagesConversation();
+  const { conversationId } = useOptionalMessagesConversation();
 
-  const conversationResourceMap = useConversationUIResources(
-    conversation?.conversationId ?? undefined,
-  );
+  const conversationResourceMap = useConversationUIResources(conversationId ?? undefined);
 
   const uiResources = useMemo(() => {
     const { resourceIds = [] } = props.node.properties;

@@ -1,4 +1,4 @@
-import { AuthType } from 'librechat-data-provider';
+import { AuthType, ErrorTypes } from 'librechat-data-provider';
 import type { BaseInitializeParams } from '~/types';
 
 const mockValidateEndpointURL = jest.fn();
@@ -67,6 +67,97 @@ function createParams(overrides: {
     db,
   };
 }
+
+describe('initializeCustom – Agents API user key resolution', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should fetch user key even when expiresAt is not in request body (Agents API flow)', async () => {
+    const { checkUserKeyExpiry } = jest.requireMock('~/utils');
+    const params = createParams({
+      apiKey: AuthType.USER_PROVIDED,
+      baseURL: 'https://api.example.com/v1',
+      userApiKey: 'sk-user-key',
+    });
+    // Simulate Agents API request body (no `key` field)
+    params.req.body = { model: 'agent_123' };
+
+    await initializeCustom(params);
+
+    expect(params.db.getUserKeyValues).toHaveBeenCalledWith({
+      userId: 'user-1',
+      name: 'test-custom',
+    });
+    expect(checkUserKeyExpiry).not.toHaveBeenCalled();
+    expect(mockGetOpenAIConfig).toHaveBeenCalledWith(
+      'sk-user-key',
+      expect.any(Object),
+      'test-custom',
+    );
+  });
+
+  it('should fetch user key for user-provided URL without expiresAt (Agents API flow)', async () => {
+    const { checkUserKeyExpiry } = jest.requireMock('~/utils');
+    const params = createParams({
+      apiKey: 'sk-system-key',
+      baseURL: AuthType.USER_PROVIDED,
+      userBaseURL: 'https://user-api.example.com/v1',
+    });
+    params.req.body = { model: 'agent_123' };
+
+    await initializeCustom(params);
+
+    expect(params.db.getUserKeyValues).toHaveBeenCalledWith({
+      userId: 'user-1',
+      name: 'test-custom',
+    });
+    expect(checkUserKeyExpiry).not.toHaveBeenCalled();
+  });
+
+  it('should still check key expiry when expiresAt is provided (UI flow)', async () => {
+    const { checkUserKeyExpiry } = jest.requireMock('~/utils');
+    const params = createParams({
+      apiKey: AuthType.USER_PROVIDED,
+      baseURL: 'https://api.example.com/v1',
+      userApiKey: 'sk-user-key',
+      expiresAt: '2099-01-01',
+    });
+
+    await initializeCustom(params);
+
+    expect(checkUserKeyExpiry).toHaveBeenCalledWith('2099-01-01', 'test-custom');
+    expect(params.db.getUserKeyValues).toHaveBeenCalled();
+  });
+
+  it('should throw EXPIRED_USER_KEY when expiresAt is expired', async () => {
+    const { checkUserKeyExpiry } = jest.requireMock('~/utils');
+    checkUserKeyExpiry.mockImplementationOnce(() => {
+      throw new Error(JSON.stringify({ type: ErrorTypes.EXPIRED_USER_KEY }));
+    });
+
+    const params = createParams({
+      apiKey: AuthType.USER_PROVIDED,
+      baseURL: 'https://api.example.com/v1',
+      userApiKey: 'sk-user-key',
+      expiresAt: '2020-01-01',
+    });
+
+    await expect(initializeCustom(params)).rejects.toThrow(ErrorTypes.EXPIRED_USER_KEY);
+    expect(params.db.getUserKeyValues).not.toHaveBeenCalled();
+  });
+
+  it('should NOT call getUserKeyValues when key and URL are system-defined', async () => {
+    const params = createParams({
+      apiKey: 'sk-system-key',
+      baseURL: 'https://api.provider.com/v1',
+    });
+
+    await initializeCustom(params);
+
+    expect(params.db.getUserKeyValues).not.toHaveBeenCalled();
+  });
+});
 
 describe('initializeCustom – SSRF guard wiring', () => {
   beforeEach(() => {

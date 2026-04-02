@@ -24,8 +24,10 @@ const SUPERSEDED_INDEXES: Record<string, string[]> = {
     'appleId_1',
   ],
   roles: ['name_1'],
-  conversations: ['conversationId_1_user_1'],
-  messages: ['messageId_1_user_1'],
+  agents: ['id_1'],
+  conversations: ['conversationId_1', 'conversationId_1_user_1'],
+  messages: ['messageId_1', 'messageId_1_user_1'],
+  presets: ['presetId_1'],
   agentcategories: ['value_1'],
   accessroles: ['accessRoleId_1'],
   conversationtags: ['tag_1_user_1'],
@@ -53,7 +55,7 @@ export async function dropSupersededTenantIndexes(
   const result: MigrationResult = { dropped: [], skipped: [], errors: [] };
 
   for (const [collectionName, indexNames] of Object.entries(SUPERSEDED_INDEXES)) {
-    const collection = connection.db.collection(collectionName);
+    const collection = connection.db!.collection(collectionName);
 
     let existingIndexes: Array<{ name?: string }>;
     try {

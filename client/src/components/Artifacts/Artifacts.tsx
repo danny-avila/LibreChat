@@ -1,15 +1,16 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
+import copy from 'copy-to-clipboard';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Code, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
 import ArtifactTabs from './ArtifactTabs';
-import { CopyCodeButton } from './Code';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -30,6 +31,7 @@ export default function Artifacts() {
   const [height, setHeight] = useState(90);
   const [isDragging, setIsDragging] = useState(false);
   const [blurAmount, setBlurAmount] = useState(0);
+  const [isCopied, setIsCopied] = useState(false);
   const dragStartY = useRef(0);
   const dragStartHeight = useRef(90);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
@@ -85,6 +87,16 @@ export default function Artifacts() {
     orderedArtifactIds,
     setCurrentArtifactId,
   } = useArtifacts();
+
+  const handleCopyArtifact = useCallback(() => {
+    const content = currentArtifact?.content ?? '';
+    if (!content) {
+      return;
+    }
+    copy(content, { format: 'text/plain' });
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 3000);
+  }, [currentArtifact?.content]);
 
   const handleDragStart = (e: React.PointerEvent) => {
     setIsDragging(true);
@@ -281,7 +293,7 @@ export default function Artifacts() {
                   }}
                 />
               )}
-              <CopyCodeButton content={currentArtifact.content ?? ''} />
+              <CopyButton isCopied={isCopied} iconOnly onClick={handleCopyArtifact} />
               <DownloadArtifact artifact={currentArtifact} />
               <Button
                 size="icon"

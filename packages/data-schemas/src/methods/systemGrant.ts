@@ -1,8 +1,9 @@
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
-import type { Types, Model, ClientSession } from 'mongoose';
-import type { SystemCapability } from '~/systemCapabilities';
+import type { Types, Model, ClientSession, FilterQuery } from 'mongoose';
+import type { SystemCapability } from '~/types/admin';
 import type { ISystemGrant } from '~/types';
-import { SystemCapabilities, CapabilityImplications } from '~/systemCapabilities';
+import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { normalizePrincipalId } from '~/utils/principal';
 import logger from '~/config/winston';
 
@@ -18,7 +19,40 @@ for (const [broad, implied] of Object.entries(CapabilityImplications)) {
   }
 }
 
+const baseCapabilityValues = new Set<string>(Object.values(SystemCapabilities));
+
+/**
+ * For a section/assignment capability like `manage:configs:endpoints` or
+ * `assign:configs:user`, returns all base capabilities that subsume it:
+ * the direct parent (`manage:configs`) plus any that imply the parent
+ * via `reverseImplications` (`manage:configs` has no reverse, but
+ * `read:configs` is implied by `manage:configs`—so `read:configs:endpoints`
+ * is satisfied by holding `manage:configs`).
+ */
+function getParentCapabilities(capability: string): string[] {
+  const lastColon = capability.lastIndexOf(':');
+  if (lastColon === -1) {
+    return [];
+  }
+  const parent = capability.slice(0, lastColon);
+  if (!baseCapabilityValues.has(parent)) {
+    return [];
+  }
+  const parents = [parent];
+  const implied = reverseImplications[parent as keyof typeof reverseImplications];
+  if (implied) {
+    parents.push(...implied);
+  }
+  return parents;
+}
+
 export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
+  function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
+    return tenantId != null
+      ? { $and: [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }] }
+      : { tenantId: { $exists: false } };
+  }
+
   /**
    * Check if any of the given principals holds a specific capability.
    * Follows the same principal-resolution pattern as AclEntry:
@@ -39,29 +73,97 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }): Promise<boolean> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const principalsQuery = principals
-      .filter((p) => p.principalType !== PrincipalType.PUBLIC)
-      .map((p) => ({ principalType: p.principalType, principalId: p.principalId }));
+      .filter(
+        (p): p is typeof p & { principalId: string | Types.ObjectId } =>
+          p.principalType !== PrincipalType.PUBLIC && p.principalId != null,
+      )
+      .map((p) => ({
+        principalType: p.principalType,
+        principalId: normalizePrincipalId(p.principalId, p.principalType),
+      }));
 
     if (!principalsQuery.length) {
       return false;
     }
 
     const impliedBy = reverseImplications[capability as keyof typeof reverseImplications] ?? [];
-    const capabilityQuery = impliedBy.length ? { $in: [capability, ...impliedBy] } : capability;
+    const parents = getParentCapabilities(capability);
+    const allMatches = [capability, ...impliedBy, ...parents];
+    const capabilityQuery = allMatches.length > 1 ? { $in: allMatches } : capability;
 
-    const query: Record<string, unknown> = {
+    const query: FilterQuery<ISystemGrant> = {
       $or: principalsQuery,
       capability: capabilityQuery,
+      ...tenantCondition(tenantId),
     };
-
-    if (tenantId != null) {
-      query.$and = [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }];
-    } else {
-      query.tenantId = { $exists: false };
-    }
 
     const doc = await SystemGrant.exists(query);
     return doc != null;
+  }
+
+  /**
+   * Returns the subset of `capabilities` that any of the given principals hold.
+   * Single DB round-trip — replaces N parallel `hasCapabilityForPrincipals` calls.
+   */
+  async function getHeldCapabilities({
+    principals,
+    capabilities,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>;
+    capabilities: SystemCapability[];
+    tenantId?: string;
+  }): Promise<Set<SystemCapability>> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const principalsQuery = principals
+      .filter(
+        (p): p is typeof p & { principalId: string | Types.ObjectId } =>
+          p.principalType !== PrincipalType.PUBLIC && p.principalId != null,
+      )
+      .map((p) => ({
+        principalType: p.principalType,
+        principalId: normalizePrincipalId(p.principalId, p.principalType as PrincipalType),
+      }));
+
+    if (!principalsQuery.length || !capabilities.length) {
+      return new Set();
+    }
+
+    const allCaps = new Set<string>([
+      ...capabilities,
+      ...capabilities.flatMap(
+        (cap) => reverseImplications[cap as keyof typeof reverseImplications] ?? [],
+      ),
+      ...capabilities.flatMap(getParentCapabilities),
+    ]);
+
+    const docs = await SystemGrant.find(
+      {
+        $or: principalsQuery,
+        capability: { $in: [...allCaps] },
+        ...tenantCondition(tenantId),
+      },
+      { capability: 1, _id: 0 },
+    ).lean();
+
+    const held = new Set<string>(docs.map((d) => d.capability));
+    const result = new Set<SystemCapability>();
+    for (const cap of capabilities) {
+      if (held.has(cap)) {
+        result.add(cap);
+        continue;
+      }
+      const implied = reverseImplications[cap as keyof typeof reverseImplications];
+      if (implied?.some((imp) => held.has(imp))) {
+        result.add(cap);
+        continue;
+      }
+      if (getParentCapabilities(cap).some((p) => held.has(p))) {
+        result.add(cap);
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -87,17 +189,12 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
 
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
 
-    const filter: Record<string, unknown> = {
+    const filter: FilterQuery<ISystemGrant> = {
       principalType,
       principalId: normalizedPrincipalId,
       capability,
+      tenantId: tenantId != null ? tenantId : { $exists: false },
     };
-
-    if (tenantId != null) {
-      filter.tenantId = tenantId;
-    } else {
-      filter.tenantId = { $exists: false };
-    }
 
     const update = {
       $set: {
@@ -149,17 +246,12 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
 
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
 
-    const filter: Record<string, unknown> = {
+    const filter: FilterQuery<ISystemGrant> = {
       principalType,
       principalId: normalizedPrincipalId,
       capability,
+      tenantId: tenantId != null ? tenantId : { $exists: false },
     };
-
-    if (tenantId != null) {
-      filter.tenantId = tenantId;
-    } else {
-      filter.tenantId = { $exists: false };
-    }
 
     const options = session ? { session } : {};
     await SystemGrant.deleteOne(filter, options);
@@ -180,22 +272,87 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }): Promise<ISystemGrant[]> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
 
-    const filter: Record<string, unknown> = {
+    const filter: FilterQuery<ISystemGrant> = {
       principalType,
       principalId: normalizePrincipalId(principalId, principalType),
+      ...tenantCondition(tenantId),
     };
 
-    if (tenantId != null) {
-      filter.$or = [{ tenantId }, { tenantId: { $exists: false } }];
-    } else {
-      filter.tenantId = { $exists: false };
+    return await SystemGrant.find(filter).lean();
+  }
+
+  const GRANTS_DEFAULT_LIMIT = 50;
+  const GRANTS_MAX_LIMIT = 200;
+
+  async function listGrants(options?: {
+    tenantId?: string;
+    principalTypes?: PrincipalType[];
+    limit?: number;
+    offset?: number;
+  }): Promise<ISystemGrant[]> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const limit = Math.min(GRANTS_MAX_LIMIT, Math.max(1, options?.limit ?? GRANTS_DEFAULT_LIMIT));
+    const offset = options?.offset ?? 0;
+    const filter: FilterQuery<ISystemGrant> = {
+      ...(options?.principalTypes?.length && { principalType: { $in: options.principalTypes } }),
+      ...tenantCondition(options?.tenantId),
+    };
+
+    return SystemGrant.find(filter)
+      .sort({ principalType: 1, capability: 1 })
+      .skip(offset)
+      .limit(limit)
+      .lean();
+  }
+
+  async function countGrants(options?: {
+    tenantId?: string;
+    principalTypes?: PrincipalType[];
+  }): Promise<number> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const filter: FilterQuery<ISystemGrant> = {
+      ...(options?.principalTypes?.length && { principalType: { $in: options.principalTypes } }),
+      ...tenantCondition(options?.tenantId),
+    };
+
+    return SystemGrant.countDocuments(filter);
+  }
+
+  async function getCapabilitiesForPrincipals({
+    principals,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: PrincipalType; principalId: string | Types.ObjectId }>;
+    tenantId?: string;
+  }): Promise<ISystemGrant[]> {
+    if (!principals.length) {
+      return [];
     }
+
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const principalsQuery = principals
+      .filter((p) => p.principalType !== PrincipalType.PUBLIC)
+      .map((p) => ({
+        principalType: p.principalType,
+        principalId: normalizePrincipalId(p.principalId, p.principalType),
+      }));
+
+    if (!principalsQuery.length) {
+      return [];
+    }
+
+    const filter: FilterQuery<ISystemGrant> = {
+      $or: principalsQuery,
+      ...tenantCondition(tenantId),
+    };
 
     return await SystemGrant.find(filter).lean();
   }
 
   /**
-   * Seed the ADMIN role with all system capabilities (no tenantId — single-instance mode).
+   * Seed the ADMIN role with all system capabilities.
+   * Context-agnostic: caller provides tenant context (e.g., `runAsSystem()` for
+   * startup, `tenantStorage.run()` for future per-tenant provisioning).
    * Idempotent and concurrency-safe: uses bulkWrite with ordered:false so parallel
    * server instances (K8s rolling deploy, PM2 cluster) do not race on E11000.
    * Retries up to 3 times with exponential backoff on transient failures.
@@ -225,7 +382,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
             upsert: true,
           },
         }));
-        await SystemGrant.bulkWrite(ops, { ordered: false });
+        await tenantSafeBulkWrite(SystemGrant, ops, { ordered: false });
         return;
       } catch (err) {
         if (attempt < maxRetries) {
@@ -246,12 +403,44 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
+  /**
+   * Delete system grants for a principal.
+   * Used for cascade cleanup when a principal (group, role) is deleted.
+   *
+   * When `tenantId` is provided, only grants scoped to **exactly** that
+   * tenant are removed — platform-level grants (no tenantId) are left
+   * intact so they continue to serve other tenants.
+   * When `tenantId` is omitted, ALL grants for the principal are removed
+   * regardless of tenant scope.
+   */
+  async function deleteGrantsForPrincipal(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    options?: { tenantId?: string; session?: ClientSession },
+  ): Promise<void> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
+
+    const filter: FilterQuery<ISystemGrant> = {
+      principalType,
+      principalId: normalizedPrincipalId,
+      ...(options?.tenantId != null && { tenantId: options.tenantId }),
+    };
+    const queryOptions = options?.session ? { session: options.session } : {};
+    await SystemGrant.deleteMany(filter, queryOptions);
+  }
+
   return {
     grantCapability,
     seedSystemGrants,
     revokeCapability,
     hasCapabilityForPrincipals,
+    getHeldCapabilities,
+    listGrants,
+    countGrants,
     getCapabilitiesForPrincipal,
+    getCapabilitiesForPrincipals,
+    deleteGrantsForPrincipal,
   };
 }
 

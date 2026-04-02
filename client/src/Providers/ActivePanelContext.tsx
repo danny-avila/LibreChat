@@ -35,3 +35,11 @@ export function useActivePanel() {
   }
   return context;
 }
+
+/** Returns `active` when it matches a known link, otherwise the first link's id. */
+export function resolveActivePanel(active: string, links: { id: string }[]): string {
+  if (links.length > 0 && links.some((l) => l.id === active)) {
+    return active;
+  }
+  return links[0]?.id ?? active;
+}

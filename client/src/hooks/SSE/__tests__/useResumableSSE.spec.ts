@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants, ErrorTypes, LocalStorageKeys } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { TSubmission } from 'librechat-data-provider';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -34,7 +34,13 @@ jest.mock('sse.js', () => ({
 }));
 
 const mockSetQueryData = jest.fn();
-const mockQueryClient = { setQueryData: mockSetQueryData };
+const mockInvalidateQueries = jest.fn();
+const mockRemoveQueries = jest.fn();
+const mockQueryClient = {
+  setQueryData: mockSetQueryData,
+  invalidateQueries: mockInvalidateQueries,
+  removeQueries: mockRemoveQueries,
+};
 
 jest.mock('@tanstack/react-query', () => ({
   ...jest.requireActual('@tanstack/react-query'),
@@ -63,6 +69,7 @@ jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => ({ data: { balance: { enabled: false } } }),
   useGetUserBalance: () => ({ refetch: jest.fn() }),
   queueTitleGeneration: jest.fn(),
+  streamStatusQueryKey: (conversationId: string) => ['streamStatus', conversationId],
 }));
 
 const mockErrorHandler = jest.fn();
@@ -162,6 +169,11 @@ describe('useResumableSSE - 404 error path', () => {
   beforeEach(() => {
     mockSSEInstances.length = 0;
     localStorage.clear();
+    mockErrorHandler.mockClear();
+    mockClearStepMaps.mockClear();
+    mockSetIsSubmitting.mockClear();
+    mockInvalidateQueries.mockClear();
+    mockRemoveQueries.mockClear();
   });
 
   const seedDraft = (conversationId: string) => {
@@ -200,19 +212,18 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
-  it('calls errorHandler with STREAM_EXPIRED error type on 404', async () => {
+  it('invalidates message cache and clears stream status on 404 instead of showing error', async () => {
     const { unmount } = await render404Scenario(CONV_ID);
 
-    expect(mockErrorHandler).toHaveBeenCalledTimes(1);
-    const call = mockErrorHandler.mock.calls[0][0];
-    expect(call.data).toBeDefined();
-    const parsed = JSON.parse(call.data.text);
-    expect(parsed.type).toBe(ErrorTypes.STREAM_EXPIRED);
-    expect(call.submission).toEqual(
-      expect.objectContaining({
-        conversation: expect.objectContaining({ conversationId: CONV_ID }),
-      }),
-    );
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['messages', CONV_ID],
+    });
+    expect(mockRemoveQueries).toHaveBeenCalledWith({
+      queryKey: ['streamStatus', CONV_ID],
+    });
+    expect(mockClearStepMaps).toHaveBeenCalled();
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
     unmount();
   });
 

@@ -4,7 +4,9 @@ const { getAppConfig } = require('~/server/services/Config');
 const configMiddleware = async (req, res, next) => {
   try {
     const userRole = req.user?.role;
-    req.config = await getAppConfig({ role: userRole });
+    const userId = req.user?.id;
+    const tenantId = req.user?.tenantId;
+    req.config = await getAppConfig({ role: userRole, userId, tenantId });
 
     next();
   } catch (error) {
