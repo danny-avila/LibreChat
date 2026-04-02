@@ -15,6 +15,7 @@ import type {
 } from '@librechat/agents';
 import type { Agent, SummarizationConfig } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
+import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
@@ -416,7 +417,16 @@ export async function createRun({
     return agentInput;
   };
 
-  const agentInputs = await Promise.all(agents.map(buildAgentContext));
+  const settled = await Promise.allSettled(agents.map(buildAgentContext));
+  const agentInputs: AgentInputs[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    if (result.status === 'fulfilled') {
+      agentInputs.push(result.value);
+    } else {
+      logger.error(`[createRun] buildAgentContext failed for agent ${agents[i].id}`, result.reason);
+    }
+  }
 
   const graphConfig: RunConfig['graphConfig'] = {
     signal,
