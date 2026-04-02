@@ -3,6 +3,7 @@
  * Tests that recordCollectedUsage is called correctly for token spending
  */
 
+const mockProcessStream = jest.fn().mockResolvedValue(undefined);
 const mockSpendTokens = jest.fn().mockResolvedValue({});
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue({});
 const mockRecordCollectedUsage = jest
@@ -35,7 +36,7 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   writeSSE: jest.fn(),
   createRun: jest.fn().mockResolvedValue({
-    processStream: jest.fn().mockResolvedValue(undefined),
+    processStream: mockProcessStream,
   }),
   createChunk: jest.fn().mockReturnValue({}),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
@@ -68,6 +69,7 @@ jest.mock('@librechat/api', () => ({
     toolCalls: new Map(),
     usage: { promptTokens: 100, completionTokens: 50, reasoningTokens: 0 },
   }),
+  resolveRecursionLimit: jest.fn().mockReturnValue(50),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
   isChatCompletionValidationFailure: jest.fn().mockReturnValue(false),
 }));
@@ -284,6 +286,38 @@ describe('OpenAIChatCompletionController', () => {
           model: 'gpt-4',
         }),
       );
+    });
+  });
+
+  describe('recursionLimit resolution', () => {
+    it('should pass resolveRecursionLimit result to processStream config', async () => {
+      const { resolveRecursionLimit } = require('@librechat/api');
+      resolveRecursionLimit.mockReturnValueOnce(75);
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockProcessStream).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ recursionLimit: 75 }),
+        expect.anything(),
+      );
+    });
+
+    it('should call resolveRecursionLimit with agentsEConfig and agent', async () => {
+      const { resolveRecursionLimit } = require('@librechat/api');
+      const { getAgent } = require('~/models');
+      const mockAgent = { id: 'agent-123', name: 'Test', recursion_limit: 200 };
+      getAgent.mockResolvedValueOnce(mockAgent);
+
+      req.config = {
+        endpoints: {
+          agents: { recursionLimit: 100, maxRecursionLimit: 150, allowedProviders: [] },
+        },
+      };
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(resolveRecursionLimit).toHaveBeenCalledWith(req.config.endpoints.agents, mockAgent);
     });
   });
 });
