@@ -113,6 +113,10 @@ export async function encodeAndFormatDocuments(
   const isBedrock = provider === Providers.BEDROCK;
   const isDocSupported = isDocumentSupportedProvider(provider);
 
+  if (!isDocSupported && !isBedrock) {
+    return result;
+  }
+
   const processableFiles = isBedrock
     ? files.filter((file) => isBedrockDocumentType(file.type))
     : files;
