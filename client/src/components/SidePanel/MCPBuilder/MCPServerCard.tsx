@@ -1,8 +1,10 @@
-import { useState, useRef } from 'react';
-import { MCPIcon } from '@librechat/client';
+import { useState, useRef, useCallback } from 'react';
+import { useAtom } from 'jotai';
+import { MCPIcon, Switch, TooltipAnchor } from '@librechat/client';
 import { PermissionBits, hasPermissions } from 'librechat-data-provider';
 import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusIcon';
 import type { MCPServerDefinition } from '~/hooks';
+import { mcpDefaultEnabledAtom } from '~/store';
 import MCPServerDialog from './MCPServerDialog';
 import { getStatusDotColor } from './MCPStatusBadge';
 import MCPCardActions from './MCPCardActions';
@@ -42,6 +44,16 @@ export default function MCPServerCard({
     onCancel,
     hasCustomUserVars = false,
   } = statusIconProps;
+
+  const [defaultEnabled, setDefaultEnabled] = useAtom(mcpDefaultEnabledAtom);
+  const isDefaultEnabled = defaultEnabled.includes(server.serverName);
+  const toggleDefaultEnabled = useCallback(() => {
+    setDefaultEnabled((prev) =>
+      prev.includes(server.serverName)
+        ? prev.filter((name) => name !== server.serverName)
+        : [...prev, server.serverName],
+    );
+  }, [server.serverName, setDefaultEnabled]);
 
   const canEditThisServer = hasPermissions(server.effectivePermissions, PermissionBits.EDIT);
   const displayName = server.config?.title || server.serverName;
@@ -126,6 +138,20 @@ export default function MCPServerCard({
           <span className="truncate text-sm font-medium text-text-primary">{displayName}</span>
           {description && <p className="truncate text-xs text-text-secondary">{description}</p>}
         </div>
+
+        {/* Default-enabled toggle */}
+        <TooltipAnchor
+          description={`Enable ${displayName} by default in new chats`}
+          side="top"
+          role="presentation"
+        >
+          <Switch
+            checked={isDefaultEnabled}
+            onCheckedChange={toggleDefaultEnabled}
+            aria-label={`Enable ${displayName} by default in new chats`}
+            className="flex-shrink-0"
+          />
+        </TooltipAnchor>
 
         {/* Actions */}
         <div className="flex-shrink-0">
