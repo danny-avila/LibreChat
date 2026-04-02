@@ -44,7 +44,7 @@ function categorizeFile(
     file.type &&
     mergedFileConfig &&
     endpointFileConfig?.supportedMimeTypes &&
-    mergedFileConfig.checkType(file.type, endpointFileConfig.supportedMimeTypes)
+    mergedFileConfig.checkType?.(file.type, endpointFileConfig.supportedMimeTypes)
   ) {
     return 'documents';
   }
