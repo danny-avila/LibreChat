@@ -805,10 +805,10 @@ async function setupOpenId() {
     );
 
     logger.info(`[openidStrategy] OpenID authentication configuration`, {
+      usePKCE,
+      hasClientSecret: !!clientSecret,
+      tokenEndpointAuthMethod: clientMetadata.token_endpoint_auth_method ?? '(library default)',
       generateNonce: shouldGenerateNonce,
-      reason: shouldGenerateNonce
-        ? 'OPENID_GENERATE_NONCE=true - Will generate nonce and use explicit metadata for federated providers'
-        : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
     });
 
     const openidLogin = new CustomOpenIDStrategy(
@@ -817,7 +817,7 @@ async function setupOpenId() {
         scope: process.env.OPENID_SCOPE,
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
-        usePKCE: isEnabled(process.env.OPENID_USE_PKCE),
+        usePKCE,
       },
       createOpenIDCallback(),
     );

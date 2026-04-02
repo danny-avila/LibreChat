@@ -73,7 +73,7 @@ const configureSocialLogins = async (app) => {
   }
   if (
     process.env.OPENID_CLIENT_ID &&
-    (isEnabled(process.env.OPENID_USE_PKCE) || process.env.OPENID_CLIENT_SECRET) &&
+    (isEnabled(process.env.OPENID_USE_PKCE) || process.env.OPENID_CLIENT_SECRET?.trim()) &&
     process.env.OPENID_ISSUER &&
     process.env.OPENID_SCOPE &&
     process.env.OPENID_SESSION_SECRET

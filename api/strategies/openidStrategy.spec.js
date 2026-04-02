@@ -140,6 +140,8 @@ describe('setupOpenId', () => {
   beforeEach(async () => {
     // Clear previous mock calls and reset implementations
     jest.clearAllMocks();
+    const { isEnabled } = require('@librechat/api');
+    isEnabled.mockImplementation(jest.requireActual('@librechat/api').isEnabled);
 
     // Reset environment variables needed by the strategy
     process.env.OPENID_ISSUER = 'https://fake-issuer.com';
@@ -159,6 +161,7 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_EMAIL_CLAIM;
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
+    delete process.env.OPENID_GENERATE_NONCE;
 
     // Default jwtDecode mock returns a token that includes the required role.
     jwtDecode.mockReturnValue({
@@ -188,6 +191,72 @@ describe('setupOpenId', () => {
     // (not 'openidAdmin' which requires existing users)
     await setupOpenId();
     verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+  });
+
+  describe('clientMetadata construction in setupOpenId', () => {
+    it('sets token_endpoint_auth_method to none for PKCE without a client secret', async () => {
+      const openidClient = require('openid-client');
+      openidClient.discovery.mockClear();
+      process.env.OPENID_USE_PKCE = 'true';
+      delete process.env.OPENID_CLIENT_SECRET;
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.client_secret).toBeUndefined();
+      expect(metadata.token_endpoint_auth_method).toBe('none');
+    });
+
+    it('leaves token_endpoint_auth_method unset for secret-based clients without nonce', async () => {
+      const openidClient = require('openid-client');
+      openidClient.discovery.mockClear();
+      process.env.OPENID_CLIENT_SECRET = 'my-secret';
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.client_secret).toBe('my-secret');
+      expect(metadata.token_endpoint_auth_method).toBeUndefined();
+    });
+
+    it('sets client_secret_post when nonce generation is enabled for secret-based clients', async () => {
+      const openidClient = require('openid-client');
+      openidClient.discovery.mockClear();
+      process.env.OPENID_GENERATE_NONCE = 'true';
+      process.env.OPENID_CLIENT_SECRET = 'my-secret';
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.client_secret).toBe('my-secret');
+      expect(metadata.token_endpoint_auth_method).toBe('client_secret_post');
+    });
+
+    it('treats a whitespace-only client secret as absent', async () => {
+      const openidClient = require('openid-client');
+      openidClient.discovery.mockClear();
+      process.env.OPENID_USE_PKCE = 'true';
+      process.env.OPENID_CLIENT_SECRET = '   ';
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.client_secret).toBeUndefined();
+      expect(metadata.token_endpoint_auth_method).toBe('none');
+    });
+
+    it('does not force a public-client auth method when PKCE and a client secret are both configured', async () => {
+      const openidClient = require('openid-client');
+      openidClient.discovery.mockClear();
+      process.env.OPENID_USE_PKCE = 'true';
+      process.env.OPENID_CLIENT_SECRET = 'my-secret';
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.client_secret).toBe('my-secret');
+      expect(metadata.token_endpoint_auth_method).toBeUndefined();
+    });
   });
 
   it('should create a new user with correct username when preferred_username claim exists', async () => {
