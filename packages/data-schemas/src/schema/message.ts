@@ -5,7 +5,6 @@ const messageSchema: Schema<IMessage> = new Schema(
   {
     messageId: {
       type: String,
-      unique: true,
       required: true,
       index: true,
       meiliIndex: true,

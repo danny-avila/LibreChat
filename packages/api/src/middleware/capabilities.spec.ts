@@ -11,6 +11,7 @@ import { generateCapabilityCheck } from './capabilities';
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
   logger: {
+    warn: jest.fn(),
     error: jest.fn(),
   },
 }));

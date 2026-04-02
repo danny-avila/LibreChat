@@ -320,23 +320,43 @@ describe('applyTenantIsolation', () => {
       await TestModel.create({ name: 'guarded', tenantId: 'tenant-a' });
     });
 
-    it('blocks $set of tenantId via findOneAndUpdate', async () => {
+    it('throws on cross-tenant $set of tenantId', async () => {
       await expect(
         tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
           TestModel.findOneAndUpdate({ name: 'guarded' }, { $set: { tenantId: 'tenant-b' } }),
         ),
-      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
+      ).rejects.toThrow('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
     });
 
-    it('blocks $unset of tenantId via updateOne', async () => {
-      await expect(
-        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
-          TestModel.updateOne({ name: 'guarded' }, { $unset: { tenantId: 1 } }),
-        ),
-      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
+    it('strips same-tenant tenantId from $set', async () => {
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOneAndUpdate(
+          { name: 'guarded' },
+          { $set: { tenantId: 'tenant-a', name: 'updated-same' } },
+          { new: true },
+        ).lean(),
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.name).toBe('updated-same');
+      expect(result!.tenantId).toBe('tenant-a');
     });
 
-    it('blocks top-level tenantId in update payload', async () => {
+    it('strips tenantId from $unset', async () => {
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOneAndUpdate(
+          { name: 'guarded' },
+          { $unset: { tenantId: 1 }, $set: { name: 'unset-attempt' } },
+          { new: true },
+        ).lean(),
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.name).toBe('unset-attempt');
+      expect(result!.tenantId).toBe('tenant-a');
+    });
+
+    it('throws on cross-tenant top-level tenantId', async () => {
       await expect(
         tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
           TestModel.updateOne({ name: 'guarded' }, { tenantId: 'tenant-b' } as Record<
@@ -344,15 +364,63 @@ describe('applyTenantIsolation', () => {
             string
           >),
         ),
-      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
+      ).rejects.toThrow('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
     });
 
-    it('blocks $setOnInsert of tenantId via updateMany', async () => {
+    it('strips same-tenant top-level tenantId', async () => {
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOneAndUpdate(
+          { name: 'guarded' },
+          { tenantId: 'tenant-a', name: 'top-level-same' } as Record<string, string>,
+          { new: true },
+        ).lean(),
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.name).toBe('top-level-same');
+      expect(result!.tenantId).toBe('tenant-a');
+    });
+
+    it('throws on cross-tenant $setOnInsert of tenantId', async () => {
       await expect(
         tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
           TestModel.updateMany({}, { $setOnInsert: { tenantId: 'tenant-b' } }),
         ),
-      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
+      ).rejects.toThrow('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
+    });
+
+    it('strips same-tenant tenantId from $setOnInsert on upsert', async () => {
+      const uniqueName = `upsert-soi-${Date.now()}`;
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.updateOne(
+          { name: uniqueName },
+          { $setOnInsert: { tenantId: 'tenant-a', name: uniqueName } },
+          { upsert: true },
+        ),
+      );
+
+      const doc = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOne({ name: uniqueName }).lean(),
+      );
+      expect(doc).not.toBeNull();
+      expect(doc!.tenantId).toBe('tenant-a');
+    });
+
+    it('strips same-tenant tenantId from $set via findByIdAndUpdate', async () => {
+      const doc = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOne({ name: 'guarded' }).lean(),
+      );
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findByIdAndUpdate(
+          doc!._id,
+          { $set: { tenantId: 'tenant-a', name: 'byId-same' } },
+          { new: true },
+        ).lean(),
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.name).toBe('byId-same');
+      expect(result!.tenantId).toBe('tenant-a');
     });
 
     it('allows updates that do not touch tenantId', async () => {
@@ -382,10 +450,48 @@ describe('applyTenantIsolation', () => {
       expect(result!.tenantId).toBe('tenant-b');
     });
 
-    it('blocks tenantId mutation even without tenant context', async () => {
-      await expect(
-        TestModel.updateOne({ name: 'guarded' }, { $set: { tenantId: 'tenant-b' } }),
-      ).rejects.toThrow('[TenantIsolation] Modifying tenantId via update operators is not allowed');
+    it('strips tenantId from $set without tenant context', async () => {
+      await TestModel.updateOne(
+        { name: 'guarded' },
+        { $set: { tenantId: 'tenant-b', name: 'no-ctx' } },
+      );
+
+      const doc = await TestModel.findOne({ name: 'no-ctx' }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc!.tenantId).toBe('tenant-a');
+    });
+
+    it('strips tenantId from $rename without tenant context', async () => {
+      await TestModel.updateOne({ name: 'guarded' }, { $rename: { tenantId: 'oldTenant' } });
+
+      const doc = await TestModel.findOne({ name: 'guarded' }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc!.tenantId).toBe('tenant-a');
+    });
+
+    it('no-ops when update contains only tenantId', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.updateOne({ name: 'guarded' }, { $set: { tenantId: 'tenant-a' } }),
+      );
+
+      const doc = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOne({ name: 'guarded' }).lean(),
+      );
+      expect(doc).not.toBeNull();
+      expect(doc!.name).toBe('guarded');
+      expect(doc!.tenantId).toBe('tenant-a');
+    });
+
+    it('no-ops when top-level update contains only tenantId', async () => {
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.findOneAndUpdate(
+          { name: 'guarded' },
+          { tenantId: 'tenant-a' } as Record<string, string>,
+          { new: true },
+        ).lean(),
+      );
+
+      expect(result).toBeNull();
     });
 
     it('blocks tenantId in replaceOne replacement document', async () => {

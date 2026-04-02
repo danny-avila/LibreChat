@@ -37,6 +37,7 @@ const {
   getMultiplier,
   getTransactions,
   findBalanceByUser,
+  upsertBalanceFields,
   createAutoRefillTransaction,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
@@ -169,7 +170,14 @@ const chatV2 = async (req, res) => {
             amount: promptTokens,
           },
         },
-        { findBalanceByUser, getMultiplier, createAutoRefillTransaction, logViolation },
+        {
+          findBalanceByUser,
+          getMultiplier,
+          createAutoRefillTransaction,
+          logViolation,
+          balanceConfig,
+          upsertBalanceFields,
+        },
       );
     };
 

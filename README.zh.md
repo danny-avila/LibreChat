@@ -1,4 +1,4 @@
-<!-- Last synced with README.md: 2026-03-20 (e442984364db02163f3cc3ecb7b2ee5efba66fb9) -->
+<!-- Last synced with README.md: 2026-03-28 (cae3888) -->
 
 <p align="center">
   <a href="https://librechat.ai">
@@ -34,7 +34,7 @@
 </p>
 
 <p align="center">
-<a href="https://railway.com/deploy/b5k2mn?referralCode=HI9hWz">
+<a href="https://railway.com/deploy/librechat-official?referralCode=HI9hWz&utm_medium=integration&utm_source=readme&utm_campaign=librechat">
   <img src="https://railway.com/button.svg" alt="Deploy on Railway" height="30">
 </a>
 <a href="https://zeabur.com/templates/0X2ZY8">

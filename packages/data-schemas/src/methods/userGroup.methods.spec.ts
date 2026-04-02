@@ -600,6 +600,155 @@ describe('UserGroup Methods - Detailed Tests', () => {
     });
   });
 
+  describe('listGroups', () => {
+    beforeEach(async () => {
+      await Group.create([
+        { name: 'Beta', source: 'local', memberIds: [], email: 'beta@test.com' },
+        { name: 'Alpha', source: 'local', memberIds: [], description: 'first group' },
+        { name: 'Gamma', source: 'entra', idOnTheSource: 'ext-g', memberIds: [] },
+      ]);
+    });
+
+    test('returns groups sorted by name', async () => {
+      const groups = await methods.listGroups();
+
+      expect(groups).toHaveLength(3);
+      expect(groups[0].name).toBe('Alpha');
+      expect(groups[1].name).toBe('Beta');
+      expect(groups[2].name).toBe('Gamma');
+    });
+
+    test('filters by source', async () => {
+      const groups = await methods.listGroups({ source: 'entra' });
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].name).toBe('Gamma');
+    });
+
+    test('filters by search (name)', async () => {
+      const groups = await methods.listGroups({ search: 'alpha' });
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].name).toBe('Alpha');
+    });
+
+    test('filters by search (email)', async () => {
+      const groups = await methods.listGroups({ search: 'beta@test' });
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].name).toBe('Beta');
+    });
+
+    test('filters by search (description)', async () => {
+      const groups = await methods.listGroups({ search: 'first group' });
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].name).toBe('Alpha');
+    });
+
+    test('respects limit and offset', async () => {
+      const groups = await methods.listGroups({ limit: 1, offset: 1 });
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].name).toBe('Beta');
+    });
+
+    test('returns empty for no matches', async () => {
+      const groups = await methods.listGroups({ search: 'nonexistent' });
+
+      expect(groups).toHaveLength(0);
+    });
+  });
+
+  describe('countGroups', () => {
+    beforeEach(async () => {
+      await Group.create([
+        { name: 'A', source: 'local', memberIds: [] },
+        { name: 'B', source: 'local', memberIds: [] },
+        { name: 'C', source: 'entra', idOnTheSource: 'ext-c', memberIds: [] },
+      ]);
+    });
+
+    test('returns total count', async () => {
+      const count = await methods.countGroups();
+
+      expect(count).toBe(3);
+    });
+
+    test('respects source filter', async () => {
+      const count = await methods.countGroups({ source: 'local' });
+
+      expect(count).toBe(2);
+    });
+
+    test('respects search filter', async () => {
+      const count = await methods.countGroups({ search: 'A' });
+
+      expect(count).toBe(1);
+    });
+  });
+
+  describe('deleteGroup', () => {
+    test('returns deleted group', async () => {
+      const group = await Group.create({ name: 'ToDelete', source: 'local', memberIds: [] });
+
+      const deleted = await methods.deleteGroup(group._id as mongoose.Types.ObjectId);
+
+      expect(deleted).toBeDefined();
+      expect(deleted?.name).toBe('ToDelete');
+      const remaining = await Group.findById(group._id);
+      expect(remaining).toBeNull();
+    });
+
+    test('returns null for non-existent ID', async () => {
+      const fakeId = new mongoose.Types.ObjectId();
+      const result = await methods.deleteGroup(fakeId);
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('removeMemberById', () => {
+    test('removes member from memberIds array', async () => {
+      const group = await Group.create({
+        name: 'Test',
+        source: 'local',
+        memberIds: ['m1', 'm2', 'm3'],
+      });
+
+      const updated = await methods.removeMemberById(
+        group._id as mongoose.Types.ObjectId,
+        'm2',
+      );
+
+      expect(updated).toBeDefined();
+      expect(updated?.memberIds).toEqual(['m1', 'm3']);
+    });
+
+    test('is idempotent when memberId not present', async () => {
+      const group = await Group.create({
+        name: 'Test',
+        source: 'local',
+        memberIds: ['m1'],
+      });
+
+      const updated = await methods.removeMemberById(
+        group._id as mongoose.Types.ObjectId,
+        'nonexistent',
+      );
+
+      expect(updated).toBeDefined();
+      expect(updated?.memberIds).toEqual(['m1']);
+    });
+
+    test('returns null for non-existent group', async () => {
+      const fakeId = new mongoose.Types.ObjectId();
+      const result = await methods.removeMemberById(fakeId, 'any-id');
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('sortPrincipalsByRelevance', () => {
     test('should sort principals by relevance score', async () => {
       const principals = [

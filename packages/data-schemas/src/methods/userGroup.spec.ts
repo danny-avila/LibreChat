@@ -496,7 +496,7 @@ describe('userGroup methods', () => {
     it('returns the updated user document', async () => {
       const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
       const { user: updatedUser } = await methods.syncUserEntraGroups(user._id, []);
-      expect(updatedUser._id.toString()).toBe(user._id.toString());
+      expect((updatedUser._id as Types.ObjectId).toString()).toBe(user._id.toString());
     });
   });
 
