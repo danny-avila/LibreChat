@@ -56,13 +56,16 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
   });
 
   /** Helper to create a mock request with file config */
-  const createMockRequest = (fileSizeLimit?: number): Partial<AppConfig> => ({
+  const createMockRequest = (
+    fileSizeLimit?: number,
+    provider: string = Providers.OPENAI,
+  ): Partial<AppConfig> => ({
     config:
       fileSizeLimit !== undefined
         ? {
             fileConfig: {
               endpoints: {
-                [Providers.OPENAI]: {
+                [provider]: {
                   fileSizeLimit,
                 },
               },
@@ -745,6 +748,237 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         filename: 'test.pdf',
         file_data: `data:application/pdf;base64,${mockContent}`,
       });
+    });
+  });
+
+  describe('Generic document encoding path', () => {
+    it('should format text/plain for Anthropic with citations enabled', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockDocFile(1, 'text/plain', 'notes.txt');
+
+      const mockContent = Buffer.from('plain text content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.ANTHROPIC },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: 'text/plain',
+          data: mockContent,
+        },
+        citations: { enabled: true },
+        context: 'File: "notes.txt"',
+      });
+      expect(result.files).toHaveLength(1);
+    });
+
+    it('should format text/html for Anthropic with citations enabled', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockDocFile(1, 'text/html', 'page.html');
+
+      const mockContent = Buffer.from('<html>content</html>').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.ANTHROPIC },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        source: { type: 'base64', media_type: 'text/html', data: mockContent },
+        citations: { enabled: true },
+      });
+    });
+
+    it('should format application/json for Anthropic without citations', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockDocFile(1, 'application/json', 'data.json');
+
+      const mockContent = Buffer.from('{"key":"value"}').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.ANTHROPIC },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).not.toHaveProperty('citations');
+    });
+
+    it('should format text/csv for OpenAI responses API', async () => {
+      const req = createMockRequest(15) as ServerRequest;
+      const file = createMockDocFile(1, 'text/csv', 'data.csv');
+
+      const mockContent = Buffer.from('a,b\n1,2').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.OPENAI, useResponsesApi: true },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'input_file',
+        filename: 'data.csv',
+        file_data: `data:text/csv;base64,${mockContent}`,
+      });
+      expect(result.files).toHaveLength(1);
+    });
+
+    it('should format XLSX for Google/VertexAI as media block', async () => {
+      const req = createMockRequest(25) as ServerRequest;
+      const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const file = createMockDocFile(2, mimeType, 'report.xlsx');
+
+      const mockContent = Buffer.from('xlsx-binary').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.GOOGLE },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'media',
+        mimeType,
+        data: mockContent,
+      });
+      expect(result.files).toHaveLength(1);
+    });
+
+    it('should format text/plain for standard OpenAI-like provider as file block', async () => {
+      const req = createMockRequest(15) as ServerRequest;
+      const file = createMockDocFile(1, 'text/plain', 'readme.txt');
+
+      const mockContent = Buffer.from('readme content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.OPENAI },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'file',
+        file: {
+          filename: 'readme.txt',
+          file_data: `data:text/plain;base64,${mockContent}`,
+        },
+      });
+      expect(result.files).toHaveLength(1);
+    });
+
+    it('should skip non-Bedrock-document types for Bedrock provider', async () => {
+      const req = createMockRequest() as ServerRequest;
+      const file = createMockDocFile(1, 'application/zip', 'archive.zip');
+
+      const mockContent = Buffer.from('zip-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.BEDROCK },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(0);
+      expect(result.files).toHaveLength(0);
+    });
+
+    it('should throw when generic file exceeds configured size limit', async () => {
+      const req = createMockRequest(1, Providers.ANTHROPIC) as ServerRequest;
+      const file = createMockDocFile(2, 'text/plain', 'large.txt');
+
+      const largeContent = Buffer.alloc(2 * 1024 * 1024).toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: largeContent,
+        metadata: file,
+      });
+
+      await expect(
+        encodeAndFormatDocuments(
+          req,
+          [file],
+          { provider: Providers.ANTHROPIC },
+          mockStrategyFunctions,
+        ),
+      ).rejects.toThrow('File size');
+    });
+
+    it('should not push metadata when provider has no handler', async () => {
+      const req = createMockRequest(15) as ServerRequest;
+      const file = createMockDocFile(1, 'text/plain', 'test.txt');
+
+      const mockContent = Buffer.from('content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.AZURE as Providers },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(0);
+      expect(result.files).toHaveLength(0);
     });
   });
 });
