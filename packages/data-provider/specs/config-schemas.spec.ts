@@ -1,9 +1,9 @@
 import {
-  configSchema,
-  endpointSchema,
   paramDefinitionSchema,
   agentsEndpointSchema,
   azureEndpointSchema,
+  endpointSchema,
+  configSchema,
 } from '../src/config';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
 
@@ -197,12 +197,6 @@ describe('endpointSchema deprecated fields', () => {
     baseURL: 'https://api.example.com',
     models: { default: ['model-1'] },
   };
-  const nestedAddParams = {
-    provider: {
-      only: ['z-ai'],
-      quantizations: ['int4'],
-    },
-  };
 
   it('silently strips deprecated summarize field', () => {
     const result = endpointSchema.safeParse({
@@ -227,6 +221,21 @@ describe('endpointSchema deprecated fields', () => {
       expect(result.data).not.toHaveProperty('customOrder');
     }
   });
+});
+
+describe('endpointSchema addParams validation', () => {
+  const validEndpoint = {
+    name: 'CustomEndpoint',
+    apiKey: 'test-key',
+    baseURL: 'https://api.example.com',
+    models: { default: ['model-1'] },
+  };
+  const nestedAddParams = {
+    provider: {
+      only: ['z-ai'],
+      quantizations: ['int4'],
+    },
+  };
 
   it('accepts nested addParams objects and arrays', () => {
     const result = endpointSchema.safeParse({
@@ -249,6 +258,31 @@ describe('endpointSchema deprecated fields', () => {
             addParams: nestedAddParams,
           },
         ],
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts boolean web_search in addParams', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      addParams: {
+        provider: {
+          only: ['z-ai'],
+        },
+        web_search: true,
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts scalar addParams values', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      addParams: {
+        model: 'custom-model',
+        retries: 2,
+        metadata: null,
       },
     });
     expect(result.success).toBe(true);
@@ -345,6 +379,25 @@ describe('azureEndpointSchema', () => {
         },
       });
     }
+  });
+
+  it('accepts boolean web_search in azure addParams', () => {
+    const result = azureEndpointSchema.safeParse({
+      groups: [
+        {
+          group: 'test-group',
+          apiKey: 'test-key',
+          models: { 'gpt-4': true },
+          addParams: {
+            provider: {
+              only: ['z-ai'],
+            },
+            web_search: false,
+          },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
   });
 
   it('rejects non-boolean web_search objects in azure addParams', () => {

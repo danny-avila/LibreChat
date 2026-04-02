@@ -126,6 +126,7 @@ const paramValueSchema: z.ZodType<unknown> = z.lazy(() =>
   ]),
 );
 
+/** Validates addParams while keeping web_search aligned with current runtime boolean handling. */
 const addParamsSchema: z.ZodType<Record<string, unknown>> = z
   .record(z.string(), paramValueSchema)
   .superRefine((params, ctx) => {
