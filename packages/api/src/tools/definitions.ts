@@ -5,7 +5,7 @@
  * @module packages/api/src/tools/definitions
  */
 
-import { Constants, isActionTool, actionDelimiter } from 'librechat-data-provider';
+import { Constants, isActionTool } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { ToolDefinition } from './classification';

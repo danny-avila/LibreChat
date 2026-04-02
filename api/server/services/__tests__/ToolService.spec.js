@@ -156,6 +156,11 @@ describe('ToolService - Action Capability Gating', () => {
       expect(isActionTool(`retrieve_action${Constants.mcp_delimiter}srv`)).toBe(false);
     });
 
+    it('should reject MCP tools with _action_ in the middle of their name', () => {
+      expect(isActionTool(`get_action_data${Constants.mcp_delimiter}myserver`)).toBe(false);
+      expect(isActionTool(`create_action_item${Constants.mcp_delimiter}server`)).toBe(false);
+    });
+
     it('should reject tools without the action delimiter', () => {
       expect(isActionTool('calculator')).toBe(false);
       expect(isActionTool(`web_search${Constants.mcp_delimiter}myserver`)).toBe(false);

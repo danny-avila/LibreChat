@@ -1238,8 +1238,11 @@ async function loadToolsForExecution({
     ? [...new Set([...requestedNonSpecialToolNames, ...ptcOrchestratedToolNames])]
     : requestedNonSpecialToolNames;
 
-  const actionToolNames = allToolNamesToLoad.filter((name) => isActionTool(name));
-  const regularToolNames = allToolNamesToLoad.filter((name) => !isActionTool(name));
+  const actionToolNames = [];
+  const regularToolNames = [];
+  for (const name of allToolNamesToLoad) {
+    (isActionTool(name) ? actionToolNames : regularToolNames).push(name);
+  }
 
   if (regularToolNames.length > 0) {
     const includesWebSearch = regularToolNames.includes(Tools.web_search);

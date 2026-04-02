@@ -583,20 +583,18 @@ export type TContentData = StreamContentData & {
 
 export const actionDelimiter = '_action_';
 export const actionDomainSeparator = '---';
+/** Mirrors `Constants.mcp_delimiter`; duplicated here to avoid a circular import from `config.ts`. */
+const mcpDelimiter = '_mcp_';
 
 /**
  * Checks whether a tool name is an OpenAPI action tool.
- * Guards against cross-delimiter collision where an MCP tool name ending in
+ * Guards against cross-delimiter collision where an MCP tool name containing
  * `_action` joined with `_mcp_<server>` produces a false `_action_` substring.
  */
 export function isActionTool(toolName: string): boolean {
-  if (!toolName.includes(actionDelimiter)) {
-    return false;
-  }
-  const idx = toolName.indexOf(actionDelimiter);
-  const afterDelimiter = toolName.slice(idx + actionDelimiter.length);
-  return !afterDelimiter.startsWith('mcp_');
+  return toolName.includes(actionDelimiter) && !toolName.includes(mcpDelimiter);
 }
+
 export const hostImageIdSuffix = '_host_copy';
 export const hostImageNamePrefix = 'host_copy_';
 
