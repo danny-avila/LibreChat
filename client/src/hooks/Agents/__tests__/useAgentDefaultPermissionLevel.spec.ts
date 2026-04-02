@@ -1,12 +1,12 @@
 import { renderHook } from '@testing-library/react';
 import { PermissionBits } from 'librechat-data-provider';
-import useAgentDefaultPermissionLevel from '../useAgentDefaultPermissionLevel';
 
 jest.mock('~/hooks/Roles', () => ({
   useHasAccess: jest.fn(),
 }));
 
 import { useHasAccess } from '~/hooks/Roles';
+import useAgentDefaultPermissionLevel from '../useAgentDefaultPermissionLevel';
 const mockUseHasAccess = useHasAccess as jest.Mock;
 
 describe('useAgentDefaultPermissionLevel', () => {
