@@ -81,16 +81,21 @@ const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
 /**
  * Strips `code_challenge` from the request query and URL strings.
  *
- * openid-client's Passport Strategy uses `currentUrl.searchParams.size === 0`
+ * openid-client v6's Passport Strategy uses `currentUrl.searchParams.size === 0`
  * to distinguish an initial authorization request from an OAuth callback.
  * The admin-panel-specific `code_challenge` query parameter would cause the
  * strategy to misclassify the request as a callback and return 401.
+ *
+ * Applied defensively to all providers to ensure the admin-panel-private
+ * `code_challenge` parameter never reaches any Passport strategy.
  * @param {import('express').Request} req
  */
 function stripCodeChallenge(req) {
   delete req.query.code_challenge;
-  req.originalUrl = req.originalUrl.replace(/[?&]code_challenge=[^&]+/, '');
-  req.url = req.url.replace(/[?&]code_challenge=[^&]+/, '');
+  const strip = (url) =>
+    url.replace(/\?code_challenge=[^&]*&/, '?').replace(/[?&]code_challenge=[^&]*/, '');
+  req.originalUrl = strip(req.originalUrl);
+  req.url = strip(req.url);
 }
 
 /**
@@ -102,19 +107,27 @@ function generateState() {
 }
 
 /**
- * Stores a PKCE challenge in cache keyed by state.
- * @param {string} state - The OAuth state value.
- * @param {string | undefined} codeChallenge - The PKCE code_challenge from query params.
+ * Stores the admin-panel PKCE challenge in cache, then strips `code_challenge`
+ * from the request so it doesn't interfere with the Passport strategy.
+ *
+ * Must be called before `passport.authenticate()` — the two operations are
+ * logically atomic: read the challenge from the query, persist it, then remove
+ * the parameter from the request URL.
+ * @param {import('express').Request} req
+ * @param {string} state - The OAuth state value (cache key).
  * @param {string} provider - Provider name for logging.
- * @returns {Promise<boolean>} True if stored successfully or no challenge provided.
+ * @returns {Promise<boolean>} True if stored (or no challenge provided); false on cache failure.
  */
-async function storePkceChallenge(state, codeChallenge, provider) {
+async function storeAndStripChallenge(req, state, provider) {
+  const { code_challenge: codeChallenge } = req.query;
   if (typeof codeChallenge !== 'string' || !PKCE_CHALLENGE_PATTERN.test(codeChallenge)) {
+    stripCodeChallenge(req);
     return true;
   }
   try {
     const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
     await cache.set(`pkce:${state}`, codeChallenge, PKCE_CHALLENGE_TTL);
+    stripCodeChallenge(req);
     return true;
   } catch (err) {
     logger.error(`[admin/oauth/${provider}] Failed to store PKCE challenge:`, err);
@@ -163,14 +176,12 @@ function retrievePkceChallenge(provider) {
 
 router.get('/oauth/openid', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'openid');
+  const stored = await storeAndStripChallenge(req, state, 'openid');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/openid/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
-
-  stripCodeChallenge(req);
 
   return passport.authenticate('openidAdmin', {
     session: false,
@@ -202,14 +213,12 @@ router.get(
 
 router.get('/oauth/saml', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'saml');
+  const stored = await storeAndStripChallenge(req, state, 'saml');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/saml/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
-
-  stripCodeChallenge(req);
 
   return passport.authenticate('samlAdmin', {
     session: false,
@@ -241,14 +250,12 @@ router.post(
 
 router.get('/oauth/google', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'google');
+  const stored = await storeAndStripChallenge(req, state, 'google');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/google/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
-
-  stripCodeChallenge(req);
 
   return passport.authenticate('googleAdmin', {
     scope: ['openid', 'profile', 'email'],
@@ -281,14 +288,12 @@ router.get(
 
 router.get('/oauth/github', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'github');
+  const stored = await storeAndStripChallenge(req, state, 'github');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/github/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
-
-  stripCodeChallenge(req);
 
   return passport.authenticate('githubAdmin', {
     scope: ['user:email', 'read:user'],
@@ -321,14 +326,12 @@ router.get(
 
 router.get('/oauth/discord', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'discord');
+  const stored = await storeAndStripChallenge(req, state, 'discord');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/discord/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
-
-  stripCodeChallenge(req);
 
   return passport.authenticate('discordAdmin', {
     scope: ['identify', 'email'],
@@ -361,14 +364,12 @@ router.get(
 
 router.get('/oauth/facebook', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'facebook');
+  const stored = await storeAndStripChallenge(req, state, 'facebook');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/facebook/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
-
-  stripCodeChallenge(req);
 
   return passport.authenticate('facebookAdmin', {
     scope: ['public_profile'],
@@ -401,14 +402,12 @@ router.get(
 
 router.get('/oauth/apple', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'apple');
+  const stored = await storeAndStripChallenge(req, state, 'apple');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/apple/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
-
-  stripCodeChallenge(req);
 
   return passport.authenticate('appleAdmin', {
     session: false,
@@ -499,3 +498,4 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
 });
 
 module.exports = router;
+module.exports._test = { stripCodeChallenge, storeAndStripChallenge };
