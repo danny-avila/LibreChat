@@ -590,9 +590,16 @@ const mcpDelimiter = '_mcp_';
  * Checks whether a tool name is an OpenAPI action tool.
  * Guards against cross-delimiter collision where an MCP tool name containing
  * `_action` joined with `_mcp_<server>` produces a false `_action_` substring.
+ * Only rejects when `_mcp_` appears after `_action_` (the MCP suffix position);
+ * `_mcp_` before `_action_` is part of the operationId and is valid.
  */
 export function isActionTool(toolName: string): boolean {
-  return toolName.includes(actionDelimiter) && !toolName.includes(mcpDelimiter);
+  const actionIdx = toolName.indexOf(actionDelimiter);
+  if (actionIdx < 0) {
+    return false;
+  }
+  const mcpIdx = toolName.indexOf(mcpDelimiter);
+  return mcpIdx < 0 || mcpIdx < actionIdx;
 }
 
 export const hostImageIdSuffix = '_host_copy';

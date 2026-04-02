@@ -150,6 +150,11 @@ describe('ToolService - Action Capability Gating', () => {
       expect(isActionTool(`fetch_data${actionDelimiter}my---domain---com`)).toBe(true);
     });
 
+    it('should identify action tools whose operationId contains _mcp_', () => {
+      expect(isActionTool(`sync_mcp_state${actionDelimiter}api---example---com`)).toBe(true);
+      expect(isActionTool(`get_mcp_config${actionDelimiter}internal---api---com`)).toBe(true);
+    });
+
     it('should reject MCP tools whose name ends with _action', () => {
       expect(isActionTool(`get_action${Constants.mcp_delimiter}myserver`)).toBe(false);
       expect(isActionTool(`fetch_action${Constants.mcp_delimiter}server_name`)).toBe(false);
