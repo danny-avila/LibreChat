@@ -6,11 +6,11 @@ import {
   DEFAULT_TOOL_TOKEN_MULTIPLIER,
 } from '@librechat/agents';
 import { CacheKeys, Time } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
 
 import type { GenericTool, LCTool, TokenCounter, ClientOptions } from '@librechat/agents';
 import type { Keyv } from 'keyv';
 
-import { logger } from '@librechat/data-schemas';
 import { standardCache } from '~/cache';
 
 /** Module-level cache instance, lazily initialized. */
@@ -34,10 +34,14 @@ function getToolTokenMultiplier(provider: Providers, clientOptions?: ClientOptio
 }
 
 /**
- * Single pass over tools and toolDefinitions. Collects deduplicated sorted
- * tool names (for fingerprint) and pre-serialized schemas (for token
- * counting on cache miss), mirroring the dedup logic in
- * AgentContext.calculateInstructionTokens().
+ * Single pass over tools and toolDefinitions. Collects:
+ * - `names`: deduplicated, sorted tool names for fingerprinting.
+ * - `schemas`: pre-serialized JSON strings for token counting.
+ *
+ * `nameSet` tracks all tool names (for the fingerprint). `countedNames`
+ * tracks which tools contributed a schema from the `tools` array — a
+ * toolDefinition whose name is in `countedNames` is skipped to avoid
+ * double-counting, mirroring AgentContext.calculateInstructionTokens().
  */
 function collectToolData(
   tools?: GenericTool[],
@@ -148,9 +152,9 @@ export async function getOrComputeToolTokens({
   const multiplier = getToolTokenMultiplier(provider, clientOptions);
   const multiplierKey = multiplier === ANTHROPIC_TOOL_TOKEN_MULTIPLIER ? 'anthropic' : 'default';
   const cacheKey = `${provider}:${multiplierKey}:${fingerprint}`;
-  const cache = getCache();
 
   try {
+    const cache = getCache();
     const cached = (await cache.get(cacheKey)) as number | undefined;
     if (cached != null && cached > 0) {
       return cached;
@@ -159,6 +163,8 @@ export async function getOrComputeToolTokens({
     logger.debug('[toolTokens] Cache read failed, computing fresh', err);
   }
 
+  // Inline token count — not delegating to computeToolSchemaTokens to avoid
+  // a second collectToolData pass; schemas are already built above.
   let toolTokens = 0;
   for (const schema of schemas) {
     toolTokens += tokenCounter(new SystemMessage(schema));
@@ -166,9 +172,15 @@ export async function getOrComputeToolTokens({
   const tokens = Math.ceil(toolTokens * multiplier);
 
   if (tokens > 0) {
-    cache.set(cacheKey, tokens).catch((err: unknown) => {
-      logger.debug('[toolTokens] Cache write failed', err);
-    });
+    try {
+      getCache()
+        .set(cacheKey, tokens)
+        .catch((err: unknown) => {
+          logger.debug('[toolTokens] Cache write failed', err);
+        });
+    } catch {
+      // getCache() init failure on write path — non-fatal
+    }
   }
 
   return tokens;

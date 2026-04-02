@@ -1,5 +1,6 @@
 import { Run, Providers, Constants } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
 import type {
   SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
@@ -15,7 +16,6 @@ import type {
 } from '@librechat/agents';
 import type { Agent, SummarizationConfig } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
-import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
@@ -426,6 +426,23 @@ export async function createRun({
     } else {
       logger.error(`[createRun] buildAgentContext failed for agent ${agents[i].id}`, result.reason);
     }
+  }
+
+  if (agentInputs.length === 0) {
+    throw new Error(
+      `[createRun] All ${agents.length} agent(s) failed to initialize; cannot create run`,
+    );
+  }
+
+  const hasEdges = (agents[0].edges?.length ?? 0) > 0;
+  if (agentInputs.length < agents.length && hasEdges) {
+    const failedIds = agents
+      .filter((_, i) => settled[i].status === 'rejected')
+      .map((a) => a.id)
+      .join(', ');
+    throw new Error(
+      `[createRun] Agent(s) [${failedIds}] failed in a routed multi-agent run; cannot proceed with partial graph`,
+    );
   }
 
   const graphConfig: RunConfig['graphConfig'] = {
