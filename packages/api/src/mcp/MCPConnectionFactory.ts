@@ -239,7 +239,7 @@ export class MCPConnectionFactory {
         );
         connection.emit('oauthFailed', new Error('Server does not use OAuth'));
       };
-      connection.once('oauthRequired', nonOAuthHandler);
+      connection.on('oauthRequired', nonOAuthHandler);
       cleanupOAuthHandlers = () => {
         connection.removeListener('oauthRequired', nonOAuthHandler);
       };
