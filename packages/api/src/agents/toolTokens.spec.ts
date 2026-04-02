@@ -1,24 +1,25 @@
 import { z } from 'zod';
-import { SystemMessage } from '@langchain/core/messages';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import {
   Providers,
   ANTHROPIC_TOOL_TOKEN_MULTIPLIER,
   DEFAULT_TOOL_TOKEN_MULTIPLIER,
 } from '@librechat/agents';
+
 import type { GenericTool, LCTool, TokenCounter } from '@librechat/agents';
+
 import { getToolFingerprint, computeToolSchemaTokens, getOrComputeToolTokens } from './toolTokens';
 
-/* ---------- Mock standardCache to use a plain Map (no Redis) ---------- */
+/* ---------- Mock standardCache with hoisted get/set for per-test overrides ---------- */
 const mockCacheStore = new Map<string, unknown>();
+const mockGet = jest.fn((key: string) => Promise.resolve(mockCacheStore.get(key)));
+const mockSet = jest.fn((key: string, value: unknown) => {
+  mockCacheStore.set(key, value);
+  return Promise.resolve(true);
+});
+
 jest.mock('~/cache', () => ({
-  standardCache: jest.fn(() => ({
-    get: jest.fn((key: string) => Promise.resolve(mockCacheStore.get(key))),
-    set: jest.fn((key: string, value: unknown) => {
-      mockCacheStore.set(key, value);
-      return Promise.resolve(true);
-    }),
-  })),
+  standardCache: jest.fn(() => ({ get: mockGet, set: mockSet })),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -52,6 +53,11 @@ const fakeTokenCounter: TokenCounter = (msg) => {
 
 beforeEach(() => {
   mockCacheStore.clear();
+  mockGet.mockImplementation((key: string) => Promise.resolve(mockCacheStore.get(key)));
+  mockSet.mockImplementation((key: string, value: unknown) => {
+    mockCacheStore.set(key, value);
+    return Promise.resolve(true);
+  });
 });
 
 /* ========================================================================= */
@@ -177,7 +183,6 @@ describe('computeToolSchemaTokens', () => {
       clientOptions,
       fakeTokenCounter,
     );
-
     const defaultResult = computeToolSchemaTokens(
       undefined,
       defs,
@@ -317,46 +322,31 @@ describe('getOrComputeToolTokens', () => {
   });
 
   it('falls back to compute when cache read throws', async () => {
-    const { standardCache } = jest.requireMock('~/cache') as { standardCache: jest.Mock };
-    const failingCache = {
-      get: jest.fn(() => Promise.reject(new Error('Redis down'))),
-      set: jest.fn(() => Promise.resolve(true)),
-    };
-    standardCache.mockReturnValueOnce(failingCache);
-
-    /** Reset the module-level cache so it picks up the failing mock */
-    jest.resetModules();
-    const { getOrComputeToolTokens: freshGetOrCompute } = await import('./toolTokens');
+    mockGet.mockRejectedValueOnce(new Error('Redis down'));
 
     const defs = [makeToolDef('tool')];
-    const result = await freshGetOrCompute({
+    const result = await getOrComputeToolTokens({
       toolDefinitions: defs,
       provider: Providers.OPENAI,
       tokenCounter: fakeTokenCounter,
     });
 
     expect(result).toBeGreaterThan(0);
+    expect(mockGet).toHaveBeenCalled();
   });
 
   it('does not throw when cache write fails', async () => {
-    const { standardCache } = jest.requireMock('~/cache') as { standardCache: jest.Mock };
-    const writeFailCache = {
-      get: jest.fn(() => Promise.resolve(undefined)),
-      set: jest.fn(() => Promise.reject(new Error('Redis write error'))),
-    };
-    standardCache.mockReturnValueOnce(writeFailCache);
+    mockSet.mockRejectedValueOnce(new Error('Redis write error'));
 
-    jest.resetModules();
-    const { getOrComputeToolTokens: freshGetOrCompute } = await import('./toolTokens');
-
-    const defs = [makeToolDef('tool')];
-    const result = await freshGetOrCompute({
+    const defs = [makeToolDef('tool_write_fail')];
+    const result = await getOrComputeToolTokens({
       toolDefinitions: defs,
       provider: Providers.OPENAI,
       tokenCounter: fakeTokenCounter,
     });
 
     expect(result).toBeGreaterThan(0);
+    expect(mockSet).toHaveBeenCalled();
   });
 
   it('uses GenericTool tools for fingerprint and token counting', async () => {
