@@ -546,21 +546,21 @@ describe('createRoleByName', () => {
   it('creates a custom role and caches it', async () => {
     const role = await createRoleByName({ name: 'editor', description: 'Can edit' });
 
-    expect(role.name).toBe('EDITOR');
+    expect(role.name).toBe('editor');
     expect(role.description).toBe('Can edit');
     expect(mockCache.set).toHaveBeenCalledWith(
-      'EDITOR',
-      expect.objectContaining({ name: 'EDITOR' }),
+      'editor',
+      expect.objectContaining({ name: 'editor' }),
     );
 
-    const persisted = await Role.findOne({ name: 'EDITOR' }).lean();
+    const persisted = await Role.findOne({ name: 'editor' }).lean();
     expect(persisted).toBeTruthy();
   });
 
-  it('trims whitespace and uppercases role name', async () => {
+  it('trims whitespace from role name', async () => {
     const role = await createRoleByName({ name: '  editor  ' });
 
-    expect(role.name).toBe('EDITOR');
+    expect(role.name).toBe('editor');
   });
 
   it('throws when name is empty', async () => {
@@ -595,15 +595,15 @@ describe('deleteRoleByName', () => {
   it('deletes a custom role and reassigns users to USER', async () => {
     await createRoleByName({ name: 'editor' });
     await User.create([
-      { name: 'Alice', email: 'alice@test.com', role: 'EDITOR', username: 'alice' },
-      { name: 'Bob', email: 'bob@test.com', role: 'EDITOR', username: 'bob' },
+      { name: 'Alice', email: 'alice@test.com', role: 'editor', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'editor', username: 'bob' },
       { name: 'Carol', email: 'carol@test.com', role: SystemRoles.USER, username: 'carol' },
     ]);
 
-    const deleted = await deleteRoleByName('EDITOR');
+    const deleted = await deleteRoleByName('editor');
 
     expect(deleted).toBeTruthy();
-    expect(deleted!.name).toBe('EDITOR');
+    expect(deleted!.name).toBe('editor');
 
     const alice = await User.findOne({ email: 'alice@test.com' }).lean();
     const bob = await User.findOne({ email: 'bob@test.com' }).lean();
@@ -627,9 +627,9 @@ describe('deleteRoleByName', () => {
     await createRoleByName({ name: 'editor' });
     mockCache.set.mockClear();
 
-    await deleteRoleByName('EDITOR');
+    await deleteRoleByName('editor');
 
-    expect(mockCache.set).toHaveBeenCalledWith('EDITOR', null);
+    expect(mockCache.set).toHaveBeenCalledWith('editor', null);
   });
 
   it('returns null and invalidates cache when role does not exist', async () => {
@@ -647,13 +647,13 @@ describe('updateRoleByName - cache on rename', () => {
     await createRoleByName({ name: 'editor', description: 'Can edit' });
     mockCache.set.mockClear();
 
-    const updated = await updateRoleByName('EDITOR', { name: 'SENIOR-EDITOR' });
+    const updated = await updateRoleByName('editor', { name: 'senior-editor' });
 
-    expect(updated.name).toBe('SENIOR-EDITOR');
-    expect(mockCache.set).toHaveBeenCalledWith('EDITOR', null);
+    expect(updated.name).toBe('senior-editor');
+    expect(mockCache.set).toHaveBeenCalledWith('editor', null);
     expect(mockCache.set).toHaveBeenCalledWith(
-      'SENIOR-EDITOR',
-      expect.objectContaining({ name: 'SENIOR-EDITOR' }),
+      'senior-editor',
+      expect.objectContaining({ name: 'senior-editor' }),
     );
   });
 
@@ -661,11 +661,11 @@ describe('updateRoleByName - cache on rename', () => {
     await createRoleByName({ name: 'editor' });
     mockCache.set.mockClear();
 
-    await updateRoleByName('EDITOR', { description: 'Updated desc' });
+    await updateRoleByName('editor', { description: 'Updated desc' });
 
     expect(mockCache.set).toHaveBeenCalledWith(
-      'EDITOR',
-      expect.objectContaining({ name: 'EDITOR', description: 'Updated desc' }),
+      'editor',
+      expect.objectContaining({ name: 'editor', description: 'Updated desc' }),
     );
     expect(mockCache.set).toHaveBeenCalledTimes(1);
   });

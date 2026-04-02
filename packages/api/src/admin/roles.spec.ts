@@ -228,7 +228,7 @@ describe('createAdminRolesHandlers', () => {
       expect(status).toHaveBeenCalledWith(201);
       expect(json).toHaveBeenCalledWith({ role });
       expect(deps.createRoleByName).toHaveBeenCalledWith({
-        name: 'EDITOR',
+        name: 'editor',
         description: 'Can edit',
         permissions: {},
       });
@@ -248,7 +248,7 @@ describe('createAdminRolesHandlers', () => {
       expect(status).toHaveBeenCalledWith(201);
       expect(json).toHaveBeenCalledWith({ role });
       expect(deps.createRoleByName).toHaveBeenCalledWith({
-        name: 'EDITOR',
+        name: 'editor',
         permissions: perms,
       });
     });
@@ -437,7 +437,7 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ role });
-      expect(deps.updateRoleByName).toHaveBeenCalledWith('EDITOR', { name: 'SENIOR-EDITOR' });
+      expect(deps.updateRoleByName).toHaveBeenCalledWith('editor', { name: 'senior-editor' });
     });
 
     it('trims name before storage', async () => {
@@ -454,7 +454,7 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.updateRole(req, res);
 
-      expect(deps.updateRoleByName).toHaveBeenCalledWith('EDITOR', { name: 'TRIMMED' });
+      expect(deps.updateRoleByName).toHaveBeenCalledWith('editor', { name: 'trimmed' });
     });
 
     it('migrates users before renaming role', async () => {
@@ -484,8 +484,8 @@ describe('createAdminRolesHandlers', () => {
       await handlers.updateRole(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.findUserIdsByRole).toHaveBeenCalledWith('EDITOR');
-      expect(deps.updateUsersByRole).toHaveBeenCalledWith('EDITOR', 'NEW-NAME');
+      expect(deps.findUserIdsByRole).toHaveBeenCalledWith('editor');
+      expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'new-name');
       expect(callOrder).toEqual(['findUserIdsByRole', 'updateUsersByRole', 'updateRoleByName']);
     });
 
@@ -539,9 +539,9 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ role });
-      expect(deps.updateUsersByRole).toHaveBeenCalledWith('EDITOR', 'SENIOR-EDITOR');
-      expect(deps.updateRoleByName).toHaveBeenCalledWith('EDITOR', {
-        name: 'SENIOR-EDITOR',
+      expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'senior-editor');
+      expect(deps.updateRoleByName).toHaveBeenCalledWith('editor', {
+        name: 'senior-editor',
         description: 'Updated desc',
       });
     });
@@ -588,7 +588,7 @@ describe('createAdminRolesHandlers', () => {
       await handlers.updateRole(req, res);
 
       expect(status).toHaveBeenCalledWith(409);
-      expect(json).toHaveBeenCalledWith({ error: 'Role "VIEWER" already exists' });
+      expect(json).toHaveBeenCalledWith({ error: 'Role "viewer" already exists' });
     });
 
     it('returns 400 when name is empty string', async () => {
@@ -684,8 +684,8 @@ describe('createAdminRolesHandlers', () => {
       expect(status).toHaveBeenCalledWith(404);
       expect(json).toHaveBeenCalledWith({ error: 'Role not found' });
       expect(deps.updateUsersByRole).toHaveBeenCalledTimes(1);
-      expect(deps.updateUsersByRole).toHaveBeenCalledWith('EDITOR', 'NEW-NAME');
-      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'EDITOR');
+      expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'new-name');
+      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'editor');
     });
 
     it('rolls back user migration when rename throws', async () => {
@@ -705,8 +705,8 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(deps.updateUsersByRole).toHaveBeenCalledTimes(1);
-      expect(deps.updateUsersByRole).toHaveBeenCalledWith('EDITOR', 'NEW-NAME');
-      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'EDITOR');
+      expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'new-name');
+      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'editor');
     });
 
     it('logs rollback failure and still returns 500', async () => {
@@ -852,7 +852,7 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.updateRolePermissions(req, res);
 
-      expect(deps.updateAccessPermissions).toHaveBeenCalledWith('EDITOR', perms, role);
+      expect(deps.updateAccessPermissions).toHaveBeenCalledWith('editor', perms, role);
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ role: updatedRole });
     });
@@ -925,7 +925,7 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.deleteRole(req, res);
 
-      expect(deps.deleteRoleByName).toHaveBeenCalledWith('EDITOR');
+      expect(deps.deleteRoleByName).toHaveBeenCalledWith('editor');
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
     });
@@ -938,12 +938,12 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.deleteConfig).toHaveBeenCalledWith(PrincipalType.ROLE, 'EDITOR');
+      expect(deps.deleteConfig).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor');
       expect(deps.deleteAclEntries).toHaveBeenCalledWith({
         principalType: PrincipalType.ROLE,
-        principalId: 'EDITOR',
+        principalId: 'editor',
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'EDITOR', {
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor', {
         tenantId: undefined,
       });
     });
@@ -959,7 +959,7 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'EDITOR', {
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.ROLE, 'editor', {
         tenantId: 'tenant-1',
       });
     });
@@ -1055,8 +1055,8 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.getRoleMembers(req, res);
 
-      expect(deps.listUsersByRole).toHaveBeenCalledWith('EDITOR', { limit: 50, offset: 0 });
-      expect(deps.countUsersByRole).toHaveBeenCalledWith('EDITOR');
+      expect(deps.listUsersByRole).toHaveBeenCalledWith('editor', { limit: 50, offset: 0 });
+      expect(deps.countUsersByRole).toHaveBeenCalledWith('editor');
       expect(status).toHaveBeenCalledWith(200);
       const response = json.mock.calls[0][0];
       expect(response.members).toHaveLength(1);
@@ -1084,7 +1084,7 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.getRoleMembers(req, res);
 
-      expect(deps.listUsersByRole).toHaveBeenCalledWith('EDITOR', { limit: 10, offset: 20 });
+      expect(deps.listUsersByRole).toHaveBeenCalledWith('editor', { limit: 10, offset: 20 });
     });
 
     it('clamps limit to 200', async () => {
@@ -1100,7 +1100,7 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.getRoleMembers(req, res);
 
-      expect(deps.listUsersByRole).toHaveBeenCalledWith('EDITOR', { limit: 200, offset: 0 });
+      expect(deps.listUsersByRole).toHaveBeenCalledWith('editor', { limit: 200, offset: 0 });
     });
 
     it('does not include joinedAt in response', async () => {
@@ -1173,7 +1173,7 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.addRoleMember(req, res);
 
-      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: 'EDITOR' });
+      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: 'editor' });
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
     });
@@ -1181,7 +1181,7 @@ describe('createAdminRolesHandlers', () => {
     it('skips DB write when user already has the target role', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        findUser: jest.fn().mockResolvedValue(mockUser({ role: 'EDITOR' })),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: 'editor' })),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1290,7 +1290,7 @@ describe('createAdminRolesHandlers', () => {
       await handlers.addRoleMember(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: 'EDITOR' });
+      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: 'editor' });
     });
 
     it('rolls back assignment when post-write admin count is zero', async () => {
@@ -1373,7 +1373,7 @@ describe('createAdminRolesHandlers', () => {
     it('removes member and returns 200', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        findUser: jest.fn().mockResolvedValue(mockUser({ role: 'EDITOR' })),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: 'editor' })),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1547,7 +1547,7 @@ describe('createAdminRolesHandlers', () => {
     it('returns 500 on unexpected error', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        findUser: jest.fn().mockResolvedValue(mockUser({ role: 'EDITOR' })),
+        findUser: jest.fn().mockResolvedValue(mockUser({ role: 'editor' })),
         updateUser: jest.fn().mockRejectedValue(new Error('timeout')),
       });
       const handlers = createAdminRolesHandlers(deps);

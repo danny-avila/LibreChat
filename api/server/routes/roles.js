@@ -71,9 +71,7 @@ const createPermissionUpdateHandler = (permissionKey) => {
   const config = permissionConfigs[permissionKey];
 
   return async (req, res) => {
-    const { roleName: _r } = req.params;
-    // TODO: TEMP, use a better parsing for roleName
-    const roleName = _r.toUpperCase();
+    const { roleName } = req.params;
     const updates = req.body;
 
     try {
@@ -110,8 +108,7 @@ const createPermissionUpdateHandler = (permissionKey) => {
  * Get a specific role by name
  */
 router.get('/:roleName', async (req, res) => {
-  const { roleName: _r } = req.params;
-  const roleName = _r.toUpperCase();
+  const { roleName } = req.params;
 
   try {
     let hasReadRoles = false;
