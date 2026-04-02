@@ -1203,7 +1203,6 @@ class BaseClient {
         categorizedAttachments.audios.push(file);
         allFiles.push(file);
       } else if (
-        !isBedrock &&
         file.type &&
         this._mergedFileConfig &&
         this._endpointFileConfig?.supportedMimeTypes &&

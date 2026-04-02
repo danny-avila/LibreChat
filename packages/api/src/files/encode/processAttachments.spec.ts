@@ -41,7 +41,6 @@ function categorizeFile(
   } else if (file.type?.startsWith('audio/')) {
     return 'audios';
   } else if (
-    !isBedrock &&
     file.type &&
     mergedFileConfig &&
     endpointFileConfig?.supportedMimeTypes &&
@@ -129,9 +128,9 @@ describe('processAttachments — supportedMimeTypes routing logic', () => {
     expect(categorizeFile({ type: 'text/csv' }, true, merged, epConfig)).toBe('documents');
   });
 
-  it('should skip non-Bedrock-document types for Bedrock even with permissive config', () => {
+  it('should route non-Bedrock-document types for Bedrock when config allows them', () => {
     const { merged, epConfig } = resolveConfig(['.*']);
-    expect(categorizeFile({ type: 'application/zip' }, true, merged, epConfig)).toBe('skipped');
+    expect(categorizeFile({ type: 'application/zip' }, true, merged, epConfig)).toBe('documents');
   });
 
   it('should route xlsx to documents with matching config', () => {
