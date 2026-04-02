@@ -139,25 +139,25 @@ export function getProps(type: string): Partial<SandpackProviderProps> {
   };
 }
 
+/** Fragment hint lets Sandpack's static-template regex detect `.js` from the URL;
+ * without it, the versioned CDN path (`/3.4.17`) has no recognised extension and
+ * `injectExternalResources` throws "Unable to determine file type". */
+const TAILWIND_CDN = 'https://cdn.tailwindcss.com/3.4.17#tailwind.js';
+
 export const sharedOptions: SandpackProviderProps['options'] = {
-  externalResources: ['https://cdn.tailwindcss.com/3.4.17'],
+  externalResources: [TAILWIND_CDN],
 };
 
-/** Static template loads Tailwind via `<script>` in sharedFiles index.html;
- * externalResources causes "Unable to determine file type" since the CDN URL has no extension. */
 export function buildSandpackOptions(
   template: SandpackProviderProps['template'],
   startupConfig?: TStartupConfig,
 ): SandpackProviderProps['options'] {
-  const baseOptions: SandpackProviderProps['options'] =
-    template === 'static' ? { ...sharedOptions, externalResources: [] } : sharedOptions;
-
   if (!startupConfig) {
-    return baseOptions;
+    return sharedOptions;
   }
 
   return {
-    ...baseOptions,
+    ...sharedOptions,
     bundlerURL: template === 'static' ? startupConfig.staticBundlerURL : startupConfig.bundlerURL,
   };
 }
