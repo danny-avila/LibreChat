@@ -4,7 +4,7 @@ import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { isUserSourced } from './utils';
+import { isUserSourced, isOAuthServer } from './utils';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
@@ -35,14 +35,7 @@ export abstract class UserConnectionManager {
   }
 
   /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
-  public async getUserConnection(
-    opts: {
-      serverName: string;
-      forceNew?: boolean;
-      /** Pre-resolved config for config-source servers not in YAML/DB */
-      serverConfig?: t.ParsedServerConfig;
-    } & Omit<t.OAuthConnectionOptions, 'useOAuth'>,
-  ): Promise<MCPConnection> {
+  public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
     const { serverName, forceNew, user } = opts;
     const userId = user?.id;
     if (!userId) {
@@ -89,11 +82,7 @@ export abstract class UserConnectionManager {
       returnOnOAuth = false,
       connectionTimeout,
       serverConfig: providedConfig,
-    }: {
-      serverName: string;
-      forceNew?: boolean;
-      serverConfig?: t.ParsedServerConfig;
-    } & Omit<t.OAuthConnectionOptions, 'useOAuth'>,
+    }: t.UserMCPConnectionOptions,
     userId: string,
   ): Promise<MCPConnection> {
     if (await this.appConnections!.has(serverName)) {
@@ -169,13 +158,19 @@ export abstract class UserConnectionManager {
         allowedDomains: registry.getAllowedDomains(),
       };
 
-      const useOAuth = Boolean(config.requiresOAuth || config.oauthMetadata);
+      const useOAuth = isOAuthServer(config);
+      if (useOAuth && !flowManager) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `[MCP][User: ${userId}] OAuth server "${serverName}" requires a flowManager`,
+        );
+      }
       const oauthOptions: t.OAuthConnectionOptions | t.UserConnectionContext = useOAuth
         ? {
             useOAuth: true as const,
             user,
             customUserVars,
-            flowManager: flowManager!,
+            flowManager: flowManager,
             tokenMethods,
             signal,
             oauthStart,
