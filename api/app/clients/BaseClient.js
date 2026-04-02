@@ -1164,9 +1164,10 @@ class BaseClient {
 
     if (!this._mergedFileConfig && this.options.req?.config?.fileConfig) {
       this._mergedFileConfig = mergeFileConfig(this.options.req.config.fileConfig);
+      const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
       this._endpointFileConfig = getEndpointFileConfig({
         fileConfig: this._mergedFileConfig,
-        endpoint: provider,
+        endpoint,
         endpointType: this.options.endpointType,
       });
     }
