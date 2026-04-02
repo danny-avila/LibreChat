@@ -124,6 +124,15 @@ describe('GET /api/roles/:roleName — isOwnRole authorization', () => {
     expect(res.status).toBe(500);
   });
 
+  it('returns 403 for prototype property names like constructor (no prototype pollution)', async () => {
+    const app = createApp({ id: 'u1', role: 'STAFF' });
+
+    const res = await request(app).get('/api/roles/constructor');
+
+    expect(res.status).toBe(403);
+    expect(mockGetRoleByName).not.toHaveBeenCalled();
+  });
+
   it('treats hasCapability failure as no capability (does not 500)', async () => {
     mockHasCapability.mockRejectedValue(new Error('capability check failed'));
     const app = createApp({ id: 'u1', role: 'STAFF' });
