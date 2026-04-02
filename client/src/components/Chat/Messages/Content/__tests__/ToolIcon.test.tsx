@@ -12,6 +12,12 @@ describe('getToolIconType - ACTN-01: Action delimiter detection', () => {
     expect(getToolIconType(toolName)).toBe('mcp');
   });
 
+  it('returns "mcp" not "action" for MCP tool whose name ends with _action (cross-delimiter collision)', () => {
+    const toolName = `get_action${Constants.mcp_delimiter}myserver`;
+    expect(getToolIconType(toolName)).not.toBe('action');
+    expect(getToolIconType(toolName)).toBe('mcp');
+  });
+
   it('returns "generic" for plain tool name without delimiters', () => {
     expect(getToolIconType('some_plain_tool')).toBe('generic');
   });
