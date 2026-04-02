@@ -3,6 +3,8 @@ const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
+const { resolveAppConfigForUser } = require('@librechat/api');
+const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
 
 // --- Mocks ---
@@ -28,6 +30,7 @@ jest.mock('@librechat/api', () => ({
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),
+  resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
 }));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
@@ -350,6 +353,33 @@ describe('setupOpenId', () => {
     const result = await validate(tokenset);
 
     // Assert – verify that the strategy rejects login
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(ErrorTypes.AUTH_FAILED);
+    expect(createUser).not.toHaveBeenCalled();
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
+  it('should block login when email fallback finds user with mismatched openidId', async () => {
+    const existingUser = {
+      _id: 'existingUserId',
+      provider: 'openid',
+      openidId: 'different-sub-claim',
+      email: tokenset.claims().email,
+      username: 'existinguser',
+      name: 'Existing User',
+    };
+    findUser.mockImplementation(async (query) => {
+      if (query.$or) {
+        return null;
+      }
+      if (query.email === tokenset.claims().email) {
+        return existingUser;
+      }
+      return null;
+    });
+
+    const result = await validate(tokenset);
+
     expect(result.user).toBe(false);
     expect(result.details.message).toBe(ErrorTypes.AUTH_FAILED);
     expect(createUser).not.toHaveBeenCalled();
@@ -1790,6 +1820,54 @@ describe('setupOpenId', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('OPENID_EMAIL_CLAIM="nonexistent_claim" not present in userinfo'),
       );
+    });
+  });
+
+  describe('Tenant-scoped config', () => {
+    it('should call resolveAppConfigForUser for tenant user', async () => {
+      const existingUser = {
+        _id: 'openid-tenant-user',
+        provider: 'openid',
+        openidId: '1234',
+        email: 'test@example.com',
+        tenantId: 'tenant-d',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existingUser);
+
+      await validate(tokenset);
+
+      expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, existingUser);
+    });
+
+    it('should use baseConfig for new user without calling resolveAppConfigForUser', async () => {
+      findUser.mockResolvedValue(null);
+
+      await validate(tokenset);
+
+      expect(resolveAppConfigForUser).not.toHaveBeenCalled();
+      expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+    });
+
+    it('should block login when tenant config restricts the domain', async () => {
+      const { isEmailDomainAllowed } = require('@librechat/api');
+      const existingUser = {
+        _id: 'openid-tenant-blocked',
+        provider: 'openid',
+        openidId: '1234',
+        email: 'test@example.com',
+        tenantId: 'tenant-restrict',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existingUser);
+      resolveAppConfigForUser.mockResolvedValue({
+        registration: { allowedDomains: ['other.com'] },
+      });
+      isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+      const { user, details } = await validate(tokenset);
+      expect(user).toBe(false);
+      expect(details).toEqual({ message: 'Email domain not allowed' });
     });
   });
 });

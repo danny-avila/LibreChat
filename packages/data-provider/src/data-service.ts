@@ -833,6 +833,10 @@ export function updatePromptGroup(
   return request.patch(endpoints.updatePromptGroup(variables.id), variables.payload);
 }
 
+export function recordPromptGroupUsage(groupId: string): Promise<{ numberOfGenerations: number }> {
+  return request.post(endpoints.recordPromptGroupUsage(groupId));
+}
+
 export function deletePrompt(payload: t.TDeletePromptVariables): Promise<t.TDeletePromptResponse> {
   return request.delete(endpoints.deletePrompt(payload));
 }

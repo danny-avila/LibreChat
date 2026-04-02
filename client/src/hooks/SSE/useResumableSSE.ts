@@ -8,29 +8,25 @@ import {
   Constants,
   QueryKeys,
   ErrorTypes,
+  StepEvents,
   apiBaseUrl,
   createPayload,
   ViolationTypes,
-  LocalStorageKeys,
   removeNullishValues,
 } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
-import { useGetStartupConfig, useGetUserBalance, queueTitleGeneration } from '~/data-provider';
+import {
+  useGetUserBalance,
+  useGetStartupConfig,
+  queueTitleGeneration,
+  streamStatusQueryKey,
+} from '~/data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
+import { clearAllDrafts } from '~/utils';
 import store from '~/store';
-
-const clearDraft = (conversationId?: string | null) => {
-  if (conversationId) {
-    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
-    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
-  } else {
-    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`);
-    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`);
-  }
-};
 
 type ChatHelpers = Pick<
   EventHandlerParams,
@@ -176,7 +172,7 @@ export default function useResumableSSE(
               conversationId: data.conversation?.conversationId,
               hasResponseMessage: !!data.responseMessage,
             });
-            clearDraft(currentSubmission.conversation?.conversationId);
+            clearAllDrafts(currentSubmission.conversation?.conversationId);
             try {
               finalHandler(data, currentSubmission as EventSubmission);
             } catch (error) {
@@ -234,7 +230,7 @@ export default function useResumableSSE(
 
             if (data.resumeState?.runSteps) {
               for (const runStep of data.resumeState.runSteps) {
-                stepHandler({ event: 'on_run_step', data: runStep }, {
+                stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, {
                   ...currentSubmission,
                   userMessage,
                 } as EventSubmission);
@@ -352,11 +348,19 @@ export default function useResumableSSE(
         /* @ts-ignore - sse.js types don't expose responseCode */
         const responseCode = e.responseCode;
 
-        // 404 means job doesn't exist (completed/deleted) - don't retry
+        // 404 → job completed & was cleaned up; messages are persisted in DB.
+        // Invalidate cache once so react-query refetches instead of showing an error.
         if (responseCode === 404) {
-          console.log('[ResumableSSE] Stream not found (404) - job completed or expired');
+          const convoId = currentSubmission.conversation?.conversationId;
+          console.log('[ResumableSSE] Stream 404, invalidating messages for:', convoId);
           sse.close();
           removeActiveJob(currentStreamId);
+          clearAllDrafts(convoId);
+          clearStepMaps();
+          if (convoId) {
+            queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, convoId] });
+            queryClient.removeQueries({ queryKey: streamStatusQueryKey(convoId) });
+          }
           setIsSubmitting(false);
           setShowStopButton(false);
           setStreamId(null);
@@ -547,6 +551,7 @@ export default function useResumableSSE(
       startupConfig?.balance?.enabled,
       balanceQuery,
       removeActiveJob,
+      queryClient,
     ],
   );
 

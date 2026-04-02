@@ -9,22 +9,7 @@ const {
   getGroupMembers,
   getGroupOwners,
 } = require('~/server/services/GraphApiService');
-const {
-  findAccessibleResources: findAccessibleResourcesACL,
-  getEffectivePermissions: getEffectivePermissionsACL,
-  getEffectivePermissionsForResources: getEffectivePermissionsForResourcesACL,
-  grantPermission: grantPermissionACL,
-  findEntriesByPrincipalsAndResource,
-  findGroupByExternalId,
-  findRoleByIdentifier,
-  getUserPrincipals,
-  hasPermission,
-  createGroup,
-  createUser,
-  updateUser,
-  findUser,
-} = require('~/models');
-const { AclEntry, AccessRole, Group } = require('~/db/models');
+const db = require('~/models');
 
 /** @type {boolean|null} */
 let transactionSupportCache = null;
@@ -96,7 +81,7 @@ const grantPermission = async ({
     validateResourceType(resourceType);
 
     // Get the role to determine permission bits
-    const role = await findRoleByIdentifier(accessRoleId);
+    const role = await db.findRoleByIdentifier(accessRoleId);
     if (!role) {
       throw new Error(`Role ${accessRoleId} not found`);
     }
@@ -107,7 +92,7 @@ const grantPermission = async ({
         `Role ${accessRoleId} is for ${role.resourceType} resources, not ${resourceType}`,
       );
     }
-    return await grantPermissionACL(
+    return await db.grantPermission(
       principalType,
       principalId,
       resourceType,
@@ -141,13 +126,13 @@ const checkPermission = async ({ userId, role, resourceType, resourceId, require
 
     validateResourceType(resourceType);
 
-    const principals = await getUserPrincipals({ userId, role });
+    const principals = await db.getUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
       return false;
     }
 
-    return await hasPermission(principals, resourceType, resourceId, requiredPermission);
+    return await db.hasPermission(principals, resourceType, resourceId, requiredPermission);
   } catch (error) {
     logger.error(`[PermissionService.checkPermission] Error: ${error.message}`);
     if (error.message.includes('requiredPermission must be')) {
@@ -170,13 +155,13 @@ const getEffectivePermissions = async ({ userId, role, resourceType, resourceId 
   try {
     validateResourceType(resourceType);
 
-    const principals = await getUserPrincipals({ userId, role });
+    const principals = await db.getUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
       return 0;
     }
 
-    return await getEffectivePermissionsACL(principals, resourceType, resourceId);
+    return await db.getEffectivePermissions(principals, resourceType, resourceId);
   } catch (error) {
     logger.error(`[PermissionService.getEffectivePermissions] Error: ${error.message}`);
     return 0;
@@ -206,10 +191,10 @@ const getResourcePermissionsMap = async ({ userId, role, resourceType, resourceI
 
   try {
     // Get user principals (user + groups + public)
-    const principals = await getUserPrincipals({ userId, role });
+    const principals = await db.getUserPrincipals({ userId, role });
 
     // Use batch method from aclEntry
-    const permissionsMap = await getEffectivePermissionsForResourcesACL(
+    const permissionsMap = await db.getEffectivePermissionsForResources(
       principals,
       resourceType,
       resourceIds,
@@ -244,12 +229,12 @@ const findAccessibleResources = async ({ userId, role, resourceType, requiredPer
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principalsList = await getUserPrincipals({ userId, role });
+    const principalsList = await db.getUserPrincipals({ userId, role });
 
     if (principalsList.length === 0) {
       return [];
     }
-    return await findAccessibleResourcesACL(principalsList, resourceType, requiredPermissions);
+    return await db.findAccessibleResources(principalsList, resourceType, requiredPermissions);
   } catch (error) {
     logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
     // Re-throw validation errors
@@ -275,17 +260,9 @@ const findPubliclyAccessibleResources = async ({ resourceType, requiredPermissio
 
     validateResourceType(resourceType);
 
-    // Find all public ACL entries where the public principal has at least the required permission bits
-    const entries = await AclEntry.find({
-      principalType: PrincipalType.PUBLIC,
-      resourceType,
-      permBits: { $bitsAllSet: requiredPermissions },
-    }).distinct('resourceId');
-
-    return entries;
+    return await db.findPublicResourceIds(resourceType, requiredPermissions);
   } catch (error) {
     logger.error(`[PermissionService.findPubliclyAccessibleResources] Error: ${error.message}`);
-    // Re-throw validation errors
     if (error.message.includes('requiredPermissions must be')) {
       throw error;
     }
@@ -302,7 +279,7 @@ const findPubliclyAccessibleResources = async ({ resourceType, requiredPermissio
 const getAvailableRoles = async ({ resourceType }) => {
   validateResourceType(resourceType);
 
-  return await AccessRole.find({ resourceType }).lean();
+  return await db.findRolesByResourceType(resourceType);
 };
 
 /**
@@ -331,15 +308,15 @@ const ensurePrincipalExists = async function (principal) {
       throw new Error('Entra ID user principals must have email and idOnTheSource');
     }
 
-    let existingUser = await findUser({ idOnTheSource: principal.idOnTheSource });
+    let existingUser = await db.findUser({ idOnTheSource: principal.idOnTheSource });
 
     if (!existingUser) {
-      existingUser = await findUser({ email: principal.email });
+      existingUser = await db.findUser({ email: principal.email });
     }
 
     if (existingUser) {
       if (!existingUser.idOnTheSource && principal.idOnTheSource) {
-        await updateUser(existingUser._id, {
+        await db.updateUser(existingUser._id, {
           idOnTheSource: principal.idOnTheSource,
           provider: 'openid',
         });
@@ -355,7 +332,7 @@ const ensurePrincipalExists = async function (principal) {
       idOnTheSource: principal.idOnTheSource,
     };
 
-    const userId = await createUser(userData, true, true);
+    const userId = await db.createUser(userData, true, true);
     return userId.toString();
   }
 
@@ -420,10 +397,10 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
       }
     }
 
-    let existingGroup = await findGroupByExternalId(principal.idOnTheSource, 'entra');
+    let existingGroup = await db.findGroupByExternalId(principal.idOnTheSource, 'entra');
 
     if (!existingGroup && principal.email) {
-      existingGroup = await Group.findOne({ email: principal.email.toLowerCase() }).lean();
+      existingGroup = await db.findGroupByQuery({ email: principal.email.toLowerCase() });
     }
 
     if (existingGroup) {
@@ -452,7 +429,7 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
       }
 
       if (needsUpdate) {
-        await Group.findByIdAndUpdate(existingGroup._id, { $set: updateData }, { new: true });
+        await db.updateGroupById(existingGroup._id, updateData);
       }
 
       return existingGroup._id.toString();
@@ -473,7 +450,7 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
       groupData.description = principal.description;
     }
 
-    const newGroup = await createGroup(groupData);
+    const newGroup = await db.createGroup(groupData);
     return newGroup._id.toString();
   }
   if (principal.id && authContext == null) {
@@ -520,7 +497,7 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
 
     const sessionOptions = session ? { session } : {};
 
-    await Group.updateMany(
+    await db.bulkUpdateGroups(
       {
         idOnTheSource: { $in: allGroupIds },
         source: 'entra',
@@ -530,13 +507,13 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       sessionOptions,
     );
 
-    await Group.updateMany(
+    await db.bulkUpdateGroups(
       {
         source: 'entra',
         memberIds: user.idOnTheSource,
         idOnTheSource: { $nin: allGroupIds },
       },
-      { $pull: { memberIds: user.idOnTheSource } },
+      { $pullAll: { memberIds: [user.idOnTheSource] } },
       sessionOptions,
     );
   } catch (error) {
@@ -563,7 +540,7 @@ const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissio
     // Use public principal to check permissions
     const publicPrincipal = [{ principalType: PrincipalType.PUBLIC }];
 
-    const entries = await findEntriesByPrincipalsAndResource(
+    const entries = await db.findEntriesByPrincipalsAndResource(
       publicPrincipal,
       resourceType,
       resourceId,
@@ -628,7 +605,7 @@ const bulkUpdateResourcePermissions = async ({
 
     const sessionOptions = localSession ? { session: localSession } : {};
 
-    const roles = await AccessRole.find({ resourceType }).lean();
+    const roles = await db.findRolesByResourceType(resourceType);
     const rolesMap = new Map();
     roles.forEach((role) => {
       rolesMap.set(role.accessRoleId, role);
@@ -732,7 +709,7 @@ const bulkUpdateResourcePermissions = async ({
     }
 
     if (bulkWrites.length > 0) {
-      await AclEntry.bulkWrite(bulkWrites, sessionOptions);
+      await db.bulkWriteAclEntries(bulkWrites, sessionOptions);
     }
 
     const deleteQueries = [];
@@ -773,12 +750,7 @@ const bulkUpdateResourcePermissions = async ({
     }
 
     if (deleteQueries.length > 0) {
-      await AclEntry.deleteMany(
-        {
-          $or: deleteQueries,
-        },
-        sessionOptions,
-      );
+      await db.deleteAclEntries({ $or: deleteQueries }, sessionOptions);
     }
 
     if (shouldEndSession && supportsTransactions) {
@@ -788,7 +760,15 @@ const bulkUpdateResourcePermissions = async ({
     return results;
   } catch (error) {
     if (shouldEndSession && supportsTransactions) {
-      await localSession.abortTransaction();
+      try {
+        await localSession.abortTransaction();
+      } catch (transactionError) {
+        /** best-effort abort; may fail if commit already succeeded */
+        logger.error(
+          `[PermissionService.bulkUpdateResourcePermissions] Error aborting transaction:`,
+          transactionError,
+        );
+      }
     }
     logger.error(`[PermissionService.bulkUpdateResourcePermissions] Error: ${error.message}`);
     throw error;
@@ -814,7 +794,7 @@ const removeAllPermissions = async ({ resourceType, resourceId }) => {
       throw new Error(`Invalid resource ID: ${resourceId}`);
     }
 
-    const result = await AclEntry.deleteMany({
+    const result = await db.deleteAclEntries({
       resourceType,
       resourceId,
     });

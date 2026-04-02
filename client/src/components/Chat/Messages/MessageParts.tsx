@@ -4,6 +4,7 @@ import { useRecoilValue } from 'recoil';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
+import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -11,7 +12,6 @@ import SiblingSwitch from './SiblingSwitch';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
-import { cn, getMessageAriaLabel } from '~/utils';
 import store from '~/store';
 
 export default function Message(props: TMessageProps) {
@@ -125,6 +125,9 @@ export default function Message(props: TMessageProps) {
             >
               {!hasParallelContent && (
                 <h2 className={cn('select-none font-semibold text-text-primary', fontSize)}>
+                  <span className="sr-only">
+                    {getHeaderPrefixForScreenReader(message, localize)}
+                  </span>
                   {name}
                 </h2>
               )}

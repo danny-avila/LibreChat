@@ -14,6 +14,7 @@ jest.mock('@librechat/api', () => ({
   isEmailDomainAllowed: jest.fn(),
   math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
   shouldUseSecureCookie: jest.fn(() => false),
+  resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
 }));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
@@ -35,8 +36,14 @@ jest.mock('~/strategies/validators', () => ({ registerSchema: { parse: jest.fn()
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
 
-const { shouldUseSecureCookie } = require('@librechat/api');
-const { setOpenIDAuthTokens } = require('./AuthService');
+const {
+  shouldUseSecureCookie,
+  isEmailDomainAllowed,
+  resolveAppConfigForUser,
+} = require('@librechat/api');
+const { findUser } = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
+const { setOpenIDAuthTokens, requestPasswordReset } = require('./AuthService');
 
 /** Helper to build a mock Express response */
 function mockResponse() {
@@ -265,5 +272,70 @@ describe('setOpenIDAuthTokens', () => {
       expect(result).toBe('the-id-token');
       expect(req.session.openidTokens.refreshToken).toBe('existing-refresh');
     });
+  });
+});
+
+describe('requestPasswordReset', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    isEmailDomainAllowed.mockReturnValue(true);
+    getAppConfig.mockResolvedValue({
+      registration: { allowedDomains: ['example.com'] },
+    });
+    resolveAppConfigForUser.mockResolvedValue({
+      registration: { allowedDomains: ['example.com'] },
+    });
+  });
+
+  it('should fast-fail with base config before DB lookup for blocked domains', async () => {
+    isEmailDomainAllowed.mockReturnValue(false);
+
+    const req = { body: { email: 'blocked@evil.com' }, ip: '127.0.0.1' };
+    const result = await requestPasswordReset(req);
+
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+    expect(findUser).not.toHaveBeenCalled();
+    expect(result).toBeInstanceOf(Error);
+  });
+
+  it('should call resolveAppConfigForUser for tenant user', async () => {
+    const user = {
+      _id: 'user-tenant',
+      email: 'user@example.com',
+      tenantId: 'tenant-x',
+      role: 'USER',
+    };
+    findUser.mockResolvedValue(user);
+
+    const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
+    await requestPasswordReset(req);
+
+    expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, user);
+  });
+
+  it('should reuse baseConfig for non-tenant user without calling resolveAppConfigForUser', async () => {
+    findUser.mockResolvedValue({ _id: 'user-no-tenant', email: 'user@example.com' });
+
+    const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
+    await requestPasswordReset(req);
+
+    expect(resolveAppConfigForUser).not.toHaveBeenCalled();
+  });
+
+  it('should return generic response when tenant config blocks the domain (non-enumerable)', async () => {
+    const user = {
+      _id: 'user-tenant',
+      email: 'user@example.com',
+      tenantId: 'tenant-x',
+      role: 'USER',
+    };
+    findUser.mockResolvedValue(user);
+    isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
+    const result = await requestPasswordReset(req);
+
+    expect(result).not.toBeInstanceOf(Error);
+    expect(result.message).toContain('If an account with that email exists');
   });
 });

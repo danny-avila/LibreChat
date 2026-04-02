@@ -1,13 +1,24 @@
 import { logger } from '@librechat/data-schemas';
+import type {
+  IBalanceUpdate,
+  BalanceConfig,
+  AppConfig,
+  ObjectId,
+  IBalance,
+  IUser,
+} from '@librechat/data-schemas';
 import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
-import type { IBalance, IUser, BalanceConfig, ObjectId, AppConfig } from '@librechat/data-schemas';
-import type { Model } from 'mongoose';
 import type { BalanceUpdateFields } from '~/types';
 import { getBalanceConfig } from '~/app/config';
 
 export interface BalanceMiddlewareOptions {
-  getAppConfig: (options?: { role?: string; refresh?: boolean }) => Promise<AppConfig>;
-  Balance: Model<IBalance>;
+  getAppConfig: (options?: {
+    role?: string;
+    tenantId?: string;
+    refresh?: boolean;
+  }) => Promise<AppConfig>;
+  findBalanceByUser: (userId: string) => Promise<IBalance | null>;
+  upsertBalanceFields: (userId: string, fields: IBalanceUpdate) => Promise<IBalance | null>;
 }
 
 /**
@@ -75,7 +86,8 @@ function buildUpdateFields(
  */
 export function createSetBalanceConfig({
   getAppConfig,
-  Balance,
+  findBalanceByUser,
+  upsertBalanceFields,
 }: BalanceMiddlewareOptions): (
   req: ServerRequest,
   res: ServerResponse,
@@ -84,7 +96,10 @@ export function createSetBalanceConfig({
   return async (req: ServerRequest, res: ServerResponse, next: NextFunction): Promise<void> => {
     try {
       const user = req.user as IUser & { _id: string | ObjectId };
-      const appConfig = await getAppConfig({ role: user?.role });
+      const appConfig = await getAppConfig({
+        role: user?.role,
+        tenantId: user?.tenantId,
+      });
       const balanceConfig = getBalanceConfig(appConfig);
       if (!balanceConfig?.enabled) {
         return next();
@@ -97,18 +112,14 @@ export function createSetBalanceConfig({
         return next();
       }
       const userId = typeof user._id === 'string' ? user._id : user._id.toString();
-      const userBalanceRecord = await Balance.findOne({ user: userId }).lean();
+      const userBalanceRecord = await findBalanceByUser(userId);
       const updateFields = buildUpdateFields(balanceConfig, userBalanceRecord, userId);
 
       if (Object.keys(updateFields).length === 0) {
         return next();
       }
 
-      await Balance.findOneAndUpdate(
-        { user: userId },
-        { $set: updateFields },
-        { upsert: true, new: true },
-      );
+      await upsertBalanceFields(userId, updateFields);
 
       next();
     } catch (error) {

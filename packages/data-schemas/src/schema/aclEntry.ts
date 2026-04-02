@@ -55,12 +55,22 @@ const aclEntrySchema = new Schema<IAclEntry>(
       type: Date,
       default: Date.now,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );
 
-aclEntrySchema.index({ principalId: 1, principalType: 1, resourceType: 1, resourceId: 1 });
-aclEntrySchema.index({ resourceId: 1, principalType: 1, principalId: 1 });
-aclEntrySchema.index({ principalId: 1, permBits: 1, resourceType: 1 });
+aclEntrySchema.index({
+  principalId: 1,
+  principalType: 1,
+  resourceType: 1,
+  resourceId: 1,
+  tenantId: 1,
+});
+aclEntrySchema.index({ resourceId: 1, principalType: 1, principalId: 1, tenantId: 1 });
+aclEntrySchema.index({ principalId: 1, permBits: 1, resourceType: 1, tenantId: 1 });
 
 export default aclEntrySchema;
