@@ -55,10 +55,12 @@ function formatDocumentBlock(
     return document;
   }
 
+  const resolvedFilename = filename || 'document';
+
   if (useResponsesApi) {
     return {
       type: 'input_file',
-      filename,
+      filename: resolvedFilename,
       file_data: `data:${mimeType};base64,${content}`,
     };
   }
@@ -75,7 +77,7 @@ function formatDocumentBlock(
     return {
       type: 'file',
       file: {
-        filename,
+        filename: resolvedFilename,
         file_data: `data:${mimeType};base64,${content}`,
       },
     };
