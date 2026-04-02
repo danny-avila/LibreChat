@@ -202,9 +202,6 @@ describe('endpointSchema deprecated fields', () => {
       only: ['z-ai'],
       quantizations: ['int4'],
     },
-    web_search: {
-      enabled: true,
-    },
   };
 
   it('silently strips deprecated summarize field', () => {
@@ -255,6 +252,43 @@ describe('endpointSchema deprecated fields', () => {
       },
     });
     expect(result.success).toBe(true);
+  });
+
+  it('rejects non-boolean web_search objects in addParams', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      addParams: {
+        provider: {
+          only: ['z-ai'],
+        },
+        web_search: {
+          enabled: true,
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects configSchema entries with non-boolean web_search objects in custom addParams', () => {
+    const result = configSchema.safeParse({
+      version: '1.0.0',
+      endpoints: {
+        custom: [
+          {
+            ...validEndpoint,
+            addParams: {
+              provider: {
+                only: ['z-ai'],
+              },
+              web_search: {
+                enabled: true,
+              },
+            },
+          },
+        ],
+      },
+    });
+    expect(result.success).toBe(false);
   });
 });
 
@@ -311,5 +345,26 @@ describe('azureEndpointSchema', () => {
         },
       });
     }
+  });
+
+  it('rejects non-boolean web_search objects in azure addParams', () => {
+    const result = azureEndpointSchema.safeParse({
+      groups: [
+        {
+          group: 'test-group',
+          apiKey: 'test-key',
+          models: { 'gpt-4': true },
+          addParams: {
+            provider: {
+              only: ['z-ai'],
+            },
+            web_search: {
+              enabled: true,
+            },
+          },
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
   });
 });
