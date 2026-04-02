@@ -8,7 +8,7 @@ import {
 
 import type { GenericTool, LCTool, TokenCounter } from '@librechat/agents';
 
-import { getToolFingerprint, computeToolSchemaTokens, getOrComputeToolTokens } from './toolTokens';
+import { collectToolSchemas, computeToolSchemaTokens, getOrComputeToolTokens } from './toolTokens';
 
 /* ---------- Mock standardCache with hoisted get/set for per-test overrides ---------- */
 const mockCacheStore = new Map<string, unknown>();
@@ -61,36 +61,38 @@ beforeEach(() => {
 });
 
 /* ========================================================================= */
-/*  getToolFingerprint                                                       */
+/*  collectToolSchemas                                                       */
 /* ========================================================================= */
 
-describe('getToolFingerprint', () => {
-  it('returns empty string when no tools or definitions provided', () => {
-    expect(getToolFingerprint()).toBe('');
-    expect(getToolFingerprint([], [])).toBe('');
+describe('collectToolSchemas', () => {
+  it('returns empty map when no tools provided', () => {
+    expect(collectToolSchemas().size).toBe(0);
+    expect(collectToolSchemas([], []).size).toBe(0);
   });
 
-  it('returns sorted names with count from GenericTool array', () => {
-    const tools = [makeTool('beta'), makeTool('alpha')];
-    expect(getToolFingerprint(tools)).toBe('alpha,beta|2');
+  it('collects schemas from GenericTool array keyed by name', () => {
+    const tools = [makeTool('alpha'), makeTool('beta')];
+    const schemas = collectToolSchemas(tools);
+    expect(schemas.size).toBe(2);
+    expect(schemas.has('alpha')).toBe(true);
+    expect(schemas.has('beta')).toBe(true);
   });
 
-  it('returns sorted names with count from LCTool definitions', () => {
-    const defs = [makeToolDef('zulu'), makeToolDef('alpha')];
-    expect(getToolFingerprint(undefined, defs)).toBe('alpha,zulu|2');
+  it('collects schemas from LCTool definitions', () => {
+    const defs = [makeToolDef('x'), makeToolDef('y')];
+    const schemas = collectToolSchemas(undefined, defs);
+    expect(schemas.size).toBe(2);
+    expect(schemas.has('x')).toBe(true);
+    expect(schemas.has('y')).toBe(true);
   });
 
-  it('deduplicates names across tools and toolDefinitions', () => {
-    const tools = [makeTool('shared'), makeTool('only_tool')];
+  it('deduplicates: GenericTool takes precedence over matching toolDefinition', () => {
+    const tools = [makeTool('shared')];
     const defs = [makeToolDef('shared'), makeToolDef('only_def')];
-    expect(getToolFingerprint(tools, defs)).toBe('only_def,only_tool,shared|3');
-  });
-
-  it('is stable regardless of input ordering', () => {
-    const a = getToolFingerprint([makeTool('x'), makeTool('a'), makeTool('m')]);
-    const b = getToolFingerprint([makeTool('m'), makeTool('x'), makeTool('a')]);
-    expect(a).toBe(b);
-    expect(a).toBe('a,m,x|3');
+    const schemas = collectToolSchemas(tools, defs);
+    expect(schemas.size).toBe(2);
+    expect(schemas.has('shared')).toBe(true);
+    expect(schemas.has('only_def')).toBe(true);
   });
 });
 
@@ -228,7 +230,7 @@ describe('getOrComputeToolTokens', () => {
     expect(result).toBe(0);
   });
 
-  it('computes and caches tokens on first call', async () => {
+  it('computes and caches each tool individually on first call', async () => {
     const defs = [makeToolDef('tool_a'), makeToolDef('tool_b')];
     const result = await getOrComputeToolTokens({
       toolDefinitions: defs,
@@ -237,13 +239,12 @@ describe('getOrComputeToolTokens', () => {
     });
 
     expect(result).toBeGreaterThan(0);
-    expect(mockCacheStore.size).toBe(1);
-
-    const cachedValue = Array.from(mockCacheStore.values())[0];
-    expect(cachedValue).toBe(result);
+    expect(mockCacheStore.has('tool_a')).toBe(true);
+    expect(mockCacheStore.has('tool_b')).toBe(true);
+    expect(mockCacheStore.size).toBe(2);
   });
 
-  it('returns cached value on second call without recomputing', async () => {
+  it('uses cached per-tool values on second call without recomputing', async () => {
     const defs = [makeToolDef('tool_a')];
     const counter = jest.fn(fakeTokenCounter);
 
@@ -265,7 +266,7 @@ describe('getOrComputeToolTokens', () => {
     expect(counter.mock.calls.length).toBe(callCountAfterFirst);
   });
 
-  it('caches separately for different providers with different multipliers', async () => {
+  it('applies different multipliers for different providers on same cached raw counts', async () => {
     const defs = [makeToolDef('tool')];
 
     const openai = await getOrComputeToolTokens({
@@ -281,43 +282,28 @@ describe('getOrComputeToolTokens', () => {
     });
 
     expect(openai).not.toBe(anthropic);
-    expect(mockCacheStore.size).toBe(2);
-  });
-
-  it('shares cache for same provider+tools across calls with different agents', async () => {
-    const defs = [makeToolDef('shared_tool')];
-
-    const first = await getOrComputeToolTokens({
-      toolDefinitions: defs,
-      provider: Providers.OPENAI,
-      tokenCounter: fakeTokenCounter,
-    });
-
-    const second = await getOrComputeToolTokens({
-      toolDefinitions: defs,
-      provider: Providers.OPENAI,
-      tokenCounter: fakeTokenCounter,
-    });
-
-    expect(first).toBe(second);
+    // Only one cache entry — raw count is provider-agnostic
     expect(mockCacheStore.size).toBe(1);
   });
 
-  it('recomputes when tool set changes', async () => {
-    const first = await getOrComputeToolTokens({
+  it('only computes new tools when tool set grows', async () => {
+    const counter = jest.fn(fakeTokenCounter);
+
+    await getOrComputeToolTokens({
       toolDefinitions: [makeToolDef('tool_a')],
       provider: Providers.OPENAI,
-      tokenCounter: fakeTokenCounter,
+      tokenCounter: counter,
     });
+    const callsAfterFirst = counter.mock.calls.length;
 
-    const second = await getOrComputeToolTokens({
+    await getOrComputeToolTokens({
       toolDefinitions: [makeToolDef('tool_a'), makeToolDef('tool_b')],
       provider: Providers.OPENAI,
-      tokenCounter: fakeTokenCounter,
+      tokenCounter: counter,
     });
 
-    expect(second).not.toBe(first);
-    expect(second).toBeGreaterThan(first);
+    // Only one new tokenCounter call for tool_b
+    expect(counter.mock.calls.length).toBe(callsAfterFirst + 1);
     expect(mockCacheStore.size).toBe(2);
   });
 
@@ -349,7 +335,7 @@ describe('getOrComputeToolTokens', () => {
     expect(mockSet).toHaveBeenCalled();
   });
 
-  it('uses GenericTool tools for fingerprint and token counting', async () => {
+  it('uses GenericTool tools for per-tool caching', async () => {
     const tools = [makeTool('alpha'), makeTool('beta')];
 
     const result = await getOrComputeToolTokens({
@@ -359,9 +345,27 @@ describe('getOrComputeToolTokens', () => {
     });
 
     expect(result).toBeGreaterThan(0);
-    expect(mockCacheStore.size).toBe(1);
+    expect(mockCacheStore.has('alpha')).toBe(true);
+    expect(mockCacheStore.has('beta')).toBe(true);
+  });
 
-    const key = Array.from(mockCacheStore.keys())[0];
-    expect(key).toContain('alpha,beta|2');
+  it('matches computeToolSchemaTokens output for same inputs', async () => {
+    const defs = [makeToolDef('a'), makeToolDef('b'), makeToolDef('c')];
+
+    const cached = await getOrComputeToolTokens({
+      toolDefinitions: defs,
+      provider: Providers.OPENAI,
+      tokenCounter: fakeTokenCounter,
+    });
+
+    const direct = computeToolSchemaTokens(
+      undefined,
+      defs,
+      Providers.OPENAI,
+      undefined,
+      fakeTokenCounter,
+    );
+
+    expect(cached).toBe(direct);
   });
 });

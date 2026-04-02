@@ -23,7 +23,7 @@ function getCache(): Keyv {
   return toolTokenCache;
 }
 
-function getToolTokenMultiplier(provider: Providers, clientOptions?: ClientOptions): number {
+export function getToolTokenMultiplier(provider: Providers, clientOptions?: ClientOptions): number {
   const isAnthropic =
     provider !== Providers.BEDROCK &&
     (provider === Providers.ANTHROPIC ||
@@ -33,81 +33,69 @@ function getToolTokenMultiplier(provider: Providers, clientOptions?: ClientOptio
   return isAnthropic ? ANTHROPIC_TOOL_TOKEN_MULTIPLIER : DEFAULT_TOOL_TOKEN_MULTIPLIER;
 }
 
+/** Serializes a GenericTool to a JSON string for token counting. Returns null if no schema. */
+function serializeGenericTool(tool: GenericTool): { name: string; json: string } | null {
+  const genericTool = tool as unknown as Record<string, unknown>;
+  const toolName = (genericTool.name as string | undefined) ?? '';
+  if (genericTool.schema == null || typeof genericTool.schema !== 'object') {
+    return null;
+  }
+  const jsonSchema = toJsonSchema(
+    genericTool.schema,
+    toolName,
+    (genericTool.description as string | undefined) ?? '',
+  );
+  return { name: toolName, json: JSON.stringify(jsonSchema) };
+}
+
+/** Serializes an LCTool definition to a JSON string for token counting. */
+function serializeToolDef(def: LCTool): string {
+  return JSON.stringify({
+    type: 'function',
+    function: {
+      name: def.name,
+      description: def.description ?? '',
+      parameters: def.parameters ?? {},
+    },
+  });
+}
+
 /**
- * Single pass over tools and toolDefinitions. Collects:
- * - `names`: deduplicated, sorted tool names for fingerprinting.
- * - `schemas`: pre-serialized JSON strings for token counting.
- *
- * `nameSet` tracks all tool names (for the fingerprint). `countedNames`
- * tracks which tools contributed a schema from the `tools` array — a
- * toolDefinition whose name is in `countedNames` is skipped to avoid
- * double-counting, mirroring AgentContext.calculateInstructionTokens().
+ * Builds a map of tool name → serialized schema JSON. Deduplicates: a tool
+ * present in `tools` (with a schema) takes precedence over a matching
+ * `toolDefinitions` entry, mirroring AgentContext.calculateInstructionTokens().
  */
-function collectToolData(
+export function collectToolSchemas(
   tools?: GenericTool[],
   toolDefinitions?: LCTool[],
-): { names: string[]; schemas: string[] } {
-  const nameSet = new Set<string>();
-  const countedNames = new Set<string>();
-  const schemas: string[] = [];
+): Map<string, string> {
+  const schemas = new Map<string, string>();
 
   if (tools) {
     for (const tool of tools) {
-      const genericTool = tool as unknown as Record<string, unknown>;
-      const toolName = (genericTool.name as string | undefined) ?? '';
-      if (toolName) {
-        nameSet.add(toolName);
-      }
-      if (genericTool.schema != null && typeof genericTool.schema === 'object') {
-        schemas.push(
-          JSON.stringify(
-            toJsonSchema(
-              genericTool.schema,
-              toolName,
-              (genericTool.description as string | undefined) ?? '',
-            ),
-          ),
-        );
-        if (toolName) {
-          countedNames.add(toolName);
-        }
+      const result = serializeGenericTool(tool);
+      if (result && result.name) {
+        schemas.set(result.name, result.json);
       }
     }
   }
 
   if (toolDefinitions) {
     for (const def of toolDefinitions) {
-      if (def.name) {
-        nameSet.add(def.name);
-      }
-      if (countedNames.has(def.name)) {
+      if (!def.name || schemas.has(def.name)) {
         continue;
       }
-      schemas.push(
-        JSON.stringify({
-          type: 'function',
-          function: {
-            name: def.name,
-            description: def.description ?? '',
-            parameters: def.parameters ?? {},
-          },
-        }),
-      );
+      schemas.set(def.name, serializeToolDef(def));
     }
   }
 
-  const names = nameSet.size > 0 ? Array.from(nameSet).sort() : [];
-  return { names, schemas };
+  return schemas;
 }
 
-export function getToolFingerprint(tools?: GenericTool[], toolDefinitions?: LCTool[]): string {
-  const { names } = collectToolData(tools, toolDefinitions);
-  if (names.length === 0) {
-    return '';
-  }
-  return names.join(',') + '|' + names.length;
-}
-
+/**
+ * Computes tool schema tokens from scratch using the provided token counter.
+ * Mirrors the logic in AgentContext.calculateInstructionTokens().
+ */
 export function computeToolSchemaTokens(
   tools: GenericTool[] | undefined,
   toolDefinitions: LCTool[] | undefined,
@@ -115,20 +103,22 @@ export function computeToolSchemaTokens(
   clientOptions: ClientOptions | undefined,
   tokenCounter: TokenCounter,
 ): number {
-  const { schemas } = collectToolData(tools, toolDefinitions);
-  let toolTokens = 0;
-  for (const schema of schemas) {
-    toolTokens += tokenCounter(new SystemMessage(schema));
+  const schemas = collectToolSchemas(tools, toolDefinitions);
+  let rawTokens = 0;
+  for (const json of schemas.values()) {
+    rawTokens += tokenCounter(new SystemMessage(json));
   }
   const multiplier = getToolTokenMultiplier(provider, clientOptions);
-  return Math.ceil(toolTokens * multiplier);
+  return Math.ceil(rawTokens * multiplier);
 }
 
 /**
- * Returns cached tool schema tokens or computes them on miss.
+ * Returns tool schema tokens, using per-tool caching to avoid redundant
+ * token counting. Each tool's raw (pre-multiplier) token count is cached
+ * individually by name, so adding/removing a tool only requires computing
+ * the new one. The provider-specific multiplier is applied to the sum.
+ *
  * Returns 0 if there are no tools.
- * Single pass over tool arrays: builds fingerprint and serialized schemas
- * together, then only runs the token counter if the cache misses.
  */
 export async function getOrComputeToolTokens({
   tools,
@@ -143,45 +133,51 @@ export async function getOrComputeToolTokens({
   clientOptions?: ClientOptions;
   tokenCounter: TokenCounter;
 }): Promise<number> {
-  const { names, schemas } = collectToolData(tools, toolDefinitions);
-  if (names.length === 0) {
+  const schemas = collectToolSchemas(tools, toolDefinitions);
+  if (schemas.size === 0) {
     return 0;
   }
 
-  const fingerprint = names.join(',') + '|' + names.length;
-  const multiplier = getToolTokenMultiplier(provider, clientOptions);
-  const multiplierKey = multiplier === ANTHROPIC_TOOL_TOKEN_MULTIPLIER ? 'anthropic' : 'default';
-  const cacheKey = `${provider}:${multiplierKey}:${fingerprint}`;
-
+  let cache: Keyv | undefined;
   try {
-    const cache = getCache();
-    const cached = (await cache.get(cacheKey)) as number | undefined;
-    if (cached != null && cached > 0) {
-      return cached;
-    }
+    cache = getCache();
   } catch (err) {
-    logger.debug('[toolTokens] Cache read failed, computing fresh', err);
+    logger.debug('[toolTokens] Cache init failed, computing fresh', err);
   }
 
-  // Inline token count — not delegating to computeToolSchemaTokens to avoid
-  // a second collectToolData pass; schemas are already built above.
-  let toolTokens = 0;
-  for (const schema of schemas) {
-    toolTokens += tokenCounter(new SystemMessage(schema));
-  }
-  const tokens = Math.ceil(toolTokens * multiplier);
+  let rawTotal = 0;
+  const toWrite: Array<{ key: string; value: number }> = [];
 
-  if (tokens > 0) {
-    try {
-      getCache()
-        .set(cacheKey, tokens)
-        .catch((err: unknown) => {
-          logger.debug('[toolTokens] Cache write failed', err);
-        });
-    } catch {
-      // getCache() init failure on write path — non-fatal
+  for (const [name, json] of schemas) {
+    let rawCount: number | undefined;
+
+    if (cache) {
+      try {
+        rawCount = (await cache.get(name)) as number | undefined;
+      } catch {
+        // Cache read failed for this tool — will compute fresh
+      }
+    }
+
+    if (rawCount == null || rawCount <= 0) {
+      rawCount = tokenCounter(new SystemMessage(json));
+      if (rawCount > 0 && cache) {
+        toWrite.push({ key: name, value: rawCount });
+      }
+    }
+
+    rawTotal += rawCount;
+  }
+
+  // Fire-and-forget cache writes for newly computed tools
+  if (cache && toWrite.length > 0) {
+    for (const { key, value } of toWrite) {
+      cache.set(key, value).catch((err: unknown) => {
+        logger.debug(`[toolTokens] Cache write failed for ${key}`, err);
+      });
     }
   }
 
-  return tokens;
+  const multiplier = getToolTokenMultiplier(provider, clientOptions);
+  return Math.ceil(rawTotal * multiplier);
 }
