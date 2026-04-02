@@ -17,12 +17,10 @@ jest.mock('~/cache/getLogStores', () => {
   return jest.fn(() => cache);
 });
 
-jest.mock('~/strategies', () => ({
-  getOpenIdConfig: jest.fn(() => ({})),
-}));
-
 const getLogStores = require('~/cache/getLogStores');
-const { stripCodeChallenge, storeAndStripChallenge } = require('~/server/routes/admin/auth')._test;
+const { stripCodeChallenge, storeAndStripChallenge } = require('~/server/utils/adminPkce');
+
+const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
 
 function makeReq({ query = {}, originalUrl = '', url = '' } = {}) {
   return { query: { ...query }, originalUrl, url };
@@ -132,11 +130,9 @@ describe('stripCodeChallenge', () => {
 
 describe('storeAndStripChallenge', () => {
   const challenge = 'a'.repeat(64);
-  let cache;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
     cache._store.clear();
   });
 
@@ -167,6 +163,8 @@ describe('storeAndStripChallenge', () => {
 
     expect(result).toBe(true);
     expect(cache.set).not.toHaveBeenCalled();
+    expect(req.originalUrl).toBe('/oauth/openid');
+    expect(req.url).toBe('/oauth/openid');
   });
 
   it('strips and returns true when code_challenge is invalid (not 64 hex)', async () => {
@@ -181,6 +179,8 @@ describe('storeAndStripChallenge', () => {
     expect(result).toBe(true);
     expect(cache.set).not.toHaveBeenCalled();
     expect(req.query.code_challenge).toBeUndefined();
+    expect(req.originalUrl).toBe('/oauth/openid');
+    expect(req.url).toBe('/oauth/openid');
   });
 
   it('returns false and does not strip on cache failure', async () => {
