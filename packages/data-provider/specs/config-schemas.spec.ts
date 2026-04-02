@@ -1,4 +1,5 @@
 import {
+  configSchema,
   endpointSchema,
   paramDefinitionSchema,
   agentsEndpointSchema,
@@ -196,6 +197,15 @@ describe('endpointSchema deprecated fields', () => {
     baseURL: 'https://api.example.com',
     models: { default: ['model-1'] },
   };
+  const nestedAddParams = {
+    provider: {
+      only: ['z-ai'],
+      quantizations: ['int4'],
+    },
+    web_search: {
+      enabled: true,
+    },
+  };
 
   it('silently strips deprecated summarize field', () => {
     const result = endpointSchema.safeParse({
@@ -219,6 +229,32 @@ describe('endpointSchema deprecated fields', () => {
     if (result.success) {
       expect(result.data).not.toHaveProperty('customOrder');
     }
+  });
+
+  it('accepts nested addParams objects and arrays', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      addParams: nestedAddParams,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.addParams).toEqual(nestedAddParams);
+    }
+  });
+
+  it('keeps configSchema validation intact with nested custom addParams', () => {
+    const result = configSchema.safeParse({
+      version: '1.0.0',
+      endpoints: {
+        custom: [
+          {
+            ...validEndpoint,
+            addParams: nestedAddParams,
+          },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
   });
 });
 
@@ -249,6 +285,31 @@ describe('azureEndpointSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data).not.toHaveProperty('plugins');
+    }
+  });
+
+  it('accepts nested addParams in azure groups', () => {
+    const result = azureEndpointSchema.safeParse({
+      groups: [
+        {
+          group: 'test-group',
+          apiKey: 'test-key',
+          models: { 'gpt-4': true },
+          addParams: {
+            provider: {
+              only: ['z-ai'],
+            },
+          },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.groups[0].addParams).toEqual({
+        provider: {
+          only: ['z-ai'],
+        },
+      });
     }
   });
 });

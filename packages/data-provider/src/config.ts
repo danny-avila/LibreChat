@@ -115,13 +115,26 @@ export const modelConfigSchema = z
 
 export type TAzureModelConfig = z.infer<typeof modelConfigSchema>;
 
+type ParamValue = string | number | boolean | null | ParamValue[] | { [key: string]: ParamValue };
+
+const paramValueSchema: z.ZodType<ParamValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(paramValueSchema),
+    z.record(z.string(), paramValueSchema),
+  ]),
+);
+
 export const azureBaseSchema = z.object({
   apiKey: z.string(),
   serverless: z.boolean().optional(),
   instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
   assistants: z.boolean().optional(),
-  addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  addParams: z.record(z.string(), paramValueSchema).optional(),
   dropParams: z.array(z.string()).optional(),
   version: z.string().optional(),
   baseURL: z.string().optional(),
@@ -361,7 +374,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
     headers: z.record(z.string()).optional(),
-    addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+    addParams: z.record(z.string(), paramValueSchema).optional(),
     dropParams: z.array(z.string()).optional(),
     customParams: z
       .object({
