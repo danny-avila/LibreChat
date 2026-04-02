@@ -296,7 +296,6 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const agentInputs: AgentInputs[] = [];
   const buildAgentContext = async (agent: RunAgent): Promise<AgentInputs> => {
     const provider =
       (providerEndpointMap[
@@ -382,7 +381,6 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
-    /** Resolve cached or computed tool schema tokens */
     let toolSchemaTokens: number | undefined;
     if (tokenCounter) {
       toolSchemaTokens = await getOrComputeToolTokens({
@@ -418,8 +416,7 @@ export async function createRun({
     return agentInput;
   };
 
-  const resolvedInputs = await Promise.all(agents.map(buildAgentContext));
-  agentInputs.push(...resolvedInputs);
+  const agentInputs = await Promise.all(agents.map(buildAgentContext));
 
   const graphConfig: RunConfig['graphConfig'] = {
     signal,
