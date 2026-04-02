@@ -8,6 +8,7 @@ const {
 } = require('@librechat/agents');
 const {
   sendEvent,
+  sendProgress,
   MCPOAuthHandler,
   isMCPDomainAllowed,
   normalizeServerName,
@@ -648,6 +649,30 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
         graphTokenResolver: getGraphApiToken,
+        onProgress: async (progressData) => {
+          logger.debug(
+            `[MCP][${serverName}][${toolName}] Sending progress to client:`,
+            progressData,
+          );
+          const eventData = {
+            progress: progressData.progress,
+            total: progressData.total,
+            message: progressData.message,
+            toolCallId: toolCall.id,
+          };
+          try {
+            if (streamId) {
+              await GenerationJobManager.emitTransientEvent(streamId, {
+                event: 'progress',
+                data: eventData,
+              });
+            } else {
+              sendProgress(res, eventData);
+            }
+          } catch (err) {
+            logger.error(`[MCP][${serverName}][${toolName}] Failed to emit progress:`, err);
+          }
+        },
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

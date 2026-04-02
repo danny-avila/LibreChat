@@ -1,7 +1,7 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
-import { Tools, Constants } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { Provider } from 'jotai';
+import { Tools, Constants } from 'librechat-data-provider';
 import ToolCall from '../ToolCall';
 
 // Mock dependencies
@@ -57,15 +57,19 @@ jest.mock('../ProgressText', () => ({
     onClick,
     inProgressText,
     finishedText,
+    error,
+    progress,
     subtitle,
   }: {
     onClick?: () => void;
     inProgressText?: string;
     finishedText?: string;
+    error?: string;
+    progress: number;
     subtitle?: string;
   }) => (
     <div data-testid="progress-text" onClick={onClick}>
-      {finishedText || inProgressText}
+      {error || progress >= 1 ? finishedText : inProgressText}
       {subtitle && <span data-testid="subtitle">{subtitle}</span>}
     </div>
   ),
@@ -98,6 +102,34 @@ jest.mock('~/utils', () => ({
   cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
 }));
 
+const mockUseAtomValue = jest.fn().mockReturnValue(undefined);
+const mockClearProgress = jest.fn();
+
+jest.mock('jotai', () => ({
+  ...jest.requireActual('jotai'),
+  useAtomValue: (...args: any[]) => mockUseAtomValue(...args),
+  useSetAtom: () => mockClearProgress,
+}));
+
+const DUMMY_ATOM = { toString: () => 'dummy-atom' };
+
+jest.mock('~/store/progress', () => ({
+  toolCallProgressFamily: jest.fn().mockReturnValue(DUMMY_ATOM),
+  clearToolCallProgressAtom: {},
+}));
+
+jest.mock('recoil', () => ({
+  ...jest.requireActual('recoil'),
+  useRecoilValue: jest.fn().mockReturnValue(false),
+}));
+
+jest.mock('~/store', () => ({
+  __esModule: true,
+  default: {
+    autoExpandTools: 'autoExpandTools',
+  },
+}));
+
 describe('ToolCall', () => {
   const mockProps = {
     args: '{"test": "input"}',
@@ -107,12 +139,14 @@ describe('ToolCall', () => {
     isSubmitting: false,
   };
 
-  const renderWithRecoil = (component: React.ReactElement) => {
-    return render(<RecoilRoot>{component}</RecoilRoot>);
+  const renderWithJotai = (component: React.ReactElement) => {
+    return render(<Provider>{component}</Provider>);
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseAtomValue.mockReturnValue(undefined);
+    mockClearProgress.mockClear();
   });
 
   describe('attachments prop passing', () => {
@@ -129,7 +163,7 @@ describe('ToolCall', () => {
         },
       ];
 
-      renderWithRecoil(<ToolCall {...mockProps} attachments={attachments as any} />);
+      renderWithJotai(<ToolCall {...mockProps} attachments={attachments} />);
 
       fireEvent.click(screen.getByTestId('progress-text'));
 
@@ -141,7 +175,7 @@ describe('ToolCall', () => {
     });
 
     it('should pass empty array when no attachments', () => {
-      renderWithRecoil(<ToolCall {...mockProps} />);
+      renderWithJotai(<ToolCall {...mockProps} />);
 
       fireEvent.click(screen.getByTestId('progress-text'));
 
@@ -172,7 +206,7 @@ describe('ToolCall', () => {
         },
       ];
 
-      renderWithRecoil(<ToolCall {...mockProps} attachments={attachments as any} />);
+      renderWithJotai(<ToolCall {...mockProps} attachments={attachments} />);
 
       fireEvent.click(screen.getByTestId('progress-text'));
 
@@ -196,7 +230,7 @@ describe('ToolCall', () => {
         },
       ];
 
-      renderWithRecoil(<ToolCall {...mockProps} attachments={attachments as any} />);
+      renderWithJotai(<ToolCall {...mockProps} attachments={attachments} />);
 
       const attachmentGroup = screen.getByTestId('attachment-group');
       expect(attachmentGroup).toBeInTheDocument();
@@ -204,13 +238,13 @@ describe('ToolCall', () => {
     });
 
     it('should not render AttachmentGroup when no attachments', () => {
-      renderWithRecoil(<ToolCall {...mockProps} />);
+      renderWithJotai(<ToolCall {...mockProps} />);
 
       expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
     });
 
     it('should not render AttachmentGroup when attachments is empty array', () => {
-      renderWithRecoil(<ToolCall {...mockProps} attachments={[]} />);
+      renderWithJotai(<ToolCall {...mockProps} attachments={[]} />);
 
       expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
     });
@@ -218,7 +252,7 @@ describe('ToolCall', () => {
 
   describe('tool call info visibility', () => {
     it('should toggle tool call info expand/collapse when clicking header', () => {
-      renderWithRecoil(<ToolCall {...mockProps} />);
+      renderWithJotai(<ToolCall {...mockProps} />);
 
       // ToolCallInfo is always in the DOM (CSS expand/collapse), but initially collapsed
       const toolCallInfo = screen.getByTestId('tool-call-info');
@@ -233,8 +267,29 @@ describe('ToolCall', () => {
       expect(screen.getByTestId('tool-call-info')).toBeInTheDocument();
     });
 
-    it('should pass input and output props to ToolCallInfo', () => {
-      renderWithRecoil(<ToolCall {...mockProps} />);
+    it('should pass all required props to ToolCallInfo', () => {
+      const attachments = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg123',
+          toolCallId: 'tool456',
+          conversationId: 'conv789',
+          [Tools.ui_resources]: {
+            '0': { type: 'button', label: 'Test' },
+          },
+        },
+      ];
+
+      // Use a name with domain separator (_action_) and domain separator (---)
+      const propsWithDomain = {
+        ...mockProps,
+        name: 'testFunction_action_test---domain---com',
+        attachments,
+      };
+
+      renderWithJotai(<ToolCall {...propsWithDomain} />);
+
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -249,9 +304,10 @@ describe('ToolCall', () => {
       const originalOpen = window.open;
       window.open = jest.fn();
 
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
+          output={undefined}
           initialProgress={0.5} // Less than 1 so it's not complete
           auth="https://auth.example.com"
           isSubmitting={true} // Should be submitting for auth to show
@@ -272,7 +328,7 @@ describe('ToolCall', () => {
     });
 
     it('should not show auth section when cancelled', () => {
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           auth="https://auth.example.com"
@@ -285,7 +341,7 @@ describe('ToolCall', () => {
     });
 
     it('should not show auth section when progress is complete', () => {
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           auth="https://auth.example.com"
@@ -300,7 +356,9 @@ describe('ToolCall', () => {
 
   describe('edge cases', () => {
     it('should handle undefined args', () => {
-      renderWithRecoil(<ToolCall {...mockProps} args={undefined as any} />);
+      renderWithJotai(<ToolCall {...mockProps} args={undefined} />);
+
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
@@ -308,15 +366,17 @@ describe('ToolCall', () => {
     });
 
     it('should handle null output', () => {
-      renderWithRecoil(<ToolCall {...mockProps} output={null} />);
+      renderWithJotai(<ToolCall {...mockProps} output={null} />);
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
       expect(props.output).toBeNull();
     });
 
-    it('should handle simple function name without domain', () => {
-      renderWithRecoil(<ToolCall {...mockProps} name="simpleName" />);
+    it('should handle missing domain', () => {
+      renderWithJotai(<ToolCall {...mockProps} domain={undefined} authDomain={undefined} />);
+
+      fireEvent.click(screen.getByTestId('progress-text'));
 
       const toolCallInfo = screen.getByTestId('tool-call-info');
       expect(toolCallInfo).toBeInTheDocument();
@@ -344,7 +404,7 @@ describe('ToolCall', () => {
         },
       ];
 
-      renderWithRecoil(<ToolCall {...mockProps} attachments={complexAttachments as any} />);
+      renderWithJotai(<ToolCall {...mockProps} attachments={complexAttachments} />);
 
       fireEvent.click(screen.getByTestId('progress-text'));
 
@@ -361,7 +421,7 @@ describe('ToolCall', () => {
     const d = Constants.mcp_delimiter;
 
     it('should detect MCP OAuth from delimiter in tool-call name', () => {
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           name={`oauth${d}my-server`}
@@ -375,7 +435,7 @@ describe('ToolCall', () => {
     });
 
     it('should preserve full server name when it contains the delimiter substring', () => {
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           name={`oauth${d}foo${d}bar`}
@@ -389,7 +449,7 @@ describe('ToolCall', () => {
     });
 
     it('should display server name (not "oauth") as function_name for OAuth tool calls', () => {
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           name={`oauth${d}my-server`}
@@ -407,7 +467,7 @@ describe('ToolCall', () => {
     it('should display server name even when auth is cleared (post-completion)', () => {
       // After OAuth completes, createOAuthEnd re-emits the toolCall without auth.
       // The display should still show the server name, not literal "oauth".
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           name={`oauth${d}my-server`}
@@ -425,7 +485,7 @@ describe('ToolCall', () => {
       const authUrl =
         'https://oauth.example.com/authorize?redirect_uri=' +
         encodeURIComponent('https://app.example.com/api/mcp/my-server/oauth/callback');
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           name="bare_name"
@@ -442,7 +502,7 @@ describe('ToolCall', () => {
       const authUrl =
         'https://oauth.example.com/authorize?redirect_uri=' +
         encodeURIComponent('https://app.example.com/api/mcp/my-server/oauth/callback');
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           name="bare_name"
@@ -462,7 +522,7 @@ describe('ToolCall', () => {
       // gets prefixed to oauth_mcp_oauth_mcp_server. Client parses:
       // func="oauth", server="oauth_mcp_server". Visually awkward but
       // semantically correct — the normalized name IS oauth_mcp_server.
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           name={`oauth${d}oauth${d}server`}
@@ -479,7 +539,7 @@ describe('ToolCall', () => {
       const authUrl =
         'https://oauth.example.com/authorize?redirect_uri=' +
         encodeURIComponent('https://app.example.com/api/actions/xyz/oauth/callback');
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           name="action_name"
@@ -494,7 +554,7 @@ describe('ToolCall', () => {
 
   describe('A11Y-04: screen reader status announcements', () => {
     it('includes sr-only aria-live region for status announcements', () => {
-      renderWithRecoil(
+      renderWithJotai(
         <ToolCall
           {...mockProps}
           initialProgress={1}
@@ -507,6 +567,145 @@ describe('ToolCall', () => {
       const liveRegion = document.querySelector('[aria-live="polite"]');
       expect(liveRegion).not.toBeNull();
       expect(liveRegion!.className).toContain('sr-only');
+    });
+  });
+
+  describe('getInProgressText - MCP progress display', () => {
+    it('shows mcpProgress.message when available', () => {
+      mockUseAtomValue.mockReturnValue({
+        progress: 2,
+        total: 10,
+        message: 'Fetching data from API...',
+        timestamp: Date.now(),
+      });
+
+      renderWithJotai(
+        <ToolCall
+          {...mockProps}
+          output={undefined}
+          initialProgress={0.1}
+          isSubmitting={true}
+          toolCallId="call-123"
+        />,
+      );
+
+      expect(screen.getByTestId('progress-text')).toHaveTextContent('Fetching data from API...');
+    });
+
+    it('shows "functionName: X/Y" when mcpProgress has total but no message', () => {
+      mockUseAtomValue.mockReturnValue({
+        progress: 3,
+        total: 10,
+        timestamp: Date.now(),
+      });
+
+      renderWithJotai(
+        <ToolCall
+          {...mockProps}
+          output={undefined}
+          initialProgress={0.1}
+          isSubmitting={true}
+          toolCallId="call-123"
+        />,
+      );
+
+      expect(screen.getByTestId('progress-text')).toHaveTextContent('testFunction: 3/10');
+    });
+
+    it('falls back to running_var localisation when no mcpProgress', () => {
+      mockUseAtomValue.mockReturnValue(undefined);
+
+      renderWithJotai(
+        <ToolCall {...mockProps} output={undefined} initialProgress={0.1} isSubmitting={true} />,
+      );
+
+      expect(screen.getByTestId('progress-text')).toHaveTextContent('Running testFunction');
+    });
+
+    it('prefers message over progress/total when both are present', () => {
+      mockUseAtomValue.mockReturnValue({
+        progress: 5,
+        total: 10,
+        message: 'Custom status message',
+        timestamp: Date.now(),
+      });
+
+      renderWithJotai(
+        <ToolCall
+          {...mockProps}
+          output={undefined}
+          initialProgress={0.1}
+          isSubmitting={true}
+          toolCallId="call-123"
+        />,
+      );
+
+      expect(screen.getByTestId('progress-text')).toHaveTextContent('Custom status message');
+      expect(screen.getByTestId('progress-text')).not.toHaveTextContent('testFunction: 5/10');
+    });
+  });
+
+  describe('toolCallId prop and progress atom integration', () => {
+    it('passes toolCallId to toolCallProgressFamily when provided', () => {
+      const { toolCallProgressFamily } = jest.requireMock('~/store/progress');
+
+      renderWithJotai(<ToolCall {...mockProps} toolCallId="specific-call-id" />);
+
+      expect(toolCallProgressFamily).toHaveBeenCalledWith('specific-call-id');
+    });
+
+    it('passes empty string to toolCallProgressFamily when toolCallId is undefined', () => {
+      const { toolCallProgressFamily } = jest.requireMock('~/store/progress');
+
+      renderWithJotai(<ToolCall {...mockProps} />);
+
+      expect(toolCallProgressFamily).toHaveBeenCalledWith('');
+    });
+
+    it('calls clearProgress with toolCallId when output arrives', () => {
+      mockUseAtomValue.mockReturnValue(mockClearProgress);
+
+      renderWithJotai(
+        <ToolCall {...mockProps} output="Tool completed" toolCallId="call-to-clear" />,
+      );
+
+      expect(mockClearProgress).toHaveBeenCalledWith('call-to-clear');
+    });
+
+    it('does not call clearProgress when toolCallId is undefined', () => {
+      mockUseAtomValue.mockReturnValue(mockClearProgress);
+
+      renderWithJotai(<ToolCall {...mockProps} output="Tool completed" />);
+
+      expect(mockClearProgress).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancelled state with hasOutput', () => {
+    it('is not cancelled when output exists even with low progress', () => {
+      renderWithJotai(
+        <ToolCall {...mockProps} output="Result" initialProgress={0.1} isSubmitting={false} />,
+      );
+
+      // When not cancelled and has output → shows finished text, not "Cancelled"
+      expect(screen.queryByTestId('progress-text')).not.toHaveTextContent('Cancelled');
+      expect(screen.queryByTestId('progress-text')).toHaveTextContent('Completed testFunction');
+    });
+
+    it('is cancelled when no output and not submitting and progress < 1', () => {
+      renderWithJotai(
+        <ToolCall {...mockProps} output={undefined} initialProgress={0.1} isSubmitting={false} />,
+      );
+
+      expect(screen.getByTestId('progress-text')).toHaveTextContent('Cancelled');
+    });
+
+    it('shows finished text when progress is 1 and output is present', () => {
+      renderWithJotai(
+        <ToolCall {...mockProps} output="Done" initialProgress={1} isSubmitting={false} />,
+      );
+
+      expect(screen.getByTestId('progress-text')).toHaveTextContent('Completed testFunction');
     });
   });
 });
