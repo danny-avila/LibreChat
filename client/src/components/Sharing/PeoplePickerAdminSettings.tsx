@@ -96,9 +96,10 @@ const PeoplePickerAdminSettings = () => {
     enabled: user?.role === SystemRoles.ADMIN,
   });
   const isSelectedCustomRole = !isSystemRoleName(selectedRole);
-  const { data: customRoleData = null } = useGetRole(selectedRole, {
-    enabled: isSelectedCustomRole,
-  });
+  const { data: customRoleData = null } = useGetRole(
+    isSelectedCustomRole ? selectedRole : '_',
+    { enabled: isSelectedCustomRole },
+  );
 
   const defaultValues = useMemo(() => {
     if (isSelectedCustomRole && customRoleData?.permissions) {
@@ -142,6 +143,16 @@ const PeoplePickerAdminSettings = () => {
     }
   }, [roles, selectedRole, reset, isSelectedCustomRole, customRoleData]);
 
+  const availableRoleNames = useMemo(() => {
+    const names = roleList?.roles?.map((r) => r.name);
+    return names?.length ? names : [SystemRoles.USER, SystemRoles.ADMIN];
+  }, [roleList]);
+
+  const roleDropdownItems = useMemo(
+    () => availableRoleNames.map((role) => ({ label: role, onClick: () => setSelectedRole(role) })),
+    [availableRoleNames],
+  );
+
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
   }
@@ -167,15 +178,6 @@ const PeoplePickerAdminSettings = () => {
   const onSubmit = (data: FormValues) => {
     mutate({ roleName: selectedRole, updates: data });
   };
-
-  const availableRoleNames = roleList?.roles?.map((r) => r.name) ?? [
-    SystemRoles.USER,
-    SystemRoles.ADMIN,
-  ];
-  const roleDropdownItems = availableRoleNames.map((role) => ({
-    label: role,
-    onClick: () => setSelectedRole(role),
-  }));
 
   return (
     <OGDialog>

@@ -560,7 +560,7 @@ describe('AuthContextProvider — custom role detection and fetching', () => {
       return { data: null };
     });
 
-    renderProviderLive();
+    const { getByTestId } = renderProviderLive();
 
     const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
       unknown,
@@ -573,6 +573,11 @@ describe('AuthContextProvider — custom role detection and fetching', () => {
     act(() => {
       jest.advanceTimersByTime(100);
     });
+
+    const rolesAttr = getByTestId('consumer').getAttribute('data-roles') ?? '{}';
+    const roles = JSON.parse(rolesAttr);
+    expect(roles).toHaveProperty('STAFF');
+    expect(roles.STAFF).toEqual(staffPermissions);
 
     mockUseGetRole.mockReturnValue({ data: null });
     jest.useRealTimers();
