@@ -124,10 +124,9 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
     enabled: user?.role === SystemRoles.ADMIN,
   });
   const isSelectedCustomRole = !isSystemRoleName(selectedRole);
-  const { data: customRoleData = null } = useGetRole(
-    isSelectedCustomRole ? selectedRole : '_',
-    { enabled: isSelectedCustomRole },
-  );
+  const { data: customRoleData = null } = useGetRole(isSelectedCustomRole ? selectedRole : '_', {
+    enabled: isSelectedCustomRole,
+  });
 
   const defaultValues = useMemo(() => {
     if (isSelectedCustomRole && customRoleData?.permissions) {

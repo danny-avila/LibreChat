@@ -40,7 +40,7 @@ const staffRole = {
 };
 
 const userRole = roleDefaults[SystemRoles.USER];
-const adminRole = roleDefaults[SystemRoles.ADMIN];
+const _adminRole = roleDefaults[SystemRoles.ADMIN];
 
 beforeEach(() => {
   jest.clearAllMocks();

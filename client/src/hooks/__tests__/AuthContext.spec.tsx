@@ -487,9 +487,7 @@ describe('AuthContextProvider — custom role detection and fetching', () => {
       jest.advanceTimersByTime(100);
     });
 
-    const staffCalls = mockUseGetRole.mock.calls.filter(
-      ([name]: [string]) => name === 'STAFF',
-    );
+    const staffCalls = mockUseGetRole.mock.calls.filter(([name]: [string]) => name === 'STAFF');
     expect(staffCalls.length).toBeGreaterThan(0);
     const lastStaffCall = staffCalls[staffCalls.length - 1];
     expect(lastStaffCall[1]).toEqual(expect.objectContaining({ enabled: true }));
