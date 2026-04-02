@@ -64,6 +64,16 @@ function UnknownIcon({
 }) {
   const endpoint = _endpoint ?? '';
   if (!endpoint) {
+    // Check for custom landing icon
+    if (context === 'landing' && window?.['startupConfig']?.interface?.landingIconURL) {
+      return (
+        <img
+          className={className}
+          src={window['startupConfig'].interface.landingIconURL}
+          alt="Landing Icon"
+        />
+      );
+    }
     return <CustomMinimalIcon className={className} />;
   }
 
