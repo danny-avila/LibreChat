@@ -79,6 +79,21 @@ const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
 const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
 
 /**
+ * Strips `code_challenge` from the request query and URL strings.
+ *
+ * openid-client's Passport Strategy uses `currentUrl.searchParams.size === 0`
+ * to distinguish an initial authorization request from an OAuth callback.
+ * The admin-panel-specific `code_challenge` query parameter would cause the
+ * strategy to misclassify the request as a callback and return 401.
+ * @param {import('express').Request} req
+ */
+function stripCodeChallenge(req) {
+  delete req.query.code_challenge;
+  req.originalUrl = req.originalUrl.replace(/[?&]code_challenge=[^&]+/, '');
+  req.url = req.url.replace(/[?&]code_challenge=[^&]+/, '');
+}
+
+/**
  * Generates a random hex state string for OAuth flows.
  * @returns {string} A 32-byte random hex string.
  */
@@ -155,6 +170,8 @@ router.get('/oauth/openid', async (req, res, next) => {
     );
   }
 
+  stripCodeChallenge(req);
+
   return passport.authenticate('openidAdmin', {
     session: false,
     state,
@@ -192,6 +209,8 @@ router.get('/oauth/saml', async (req, res, next) => {
     );
   }
 
+  stripCodeChallenge(req);
+
   return passport.authenticate('samlAdmin', {
     session: false,
     additionalParams: { RelayState: state },
@@ -228,6 +247,8 @@ router.get('/oauth/google', async (req, res, next) => {
       `${getAdminPanelUrl()}/auth/google/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
+
+  stripCodeChallenge(req);
 
   return passport.authenticate('googleAdmin', {
     scope: ['openid', 'profile', 'email'],
@@ -267,6 +288,8 @@ router.get('/oauth/github', async (req, res, next) => {
     );
   }
 
+  stripCodeChallenge(req);
+
   return passport.authenticate('githubAdmin', {
     scope: ['user:email', 'read:user'],
     session: false,
@@ -304,6 +327,8 @@ router.get('/oauth/discord', async (req, res, next) => {
       `${getAdminPanelUrl()}/auth/discord/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
+
+  stripCodeChallenge(req);
 
   return passport.authenticate('discordAdmin', {
     scope: ['identify', 'email'],
@@ -343,6 +368,8 @@ router.get('/oauth/facebook', async (req, res, next) => {
     );
   }
 
+  stripCodeChallenge(req);
+
   return passport.authenticate('facebookAdmin', {
     scope: ['public_profile'],
     session: false,
@@ -380,6 +407,8 @@ router.get('/oauth/apple', async (req, res, next) => {
       `${getAdminPanelUrl()}/auth/apple/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
     );
   }
+
+  stripCodeChallenge(req);
 
   return passport.authenticate('appleAdmin', {
     session: false,
