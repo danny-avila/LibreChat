@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { SystemRoles, roleDefaults, isSystemRoleName } from 'librechat-data-provider';
 import type { PermissionTypes, TRole } from 'librechat-data-provider';
 import { useGetRole, useListRoles } from '~/data-provider';
