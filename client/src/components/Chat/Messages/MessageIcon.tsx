@@ -19,32 +19,22 @@ type MessageIconProps = {
  * this component renders display properties only, not identity-derived content.
  */
 export function arePropsEqual(prev: MessageIconProps, next: MessageIconProps): boolean {
-  if (prev.iconData?.endpoint !== next.iconData?.endpoint) {
-    return false;
-  }
-  if (prev.iconData?.model !== next.iconData?.model) {
-    return false;
-  }
-  if (prev.iconData?.iconURL !== next.iconData?.iconURL) {
-    return false;
-  }
-  if (prev.iconData?.modelLabel !== next.iconData?.modelLabel) {
-    return false;
-  }
-  if (prev.iconData?.isCreatedByUser !== next.iconData?.isCreatedByUser) {
-    return false;
-  }
-  if (prev.agent?.name !== next.agent?.name) {
-    return false;
-  }
-  if (prev.agent?.avatar?.filepath !== next.agent?.avatar?.filepath) {
-    return false;
-  }
-  if (prev.assistant?.name !== next.assistant?.name) {
-    return false;
-  }
-  if (prev.assistant?.metadata?.avatar !== next.assistant?.metadata?.avatar) {
-    return false;
+  const checks: [unknown, unknown][] = [
+    [prev.iconData?.endpoint, next.iconData?.endpoint],
+    [prev.iconData?.model, next.iconData?.model],
+    [prev.iconData?.iconURL, next.iconData?.iconURL],
+    [prev.iconData?.modelLabel, next.iconData?.modelLabel],
+    [prev.iconData?.isCreatedByUser, next.iconData?.isCreatedByUser],
+    [prev.agent?.name, next.agent?.name],
+    [prev.agent?.avatar?.filepath, next.agent?.avatar?.filepath],
+    [prev.assistant?.name, next.assistant?.name],
+    [prev.assistant?.metadata?.avatar, next.assistant?.metadata?.avatar],
+  ];
+
+  for (const [prevVal, nextVal] of checks) {
+    if (prevVal !== nextVal) {
+      return false;
+    }
   }
   return true;
 }
