@@ -147,35 +147,13 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       error: oauthError,
     });
 
-    if (oauthError) {
-      logger.error('[MCP OAuth] OAuth error received', { error: oauthError });
-      if (state && typeof state === 'string') {
-        try {
-          const flowsCache = getLogStores(CacheKeys.FLOWS);
-          const flowManager = getFlowStateManager(flowsCache);
-          const flowId = await MCPOAuthHandler.resolveStateToFlowId(state, flowManager);
-          if (flowId) {
-            await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
-            logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
-              flowId,
-              error: oauthError,
-            });
-          }
-        } catch (err) {
-          logger.debug('[MCP OAuth] Could not mark flow as failed', err);
-        }
-      }
-      return res.redirect(
-        `${basePath}/oauth/error?error=${encodeURIComponent(String(oauthError))}`,
-      );
-    }
-
-    if (!code || typeof code !== 'string') {
-      logger.error('[MCP OAuth] Missing or invalid code');
-      return res.redirect(`${basePath}/oauth/error?error=missing_code`);
-    }
-
     if (!state || typeof state !== 'string') {
+      if (oauthError) {
+        logger.error('[MCP OAuth] OAuth error received without state', { error: oauthError });
+        return res.redirect(
+          `${basePath}/oauth/error?error=${encodeURIComponent(String(oauthError))}`,
+        );
+      }
       logger.error('[MCP OAuth] Missing or invalid state');
       return res.redirect(`${basePath}/oauth/error?error=missing_state`);
     }
@@ -225,6 +203,27 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         },
       );
       return res.redirect(`${basePath}/oauth/error?error=csrf_validation_failed`);
+    }
+
+    if (oauthError) {
+      logger.error('[MCP OAuth] OAuth error received', { error: oauthError, flowId });
+      try {
+        await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+        logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
+          flowId,
+          error: oauthError,
+        });
+      } catch (err) {
+        logger.debug('[MCP OAuth] Could not mark flow as failed', err);
+      }
+      return res.redirect(
+        `${basePath}/oauth/error?error=${encodeURIComponent(String(oauthError))}`,
+      );
+    }
+
+    if (!code || typeof code !== 'string') {
+      logger.error('[MCP OAuth] Missing or invalid code');
+      return res.redirect(`${basePath}/oauth/error?error=missing_code`);
     }
 
     logger.debug('[MCP OAuth] Getting flow state for flowId: ' + flowId);

@@ -607,6 +607,7 @@ export class MCPConnectionFactory {
               tokens,
               clientInfo: flowMeta?.clientInfo,
               metadata: flowMeta?.metadata,
+              reusedStoredClient: flowMeta?.reusedStoredClient === true,
             };
           }
 
