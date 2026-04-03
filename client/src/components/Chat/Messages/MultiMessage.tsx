@@ -1,6 +1,7 @@
 import { useRecoilState } from 'recoil';
 import { useEffect, useCallback } from 'react';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
+import { logger } from '~/utils';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageContent from '~/components/Messages/MessageContent';
@@ -55,6 +56,18 @@ export default function MultiMessage({
    * ensures sibling switches still get clean remounts.
    */
   const stableKey = `${message.parentMessageId}_${currentSiblingIdx}`;
+  logger.log('multi_message_key', {
+    stableKey,
+    messageId: message.messageId,
+    parentMessageId: message.parentMessageId,
+    currentSiblingIdx,
+    hasContent: !!message.content,
+    route: isAssistantsEndpoint(message.endpoint)
+      ? 'MessageParts'
+      : message.content
+        ? 'MessageContent'
+        : 'Message',
+  });
 
   if (isAssistantsEndpoint(message.endpoint) && message.content) {
     return (

@@ -5,6 +5,7 @@ import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
+import { logger } from '~/utils';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { MessagesViewProvider } from '~/Providers';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -57,6 +58,7 @@ function MessagesViewContent({
     stableKeyRef.current = Constants.NEW_CONVO;
   }
   const rootKey = stableKeyRef.current;
+  logger.log('messages_view_key', { rootKey, conversationId, isNewConvo });
 
   return (
     <>
