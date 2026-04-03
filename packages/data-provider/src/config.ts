@@ -64,12 +64,21 @@ export enum SettingsViews {
 
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
+export const fileStorageSchema = z.enum([
+  FileSources.local,
+  FileSources.firebase,
+  FileSources.s3,
+  FileSources.azure_blob,
+]);
+
+export type FileStorage = z.infer<typeof fileStorageSchema>;
+
 export const fileStrategiesSchema = z
   .object({
-    default: fileSourceSchema.optional(),
-    avatar: fileSourceSchema.optional(),
-    image: fileSourceSchema.optional(),
-    document: fileSourceSchema.optional(),
+    default: fileStorageSchema.optional(),
+    avatar: fileStorageSchema.optional(),
+    image: fileStorageSchema.optional(),
+    document: fileStorageSchema.optional(),
   })
   .optional();
 
@@ -1055,7 +1064,7 @@ export const configSchema = z.object({
     .optional(),
   interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
-  fileStrategy: fileSourceSchema.default(FileSources.local),
+  fileStrategy: fileStorageSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,
   actions: z
     .object({
