@@ -147,13 +147,50 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       error: oauthError,
     });
 
-    if (!state || typeof state !== 'string') {
-      if (oauthError) {
-        logger.error('[MCP OAuth] OAuth error received without state', { error: oauthError });
-        return res.redirect(
-          `${basePath}/oauth/error?error=${encodeURIComponent(String(oauthError))}`,
-        );
+    if (oauthError) {
+      logger.error('[MCP OAuth] OAuth error received', { error: oauthError });
+      // Gate failFlow behind callback validation to prevent DoS via leaked state
+      if (state && typeof state === 'string') {
+        try {
+          const flowsCache = getLogStores(CacheKeys.FLOWS);
+          const flowManager = getFlowStateManager(flowsCache);
+          const flowId = await MCPOAuthHandler.resolveStateToFlowId(state, flowManager);
+          if (flowId) {
+            const flowParts = flowId.split(':');
+            const [flowUserId] = flowParts;
+            const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
+            const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
+            let hasActiveFlow = false;
+            if (!hasCsrf && !hasSession) {
+              const pendingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
+              const pendingAge = pendingFlow?.createdAt
+                ? Date.now() - pendingFlow.createdAt
+                : Infinity;
+              hasActiveFlow = pendingFlow?.status === 'PENDING' && pendingAge < PENDING_STALE_MS;
+            }
+            if (hasCsrf || hasSession || hasActiveFlow) {
+              await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+              logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
+                flowId,
+                error: oauthError,
+              });
+            }
+          }
+        } catch (err) {
+          logger.debug('[MCP OAuth] Could not mark flow as failed', err);
+        }
       }
+      return res.redirect(
+        `${basePath}/oauth/error?error=${encodeURIComponent(String(oauthError))}`,
+      );
+    }
+
+    if (!code || typeof code !== 'string') {
+      logger.error('[MCP OAuth] Missing or invalid code');
+      return res.redirect(`${basePath}/oauth/error?error=missing_code`);
+    }
+
+    if (!state || typeof state !== 'string') {
       logger.error('[MCP OAuth] Missing or invalid state');
       return res.redirect(`${basePath}/oauth/error?error=missing_state`);
     }
@@ -203,27 +240,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         },
       );
       return res.redirect(`${basePath}/oauth/error?error=csrf_validation_failed`);
-    }
-
-    if (oauthError) {
-      logger.error('[MCP OAuth] OAuth error received', { error: oauthError, flowId });
-      try {
-        await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
-        logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
-          flowId,
-          error: oauthError,
-        });
-      } catch (err) {
-        logger.debug('[MCP OAuth] Could not mark flow as failed', err);
-      }
-      return res.redirect(
-        `${basePath}/oauth/error?error=${encodeURIComponent(String(oauthError))}`,
-      );
-    }
-
-    if (!code || typeof code !== 'string') {
-      logger.error('[MCP OAuth] Missing or invalid code');
-      return res.redirect(`${basePath}/oauth/error?error=missing_code`);
     }
 
     logger.debug('[MCP OAuth] Getting flow state for flowId: ' + flowId);
