@@ -484,7 +484,7 @@ export class MCPTokenStorage {
   }: {
     userId: string;
     serverName: string;
-    deleteTokens: (query: { userId: string; type: string; identifier: string }) => Promise<unknown>;
+    deleteTokens: TokenMethods['deleteTokens'];
   }): Promise<void> {
     const identifier = `mcp:${serverName}`;
     await deleteTokens({
@@ -492,9 +492,8 @@ export class MCPTokenStorage {
       type: 'mcp_oauth_client',
       identifier: `${identifier}:client`,
     });
-    logger.debug(
-      `[MCPTokenStorage] Cleared stored client registration for ${serverName} (userId: ${userId})`,
-    );
+    const logPrefix = this.getLogPrefix(userId, serverName);
+    logger.debug(`${logPrefix} Cleared stored client registration`);
   }
 
   /**

@@ -362,7 +362,7 @@ export class MCPConnectionFactory {
                 serverName: this.serverName,
                 deleteTokens: this.tokenMethods.deleteTokens,
               }).catch((err) => {
-                logger.debug(`${this.logPrefix} Failed to clear stale client registration`, err);
+                logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
               });
             }
             const oldState = oldMeta?.state;
