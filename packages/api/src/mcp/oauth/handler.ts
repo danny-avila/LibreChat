@@ -512,16 +512,19 @@ export class MCPOAuthHandler {
           if (existing?.clientInfo?.client_id) {
             const storedRedirectUri = (existing.clientInfo as OAuthClientInformation)
               .redirect_uris?.[0];
-            const storedIssuer = existing.clientMetadata?.issuer;
+            const storedIssuer =
+              typeof existing.clientMetadata?.issuer === 'string'
+                ? existing.clientMetadata.issuer
+                : null;
             const currentIssuer = metadata.issuer ?? authServerUrl.toString();
 
             if (!storedRedirectUri || storedRedirectUri !== redirectUri) {
               logger.debug(
                 `[MCPOAuth] Stored redirect_uri "${storedRedirectUri}" differs from current "${redirectUri}", will re-register`,
               );
-            } else if (storedIssuer && storedIssuer !== currentIssuer) {
+            } else if (!storedIssuer || storedIssuer !== currentIssuer) {
               logger.debug(
-                `[MCPOAuth] Stored issuer "${storedIssuer}" differs from current "${currentIssuer}", will re-register`,
+                `[MCPOAuth] Issuer mismatch (stored: ${storedIssuer ?? 'none'}, current: ${currentIssuer}), will re-register`,
               );
             } else {
               logger.debug(

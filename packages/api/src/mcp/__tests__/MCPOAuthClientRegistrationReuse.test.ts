@@ -54,7 +54,7 @@ jest.mock('~/mcp/mcpConfig', () => ({
 }));
 
 describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
-  let server: OAuthTestServer;
+  let server: OAuthTestServer | undefined;
   let originalDomainServer: string | undefined;
 
   beforeEach(() => {
@@ -70,6 +70,7 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
     }
     if (server) {
       await server.close();
+      server = undefined;
     }
     jest.clearAllMocks();
   });
@@ -289,7 +290,9 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
       server = await createOAuthMCPServer({ tokenTTLMs: 60000 });
       const tokenStore = new InMemoryTokenStore();
 
-      // Seed a stored client with a client_id that the OAuth server doesn't recognize
+      // Seed a stored client with a client_id that the OAuth server doesn't recognize,
+      // but with matching issuer and redirect_uri so reuse logic accepts it
+      const serverIssuer = `http://127.0.0.1:${server.port}`;
       await MCPTokenStorage.storeTokens({
         userId: 'user-1',
         serverName: 'test-server',
@@ -302,6 +305,11 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
           client_secret: 'stale-secret',
           redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
         } as OAuthClientInformation & { redirect_uris: string[] },
+        metadata: {
+          issuer: serverIssuer,
+          authorization_endpoint: `${serverIssuer}/authorize`,
+          token_endpoint: `${serverIssuer}/token`,
+        },
       });
 
       // First attempt: reuses the stale client (this is expected — we don't know it's stale yet)

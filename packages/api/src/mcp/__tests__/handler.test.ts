@@ -1429,7 +1429,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
       mockGetClientInfoAndMetadata.mockResolvedValueOnce({
         clientInfo: existingClientInfo,
-        clientMetadata: {},
+        clientMetadata: { issuer: 'https://example.com' },
       });
 
       // Mock resource metadata discovery to fail

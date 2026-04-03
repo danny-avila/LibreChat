@@ -373,19 +373,7 @@ export class MCPConnectionFactory {
           this.flowManager!.createFlow(newFlowId, 'mcp_oauth', {}, this.signal).catch(
             async (error) => {
               logger.debug(`${this.logPrefix} OAuth flow monitor ended`, error);
-              if (
-                flowMetadata.reusedStoredClient &&
-                this.tokenMethods?.deleteTokens &&
-                MCPConnectionFactory.isClientRejection(error)
-              ) {
-                await MCPTokenStorage.deleteClientRegistration({
-                  userId: this.userId!,
-                  serverName: this.serverName,
-                  deleteTokens: this.tokenMethods.deleteTokens,
-                }).catch((err) => {
-                  logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
-                });
-              }
+              await this.clearStaleClientIfRejected(flowMetadata.reusedStoredClient, error);
             },
           );
 
@@ -429,21 +417,7 @@ export class MCPConnectionFactory {
       if (result?.tokens) {
         connection.emit('oauthHandled');
       } else {
-        // OAuth failed — if we reused a stored client registration and the failure
-        // indicates client rejection, clear it so the next attempt does fresh DCR
-        if (
-          result?.reusedStoredClient &&
-          this.tokenMethods?.deleteTokens &&
-          MCPConnectionFactory.isClientRejection(result.error)
-        ) {
-          await MCPTokenStorage.deleteClientRegistration({
-            userId: this.userId!,
-            serverName: this.serverName,
-            deleteTokens: this.tokenMethods.deleteTokens,
-          }).catch((err) => {
-            logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
-          });
-        }
+        await this.clearStaleClientIfRejected(result?.reusedStoredClient, result?.error);
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
       }
@@ -495,6 +469,26 @@ export class MCPConnectionFactory {
         await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
       }
     }
+  }
+
+  /** Clears stored client registration if the error indicates client rejection */
+  private async clearStaleClientIfRejected(
+    reusedStoredClient: boolean | undefined,
+    error: unknown,
+  ): Promise<void> {
+    if (!reusedStoredClient || !this.tokenMethods?.deleteTokens) {
+      return;
+    }
+    if (!MCPConnectionFactory.isClientRejection(error)) {
+      return;
+    }
+    await MCPTokenStorage.deleteClientRegistration({
+      userId: this.userId!,
+      serverName: this.serverName,
+      deleteTokens: this.tokenMethods.deleteTokens,
+    }).catch((err) => {
+      logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
+    });
   }
 
   /** Determines if an error indicates the OAuth client registration was rejected */
