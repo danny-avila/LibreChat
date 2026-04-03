@@ -255,7 +255,7 @@ const createMeiliMongooseModel = ({
 
       try {
         // Add documents to MeiliSearch
-        await index.addDocumentsInBatches(formattedDocs);
+        await index.addDocumentsInBatches(formattedDocs, undefined, { primaryKey });
 
         // Update MongoDB to mark documents as indexed.
         // { timestamps: false } prevents Mongoose from touching updatedAt, preserving
@@ -422,7 +422,7 @@ const createMeiliMongooseModel = ({
 
       while (retryCount < maxRetries) {
         try {
-          await index.addDocuments([object]);
+          await index.addDocuments([object], { primaryKey });
           break;
         } catch (error) {
           retryCount++;
@@ -436,9 +436,11 @@ const createMeiliMongooseModel = ({
       }
 
       try {
-        await this.collection.updateMany(
+        const Model = this.constructor as Model<DocumentWithMeiliIndex>;
+        await Model.updateMany(
           { _id: this._id as Types.ObjectId },
           { $set: { _meiliIndex: true } },
+          { timestamps: false },
         );
       } catch (error) {
         logger.error('[addObjectToMeili] Error updating _meiliIndex field:', error);
@@ -459,7 +461,7 @@ const createMeiliMongooseModel = ({
         const object = _.omitBy(_.pick(this.toJSON(), attributesToIndex), (v, k) =>
           k.startsWith('$'),
         );
-        await index.updateDocuments([object]);
+        await index.updateDocuments([object], { primaryKey });
         next();
       } catch (error) {
         logger.error('[updateObjectToMeili] Error updating document in Meili:', error);
