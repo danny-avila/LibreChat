@@ -4,6 +4,7 @@ import {
   azureEndpointSchema,
   endpointSchema,
   configSchema,
+  interfaceSchema,
 } from '../src/config';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
 
@@ -419,5 +420,13 @@ describe('azureEndpointSchema', () => {
       ],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('interfaceSchema', () => {
+  it('silently strips removed legacy fields', () => {
+    const result = interfaceSchema.parse({ endpointsMenu: true, modelSelect: false });
+    expect(result).not.toHaveProperty('endpointsMenu');
+    expect(result.modelSelect).toBe(false);
   });
 });
