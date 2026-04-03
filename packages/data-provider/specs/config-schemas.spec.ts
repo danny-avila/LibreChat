@@ -477,6 +477,19 @@ describe('fileStrategiesSchema', () => {
   });
 });
 
+describe('configSchema fileStrategy', () => {
+  it('rejects a processing strategy as fileStrategy', () => {
+    const result = configSchema.safeParse({ version: '1.3.7', fileStrategy: FileSources.vectordb });
+    expect(result.success).toBe(false);
+  });
+
+  it('defaults fileStrategy to local when absent', () => {
+    const result = configSchema.safeParse({ version: '1.3.7' });
+    expect(result.success).toBe(true);
+    expect(result.data?.fileStrategy).toBe(FileSources.local);
+  });
+});
+
 describe('interfaceSchema', () => {
   it('silently strips removed legacy fields', () => {
     const result = interfaceSchema.parse({

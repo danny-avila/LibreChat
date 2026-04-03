@@ -62,14 +62,18 @@ export enum SettingsViews {
   advanced = 'advanced',
 }
 
+/** Validates any FileSources value — use for file metadata, DB records, and upload routing. */
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
-export const fileStorageSchema = z.enum([
+/** Storage backend strategies only — use for config fields that set where files are stored. */
+const FILE_STORAGE_BACKENDS = [
   FileSources.local,
   FileSources.firebase,
   FileSources.s3,
   FileSources.azure_blob,
-]);
+] as const satisfies ReadonlyArray<FileSources>;
+
+export const fileStorageSchema = z.enum(FILE_STORAGE_BACKENDS);
 
 export type FileStorage = z.infer<typeof fileStorageSchema>;
 
@@ -1838,7 +1842,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.8.4',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.6',
+  CONFIG_VERSION = '1.3.7',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
