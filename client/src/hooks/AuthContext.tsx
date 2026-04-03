@@ -49,11 +49,10 @@ const AuthContextProvider = ({
   const setQueriesEnabled = useSetRecoilState<boolean>(store.queriesEnabled);
 
   const customRoleName = user?.role ?? '';
-  const isCustomRole =
-    isAuthenticated && customRoleName !== '' && !isSystemRoleName(customRoleName);
+  const isCustomRole = isAuthenticated && !!user?.role && !isSystemRoleName(user.role);
 
   const { data: userRole = null } = useGetRole(SystemRoles.USER, {
-    enabled: !!(isAuthenticated && (user?.role ?? '')),
+    enabled: isAuthenticated && user?.role === SystemRoles.USER,
   });
   const { data: adminRole = null } = useGetRole(SystemRoles.ADMIN, {
     enabled: !!(isAuthenticated && user?.role === SystemRoles.ADMIN),

@@ -40,7 +40,7 @@ const staffRole = {
 };
 
 const userRole = roleDefaults[SystemRoles.USER];
-const _adminRole = roleDefaults[SystemRoles.ADMIN];
+const adminRole = roleDefaults[SystemRoles.ADMIN];
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -93,6 +93,16 @@ describe('GET /api/roles/:roleName — isOwnRole authorization', () => {
     const res = await request(app).get(`/api/roles/${SystemRoles.ADMIN}`);
 
     expect(res.status).toBe(403);
+  });
+
+  it('allows ADMIN user to fetch their own ADMIN role via isOwnRole', async () => {
+    mockHasCapability.mockResolvedValue(false);
+    mockGetRoleByName.mockResolvedValue(adminRole);
+    const app = createApp({ id: 'u1', role: SystemRoles.ADMIN });
+
+    const res = await request(app).get(`/api/roles/${SystemRoles.ADMIN}`);
+
+    expect(res.status).toBe(200);
   });
 
   it('allows any user with READ_ROLES capability to fetch any role', async () => {

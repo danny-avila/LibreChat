@@ -1,14 +1,8 @@
-import { useMemo, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import {
-  Permissions,
-  SystemRoles,
-  roleDefaults,
-  PermissionTypes,
-  isSystemRoleName,
-} from 'librechat-data-provider';
+import { Permissions, SystemRoles, PermissionTypes } from 'librechat-data-provider';
 import {
   Button,
   Switch,
@@ -20,12 +14,8 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
-import {
-  useGetRole,
-  useListRoles,
-  useUpdatePeoplePickerPermissionsMutation,
-} from '~/data-provider';
-import { useLocalize, useAuthContext } from '~/hooks';
+import { useUpdatePeoplePickerPermissionsMutation } from '~/data-provider';
+import { useLocalize, useAuthContext, useRoleSelector } from '~/hooks';
 
 type FormValues = {
   [Permissions.VIEW_USERS]: boolean;
@@ -80,7 +70,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
 const PeoplePickerAdminSettings = () => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { user, roles } = useAuthContext();
+  const { user } = useAuthContext();
   const { mutate, isLoading } = useUpdatePeoplePickerPermissionsMutation({
     onSuccess: () => {
       showToast({ status: 'success', message: localize('com_ui_saved') });
@@ -91,28 +81,15 @@ const PeoplePickerAdminSettings = () => {
   });
 
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<string>(SystemRoles.USER);
-  const { data: roleList } = useListRoles({
-    enabled: user?.role === SystemRoles.ADMIN,
-  });
-  const isSelectedCustomRole = !isSystemRoleName(selectedRole);
-  const { data: customRoleData = null } = useGetRole(isSelectedCustomRole ? selectedRole : '_', {
-    enabled: isSelectedCustomRole,
-  });
-
-  const defaultValues = useMemo(() => {
-    if (isSelectedCustomRole && customRoleData?.permissions) {
-      return customRoleData.permissions[PermissionTypes.PEOPLE_PICKER];
-    }
-    const rolePerms = roles?.[selectedRole]?.permissions;
-    if (rolePerms) {
-      return rolePerms[PermissionTypes.PEOPLE_PICKER];
-    }
-    const defaults = isSystemRoleName(selectedRole)
-      ? roleDefaults[selectedRole as SystemRoles]
-      : roleDefaults[SystemRoles.USER];
-    return defaults.permissions[PermissionTypes.PEOPLE_PICKER];
-  }, [roles, selectedRole, isSelectedCustomRole, customRoleData]);
+  const {
+    selectedRole,
+    isSelectedCustomRole,
+    isCustomRoleLoading,
+    defaultValues,
+    resolvePermissions,
+    customRoleData,
+    roleDropdownItems,
+  } = useRoleSelector(PermissionTypes.PEOPLE_PICKER);
 
   const {
     reset,
@@ -123,34 +100,22 @@ const PeoplePickerAdminSettings = () => {
     formState: { isSubmitting },
   } = useForm<FormValues>({
     mode: 'onChange',
-    defaultValues,
+    defaultValues: defaultValues as FormValues,
   });
 
   useEffect(() => {
-    if (isSelectedCustomRole && customRoleData?.permissions?.[PermissionTypes.PEOPLE_PICKER]) {
-      reset(customRoleData.permissions[PermissionTypes.PEOPLE_PICKER]);
-    } else {
-      const value = roles?.[selectedRole]?.permissions?.[PermissionTypes.PEOPLE_PICKER];
-      if (value) {
-        reset(value);
-      } else {
-        const defaults = isSystemRoleName(selectedRole)
-          ? roleDefaults[selectedRole as SystemRoles]
-          : roleDefaults[SystemRoles.USER];
-        reset(defaults.permissions[PermissionTypes.PEOPLE_PICKER]);
-      }
+    if (isSelectedCustomRole && isCustomRoleLoading) {
+      return;
     }
-  }, [roles, selectedRole, reset, isSelectedCustomRole, customRoleData]);
-
-  const availableRoleNames = useMemo(() => {
-    const names = roleList?.roles?.map((r) => r.name);
-    return names?.length ? names : [SystemRoles.USER, SystemRoles.ADMIN];
-  }, [roleList]);
-
-  const roleDropdownItems = useMemo(
-    () => availableRoleNames.map((role) => ({ label: role, onClick: () => setSelectedRole(role) })),
-    [availableRoleNames],
-  );
+    reset(resolvePermissions(selectedRole, customRoleData) as FormValues);
+  }, [
+    selectedRole,
+    reset,
+    isSelectedCustomRole,
+    isCustomRoleLoading,
+    customRoleData,
+    resolvePermissions,
+  ]);
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -232,7 +197,9 @@ const PeoplePickerAdminSettings = () => {
               <button
                 type="button"
                 onClick={handleSubmit(onSubmit)}
-                disabled={isSubmitting || isLoading}
+                disabled={
+                  isSubmitting || isLoading || (isSelectedCustomRole && isCustomRoleLoading)
+                }
                 className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
               >
                 {localize('com_ui_save')}

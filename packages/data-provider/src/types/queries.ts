@@ -173,10 +173,10 @@ export type AccessRole = {
 export type AccessRolesResponse = AccessRole[];
 
 export type ListRolesResponse = {
-  roles: Array<{ _id: string; name: string; description: string }>;
+  roles: Array<{ _id?: string; name: string; description?: string }>;
   total: number;
   limit: number;
-  offset: number;
+  offset?: number;
 };
 
 export interface MCPServerStatus {

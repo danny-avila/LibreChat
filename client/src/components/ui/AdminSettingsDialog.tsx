@@ -1,14 +1,8 @@
-import { useMemo, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import {
-  Permissions,
-  SystemRoles,
-  roleDefaults,
-  PermissionTypes,
-  isSystemRoleName,
-} from 'librechat-data-provider';
+import { Permissions, SystemRoles } from 'librechat-data-provider';
 import {
   OGDialog,
   OGDialogTitle,
@@ -19,9 +13,9 @@ import {
   DropdownPopup,
 } from '@librechat/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
+import type { PermissionTypes } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
-import { useGetRole, useListRoles } from '~/data-provider';
-import { useLocalize, useAuthContext } from '~/hooks';
+import { useLocalize, useAuthContext, useRoleSelector } from '~/hooks';
 
 type FormValues = Record<Permissions, boolean>;
 
@@ -115,31 +109,19 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
   extraContent,
 }) => {
   const localize = useLocalize();
-  const { user, roles } = useAuthContext();
+  const { user } = useAuthContext();
   const { mutate, isLoading } = mutation;
 
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<string>(SystemRoles.USER);
-  const { data: roleList } = useListRoles({
-    enabled: user?.role === SystemRoles.ADMIN,
-  });
-  const isSelectedCustomRole = !isSystemRoleName(selectedRole);
-  const { data: customRoleData = null } = useGetRole(isSelectedCustomRole ? selectedRole : '_', {
-    enabled: isSelectedCustomRole,
-  });
-
-  const defaultValues = useMemo(() => {
-    if (isSelectedCustomRole && customRoleData?.permissions) {
-      return customRoleData.permissions[permissionType];
-    }
-    if (roles?.[selectedRole]?.permissions) {
-      return roles[selectedRole]?.permissions[permissionType];
-    }
-    const defaults = isSystemRoleName(selectedRole)
-      ? roleDefaults[selectedRole as SystemRoles]
-      : roleDefaults[SystemRoles.USER];
-    return defaults.permissions[permissionType];
-  }, [roles, selectedRole, permissionType, isSelectedCustomRole, customRoleData]);
+  const {
+    selectedRole,
+    isSelectedCustomRole,
+    isCustomRoleLoading,
+    defaultValues,
+    resolvePermissions,
+    customRoleData,
+    roleDropdownItems,
+  } = useRoleSelector(permissionType);
 
   const {
     reset,
@@ -154,27 +136,18 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
   });
 
   useEffect(() => {
-    if (isSelectedCustomRole && customRoleData?.permissions?.[permissionType]) {
-      reset(customRoleData.permissions[permissionType]);
-    } else if (roles?.[selectedRole]?.permissions?.[permissionType]) {
-      reset(roles[selectedRole]?.permissions[permissionType]);
-    } else {
-      const defaults = isSystemRoleName(selectedRole)
-        ? roleDefaults[selectedRole as SystemRoles]
-        : roleDefaults[SystemRoles.USER];
-      reset(defaults.permissions[permissionType]);
+    if (isSelectedCustomRole && isCustomRoleLoading) {
+      return;
     }
-  }, [roles, selectedRole, reset, permissionType, isSelectedCustomRole, customRoleData]);
-
-  const availableRoleNames = useMemo(() => {
-    const names = roleList?.roles?.map((r) => r.name);
-    return names?.length ? names : [SystemRoles.USER, SystemRoles.ADMIN];
-  }, [roleList]);
-
-  const roleDropdownItems = useMemo(
-    () => availableRoleNames.map((role) => ({ label: role, onClick: () => setSelectedRole(role) })),
-    [availableRoleNames],
-  );
+    reset(resolvePermissions(selectedRole, customRoleData));
+  }, [
+    selectedRole,
+    reset,
+    isSelectedCustomRole,
+    isCustomRoleLoading,
+    customRoleData,
+    resolvePermissions,
+  ]);
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -277,7 +250,9 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
               <Button
                 type="submit"
                 variant="submit"
-                disabled={isSubmitting || isLoading}
+                disabled={
+                  isSubmitting || isLoading || (isSelectedCustomRole && isCustomRoleLoading)
+                }
                 aria-label={localize('com_ui_save')}
               >
                 {localize('com_ui_save')}

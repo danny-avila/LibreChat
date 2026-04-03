@@ -512,10 +512,9 @@ describe('AuthContextProvider — custom role detection and fetching', () => {
       jest.advanceTimersByTime(100);
     });
 
-    const nonSystemCalls = mockUseGetRole.mock.calls.filter(
-      ([name]: [string]) => name !== 'USER' && name !== 'ADMIN',
-    );
-    for (const call of nonSystemCalls) {
+    const sentinelCalls = mockUseGetRole.mock.calls.filter(([name]: [string]) => name === '_');
+    expect(sentinelCalls.length).toBeGreaterThan(0);
+    for (const call of sentinelCalls) {
       expect(call[1]).toEqual(expect.objectContaining({ enabled: false }));
     }
 
@@ -539,10 +538,9 @@ describe('AuthContextProvider — custom role detection and fetching', () => {
       jest.advanceTimersByTime(100);
     });
 
-    const nonSystemCalls = mockUseGetRole.mock.calls.filter(
-      ([name]: [string]) => name !== 'USER' && name !== 'ADMIN',
-    );
-    for (const call of nonSystemCalls) {
+    const sentinelCalls = mockUseGetRole.mock.calls.filter(([name]: [string]) => name === '_');
+    expect(sentinelCalls.length).toBeGreaterThan(0);
+    for (const call of sentinelCalls) {
       expect(call[1]).toEqual(expect.objectContaining({ enabled: false }));
     }
 
