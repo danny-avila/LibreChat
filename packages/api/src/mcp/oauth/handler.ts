@@ -512,7 +512,7 @@ export class MCPOAuthHandler {
           if (existing?.clientInfo?.client_id) {
             const storedRedirectUri = (existing.clientInfo as OAuthClientInformation)
               .redirect_uris?.[0];
-            const storedIssuer = (existing.clientMetadata as Record<string, unknown>)?.issuer;
+            const storedIssuer = existing.clientMetadata?.issuer;
             const currentIssuer = metadata.issuer ?? authServerUrl.toString();
 
             if (!storedRedirectUri || storedRedirectUri !== redirectUri) {
