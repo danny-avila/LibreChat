@@ -1,6 +1,7 @@
 const express = require('express');
-const { isEnabled } = require('@librechat/api');
+const { isEnabled, createTempChatExpirationDate } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { RetentionMode } = require('librechat-data-provider');
 const {
   getSharedMessages,
   createSharedLink,
@@ -98,7 +99,20 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
 router.post('/:conversationId', requireJwtAuth, async (req, res) => {
   try {
     const { targetMessageId } = req.body;
-    const created = await createSharedLink(req.user.id, req.params.conversationId, targetMessageId);
+    let expiredAt;
+    if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      try {
+        expiredAt = createTempChatExpirationDate(req.config?.interfaceConfig);
+      } catch (err) {
+        logger.error('Error creating shared link expiration date:', err);
+      }
+    }
+    const created = await createSharedLink(
+      req.user.id,
+      req.params.conversationId,
+      targetMessageId,
+      expiredAt,
+    );
     if (created) {
       res.status(200).json(created);
     } else {
@@ -112,7 +126,15 @@ router.post('/:conversationId', requireJwtAuth, async (req, res) => {
 
 router.patch('/:shareId', requireJwtAuth, async (req, res) => {
   try {
-    const updatedShare = await updateSharedLink(req.user.id, req.params.shareId);
+    let expiredAt;
+    if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      try {
+        expiredAt = createTempChatExpirationDate(req.config?.interfaceConfig);
+      } catch (err) {
+        logger.error('Error creating shared link expiration date:', err);
+      }
+    }
+    const updatedShare = await updateSharedLink(req.user.id, req.params.shareId, expiredAt);
     if (updatedShare) {
       res.status(200).json(updatedShare);
     } else {
