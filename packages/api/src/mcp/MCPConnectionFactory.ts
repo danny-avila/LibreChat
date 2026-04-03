@@ -507,7 +507,7 @@ export class MCPConnectionFactory {
       return (
         msg.includes('invalid_client') ||
         msg.includes('unauthorized_client') ||
-        msg.includes('client_id') ||
+        msg.includes('client_id mismatch') ||
         msg.includes('client not found') ||
         msg.includes('unknown client')
       );
