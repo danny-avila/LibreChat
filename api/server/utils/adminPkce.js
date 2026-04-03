@@ -7,6 +7,10 @@ const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
 /** Regex pattern for valid PKCE challenges: 64 hex characters (SHA-256 hex digest) */
 const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
 
+/** Removes `code_challenge` from a single URL string, preserving other query params. */
+const stripChallengeFromUrl = (url) =>
+  url.replace(/\?code_challenge=[^&]*&/, '?').replace(/[?&]code_challenge=[^&]*/, '');
+
 /**
  * Strips `code_challenge` from the request query and URL strings.
  *
@@ -21,10 +25,8 @@ const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
  */
 function stripCodeChallenge(req) {
   delete req.query.code_challenge;
-  const strip = (url) =>
-    url.replace(/\?code_challenge=[^&]*&/, '?').replace(/[?&]code_challenge=[^&]*/, '');
-  req.originalUrl = strip(req.originalUrl);
-  req.url = strip(req.url);
+  req.originalUrl = stripChallengeFromUrl(req.originalUrl);
+  req.url = stripChallengeFromUrl(req.url);
 }
 
 /**
@@ -56,9 +58,4 @@ async function storeAndStripChallenge(req, state, provider) {
   }
 }
 
-module.exports = {
-  stripCodeChallenge,
-  storeAndStripChallenge,
-  PKCE_CHALLENGE_TTL,
-  PKCE_CHALLENGE_PATTERN,
-};
+module.exports = { stripCodeChallenge, storeAndStripChallenge };

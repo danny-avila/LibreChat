@@ -195,7 +195,8 @@ describe('storeAndStripChallenge', () => {
 
     expect(result).toBe(false);
     expect(req.query.code_challenge).toBe(challenge);
-    expect(req.originalUrl).toContain('code_challenge');
+    expect(req.originalUrl).toBe(`/oauth/openid?code_challenge=${challenge}`);
+    expect(req.url).toBe(`/oauth/openid?code_challenge=${challenge}`);
   });
 
   it('reads code_challenge before stripping (ordering guarantee)', async () => {
