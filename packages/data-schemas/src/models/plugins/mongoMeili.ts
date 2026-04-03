@@ -94,7 +94,7 @@ const getSyncConfig = () => ({
  * Validates the required options for configuring the mongoMeili plugin.
  */
 const validateOptions = (options: Partial<MongoMeiliOptions>): void => {
-  const requiredKeys: (keyof MongoMeiliOptions)[] = ['host', 'apiKey', 'indexName'];
+  const requiredKeys: (keyof MongoMeiliOptions)[] = ['host', 'apiKey', 'indexName', 'primaryKey'];
   requiredKeys.forEach((key) => {
     if (!options[key]) {
       throw new Error(`Missing mongoMeili Option: ${key}`);
@@ -136,13 +136,14 @@ const processBatch = async <T>(
 const createMeiliMongooseModel = ({
   index,
   attributesToIndex,
+  primaryKey,
   syncOptions,
 }: {
   index: Index<MeiliIndexable>;
   attributesToIndex: string[];
+  primaryKey: string;
   syncOptions: { batchSize: number; delayMs: number };
 }) => {
-  const primaryKey = attributesToIndex[0];
   const syncConfig = { ...getSyncConfig(), ...syncOptions };
 
   class MeiliMongooseModel {
@@ -436,11 +437,10 @@ const createMeiliMongooseModel = ({
       }
 
       try {
-        const Model = this.constructor as Model<DocumentWithMeiliIndex>;
-        await Model.updateMany(
+        // eslint-disable-next-line no-restricted-syntax -- _meiliIndex is an internal bookkeeping flag, not tenant-scoped data
+        await this.collection.updateOne(
           { _id: this._id as Types.ObjectId },
           { $set: { _meiliIndex: true } },
-          { timestamps: false },
         );
       } catch (error) {
         logger.error('[addObjectToMeili] Error updating _meiliIndex field:', error);
@@ -458,9 +458,7 @@ const createMeiliMongooseModel = ({
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
       try {
-        const object = _.omitBy(_.pick(this.toJSON(), attributesToIndex), (v, k) =>
-          k.startsWith('$'),
-        );
+        const object = this.preprocessObjectForIndex!();
         await index.updateDocuments([object], { primaryKey });
         next();
       } catch (error) {
@@ -479,7 +477,7 @@ const createMeiliMongooseModel = ({
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
       try {
-        await index.deleteDocument(this._id as string);
+        await index.deleteDocument(String(this[primaryKey as keyof DocumentWithMeiliIndex]));
         next();
       } catch (error) {
         logger.error('[deleteObjectFromMeili] Error deleting document from Meili:', error);
@@ -645,7 +643,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     logger.debug(`[mongoMeili] Added 'user' field to ${indexName} index attributes`);
   }
 
-  schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex, syncOptions }));
+  schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex, primaryKey, syncOptions }));
 
   // Register Mongoose hooks
   schema.post('save', function (doc: DocumentWithMeiliIndex, next) {
