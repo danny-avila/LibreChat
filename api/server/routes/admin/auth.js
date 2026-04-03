@@ -3,11 +3,15 @@ const passport = require('passport');
 const crypto = require('node:crypto');
 const { CacheKeys } = require('librechat-data-provider');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
-const { getAdminPanelUrl, exchangeAdminCode, createSetBalanceConfig } = require('@librechat/api');
+const {
+  getAdminPanelUrl,
+  exchangeAdminCode,
+  createSetBalanceConfig,
+  storeAndStripChallenge,
+} = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
-const { storeAndStripChallenge } = require('~/server/utils/adminPkce');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
@@ -123,7 +127,8 @@ function retrievePkceChallenge(provider) {
 
 router.get('/oauth/openid', async (req, res, next) => {
   const state = generateState();
-  const stored = await storeAndStripChallenge(req, state, 'openid');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'openid');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/openid/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -160,7 +165,8 @@ router.get(
 
 router.get('/oauth/saml', async (req, res, next) => {
   const state = generateState();
-  const stored = await storeAndStripChallenge(req, state, 'saml');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'saml');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/saml/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -197,7 +203,8 @@ router.post(
 
 router.get('/oauth/google', async (req, res, next) => {
   const state = generateState();
-  const stored = await storeAndStripChallenge(req, state, 'google');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'google');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/google/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -235,7 +242,8 @@ router.get(
 
 router.get('/oauth/github', async (req, res, next) => {
   const state = generateState();
-  const stored = await storeAndStripChallenge(req, state, 'github');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'github');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/github/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -273,7 +281,8 @@ router.get(
 
 router.get('/oauth/discord', async (req, res, next) => {
   const state = generateState();
-  const stored = await storeAndStripChallenge(req, state, 'discord');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'discord');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/discord/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -311,7 +320,8 @@ router.get(
 
 router.get('/oauth/facebook', async (req, res, next) => {
   const state = generateState();
-  const stored = await storeAndStripChallenge(req, state, 'facebook');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'facebook');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/facebook/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -349,7 +359,8 @@ router.get(
 
 router.get('/oauth/apple', async (req, res, next) => {
   const state = generateState();
-  const stored = await storeAndStripChallenge(req, state, 'apple');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'apple');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/apple/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,

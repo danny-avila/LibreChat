@@ -1,29 +1,22 @@
-const { CacheKeys } = require('librechat-data-provider');
+import { Keyv } from 'keyv';
 
-jest.mock('~/cache/getLogStores', () => {
-  const store = new Map();
-  const cache = {
-    get: jest.fn((key) => Promise.resolve(store.get(key))),
-    set: jest.fn((key, value) => {
-      store.set(key, value);
-      return Promise.resolve(true);
-    }),
-    delete: jest.fn((key) => {
-      store.delete(key);
-      return Promise.resolve(true);
-    }),
-    _store: store,
-  };
-  return jest.fn(() => cache);
-});
+jest.mock(
+  '@librechat/data-schemas',
+  () => ({
+    logger: {
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    },
+  }),
+  { virtual: true },
+);
 
-const getLogStores = require('~/cache/getLogStores');
-const { stripCodeChallenge, storeAndStripChallenge } = require('~/server/utils/adminPkce');
+import { stripCodeChallenge, storeAndStripChallenge } from './exchange';
+import type { PkceStrippableRequest } from './exchange';
 
-const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-
-function makeReq({ query = {}, originalUrl = '', url = '' } = {}) {
-  return { query: { ...query }, originalUrl, url };
+function makeReq(overrides: Partial<PkceStrippableRequest> = {}): PkceStrippableRequest {
+  return { query: {}, originalUrl: '', url: '', ...overrides };
 }
 
 describe('stripCodeChallenge', () => {
@@ -131,67 +124,69 @@ describe('stripCodeChallenge', () => {
 describe('storeAndStripChallenge', () => {
   const challenge = 'a'.repeat(64);
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    cache._store.clear();
-  });
-
   it('stores valid challenge in cache and strips from request', async () => {
+    const cache = new Keyv();
+    const setSpy = jest.spyOn(cache, 'set');
     const req = makeReq({
       query: { code_challenge: challenge },
       originalUrl: `/oauth/openid?code_challenge=${challenge}`,
       url: `/oauth/openid?code_challenge=${challenge}`,
     });
 
-    const result = await storeAndStripChallenge(req, 'test-state', 'openid');
+    const result = await storeAndStripChallenge(cache, req, 'test-state', 'openid');
 
     expect(result).toBe(true);
-    expect(cache.set).toHaveBeenCalledWith(`pkce:test-state`, challenge, expect.any(Number));
+    expect(setSpy).toHaveBeenCalledWith(`pkce:test-state`, challenge, expect.any(Number));
     expect(req.query.code_challenge).toBeUndefined();
     expect(req.originalUrl).toBe('/oauth/openid');
     expect(req.url).toBe('/oauth/openid');
   });
 
   it('strips and returns true when no code_challenge is present', async () => {
+    const cache = new Keyv();
+    const setSpy = jest.spyOn(cache, 'set');
     const req = makeReq({
       query: {},
       originalUrl: '/oauth/openid',
       url: '/oauth/openid',
     });
 
-    const result = await storeAndStripChallenge(req, 'test-state', 'openid');
+    const result = await storeAndStripChallenge(cache, req, 'test-state', 'openid');
 
     expect(result).toBe(true);
-    expect(cache.set).not.toHaveBeenCalled();
+    expect(setSpy).not.toHaveBeenCalled();
     expect(req.originalUrl).toBe('/oauth/openid');
     expect(req.url).toBe('/oauth/openid');
   });
 
   it('strips and returns true when code_challenge is invalid (not 64 hex)', async () => {
+    const cache = new Keyv();
+    const setSpy = jest.spyOn(cache, 'set');
     const req = makeReq({
       query: { code_challenge: 'too-short' },
       originalUrl: '/oauth/openid?code_challenge=too-short',
       url: '/oauth/openid?code_challenge=too-short',
     });
 
-    const result = await storeAndStripChallenge(req, 'test-state', 'openid');
+    const result = await storeAndStripChallenge(cache, req, 'test-state', 'openid');
 
     expect(result).toBe(true);
-    expect(cache.set).not.toHaveBeenCalled();
+    expect(setSpy).not.toHaveBeenCalled();
     expect(req.query.code_challenge).toBeUndefined();
     expect(req.originalUrl).toBe('/oauth/openid');
     expect(req.url).toBe('/oauth/openid');
   });
 
   it('returns false and does not strip on cache failure', async () => {
-    cache.set.mockRejectedValueOnce(new Error('cache down'));
+    const cache = new Keyv();
+    jest.spyOn(cache, 'set').mockRejectedValueOnce(new Error('cache down'));
     const req = makeReq({
       query: { code_challenge: challenge },
       originalUrl: `/oauth/openid?code_challenge=${challenge}`,
       url: `/oauth/openid?code_challenge=${challenge}`,
     });
 
-    const result = await storeAndStripChallenge(req, 'test-state', 'openid');
+    const result = await storeAndStripChallenge(cache, req, 'test-state', 'openid');
 
     expect(result).toBe(false);
     expect(req.query.code_challenge).toBe(challenge);
@@ -200,15 +195,17 @@ describe('storeAndStripChallenge', () => {
   });
 
   it('reads code_challenge before stripping (ordering guarantee)', async () => {
+    const cache = new Keyv();
+    const setSpy = jest.spyOn(cache, 'set');
     const req = makeReq({
       query: { code_challenge: challenge },
       originalUrl: `/oauth/openid?code_challenge=${challenge}`,
       url: `/oauth/openid?code_challenge=${challenge}`,
     });
 
-    await storeAndStripChallenge(req, 'test-state', 'openid');
+    await storeAndStripChallenge(cache, req, 'test-state', 'openid');
 
-    const storedValue = cache.set.mock.calls[0][1];
+    const storedValue = setSpy.mock.calls[0][1];
     expect(storedValue).toBe(challenge);
   });
 });
