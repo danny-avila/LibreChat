@@ -13,6 +13,11 @@ import type { Keyv } from 'keyv';
 
 import { standardCache } from '~/cache';
 
+interface ToolEntry {
+  cacheKey: string;
+  json: string;
+}
+
 /** Module-level cache instance, lazily initialized. */
 let toolTokenCache: Keyv | undefined;
 
@@ -61,35 +66,43 @@ function serializeToolDef(def: LCTool): string {
 }
 
 /**
- * Builds a map of tool name → serialized schema JSON. Deduplicates: a tool
- * present in `tools` (with a schema) takes precedence over a matching
- * `toolDefinitions` entry, mirroring AgentContext.calculateInstructionTokens().
+ * Builds a list of tool entries with cache keys and serialized schemas.
+ * Deduplicates: a tool present in `tools` (with a schema) takes precedence
+ * over a matching `toolDefinitions` entry.
+ *
+ * Cache key includes toolType when available (from LCTool) to differentiate
+ * builtin/mcp/action tools that may share a name.
+ * GenericTool entries use the `mcp` flag when present.
  */
-export function collectToolSchemas(
-  tools?: GenericTool[],
-  toolDefinitions?: LCTool[],
-): Map<string, string> {
-  const schemas = new Map<string, string>();
+export function collectToolSchemas(tools?: GenericTool[], toolDefinitions?: LCTool[]): ToolEntry[] {
+  const seen = new Set<string>();
+  const entries: ToolEntry[] = [];
 
   if (tools) {
     for (const tool of tools) {
       const result = serializeGenericTool(tool);
-      if (result && result.name) {
-        schemas.set(result.name, result.json);
+      if (!result || !result.name) {
+        continue;
       }
+      seen.add(result.name);
+      const toolType =
+        (tool as unknown as Record<string, unknown>).mcp === true ? 'mcp' : 'builtin';
+      entries.push({ cacheKey: `${result.name}:${toolType}`, json: result.json });
     }
   }
 
   if (toolDefinitions) {
     for (const def of toolDefinitions) {
-      if (!def.name || schemas.has(def.name)) {
+      if (!def.name || seen.has(def.name)) {
         continue;
       }
-      schemas.set(def.name, serializeToolDef(def));
+      seen.add(def.name);
+      const toolType = def.toolType ?? 'builtin';
+      entries.push({ cacheKey: `${def.name}:${toolType}`, json: serializeToolDef(def) });
     }
   }
 
-  return schemas;
+  return entries;
 }
 
 /**
@@ -103,9 +116,9 @@ export function computeToolSchemaTokens(
   clientOptions: ClientOptions | undefined,
   tokenCounter: TokenCounter,
 ): number {
-  const schemas = collectToolSchemas(tools, toolDefinitions);
+  const entries = collectToolSchemas(tools, toolDefinitions);
   let rawTokens = 0;
-  for (const json of schemas.values()) {
+  for (const { json } of entries) {
     rawTokens += tokenCounter(new SystemMessage(json));
   }
   const multiplier = getToolTokenMultiplier(provider, clientOptions);
@@ -115,8 +128,8 @@ export function computeToolSchemaTokens(
 /**
  * Returns tool schema tokens, using per-tool caching to avoid redundant
  * token counting. Each tool's raw (pre-multiplier) token count is cached
- * individually by name, so adding/removing a tool only requires computing
- * the new one. The provider-specific multiplier is applied to the sum.
+ * individually, keyed by `{tenantId}:{name}:{toolType}` (or `{name}:{toolType}`
+ * without tenant). The provider-specific multiplier is applied to the sum.
  *
  * Returns 0 if there are no tools.
  */
@@ -135,8 +148,8 @@ export async function getOrComputeToolTokens({
   tokenCounter: TokenCounter;
   tenantId?: string;
 }): Promise<number> {
-  const schemas = collectToolSchemas(tools, toolDefinitions);
-  if (schemas.size === 0) {
+  const entries = collectToolSchemas(tools, toolDefinitions);
+  if (entries.length === 0) {
     return 0;
   }
 
@@ -152,13 +165,13 @@ export async function getOrComputeToolTokens({
   let rawTotal = 0;
   const toWrite: Array<{ key: string; value: number }> = [];
 
-  for (const [name, json] of schemas) {
-    const cacheKey = `${keyPrefix}${name}`;
+  for (const { cacheKey, json } of entries) {
+    const fullKey = `${keyPrefix}${cacheKey}`;
     let rawCount: number | undefined;
 
     if (cache) {
       try {
-        rawCount = (await cache.get(cacheKey)) as number | undefined;
+        rawCount = (await cache.get(fullKey)) as number | undefined;
       } catch {
         // Cache read failed for this tool — will compute fresh
       }
@@ -167,7 +180,7 @@ export async function getOrComputeToolTokens({
     if (rawCount == null || rawCount <= 0) {
       rawCount = tokenCounter(new SystemMessage(json));
       if (rawCount > 0 && cache) {
-        toWrite.push({ key: cacheKey, value: rawCount });
+        toWrite.push({ key: fullKey, value: rawCount });
       }
     }
 
