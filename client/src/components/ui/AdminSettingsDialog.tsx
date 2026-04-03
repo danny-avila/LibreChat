@@ -117,9 +117,8 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
     selectedRole,
     isSelectedCustomRole,
     isCustomRoleLoading,
+    isCustomRoleError,
     defaultValues,
-    resolvePermissions,
-    customRoleData,
     roleDropdownItems,
   } = useRoleSelector(permissionType);
 
@@ -136,18 +135,11 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
   });
 
   useEffect(() => {
-    if (isSelectedCustomRole && isCustomRoleLoading) {
+    if (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError)) {
       return;
     }
-    reset(resolvePermissions(selectedRole, customRoleData));
-  }, [
-    selectedRole,
-    reset,
-    isSelectedCustomRole,
-    isCustomRoleLoading,
-    customRoleData,
-    resolvePermissions,
-  ]);
+    reset(defaultValues);
+  }, [isSelectedCustomRole, isCustomRoleLoading, isCustomRoleError, defaultValues, reset]);
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -251,7 +243,9 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
                 type="submit"
                 variant="submit"
                 disabled={
-                  isSubmitting || isLoading || (isSelectedCustomRole && isCustomRoleLoading)
+                  isSubmitting ||
+                  isLoading ||
+                  (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError))
                 }
                 aria-label={localize('com_ui_save')}
               >

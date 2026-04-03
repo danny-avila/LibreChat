@@ -85,9 +85,8 @@ const PeoplePickerAdminSettings = () => {
     selectedRole,
     isSelectedCustomRole,
     isCustomRoleLoading,
+    isCustomRoleError,
     defaultValues,
-    resolvePermissions,
-    customRoleData,
     roleDropdownItems,
   } = useRoleSelector(PermissionTypes.PEOPLE_PICKER);
 
@@ -104,18 +103,11 @@ const PeoplePickerAdminSettings = () => {
   });
 
   useEffect(() => {
-    if (isSelectedCustomRole && isCustomRoleLoading) {
+    if (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError)) {
       return;
     }
-    reset(resolvePermissions(selectedRole, customRoleData) as FormValues);
-  }, [
-    selectedRole,
-    reset,
-    isSelectedCustomRole,
-    isCustomRoleLoading,
-    customRoleData,
-    resolvePermissions,
-  ]);
+    reset(defaultValues as FormValues);
+  }, [isSelectedCustomRole, isCustomRoleLoading, isCustomRoleError, defaultValues, reset]);
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -198,7 +190,9 @@ const PeoplePickerAdminSettings = () => {
                 type="button"
                 onClick={handleSubmit(onSubmit)}
                 disabled={
-                  isSubmitting || isLoading || (isSelectedCustomRole && isCustomRoleLoading)
+                  isSubmitting ||
+                  isLoading ||
+                  (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError))
                 }
                 className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
               >

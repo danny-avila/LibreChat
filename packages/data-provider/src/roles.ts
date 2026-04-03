@@ -111,13 +111,14 @@ const defaultRolesSchema = z.object({
   }),
 });
 
-/** Case-insensitive check for reserved system role names (USER, ADMIN). */
+const systemRoleSet = new Set(Object.values(SystemRoles).map((r) => r.toUpperCase()));
+
+/** Case-insensitive check for reserved system role names. */
 export function isSystemRoleName(name: string | undefined | null): boolean {
   if (!name) {
     return false;
   }
-  const upper = name.toUpperCase();
-  return upper === SystemRoles.USER || upper === SystemRoles.ADMIN;
+  return systemRoleSet.has(name.toUpperCase());
 }
 
 export const roleDefaults = defaultRolesSchema.parse({

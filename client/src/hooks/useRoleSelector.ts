@@ -14,10 +14,11 @@ export function useRoleSelector(permissionType: PermissionTypes) {
 
   const isSelectedCustomRole = !isSystemRoleName(selectedRole);
 
-  const { data: customRoleData = null, isLoading: isCustomRoleLoading } = useGetRole(
-    isSelectedCustomRole ? selectedRole : '_',
-    { enabled: isSelectedCustomRole },
-  );
+  const {
+    data: customRoleData = null,
+    isLoading: isCustomRoleLoading,
+    isError: isCustomRoleError,
+  } = useGetRole(isSelectedCustomRole ? selectedRole : '_', { enabled: isSelectedCustomRole });
 
   const resolvePermissions = useCallback(
     (role: string, customData: TRole | null) => {
@@ -55,10 +56,9 @@ export function useRoleSelector(permissionType: PermissionTypes) {
     selectedRole,
     setSelectedRole,
     isSelectedCustomRole,
-    customRoleData,
     isCustomRoleLoading,
+    isCustomRoleError,
     defaultValues,
-    resolvePermissions,
     roleDropdownItems,
   };
 }
