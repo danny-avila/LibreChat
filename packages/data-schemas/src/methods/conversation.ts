@@ -180,10 +180,7 @@ export function createConversationMethods(
         update.isTemporary = false;
       }
 
-      if (
-        isTemporary ||
-        interfaceConfig?.retentionMode === RetentionMode.ALL
-      ) {
+      if (isTemporary || interfaceConfig?.retentionMode === RetentionMode.ALL) {
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {

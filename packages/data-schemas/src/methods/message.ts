@@ -92,10 +92,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         messageId: params.newMessageId || params.messageId,
       };
 
-      if (
-        isTemporary ||
-        interfaceConfig?.retentionMode === RetentionMode.ALL
-      ) {
+      if (isTemporary || interfaceConfig?.retentionMode === RetentionMode.ALL) {
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {
