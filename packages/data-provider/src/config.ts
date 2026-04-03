@@ -115,13 +115,39 @@ export const modelConfigSchema = z
 
 export type TAzureModelConfig = z.infer<typeof modelConfigSchema>;
 
+const paramValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(paramValueSchema),
+    z.record(z.string(), paramValueSchema),
+  ]),
+);
+
+/** Validates addParams while keeping web_search aligned with current runtime boolean handling. */
+const addParamsSchema: z.ZodType<Record<string, unknown>> = z
+  .record(z.string(), paramValueSchema)
+  .superRefine((params, ctx) => {
+    if (params.web_search === undefined || typeof params.web_search === 'boolean') {
+      return;
+    }
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['web_search'],
+      message: '`web_search` must be a boolean in addParams',
+    });
+  });
+
 export const azureBaseSchema = z.object({
   apiKey: z.string(),
   serverless: z.boolean().optional(),
   instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
   assistants: z.boolean().optional(),
-  addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  addParams: addParamsSchema.optional(),
   dropParams: z.array(z.string()).optional(),
   version: z.string().optional(),
   baseURL: z.string().optional(),
@@ -361,7 +387,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
     headers: z.record(z.string()).optional(),
-    addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+    addParams: addParamsSchema.optional(),
     dropParams: z.array(z.string()).optional(),
     customParams: z
       .object({
