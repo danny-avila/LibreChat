@@ -677,7 +677,6 @@ export const interfaceSchema = z
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
-    endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
     sidePanel: z.boolean().optional(),
@@ -735,7 +734,6 @@ export const interfaceSchema = z
       .optional(),
   })
   .default({
-    endpointsMenu: true,
     modelSelect: true,
     parameters: true,
     sidePanel: true,

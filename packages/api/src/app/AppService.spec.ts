@@ -105,7 +105,6 @@ describe('AppService', () => {
         }),
         fileStrategy: 'testStrategy',
         interfaceConfig: expect.objectContaining({
-          endpointsMenu: true,
           modelSelect: true,
           parameters: true,
           sidePanel: true,
