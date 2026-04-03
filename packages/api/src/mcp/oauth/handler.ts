@@ -24,8 +24,8 @@ import {
   selectRegistrationAuthMethod,
   inferClientAuthMethod,
 } from './methods';
-import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import type { TokenMethods } from '@librechat/data-schemas';
+import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import { MCPTokenStorage } from './tokens';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
@@ -496,8 +496,7 @@ export class MCPOAuthHandler {
         `[MCPOAuth] OAuth metadata discovered, auth server URL: ${sanitizeUrlForLogging(authServerUrl)}`,
       );
 
-      /** Dynamic client registration based on the discovered metadata */
-      const redirectUri = config?.redirect_uri || this.getDefaultRedirectUri(serverName);
+      const redirectUri = this.getDefaultRedirectUri(serverName);
       logger.debug(`[MCPOAuth] Resolving OAuth client with redirect URI: ${redirectUri}`);
 
       let clientInfo: OAuthClientInformation | undefined;
@@ -510,23 +509,22 @@ export class MCPOAuthHandler {
             findToken,
           });
           if (existing?.clientInfo?.client_id) {
-            const existingClient = existing.clientInfo as OAuthClientInformation;
-            const storedRedirectUri = existingClient.redirect_uris?.[0];
-            if (storedRedirectUri && storedRedirectUri !== redirectUri) {
+            const storedRedirectUri = existing.clientInfo.redirect_uris?.[0];
+            if (!storedRedirectUri || storedRedirectUri !== redirectUri) {
               logger.debug(
                 `[MCPOAuth] Stored redirect_uri "${storedRedirectUri}" differs from current "${redirectUri}", will re-register`,
               );
             } else {
               logger.debug(
-                `[MCPOAuth] Reusing existing client registration: ${existingClient.client_id}`,
+                `[MCPOAuth] Reusing existing client registration: ${existing.clientInfo.client_id}`,
               );
-              clientInfo = existingClient;
+              clientInfo = existing.clientInfo;
             }
           }
         } catch (error) {
-          logger.debug(
-            `[MCPOAuth] Failed to look up existing client registration, will register new`,
-            { error },
+          logger.warn(
+            `[MCPOAuth] Failed to look up existing client registration, falling back to new registration`,
+            { error, serverName, userId },
           );
         }
       }
