@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
@@ -34,6 +35,29 @@ function MessagesViewContent({
 
   const { conversationId } = conversation ?? {};
 
+  /**
+   * Stabilize the key for the root MultiMessage to prevent full tree unmount/remount
+   * during the new conversation lifecycle. When a user sends their first message,
+   * conversationId transitions from null/'new' → server-assigned UUID. Using
+   * conversationId directly as the key would destroy the entire message tree on
+   * this transition, causing visible icon/image flickering.
+   *
+   * The ref captures the first real conversationId and keeps it until a genuine
+   * conversation switch (navigating to a different conversation).
+   */
+  const stableKeyRef = useRef<string | null>(null);
+  const isNewConvo = !conversationId || conversationId === Constants.NEW_CONVO;
+  if (!isNewConvo) {
+    if (stableKeyRef.current === null || stableKeyRef.current === Constants.NEW_CONVO) {
+      stableKeyRef.current = conversationId;
+    } else if (stableKeyRef.current !== conversationId) {
+      stableKeyRef.current = conversationId;
+    }
+  } else if (stableKeyRef.current === null) {
+    stableKeyRef.current = Constants.NEW_CONVO;
+  }
+  const rootKey = stableKeyRef.current;
+
   return (
     <>
       <div className="relative flex-1 overflow-hidden overflow-y-auto">
@@ -62,7 +86,7 @@ function MessagesViewContent({
                 <>
                   <div ref={screenshotTargetRef}>
                     <MultiMessage
-                      key={conversationId}
+                      key={rootKey}
                       messagesTree={_messagesTree}
                       messageId={conversationId ?? null}
                       setCurrentEditId={setCurrentEditId}
