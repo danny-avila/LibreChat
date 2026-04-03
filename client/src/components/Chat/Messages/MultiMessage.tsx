@@ -39,20 +39,31 @@ export default function MultiMessage({
     return null;
   }
 
-  const message = messagesTree[messagesTree.length - siblingIdx - 1] as TMessage | undefined;
+  const currentSiblingIdx = messagesTree.length - siblingIdx - 1;
+  const message = messagesTree[currentSiblingIdx] as TMessage | undefined;
 
   if (!message) {
     return null;
   }
 
+  /**
+   * Key on parentMessageId + siblingIdx instead of messageId.
+   * messageId changes during the SSE lifecycle (client UUID → createdHandler ID → server ID),
+   * which causes React to unmount/remount the entire subtree on each change — destroying
+   * memoized component state and causing visible icon/image flickering.
+   * parentMessageId is stable from creation through final response, and siblingIdx
+   * ensures sibling switches still get clean remounts.
+   */
+  const stableKey = `${message.parentMessageId}_${currentSiblingIdx}`;
+
   if (isAssistantsEndpoint(message.endpoint) && message.content) {
     return (
       <MessageParts
-        key={message.messageId}
+        key={stableKey}
         message={message}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
-        siblingIdx={messagesTree.length - siblingIdx - 1}
+        siblingIdx={currentSiblingIdx}
         siblingCount={messagesTree.length}
         setSiblingIdx={setSiblingIdxRev}
       />
@@ -60,11 +71,11 @@ export default function MultiMessage({
   } else if (message.content) {
     return (
       <MessageContent
-        key={message.messageId}
+        key={stableKey}
         message={message}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
-        siblingIdx={messagesTree.length - siblingIdx - 1}
+        siblingIdx={currentSiblingIdx}
         siblingCount={messagesTree.length}
         setSiblingIdx={setSiblingIdxRev}
       />
@@ -73,11 +84,11 @@ export default function MultiMessage({
 
   return (
     <Message
-      key={message.messageId}
+      key={stableKey}
       message={message}
       currentEditId={currentEditId}
       setCurrentEditId={setCurrentEditId}
-      siblingIdx={messagesTree.length - siblingIdx - 1}
+      siblingIdx={currentSiblingIdx}
       siblingCount={messagesTree.length}
       setSiblingIdx={setSiblingIdxRev}
     />
