@@ -16,7 +16,7 @@ function fakeConfig(overrides: Record<string, unknown>, priority: number): IConf
 }
 
 const baseConfig = {
-  interfaceConfig: { modelSelect: true, sidePanel: true },
+  interfaceConfig: { modelSelect: true, parameters: true },
   registration: { enabled: true },
   endpoints: ['openAI'],
 } as unknown as AppConfig;
@@ -36,7 +36,7 @@ describe('mergeConfigOverrides', () => {
     const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
     const iface = result.interfaceConfig as Record<string, unknown>;
     expect(iface.modelSelect).toBe(false);
-    expect(iface.sidePanel).toBe(true);
+    expect(iface.parameters).toBe(true);
   });
 
   it('sorts by priority — higher priority wins', () => {
@@ -98,13 +98,13 @@ describe('mergeConfigOverrides', () => {
   it('merges three priority levels in order', () => {
     const configs = [
       fakeConfig({ interface: { modelSelect: false } }, 0),
-      fakeConfig({ interface: { modelSelect: true, sidePanel: false } }, 10),
-      fakeConfig({ interface: { sidePanel: true } }, 100),
+      fakeConfig({ interface: { modelSelect: true, parameters: false } }, 10),
+      fakeConfig({ interface: { parameters: true } }, 100),
     ];
     const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
     const iface = result.interfaceConfig as Record<string, unknown>;
     expect(iface.modelSelect).toBe(true);
-    expect(iface.sidePanel).toBe(true);
+    expect(iface.parameters).toBe(true);
   });
 
   it('remaps all renamed YAML keys (exhaustiveness check)', () => {
@@ -137,7 +137,7 @@ describe('mergeConfigOverrides', () => {
 
   it('strips interface permission fields from overrides', () => {
     const base = {
-      interfaceConfig: { modelSelect: true, sidePanel: true },
+      interfaceConfig: { modelSelect: true, parameters: true },
     } as unknown as AppConfig;
 
     const configs = [
@@ -164,7 +164,7 @@ describe('mergeConfigOverrides', () => {
     expect(iface.agents).toBeUndefined();
     expect(iface.marketplace).toBeUndefined();
     // Untouched base field preserved
-    expect(iface.sidePanel).toBe(true);
+    expect(iface.parameters).toBe(true);
   });
 
   it('preserves UI sub-keys in composite permission fields like mcpServers', () => {
@@ -281,7 +281,7 @@ describe('INTERFACE_PERMISSION_FIELDS', () => {
   });
 
   it('does not contain UI-only fields', () => {
-    const uiFields = ['modelSelect', 'parameters', 'presets', 'sidePanel'];
+    const uiFields = ['modelSelect', 'parameters', 'presets'];
     for (const field of uiFields) {
       expect(INTERFACE_PERMISSION_FIELDS.has(field)).toBe(false);
     }

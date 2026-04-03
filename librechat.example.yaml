@@ -82,7 +82,6 @@ interface:
 
   modelSelect: true
   parameters: true
-  sidePanel: true
   presets: true
   prompts:
     use: true

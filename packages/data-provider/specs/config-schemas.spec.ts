@@ -425,8 +425,13 @@ describe('azureEndpointSchema', () => {
 
 describe('interfaceSchema', () => {
   it('silently strips removed legacy fields', () => {
-    const result = interfaceSchema.parse({ endpointsMenu: true, modelSelect: false });
+    const result = interfaceSchema.parse({
+      endpointsMenu: true,
+      sidePanel: true,
+      modelSelect: false,
+    });
     expect(result).not.toHaveProperty('endpointsMenu');
+    expect(result).not.toHaveProperty('sidePanel');
     expect(result.modelSelect).toBe(false);
   });
 });

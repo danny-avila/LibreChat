@@ -240,7 +240,7 @@ describe('patchConfigFields', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { modelSelect: true, sidePanel: true } },
+      { interface: { modelSelect: true, parameters: true } },
       10,
     );
 
@@ -255,7 +255,7 @@ describe('patchConfigFields', () => {
     const overrides = result!.overrides as Record<string, unknown>;
     const iface = overrides.interface as Record<string, unknown>;
     expect(iface.modelSelect).toBe(false);
-    expect(iface.sidePanel).toBe(true);
+    expect(iface.parameters).toBe(true);
   });
 
   it('creates a config if none exists (upsert)', async () => {
@@ -278,7 +278,7 @@ describe('unsetConfigField', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { modelSelect: false, sidePanel: false } },
+      { interface: { modelSelect: false, parameters: false } },
       10,
     );
 
@@ -290,7 +290,7 @@ describe('unsetConfigField', () => {
     const overrides = result!.overrides as Record<string, unknown>;
     const iface = overrides.interface as Record<string, unknown>;
     expect(iface.modelSelect).toBeUndefined();
-    expect(iface.sidePanel).toBe(false);
+    expect(iface.parameters).toBe(false);
   });
 
   it('returns null for non-existent config', async () => {

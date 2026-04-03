@@ -107,7 +107,6 @@ describe('AppService', () => {
         interfaceConfig: expect.objectContaining({
           modelSelect: true,
           parameters: true,
-          sidePanel: true,
           presets: true,
         }),
         mcpConfig: null,
