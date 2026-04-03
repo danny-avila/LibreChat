@@ -40,7 +40,7 @@ export function getTopLevelSection(fieldPath: string): string {
  * - `"interface.mcpServers.use"` → true (permission sub-key)
  * - `"interface.mcpServers.placeholder"` → false (UI-only sub-key)
  * - `"interface.peoplePicker.users"` → true (all peoplePicker sub-keys are permissions)
- * - `"interface.endpointsMenu"` → false (UI-only field)
+ * - `"interface.modelSelect"` → false (UI-only field)
  */
 function isInterfacePermissionPath(fieldPath: string): boolean {
   const parts = fieldPath.split('.');

@@ -1,6 +1,6 @@
 import type {
   TEndpoint,
-  FileSources,
+  FileStorage,
   TFileConfig,
   TAzureConfig,
   TCustomConfig,
@@ -62,7 +62,7 @@ export interface AppConfig {
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
-  fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
+  fileStrategy: FileStorage;
   /** File strategies configuration */
   fileStrategies?: TCustomConfig['fileStrategies'];
   /** Registration configurations */

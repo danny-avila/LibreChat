@@ -192,16 +192,13 @@ export function checkInterfaceConfig(appConfig: AppConfig) {
     if (i === 0) i++;
   }
 
-  // warn about config.modelSpecs.enforce if true and if any of these, endpointsMenu, modelSelect, presets, or parameters are enabled, that enforcing model specs can conflict with these options.
+  // warn about config.modelSpecs.enforce if true and if any of these, modelSelect, presets, or parameters are enabled, that enforcing model specs can conflict with these options.
   if (
     appConfig?.modelSpecs?.enforce &&
-    (interfaceConfig?.endpointsMenu ||
-      interfaceConfig?.modelSelect ||
-      interfaceConfig?.presets ||
-      interfaceConfig?.parameters)
+    (interfaceConfig?.modelSelect || interfaceConfig?.presets || interfaceConfig?.parameters)
   ) {
     logger.warn(
-      "Note: Enforcing model specs can conflict with the interface options: endpointsMenu, modelSelect, presets, and parameters. It's recommended to disable these options from the interface or disable enforcing model specs.",
+      "Note: Enforcing model specs can conflict with the interface options: modelSelect, presets, and parameters. It's recommended to disable these options from the interface or disable enforcing model specs.",
     );
     if (i === 0) i++;
   }

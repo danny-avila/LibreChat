@@ -54,7 +54,7 @@ function createHandlers(overrides = {}) {
     toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
 
-    getAppConfig: jest.fn().mockResolvedValue({ interface: { endpointsMenu: true } }),
+    getAppConfig: jest.fn().mockResolvedValue({ interface: { modelSelect: true } }),
     ...overrides,
   };
   const handlers = createAdminConfigHandlers(deps);
@@ -133,7 +133,7 @@ describe('createAdminConfigHandlers', () => {
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
-        body: { overrides: { interface: { endpointsMenu: false } } },
+        body: { overrides: { interface: { modelSelect: false } } },
       });
       const res = mockRes();
 
@@ -148,7 +148,7 @@ describe('createAdminConfigHandlers', () => {
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
-        body: { overrides: { interface: { endpointsMenu: false } } },
+        body: { overrides: { interface: { modelSelect: false } } },
       });
       const res = mockRes();
 
@@ -178,7 +178,7 @@ describe('createAdminConfigHandlers', () => {
         params: { principalType: 'role', principalId: 'admin' },
         body: {
           overrides: {
-            interface: { endpointsMenu: false, prompts: false, agents: { use: false } },
+            interface: { modelSelect: false, prompts: false, agents: { use: false } },
           },
         },
       });
@@ -188,7 +188,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(201);
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
-      expect(savedOverrides.interface).toEqual({ endpointsMenu: false });
+      expect(savedOverrides.interface).toEqual({ modelSelect: false });
     });
 
     it('preserves UI sub-keys in composite permission fields like mcpServers', async () => {
@@ -263,17 +263,13 @@ describe('createAdminConfigHandlers', () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
-        query: { fieldPath: 'interface.endpointsMenu' },
+        query: { fieldPath: 'interface.modelSelect' },
       });
       const res = mockRes();
 
       await handlers.deleteConfigField(req, res);
 
-      expect(deps.unsetConfigField).toHaveBeenCalledWith(
-        'role',
-        'admin',
-        'interface.endpointsMenu',
-      );
+      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'interface.modelSelect');
     });
 
     it('allows deleting mcpServers UI sub-key paths', async () => {
@@ -343,18 +339,14 @@ describe('createAdminConfigHandlers', () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
-        query: { fieldPath: 'interface.endpointsMenu' },
+        query: { fieldPath: 'interface.modelSelect' },
       });
       const res = mockRes();
 
       await handlers.deleteConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.unsetConfigField).toHaveBeenCalledWith(
-        'role',
-        'admin',
-        'interface.endpointsMenu',
-      );
+      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'interface.modelSelect');
     });
 
     it('returns 400 when fieldPath query param is missing', async () => {
@@ -407,7 +399,7 @@ describe('createAdminConfigHandlers', () => {
         params: { principalType: 'role', principalId: 'admin' },
         body: {
           entries: [
-            { fieldPath: 'interface.endpointsMenu', value: false },
+            { fieldPath: 'interface.modelSelect', value: false },
             { fieldPath: 'interface.prompts', value: false },
           ],
         },
@@ -418,7 +410,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
-      expect(patchedFields['interface.endpointsMenu']).toBe(false);
+      expect(patchedFields['interface.modelSelect']).toBe(false);
       expect(patchedFields['interface.prompts']).toBeUndefined();
     });
 
@@ -632,21 +624,21 @@ describe('createAdminConfigHandlers', () => {
       name: 'upsertConfigOverrides',
       reqOverrides: {
         params: { principalType: 'role', principalId: 'admin' },
-        body: { overrides: { interface: { endpointsMenu: false } } },
+        body: { overrides: { interface: { modelSelect: false } } },
       },
     },
     {
       name: 'patchConfigField',
       reqOverrides: {
         params: { principalType: 'role', principalId: 'admin' },
-        body: { entries: [{ fieldPath: 'interface.endpointsMenu', value: false }] },
+        body: { entries: [{ fieldPath: 'interface.modelSelect', value: false }] },
       },
     },
     {
       name: 'deleteConfigField',
       reqOverrides: {
         params: { principalType: 'role', principalId: 'admin' },
-        query: { fieldPath: 'interface.endpointsMenu' },
+        query: { fieldPath: 'interface.modelSelect' },
       },
     },
     {
@@ -775,7 +767,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.getBaseConfig(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body!.config).toEqual({ interface: { endpointsMenu: true } });
+      expect(res.body!.config).toEqual({ interface: { modelSelect: true } });
     });
   });
 });

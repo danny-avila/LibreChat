@@ -2,7 +2,7 @@ import { isValidFieldPath, getTopLevelSection } from './config';
 
 describe('isValidFieldPath', () => {
   it('accepts simple dot paths', () => {
-    expect(isValidFieldPath('interface.endpointsMenu')).toBe(true);
+    expect(isValidFieldPath('interface.modelSelect')).toBe(true);
     expect(isValidFieldPath('registration.socialLogins')).toBe(true);
     expect(isValidFieldPath('a')).toBe(true);
     expect(isValidFieldPath('a.b.c.d')).toBe(true);
@@ -47,7 +47,7 @@ describe('isValidFieldPath', () => {
 
 describe('getTopLevelSection', () => {
   it('returns first segment of a dot path', () => {
-    expect(getTopLevelSection('interface.endpointsMenu')).toBe('interface');
+    expect(getTopLevelSection('interface.modelSelect')).toBe('interface');
     expect(getTopLevelSection('registration.socialLogins.github')).toBe('registration');
   });
 
