@@ -26,6 +26,7 @@
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
 import { InMemoryTokenStore, createOAuthMCPServer } from './helpers/oauthTestServer';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPOAuthHandler, MCPTokenStorage } from '~/mcp/oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -393,6 +394,107 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
 
       expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
+    });
+  });
+
+  describe('isClientRejection', () => {
+    it('should detect invalid_client errors', () => {
+      expect(MCPConnectionFactory.isClientRejection(new Error('invalid_client'))).toBe(true);
+      expect(
+        MCPConnectionFactory.isClientRejection(
+          new Error('OAuth token exchange failed: invalid_client'),
+        ),
+      ).toBe(true);
+    });
+
+    it('should detect unauthorized_client errors', () => {
+      expect(MCPConnectionFactory.isClientRejection(new Error('unauthorized_client'))).toBe(true);
+    });
+
+    it('should detect client_id mismatch errors', () => {
+      expect(
+        MCPConnectionFactory.isClientRejection(
+          new Error('Token exchange rejected: client_id mismatch'),
+        ),
+      ).toBe(true);
+    });
+
+    it('should detect client not found errors', () => {
+      expect(MCPConnectionFactory.isClientRejection(new Error('client not found'))).toBe(true);
+      expect(MCPConnectionFactory.isClientRejection(new Error('unknown client'))).toBe(true);
+    });
+
+    it('should not match unrelated errors', () => {
+      expect(MCPConnectionFactory.isClientRejection(new Error('timeout'))).toBe(false);
+      expect(MCPConnectionFactory.isClientRejection(new Error('Flow state not found'))).toBe(false);
+      expect(MCPConnectionFactory.isClientRejection(new Error('user denied access'))).toBe(false);
+      expect(MCPConnectionFactory.isClientRejection(null)).toBe(false);
+      expect(MCPConnectionFactory.isClientRejection(undefined)).toBe(false);
+    });
+  });
+
+  describe('Token exchange with enforced client_id', () => {
+    it('should reject token exchange when client_id does not match registered client', async () => {
+      server = await createOAuthMCPServer({ tokenTTLMs: 60000, enforceClientId: true });
+
+      // Register a real client via DCR
+      const regRes = await fetch(`${server.url}register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirect_uris: ['http://localhost/callback'] }),
+      });
+      const registered = (await regRes.json()) as { client_id: string };
+
+      // Get an auth code bound to the registered client_id
+      const authRes = await fetch(
+        `${server.url}authorize?redirect_uri=http://localhost/callback&state=s1&client_id=${registered.client_id}`,
+        { redirect: 'manual' },
+      );
+      const location = authRes.headers.get('location') ?? '';
+      const code = new URL(location).searchParams.get('code');
+
+      // Try to exchange the code with a DIFFERENT (stale) client_id
+      const tokenRes = await fetch(`${server.url}token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=authorization_code&code=${code}&client_id=stale-client-id`,
+      });
+
+      expect(tokenRes.status).toBe(401);
+      const body = (await tokenRes.json()) as { error: string; error_description?: string };
+      expect(body.error).toBe('invalid_client');
+
+      // Verify isClientRejection would match this error
+      const errorMsg = body.error_description ?? body.error;
+      expect(MCPConnectionFactory.isClientRejection(new Error(errorMsg))).toBe(true);
+    });
+
+    it('should accept token exchange when client_id matches', async () => {
+      server = await createOAuthMCPServer({ tokenTTLMs: 60000, enforceClientId: true });
+
+      const regRes = await fetch(`${server.url}register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirect_uris: ['http://localhost/callback'] }),
+      });
+      const registered = (await regRes.json()) as { client_id: string };
+
+      const authRes = await fetch(
+        `${server.url}authorize?redirect_uri=http://localhost/callback&state=s1&client_id=${registered.client_id}`,
+        { redirect: 'manual' },
+      );
+      const location = authRes.headers.get('location') ?? '';
+      const code = new URL(location).searchParams.get('code');
+
+      const tokenRes = await fetch(`${server.url}token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=authorization_code&code=${code}&client_id=${registered.client_id}`,
+      });
+
+      expect(tokenRes.status).toBe(200);
+      const body = (await tokenRes.json()) as { access_token: string };
+      expect(body.access_token).toBeTruthy();
     });
   });
 });
