@@ -4,8 +4,12 @@ import {
   azureEndpointSchema,
   endpointSchema,
   configSchema,
+  interfaceSchema,
+  fileStorageSchema,
+  fileStrategiesSchema,
 } from '../src/config';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
+import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
   it('accepts a minimal definition with only key', () => {
@@ -419,5 +423,82 @@ describe('azureEndpointSchema', () => {
       ],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('fileStorageSchema', () => {
+  const validStrategies = [
+    FileSources.local,
+    FileSources.firebase,
+    FileSources.s3,
+    FileSources.azure_blob,
+  ];
+  const invalidStrategies = [
+    FileSources.openai,
+    FileSources.azure,
+    FileSources.vectordb,
+    FileSources.execute_code,
+    FileSources.mistral_ocr,
+    FileSources.azure_mistral_ocr,
+    FileSources.vertexai_mistral_ocr,
+    FileSources.text,
+    FileSources.document_parser,
+  ];
+
+  for (const strategy of validStrategies) {
+    it(`accepts storage strategy "${strategy}"`, () => {
+      expect(fileStorageSchema.safeParse(strategy).success).toBe(true);
+    });
+  }
+
+  for (const strategy of invalidStrategies) {
+    it(`rejects processing strategy "${strategy}"`, () => {
+      expect(fileStorageSchema.safeParse(strategy).success).toBe(false);
+    });
+  }
+});
+
+describe('fileStrategiesSchema', () => {
+  it('accepts valid storage strategies for all sub-fields', () => {
+    const result = fileStrategiesSchema.safeParse({
+      default: FileSources.s3,
+      avatar: FileSources.local,
+      image: FileSources.firebase,
+      document: FileSources.azure_blob,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects processing strategies in sub-fields', () => {
+    const result = fileStrategiesSchema.safeParse({
+      default: FileSources.vectordb,
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('configSchema fileStrategy', () => {
+  it('rejects a processing strategy as fileStrategy', () => {
+    const result = configSchema.safeParse({ version: '1.3.7', fileStrategy: FileSources.vectordb });
+    expect(result.success).toBe(false);
+  });
+
+  it('defaults fileStrategy to local when absent', () => {
+    const result = configSchema.safeParse({ version: '1.3.7' });
+    expect(result.success).toBe(true);
+    expect(result.data?.fileStrategy).toBe(FileSources.local);
+  });
+});
+
+describe('interfaceSchema', () => {
+  it('silently strips removed legacy fields', () => {
+    const result = interfaceSchema.parse({
+      endpointsMenu: true,
+      sidePanel: true,
+      modelSelect: false,
+    });
+    expect(result).not.toHaveProperty('endpointsMenu');
+    expect(result).not.toHaveProperty('sidePanel');
+    expect(result.modelSelect).toBe(false);
   });
 });

@@ -1,10 +1,10 @@
-import { useMemo, useEffect, useRef, memo } from 'react';
+import { useMemo, memo } from 'react';
 import { getEndpointField } from 'librechat-data-provider';
 import type { Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { getIconEndpoint, logger } from '~/utils';
+import { getIconEndpoint } from '~/utils';
 import Icon from '~/components/Endpoints/Icon';
 
 type MessageIconProps = {
@@ -19,25 +19,20 @@ type MessageIconProps = {
  * this component renders display properties only, not identity-derived content.
  */
 export function arePropsEqual(prev: MessageIconProps, next: MessageIconProps): boolean {
-  const checks: [string, unknown, unknown][] = [
-    ['iconData.endpoint', prev.iconData?.endpoint, next.iconData?.endpoint],
-    ['iconData.model', prev.iconData?.model, next.iconData?.model],
-    ['iconData.iconURL', prev.iconData?.iconURL, next.iconData?.iconURL],
-    ['iconData.modelLabel', prev.iconData?.modelLabel, next.iconData?.modelLabel],
-    ['iconData.isCreatedByUser', prev.iconData?.isCreatedByUser, next.iconData?.isCreatedByUser],
-    ['agent.name', prev.agent?.name, next.agent?.name],
-    ['agent.avatar.filepath', prev.agent?.avatar?.filepath, next.agent?.avatar?.filepath],
-    ['assistant.name', prev.assistant?.name, next.assistant?.name],
-    [
-      'assistant.metadata.avatar',
-      prev.assistant?.metadata?.avatar,
-      next.assistant?.metadata?.avatar,
-    ],
+  const checks: [unknown, unknown][] = [
+    [prev.iconData?.endpoint, next.iconData?.endpoint],
+    [prev.iconData?.model, next.iconData?.model],
+    [prev.iconData?.iconURL, next.iconData?.iconURL],
+    [prev.iconData?.modelLabel, next.iconData?.modelLabel],
+    [prev.iconData?.isCreatedByUser, next.iconData?.isCreatedByUser],
+    [prev.agent?.name, next.agent?.name],
+    [prev.agent?.avatar?.filepath, next.agent?.avatar?.filepath],
+    [prev.assistant?.name, next.assistant?.name],
+    [prev.assistant?.metadata?.avatar, next.assistant?.metadata?.avatar],
   ];
 
-  for (const [field, prevVal, nextVal] of checks) {
+  for (const [prevVal, nextVal] of checks) {
     if (prevVal !== nextVal) {
-      logger.log('icon_memo_diff', `field "${field}" changed:`, prevVal, '→', nextVal);
       return false;
     }
   }
@@ -45,28 +40,6 @@ export function arePropsEqual(prev: MessageIconProps, next: MessageIconProps): b
 }
 
 const MessageIcon = memo(({ iconData, assistant, agent }: MessageIconProps) => {
-  const renderCountRef = useRef(0);
-  renderCountRef.current += 1;
-
-  useEffect(() => {
-    logger.log(
-      'icon_lifecycle',
-      'MOUNT',
-      iconData?.modelLabel,
-      `render #${renderCountRef.current}`,
-    );
-    return () => {
-      logger.log('icon_lifecycle', 'UNMOUNT', iconData?.modelLabel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  logger.log(
-    'icon_data',
-    `render #${renderCountRef.current}`,
-    iconData?.isCreatedByUser ? 'user' : iconData?.modelLabel,
-    iconData,
-  );
   const { data: endpointsConfig } = useGetEndpointsQuery();
 
   const agentName = agent?.name ?? '';

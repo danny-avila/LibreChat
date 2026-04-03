@@ -32,7 +32,7 @@ describe('upsertConfig', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { endpointsMenu: false } },
+      { interface: { modelSelect: false } },
       10,
     );
 
@@ -49,7 +49,7 @@ describe('upsertConfig', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { endpointsMenu: false } },
+      { interface: { modelSelect: false } },
       10,
     );
 
@@ -57,7 +57,7 @@ describe('upsertConfig', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { endpointsMenu: true } },
+      { interface: { modelSelect: true } },
       10,
     );
 
@@ -70,7 +70,7 @@ describe('upsertConfig', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { endpointsMenu: true } },
+      { interface: { modelSelect: true } },
       10,
     );
 
@@ -78,7 +78,7 @@ describe('upsertConfig', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { endpointsMenu: false } },
+      { interface: { modelSelect: false } },
       10,
     );
 
@@ -240,7 +240,7 @@ describe('patchConfigFields', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { endpointsMenu: true, sidePanel: true } },
+      { interface: { modelSelect: true, parameters: true } },
       10,
     );
 
@@ -248,14 +248,14 @@ describe('patchConfigFields', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { 'interface.endpointsMenu': false },
+      { 'interface.modelSelect': false },
       10,
     );
 
     const overrides = result!.overrides as Record<string, unknown>;
     const iface = overrides.interface as Record<string, unknown>;
-    expect(iface.endpointsMenu).toBe(false);
-    expect(iface.sidePanel).toBe(true);
+    expect(iface.modelSelect).toBe(false);
+    expect(iface.parameters).toBe(true);
   });
 
   it('creates a config if none exists (upsert)', async () => {
@@ -263,7 +263,7 @@ describe('patchConfigFields', () => {
       PrincipalType.ROLE,
       'newrole',
       PrincipalModel.ROLE,
-      { 'interface.endpointsMenu': false },
+      { 'interface.modelSelect': false },
       10,
     );
 
@@ -278,19 +278,19 @@ describe('unsetConfigField', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { endpointsMenu: false, sidePanel: false } },
+      { interface: { modelSelect: false, parameters: false } },
       10,
     );
 
     const result = await methods.unsetConfigField(
       PrincipalType.ROLE,
       'admin',
-      'interface.endpointsMenu',
+      'interface.modelSelect',
     );
     const overrides = result!.overrides as Record<string, unknown>;
     const iface = overrides.interface as Record<string, unknown>;
-    expect(iface.endpointsMenu).toBeUndefined();
-    expect(iface.sidePanel).toBe(false);
+    expect(iface.modelSelect).toBeUndefined();
+    expect(iface.parameters).toBe(false);
   });
 
   it('returns null for non-existent config', async () => {
