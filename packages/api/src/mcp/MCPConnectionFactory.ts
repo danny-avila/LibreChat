@@ -356,7 +356,11 @@ export class MCPConnectionFactory {
 
           if (existingFlow) {
             const oldMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
-            if (oldMeta?.reusedStoredClient && this.tokenMethods?.deleteTokens) {
+            if (
+              existingFlow.status === 'FAILED' &&
+              oldMeta?.reusedStoredClient &&
+              this.tokenMethods?.deleteTokens
+            ) {
               await MCPTokenStorage.deleteClientRegistration({
                 userId: this.userId!,
                 serverName: this.serverName,
@@ -425,9 +429,9 @@ export class MCPConnectionFactory {
       } else {
         // OAuth failed — if we reused a stored client registration, clear it
         // so the next attempt falls through to fresh DCR
-        if (result?.clientInfo && this.tokenMethods?.deleteTokens) {
+        if (this.tokenMethods?.deleteTokens && this.flowManager) {
           const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
-          const failedFlow = await this.flowManager?.getFlowState(flowId, 'mcp_oauth');
+          const failedFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
           const failedMeta = failedFlow?.metadata as MCPOAuthFlowMetadata | undefined;
           if (failedMeta?.reusedStoredClient) {
             await MCPTokenStorage.deleteClientRegistration({
@@ -435,7 +439,7 @@ export class MCPConnectionFactory {
               serverName: this.serverName,
               deleteTokens: this.tokenMethods.deleteTokens,
             }).catch((err) => {
-              logger.debug(`${this.logPrefix} Failed to clear stale client registration`, err);
+              logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
             });
           }
         }
