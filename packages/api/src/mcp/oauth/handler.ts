@@ -509,7 +509,8 @@ export class MCPOAuthHandler {
             findToken,
           });
           if (existing?.clientInfo?.client_id) {
-            const storedRedirectUri = existing.clientInfo.redirect_uris?.[0];
+            const storedRedirectUri = (existing.clientInfo as OAuthClientInformation)
+              .redirect_uris?.[0];
             if (!storedRedirectUri || storedRedirectUri !== redirectUri) {
               logger.debug(
                 `[MCPOAuth] Stored redirect_uri "${storedRedirectUri}" differs from current "${redirectUri}", will re-register`,

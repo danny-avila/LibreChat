@@ -23,6 +23,7 @@
  * fix and would require a distributed lock (e.g., Redis SETNX) around registration.
  */
 
+import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
 import { InMemoryTokenStore, createOAuthMCPServer } from './helpers/oauthTestServer';
 import { MCPOAuthHandler, MCPTokenStorage } from '~/mcp/oauth';
@@ -210,7 +211,7 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
           client_id: 'old-client-id',
           client_secret: 'old-secret',
           redirect_uris: ['http://old-domain.com/api/mcp/test-server/oauth/callback'],
-        },
+        } as OAuthClientInformation & { redirect_uris: string[] },
       });
 
       const result = await MCPOAuthHandler.initiateOAuthFlow(
@@ -242,7 +243,7 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
           client_id: 'empty-redirect-client',
           client_secret: 'secret',
           redirect_uris: [],
-        },
+        } as OAuthClientInformation & { redirect_uris: string[] },
       });
 
       const result = await MCPOAuthHandler.initiateOAuthFlow(
