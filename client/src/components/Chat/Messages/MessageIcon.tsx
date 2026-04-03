@@ -1,4 +1,4 @@
-import { useMemo, memo } from 'react';
+import { useMemo, useEffect, useRef, memo } from 'react';
 import { getEndpointField } from 'librechat-data-provider';
 import type { Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
@@ -45,7 +45,28 @@ export function arePropsEqual(prev: MessageIconProps, next: MessageIconProps): b
 }
 
 const MessageIcon = memo(({ iconData, assistant, agent }: MessageIconProps) => {
-  logger.log('icon_data', iconData, assistant, agent);
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+
+  useEffect(() => {
+    logger.log(
+      'icon_lifecycle',
+      'MOUNT',
+      iconData?.modelLabel,
+      `render #${renderCountRef.current}`,
+    );
+    return () => {
+      logger.log('icon_lifecycle', 'UNMOUNT', iconData?.modelLabel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  logger.log(
+    'icon_data',
+    `render #${renderCountRef.current}`,
+    iconData?.isCreatedByUser ? 'user' : iconData?.modelLabel,
+    iconData,
+  );
   const { data: endpointsConfig } = useGetEndpointsQuery();
 
   const agentName = agent?.name ?? '';
