@@ -1,7 +1,6 @@
 import { useRecoilState } from 'recoil';
 import { useEffect, useCallback } from 'react';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
-import { logger } from '~/utils';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageContent from '~/components/Messages/MessageContent';
@@ -48,62 +47,32 @@ export default function MultiMessage({
   }
 
   /**
-   * Key on parentMessageId + siblingIdx instead of messageId.
-   * messageId changes during the SSE lifecycle (client UUID → createdHandler ID → server ID),
-   * which causes React to unmount/remount the entire subtree on each change — destroying
-   * memoized component state and causing visible icon/image flickering.
-   * parentMessageId is stable from creation through final response, and siblingIdx
-   * ensures sibling switches still get clean remounts.
+   * No explicit key — React uses positional reconciliation since MultiMessage
+   * always renders exactly one child at this position.
+   *
+   * Both messageId and parentMessageId change during the SSE lifecycle
+   * (client UUID → createdHandler ID → server ID), so neither can serve as a
+   * stable key. Using either caused React to unmount/remount the entire subtree
+   * on each SSE event, destroying memoized state and causing visible flickering.
+   *
+   * Without a key, React reuses the component instance and updates props in place.
+   * The memo comparators on ContentRender/MessageRender handle field-level diffing,
+   * and sibling switches work correctly because the message prop changes entirely.
    */
-  const stableKey = `${message.parentMessageId}_${currentSiblingIdx}`;
-  logger.log('multi_message_key', {
-    stableKey,
-    messageId: message.messageId,
-    parentMessageId: message.parentMessageId,
-    currentSiblingIdx,
-    hasContent: !!message.content,
-    route: isAssistantsEndpoint(message.endpoint)
-      ? 'MessageParts'
-      : message.content
-        ? 'MessageContent'
-        : 'Message',
-  });
+  const sharedProps = {
+    message,
+    currentEditId,
+    setCurrentEditId,
+    siblingIdx: currentSiblingIdx,
+    siblingCount: messagesTree.length,
+    setSiblingIdx: setSiblingIdxRev,
+  };
 
   if (isAssistantsEndpoint(message.endpoint) && message.content) {
-    return (
-      <MessageParts
-        key={stableKey}
-        message={message}
-        currentEditId={currentEditId}
-        setCurrentEditId={setCurrentEditId}
-        siblingIdx={currentSiblingIdx}
-        siblingCount={messagesTree.length}
-        setSiblingIdx={setSiblingIdxRev}
-      />
-    );
+    return <MessageParts {...sharedProps} />;
   } else if (message.content) {
-    return (
-      <MessageContent
-        key={stableKey}
-        message={message}
-        currentEditId={currentEditId}
-        setCurrentEditId={setCurrentEditId}
-        siblingIdx={currentSiblingIdx}
-        siblingCount={messagesTree.length}
-        setSiblingIdx={setSiblingIdxRev}
-      />
-    );
+    return <MessageContent {...sharedProps} />;
   }
 
-  return (
-    <Message
-      key={stableKey}
-      message={message}
-      currentEditId={currentEditId}
-      setCurrentEditId={setCurrentEditId}
-      siblingIdx={currentSiblingIdx}
-      siblingCount={messagesTree.length}
-      setSiblingIdx={setSiblingIdxRev}
-    />
-  );
+  return <Message {...sharedProps} />;
 }

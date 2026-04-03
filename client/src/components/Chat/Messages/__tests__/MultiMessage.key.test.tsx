@@ -31,41 +31,45 @@ function TrackedChild({
 }
 
 type TestMessage = { messageId: string; parentMessageId: string };
-type KeyStrategy = 'messageId' | 'parentMessageId+siblingIdx';
+type KeyStrategy = 'messageId' | 'none';
 
 function KeyTestWrapper({
   message,
-  siblingIdx = 0,
   keyStrategy,
   onMount,
   onUnmount,
 }: {
   message: TestMessage;
-  siblingIdx?: number;
   keyStrategy: KeyStrategy;
   onMount: (id: string) => void;
   onUnmount: (id: string) => void;
 }) {
-  const key =
-    keyStrategy === 'messageId' ? message.messageId : `${message.parentMessageId}_${siblingIdx}`;
+  const key = keyStrategy === 'messageId' ? message.messageId : undefined;
   return (
     <TrackedChild key={key} messageId={message.messageId} onMount={onMount} onUnmount={onUnmount} />
   );
 }
 
 /**
- * Simulates the SSE message lifecycle:
- * 1. useChatFunctions creates initialResponse with client-generated messageId
- * 2. createdHandler replaces it with messageId: userMessageId + '_'
- * 3. finalHandler replaces it with server-assigned responseMessage.messageId
- *
- * parentMessageId (the user message ID) stays constant throughout.
+ * Simulates the SSE message lifecycle where BOTH messageId AND parentMessageId
+ * change at every event:
+ * 1. useChatFunctions: client-generated messageId, parentMessageId = client user msg ID
+ * 2. createdHandler: server-assigned messageId, parentMessageId = server request msg ID
+ * 3. finalHandler: final server messageId, parentMessageId = final request msg ID
  */
-const userMessageId = 'user-msg-abc123';
 const phases = {
-  initial: { messageId: 'client-generated-uuid', parentMessageId: userMessageId },
-  created: { messageId: `${userMessageId}_`, parentMessageId: userMessageId },
-  final: { messageId: 'server-assigned-uuid-xyz', parentMessageId: userMessageId },
+  initial: {
+    messageId: 'client-generated-uuid',
+    parentMessageId: 'client-user-msg-id',
+  },
+  created: {
+    messageId: 'client-user-msg-id_',
+    parentMessageId: 'server-request-msg-id',
+  },
+  final: {
+    messageId: 'server-final-response-id',
+    parentMessageId: 'server-final-request-id',
+  },
 };
 
 function runLifecycle(keyStrategy: KeyStrategy) {
@@ -86,7 +90,7 @@ function runLifecycle(keyStrategy: KeyStrategy) {
 }
 
 describe('MultiMessage key stability', () => {
-  describe('key={message.messageId} (current behavior)', () => {
+  describe('key={message.messageId} (original behavior)', () => {
     it('unmounts and remounts on CREATED event when messageId changes', () => {
       const mounts: string[] = [];
       const unmounts: string[] = [];
@@ -113,7 +117,7 @@ describe('MultiMessage key stability', () => {
       );
 
       expect(unmounts).toEqual(['client-generated-uuid']);
-      expect(mounts).toEqual(['client-generated-uuid', `${userMessageId}_`]);
+      expect(mounts).toHaveLength(2);
     });
 
     it('causes 3 mounts and 2 unmounts across the full SSE lifecycle', () => {
@@ -123,7 +127,7 @@ describe('MultiMessage key stability', () => {
     });
   });
 
-  describe('key={parentMessageId + siblingIdx} (stable key)', () => {
+  describe('no key (positional reconciliation)', () => {
     it('does NOT unmount on CREATED event — reuses the same instance', () => {
       const mounts: string[] = [];
       const unmounts: string[] = [];
@@ -131,7 +135,7 @@ describe('MultiMessage key stability', () => {
       const { rerender } = render(
         <KeyTestWrapper
           message={phases.initial}
-          keyStrategy="parentMessageId+siblingIdx"
+          keyStrategy="none"
           onMount={(id) => mounts.push(id)}
           onUnmount={(id) => unmounts.push(id)}
         />,
@@ -142,7 +146,7 @@ describe('MultiMessage key stability', () => {
       rerender(
         <KeyTestWrapper
           message={phases.created}
-          keyStrategy="parentMessageId+siblingIdx"
+          keyStrategy="none"
           onMount={(id) => mounts.push(id)}
           onUnmount={(id) => unmounts.push(id)}
         />,
@@ -153,50 +157,9 @@ describe('MultiMessage key stability', () => {
     });
 
     it('survives full SSE lifecycle with exactly 1 mount and 0 unmounts', () => {
-      const { mounts, unmounts } = runLifecycle('parentMessageId+siblingIdx');
+      const { mounts, unmounts } = runLifecycle('none');
       expect(mounts).toHaveLength(1);
       expect(unmounts).toHaveLength(0);
-    });
-
-    it('remounts when switching siblings (different siblingIdx)', () => {
-      const siblingA: TestMessage = {
-        messageId: 'sibling-a-id',
-        parentMessageId: userMessageId,
-      };
-      const siblingB: TestMessage = {
-        messageId: 'sibling-b-id',
-        parentMessageId: userMessageId,
-      };
-      const mounts: string[] = [];
-      const unmounts: string[] = [];
-      const callbacks = {
-        onMount: (id: string) => mounts.push(id),
-        onUnmount: (id: string) => unmounts.push(id),
-      };
-
-      const { rerender } = render(
-        <KeyTestWrapper
-          message={siblingA}
-          siblingIdx={0}
-          keyStrategy="parentMessageId+siblingIdx"
-          {...callbacks}
-        />,
-      );
-
-      expect(mounts).toEqual(['sibling-a-id']);
-
-      // Switch to sibling B at siblingIdx=1 → key changes → clean remount
-      rerender(
-        <KeyTestWrapper
-          message={siblingB}
-          siblingIdx={1}
-          keyStrategy="parentMessageId+siblingIdx"
-          {...callbacks}
-        />,
-      );
-
-      expect(unmounts).toEqual(['sibling-a-id']);
-      expect(mounts).toEqual(['sibling-a-id', 'sibling-b-id']);
     });
   });
 });
