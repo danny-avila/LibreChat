@@ -28,7 +28,7 @@ export function useRoleSelector(permissionType: PermissionTypes) {
       if (!isCustom && roles?.[role]?.permissions?.[permissionType]) {
         return roles[role]?.permissions[permissionType];
       }
-      const defaults = isSystemRoleName(role)
+      const defaults = !isCustom
         ? roleDefaults[role as SystemRoles]
         : roleDefaults[SystemRoles.USER];
       return defaults.permissions[permissionType];
@@ -52,7 +52,6 @@ export function useRoleSelector(permissionType: PermissionTypes) {
   );
 
   return {
-    roles,
     selectedRole,
     setSelectedRole,
     isSelectedCustomRole,
@@ -60,7 +59,6 @@ export function useRoleSelector(permissionType: PermissionTypes) {
     isCustomRoleLoading,
     defaultValues,
     resolvePermissions,
-    availableRoleNames,
     roleDropdownItems,
   };
 }
