@@ -126,17 +126,21 @@ export async function getOrComputeToolTokens({
   provider,
   clientOptions,
   tokenCounter,
+  tenantId,
 }: {
   tools?: GenericTool[];
   toolDefinitions?: LCTool[];
   provider: Providers;
   clientOptions?: ClientOptions;
   tokenCounter: TokenCounter;
+  tenantId?: string;
 }): Promise<number> {
   const schemas = collectToolSchemas(tools, toolDefinitions);
   if (schemas.size === 0) {
     return 0;
   }
+
+  const keyPrefix = tenantId ? `${tenantId}:` : '';
 
   let cache: Keyv | undefined;
   try {
@@ -149,11 +153,12 @@ export async function getOrComputeToolTokens({
   const toWrite: Array<{ key: string; value: number }> = [];
 
   for (const [name, json] of schemas) {
+    const cacheKey = `${keyPrefix}${name}`;
     let rawCount: number | undefined;
 
     if (cache) {
       try {
-        rawCount = (await cache.get(name)) as number | undefined;
+        rawCount = (await cache.get(cacheKey)) as number | undefined;
       } catch {
         // Cache read failed for this tool — will compute fresh
       }
@@ -162,7 +167,7 @@ export async function getOrComputeToolTokens({
     if (rawCount == null || rawCount <= 0) {
       rawCount = tokenCounter(new SystemMessage(json));
       if (rawCount > 0 && cache) {
-        toWrite.push({ key: name, value: rawCount });
+        toWrite.push({ key: cacheKey, value: rawCount });
       }
     }
 
