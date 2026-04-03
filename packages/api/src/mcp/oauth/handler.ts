@@ -500,6 +500,7 @@ export class MCPOAuthHandler {
       logger.debug(`[MCPOAuth] Resolving OAuth client with redirect URI: ${redirectUri}`);
 
       let clientInfo: OAuthClientInformation | undefined;
+      let reusedStoredClient = false;
 
       if (findToken) {
         try {
@@ -511,15 +512,23 @@ export class MCPOAuthHandler {
           if (existing?.clientInfo?.client_id) {
             const storedRedirectUri = (existing.clientInfo as OAuthClientInformation)
               .redirect_uris?.[0];
+            const storedIssuer = (existing.clientMetadata as Record<string, unknown>)?.issuer;
+            const currentIssuer = metadata.issuer ?? authServerUrl.toString();
+
             if (!storedRedirectUri || storedRedirectUri !== redirectUri) {
               logger.debug(
                 `[MCPOAuth] Stored redirect_uri "${storedRedirectUri}" differs from current "${redirectUri}", will re-register`,
+              );
+            } else if (storedIssuer && storedIssuer !== currentIssuer) {
+              logger.debug(
+                `[MCPOAuth] Stored issuer "${storedIssuer}" differs from current "${currentIssuer}", will re-register`,
               );
             } else {
               logger.debug(
                 `[MCPOAuth] Reusing existing client registration: ${existing.clientInfo.client_id}`,
               );
               clientInfo = existing.clientInfo;
+              reusedStoredClient = true;
             }
           }
         } catch (error) {
@@ -610,6 +619,7 @@ export class MCPOAuthHandler {
         metadata,
         resourceMetadata,
         ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
+        ...(reusedStoredClient && { reusedStoredClient }),
       };
 
       logger.debug(

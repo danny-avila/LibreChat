@@ -145,6 +145,7 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
 
       expect(server.registeredClients.size).toBe(1);
       expect(secondResult.flowMetadata.clientInfo?.client_id).toBe(firstClientId);
+      expect(secondResult.flowMetadata.reusedStoredClient).toBe(true);
     });
 
     it('should reuse the same client when two reconnections fire concurrently with pre-seeded token', async () => {
@@ -315,10 +316,11 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
       expect(firstResult.flowMetadata.clientInfo?.client_id).toBe(
         'stale-client-that-oauth-server-deleted',
       );
+      expect(firstResult.flowMetadata.reusedStoredClient).toBe(true);
       expect(server.registeredClients.size).toBe(0);
 
-      // Simulate flow failure: the OAuth server rejected the stale client_id,
-      // so the operator clears the stored client registration
+      // Simulate what MCPConnectionFactory does on failure when reusedStoredClient is set:
+      // clear the stored client registration so the next attempt does a fresh DCR
       await MCPTokenStorage.deleteClientRegistration({
         userId: 'user-1',
         serverName: 'test-server',
@@ -336,11 +338,51 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
         tokenStore.findToken,
       );
 
-      // Now it registered a new client
       expect(server.registeredClients.size).toBe(1);
       expect(secondResult.flowMetadata.clientInfo?.client_id).not.toBe(
         'stale-client-that-oauth-server-deleted',
       );
+      expect(secondResult.flowMetadata.reusedStoredClient).toBeUndefined();
+    });
+
+    it('should re-register when stored client was issued by a different authorization server', async () => {
+      server = await createOAuthMCPServer({ tokenTTLMs: 60000 });
+      const tokenStore = new InMemoryTokenStore();
+
+      // Seed a stored client that was registered with a different issuer
+      await MCPTokenStorage.storeTokens({
+        userId: 'user-1',
+        serverName: 'test-server',
+        tokens: { access_token: 'old-token', token_type: 'Bearer' },
+        createToken: tokenStore.createToken,
+        updateToken: tokenStore.updateToken,
+        findToken: tokenStore.findToken,
+        clientInfo: {
+          client_id: 'old-issuer-client',
+          client_secret: 'secret',
+          redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        } as OAuthClientInformation & { redirect_uris: string[] },
+        metadata: {
+          issuer: 'https://old-auth-server.example.com',
+          authorization_endpoint: 'https://old-auth-server.example.com/authorize',
+          token_endpoint: 'https://old-auth-server.example.com/token',
+        },
+      });
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        server.url,
+        'user-1',
+        {},
+        undefined,
+        undefined,
+        tokenStore.findToken,
+      );
+
+      // Should have registered a NEW client because the issuer changed
+      expect(server.registeredClients.size).toBe(1);
+      expect(result.flowMetadata.clientInfo?.client_id).not.toBe('old-issuer-client');
+      expect(result.flowMetadata.reusedStoredClient).toBeUndefined();
     });
 
     it('should not call getClientInfoAndMetadata when findToken is not provided', async () => {

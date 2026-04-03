@@ -355,7 +355,17 @@ export class MCPConnectionFactory {
           );
 
           if (existingFlow) {
-            const oldState = (existingFlow.metadata as MCPOAuthFlowMetadata)?.state;
+            const oldMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
+            if (oldMeta?.reusedStoredClient && this.tokenMethods?.deleteTokens) {
+              await MCPTokenStorage.deleteClientRegistration({
+                userId: this.userId!,
+                serverName: this.serverName,
+                deleteTokens: this.tokenMethods.deleteTokens,
+              }).catch((err) => {
+                logger.debug(`${this.logPrefix} Failed to clear stale client registration`, err);
+              });
+            }
+            const oldState = oldMeta?.state;
             await this.flowManager!.deleteFlow(newFlowId, 'mcp_oauth');
             if (oldState) {
               await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager!);
@@ -413,16 +423,21 @@ export class MCPConnectionFactory {
       if (result?.tokens) {
         connection.emit('oauthHandled');
       } else {
-        // OAuth failed — clear stored client registration so the next attempt
-        // does a fresh DCR instead of reusing a potentially stale client_id
-        if (this.tokenMethods?.deleteTokens) {
-          await MCPTokenStorage.deleteClientRegistration({
-            userId: this.userId!,
-            serverName: this.serverName,
-            deleteTokens: this.tokenMethods.deleteTokens,
-          }).catch((err) => {
-            logger.debug(`${this.logPrefix} Failed to clear stale client registration`, err);
-          });
+        // OAuth failed — if we reused a stored client registration, clear it
+        // so the next attempt falls through to fresh DCR
+        if (result?.clientInfo && this.tokenMethods?.deleteTokens) {
+          const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+          const failedFlow = await this.flowManager?.getFlowState(flowId, 'mcp_oauth');
+          const failedMeta = failedFlow?.metadata as MCPOAuthFlowMetadata | undefined;
+          if (failedMeta?.reusedStoredClient) {
+            await MCPTokenStorage.deleteClientRegistration({
+              userId: this.userId!,
+              serverName: this.serverName,
+              deleteTokens: this.tokenMethods.deleteTokens,
+            }).catch((err) => {
+              logger.debug(`${this.logPrefix} Failed to clear stale client registration`, err);
+            });
+          }
         }
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
