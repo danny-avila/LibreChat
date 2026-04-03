@@ -156,6 +156,46 @@ describe('Meilisearch Mongoose plugin', () => {
     );
   });
 
+  test('updating an indexed message calls updateDocuments with primaryKey: messageId', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const msg = await messageModel.create({
+      messageId: new mongoose.Types.ObjectId().toString(),
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      isCreatedByUser: true,
+    });
+    mockUpdateDocuments.mockClear();
+
+    msg._meiliIndex = true;
+    msg.text = 'Updated text';
+    await msg.save();
+
+    expect(mockUpdateDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ messageId: expect.anything() })],
+      { primaryKey: 'messageId' },
+    );
+  });
+
+  test('deleteObjectFromMeili calls deleteDocument with messageId, not _id', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const msgId = new mongoose.Types.ObjectId().toString();
+    const msg = await messageModel.create({
+      messageId: msgId,
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      isCreatedByUser: true,
+    });
+    mockDeleteDocument.mockClear();
+
+    const typedMsg = msg as unknown as import('./mongoMeili').DocumentWithMeiliIndex;
+    await new Promise<void>((resolve, reject) => {
+      typedMsg.deleteObjectFromMeili!((err) => (err ? reject(err) : resolve()));
+    });
+
+    expect(mockDeleteDocument).toHaveBeenCalledWith(msgId);
+    expect(mockDeleteDocument).not.toHaveBeenCalledWith(String(msg._id));
+  });
+
   test('updateDocuments receives preprocessed data with primaryKey', async () => {
     const conversationModel = createConversationModel(mongoose);
     const conversationId = 'abc|def|ghi';

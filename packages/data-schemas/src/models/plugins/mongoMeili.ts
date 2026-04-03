@@ -130,6 +130,7 @@ const processBatch = async <T>(
  * @param config - Configuration object.
  * @param config.index - The MeiliSearch index object.
  * @param config.attributesToIndex - List of attributes to index.
+ * @param config.primaryKey - The primary key field for MeiliSearch document operations.
  * @param config.syncOptions - Sync configuration options.
  * @returns A class definition that will be loaded into the Mongoose schema.
  */
