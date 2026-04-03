@@ -413,7 +413,17 @@ export class MCPConnectionFactory {
       if (result?.tokens) {
         connection.emit('oauthHandled');
       } else {
-        // OAuth failed, emit oauthFailed to properly reject the promise
+        // OAuth failed — clear stored client registration so the next attempt
+        // does a fresh DCR instead of reusing a potentially stale client_id
+        if (this.tokenMethods?.deleteTokens) {
+          await MCPTokenStorage.deleteClientRegistration({
+            userId: this.userId!,
+            serverName: this.serverName,
+            deleteTokens: this.tokenMethods.deleteTokens,
+          }).catch((err) => {
+            logger.debug(`${this.logPrefix} Failed to clear stale client registration`, err);
+          });
+        }
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
       }

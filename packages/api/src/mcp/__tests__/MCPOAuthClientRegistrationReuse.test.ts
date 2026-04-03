@@ -283,6 +283,66 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
       expect(result.flowMetadata.clientInfo?.client_id).toBeTruthy();
     });
 
+    it('should not reuse a stale client on retry after a failed flow', async () => {
+      server = await createOAuthMCPServer({ tokenTTLMs: 60000 });
+      const tokenStore = new InMemoryTokenStore();
+
+      // Seed a stored client with a client_id that the OAuth server doesn't recognize
+      await MCPTokenStorage.storeTokens({
+        userId: 'user-1',
+        serverName: 'test-server',
+        tokens: { access_token: 'old-token', token_type: 'Bearer' },
+        createToken: tokenStore.createToken,
+        updateToken: tokenStore.updateToken,
+        findToken: tokenStore.findToken,
+        clientInfo: {
+          client_id: 'stale-client-that-oauth-server-deleted',
+          client_secret: 'stale-secret',
+          redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        } as OAuthClientInformation & { redirect_uris: string[] },
+      });
+
+      // First attempt: reuses the stale client (this is expected — we don't know it's stale yet)
+      const firstResult = await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        server.url,
+        'user-1',
+        {},
+        undefined,
+        undefined,
+        tokenStore.findToken,
+      );
+      expect(firstResult.flowMetadata.clientInfo?.client_id).toBe(
+        'stale-client-that-oauth-server-deleted',
+      );
+      expect(server.registeredClients.size).toBe(0);
+
+      // Simulate flow failure: the OAuth server rejected the stale client_id,
+      // so the operator clears the stored client registration
+      await MCPTokenStorage.deleteClientRegistration({
+        userId: 'user-1',
+        serverName: 'test-server',
+        deleteTokens: tokenStore.deleteToken,
+      });
+
+      // Second attempt (retry after failure): should do a fresh DCR
+      const secondResult = await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        server.url,
+        'user-1',
+        {},
+        undefined,
+        undefined,
+        tokenStore.findToken,
+      );
+
+      // Now it registered a new client
+      expect(server.registeredClients.size).toBe(1);
+      expect(secondResult.flowMetadata.clientInfo?.client_id).not.toBe(
+        'stale-client-that-oauth-server-deleted',
+      );
+    });
+
     it('should not call getClientInfoAndMetadata when findToken is not provided', async () => {
       server = await createOAuthMCPServer({ tokenTTLMs: 60000 });
       const spy = jest.spyOn(MCPTokenStorage, 'getClientInfoAndMetadata');
