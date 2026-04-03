@@ -429,19 +429,14 @@ export class MCPConnectionFactory {
       } else {
         // OAuth failed — if we reused a stored client registration, clear it
         // so the next attempt falls through to fresh DCR
-        if (this.tokenMethods?.deleteTokens && this.flowManager) {
-          const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
-          const failedFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
-          const failedMeta = failedFlow?.metadata as MCPOAuthFlowMetadata | undefined;
-          if (failedMeta?.reusedStoredClient) {
-            await MCPTokenStorage.deleteClientRegistration({
-              userId: this.userId!,
-              serverName: this.serverName,
-              deleteTokens: this.tokenMethods.deleteTokens,
-            }).catch((err) => {
-              logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
-            });
-          }
+        if (result?.reusedStoredClient && this.tokenMethods?.deleteTokens) {
+          await MCPTokenStorage.deleteClientRegistration({
+            userId: this.userId!,
+            serverName: this.serverName,
+            deleteTokens: this.tokenMethods.deleteTokens,
+          }).catch((err) => {
+            logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
+          });
         }
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
@@ -535,6 +530,7 @@ export class MCPConnectionFactory {
     tokens: MCPOAuthTokens | null;
     clientInfo?: OAuthClientInformation;
     metadata?: OAuthMetadata;
+    reusedStoredClient?: boolean;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
     logger.debug(
@@ -548,6 +544,8 @@ export class MCPConnectionFactory {
       logger.warn(`${this.logPrefix} Please configure OAuth credentials for ${this.serverName}`);
       return null;
     }
+
+    let reusedStoredClient = false;
 
     try {
       logger.debug(`${this.logPrefix} Checking for existing OAuth flow for ${this.serverName}...`);
@@ -648,6 +646,8 @@ export class MCPConnectionFactory {
         this.tokenMethods?.findToken,
       );
 
+      reusedStoredClient = flowMetadata.reusedStoredClient === true;
+
       // Store flow state BEFORE redirecting so the callback can find it
       const metadataWithUrl = { ...flowMetadata, authorizationUrl };
       await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
@@ -670,18 +670,15 @@ export class MCPConnectionFactory {
       }
       logger.info(`${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`);
 
-      /** Client information from the flow metadata */
-      const clientInfo = flowMetadata?.clientInfo;
-      const metadata = flowMetadata?.metadata;
-
       return {
         tokens,
-        clientInfo,
-        metadata,
+        clientInfo: flowMetadata.clientInfo,
+        metadata: flowMetadata.metadata,
+        reusedStoredClient,
       };
     } catch (error) {
       logger.error(`${this.logPrefix} Failed to complete OAuth flow for ${this.serverName}`, error);
-      return null;
+      return { tokens: null, reusedStoredClient };
     }
   }
 }
