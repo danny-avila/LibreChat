@@ -47,7 +47,6 @@ export default function Message(props: TMessageProps) {
         </div>
       </MessageContainer>
       <MultiMessage
-        key={messageId}
         messageId={messageId}
         conversation={conversation}
         messagesTree={children ?? []}
