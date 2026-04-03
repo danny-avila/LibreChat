@@ -390,6 +390,7 @@ export async function createRun({
         provider,
         clientOptions: llmConfig,
         tokenCounter,
+        tenantId: user?.tenantId,
       });
     }
 
