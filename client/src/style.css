@@ -80,13 +80,23 @@
   margin-bottom: 1.5rem;
 }
 
+.prose.prose-nj ul {
+  margin-left: 0.75rem;
+}
+
 .prose.prose-nj h3 {
   margin-top: 1.5rem;
 }
+
 .prose.prose-nj h3,
 .prose.prose-nj h4 {
   margin-bottom: 0.75rem;
 }
+
+.prose.prose-nj h3:not(:first-of-type) {
+  margin-top: 2.5rem;
+}
+/*End of NJ-specific markdown customizations*/
 
 html {
   --brand-purple: #ab68ff;

@@ -4,18 +4,14 @@
 
 ### March 25, 2026
 
-Key features released:
-
-- **Chat history management** — Manage your chats through re-naming them, archiving them, and duplicating them as needed.
-  - You can also see your archived chats in the user menu on the bottom right
+- **Key features released:**
+  - **Chat history management** — Manage your chats through re-naming them, archiving them, and duplicating them as needed.
+    - You can also see your archived chats in the user menu on the bottom right
 - **Updated Guides & FAQs Page** — Easily find what you need on the re-designed FAQs about how to use AI responsibly on this page with the updated look
 
-Non-user facing changes:
-
-- We have increased our scaling capabilities to stabilize the app
-- We have resolved a server error that has shown up for some users in chat history
-
----
+- **Non-user facing changes:**
+  - We have increased our scaling capabilities to stabilize the app
+  - We have resolved a server error that has shown up for some users in chat history
 
 ### March 12, 2026
 
