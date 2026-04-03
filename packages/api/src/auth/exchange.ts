@@ -168,6 +168,73 @@ export async function exchangeAdminCode(
   };
 }
 
+/** PKCE challenge cache TTL: 5 minutes (enough for user to authenticate with IdP) */
+export const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
+/** Regex pattern for valid PKCE challenges: 64 hex characters (SHA-256 hex digest) */
+export const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
+
+/** Removes `code_challenge` from a single URL string, preserving other query params. */
+const stripChallengeFromUrl = (url: string): string =>
+  url.replace(/\?code_challenge=[^&]*&/, '?').replace(/[?&]code_challenge=[^&]*/, '');
+
+/** Minimal request shape needed by {@link stripCodeChallenge}. */
+export interface PkceStrippableRequest {
+  query: Record<string, unknown>;
+  originalUrl: string;
+  url: string;
+}
+
+/**
+ * Strips `code_challenge` from the request query and URL strings.
+ *
+ * openid-client v6's Passport Strategy uses `currentUrl.searchParams.size === 0`
+ * to distinguish an initial authorization request from an OAuth callback.
+ * The admin-panel-specific `code_challenge` query parameter would cause the
+ * strategy to misclassify the request as a callback and return 401.
+ *
+ * Applied defensively to all providers to ensure the admin-panel-private
+ * `code_challenge` parameter never reaches any Passport strategy.
+ */
+export function stripCodeChallenge(req: PkceStrippableRequest): void {
+  delete req.query.code_challenge;
+  req.originalUrl = stripChallengeFromUrl(req.originalUrl);
+  req.url = stripChallengeFromUrl(req.url);
+}
+
+/**
+ * Stores the admin-panel PKCE challenge in cache, then strips `code_challenge`
+ * from the request so it doesn't interfere with the Passport strategy.
+ *
+ * Must be called before `passport.authenticate()` — the two operations are
+ * logically atomic: read the challenge from the query, persist it, then remove
+ * the parameter from the request URL.
+ * @param cache - The Keyv cache instance for storing PKCE challenges.
+ * @param req - The Express request to read and mutate.
+ * @param state - The OAuth state value (cache key).
+ * @param provider - Provider name for logging.
+ * @returns True if stored (or no challenge provided); false on cache failure.
+ */
+export async function storeAndStripChallenge(
+  cache: Keyv,
+  req: PkceStrippableRequest,
+  state: string,
+  provider: string,
+): Promise<boolean> {
+  const { code_challenge: codeChallenge } = req.query;
+  if (typeof codeChallenge !== 'string' || !PKCE_CHALLENGE_PATTERN.test(codeChallenge)) {
+    stripCodeChallenge(req);
+    return true;
+  }
+  try {
+    await cache.set(`pkce:${state}`, codeChallenge, PKCE_CHALLENGE_TTL);
+    stripCodeChallenge(req);
+    return true;
+  } catch (err) {
+    logger.error(`[admin/oauth/${provider}] Failed to store PKCE challenge:`, err);
+    return false;
+  }
+}
+
 /**
  * Checks if the redirect URI is for the admin panel (cross-origin).
  * Uses proper URL parsing to compare origins, handling edge cases where
