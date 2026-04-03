@@ -351,7 +351,7 @@ export class MCPConnectionFactory {
             config?.oauth_headers ?? {},
             config?.oauth,
             this.allowedDomains,
-            this.tokenMethods?.findToken,
+            this.tokenMethods?.deleteTokens ? this.tokenMethods.findToken : undefined,
           );
 
           if (existingFlow) {
