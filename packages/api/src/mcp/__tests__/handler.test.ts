@@ -1681,6 +1681,67 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         }),
       );
     });
+
+    it('should re-register when stored client has empty redirect_uris', async () => {
+      const existingClientInfo = {
+        client_id: 'empty-redirect-client',
+        client_secret: 'secret',
+        redirect_uris: [],
+      };
+
+      mockGetClientInfoAndMetadata.mockResolvedValueOnce({
+        clientInfo: existingClientInfo,
+        clientMetadata: {},
+      });
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://example.com',
+        authorization_endpoint: 'https://example.com/authorize',
+        token_endpoint: 'https://example.com/token',
+        registration_endpoint: 'https://example.com/register',
+        response_types_supported: ['code'],
+        jwks_uri: 'https://example.com/.well-known/jwks.json',
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['RS256'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        client_secret: 'new-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://example.com/mcp',
+        'user-123',
+        {},
+        undefined,
+        undefined,
+        mockFindToken,
+      );
+
+      expect(mockRegisterClient).toHaveBeenCalled();
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        'https://example.com/mcp',
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            client_id: 'new-client-id',
+          }),
+        }),
+      );
+    });
   });
 
   describe('Fallback OAuth Metadata (Legacy Server Support)', () => {

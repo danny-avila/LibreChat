@@ -62,7 +62,11 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
   });
 
   afterEach(async () => {
-    process.env.DOMAIN_SERVER = originalDomainServer;
+    if (originalDomainServer !== undefined) {
+      process.env.DOMAIN_SERVER = originalDomainServer;
+    } else {
+      delete process.env.DOMAIN_SERVER;
+    }
     if (server) {
       await server.close();
     }

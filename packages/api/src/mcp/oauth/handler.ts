@@ -10,6 +10,7 @@ import {
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import { TokenExchangeMethodEnum, type MCPOptions } from 'librechat-data-provider';
+import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type {
   OAuthClientInformation,
@@ -24,7 +25,6 @@ import {
   selectRegistrationAuthMethod,
   inferClientAuthMethod,
 } from './methods';
-import type { TokenMethods } from '@librechat/data-schemas';
 import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import { MCPTokenStorage } from './tokens';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
