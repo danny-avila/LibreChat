@@ -21,6 +21,7 @@ const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   generateCheckAccess,
   createRequireApiKeyAuth,
+  createRemoteAgentAuth,
   createCheckRemoteAgentAccess,
 } = require('@librechat/api');
 const {
@@ -30,13 +31,21 @@ const {
 } = require('~/server/controllers/agents/openai');
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
 const { configMiddleware } = require('~/server/middleware');
+const { getAppConfig } = require('~/server/services/Config');
 const db = require('~/models');
 
 const router = express.Router();
 
-const requireApiKeyAuth = createRequireApiKeyAuth({
+const apiKeyMiddleware = createRequireApiKeyAuth({
   validateAgentApiKey: db.validateAgentApiKey,
   findUser: db.findUser,
+});
+
+const requireRemoteAgentAuth = createRemoteAgentAuth({
+  apiKeyMiddleware,
+  findUser: db.findUser,
+  updateUser: db.updateUser,
+  getAppConfig,
 });
 
 const checkRemoteAgentsFeature = generateCheckAccess({
@@ -50,7 +59,7 @@ const checkAgentPermission = createCheckRemoteAgentAccess({
   getEffectivePermissions,
 });
 
-router.use(requireApiKeyAuth);
+router.use(requireRemoteAgentAuth);
 router.use(configMiddleware);
 router.use(checkRemoteAgentsFeature);
 

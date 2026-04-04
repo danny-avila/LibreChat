@@ -318,6 +318,27 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
+const remoteApiAuthSchema = z.object({
+  apiKey: z
+    .object({
+      enabled: z.boolean().default(true),
+    })
+    .optional(),
+  oidc: z
+    .object({
+      enabled: z.boolean().default(false),
+      issuer: z.string(),
+      audience: z.string().optional(),
+      jwksUri: z.string().optional(),
+      scope: z.string().optional(),
+    })
+    .optional(),
+});
+
+const remoteApiSchema = z.object({
+  auth: remoteApiAuthSchema.optional(),
+});
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -334,6 +355,7 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      remoteApi: remoteApiSchema.optional(),
     }),
   )
   .default({
