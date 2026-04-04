@@ -117,6 +117,11 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: RerankerTypes.SIMPLE,
+      label: localize('com_ui_web_search_reranker_simple'),
+      inputs: {},
+    },
   ];
 
   const scraperOptions: DropdownOption[] = [
