@@ -42,6 +42,7 @@ export type Paths = {
   fonts: string;
   assets: string;
   imageOutput: string;
+  customTheme: string;
   structuredTools: string;
   pluginManifest: string;
 };

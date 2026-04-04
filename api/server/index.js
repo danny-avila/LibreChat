@@ -92,6 +92,32 @@ const startServer = async () => {
     }
   }
 
+  // Custom theme CSS: inject a <link> tag if a custom theme.css file exists
+  const customThemePath = appConfig.paths.customTheme;
+  const customThemeCssPath = path.join(customThemePath, 'theme.css');
+  const hasCustomTheme = fs.existsSync(customThemeCssPath);
+  if (hasCustomTheme) {
+    logger.info(`Custom theme CSS found at ${customThemeCssPath}`);
+    // Use a relative URL so it resolves correctly under any <base href> (subdirectory deployments)
+    indexHTML = indexHTML.replace(
+      '</head>',
+      '    <link rel="stylesheet" href="custom/theme.css">\n  </head>',
+    );
+  }
+
+  /** Sends the in-memory index.html with per-request lang injection */
+  const serveIndexHtml = (req, res) => {
+    res.set({
+      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
+      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
+      Expires: process.env.INDEX_EXPIRES || '0',
+    });
+    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+    const saneLang = lang.replace(/"/g, '&quot;');
+    res.type('html');
+    res.send(indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`));
+  };
+
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   /* Middleware */
@@ -123,9 +149,19 @@ const startServer = async () => {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
+  /* Explicit /index.html route — must precede staticCache so it serves the
+     in-memory HTML (with custom theme link, correct lang, etc.) rather than
+     the raw file from disk. Registered after cookie/compression middleware
+     so req.cookies and response compression are available. */
+  app.get('/index.html', serveIndexHtml);
+
   app.use(staticCache(appConfig.paths.dist));
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));
+
+  if (hasCustomTheme) {
+    app.use('/custom', staticCache(customThemePath, { noCache: true, skipGzipScan: true }));
+  }
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
@@ -190,20 +226,7 @@ const startServer = async () => {
   app.use('/api', apiNotFound);
 
   /** SPA fallback - serve index.html for all unmatched routes */
-  app.use((req, res) => {
-    res.set({
-      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-      Expires: process.env.INDEX_EXPIRES || '0',
-    });
-
-    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const saneLang = lang.replace(/"/g, '&quot;');
-    let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
-
-    res.type('html');
-    res.send(updatedIndexHtml);
-  });
+  app.use(serveIndexHtml);
 
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
