@@ -61,6 +61,38 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
     safe.oauth = safeOAuth;
   }
 
+  //
+  // Only DB-backed configs should have headers round-trip through the API. YAML configs
+  // (even those with secretHeaderKeys via SSEOptionsSchema/StreamableHTTPOptionsSchema)
+  // are excluded to prevent exposing env-resolved header values in API responses.
+  const rawHeaders = (config as ParsedServerConfig & { headers?: Record<string, string> }).headers;
+  const hasHeaders = !!rawHeaders && Object.keys(rawHeaders).length > 0;
+  const isDbBacked = config.dbId !== undefined;
+  const isLegacyDbHeaders = isDbBacked && hasHeaders && config.secretHeaderKeys === undefined;
+  // Treat as "UI-managed" only if DB-backed AND has headers or secretHeaderKeys.
+  const isUiManaged = isDbBacked && (config.secretHeaderKeys !== undefined || hasHeaders);
+
+  if (isUiManaged && rawHeaders) {
+    const maskedHeaders: Record<string, string> = {};
+    if (isLegacyDbHeaders) {
+      // Legacy DB configs with headers but no secretHeaderKeys are treated as non-secret
+      // headers to avoid data loss on edit/save round-trips. Pass headers through unchanged
+      // and intentionally do NOT emit secretHeaderKeys so the client doesn't treat them as secrets.
+      for (const [k, v] of Object.entries(rawHeaders)) {
+        maskedHeaders[k] = v;
+      }
+      (safe as ParsedServerConfig & { headers?: Record<string, string> }).headers = maskedHeaders;
+    } else {
+      // Modern configs with secretHeaderKeys: mask secret values, pass through non-secrets.
+      const secretKeys = new Set(config.secretHeaderKeys ?? []);
+      for (const [k, v] of Object.entries(rawHeaders)) {
+        maskedHeaders[k] = secretKeys.has(k) ? '' : v;
+      }
+      (safe as ParsedServerConfig & { headers?: Record<string, string> }).headers = maskedHeaders;
+      safe.secretHeaderKeys = config.secretHeaderKeys ?? [];
+    }
+  }
+
   return Object.fromEntries(
     Object.entries(safe).filter(([, v]) => v !== undefined),
   ) as Partial<ParsedServerConfig>;

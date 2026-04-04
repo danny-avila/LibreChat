@@ -6,9 +6,10 @@ import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 
 export default function TransportSection() {
   const localize = useLocalize();
-  const { setValue } = useFormContext<MCPServerFormData>();
+  const { control, setValue } = useFormContext<MCPServerFormData>();
 
   const transportType = useWatch<MCPServerFormData, 'type'>({
+    control,
     name: 'type',
   });
 

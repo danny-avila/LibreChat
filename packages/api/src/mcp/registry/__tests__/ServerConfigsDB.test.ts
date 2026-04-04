@@ -507,6 +507,185 @@ describe('ServerConfigsDB', () => {
       expect(retrievedWithHeaders?.headers?.['X-My-Api-Key']).toBe('{{MCP_API_KEY}}');
       expect(retrievedWithHeaders?.headers?.Authorization).toBeUndefined();
     });
+
+    it('should encrypt secret header values when saving to database', async () => {
+      const config: ParsedServerConfig & {
+        headers?: Record<string, string>;
+        secretHeaderKeys?: string[];
+      } = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Secret Header Encryption Test',
+        headers: {
+          'X-Public-Header': 'public-value',
+          'X-Secret-Token': 'super-secret-token',
+        },
+        secretHeaderKeys: ['X-Secret-Token'],
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      // Verify the secret header value is encrypted in DB (not plaintext)
+      const MCPServer = mongoose.models.MCPServer;
+      const server = await MCPServer.findOne({ serverName: created.serverName });
+      const dbConfig = server?.config as ParsedServerConfig & { headers?: Record<string, string> };
+      expect(dbConfig?.headers?.['X-Secret-Token']).not.toBe('super-secret-token');
+      expect(dbConfig?.headers?.['X-Public-Header']).toBe('public-value');
+      expect(dbConfig?.secretHeaderKeys).toEqual(['X-Secret-Token']);
+
+      // Verify the secret is decrypted when accessed via get()
+      const retrieved = (await serverConfigsDB.get(
+        created.serverName,
+        userId,
+      )) as ParsedServerConfig & {
+        headers?: Record<string, string>;
+      };
+      expect(retrieved?.headers?.['X-Secret-Token']).toBe('super-secret-token');
+      expect(retrieved?.headers?.['X-Public-Header']).toBe('public-value');
+    });
+
+    it('should preserve secret header values when not provided in update', async () => {
+      const config: ParsedServerConfig & {
+        headers?: Record<string, string>;
+        secretHeaderKeys?: string[];
+      } = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Secret Header Preserve Test',
+        headers: {
+          'X-Public-Header': 'public-value',
+          'X-Secret-Token': 'original-secret',
+        },
+        secretHeaderKeys: ['X-Secret-Token'],
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      // Update without providing the secret header value (empty string means "preserve existing")
+      const updatedConfig: ParsedServerConfig & {
+        headers?: Record<string, string>;
+        secretHeaderKeys?: string[];
+      } = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Secret Header Preserve Test',
+        description: 'Updated description',
+        headers: {
+          'X-Public-Header': 'updated-public-value',
+          'X-Secret-Token': '', // Empty means preserve existing
+        },
+        secretHeaderKeys: ['X-Secret-Token'],
+      };
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      // Verify the secret is still encrypted in DB (preserved, not plaintext)
+      const MCPServer = mongoose.models.MCPServer;
+      const server = await MCPServer.findOne({ serverName: created.serverName });
+      const dbConfig = server?.config as ParsedServerConfig & { headers?: Record<string, string> };
+      expect(dbConfig?.headers?.['X-Secret-Token']).not.toBe('original-secret');
+      expect(dbConfig?.headers?.['X-Public-Header']).toBe('updated-public-value');
+
+      // Verify the secret is decrypted when accessed via get()
+      const retrieved = (await serverConfigsDB.get(
+        created.serverName,
+        userId,
+      )) as ParsedServerConfig & {
+        headers?: Record<string, string>;
+      };
+      expect(retrieved?.headers?.['X-Secret-Token']).toBe('original-secret');
+      expect(retrieved?.headers?.['X-Public-Header']).toBe('updated-public-value');
+      expect(retrieved?.description).toBe('Updated description');
+    });
+
+    it('should allow updating secret header value when explicitly provided', async () => {
+      const config: ParsedServerConfig & {
+        headers?: Record<string, string>;
+        secretHeaderKeys?: string[];
+      } = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Secret Header Update Test',
+        headers: {
+          'X-Secret-Token': 'old-secret',
+        },
+        secretHeaderKeys: ['X-Secret-Token'],
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      // Update with new secret value
+      const updatedConfig: ParsedServerConfig & {
+        headers?: Record<string, string>;
+        secretHeaderKeys?: string[];
+      } = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Secret Header Update Test',
+        headers: {
+          'X-Secret-Token': 'new-secret',
+        },
+        secretHeaderKeys: ['X-Secret-Token'],
+      };
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      // Verify the secret is encrypted in DB (not plaintext)
+      const MCPServer = mongoose.models.MCPServer;
+      const server = await MCPServer.findOne({ serverName: created.serverName });
+      const dbConfig = server?.config as ParsedServerConfig & { headers?: Record<string, string> };
+      expect(dbConfig?.headers?.['X-Secret-Token']).not.toBe('new-secret');
+
+      // Verify the secret is decrypted to the new value when accessed via get()
+      const retrieved = (await serverConfigsDB.get(
+        created.serverName,
+        userId,
+      )) as ParsedServerConfig & {
+        headers?: Record<string, string>;
+      };
+      expect(retrieved?.headers?.['X-Secret-Token']).toBe('new-secret');
+    });
+
+    it('should handle multiple secret headers with mixed preservation', async () => {
+      const config: ParsedServerConfig & {
+        headers?: Record<string, string>;
+        secretHeaderKeys?: string[];
+      } = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Multiple Secret Headers Test',
+        headers: {
+          'X-Secret-One': 'secret-one',
+          'X-Secret-Two': 'secret-two',
+          'X-Public': 'public',
+        },
+        secretHeaderKeys: ['X-Secret-One', 'X-Secret-Two'],
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      // Update: preserve X-Secret-One (empty), update X-Secret-Two, update X-Public
+      const updatedConfig: ParsedServerConfig & {
+        headers?: Record<string, string>;
+        secretHeaderKeys?: string[];
+      } = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Multiple Secret Headers Test',
+        headers: {
+          'X-Secret-One': '', // Preserve existing
+          'X-Secret-Two': 'new-secret-two', // Update
+          'X-Public': 'updated-public',
+        },
+        secretHeaderKeys: ['X-Secret-One', 'X-Secret-Two'],
+      };
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      // Verify via get()
+      const retrieved = (await serverConfigsDB.get(
+        created.serverName,
+        userId,
+      )) as ParsedServerConfig & {
+        headers?: Record<string, string>;
+      };
+      expect(retrieved?.headers?.['X-Secret-One']).toBe('secret-one'); // Preserved
+      expect(retrieved?.headers?.['X-Secret-Two']).toBe('new-secret-two'); // Updated
+      expect(retrieved?.headers?.['X-Public']).toBe('updated-public');
+    });
   });
 
   describe('credential placeholder sanitization', () => {

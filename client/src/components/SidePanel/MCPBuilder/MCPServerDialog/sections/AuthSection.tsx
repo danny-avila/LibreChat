@@ -16,6 +16,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const {
+    control,
     register,
     setValue,
     formState: { errors },
@@ -24,14 +25,17 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
   const [isCopying, setIsCopying] = useState(false);
 
   const authType = useWatch<MCPServerFormData, 'auth.auth_type'>({
+    control,
     name: 'auth.auth_type',
   }) as AuthTypeEnum;
 
   const apiKeySource = useWatch<MCPServerFormData, 'auth.api_key_source'>({
+    control,
     name: 'auth.api_key_source',
   }) as 'admin' | 'user';
 
   const authorizationType = useWatch<MCPServerFormData, 'auth.api_key_authorization_type'>({
+    control,
     name: 'auth.api_key_authorization_type',
   }) as AuthorizationTypeEnum;
 
