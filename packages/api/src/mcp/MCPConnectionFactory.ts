@@ -664,7 +664,7 @@ export class MCPConnectionFactory {
         this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
         this.allowedDomains,
-        this.tokenMethods?.findToken,
+        this.tokenMethods?.deleteTokens ? this.tokenMethods.findToken : undefined,
       );
 
       reusedStoredClient = flowMetadata.reusedStoredClient === true;
