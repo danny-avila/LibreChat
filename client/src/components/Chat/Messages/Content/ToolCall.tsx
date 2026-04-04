@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
+import { useAtomValue, useSetAtom } from 'jotai';
 import {
   Constants,
   dataService,
@@ -17,6 +18,32 @@ import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
 import { logger } from '~/utils';
 import store from '~/store';
+import {
+  toolCallProgressFamily,
+  clearToolCallProgressAtom,
+  type ProgressState,
+} from '~/store/progress';
+
+/**
+ * Gets the in-progress text to display for a tool call.
+ * Prioritizes MCP progress message, then progress/total, then default localized text.
+ */
+function getInProgressText(
+  mcpProgress: ProgressState | undefined,
+  functionName: string,
+  localize: ReturnType<typeof useLocalize>,
+): string {
+  if (mcpProgress?.message) {
+    return mcpProgress.message;
+  }
+  if (mcpProgress?.total) {
+    return `${functionName}: ${mcpProgress.progress}/${mcpProgress.total}`;
+  }
+  if (functionName) {
+    return localize('com_assistants_running_var', { 0: functionName });
+  }
+  return localize('com_assistants_running_action');
+}
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -27,6 +54,7 @@ export default function ToolCall({
   output,
   attachments,
   auth,
+  toolCallId,
 }: {
   initialProgress: number;
   isLast?: boolean;
@@ -36,6 +64,7 @@ export default function ToolCall({
   output?: string | null;
   attachments?: TAttachment[];
   auth?: string;
+  toolCallId?: string;
 }) {
   const localize = useLocalize();
   const autoExpand = useRecoilValue(store.autoExpandTools);
@@ -130,10 +159,6 @@ export default function ToolCall({
     window.open(auth, '_blank', 'noopener,noreferrer');
   }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
-  const hasError = typeof output === 'string' && isError(output);
-  const cancelled = !isSubmitting && initialProgress < 1 && !hasError;
-  const errorState = hasError;
-
   const args = useMemo(() => {
     if (typeof _args === 'string') {
       return _args;
@@ -158,8 +183,32 @@ export default function ToolCall({
     return parsedAuthUrl?.hostname ?? '';
   }, [parsedAuthUrl]);
 
-  const progress = useProgress(initialProgress);
-  const showCancelled = cancelled || (errorState && !output);
+  // Get simulated progress
+  const simulatedProgress = useProgress(initialProgress);
+
+  // Get real-time progress from MCP server by tool call ID
+  const mcpProgress = useAtomValue(toolCallProgressFamily(toolCallId ?? ''));
+  const clearProgress = useSetAtom(clearToolCallProgressAtom);
+
+  // Clean up progress data when tool completes
+  useEffect(() => {
+    if (hasOutput && toolCallId) {
+      clearProgress(toolCallId);
+    }
+  }, [hasOutput, toolCallId, clearProgress]);
+
+  // If tool has output, it's completed (progress = 1), otherwise use simulated progress
+  const progress = useMemo(() => {
+    if (hasOutput) {
+      return 1;
+    }
+    return simulatedProgress;
+  }, [hasOutput, simulatedProgress]);
+
+  const hasError = typeof output === 'string' && isError(output);
+  const errorState = hasError;
+  const cancelled = (!isSubmitting && progress < 1 && !hasOutput) || errorState;
+  const showCancelled = (cancelled && !hasOutput) || (errorState && !output);
 
   const subtitle = useMemo(() => {
     if (isMCPToolCall && mcpServerName) {
@@ -191,24 +240,15 @@ export default function ToolCall({
   return (
     <>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {(() => {
-          if (progress < 1 && !showCancelled) {
-            return function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action');
-          }
-          return getFinishedText();
-        })()}
+        {progress < 1 && !showCancelled
+          ? getInProgressText(mcpProgress, function_name, localize)
+          : getFinishedText()}
       </span>
       <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={() => setShowInfo((prev) => !prev)}
-          inProgressText={
-            function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action')
-          }
+          inProgressText={getInProgressText(mcpProgress, function_name, localize)}
           authText={
             !showCancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
           }

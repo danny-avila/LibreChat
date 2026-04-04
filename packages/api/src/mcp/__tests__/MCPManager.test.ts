@@ -8,6 +8,7 @@ import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
+import { EventEmitter } from 'events';
 import * as graphUtils from '~/utils/graph';
 
 // Mock external dependencies
@@ -429,6 +430,10 @@ describe('MCPManager', () => {
           isError: false,
         }),
       },
+      generateProgressToken: jest.fn().mockReturnValue('mock-progress-token'),
+      registerProgressToken: jest.fn(),
+      subscribeToProgress: jest.fn().mockReturnValue(() => {}),
+      unregisterProgressToken: jest.fn(),
     } as unknown as MCPConnection;
 
     const mockGraphTokenResolver: GraphTokenResolver = jest.fn().mockResolvedValue({
@@ -964,6 +969,398 @@ describe('MCPManager', () => {
         expect.objectContaining({ serverName }),
         expect.objectContaining({ user: mockUser, useOAuth: true }),
       );
+    });
+  });
+
+  describe('callTool Progress Integration', () => {
+    const serverName = 'test_server';
+
+    const mockUser: Partial<IUser> = {
+      id: 'user-123',
+      provider: 'openid',
+      openidId: 'oidc-sub-456',
+    };
+
+    const mockFlowManager = {
+      getState: jest.fn(),
+      setState: jest.fn(),
+      clearState: jest.fn(),
+    };
+
+    function buildMockConnection(overrides: Partial<Record<string, unknown>> = {}) {
+      const emitter = new EventEmitter();
+      return {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        timeout: 30000,
+        on: jest.fn((event, handler) => emitter.on(event, handler)),
+        off: jest.fn((event, handler) => emitter.off(event, handler)),
+        emit: (event: string, data: unknown) => emitter.emit(event, data),
+        client: {
+          request: jest.fn().mockResolvedValue({
+            content: [{ type: 'text', text: 'Tool result' }],
+            isError: false,
+          }),
+        },
+        generateProgressToken: jest.fn().mockReturnValue('mock-progress-token'),
+        registerProgressToken: jest.fn(),
+        unregisterProgressToken: jest.fn(),
+        ...overrides,
+      } as unknown as MCPConnection;
+    }
+
+    function mockAppConnections(connection: MCPConnection) {
+      (ConnectionsRepository as jest.MockedClass<typeof ConnectionsRepository>).mockImplementation(
+        () =>
+          ({
+            has: jest.fn().mockResolvedValue(false),
+            get: jest.fn().mockResolvedValue(connection),
+          }) as unknown as ConnectionsRepository,
+      );
+    }
+
+    function newMCPServersConfig(): t.MCPServers {
+      return { [serverName]: { type: 'stdio', command: 'test', args: [] } };
+    }
+
+    beforeEach(() => {
+      (MCPManager as unknown as { instance: null }).instance = null;
+      jest.clearAllMocks();
+      (MCPServersInitializer.initialize as jest.Mock).mockResolvedValue(undefined);
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({});
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options) => options,
+      );
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+      });
+    });
+
+    describe('progress token lifecycle', () => {
+      it('generates and registers a progress token before the tool call', async () => {
+        const connection = buildMockConnection();
+        mockAppConnections(connection);
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+        });
+
+        expect(connection.generateProgressToken).toHaveBeenCalledTimes(1);
+        expect(connection.registerProgressToken).toHaveBeenCalledWith('mock-progress-token');
+      });
+
+      it('passes _meta.progressToken in the MCP request params', async () => {
+        const connection = buildMockConnection();
+        mockAppConnections(connection);
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+        });
+
+        expect(connection.client.request).toHaveBeenCalledWith(
+          expect.objectContaining({
+            params: expect.objectContaining({
+              _meta: { progressToken: 'mock-progress-token' },
+            }),
+          }),
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
+      it('schedules unregisterProgressToken cleanup in finally block after success', async () => {
+        jest.useFakeTimers();
+        const connection = buildMockConnection();
+        mockAppConnections(connection);
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+        });
+
+        expect(connection.unregisterProgressToken).not.toHaveBeenCalled();
+        jest.advanceTimersByTime(600);
+        expect(connection.unregisterProgressToken).toHaveBeenCalledWith('mock-progress-token');
+        jest.useRealTimers();
+      });
+
+      it('schedules cleanup in finally block even when tool call throws', async () => {
+        jest.useFakeTimers();
+        const connection = buildMockConnection({
+          client: {
+            request: jest.fn().mockRejectedValue(new Error('MCP server error')),
+          },
+        });
+        mockAppConnections(connection);
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await expect(
+          manager.callTool({
+            user: mockUser as IUser,
+            serverName,
+            toolName: 'test_tool',
+            provider: 'openai',
+            flowManager: mockFlowManager as unknown as Parameters<
+              typeof manager.callTool
+            >[0]['flowManager'],
+          }),
+        ).rejects.toThrow('MCP server error');
+
+        jest.advanceTimersByTime(600);
+        expect(connection.unregisterProgressToken).toHaveBeenCalledWith('mock-progress-token');
+        jest.useRealTimers();
+      });
+    });
+
+    describe('onProgress callback', () => {
+      it('does not register a progress listener when onProgress is not provided', async () => {
+        const connection = buildMockConnection();
+        mockAppConnections(connection);
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+        });
+
+        expect(connection.on).not.toHaveBeenCalledWith('progress', expect.any(Function));
+      });
+
+      it('registers a progress listener when onProgress is provided', async () => {
+        const connection = buildMockConnection();
+        mockAppConnections(connection);
+
+        const onProgress = jest.fn();
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          onProgress,
+        });
+
+        expect(connection.on).toHaveBeenCalledWith('progress', expect.any(Function));
+      });
+
+      it('calls onProgress with the correct shape when a progress event fires', async () => {
+        const emitter = new EventEmitter();
+        const connection = buildMockConnection({
+          on: jest.fn((event, handler) => emitter.on(event, handler)),
+          off: jest.fn((event, handler) => emitter.off(event, handler)),
+          client: {
+            request: jest.fn().mockImplementation(async () => {
+              emitter.emit('progress', {
+                serverName,
+                progressToken: 'mock-progress-token',
+                progress: 3,
+                total: 10,
+                message: 'Processing...',
+              });
+              return { content: [{ type: 'text', text: 'done' }], isError: false };
+            }),
+          },
+        });
+        mockAppConnections(connection);
+
+        const onProgress = jest.fn();
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          onProgress,
+        });
+
+        expect(onProgress).toHaveBeenCalledTimes(1);
+        expect(onProgress).toHaveBeenCalledWith({
+          progressToken: 'mock-progress-token',
+          progress: 3,
+          total: 10,
+          message: 'Processing...',
+          serverName,
+        });
+      });
+
+      it('calls onProgress multiple times as progress events accumulate', async () => {
+        const emitter = new EventEmitter();
+        const connection = buildMockConnection({
+          on: jest.fn((event, handler) => emitter.on(event, handler)),
+          off: jest.fn((event, handler) => emitter.off(event, handler)),
+          client: {
+            request: jest.fn().mockImplementation(async () => {
+              for (let i = 1; i <= 3; i++) {
+                emitter.emit('progress', {
+                  serverName,
+                  progressToken: 'mock-progress-token',
+                  progress: i,
+                  total: 3,
+                });
+              }
+              return { content: [{ type: 'text', text: 'done' }], isError: false };
+            }),
+          },
+        });
+        mockAppConnections(connection);
+
+        const onProgress = jest.fn();
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          onProgress,
+        });
+
+        expect(onProgress).toHaveBeenCalledTimes(3);
+      });
+
+      it('detaches the progress listener after call completes', async () => {
+        jest.useFakeTimers();
+        const connection = buildMockConnection();
+        mockAppConnections(connection);
+
+        const onProgress = jest.fn();
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          onProgress,
+        });
+
+        jest.advanceTimersByTime(600);
+        expect(connection.off).toHaveBeenCalledWith('progress', expect.any(Function));
+        jest.useRealTimers();
+      });
+
+      it('detaches the progress listener after call throws', async () => {
+        jest.useFakeTimers();
+        const connection = buildMockConnection({
+          client: {
+            request: jest.fn().mockRejectedValue(new Error('fail')),
+          },
+        });
+        mockAppConnections(connection);
+
+        const onProgress = jest.fn();
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await expect(
+          manager.callTool({
+            user: mockUser as IUser,
+            serverName,
+            toolName: 'test_tool',
+            provider: 'openai',
+            flowManager: mockFlowManager as unknown as Parameters<
+              typeof manager.callTool
+            >[0]['flowManager'],
+            onProgress,
+          }),
+        ).rejects.toThrow('fail');
+
+        jest.advanceTimersByTime(600);
+        expect(connection.off).toHaveBeenCalledWith('progress', expect.any(Function));
+        jest.useRealTimers();
+      });
+
+      it('logs each received progress event at info level', async () => {
+        const emitter = new EventEmitter();
+        const connection = buildMockConnection({
+          on: jest.fn((event, handler) => emitter.on(event, handler)),
+          off: jest.fn((event, handler) => emitter.off(event, handler)),
+          client: {
+            request: jest.fn().mockImplementation(async () => {
+              emitter.emit('progress', {
+                serverName,
+                progressToken: 'mock-progress-token',
+                progress: 1,
+                total: 5,
+                message: 'Step 1',
+              });
+              return { content: [{ type: 'text', text: 'done' }], isError: false };
+            }),
+          },
+        });
+        mockAppConnections(connection);
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          onProgress: jest.fn(),
+        });
+
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.stringContaining('Progress event received'),
+          expect.objectContaining({ progress: 1, total: 5, message: 'Step 1' }),
+        );
+      });
+
+      it('logs progress token registration at info level', async () => {
+        const connection = buildMockConnection();
+        mockAppConnections(connection);
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+        });
+
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.stringContaining('Progress token generated and registered'),
+        );
+      });
     });
   });
 });

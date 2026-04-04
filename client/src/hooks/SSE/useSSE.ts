@@ -10,6 +10,7 @@ import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import { clearAllDrafts } from '~/utils';
+import { useProgressTracking } from './useProgressTracking';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -71,6 +72,7 @@ export default function useSSE(
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
+  const { handleProgressEvent, cleanupProgress } = useProgressTracking();
 
   useEffect(() => {
     if (submission == null || Object.keys(submission).length === 0) {
@@ -99,6 +101,8 @@ export default function useSSE(
         console.error(error);
       }
     });
+
+    sse.addEventListener('progress', handleProgressEvent);
 
     sse.addEventListener('message', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
@@ -234,6 +238,8 @@ export default function useSSE(
     return () => {
       const isCancelled = sse.readyState <= 1;
       sse.close();
+      // Clear progress map and pending cleanup timers on unmount
+      cleanupProgress();
       if (isCancelled) {
         const e = new Event('cancel');
         /* @ts-ignore */
