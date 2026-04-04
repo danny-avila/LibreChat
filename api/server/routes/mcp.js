@@ -160,15 +160,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             const [flowUserId] = flowParts;
             const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
             const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
-            let hasActiveFlow = false;
-            if (!hasCsrf && !hasSession) {
-              const pendingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
-              const pendingAge = pendingFlow?.createdAt
-                ? Date.now() - pendingFlow.createdAt
-                : Infinity;
-              hasActiveFlow = pendingFlow?.status === 'PENDING' && pendingAge < PENDING_STALE_MS;
-            }
-            if (hasCsrf || hasSession || hasActiveFlow) {
+            if (hasCsrf || hasSession) {
               await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
               logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
                 flowId,
