@@ -149,6 +149,29 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     if (oauthError) {
       logger.error('[MCP OAuth] OAuth error received', { error: oauthError });
+      // Gate failFlow behind callback validation to prevent DoS via leaked state
+      if (state && typeof state === 'string') {
+        try {
+          const flowsCache = getLogStores(CacheKeys.FLOWS);
+          const flowManager = getFlowStateManager(flowsCache);
+          const flowId = await MCPOAuthHandler.resolveStateToFlowId(state, flowManager);
+          if (flowId) {
+            const flowParts = flowId.split(':');
+            const [flowUserId] = flowParts;
+            const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
+            const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
+            if (hasCsrf || hasSession) {
+              await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+              logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
+                flowId,
+                error: oauthError,
+              });
+            }
+          }
+        } catch (err) {
+          logger.debug('[MCP OAuth] Could not mark flow as failed', err);
+        }
+      }
       return res.redirect(
         `${basePath}/oauth/error?error=${encodeURIComponent(String(oauthError))}`,
       );

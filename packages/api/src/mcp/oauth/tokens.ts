@@ -476,6 +476,26 @@ export class MCPTokenStorage {
     };
   }
 
+  /** Deletes only the stored client registration for a specific user and server */
+  static async deleteClientRegistration({
+    userId,
+    serverName,
+    deleteTokens,
+  }: {
+    userId: string;
+    serverName: string;
+    deleteTokens: TokenMethods['deleteTokens'];
+  }): Promise<void> {
+    const identifier = `mcp:${serverName}`;
+    await deleteTokens({
+      userId,
+      type: 'mcp_oauth_client',
+      identifier: `${identifier}:client`,
+    });
+    const logPrefix = this.getLogPrefix(userId, serverName);
+    logger.debug(`${logPrefix} Cleared stored client registration`);
+  }
+
   /**
    * Deletes all OAuth-related tokens for a specific user and server
    */

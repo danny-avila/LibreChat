@@ -91,6 +91,8 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   authorizationUrl?: string;
   /** Custom headers for OAuth token exchange, persisted at flow initiation for the callback. */
   oauthHeaders?: Record<string, string>;
+  /** True when the flow reused a stored client registration from a prior successful OAuth flow */
+  reusedStoredClient?: boolean;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {

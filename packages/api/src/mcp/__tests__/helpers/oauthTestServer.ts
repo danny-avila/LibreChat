@@ -59,6 +59,8 @@ export interface OAuthTestServerOptions {
   issueRefreshTokens?: boolean;
   refreshTokenTTLMs?: number;
   rotateRefreshTokens?: boolean;
+  /** When true, /token validates client_id against the registered client that initiated /authorize */
+  enforceClientId?: boolean;
 }
 
 export interface OAuthTestServer {
@@ -81,6 +83,17 @@ async function readRequestBody(req: http.IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString();
 }
 
+function parseBasicAuth(
+  header: string | undefined,
+): { clientId: string; clientSecret: string } | null {
+  if (!header?.startsWith('Basic ')) {
+    return null;
+  }
+  const decoded = Buffer.from(header.slice(6), 'base64').toString();
+  const [clientId, clientSecret] = decoded.split(':');
+  return clientId ? { clientId, clientSecret: clientSecret ?? '' } : null;
+}
+
 function parseTokenRequest(body: string, contentType: string | undefined): URLSearchParams | null {
   if (contentType?.includes('application/x-www-form-urlencoded')) {
     return new URLSearchParams(body);
@@ -100,6 +113,7 @@ export async function createOAuthMCPServer(
     issueRefreshTokens = false,
     refreshTokenTTLMs = 365 * 24 * 60 * 60 * 1000,
     rotateRefreshTokens = false,
+    enforceClientId = false,
   } = options;
 
   const sessions = new Map<string, StreamableHTTPServerTransport>();
@@ -107,7 +121,10 @@ export async function createOAuthMCPServer(
   const tokenIssueTimes = new Map<string, number>();
   const issuedRefreshTokens = new Map<string, string>();
   const refreshTokenIssueTimes = new Map<string, number>();
-  const authCodes = new Map<string, { codeChallenge?: string; codeChallengeMethod?: string }>();
+  const authCodes = new Map<
+    string,
+    { codeChallenge?: string; codeChallengeMethod?: string; clientId?: string }
+  >();
   const registeredClients = new Map<string, { client_id: string; client_secret: string }>();
 
   let port = 0;
@@ -155,7 +172,8 @@ export async function createOAuthMCPServer(
       const code = randomUUID();
       const codeChallenge = url.searchParams.get('code_challenge') ?? undefined;
       const codeChallengeMethod = url.searchParams.get('code_challenge_method') ?? undefined;
-      authCodes.set(code, { codeChallenge, codeChallengeMethod });
+      const clientId = url.searchParams.get('client_id') ?? undefined;
+      authCodes.set(code, { codeChallenge, codeChallengeMethod, clientId });
       const redirectUri = url.searchParams.get('redirect_uri') ?? '';
       const state = url.searchParams.get('state') ?? '';
       res.writeHead(302, {
@@ -199,6 +217,23 @@ export async function createOAuthMCPServer(
               res.end(JSON.stringify({ error: 'invalid_grant' }));
               return;
             }
+          }
+        }
+
+        if (enforceClientId && codeData.clientId) {
+          const requestClientId =
+            params.get('client_id') ?? parseBasicAuth(req.headers.authorization)?.clientId;
+          if (!requestClientId || !registeredClients.has(requestClientId)) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'invalid_client' }));
+            return;
+          }
+          if (requestClientId !== codeData.clientId) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(
+              JSON.stringify({ error: 'invalid_client', error_description: 'client_id mismatch' }),
+            );
+            return;
           }
         }
 
@@ -437,6 +472,25 @@ export class InMemoryTokenStore {
     identifier: string;
   }): Promise<void> => {
     this.tokens.delete(this.key(filter));
+  };
+
+  deleteTokens = async (query: {
+    userId?: string;
+    type?: string;
+    identifier?: string;
+  }): Promise<{ acknowledged: boolean; deletedCount: number }> => {
+    let deletedCount = 0;
+    for (const [key, token] of this.tokens.entries()) {
+      const match =
+        (!query.userId || token.userId === query.userId) &&
+        (!query.type || token.type === query.type) &&
+        (!query.identifier || token.identifier === query.identifier);
+      if (match) {
+        this.tokens.delete(key);
+        deletedCount++;
+      }
+    }
+    return { acknowledged: true, deletedCount };
   };
 
   getAll(): InMemoryToken[] {
