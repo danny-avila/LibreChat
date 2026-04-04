@@ -293,6 +293,8 @@ mongodb:
   enabled: true
   auth:
     enabled: false
+  image:
+    tag: "latest"  # Bitnami removed versioned tags from Docker Hub (see #11568)
   databases:
    - LibreChat
 #  persistence: 
