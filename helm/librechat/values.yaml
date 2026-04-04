@@ -4,17 +4,15 @@
 
 replicaCount: 1
 
-
-
 global:
-   # default Secret for envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
-   # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
-   # Required Values:
-   # - CREDS_KEY
-   # - CREDS_IV
-   # - JWT_SECRET
-   # - JWT_REFRESH_SECRET
-   # - MEILI_MASTER_KEY
+  # default Secret for envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+  # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+  # Required Values:
+  # - CREDS_KEY
+  # - CREDS_IV
+  # - JWT_SECRET
+  # - JWT_REFRESH_SECRET
+  # - MEILI_MASTER_KEY
   librechat:
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
@@ -47,7 +45,7 @@ librechat:
     # Required Values:
     # - MEILI_MASTER_KEY
   existingSecretName: "librechat-credentials-env"
-  
+
   # For adding a custom config yaml-file you can set the contents in this var. See https://www.librechat.ai/docs/configuration/librechat_yaml/example
   configYamlContent: ""
   # configYamlContent: |
@@ -67,7 +65,7 @@ librechat:
   #       openNewTab: true
 
   #   registration:
-  #     socialLogins: ["discord", "facebook", "github", "google", "openid"] 
+  #     socialLogins: ["discord", "facebook", "github", "google", "openid"]
   #   endpoints:
   #     azureOpenAI:
   #      # Endpoint-level configuration
@@ -107,7 +105,7 @@ librechat:
     enabled: true
     size: 10G
     accessModes: ReadWriteOnce
-    # storageClassName: 
+    # storageClassName:
 
 # only lite RAG is supported
 librechat-rag-api:
@@ -115,6 +113,8 @@ librechat-rag-api:
   # can be azure, openai, huggingface or huggingfacetei
   embeddingsProvider: openai
 
+librechat-exporter:
+  enabled: false
 
 image:
   repository: danny-avila/librechat
@@ -122,7 +122,6 @@ image:
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
-
 
 imagePullSecrets: []
 nameOverride: ""
@@ -146,8 +145,6 @@ lifecycle: {}
 #     exec:
 #       command: ["/bin/sh", "-c", "npm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)>"]
 
-
-
 podAnnotations: {}
 podLabels: {}
 deploymentAnnotations: {}
@@ -164,7 +161,7 @@ podSecurityContext:
 securityContext:
   capabilities:
     drop:
-    - ALL
+      - ALL
   # readOnlyRootFilesystem: true # not supported yet
   runAsNonRoot: true
   runAsUser: 1000
@@ -203,7 +200,6 @@ resources: {}
   # requests:
   #   cpu: 100m
   #   memory: 128Mi
-
 
 autoscaling:
   enabled: false
@@ -257,7 +253,7 @@ hostAliases: []
 
 # DNS Configuration
 # Customize DNS resolution for redirecting traffic to proxy servers
-dnsPolicy: ""  # Options: ClusterFirst, Default, None, ClusterFirstWithHostNet
+dnsPolicy: "" # Options: ClusterFirst, Default, None, ClusterFirstWithHostNet
 dnsConfig: {}
 # Example configuration for custom DNS:
 # dnsPolicy: "None"  # Use only custom DNS settings
@@ -294,10 +290,9 @@ mongodb:
   auth:
     enabled: false
   databases:
-   - LibreChat
-#  persistence: 
+    - LibreChat
+#  persistence:
 #    size: 8Gi
-
 
 meilisearch:
   enabled: true
