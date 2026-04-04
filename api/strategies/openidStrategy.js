@@ -783,18 +783,25 @@ const setupOpenIdAdmin = (openidConfig) => {
  */
 async function setupOpenId() {
   try {
+    const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
 
     /** @type {ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
-      client_secret: process.env.OPENID_CLIENT_SECRET,
+      response_types: ['code'],
+      grant_types: ['authorization_code'],
     };
 
-    if (shouldGenerateNonce) {
-      clientMetadata.response_types = ['code'];
-      clientMetadata.grant_types = ['authorization_code'];
-      clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+    const clientSecret = process.env.OPENID_CLIENT_SECRET?.trim();
+
+    if (clientSecret) {
+      clientMetadata.client_secret = clientSecret;
+      if (shouldGenerateNonce) {
+        clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+      }
+    } else if (usePKCE) {
+      clientMetadata.token_endpoint_auth_method = 'none';
     }
 
     /** @type {Configuration} */
@@ -809,10 +816,10 @@ async function setupOpenId() {
     );
 
     logger.info(`[openidStrategy] OpenID authentication configuration`, {
+      usePKCE,
+      hasClientSecret: !!clientSecret,
+      tokenEndpointAuthMethod: clientMetadata.token_endpoint_auth_method ?? '(library default)',
       generateNonce: shouldGenerateNonce,
-      reason: shouldGenerateNonce
-        ? 'OPENID_GENERATE_NONCE=true - Will generate nonce and use explicit metadata for federated providers'
-        : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
     });
 
     const openidLogin = new CustomOpenIDStrategy(
@@ -821,7 +828,7 @@ async function setupOpenId() {
         scope: process.env.OPENID_SCOPE,
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
-        usePKCE: isEnabled(process.env.OPENID_USE_PKCE),
+        usePKCE,
       },
       createOpenIDCallback(),
     );
