@@ -351,6 +351,7 @@ export class MCPConnectionFactory {
             config?.oauth_headers ?? {},
             config?.oauth,
             this.allowedDomains,
+            // Only reuse stored client when deleteTokens is available for stale-client cleanup
             this.tokenMethods?.deleteTokens ? this.tokenMethods.findToken : undefined,
           );
 
@@ -491,7 +492,11 @@ export class MCPConnectionFactory {
     });
   }
 
-  /** Determines if an error indicates the OAuth client registration was rejected */
+  /**
+   * Checks whether an error indicates the OAuth client registration was rejected.
+   * Includes RFC 6749 §5.2 standard codes (`invalid_client`, `unauthorized_client`)
+   * and known vendor-specific patterns (Okta: `client_id mismatch`, Auth0: `client not found`).
+   */
   static isClientRejection(error: unknown): boolean {
     if (!error || typeof error !== 'object') {
       return false;
@@ -608,7 +613,7 @@ export class MCPConnectionFactory {
               tokens,
               clientInfo: flowMeta?.clientInfo,
               metadata: flowMeta?.metadata,
-              reusedStoredClient: flowMeta?.reusedStoredClient === true,
+              reusedStoredClient,
             };
           }
 

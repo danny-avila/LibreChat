@@ -514,9 +514,9 @@ export class MCPOAuthHandler {
               .redirect_uris?.[0];
             const storedIssuer =
               typeof existing.clientMetadata?.issuer === 'string'
-                ? existing.clientMetadata.issuer
+                ? existing.clientMetadata.issuer.replace(/\/+$/, '')
                 : null;
-            const currentIssuer = metadata.issuer ?? authServerUrl.toString();
+            const currentIssuer = (metadata.issuer ?? authServerUrl.toString()).replace(/\/+$/, '');
 
             if (!storedRedirectUri || storedRedirectUri !== redirectUri) {
               logger.debug(

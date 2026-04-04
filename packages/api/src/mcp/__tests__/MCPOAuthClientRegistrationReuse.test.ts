@@ -333,7 +333,7 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
       await MCPTokenStorage.deleteClientRegistration({
         userId: 'user-1',
         serverName: 'test-server',
-        deleteTokens: tokenStore.deleteToken,
+        deleteTokens: tokenStore.deleteTokens,
       });
 
       // Second attempt (retry after failure): should do a fresh DCR

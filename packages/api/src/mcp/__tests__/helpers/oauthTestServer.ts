@@ -474,6 +474,25 @@ export class InMemoryTokenStore {
     this.tokens.delete(this.key(filter));
   };
 
+  deleteTokens = async (query: {
+    userId?: string;
+    type?: string;
+    identifier?: string;
+  }): Promise<{ acknowledged: boolean; deletedCount: number }> => {
+    let deletedCount = 0;
+    for (const [key, token] of this.tokens.entries()) {
+      const match =
+        (!query.userId || token.userId === query.userId) &&
+        (!query.type || token.type === query.type) &&
+        (!query.identifier || token.identifier === query.identifier);
+      if (match) {
+        this.tokens.delete(key);
+        deletedCount++;
+      }
+    }
+    return { acknowledged: true, deletedCount };
+  };
+
   getAll(): InMemoryToken[] {
     return [...this.tokens.values()];
   }
