@@ -596,6 +596,7 @@ export class MCPConnectionFactory {
               await this.oauthStart(storedAuthUrl);
             }
 
+            reusedStoredClient = flowMeta?.reusedStoredClient === true;
             const tokens = await this.flowManager.createFlow(flowId, 'mcp_oauth', {}, this.signal);
             if (typeof this.oauthEnd === 'function') {
               await this.oauthEnd();
