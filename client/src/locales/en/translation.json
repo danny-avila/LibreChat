@@ -807,7 +807,7 @@
   "com_ui_important_notice": "Important Notice (Testing Version)",
   "com_ui_important_notice_p1": "This application is currently under development and is provided only for testing and validation purposes.",
   "com_ui_important_notice_p2": "It is not a public advisory service and must not be relied upon for real-world farming decisions.",
-  "com_ui_important_notice_p3": "Advisories are experimental and limited to paddy crops for selected states only.",
+  "com_ui_important_notice_p3": "The advisories are experimental and currently cover major crops for selected states.",
   "com_ui_important_notice_p4": "Weather data & market data are from authentic government sources.",
   "com_ui_important_notice_p5": "By proceeding, you agree to use this app only as a tester.",
   "com_ui_important_notice_p6": "For any queries, suggestions and feedback, write to: email.annam.ai",
