@@ -21,6 +21,10 @@ const convoSchema: Schema<IConversation> = new Schema(
       meiliIndex: true,
     },
     messages: [{ type: Schema.Types.ObjectId, ref: 'Message' }],
+    isTemporary: {
+      type: Boolean,
+      default: false,
+    },
     ...conversationPreset,
     agent_id: {
       type: String,

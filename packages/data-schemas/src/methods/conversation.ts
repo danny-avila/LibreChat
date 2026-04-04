@@ -1,4 +1,5 @@
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
+import { RetentionMode } from 'librechat-data-provider';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
@@ -174,6 +175,12 @@ export function createConversationMethods(
       }
 
       if (isTemporary) {
+        update.isTemporary = true;
+      } else {
+        update.isTemporary = false;
+      }
+
+      if (isTemporary || interfaceConfig?.retentionMode === RetentionMode.ALL) {
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {
@@ -278,7 +285,7 @@ export function createConversationMethods(
     }
 
     filters.push({
-      $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
+      $or: [{ isTemporary: false }, { isTemporary: { $exists: false } }],
     } as FilterQuery<IConversation>);
 
     if (search) {
@@ -399,7 +406,7 @@ export function createConversationMethods(
       const results = await Conversation.find({
         user,
         conversationId: { $in: conversationIds },
-        $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
+        $or: [{ isTemporary: false }, { isTemporary: { $exists: false } }],
       }).lean();
 
       results.sort(

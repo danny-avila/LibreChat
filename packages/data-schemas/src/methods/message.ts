@@ -1,4 +1,5 @@
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
+import { RetentionMode } from 'librechat-data-provider';
 import logger from '~/config/winston';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
@@ -91,7 +92,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         messageId: params.newMessageId || params.messageId,
       };
 
-      if (isTemporary) {
+      if (isTemporary || interfaceConfig?.retentionMode === RetentionMode.ALL) {
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {

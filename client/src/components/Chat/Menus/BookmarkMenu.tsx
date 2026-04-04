@@ -26,8 +26,9 @@ const BookmarkMenu: FC = () => {
   const conversationId = conversation?.conversationId ?? '';
   const updateConvoTags = useBookmarkSuccess(conversationId);
   const tags = conversation?.tags;
-  const isTemporary = conversation?.expiredAt != null;
-
+  const isTemporary =
+    conversation.isTemporary ||
+    (conversation.isTemporary === undefined && conversation.expiredAt != null);
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -60,9 +61,9 @@ const BookmarkMenu: FC = () => {
 
   const isActiveConvo = Boolean(
     conversation &&
-      conversationId &&
-      conversationId !== Constants.NEW_CONVO &&
-      conversationId !== 'search',
+    conversationId &&
+    conversationId !== Constants.NEW_CONVO &&
+    conversationId !== 'search',
   );
 
   const handleSubmit = useCallback(
