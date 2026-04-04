@@ -83,6 +83,10 @@ interface:
   modelSelect: true
   parameters: true
   presets: true
+  # Enable/disable the Attach Files sidebar panel (default: true)
+  # When set to false, hides the sidebar's file management panel
+  # but users can still upload files directly in chats
+  attachFiles: true
   prompts:
     use: true
     create: true
