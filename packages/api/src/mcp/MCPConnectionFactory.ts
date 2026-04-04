@@ -495,7 +495,8 @@ export class MCPConnectionFactory {
   /**
    * Checks whether an error indicates the OAuth client registration was rejected.
    * Includes RFC 6749 §5.2 standard codes (`invalid_client`, `unauthorized_client`)
-   * and known vendor-specific patterns (Okta: `client_id mismatch`, Auth0: `client not found`).
+   * and known vendor-specific patterns (Okta: `client_id mismatch`, Auth0: `client not found`,
+   * generic: `unknown client`).
    */
   static isClientRejection(error: unknown): boolean {
     if (!error || typeof error !== 'object') {

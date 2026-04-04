@@ -354,8 +354,8 @@ describe('MCPConnectionFactory', () => {
 
       await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
 
-      // Wait for the background .catch() handler to run
-      await new Promise((r) => setTimeout(r, 50));
+      // Drain microtasks so the background .catch() handler completes
+      await new Promise((r) => setImmediate(r));
 
       // deleteClientRegistration should have been called via clearStaleClientIfRejected
       expect(mockMCPTokenStorage.deleteClientRegistration).toHaveBeenCalledWith(

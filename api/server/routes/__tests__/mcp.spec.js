@@ -315,7 +315,6 @@ describe('MCP Routes', () => {
       it('should fail the flow when OAuth error is received with valid CSRF cookie', async () => {
         const flowId = 'test-user-id:test-server';
         const mockFlowManager = {
-          getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
           failFlow: jest.fn().mockResolvedValue(true),
         };
 
@@ -342,10 +341,38 @@ describe('MCP Routes', () => {
         );
       });
 
+      it('should fail the flow when OAuth error is received with valid session cookie', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          failFlow: jest.fn().mockResolvedValue(true),
+        };
+
+        getLogStores.mockReturnValueOnce({});
+        require('~/config').getFlowStateManager.mockReturnValueOnce(mockFlowManager);
+        MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(flowId);
+
+        const sessionToken = generateTestCsrfToken('test-user-id');
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .set('Cookie', [`oauth_session=${sessionToken}`])
+          .query({
+            error: 'invalid_client',
+            state: flowId,
+          });
+        const basePath = getBasePath();
+
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_client`);
+        expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+          flowId,
+          'mcp_oauth',
+          'invalid_client',
+        );
+      });
+
       it('should NOT fail the flow when OAuth error is received without cookies (DoS prevention)', async () => {
         const flowId = 'test-user-id:test-server';
         const mockFlowManager = {
-          getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
           failFlow: jest.fn(),
         };
 
