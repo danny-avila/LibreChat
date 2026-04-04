@@ -21,6 +21,7 @@ const {
   generateCheckAccess,
   validateOAuthSession,
   OAUTH_SESSION_COOKIE,
+  MCPToolCallValidationHandler,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -754,6 +755,90 @@ async function getOAuthHeaders(serverName, userId, configServers) {
   );
   return serverConfig?.oauth_headers ?? {};
 }
+
+/**
+ * Tool Call Validation Routes
+ */
+
+router.post('/validation/confirm/:validationId', requireJwtAuth, async (req, res) => {
+  try {
+    const { validationId } = req.params;
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!validationId.startsWith(`${user.id}:`)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+
+    await MCPToolCallValidationHandler.completeValidationFlow(validationId, flowManager);
+
+    res.json({ success: true, message: 'Tool call validation confirmed' });
+  } catch (error) {
+    logger.error('[MCP Validation] Failed to confirm validation', error);
+    res.status(500).json({ error: error.message || 'Failed to confirm validation' });
+  }
+});
+
+router.post('/validation/reject/:validationId', requireJwtAuth, async (req, res) => {
+  try {
+    const { validationId } = req.params;
+    const { reason } = req.body;
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!validationId.startsWith(`${user.id}:`)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+
+    await MCPToolCallValidationHandler.rejectValidationFlow(validationId, flowManager, reason);
+
+    res.json({ success: true, message: 'Tool call validation rejected' });
+  } catch (error) {
+    logger.error('[MCP Validation] Failed to reject validation', error);
+    res.status(500).json({ error: error.message || 'Failed to reject validation' });
+  }
+});
+
+router.get('/validation/status/:validationId', requireJwtAuth, async (req, res) => {
+  try {
+    const { validationId } = req.params;
+    const user = req.user;
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!validationId.startsWith(`${user.id}:`)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+
+    const flowState = await MCPToolCallValidationHandler.getFlowState(validationId, flowManager);
+
+    if (!flowState) {
+      return res.status(404).json({ error: 'Validation flow not found' });
+    }
+
+    res.json({ success: true, validationId, metadata: flowState });
+  } catch (error) {
+    logger.error('[MCP Validation] Failed to get validation status', error);
+    res.status(500).json({ error: 'Failed to get validation status' });
+  }
+});
 
 /**
 MCP Server CRUD Routes (User-Managed MCP Servers)

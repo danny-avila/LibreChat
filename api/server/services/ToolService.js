@@ -12,6 +12,8 @@ const {
 const {
   sendEvent,
   getToolkitKey,
+  requiresApproval,
+  getToolServerName,
   getUserMCPAuthMap,
   loadToolDefinitions,
   GenerationJobManager,
@@ -20,6 +22,7 @@ const {
   buildImageToolContext,
   buildToolClassification,
   buildOAuthToolCallName,
+  MCPToolCallValidationHandler,
 } = require('@librechat/api');
 const {
   Time,
@@ -810,6 +813,94 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
  * @param {ServerRequest} params.req - The request object
  * @param {ServerResponse} params.res - The response object
  * @param {Object} params.agent - The agent configuration
+/**
+ * Wraps a tool with approval validation flow.
+ * The wrapped tool sends an SSE event and waits for user approval before executing.
+ * @param {Object} params
+ * @param {Object} params.tool - The tool to wrap
+ * @param {ServerResponse} params.res - The response object for SSE
+ * @param {string|null} params.streamId - Stream ID for resumable mode
+ * @returns {Object} The wrapped tool
+ */
+function wrapToolWithApproval({ tool, res, streamId }) {
+  const originalCall = tool._call.bind(tool);
+  const toolName = tool.name;
+  const serverName = getToolServerName(toolName);
+
+  tool._call = async (toolArguments, runManager, parentConfig) => {
+    const config = parentConfig;
+    const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
+
+    const flowsCache = getLogStores(CacheKeys.FLOWS);
+    const flowManager = getFlowStateManager(flowsCache);
+    const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
+
+    const { args: _args, stepId, ...toolCall } = config?.toolCall ?? {};
+
+    const { validationId, flowMetadata } =
+      await MCPToolCallValidationHandler.initiateValidationFlow(
+        userId,
+        serverName,
+        toolName,
+        typeof toolArguments === 'string' ? { input: toolArguments } : toolArguments,
+      );
+
+    const validationData = {
+      id: stepId,
+      delta: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [{ ...toolCall, args: '' }],
+        validation: validationId,
+        expires_at: Date.now() + Time.TEN_MINUTES,
+      },
+    };
+
+    if (streamId) {
+      await GenerationJobManager.emitChunk(streamId, {
+        event: GraphEvents.ON_RUN_STEP_DELTA,
+        data: validationData,
+      });
+    } else {
+      sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data: validationData });
+    }
+
+    const validationFlowType = MCPToolCallValidationHandler.getFlowType();
+    try {
+      await flowManager.createFlow(validationId, validationFlowType, flowMetadata, derivedSignal);
+
+      const successData = {
+        id: stepId,
+        delta: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [{ ...toolCall }],
+        },
+      };
+      if (streamId) {
+        await GenerationJobManager.emitChunk(streamId, {
+          event: GraphEvents.ON_RUN_STEP_DELTA,
+          data: successData,
+        });
+      } else {
+        sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data: successData });
+      }
+    } catch (_validationError) {
+      throw new Error(
+        `Tool call validation required for ${toolName}. User rejected or validation timed out.`,
+      );
+    }
+
+    return await originalCall(toolArguments, runManager, parentConfig);
+  };
+
+  tool.requiresApproval = true;
+  return tool;
+}
+
+/**
+ * @param {Object} params - Run params containing user and request information.
+ * @param {ServerRequest} params.req - The server request
+ * @param {ServerResponse} params.res - The server response
+ * @param {Agent} params.agent - The Agent
  * @param {AbortSignal} [params.signal] - Abort signal
  * @param {Object} [params.tool_resources] - Tool resources
  * @param {string} [params.openAIApiKey] - OpenAI API key
@@ -933,9 +1024,16 @@ async function loadAgentTools({
       loadAuthValues,
     });
 
+  const toolApprovalConfig = appConfig.endpoints?.[EModelEndpoint.agents]?.toolApproval;
   const agentTools = [];
   for (let i = 0; i < loadedTools.length; i++) {
-    const tool = loadedTools[i];
+    let tool = loadedTools[i];
+
+    const needsApproval = requiresApproval(tool.name, toolApprovalConfig);
+    if (res && needsApproval && tool.mcp !== true) {
+      tool = wrapToolWithApproval({ tool, res, streamId });
+    }
+
     if (tool.name && (tool.name === Tools.execute_code || tool.name === Tools.file_search)) {
       agentTools.push(tool);
       continue;
@@ -945,7 +1043,7 @@ async function loadAgentTools({
       continue;
     }
 
-    if (tool.mcp === true) {
+    if (tool.mcp === true || tool.requiresApproval === true) {
       agentTools.push(tool);
       continue;
     }

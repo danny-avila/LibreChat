@@ -31,6 +31,7 @@ jest.mock('~/hooks', () => ({
     },
     ref: { current: null },
   }),
+  useAuthContext: () => ({ token: 'mock-token' }),
 }));
 
 jest.mock('~/hooks/MCP', () => ({
@@ -89,6 +90,8 @@ jest.mock('lucide-react', () => ({
   ChevronDown: () => <span>{'ChevronDown'}</span>,
   ChevronUp: () => <span>{'ChevronUp'}</span>,
   TriangleAlert: () => <span>{'TriangleAlert'}</span>,
+  CheckCircle: () => <span>{'CheckCircle'}</span>,
+  XCircle: () => <span>{'XCircle'}</span>,
 }));
 
 jest.mock('~/utils', () => ({

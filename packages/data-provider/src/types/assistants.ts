@@ -496,6 +496,7 @@ export type PartMetadata = {
   status?: string;
   action?: boolean;
   auth?: string;
+  validation?: string;
   expires_at?: number;
   /** Index indicating parallel sibling content (same stepIndex in multi-agent runs) */
   siblingIndex?: number;
