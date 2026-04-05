@@ -32,6 +32,7 @@ import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
+import ContextTracker from './ContextTracker';
 import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
@@ -318,7 +319,7 @@ const ChatForm = memo(function ChatForm({
                     onBlur={handleTextareaBlur}
                     aria-label={localize('com_ui_message_input')}
                     onClick={handleFocusOrClick}
-                    style={{ height: 44, overflowY: 'auto' }}
+                    style={{ height: 44 }}
                     className={cn(
                       baseClasses,
                       removeFocusRings,
@@ -372,7 +373,8 @@ const ChatForm = memo(function ChatForm({
                   isSubmitting={isSubmitting}
                 />
               )}
-              <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+              <div className={cn('flex items-center gap-2', isRTL ? 'ml-2' : 'mr-2')}>
+                {endpoint && <ContextTracker conversation={conversation} />}
                 {isSubmitting && showStopButton ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
                 ) : (

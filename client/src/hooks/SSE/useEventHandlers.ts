@@ -491,6 +491,27 @@ export default function useEventHandlers({
           setMessages(_messages);
           queryClient.setQueryData<TMessage[]>([QueryKeys.messages, id], _messages);
         };
+        const shouldRefreshTokenCounts = (targetMessages: TMessage[]) =>
+          targetMessages.some((message) => {
+            if (message.isCreatedByUser) {
+              return false;
+            }
+            const tokenCount = message.tokenCount;
+            return (
+              typeof tokenCount !== 'number' || !Number.isFinite(tokenCount) || tokenCount <= 0
+            );
+          });
+        const scheduleTokenCountRefresh = (targetConversationId: string, targetMessages: TMessage[]) => {
+          if (!shouldRefreshTokenCounts(targetMessages)) {
+            return;
+          }
+          setTimeout(() => {
+            void queryClient.invalidateQueries({
+              queryKey: [QueryKeys.messages, targetConversationId],
+              exact: true,
+            });
+          }, 0);
+        };
 
         const hasNoResponse =
           responseMessage?.content?.[0]?.['text']?.value ===
@@ -545,6 +566,9 @@ export default function useEventHandlers({
 
         if (finalMessages.length > 0) {
           setFinalMessages(conversation.conversationId, finalMessages);
+          if (conversation.conversationId) {
+            scheduleTokenCountRefresh(conversation.conversationId, finalMessages);
+          }
         } else if (
           isAssistantsEndpoint(submissionConvo.endpoint) &&
           (!submissionConvo.conversationId ||

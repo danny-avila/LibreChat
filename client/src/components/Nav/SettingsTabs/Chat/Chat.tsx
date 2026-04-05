@@ -85,6 +85,13 @@ const toggleSwitchConfigs = [
     key: 'showBadges',
   },
   {
+    stateAtom: store.showContextTracker,
+    localizationKey: 'com_nav_show_context_tracker' as const,
+    switchId: 'showContextTracker',
+    hoverCardText: undefined,
+    key: 'showContextTracker',
+  },
+  {
     stateAtom: store.modularChat,
     localizationKey: 'com_nav_modular_chat' as const,
     switchId: 'modularChat',
