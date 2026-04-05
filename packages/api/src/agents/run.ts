@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { Run, Providers, Constants } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
 import type {
@@ -18,6 +19,7 @@ import type { BaseMessage } from '@langchain/core/messages';
 import type { IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+import { getOrComputeToolTokens } from './toolTokens';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -295,8 +297,7 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const agentInputs: AgentInputs[] = [];
-  const buildAgentContext = (agent: RunAgent) => {
+  const buildAgentContext = async (agent: RunAgent): Promise<AgentInputs> => {
     const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
@@ -381,11 +382,24 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
+    let toolSchemaTokens: number | undefined;
+    if (tokenCounter) {
+      toolSchemaTokens = await getOrComputeToolTokens({
+        tools: agent.tools,
+        toolDefinitions,
+        provider,
+        clientOptions: llmConfig,
+        tokenCounter,
+        tenantId: user?.tenantId,
+      });
+    }
+
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const agentInput: AgentInputs = {
       provider,
       reasoningKey,
       toolDefinitions,
+      toolSchemaTokens,
       agentId: agent.id,
       tools: agent.tools,
       clientOptions: llmConfig,
@@ -401,11 +415,35 @@ export async function createRun({
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
-    agentInputs.push(agentInput);
+    return agentInput;
   };
 
-  for (const agent of agents) {
-    buildAgentContext(agent);
+  const settled = await Promise.allSettled(agents.map(buildAgentContext));
+  const agentInputs: AgentInputs[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    if (result.status === 'fulfilled') {
+      agentInputs.push(result.value);
+    } else {
+      logger.error(`[createRun] buildAgentContext failed for agent ${agents[i].id}`, result.reason);
+    }
+  }
+
+  if (agentInputs.length === 0) {
+    throw new Error(
+      `[createRun] All ${agents.length} agent(s) failed to initialize; cannot create run`,
+    );
+  }
+
+  const hasEdges = (agents[0].edges?.length ?? 0) > 0;
+  if (agentInputs.length < agents.length && hasEdges) {
+    const failedIds = agents
+      .filter((_, i) => settled[i].status === 'rejected')
+      .map((a) => a.id)
+      .join(', ');
+    throw new Error(
+      `[createRun] Agent(s) [${failedIds}] failed in a routed multi-agent run; cannot proceed with partial graph`,
+    );
   }
 
   const graphConfig: RunConfig['graphConfig'] = {
