@@ -466,6 +466,22 @@ const processFileUpload = async ({ req, res, metadata }) => {
  * @param {FileMetadata} params.metadata - Additional metadata for the file.
  * @returns {Promise<void>}
  */
+/**
+ * Resolves the file interaction mode from the merged file config.
+ * Checks endpoint-level config first, then global config.
+ * Returns 'deferred' as the default when nothing is configured.
+ *
+ * @param {object} req - The Express request object
+ * @param {object} appConfig - The application config
+ * @returns {string} - The resolved interaction mode: 'text' | 'provider' | 'deferred' | 'legacy'
+ */
+const resolveInteractionMode = (req, appConfig) => {
+  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
+  const endpoint = req.body?.endpoint;
+  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
+  return endpointConfig?.defaultFileInteraction ?? fileConfig?.defaultFileInteraction ?? 'deferred';
+};
+
 const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
   const appConfig = req.config;
@@ -473,11 +489,19 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   let messageAttachment = !!metadata.message_file;
 
+  let effectiveToolResource = tool_resource;
   if (agent_id && !tool_resource && !messageAttachment) {
-    throw new Error('No tool resource provided for agent file upload');
+    const interactionMode = resolveInteractionMode(req, appConfig);
+    if (interactionMode === 'legacy') {
+      throw new Error('No tool resource provided for agent file upload');
+    }
+    // In unified mode: 'text' routes to context processing, 'deferred'/'provider' fall through to standard storage
+    if (interactionMode === 'text') {
+      effectiveToolResource = EToolResources.context;
+    }
   }
 
-  if (tool_resource === EToolResources.file_search && file.mimetype.startsWith('image')) {
+  if (effectiveToolResource === EToolResources.file_search && file.mimetype.startsWith('image')) {
     throw new Error('Image uploads are not supported for file search tool resources');
   }
 
@@ -489,7 +513,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
-  if (tool_resource === EToolResources.execute_code) {
+  if (effectiveToolResource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
@@ -505,13 +529,13 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       entity_id,
     });
     fileInfoMetadata = { fileIdentifier };
-  } else if (tool_resource === EToolResources.file_search) {
+  } else if (effectiveToolResource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }
     // Note: File search processing continues to dual storage logic below
-  } else if (tool_resource === EToolResources.context) {
+  } else if (effectiveToolResource === EToolResources.context) {
     const { file_id, temp_file_id = null } = metadata;
 
     /**
@@ -543,11 +567,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       });
 
-      if (!messageAttachment && tool_resource) {
+      if (!messageAttachment && effectiveToolResource) {
         await db.addAgentResourceFile({
           file_id,
           agent_id,
-          tool_resource,
+          tool_resource: effectiveToolResource,
           updatingUserId: req?.user?.id,
         });
       }
@@ -636,7 +660,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const isImageFile = file.mimetype.startsWith('image');
   const source = getFileStrategy(appConfig, { isImage: isImageFile });
 
-  if (tool_resource === EToolResources.file_search) {
+  if (effectiveToolResource === EToolResources.file_search) {
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
     const { handleFileUpload } = getStrategyFunctions(source);
     const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
@@ -676,18 +700,18 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   let { bytes, filename, filepath: _filepath, height, width } = storageResult;
   // For RAG files, use embedding result; for others, use storage result
   let embedded = storageResult.embedded;
-  if (tool_resource === EToolResources.file_search) {
+  if (effectiveToolResource === EToolResources.file_search) {
     embedded = embeddingResult?.embedded;
     filename = embeddingResult?.filename || filename;
   }
 
   let filepath = _filepath;
 
-  if (!messageAttachment && tool_resource) {
+  if (!messageAttachment && effectiveToolResource) {
     await db.addAgentResourceFile({
       file_id,
       agent_id,
-      tool_resource,
+      tool_resource: effectiveToolResource,
       updatingUserId: req?.user?.id,
     });
   }

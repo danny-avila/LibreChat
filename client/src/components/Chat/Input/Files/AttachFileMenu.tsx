@@ -110,6 +110,10 @@ const AttachFileMenu = ({
     ephemeralAgent,
   );
 
+  const isUnifiedMode =
+    endpointFileConfig?.defaultFileInteraction != null &&
+    endpointFileConfig.defaultFileInteraction !== 'legacy';
+
   const handleUploadClick = (fileType?: FileUploadType) => {
     if (!inputRef.current) {
       return;
@@ -130,6 +134,12 @@ const AttachFileMenu = ({
     }
     inputRef.current.click();
     inputRef.current.accept = '';
+  };
+
+  /** Unified mode: single click triggers file upload with no tool_resource */
+  const handleUnifiedUpload = () => {
+    setToolResource(undefined);
+    handleUploadClick();
   };
 
   const dropdownItems = useMemo(() => {
@@ -285,6 +295,47 @@ const AttachFileMenu = ({
       console.error('SharePoint file processing error:', error);
     }
   };
+
+  if (isUnifiedMode) {
+    return (
+      <>
+        <FileUpload
+          ref={inputRef}
+          handleFileChange={(e) => {
+            handleFileChange(e, toolResource);
+          }}
+        >
+          <TooltipAnchor
+            render={
+              <button
+                type="button"
+                disabled={isUploadDisabled}
+                id="attach-file-button"
+                aria-label={localize('com_sidepanel_attach_files')}
+                onClick={handleUnifiedUpload}
+                className="flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50"
+              >
+                <div className="flex w-full items-center justify-center gap-2">
+                  <AttachmentIcon />
+                </div>
+              </button>
+            }
+            id="attach-file-button"
+            description={localize('com_sidepanel_attach_files')}
+            disabled={isUploadDisabled}
+          />
+        </FileUpload>
+        <SharePointPickerDialog
+          isOpen={isSharePointDialogOpen}
+          onOpenChange={setIsSharePointDialogOpen}
+          onFilesSelected={handleSharePointFilesSelected}
+          isDownloading={isProcessing}
+          downloadProgress={downloadProgress}
+          maxSelectionCount={endpointFileConfig?.fileLimit}
+        />
+      </>
+    );
+  }
 
   return (
     <>

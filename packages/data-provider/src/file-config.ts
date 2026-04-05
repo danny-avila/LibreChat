@@ -444,12 +444,16 @@ export const fileConfig = {
 
 const supportedMimeTypesSchema = z.array(z.string()).optional();
 
+export const FileInteractionMode = z.enum(['text', 'provider', 'deferred', 'legacy']);
+export type TFileInteractionMode = z.infer<typeof FileInteractionMode>;
+
 export const endpointFileConfigSchema = z.object({
   disabled: z.boolean().optional(),
   fileLimit: z.number().min(0).optional(),
   fileSizeLimit: z.number().min(0).optional(),
   totalSizeLimit: z.number().min(0).optional(),
   supportedMimeTypes: supportedMimeTypesSchema.optional(),
+  defaultFileInteraction: FileInteractionMode.optional(),
 });
 
 export const fileConfigSchema = z.object({
@@ -481,6 +485,7 @@ export const fileConfigSchema = z.object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
     })
     .optional(),
+  defaultFileInteraction: FileInteractionMode.optional(),
 });
 
 export type TFileConfig = z.infer<typeof fileConfigSchema>;
@@ -526,6 +531,8 @@ function mergeWithDefault(
     fileSizeLimit: endpointConfig.fileSizeLimit ?? defaultConfig.fileSizeLimit,
     totalSizeLimit: endpointConfig.totalSizeLimit ?? defaultConfig.totalSizeLimit,
     supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultMimeTypes,
+    defaultFileInteraction:
+      endpointConfig.defaultFileInteraction ?? defaultConfig.defaultFileInteraction,
   };
 }
 
@@ -654,6 +661,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     return mergedConfig;
   }
 
+  if (dynamic.defaultFileInteraction !== undefined) {
+    mergedConfig.defaultFileInteraction = dynamic.defaultFileInteraction;
+  }
+
   if (dynamic.serverFileSizeLimit !== undefined) {
     mergedConfig.serverFileSizeLimit = mbToBytes(dynamic.serverFileSizeLimit);
   }
@@ -744,6 +755,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       mergedEndpoint.supportedMimeTypes = convertStringsToRegex(
         dynamicEndpoint.supportedMimeTypes as unknown as string[],
       );
+    }
+
+    if (dynamicEndpoint.defaultFileInteraction !== undefined) {
+      mergedEndpoint.defaultFileInteraction = dynamicEndpoint.defaultFileInteraction;
     }
   }
 
