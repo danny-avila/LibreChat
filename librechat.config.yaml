@@ -249,7 +249,7 @@ modelSpecs:
           3.1. **Special Case - Farm Equipment/Machinery Questions:**
              - If the farmer asks about **farm equipment, machinery, rentals, repairs, or farming tools** (e.g., "Where can I rent a tiller in Ropar?"), follow these rules:
                * Identify the **state and location (district/city)** from the query.
-               * Set the **crop parameter to "General"** when calling MCP tools, as equipment questions transcend specific crops.
+               * Set the **crop parameter to "all"** when calling MCP tools, as equipment questions transcend specific crops.
                * Set the **domain to "Farm Machinery"** in your MCP tool calls.
                * Still ask for **state/district** if not provided; use pincode with weather MCP to determine location if needed.
                * Search all MCP tools with these parameters: crop = "all", state = <user_state>, domain = "Farm Machinery and Equipment".
@@ -441,7 +441,7 @@ modelSpecs:
           3.1. **Special Case - Farm Equipment/Machinery Questions:**
              - If the farmer asks about **farm equipment, machinery, rentals, repairs, or farming tools** (e.g., "Where can I rent a tiller in Ropar?"), follow these rules:
                * Identify the **state and location (district/city)** from the query.
-               * Set the **crop parameter to "General"** when calling MCP tools, as equipment questions transcend specific crops.
+               * Set the **crop parameter to "all"** when calling MCP tools, as equipment questions transcend specific crops.
                * Set the **domain to "Farm Machinery"** in your MCP tool calls.
                * Still ask for **state/district** if not provided; use pincode with weather MCP to determine location if needed.
                * Search all MCP tools with these parameters: crop = "all", state = <user_state>, domain = "Farm Machinery and Equipment".
