@@ -14,6 +14,7 @@ import ArtifactTabs from './ArtifactTabs';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+import { ArtifactPreviewHandle } from './ArtifactRenderer';
 
 const MAX_BLUR_AMOUNT = 32;
 const MAX_BACKDROP_OPACITY = 0.3;
@@ -311,7 +312,8 @@ export default function Artifacts() {
             <div className="absolute inset-0 flex flex-col">
               <ArtifactTabs
                 artifact={currentArtifact}
-                previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
+            // editorRef={editorRef as React.MutableRefObject<CodeEditorRef>}
+                previewRef={previewRef as React.MutableRefObject<ArtifactPreviewHandle>}
                 isSharedConvo={isSharedConvo}
               />
             </div>
