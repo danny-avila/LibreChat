@@ -427,6 +427,7 @@ export const fileConfig = {
     maxWidth: 1900,
     maxHeight: 1900,
     quality: 0.92,
+    minFileSizeKB: 1024,
   },
   ocr: {
     supportedMimeTypes: defaultOCRMimeTypes,
@@ -469,6 +470,7 @@ export const fileConfigSchema = z.object({
       maxWidth: z.number().min(0).optional(),
       maxHeight: z.number().min(0).optional(),
       quality: z.number().min(0).max(1).optional(),
+      minFileSizeKB: z.number().min(0).optional(),
     })
     .optional(),
   ocr: z

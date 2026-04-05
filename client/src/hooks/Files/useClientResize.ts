@@ -25,8 +25,10 @@ export const useClientResize = () => {
     maxWidth: 1900,
     maxHeight: 1900,
     quality: 0.92,
+    minFileSizeKB: 1024,
   };
   const isEnabled = config?.enabled ?? false;
+  const minFileSizeBytes = (config?.minFileSizeKB ?? 1024) * 1024;
 
   /**
    * Resizes an image if client-side resizing is enabled and supported
@@ -50,8 +52,8 @@ export const useClientResize = () => {
         return { file, resized: false };
       }
 
-      // Return original file if it doesn't need resizing
-      if (!shouldResizeImage(file)) {
+      // Return original file if it's below the minimum size threshold
+      if (!shouldResizeImage(file, minFileSizeBytes)) {
         return { file, resized: false };
       }
 
@@ -70,7 +72,7 @@ export const useClientResize = () => {
         return { file, resized: false };
       }
     },
-    [isEnabled, config],
+    [isEnabled, config, minFileSizeBytes],
   );
 
   return {
