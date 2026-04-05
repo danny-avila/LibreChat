@@ -16,6 +16,7 @@ export type RequestBody = {
   model?: string;
   key?: string;
   endpointOption?: Partial<TEndpointOption>;
+  clientTimezone?: string;
 };
 
 export type ServerRequest = Request<unknown, unknown, RequestBody> & {

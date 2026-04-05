@@ -611,6 +611,7 @@ export const tMessageSchema = z.object({
   isCreatedByUser: z.boolean(),
   error: z.boolean().optional(),
   clientTimestamp: z.string().optional(),
+  clientTimezone: z.string().optional(),
   createdAt: z
     .string()
     .optional()
@@ -690,6 +691,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   siblingIndex?: number;
   attachments?: TAttachment[];
   clientTimestamp?: string;
+  clientTimezone?: string;
   feedback?: TFeedback;
 };
 
