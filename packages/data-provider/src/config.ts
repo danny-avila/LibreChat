@@ -8,6 +8,7 @@ import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { isSafeImageUrl } from './utils';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -689,6 +690,14 @@ export const interfaceSchema = z
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
+    loginImageUrl: z
+      .string()
+      .url()
+      .refine(isSafeImageUrl, {
+        message: 'loginImageUrl must be a valid HTTP, HTTPS, or data:image URL',
+      })
+      .optional(),
+    loginText: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
