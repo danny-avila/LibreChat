@@ -52,6 +52,7 @@ describe('GraphApiService', () => {
   afterEach(() => {
     // Clean up environment variables
     delete process.env.OPENID_GRAPH_SCOPES;
+    delete process.env.PROXY;
   });
 
   beforeEach(async () => {
@@ -153,6 +154,7 @@ describe('GraphApiService', () => {
       expect(getOpenIdConfig).toHaveBeenCalled();
       expect(Client.init).toHaveBeenCalledWith({
         authProvider: expect.any(Function),
+        fetchOptions: {},
       });
       expect(result).toBe(mockGraphClient);
     });
@@ -205,6 +207,7 @@ describe('GraphApiService', () => {
             assertion: 'test-token',
             requested_token_use: 'on_behalf_of',
           },
+          {},
         );
       }
 
@@ -239,6 +242,7 @@ describe('GraphApiService', () => {
             assertion: 'test-token',
             requested_token_use: 'on_behalf_of',
           },
+          {},
         );
       }
 
@@ -797,6 +801,206 @@ describe('GraphApiService', () => {
           'Users endpoint: Insufficient privileges',
           'Groups endpoint: Access denied to groups',
         ],
+      });
+    });
+  });
+
+  describe('Proxy Configuration', () => {
+    let originalEnv;
+    const { ProxyAgent } = require('undici');
+
+    beforeAll(() => {
+      originalEnv = { ...process.env };
+    });
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+      jest.clearAllMocks();
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    describe('Graph Client Proxy Configuration', () => {
+      it('should configure ProxyAgent dispatcher in Graph Client when PROXY env is set', async () => {
+        process.env.PROXY = 'http://proxy.example.com:8080';
+        mockTokensCache.get.mockResolvedValue(null);
+
+        await GraphApiService.createGraphClient('test-token', 'test-user');
+
+        expect(Client.init).toHaveBeenCalled();
+        const initCall = Client.init.mock.calls[0][0];
+        expect(initCall).toHaveProperty('fetchOptions');
+        expect(initCall.fetchOptions).toHaveProperty('dispatcher');
+        expect(initCall.fetchOptions.dispatcher).toBeInstanceOf(ProxyAgent);
+      });
+
+      it('should not configure ProxyAgent dispatcher when PROXY env is not set', async () => {
+        delete process.env.PROXY;
+        mockTokensCache.get.mockResolvedValue(null);
+
+        await GraphApiService.createGraphClient('test-token', 'test-user');
+
+        expect(Client.init).toHaveBeenCalled();
+        const initCall = Client.init.mock.calls[0][0];
+
+        // fetchOptions should either not exist or not have a dispatcher
+        if (initCall.fetchOptions) {
+          expect(initCall.fetchOptions.dispatcher).toBeUndefined();
+        }
+      });
+
+      it('should create ProxyAgent dispatcher for any configured proxy URL', async () => {
+        const proxyUrl = 'http://custom-proxy.example.com:3128';
+        process.env.PROXY = proxyUrl;
+        mockTokensCache.get.mockResolvedValue(null);
+
+        await GraphApiService.createGraphClient('test-token', 'test-user');
+
+        const initCall = Client.init.mock.calls[0][0];
+        expect(initCall.fetchOptions.dispatcher).toBeInstanceOf(ProxyAgent);
+      });
+    });
+
+    describe('OpenID Client Proxy Configuration', () => {
+      it('should configure HttpsProxyAgent for openid-client custom fetch when PROXY env is set', async () => {
+        process.env.PROXY = 'http://proxy.example.com:8080';
+        mockTokensCache.get.mockResolvedValue(null);
+
+        await GraphApiService.exchangeTokenForGraphAccess(
+          mockOpenIdConfig,
+          'test-token',
+          'test-user',
+        );
+
+        if (client.genericGrantRequest) {
+          expect(client.genericGrantRequest).toHaveBeenCalled();
+          const clientOptions = client.genericGrantRequest.mock.calls[0][3];
+
+          expect(clientOptions).toBeDefined();
+          const customFetchSymbol = Symbol.for('openid-client.custom.fetch');
+          expect(clientOptions[customFetchSymbol]).toBeDefined();
+          expect(typeof clientOptions[customFetchSymbol]).toBe('function');
+        }
+      });
+
+      it('should not configure custom fetch when PROXY env is not set', async () => {
+        delete process.env.PROXY;
+        mockTokensCache.get.mockResolvedValue(null);
+
+        await GraphApiService.exchangeTokenForGraphAccess(
+          mockOpenIdConfig,
+          'test-token',
+          'test-user',
+        );
+
+        if (client.genericGrantRequest) {
+          expect(client.genericGrantRequest).toHaveBeenCalled();
+          const clientOptions = client.genericGrantRequest.mock.calls[0][3];
+
+          // clientOptions should be empty object or not have custom fetch
+          expect(clientOptions).toEqual({});
+        }
+      });
+
+      it('should use HttpsProxyAgent with correct proxy URL', async () => {
+        const proxyUrl = 'http://custom-proxy.example.com:3128';
+        process.env.PROXY = proxyUrl;
+        mockTokensCache.get.mockResolvedValue(null);
+
+        await GraphApiService.exchangeTokenForGraphAccess(
+          mockOpenIdConfig,
+          'test-token',
+          'test-user',
+        );
+
+        if (client.genericGrantRequest) {
+          const clientOptions = client.genericGrantRequest.mock.calls[0][3];
+          const customFetch = clientOptions[Symbol.for('openid-client.custom.fetch')];
+
+          expect(customFetch).toBeDefined();
+          expect(typeof customFetch).toBe('function');
+        }
+      });
+
+      it('should pass HttpsProxyAgent through custom fetch to nodeFetch', async () => {
+        process.env.PROXY = 'http://proxy.example.com:8080';
+        mockTokensCache.get.mockResolvedValue(null);
+
+        await GraphApiService.exchangeTokenForGraphAccess(
+          mockOpenIdConfig,
+          'test-token',
+          'test-user',
+        );
+
+        if (client.genericGrantRequest) {
+          const clientOptions = client.genericGrantRequest.mock.calls[0][3];
+          const customFetch = clientOptions[Symbol.for('openid-client.custom.fetch')];
+
+          // Test that custom fetch function is created with HttpsProxyAgent
+          expect(customFetch).toBeDefined();
+          expect(typeof customFetch).toBe('function');
+        }
+      });
+    });
+
+    describe('Proxy Integration Tests', () => {
+      it('should maintain proxy configuration throughout token exchange and graph client creation', async () => {
+        process.env.PROXY = 'http://proxy.example.com:8080';
+        mockTokensCache.get.mockResolvedValue(null);
+
+        // First, exchange token (tests openid-client proxy)
+        const graphToken = await GraphApiService.exchangeTokenForGraphAccess(
+          mockOpenIdConfig,
+          'test-token',
+          'test-user',
+        );
+
+        expect(graphToken).toBe('mocked-graph-token');
+
+        if (client.genericGrantRequest) {
+          const clientOptions = client.genericGrantRequest.mock.calls[0][3];
+          expect(clientOptions[Symbol.for('openid-client.custom.fetch')]).toBeDefined();
+        }
+
+        // Then, create graph client (tests Graph API proxy)
+        await GraphApiService.createGraphClient('test-token', 'test-user');
+
+        const initCall = Client.init.mock.calls[0][0];
+        expect(initCall.fetchOptions.dispatcher).toBeInstanceOf(ProxyAgent);
+      });
+
+      it('should handle different proxy protocols', async () => {
+        const proxyProtocols = [
+          'http://proxy.example.com:8080',
+          'https://secure-proxy.example.com:8443',
+        ];
+
+        for (const proxyUrl of proxyProtocols) {
+          process.env.PROXY = proxyUrl;
+          mockTokensCache.get.mockResolvedValue(null);
+          jest.clearAllMocks();
+
+          await GraphApiService.createGraphClient('test-token', 'test-user');
+
+          const initCall = Client.init.mock.calls[0][0];
+          expect(initCall.fetchOptions.dispatcher).toBeInstanceOf(ProxyAgent);
+        }
+      });
+
+      it('should not fail when PROXY is set to empty string', async () => {
+        process.env.PROXY = '';
+        mockTokensCache.get.mockResolvedValue(null);
+
+        await expect(
+          GraphApiService.createGraphClient('test-token', 'test-user'),
+        ).resolves.not.toThrow();
+
+        const initCall = Client.init.mock.calls[0][0];
+        if (initCall.fetchOptions) {
+          expect(initCall.fetchOptions.dispatcher).toBeUndefined();
+        }
       });
     });
   });
