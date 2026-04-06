@@ -5,7 +5,7 @@ FROM node:20-alpine AS node
 
 RUN apk upgrade --no-cache
 RUN apk add --no-cache jemalloc
-RUN apk add --no-cache python3 py3-pip uv
+RUN apk add --no-cache python3 py3-pip uv git bash openssh-client
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
