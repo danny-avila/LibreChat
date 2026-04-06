@@ -36,9 +36,6 @@ jobs:
           git remote add upstream https://github.com/danny-avila/LibreChat.git
           git fetch upstream main
 
-      - name: Push upstream main to origin main
-        run: git push origin upstream/main:main
-
       - name: Check for new upstream commits
         id: check
         run: |
