@@ -828,13 +828,13 @@ describe('builtInTools via addParams', () => {
     expect(result.llmConfig.modelKwargs).toBeUndefined();
   });
 
-  it('should filter out non-string values from builtInTools', () => {
+  it('should filter out non-string, empty, and duplicate values from builtInTools', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
       streaming: true,
       modelOptions: { model: 'grok-3' },
       addParams: {
-        builtInTools: ['x_search', 123, null, undefined, { type: 'bad' }],
+        builtInTools: ['x_search', 123, null, '', '  ', undefined, { type: 'bad' }, 'x_search', ' x_search '],
       },
     });
 
@@ -871,5 +871,106 @@ describe('builtInTools via addParams', () => {
     expect(result.tools).toContainEqual({ type: 'x_search' });
     expect(result.tools).toContainEqual({ type: 'code_execution' });
     expect(result.tools).not.toContainEqual({ type: 'web_search' });
+  });
+
+  it('should respect dropParams when builtInTools includes a dropped tool', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'grok-3' },
+      addParams: {
+        builtInTools: ['web_search', 'x_search'],
+      },
+      dropParams: ['web_search'],
+    });
+
+    expect(result.tools).not.toContainEqual({ type: 'web_search' });
+    expect(result.tools).toContainEqual({ type: 'x_search' });
+    expect(result.tools).toHaveLength(1);
+  });
+
+  it('should skip non-web_search builtInTools for OpenRouter', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      useOpenRouter: true,
+      modelOptions: { model: 'grok-3' },
+      addParams: {
+        builtInTools: ['x_search'],
+      },
+    });
+
+    expect(result.tools).toEqual([]);
+    expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+  });
+
+  it('should translate builtInTools web_search to OpenRouter plugins format', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      useOpenRouter: true,
+      modelOptions: { model: 'grok-3' },
+      addParams: {
+        builtInTools: ['web_search', 'x_search'],
+      },
+    });
+
+    expect(result.llmConfig.modelKwargs).toHaveProperty('plugins', [{ id: 'web' }]);
+    expect(result.tools).toEqual([]);
+    expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+  });
+
+  it('should produce empty tools and no useResponsesApi when all builtInTools are dropped', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'grok-3' },
+      addParams: {
+        builtInTools: ['web_search'],
+      },
+      dropParams: ['web_search'],
+    });
+
+    expect(result.tools).toEqual([]);
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+  });
+
+  it('should disable all builtInTools via dropParams: ["builtInTools"]', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'grok-3' },
+      addParams: {
+        builtInTools: ['x_search', 'web_search'],
+      },
+      dropParams: ['builtInTools'],
+    });
+
+    expect(result.tools).toEqual([]);
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+  });
+
+  it('should use reasoning object format when builtInTools forces Responses API on OpenAI endpoint', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: {
+        model: 'gpt-4',
+        reasoning_effort: ReasoningEffort.high,
+        reasoning_summary: ReasoningSummary.concise,
+      },
+      addParams: {
+        builtInTools: ['web_search'],
+      },
+    });
+
+    expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+    expect(result.llmConfig).toHaveProperty('reasoning');
+    expect(result.llmConfig.reasoning).toEqual({
+      effort: ReasoningEffort.high,
+      summary: ReasoningSummary.concise,
+    });
+    expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
   });
 });
