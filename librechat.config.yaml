@@ -81,7 +81,7 @@ interface:
   temporaryChatRetention: 8760
 
 registration:
-  socialLogins: []
+  socialLogins: ['google']
   allowedDomains:
   - "gmail.com"
   - "iitrpr.ac.in"
