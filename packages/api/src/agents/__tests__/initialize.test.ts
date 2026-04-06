@@ -282,3 +282,126 @@ describe('initializeAgent — maxContextTokens', () => {
     expect(result.maxContextTokens).toBe(userValue);
   });
 });
+
+describe('initializeAgent — tool merging for custom providers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('merges built-in tools with agent tools for xAI provider', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.provider = Providers.XAI;
+
+    const builtInTools = [{ type: 'web_search' }, { type: 'x_search' }];
+    const structuredTool = { name: 'file_search', description: 'search files' };
+
+    mockGetProviderConfig.mockReturnValue({
+      getOptions: jest.fn().mockResolvedValue({
+        llmConfig: { model: 'grok-3' },
+        tools: builtInTools,
+        endpointTokenConfig: undefined,
+      } satisfies InitializeResultBase),
+      overrideProvider: Providers.XAI,
+    });
+
+    loadTools.mockResolvedValue({
+      tools: [structuredTool],
+      toolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [],
+      hasDeferredTools: false,
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.XAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toContainEqual(structuredTool);
+    expect(result.tools).toContainEqual({ type: 'web_search' });
+    expect(result.tools).toContainEqual({ type: 'x_search' });
+    expect(result.tools).toHaveLength(3);
+  });
+
+  it('uses only built-in tools when no agent tools exist for xAI', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.provider = Providers.XAI;
+
+    const builtInTools = [{ type: 'x_search' }];
+
+    mockGetProviderConfig.mockReturnValue({
+      getOptions: jest.fn().mockResolvedValue({
+        llmConfig: { model: 'grok-3' },
+        tools: builtInTools,
+        endpointTokenConfig: undefined,
+      } satisfies InitializeResultBase),
+      overrideProvider: Providers.XAI,
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.XAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toContainEqual({ type: 'x_search' });
+    expect(result.tools).toHaveLength(1);
+  });
+
+  it('still throws conflict error for Google provider', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.provider = Providers.GOOGLE;
+
+    const builtInTools = [{ googleSearch: {} }];
+    const structuredTool = { name: 'file_search', description: 'search files' };
+
+    mockGetProviderConfig.mockReturnValue({
+      getOptions: jest.fn().mockResolvedValue({
+        llmConfig: { model: 'gemini-2.5-pro' },
+        tools: builtInTools,
+        endpointTokenConfig: undefined,
+      } satisfies InitializeResultBase),
+      overrideProvider: Providers.GOOGLE,
+    });
+
+    loadTools.mockResolvedValue({
+      tools: [structuredTool],
+      toolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [],
+      hasDeferredTools: false,
+    });
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toThrow('google_tool_conflict');
+  });
+});

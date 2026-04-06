@@ -179,6 +179,7 @@ export function getOpenAILLMConfig({
   }
 
   let enableWebSearch = web_search;
+  let builtInToolTypes: string[] = [];
 
   /** Apply defaultParams first - only if fields are undefined */
   if (defaultParams && typeof defaultParams === 'object') {
@@ -187,6 +188,14 @@ export function getOpenAILLMConfig({
       if (key === 'web_search') {
         if (enableWebSearch === undefined && typeof value === 'boolean') {
           enableWebSearch = value;
+        }
+        continue;
+      }
+
+      /** Handle builtInTools separately - provider-specific server-side tools */
+      if (key === 'builtInTools') {
+        if (Array.isArray(value) && builtInToolTypes.length === 0) {
+          builtInToolTypes = value.filter((v): v is string => typeof v === 'string');
         }
         continue;
       }
@@ -210,6 +219,14 @@ export function getOpenAILLMConfig({
       if (key === 'web_search') {
         if (typeof value === 'boolean') {
           enableWebSearch = value;
+        }
+        continue;
+      }
+
+      /** Handle builtInTools - addParams overrides defaultParams */
+      if (key === 'builtInTools') {
+        if (Array.isArray(value)) {
+          builtInToolTypes = value.filter((v): v is string => typeof v === 'string');
         }
         continue;
       }
@@ -272,6 +289,17 @@ export function getOpenAILLMConfig({
     /** Standard OpenAI web search uses tools API */
     llmConfig.useResponsesApi = true;
     tools.push({ type: 'web_search' });
+  }
+
+  /** Inject provider-specific built-in server-side tools (e.g., xAI x_search, code_execution) */
+  if (builtInToolTypes.length > 0) {
+    llmConfig.useResponsesApi = true;
+    for (const toolType of builtInToolTypes) {
+      if (toolType === 'web_search' && enableWebSearch) {
+        continue;
+      }
+      tools.push({ type: toolType });
+    }
   }
 
   /**

@@ -759,3 +759,117 @@ describe('applyDefaultParams', () => {
     });
   });
 });
+
+describe('builtInTools via addParams', () => {
+  it('should inject built-in tools and enable Responses API', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'grok-3' },
+      addParams: {
+        builtInTools: ['x_search'],
+      },
+    });
+
+    expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+    expect(result.tools).toContainEqual({ type: 'x_search' });
+    expect(result.tools).toHaveLength(1);
+  });
+
+  it('should inject multiple built-in tools', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'grok-3' },
+      addParams: {
+        builtInTools: ['x_search', 'web_search', 'code_execution'],
+      },
+    });
+
+    expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+    expect(result.tools).toContainEqual({ type: 'x_search' });
+    expect(result.tools).toContainEqual({ type: 'web_search' });
+    expect(result.tools).toContainEqual({ type: 'code_execution' });
+    expect(result.tools).toHaveLength(3);
+  });
+
+  it('should avoid duplicate web_search when both web_search: true and builtInTools include it', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: {
+        model: 'grok-3',
+        web_search: true,
+      },
+      addParams: {
+        builtInTools: ['web_search', 'x_search'],
+      },
+    });
+
+    expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+    const webSearchTools = result.tools!.filter(
+      (t) => typeof t === 'object' && 'type' in t && t.type === 'web_search',
+    );
+    expect(webSearchTools).toHaveLength(1);
+    expect(result.tools).toContainEqual({ type: 'x_search' });
+  });
+
+  it('should not leak builtInTools into llmConfig or modelKwargs', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'grok-3' },
+      addParams: {
+        builtInTools: ['x_search'],
+      },
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('builtInTools');
+    expect(result.llmConfig.modelKwargs).toBeUndefined();
+  });
+
+  it('should filter out non-string values from builtInTools', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'grok-3' },
+      addParams: {
+        builtInTools: ['x_search', 123, null, undefined, { type: 'bad' }],
+      },
+    });
+
+    expect(result.tools).toEqual([{ type: 'x_search' }]);
+  });
+
+  it('should support builtInTools via defaultParams', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'grok-3' },
+      defaultParams: {
+        builtInTools: ['x_search'],
+      },
+    });
+
+    expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+    expect(result.tools).toContainEqual({ type: 'x_search' });
+  });
+
+  it('should allow addParams builtInTools to override defaultParams', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      modelOptions: { model: 'grok-3' },
+      defaultParams: {
+        builtInTools: ['web_search'],
+      },
+      addParams: {
+        builtInTools: ['x_search', 'code_execution'],
+      },
+    });
+
+    expect(result.tools).toContainEqual({ type: 'x_search' });
+    expect(result.tools).toContainEqual({ type: 'code_execution' });
+    expect(result.tools).not.toContainEqual({ type: 'web_search' });
+  });
+});
