@@ -170,6 +170,12 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
 
     try {
       const principals = await buildPrincipals(role, userId);
+
+      if (principals.length === 0) {
+        await cache.set(cacheKey, baseConfig, overrideCacheTtl);
+        return baseConfig;
+      }
+
       const configs = await getApplicableConfigs(principals);
 
       if (configs.length === 0) {
