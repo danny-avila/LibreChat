@@ -1,4 +1,4 @@
-## Release notes
+# Release notes
 
 ---
 
