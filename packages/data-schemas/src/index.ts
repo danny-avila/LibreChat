@@ -28,3 +28,4 @@ export {
 } from './config/tenantContext';
 export type { TenantContext } from './config/tenantContext';
 export { dropSupersededTenantIndexes, dropSupersededPromptGroupIndexes } from './migrations';
+export { archiveOldConversations } from './nj/archiveOldConversations';

@@ -38,6 +38,7 @@ const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 const { njContentSecurityPolicy } = require('~/nj/nj-helmet');
+const { njCronJobs } = require('~/nj/nj-cron');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -234,6 +235,8 @@ const startServer = async () => {
     const streamServices = createStreamServices();
     GenerationJobManager.configure(streamServices);
     GenerationJobManager.initialize();
+
+    njCronJobs();
 
     const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
     if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
