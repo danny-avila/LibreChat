@@ -10,6 +10,7 @@ import {
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import { TokenExchangeMethodEnum, type MCPOptions } from 'librechat-data-provider';
+import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type {
   OAuthClientInformation,
@@ -25,6 +26,7 @@ import {
   inferClientAuthMethod,
 } from './methods';
 import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
+import { MCPTokenStorage } from './tokens';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
@@ -368,6 +370,7 @@ export class MCPOAuthHandler {
     oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
     allowedDomains?: string[] | null,
+    findToken?: TokenMethods['findToken'],
   ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
     logger.debug(
       `[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${sanitizeUrlForLogging(serverUrl)}`,
@@ -494,18 +497,62 @@ export class MCPOAuthHandler {
       );
 
       const redirectUri = this.getDefaultRedirectUri(serverName);
-      logger.debug(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
+      logger.debug(`[MCPOAuth] Resolving OAuth client with redirect URI: ${redirectUri}`);
 
-      const clientInfo = await this.registerOAuthClient(
-        authServerUrl.toString(),
-        metadata,
-        oauthHeaders,
-        resourceMetadata,
-        redirectUri,
-        config?.token_exchange_method,
-      );
+      let clientInfo: OAuthClientInformation | undefined;
+      let reusedStoredClient = false;
 
-      logger.debug(`[MCPOAuth] Client registered with ID: ${clientInfo.client_id}`);
+      if (findToken) {
+        try {
+          const existing = await MCPTokenStorage.getClientInfoAndMetadata({
+            userId,
+            serverName,
+            findToken,
+          });
+          if (existing?.clientInfo?.client_id) {
+            const storedRedirectUri = (existing.clientInfo as OAuthClientInformation)
+              .redirect_uris?.[0];
+            const storedIssuer =
+              typeof existing.clientMetadata?.issuer === 'string'
+                ? existing.clientMetadata.issuer.replace(/\/+$/, '')
+                : null;
+            const currentIssuer = (metadata.issuer ?? authServerUrl.toString()).replace(/\/+$/, '');
+
+            if (!storedRedirectUri || storedRedirectUri !== redirectUri) {
+              logger.debug(
+                `[MCPOAuth] Stored redirect_uri "${storedRedirectUri}" differs from current "${redirectUri}", will re-register`,
+              );
+            } else if (!storedIssuer || storedIssuer !== currentIssuer) {
+              logger.debug(
+                `[MCPOAuth] Issuer mismatch (stored: ${storedIssuer ?? 'none'}, current: ${currentIssuer}), will re-register`,
+              );
+            } else {
+              logger.debug(
+                `[MCPOAuth] Reusing existing client registration: ${existing.clientInfo.client_id}`,
+              );
+              clientInfo = existing.clientInfo;
+              reusedStoredClient = true;
+            }
+          }
+        } catch (error) {
+          logger.warn(
+            `[MCPOAuth] Failed to look up existing client registration, falling back to new registration`,
+            { error, serverName, userId },
+          );
+        }
+      }
+
+      if (!clientInfo) {
+        clientInfo = await this.registerOAuthClient(
+          authServerUrl.toString(),
+          metadata,
+          oauthHeaders,
+          resourceMetadata,
+          redirectUri,
+          config?.token_exchange_method,
+        );
+        logger.debug(`[MCPOAuth] Client registered with ID: ${clientInfo.client_id}`);
+      }
 
       /** Authorization Scope */
       const scope =
@@ -575,6 +622,7 @@ export class MCPOAuthHandler {
         metadata,
         resourceMetadata,
         ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
+        ...(reusedStoredClient && { reusedStoredClient }),
       };
 
       logger.debug(

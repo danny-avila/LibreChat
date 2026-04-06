@@ -63,14 +63,27 @@ export enum SettingsViews {
   advanced = 'advanced',
 }
 
+/** Validates any FileSources value — use for file metadata, DB records, and upload routing. */
 export const fileSourceSchema = z.nativeEnum(FileSources);
+
+/** Storage backend strategies only — use for config fields that set where files are stored. */
+const FILE_STORAGE_BACKENDS = [
+  FileSources.local,
+  FileSources.firebase,
+  FileSources.s3,
+  FileSources.azure_blob,
+] as const satisfies ReadonlyArray<FileSources>;
+
+export const fileStorageSchema = z.enum(FILE_STORAGE_BACKENDS);
+
+export type FileStorage = z.infer<typeof fileStorageSchema>;
 
 export const fileStrategiesSchema = z
   .object({
-    default: fileSourceSchema.optional(),
-    avatar: fileSourceSchema.optional(),
-    image: fileSourceSchema.optional(),
-    document: fileSourceSchema.optional(),
+    default: fileStorageSchema.optional(),
+    avatar: fileStorageSchema.optional(),
+    image: fileStorageSchema.optional(),
+    document: fileStorageSchema.optional(),
   })
   .optional();
 
@@ -116,13 +129,39 @@ export const modelConfigSchema = z
 
 export type TAzureModelConfig = z.infer<typeof modelConfigSchema>;
 
+const paramValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(paramValueSchema),
+    z.record(z.string(), paramValueSchema),
+  ]),
+);
+
+/** Validates addParams while keeping web_search aligned with current runtime boolean handling. */
+const addParamsSchema: z.ZodType<Record<string, unknown>> = z
+  .record(z.string(), paramValueSchema)
+  .superRefine((params, ctx) => {
+    if (params.web_search === undefined || typeof params.web_search === 'boolean') {
+      return;
+    }
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['web_search'],
+      message: '`web_search` must be a boolean in addParams',
+    });
+  });
+
 export const azureBaseSchema = z.object({
   apiKey: z.string(),
   serverless: z.boolean().optional(),
   instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
   assistants: z.boolean().optional(),
-  addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  addParams: addParamsSchema.optional(),
   dropParams: z.array(z.string()).optional(),
   version: z.string().optional(),
   baseURL: z.string().optional(),
@@ -362,7 +401,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
     headers: z.record(z.string()).optional(),
-    addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+    addParams: addParamsSchema.optional(),
     dropParams: z.array(z.string()).optional(),
     customParams: z
       .object({
@@ -657,10 +696,8 @@ export const interfaceSchema = z
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
-    endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
-    sidePanel: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
     memories: z.boolean().optional(),
@@ -716,10 +753,8 @@ export const interfaceSchema = z
       .optional(),
   })
   .default({
-    endpointsMenu: true,
     modelSelect: true,
     parameters: true,
-    sidePanel: true,
     presets: true,
     multiConvo: true,
     bookmarks: true,
@@ -1040,7 +1075,7 @@ export const configSchema = z.object({
     .optional(),
   interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
-  fileStrategy: fileSourceSchema.default(FileSources.local),
+  fileStrategy: fileStorageSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,
   actions: z
     .object({
@@ -1814,7 +1849,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.8.4',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.6',
+  CONFIG_VERSION = '1.3.7',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
