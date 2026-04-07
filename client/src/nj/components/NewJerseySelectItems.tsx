@@ -5,13 +5,15 @@ import { DropdownMenuSeparator } from '@librechat/client';
 import * as Menu from '@ariakit/react/menu';
 import { useNavigate } from 'react-router-dom';
 import icons from '@uswds/uswds/img/sprite.svg';
-import React from 'react';
+import React, { useState } from 'react';
+import ModelInformationModal from './ModelInformationModal';
 
 /**
  * New Jersey-specific menu items that show up in the AccountSettings popup.
  */
 export function NewJerseySelectItems() {
   const navigate = useNavigate();
+  const [modelInfoOpen, setModelInfoOpen] = useState(false);
 
   return (
     <>
@@ -37,6 +39,14 @@ export function NewJerseySelectItems() {
       </Menu.MenuItem>
 
       <DropdownMenuSeparator />
+
+      <Menu.MenuItem onClick={() => setModelInfoOpen(true)} className="select-item text-sm">
+        <svg className="usa-icon usa-icon--size-2" aria-hidden="true" focusable="false" role="img">
+          <use href={`${icons}#help`} />
+        </svg>
+        Model information
+      </Menu.MenuItem>
+      <ModelInformationModal open={modelInfoOpen} onOpenChange={setModelInfoOpen} />
 
       <Menu.MenuItem
         onClick={() => window.open('https://forms.office.com/g/zLiSuXxJ0Y', '_blank')}
