@@ -78,12 +78,13 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
       animate={{ scale: 1 }}
       exit={{ scale: 0.9 }}
       transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-      className="w-80 rounded-2xl bg-text-primary p-6 text-surface-primary shadow-xl"
+      className="w-[340px] rounded-2xl bg-text-primary pb-5 pl-3 pr-3 pt-3 text-surface-primary"
+      style={{ boxShadow: '0 0 0 2px #000, 0 0 0 4px #fff' }}
     >
-      <div className="mb-4 flex items-start justify-between">
+      <div className="mb-5 flex items-start justify-between">
         <div className="flex items-center gap-2">
           <Icon name="notifications" style={{ color: '#FFBE2E' }} />
-          <h3 className="text-base font-semibold">New update</h3>
+          <h3 className="text-base font-semibold">New updates</h3>
         </div>
         <button
           onClick={onClose}
@@ -96,7 +97,7 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
         </button>
       </div>
 
-      <div className="mb-4">
+      <div className="mb-5 pl-5">
         <p className="mb-3 text-sm">
           Please check out the latest updates at the new Release Notes page!
         </p>
@@ -109,12 +110,14 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
         </Link>
       </div>
 
-      <button
-        onClick={handleDismiss}
-        className="hover:bg-surface-primary/10 w-full rounded border-2 border-surface-primary bg-transparent py-2 text-sm font-medium text-surface-primary"
-      >
-        Dismiss
-      </button>
+      <div className="pl-5 pr-5">
+        <button
+          onClick={handleDismiss}
+          className="hover:bg-surface-primary/10 w-full rounded border-2 border-surface-primary bg-transparent py-2 text-sm font-medium text-surface-primary"
+        >
+          Dismiss
+        </button>
+      </div>
     </motion.div>
   );
 }
