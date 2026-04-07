@@ -261,7 +261,9 @@ describe('createAppConfigService', () => {
         expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
         expect(config).toEqual(deps._baseConfig);
 
-        const setCalls = deps._cache.set.mock.calls.filter(([key]: [string]) => key !== '_BASE_');
+        const setCalls = deps._cache.set.mock.calls.filter(
+          ([key]: [string, unknown]) => key !== '_BASE_',
+        );
         expect(setCalls).toHaveLength(0);
       });
 
