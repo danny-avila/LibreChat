@@ -168,8 +168,20 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       }
     }
 
+    let principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>;
     try {
-      const principals = await buildPrincipals(role, userId);
+      principals = await buildPrincipals(role, userId);
+    } catch (error) {
+      logger.error('[getAppConfig] Error building principals, falling back to base:', error);
+      return baseConfig;
+    }
+
+    if (principals.length === 0) {
+      await cache.set(cacheKey, baseConfig, overrideCacheTtl);
+      return baseConfig;
+    }
+
+    try {
       const configs = await getApplicableConfigs(principals);
 
       if (configs.length === 0) {
