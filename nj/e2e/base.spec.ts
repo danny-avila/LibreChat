@@ -16,4 +16,6 @@ test('Debug app load', async ({ page }) => {
   console.log('URL:', page.url());
   console.log('Title:', await page.title());
   console.log('HTML snippet:', await page.content());
+
+  await page.screenshot({ path: '/tmp/page.png', fullPage: true });
 });

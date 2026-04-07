@@ -122,3 +122,9 @@ jobs:
           name: test-results-${{ github.run_id }}
           path: /e2e/specs/.test-results/
           retention-days: 30
+
+      - name: Upload screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshot-${{ github.run_id }}
+          path: /tmp/page.png
