@@ -293,13 +293,13 @@ describe('createAppConfigService', () => {
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('No tenantId in strict mode'));
         const warnCount = warnSpy.mock.calls.length;
 
-        await getAppConfig({ role: 'USER' });
+        await getAppConfig({ role: 'ADMIN' });
         expect(warnSpy).toHaveBeenCalledTimes(warnCount);
 
         warnSpy.mockRestore();
       });
 
-      it('falls through to DB when ALS has tenant context despite no tenantId param', async () => {
+      it('falls through to getApplicableConfigs when ALS has tenant context despite no tenantId param', async () => {
         const { tenantStorage } = jest.requireActual('@librechat/data-schemas');
         const deps = createDeps({
           getApplicableConfigs: jest
