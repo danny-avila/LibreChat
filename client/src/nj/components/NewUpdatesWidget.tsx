@@ -84,7 +84,7 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
       <div className="mb-5 flex items-start justify-between">
         <div className="flex items-center gap-2">
           <Icon name="notifications" style={{ color: '#FFBE2E' }} />
-          <h3 className="text-base font-semibold">New updates</h3>
+          <h3 className="text-base font-semibold">AI Office Hours</h3>
         </div>
         <button
           onClick={onClose}
@@ -99,14 +99,14 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
 
       <div className="mb-5 pl-5">
         <p className="mb-3 text-sm">
-          Please check out the latest updates at the new Release Notes page!
+          Get your questions answered by the NJ AI Assistant team at AI Office Hours every Thursday!
         </p>
         <Link
           to={{ pathname: '/nj/release-notes' }}
           onClick={handleLinkClick}
           className="inline-flex items-center gap-1 text-sm underline hover:decoration-2"
         >
-          Release Notes
+          Office hours info
         </Link>
       </div>
 
