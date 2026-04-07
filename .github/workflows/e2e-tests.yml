@@ -102,7 +102,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ github.run_id }}
-          path: playwright-report/
+          path: /e2e/playwright-report/
           retention-days: 30
 
       - name: Upload test results
@@ -110,5 +110,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ github.run_id }}
-          path: specs/.test-results/
+          path: /e2e/specs/.test-results/
           retention-days: 30
+
+      - name: Notify Slack on Failure
+        if: failure()
+        uses: newjersey/innovation-shared-actions/.github/workflows/slack.yml@main
+        with:
+          channel_id: C08ESQVC2G7 #platform-eng-alerts
+          message: ":x: End to end tests failed for ${{ github.repository }} - <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|failed view workflow>"
+        secrets: inherit
