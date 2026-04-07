@@ -5,7 +5,7 @@ import type { AppConfig, IConfig } from '@librechat/data-schemas';
 
 const BASE_CONFIG_KEY = '_BASE_';
 
-const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
+export const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ function isStrictOverrideMode(): boolean {
   return (_strictOverride ??= process.env.TENANT_ISOLATION_STRICT === 'true');
 }
 
-/** @internal Resets the cached strict-override flag. Exposed for test teardown only. */
+/** @internal Resets the memoized strict-override flag and one-time no-tenantId warning gate. Exposed for test teardown only. */
 let _warnedNoTenantInStrictMode = false;
 
 export function _resetOverrideStrictCache(): void {
