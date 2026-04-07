@@ -282,18 +282,41 @@ describe('createAppConfigService', () => {
 
         expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
       });
+
+      it('warns once when non-empty principals proceed without tenantId', async () => {
+        const { logger } = jest.requireActual('@librechat/data-schemas');
+        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
+
+        await getAppConfig({ role: 'USER' });
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('No tenantId in strict mode'));
+        const warnCount = warnSpy.mock.calls.length;
+
+        await getAppConfig({ role: 'USER' });
+        expect(warnSpy).toHaveBeenCalledTimes(warnCount);
+
+        warnSpy.mockRestore();
+      });
     });
 
-    it('queries DB for empty principals when not in strict mode', async () => {
-      delete process.env.TENANT_ISOLATION_STRICT;
-      _resetOverrideStrictCache();
+    describe('non-strict mode (TENANT_ISOLATION_STRICT unset)', () => {
+      beforeEach(() => {
+        delete process.env.TENANT_ISOLATION_STRICT;
+        _resetOverrideStrictCache();
+      });
+      afterEach(() => {
+        _resetOverrideStrictCache();
+      });
 
-      const deps = createDeps();
-      const { getAppConfig } = createAppConfigService(deps);
+      it('passes empty principals through to getApplicableConfigs', async () => {
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
 
-      await getAppConfig();
+        await getAppConfig();
 
-      expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+      });
     });
 
     it('does not cache on buildPrincipals error — retries on next request', async () => {

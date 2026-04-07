@@ -50,9 +50,9 @@ function isStrictOverrideMode(): boolean {
   return (_strictOverride ??= process.env.TENANT_ISOLATION_STRICT === 'true');
 }
 
-/** @internal Resets the memoized strict-override flag and one-time no-tenantId warning gate. Exposed for test teardown only. */
 let _warnedNoTenantInStrictMode = false;
 
+/** @internal Resets the memoized strict-override flag and one-time no-tenantId warning gate. Exposed for test teardown only. */
 export function _resetOverrideStrictCache(): void {
   _strictOverride = undefined;
   _warnedNoTenantInStrictMode = false;
@@ -169,6 +169,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       return baseConfig;
     }
 
+    // Strict-isolation + no tenant = pathological path (middleware bypass or system call).
+    // Legitimate system calls use baseOnly:true; admin calls always carry tenantId.
+    // The __base__ DB override has no tenant scope to apply here, so YAML config is correct.
     if (principals.length === 0 && !tenantId && isStrictOverrideMode()) {
       await cache.set(cacheKey, baseConfig, overrideCacheTtl).catch((error: unknown) => {
         logger.warn('[getAppConfig] Failed to cache base config for strict-mode path:', error);
