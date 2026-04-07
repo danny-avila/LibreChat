@@ -242,35 +242,42 @@ describe('createAppConfigService', () => {
       expect(config).toEqual(deps._baseConfig);
     });
 
-    it('skips DB query for empty principals in strict mode without tenantId', async () => {
-      process.env.TENANT_ISOLATION_STRICT = 'true';
-      _resetOverrideStrictCache();
+    describe('strict mode (TENANT_ISOLATION_STRICT=true)', () => {
+      beforeEach(() => {
+        process.env.TENANT_ISOLATION_STRICT = 'true';
+        _resetOverrideStrictCache();
+      });
+      afterEach(() => {
+        delete process.env.TENANT_ISOLATION_STRICT;
+        _resetOverrideStrictCache();
+      });
 
-      const deps = createDeps();
-      const { getAppConfig } = createAppConfigService(deps);
+      it('skips DB query and caches baseConfig for empty principals without tenantId', async () => {
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
 
-      const config = await getAppConfig();
+        const config = await getAppConfig();
 
-      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
-      expect(config).toEqual(deps._baseConfig);
+        expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+        expect(config).toEqual(deps._baseConfig);
+        expect(deps._cache.set).toHaveBeenCalledWith(
+          expect.stringContaining('_OVERRIDE_'),
+          deps._baseConfig,
+          expect.any(Number),
+        );
 
-      delete process.env.TENANT_ISOLATION_STRICT;
-      _resetOverrideStrictCache();
-    });
+        await getAppConfig();
+        expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+      });
 
-    it('queries DB for empty principals in strict mode when tenantId is present', async () => {
-      process.env.TENANT_ISOLATION_STRICT = 'true';
-      _resetOverrideStrictCache();
+      it('queries DB when tenantId is present', async () => {
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
 
-      const deps = createDeps();
-      const { getAppConfig } = createAppConfigService(deps);
+        await getAppConfig({ tenantId: 'tenant-a' });
 
-      await getAppConfig({ tenantId: 'tenant-a' });
-
-      expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
-
-      delete process.env.TENANT_ISOLATION_STRICT;
-      _resetOverrideStrictCache();
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+      });
     });
 
     it('queries DB for empty principals when not in strict mode', async () => {

@@ -60,13 +60,6 @@ export function _resetOverrideStrictCache(): void {
 
 function overrideCacheKey(role?: string, userId?: string, tenantId?: string): string {
   const tenant = tenantId || '__default__';
-  if (!tenantId && isStrictOverrideMode() && !_warnedNoTenantInStrictMode) {
-    _warnedNoTenantInStrictMode = true;
-    logger.warn(
-      '[overrideCacheKey] No tenantId in strict mode — falling back to __default__. ' +
-        'This likely indicates a code path that bypasses the tenant context middleware.',
-    );
-  }
   if (userId && role) {
     return `_OVERRIDE_:${tenant}:${role}:${userId}`;
   }
@@ -177,8 +170,18 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
     }
 
     if (principals.length === 0 && !tenantId && isStrictOverrideMode()) {
-      await cache.set(cacheKey, baseConfig, overrideCacheTtl).catch(() => {});
+      await cache.set(cacheKey, baseConfig, overrideCacheTtl).catch((error: unknown) => {
+        logger.warn('[getAppConfig] Failed to cache base config for strict-mode path:', error);
+      });
       return baseConfig;
+    }
+
+    if (!tenantId && isStrictOverrideMode() && !_warnedNoTenantInStrictMode) {
+      _warnedNoTenantInStrictMode = true;
+      logger.warn(
+        '[getAppConfig] No tenantId in strict mode — falling back to __default__. ' +
+          'This likely indicates a code path that bypasses the tenant context middleware.',
+      );
     }
 
     try {
