@@ -176,6 +176,11 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       return baseConfig;
     }
 
+    if (principals.length === 0 && !tenantId && isStrictOverrideMode()) {
+      await cache.set(cacheKey, baseConfig, overrideCacheTtl).catch(() => {});
+      return baseConfig;
+    }
+
     try {
       const configs = await getApplicableConfigs(principals);
 

@@ -1,5 +1,5 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import { createAppConfigService } from './service';
+import { createAppConfigService, _resetOverrideStrictCache } from './service';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
 interface TestConfig extends AppConfig {
@@ -240,6 +240,49 @@ describe('createAppConfigService', () => {
       expect(deps.getUserPrincipals).toHaveBeenCalledWith({ userId: 'uid1', role: 'USER' });
       expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
       expect(config).toEqual(deps._baseConfig);
+    });
+
+    it('skips DB query for empty principals in strict mode without tenantId', async () => {
+      process.env.TENANT_ISOLATION_STRICT = 'true';
+      _resetOverrideStrictCache();
+
+      const deps = createDeps();
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig();
+
+      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+      expect(config).toEqual(deps._baseConfig);
+
+      delete process.env.TENANT_ISOLATION_STRICT;
+      _resetOverrideStrictCache();
+    });
+
+    it('queries DB for empty principals in strict mode when tenantId is present', async () => {
+      process.env.TENANT_ISOLATION_STRICT = 'true';
+      _resetOverrideStrictCache();
+
+      const deps = createDeps();
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig({ tenantId: 'tenant-a' });
+
+      expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+
+      delete process.env.TENANT_ISOLATION_STRICT;
+      _resetOverrideStrictCache();
+    });
+
+    it('queries DB for empty principals when not in strict mode', async () => {
+      delete process.env.TENANT_ISOLATION_STRICT;
+      _resetOverrideStrictCache();
+
+      const deps = createDeps();
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig();
+
+      expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
     });
 
     it('does not cache on buildPrincipals error — retries on next request', async () => {
