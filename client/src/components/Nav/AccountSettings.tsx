@@ -9,8 +9,6 @@ import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import { NewJerseySelectItems } from '~/nj/components/NewJerseySelectItems';
 import icons from '@uswds/uswds/img/sprite.svg';
-import ArchivedChatsModal from '~/nj/components/ArchivedChatsModal';
-import ArchiveIcon from '~/nj/svgs/ArchiveIcon';
 
 function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const localize = useLocalize();
@@ -21,7 +19,6 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
-  const [showArchivedChats, setShowArchivedChats] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
@@ -64,11 +61,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
           {user?.email ?? localize('com_nav_user')}
         </div>
-        <Menu.MenuItem onClick={() => setShowArchivedChats(true)} className="select-item text-sm">
-          <ArchiveIcon height={16} />
-          {localize('com_nav_archived_chats')}
-        </Menu.MenuItem>
-        <DropdownMenuSeparator />
+        {/* NJ: Hide "balance", "my files", "help & faq", & "settings" (we'll re-enable as we desire)
         {startupConfig?.balance?.enabled === true && balanceQuery.data != null && (
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
@@ -78,7 +71,6 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
             <DropdownMenuSeparator />
           </>
         )}
-        {/* NJ: Hide "my files", "help & faq", & "settings" (we'll re-enable as we desire)
         <Menu.MenuItem onClick={() => setShowFiles(true)} className="select-item text-sm">
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
@@ -122,13 +114,6 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         />
       )}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
-      {showArchivedChats && (
-        <ArchivedChatsModal
-          open={showArchivedChats}
-          onOpenChange={setShowArchivedChats}
-          triggerRef={accountSettingsButtonRef}
-        />
-      )}
     </Menu.MenuProvider>
   );
 }

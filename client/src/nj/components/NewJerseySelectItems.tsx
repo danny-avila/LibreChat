@@ -7,6 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import icons from '@uswds/uswds/img/sprite.svg';
 import React, { useState } from 'react';
 import ModelInformationModal from './ModelInformationModal';
+import ArchivedChatsModal from './ArchivedChatsModal';
+import ArchiveIcon from '~/nj/svgs/ArchiveIcon';
 
 /**
  * New Jersey-specific menu items that show up in the AccountSettings popup.
@@ -14,9 +16,17 @@ import ModelInformationModal from './ModelInformationModal';
 export function NewJerseySelectItems() {
   const navigate = useNavigate();
   const [modelInfoOpen, setModelInfoOpen] = useState(false);
+  const [archivedChatsOpen, setArchivedChatsOpen] = useState(false);
 
   return (
     <>
+      <Menu.MenuItem onClick={() => setArchivedChatsOpen(true)} className="select-item text-sm">
+        <ArchiveIcon height={16} />
+        Archived chats
+      </Menu.MenuItem>
+
+      <DropdownMenuSeparator />
+
       <Menu.MenuItem onClick={() => navigate('nj/guide')} className="select-item text-sm">
         <svg className="usa-icon usa-icon--size-2" aria-hidden="true" focusable="false" role="img">
           <use href={`${icons}#school`} />
@@ -46,7 +56,6 @@ export function NewJerseySelectItems() {
         </svg>
         Model information
       </Menu.MenuItem>
-      <ModelInformationModal open={modelInfoOpen} onOpenChange={setModelInfoOpen} />
 
       <Menu.MenuItem
         onClick={() => window.open('https://forms.office.com/g/zLiSuXxJ0Y', '_blank')}
@@ -71,6 +80,9 @@ export function NewJerseySelectItems() {
       </Menu.MenuItem>
 
       <DropdownMenuSeparator />
+
+      <ModelInformationModal open={modelInfoOpen} onOpenChange={setModelInfoOpen} />
+      <ArchivedChatsModal open={archivedChatsOpen} onOpenChange={setArchivedChatsOpen} />
     </>
   );
 }
