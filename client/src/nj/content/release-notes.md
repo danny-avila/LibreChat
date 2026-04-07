@@ -2,16 +2,35 @@
 
 ---
 
+### April 7, 2026
+
+Features Released:
+
+* **AI Office Hours** — Join weekly AI Office Hours to learn more about AI and prompting, the NJ AI Assistant, or get help on a project you’re working on.
+  * Office Hours are weekly on Thursdays from 12:30 - 1:30 pm. You can use [this Teams link](https://teams.microsoft.com/meet/27661582151645?p=78SP1n7rYEGoorbxsn) to access it.
+  * If you have a question and cannot make office hours, feel free to email us at [AI.Assistant@innovation.nj.gov](mailto:AI.Assistant@innovation.nj.gov) instead
+  * Note: You can also access this information on the [FAQs and Guides page](https://ai-assistant.nj.gov/nj/guide) under the “Help & Support” section.
+* **Alert for Announcements and Updates** — This alert will surface new features and resources that are particularly useful for users. You can see it in the top right corner when there is new information to share
+* **Release notes page** — Users can easily see the new features, bugs fixed, or infrastructure changes made in the release notes.
+
+Bug Fixes & Improvements:
+
+* We removed code around the data retention of files. Doing this cleans up our codebase, which makes long-term maintenance of our code easier
+
+We also retired the original NJ AI Assistant on March 27\. We are grateful for the foundation that the original app established and the service it provided to users.
+
 ### March 25, 2026
 
-- **Key features released:**
-  - **Chat history management** — Manage your chats through re-naming them, archiving them, and duplicating them as needed.
-    - You can also see your archived chats in the user menu on the bottom right
+Features Released:
+
+- **Chat history management** — Manage your chats through re-naming them, archiving them, and duplicating them as needed.
+  - You can also see your archived chats in the user menu on the bottom right
 - **Updated Guides & FAQs Page** — Easily find what you need on the re-designed FAQs about how to use AI responsibly on this page with the updated look
 
-- **Non-user facing changes:**
-  - We have increased our scaling capabilities to stabilize the app
-  - We have resolved a server error that has shown up for some users in chat history
+Bug Fixes & Improvements:
+
+- We have increased our scaling capabilities to stabilize the app
+- We have resolved a server error that has shown up for some users in chat history
 
 ### March 12, 2026
 
