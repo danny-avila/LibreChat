@@ -38,7 +38,7 @@ env:
   CREDS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   CREDS_IV: 0123456789abcdef0123456789abcdef
   SESSION_SECRET: test-session-secret-for-ci-${{ github.run_id }}
-  FILE_STRATEGY: local
+  CONFIG_PATH: /tmp/ci-librechat.yaml
   ALLOW_REGISTRATION: true
   SESSION_EXPIRY: 60000
   REFRESH_TOKEN_EXPIRY: 300000
@@ -86,6 +86,13 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
+
+      - name: Create CI config override
+        run: |
+          cat > /tmp/ci-librechat.yaml << 'EOF'
+          version: 1.0.0
+          fileStrategy: local
+          EOF
 
       # - name: Build frontend for server
       #   run: npm run frontend
