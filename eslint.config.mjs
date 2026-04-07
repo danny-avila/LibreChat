@@ -217,7 +217,7 @@ export default [
     })),
   {
     files: ['**/*.ts', '**/*.tsx'],
-    ignores: ['packages/**/*'],
+    ignores: ['packages/**/*', 'nj/**/*', 'e2e/**/*'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
       jest: fixupPluginRules(jest),
