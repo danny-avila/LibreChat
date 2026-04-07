@@ -34,7 +34,7 @@ function createMockCache(namespace = 'app_config') {
 
 function createDeps(overrides = {}) {
   const cache = createMockCache();
-  const baseConfig = { interfaceConfig: { endpointsMenu: true }, endpoints: ['openAI'] };
+  const baseConfig = { interfaceConfig: { modelSelect: true }, endpoints: ['openAI'] };
 
   return {
     loadBaseConfig: jest.fn().mockResolvedValue(baseConfig),
@@ -79,7 +79,7 @@ describe('createAppConfigService', () => {
         getApplicableConfigs: jest
           .fn()
           .mockResolvedValue([
-            { priority: 10, overrides: { interface: { endpointsMenu: false } }, isActive: true },
+            { priority: 10, overrides: { interface: { modelSelect: false } }, isActive: true },
           ]),
       });
       const { getAppConfig } = createAppConfigService(deps);
@@ -125,7 +125,7 @@ describe('createAppConfigService', () => {
         getApplicableConfigs: jest
           .fn()
           .mockResolvedValue([
-            { priority: 10, overrides: { interface: { endpointsMenu: false } }, isActive: true },
+            { priority: 10, overrides: { interface: { modelSelect: false } }, isActive: true },
           ]),
       });
       const { getAppConfig } = createAppConfigService(deps);
@@ -133,7 +133,7 @@ describe('createAppConfigService', () => {
       const config = await getAppConfig({ role: 'ADMIN' });
 
       const merged = config as TestConfig;
-      expect(merged.interfaceConfig?.endpointsMenu).toBe(false);
+      expect(merged.interfaceConfig?.modelSelect).toBe(false);
       expect(merged.endpoints).toEqual(['openAI']);
     });
 

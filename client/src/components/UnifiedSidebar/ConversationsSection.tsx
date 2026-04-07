@@ -120,7 +120,7 @@ const ConversationsSection = memo(() => {
             <BookmarkNav tags={tags} setTags={setTags} />
           </Suspense>
         )}
-        <SearchBar isSmallScreen={isSmallScreen} />
+        {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
       </div>
       {isSmallScreen && (
         <div
