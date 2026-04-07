@@ -1,5 +1,5 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import { createAppConfigService } from './service';
+import { createAppConfigService, DEFAULT_OVERRIDE_CACHE_TTL } from './service';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
 interface TestConfig extends AppConfig {
@@ -245,7 +245,7 @@ describe('createAppConfigService', () => {
       expect(deps._cache.set).toHaveBeenCalledWith(
         expect.stringContaining('_OVERRIDE_'),
         deps._baseConfig,
-        60_000,
+        DEFAULT_OVERRIDE_CACHE_TTL,
       );
 
       await getAppConfig({ userId: 'uid1', role: 'USER' });

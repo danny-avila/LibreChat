@@ -5,7 +5,7 @@ import type { AppConfig, IConfig } from '@librechat/data-schemas';
 
 const BASE_CONFIG_KEY = '_BASE_';
 
-const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
+export const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -170,7 +170,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
 
     const principals = await buildPrincipals(role, userId).catch((error: unknown) => {
       logger.error('[getAppConfig] Error building principals, falling back to base:', error);
-      return null as null;
+      return null;
     });
     if (principals === null) {
       return baseConfig;
