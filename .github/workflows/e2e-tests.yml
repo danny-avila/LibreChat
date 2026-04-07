@@ -36,6 +36,23 @@ on:
         required: false
         default: 'Manual e2e test run'
 
+env:
+  CI: true
+  NODE_ENV: CI
+  MONGO_URI: mongodb://localhost:27017/LibreChat
+  E2E_USER_EMAIL: e2e-test-${{ github.run_id }}@test.local
+  E2E_USER_PASSWORD: Test123!@#${{ github.run_id }}
+  JWT_SECRET: test-jwt-secret-for-ci-${{ github.run_id }}
+  JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci-${{ github.run_id }}
+  CREDS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  CREDS_IV: 0123456789abcdef0123456789abcdef
+  SESSION_SECRET: test-session-secret-for-ci-${{ github.run_id }}
+  ALLOW_REGISTRATION: true
+  SESSION_EXPIRY: 60000
+  REFRESH_TOKEN_EXPIRY: 300000
+  EMAIL_HOST: ''
+  SEARCH: false
+
 jobs:
   playwright_tests:
     name: Run Playwright E2E Tests
@@ -89,22 +106,6 @@ jobs:
         run: npx wait-on http://localhost:3080
 
       - name: Run Playwright tests
-        env:
-          CI: true
-          NODE_ENV: CI
-          MONGO_URI: mongodb://localhost:27017/LibreChat
-          E2E_USER_EMAIL: e2e-test-${{ github.run_id }}@test.local
-          E2E_USER_PASSWORD: Test123!@#${{ github.run_id }}
-          JWT_SECRET: test-jwt-secret-for-ci-${{ github.run_id }}
-          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci-${{ github.run_id }}
-          CREDS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-          CREDS_IV: 0123456789abcdef0123456789abcdef
-          SESSION_SECRET: test-session-secret-for-ci-${{ github.run_id }}
-          ALLOW_REGISTRATION: true
-          SESSION_EXPIRY: 60000
-          REFRESH_TOKEN_EXPIRY: 300000
-          EMAIL_HOST: ''
-          SEARCH: false
         run: npm run e2e:nj -- --reporter=list --timeout=60000
 
       - name: Upload Playwright report
