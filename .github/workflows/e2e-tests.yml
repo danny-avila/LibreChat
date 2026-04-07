@@ -57,10 +57,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js 24.x 
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
 
       - name: Install dependencies
@@ -112,11 +112,3 @@ jobs:
           name: test-results-${{ github.run_id }}
           path: /e2e/specs/.test-results/
           retention-days: 30
-
-      - name: Notify Slack on Failure
-        if: failure()
-        uses: newjersey/innovation-shared-actions/.github/workflows/slack.yml@main
-        with:
-          channel_id: C08ESQVC2G7 #platform-eng-alerts
-          message: ":x: End to end tests failed for ${{ github.repository }} - <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|failed view workflow>"
-        secrets: inherit
