@@ -3097,3 +3097,28 @@ html {
   height: 4.5rem;
   width: 4.5rem;
 }
+
+/* React Markdown styling (for our release notes page) */
+.prose-nj h1 {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+}
+
+.prose-nj h2 {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+
+.prose-nj h3 {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.prose-nj p {
+  line-height: 1.5rem;
+}
+
+.prose-nj hr {
+  margin-top: 1.5rem;
+  margin-bottom: .5rem;
+}

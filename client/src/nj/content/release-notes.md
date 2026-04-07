@@ -2,7 +2,7 @@
 
 ---
 
-### April 7, 2026
+## April 7, 2026
 
 Features Released:
 
@@ -19,7 +19,7 @@ Bug Fixes & Improvements:
 
 We also retired the original NJ AI Assistant on March 27\. We are grateful for the foundation that the original app established and the service it provided to users.
 
-### March 25, 2026
+## March 25, 2026
 
 Features Released:
 
@@ -32,7 +32,7 @@ Bug Fixes & Improvements:
 - We have increased our scaling capabilities to stabilize the app
 - We have resolved a server error that has shown up for some users in chat history
 
-### March 12, 2026
+## March 12, 2026
 
 The updated NJ AI Assistant brings a redesigned interface and expanded capabilities based on feedback from users like you. Along with previous functionality from version 1.0, this new update brings:
 
@@ -42,7 +42,7 @@ The updated NJ AI Assistant brings a redesigned interface and expanded capabilit
 - **More control over your conversations** — Voice transcription, edit prompts, retry responses, and revisit past chats
 - **Built-in learning resources** — Guides on effective prompting and responsible AI use, plus direct access to State AI policy
 
-#### **How do I navigate the NJ AI Assistant?**
+### **How do I navigate the NJ AI Assistant?**
 
 We've added a few ways to move around and find what you need.
 
