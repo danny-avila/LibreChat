@@ -8,12 +8,13 @@ import {
   createContext,
 } from 'react';
 import { debounce } from 'lodash';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import {
   apiBaseUrl,
   SystemRoles,
   setTokenHeader,
+  isSystemRoleName,
   buildLoginRedirectUrl,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
@@ -45,12 +46,19 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const setQueriesEnabled = useSetRecoilState<boolean>(store.queriesEnabled);
+
+  const userRoleName = user?.role ?? '';
+  const isCustomRole = isAuthenticated && !!user?.role && !isSystemRoleName(user.role);
 
   const { data: userRole = null } = useGetRole(SystemRoles.USER, {
     enabled: !!(isAuthenticated && (user?.role ?? '')),
   });
   const { data: adminRole = null } = useGetRole(SystemRoles.ADMIN, {
     enabled: !!(isAuthenticated && user?.role === SystemRoles.ADMIN),
+  });
+  const { data: customRole = null } = useGetRole(isCustomRole ? userRoleName : '_', {
+    enabled: isCustomRole,
   });
 
   const navigate = useNavigate();
@@ -63,6 +71,9 @@ const AuthContextProvider = ({
         setToken(token);
         setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
+        if (isAuthenticated) {
+          setQueriesEnabled(true);
+        }
 
         const searchParams = new URLSearchParams(window.location.search);
         const postLoginRedirect = getPostLoginRedirect(searchParams);
@@ -81,7 +92,7 @@ const AuthContextProvider = ({
 
         navigate(finalRedirect, { replace: true });
       }, 50),
-    [navigate, setUser],
+    [navigate, setUser, setQueriesEnabled],
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
@@ -263,11 +274,22 @@ const AuthContextProvider = ({
       roles: {
         [SystemRoles.USER]: userRole,
         [SystemRoles.ADMIN]: adminRole,
+        ...(isCustomRole && customRole ? { [userRoleName]: customRole } : {}),
       },
       isAuthenticated,
     }),
 
-    [user, error, isAuthenticated, token, userRole, adminRole],
+    [
+      user,
+      error,
+      isAuthenticated,
+      token,
+      userRole,
+      adminRole,
+      isCustomRole,
+      userRoleName,
+      customRole,
+    ],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;

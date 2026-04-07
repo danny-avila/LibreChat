@@ -5,3 +5,4 @@ export * from './specs';
 export * from './turnstile';
 export * from './vertex';
 export * from './web';
+export * from './resolution';

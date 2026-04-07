@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   CacheKeys,
   Constants,
@@ -36,15 +36,17 @@ const {
   getFlowStateManager,
   getMCPManager,
 } = require('~/config');
-const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
+const {
+  getServerConnectionStatus,
+  resolveConfigServers,
+  getMCPSetupData,
+} = require('~/server/services/MCP');
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
-const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { findPluginAuthsByKeys } = require('~/models');
-const { getRoleByName } = require('~/models/Role');
 const { getLogStores } = require('~/cache');
+const db = require('~/models');
 
 const router = Router();
 
@@ -53,13 +55,13 @@ const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
 const checkMCPUsePermissions = generateCheckAccess({
   permissionType: PermissionTypes.MCP_SERVERS,
   permissions: [Permissions.USE],
-  getRoleByName,
+  getRoleByName: db.getRoleByName,
 });
 
 const checkMCPCreate = generateCheckAccess({
   permissionType: PermissionTypes.MCP_SERVERS,
   permissions: [Permissions.USE, Permissions.CREATE],
-  getRoleByName,
+  getRoleByName: db.getRoleByName,
 });
 
 /**
@@ -103,7 +105,8 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
       return res.status(400).json({ error: 'Invalid flow state' });
     }
 
-    const oauthHeaders = await getOAuthHeaders(serverName, userId);
+    const configServers = await resolveConfigServers(req);
+    const oauthHeaders = await getOAuthHeaders(serverName, userId, configServers);
     const {
       authorizationUrl,
       flowId: oauthFlowId,
@@ -146,6 +149,29 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     if (oauthError) {
       logger.error('[MCP OAuth] OAuth error received', { error: oauthError });
+      // Gate failFlow behind callback validation to prevent DoS via leaked state
+      if (state && typeof state === 'string') {
+        try {
+          const flowsCache = getLogStores(CacheKeys.FLOWS);
+          const flowManager = getFlowStateManager(flowsCache);
+          const flowId = await MCPOAuthHandler.resolveStateToFlowId(state, flowManager);
+          if (flowId) {
+            const flowParts = flowId.split(':');
+            const [flowUserId] = flowParts;
+            const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
+            const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
+            if (hasCsrf || hasSession) {
+              await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+              logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
+                flowId,
+                error: oauthError,
+              });
+            }
+          }
+        } catch (err) {
+          logger.debug('[MCP OAuth] Could not mark flow as failed', err);
+        }
+      }
       return res.redirect(
         `${basePath}/oauth/error?error=${encodeURIComponent(String(oauthError))}`,
       );
@@ -235,7 +261,14 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     }
 
     logger.debug('[MCP OAuth] Completing OAuth flow');
-    const oauthHeaders = await getOAuthHeaders(serverName, flowState.userId);
+    if (!flowState.oauthHeaders) {
+      logger.warn(
+        '[MCP OAuth] oauthHeaders absent from flow state — config-source server oauth_headers will be empty',
+        { serverName, flowId },
+      );
+    }
+    const oauthHeaders =
+      flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager, oauthHeaders);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
@@ -246,9 +279,9 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           userId: flowState.userId,
           serverName,
           tokens,
-          createToken,
-          updateToken,
-          findToken,
+          createToken: db.createToken,
+          updateToken: db.updateToken,
+          findToken: db.findToken,
           clientInfo: flowState.clientInfo,
           metadata: flowState.metadata,
         });
@@ -286,10 +319,10 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           serverName,
           flowManager,
           tokenMethods: {
-            findToken,
-            updateToken,
-            createToken,
-            deleteTokens,
+            findToken: db.findToken,
+            updateToken: db.updateToken,
+            createToken: db.createToken,
+            deleteTokens: db.deleteTokens,
           },
         });
 
@@ -499,7 +532,12 @@ router.post(
       logger.info(`[MCP Reinitialize] Reinitializing server: ${serverName}`);
 
       const mcpManager = getMCPManager();
-      const serverConfig = await getMCPServersRegistry().getServerConfig(serverName, user.id);
+      const configServers = await resolveConfigServers(req);
+      const serverConfig = await getMCPServersRegistry().getServerConfig(
+        serverName,
+        user.id,
+        configServers,
+      );
       if (!serverConfig) {
         return res.status(404).json({
           error: `MCP server '${serverName}' not found in configuration`,
@@ -517,13 +555,15 @@ router.post(
         userMCPAuthMap = await getUserMCPAuthMap({
           userId: user.id,
           servers: [serverName],
-          findPluginAuthsByKeys,
+          findPluginAuthsByKeys: db.findPluginAuthsByKeys,
         });
       }
 
       const result = await reinitMCPServer({
         user,
         serverName,
+        serverConfig,
+        configServers,
         userMCPAuthMap,
       });
 
@@ -566,6 +606,7 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
+      { role: user.role, tenantId: getTenantId() },
     );
     const connectionStatus = {};
 
@@ -595,9 +636,6 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       connectionStatus,
     });
   } catch (error) {
-    if (error.message === 'MCP config not found') {
-      return res.status(404).json({ error: error.message });
-    }
     logger.error('[MCP Connection Status] Failed to get connection status', error);
     res.status(500).json({ error: 'Failed to get connection status' });
   }
@@ -618,6 +656,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
+      { role: user.role, tenantId: getTenantId() },
     );
 
     if (!mcpConfig[serverName]) {
@@ -642,9 +681,6 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
       requiresOAuth: serverStatus.requiresOAuth,
     });
   } catch (error) {
-    if (error.message === 'MCP config not found') {
-      return res.status(404).json({ error: error.message });
-    }
     logger.error(
       `[MCP Per-Server Status] Failed to get connection status for ${req.params.serverName}`,
       error,
@@ -666,7 +702,12 @@ router.get('/:serverName/auth-values', requireJwtAuth, checkMCPUsePermissions, a
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const serverConfig = await getMCPServersRegistry().getServerConfig(serverName, user.id);
+    const configServers = await resolveConfigServers(req);
+    const serverConfig = await getMCPServersRegistry().getServerConfig(
+      serverName,
+      user.id,
+      configServers,
+    );
     if (!serverConfig) {
       return res.status(404).json({
         error: `MCP server '${serverName}' not found in configuration`,
@@ -705,8 +746,12 @@ router.get('/:serverName/auth-values', requireJwtAuth, checkMCPUsePermissions, a
   }
 });
 
-async function getOAuthHeaders(serverName, userId) {
-  const serverConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
+async function getOAuthHeaders(serverName, userId, configServers) {
+  const serverConfig = await getMCPServersRegistry().getServerConfig(
+    serverName,
+    userId,
+    configServers,
+  );
   return serverConfig?.oauth_headers ?? {};
 }
 

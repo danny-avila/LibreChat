@@ -119,6 +119,39 @@ describe('definitions.ts', () => {
         expect(actionDef?.parameters).toBeUndefined();
       });
 
+      it('should not classify MCP tools with _action in name as action tools', async () => {
+        const mockGetActionToolDefinitions = jest.fn();
+        const mcpTool = 'get_action_mcp_myserver';
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue({
+          tools: [
+            {
+              name: 'get_action',
+              description: 'Gets an action',
+              inputSchema: { type: 'object', properties: {} },
+            },
+          ],
+        });
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: [mcpTool],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+          getActionToolDefinitions: mockGetActionToolDefinitions,
+        };
+
+        await loadToolDefinitions(params, deps);
+
+        expect(mockGetActionToolDefinitions).not.toHaveBeenCalled();
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalled();
+      });
+
       it('should not call getActionToolDefinitions when no action tools present', async () => {
         const mockGetActionToolDefinitions = jest.fn();
         mockIsBuiltInTool.mockReturnValue(true);

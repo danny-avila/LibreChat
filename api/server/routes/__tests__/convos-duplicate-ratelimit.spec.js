@@ -12,9 +12,11 @@ jest.mock('librechat-data-provider', () =>
 
 jest.mock('~/cache/logViolation', () => jest.fn().mockResolvedValue(undefined));
 jest.mock('~/cache/getLogStores', () => require(MOCKS).logStores());
-jest.mock('~/models/Conversation', () => require(MOCKS).conversationModel());
-jest.mock('~/models/ToolCall', () => require(MOCKS).toolCallModel());
-jest.mock('~/models', () => require(MOCKS).sharedModels());
+jest.mock('~/models', () => ({
+  ...require(MOCKS).sharedModels(),
+  ...require(MOCKS).conversationModel(),
+  ...require(MOCKS).toolCallModel(),
+}));
 jest.mock('~/server/middleware/requireJwtAuth', () => require(MOCKS).requireJwtAuth());
 
 jest.mock('~/server/middleware', () => {

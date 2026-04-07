@@ -15,13 +15,19 @@ jest.mock('@librechat/api', () => ({
   checkAccess: jest.fn(),
   initializeAgent: jest.fn(),
   createMemoryProcessor: jest.fn(),
-}));
-
-jest.mock('~/models/Agent', () => ({
   loadAgent: jest.fn(),
 }));
 
-jest.mock('~/models/Role', () => ({
+jest.mock('~/server/services/Config', () => ({
+  getMCPServerTools: jest.fn(),
+}));
+
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/models', () => ({
+  getAgent: jest.fn(),
   getRoleByName: jest.fn(),
 }));
 
@@ -1313,7 +1319,7 @@ describe('AgentClient - titleConvo', () => {
       });
 
       // Verify formatInstructionsForContext was called with correct server names
-      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2']);
+      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2'], {});
 
       // Verify the instructions do NOT contain [object Promise]
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
@@ -1353,10 +1359,10 @@ describe('AgentClient - titleConvo', () => {
       });
 
       // Verify formatInstructionsForContext was called with ephemeral server names
-      expect(mockFormatInstructions).toHaveBeenCalledWith([
-        'ephemeral-server1',
-        'ephemeral-server2',
-      ]);
+      expect(mockFormatInstructions).toHaveBeenCalledWith(
+        ['ephemeral-server1', 'ephemeral-server2'],
+        {},
+      );
 
       // Verify no [object Promise] in instructions
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
@@ -1816,7 +1822,7 @@ describe('AgentClient - titleConvo', () => {
 
       /** Traversal stops at msg-2 (has summary), so we get msg-4 -> msg-3 -> msg-2 */
       expect(result).toHaveLength(3);
-      expect(result[0].text).toBe('Summary of conversation');
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Summary of conversation' }]);
       expect(result[0].role).toBe('system');
       expect(result[0].mapped).toBe(true);
       expect(result[1].mapped).toBe(true);
@@ -2138,7 +2144,7 @@ describe('AgentClient - titleConvo', () => {
       };
 
       mockCheckAccess = require('@librechat/api').checkAccess;
-      mockLoadAgent = require('~/models/Agent').loadAgent;
+      mockLoadAgent = require('@librechat/api').loadAgent;
       mockInitializeAgent = require('@librechat/api').initializeAgent;
       mockCreateMemoryProcessor = require('@librechat/api').createMemoryProcessor;
     });
@@ -2195,6 +2201,7 @@ describe('AgentClient - titleConvo', () => {
         expect.objectContaining({
           agent_id: differentAgentId,
         }),
+        expect.any(Object),
       );
       expect(mockInitializeAgent).toHaveBeenCalledWith(
         expect.objectContaining({

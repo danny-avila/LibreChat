@@ -22,8 +22,8 @@ jest.mock('~/config', () => ({
   })),
 }));
 
-jest.mock('~/models/Project', () => ({
-  getProjectByName: jest.fn().mockResolvedValue(null),
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('~/server/services/Files/strategies', () => ({
@@ -34,21 +34,8 @@ jest.mock('~/server/services/Files/images/avatar', () => ({
   resizeAvatar: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/S3/crud', () => ({
-  refreshS3Url: jest.fn(),
-}));
-
 jest.mock('~/server/services/Files/process', () => ({
   filterFile: jest.fn(),
-}));
-
-jest.mock('~/models/Action', () => ({
-  updateAction: jest.fn(),
-  getActions: jest.fn().mockResolvedValue([]),
-}));
-
-jest.mock('~/models/File', () => ({
-  deleteFileByFilter: jest.fn(),
 }));
 
 jest.mock('~/server/services/PermissionService', () => ({
@@ -59,9 +46,17 @@ jest.mock('~/server/services/PermissionService', () => ({
   checkPermission: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('~/models', () => ({
-  getCategoriesWithCounts: jest.fn(),
-}));
+jest.mock('~/models', () => {
+  const mongoose = require('mongoose');
+  const { createModels, createMethods } = require('@librechat/data-schemas');
+  createModels(mongoose);
+  const methods = createMethods(mongoose);
+  return {
+    ...methods,
+    getCategoriesWithCounts: jest.fn(),
+    deleteFileByFilter: jest.fn(),
+  };
+});
 
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({
@@ -232,7 +227,27 @@ describe('MCP Tool Authorization', () => {
         availableTools,
       });
 
-      expect(mockGetAllServerConfigs).toHaveBeenCalledWith('specific-user-id');
+      expect(mockGetAllServerConfigs).toHaveBeenCalledWith('specific-user-id', undefined);
+    });
+
+    test('should pass configServers to getAllServerConfigs and allow config-override servers', async () => {
+      const configServers = {
+        'config-override-server': { type: 'sse', url: 'https://override.example.com' },
+      };
+      mockGetAllServerConfigs.mockResolvedValue({
+        'config-override-server': configServers['config-override-server'],
+      });
+
+      const result = await filterAuthorizedTools({
+        tools: [`tool${d}config-override-server`, `tool${d}unauthorizedServer`],
+        userId,
+        availableTools,
+        configServers,
+      });
+
+      expect(mockGetAllServerConfigs).toHaveBeenCalledWith(userId, configServers);
+      expect(result).toContain(`tool${d}config-override-server`);
+      expect(result).not.toContain(`tool${d}unauthorizedServer`);
     });
 
     test('should only call getAllServerConfigs once even with multiple MCP tools', async () => {

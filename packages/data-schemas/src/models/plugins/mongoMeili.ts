@@ -94,7 +94,7 @@ const getSyncConfig = () => ({
  * Validates the required options for configuring the mongoMeili plugin.
  */
 const validateOptions = (options: Partial<MongoMeiliOptions>): void => {
-  const requiredKeys: (keyof MongoMeiliOptions)[] = ['host', 'apiKey', 'indexName'];
+  const requiredKeys: (keyof MongoMeiliOptions)[] = ['host', 'apiKey', 'indexName', 'primaryKey'];
   requiredKeys.forEach((key) => {
     if (!options[key]) {
       throw new Error(`Missing mongoMeili Option: ${key}`);
@@ -130,19 +130,21 @@ const processBatch = async <T>(
  * @param config - Configuration object.
  * @param config.index - The MeiliSearch index object.
  * @param config.attributesToIndex - List of attributes to index.
+ * @param config.primaryKey - The primary key field for MeiliSearch document operations.
  * @param config.syncOptions - Sync configuration options.
  * @returns A class definition that will be loaded into the Mongoose schema.
  */
 const createMeiliMongooseModel = ({
   index,
   attributesToIndex,
+  primaryKey,
   syncOptions,
 }: {
   index: Index<MeiliIndexable>;
   attributesToIndex: string[];
+  primaryKey: string;
   syncOptions: { batchSize: number; delayMs: number };
 }) => {
-  const primaryKey = attributesToIndex[0];
   const syncConfig = { ...getSyncConfig(), ...syncOptions };
 
   class MeiliMongooseModel {
@@ -255,7 +257,7 @@ const createMeiliMongooseModel = ({
 
       try {
         // Add documents to MeiliSearch
-        await index.addDocumentsInBatches(formattedDocs);
+        await index.addDocumentsInBatches(formattedDocs, undefined, { primaryKey });
 
         // Update MongoDB to mark documents as indexed.
         // { timestamps: false } prevents Mongoose from touching updatedAt, preserving
@@ -422,7 +424,7 @@ const createMeiliMongooseModel = ({
 
       while (retryCount < maxRetries) {
         try {
-          await index.addDocuments([object]);
+          await index.addDocuments([object], { primaryKey });
           break;
         } catch (error) {
           retryCount++;
@@ -436,7 +438,8 @@ const createMeiliMongooseModel = ({
       }
 
       try {
-        await this.collection.updateMany(
+        // eslint-disable-next-line no-restricted-syntax -- _meiliIndex is an internal bookkeeping flag, not tenant-scoped data
+        await this.collection.updateOne(
           { _id: this._id as Types.ObjectId },
           { $set: { _meiliIndex: true } },
         );
@@ -456,10 +459,8 @@ const createMeiliMongooseModel = ({
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
       try {
-        const object = _.omitBy(_.pick(this.toJSON(), attributesToIndex), (v, k) =>
-          k.startsWith('$'),
-        );
-        await index.updateDocuments([object]);
+        const object = this.preprocessObjectForIndex!();
+        await index.updateDocuments([object], { primaryKey });
         next();
       } catch (error) {
         logger.error('[updateObjectToMeili] Error updating document in Meili:', error);
@@ -477,7 +478,7 @@ const createMeiliMongooseModel = ({
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
       try {
-        await index.deleteDocument(this._id as string);
+        await index.deleteDocument(String(this[primaryKey as keyof DocumentWithMeiliIndex]));
         next();
       } catch (error) {
         logger.error('[deleteObjectFromMeili] Error deleting document from Meili:', error);
@@ -643,7 +644,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     logger.debug(`[mongoMeili] Added 'user' field to ${indexName} index attributes`);
   }
 
-  schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex, syncOptions }));
+  schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex, primaryKey, syncOptions }));
 
   // Register Mongoose hooks
   schema.post('save', function (doc: DocumentWithMeiliIndex, next) {
