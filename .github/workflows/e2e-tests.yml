@@ -47,6 +47,7 @@ env:
   CREDS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   CREDS_IV: 0123456789abcdef0123456789abcdef
   SESSION_SECRET: test-session-secret-for-ci-${{ github.run_id }}
+  FILE_STRATEGY: local
   ALLOW_REGISTRATION: true
   SESSION_EXPIRY: 60000
   REFRESH_TOKEN_EXPIRY: 300000
@@ -95,15 +96,15 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Build frontend for server
-        run: npm run frontend
+      # - name: Build frontend for server
+      #   run: npm run frontend
 
-      - name: Start backend
-        run: |
-          npm run backend &
+      # - name: Start backend
+      #   run: |
+      #     npm run backend &
 
-      - name: Wait for app to be ready
-        run: npx wait-on http://localhost:3080
+      # - name: Wait for app to be ready
+      #   run: npx wait-on http://localhost:3080
 
       - name: Run Playwright tests
         run: npm run e2e:nj -- --reporter=list --timeout=60000
