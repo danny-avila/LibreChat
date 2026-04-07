@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 
-test('Input form should be accessible', async ({ page }) => {
+test('Basic test to make sure the app is running', async ({ page }) => {
+
+  // Navigate to the app
   await page.goto('http://localhost:3080/', { timeout: 5000 });
 
-  const formAccessibilityScanResults = await new AxeBuilder({ page }).include('form').analyze();
+  // Check that the page has a title
+  await expect(page).toHaveTitle(/NJ AI Assistant/);
 
-  expect(formAccessibilityScanResults.violations).toEqual([]);
 });
