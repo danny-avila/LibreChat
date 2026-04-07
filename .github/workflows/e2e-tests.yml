@@ -86,6 +86,11 @@ jobs:
           MONGO_URI: mongodb://localhost:27017/LibreChat
           E2E_USER_EMAIL: e2e-test-${{ github.run_id }}@test.local
           E2E_USER_PASSWORD: Test123!@#${{ github.run_id }}
+          JWT_SECRET: test-jwt-secret-for-ci-${{ github.run_id }}
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci-${{ github.run_id }}
+          CREDS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          CREDS_IV: 0123456789abcdef0123456789abcdef
+          SESSION_SECRET: test-session-secret-for-ci-${{ github.run_id }}
           ALLOW_REGISTRATION: true
           SESSION_EXPIRY: 60000
           REFRESH_TOKEN_EXPIRY: 300000
