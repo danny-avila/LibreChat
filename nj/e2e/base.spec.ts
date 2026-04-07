@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 test('Basic test to make sure the app is running', async ({ page }) => {
-  // Navigate to the app
-  await page.goto('http://localhost:3080/', { timeout: 5000 });
+  await page.goto('http://localhost:3080/');
 
-  // Check that the page has a title
+  await expect(page.locator('#root')).toBeVisible();
   await expect(page).toHaveTitle(/LibreChat/);
 });
