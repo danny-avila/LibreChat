@@ -1,0 +1,106 @@
+name: E2E Tests (Playwright)
+
+on:
+  pull_request:
+    branches:
+      - newjersey
+    paths:
+      - 'api/**'
+      - 'client/**'
+      - 'config/**'
+      - 'e2e/**'
+      - 'helm/**'
+      - 'nj/**'
+      - 'packages/**'
+      - 'src/**'
+      - 'utils/**'
+      - '.github/workflows/e2e-tests.yml'
+  push:
+    branches:
+      - newjersey
+    paths:
+      - 'api/**'
+      - 'client/**'
+      - 'config/**'
+      - 'e2e/**'
+      - 'helm/**'
+      - 'nj/**'
+      - 'packages/**'
+      - 'src/**'
+      - 'utils/**'
+      - '.github/workflows/e2e-tests.yml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual e2e test run'
+
+jobs:
+  playwright_tests:
+    name: Run Playwright E2E Tests
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build packages
+        run: |
+          npm run build:data-provider
+          npm run build:data-schemas
+          npm run build:api
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        env:
+          CI: true
+          NODE_ENV: CI
+          MONGO_URI: mongodb://localhost:27017/LibreChat
+          E2E_USER_EMAIL: e2e-test-${{ github.run_id }}@test.local
+          E2E_USER_PASSWORD: Test123!@#${{ github.run_id }}
+          ALLOW_REGISTRATION: true
+          SESSION_EXPIRY: 60000
+          REFRESH_TOKEN_EXPIRY: 300000
+          EMAIL_HOST: ''
+          SEARCH: false
+        run: npm run e2e:ci
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: e2e/playwright-report/
+          retention-days: 30
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_id }}
+          path: e2e/specs/.test-results/
+          retention-days: 30
