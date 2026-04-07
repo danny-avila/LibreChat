@@ -308,7 +308,9 @@ describe('createAppConfigService', () => {
         });
         const { getAppConfig } = createAppConfigService(deps);
 
-        const config = await tenantStorage.run({ tenantId: 'tenant-a' }, () => getAppConfig());
+        const config = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          getAppConfig(),
+        );
 
         expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
         expect((config as TestConfig).restricted).toBe(true);

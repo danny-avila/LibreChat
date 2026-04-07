@@ -175,8 +175,8 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
     }
 
     // Strict-isolation + no tenant (param or ALS) = pathological path (middleware bypass or
-    // system call). Legitimate system calls use baseOnly:true; admin calls always carry tenantId.
-    // If ALS has a tenant, Mongoose will scope queries to that tenant's overrides — must fall through.
+    // unauthenticated startup). Pre-tenant calls use baseOnly:true; admin calls carry tenantId.
+    // If ALS has a tenant, Mongoose scopes queries to that tenant's overrides — must fall through.
     if (principals.length === 0 && !tenantId && !getTenantId() && isStrictOverrideMode()) {
       await cache.set(cacheKey, baseConfig, overrideCacheTtl).catch((error: unknown) => {
         logger.warn('[getAppConfig] Failed to cache base config for strict-mode path:', error);
