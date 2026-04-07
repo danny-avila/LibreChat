@@ -201,17 +201,17 @@ describe('createAppConfigService', () => {
       const deps = createDeps({ getApplicableConfigs: mockGetConfigs });
       const { getAppConfig } = createAppConfigService(deps);
 
-      // No role/userId → empty principals → short-circuits without calling getApplicableConfigs
-      await getAppConfig();
+      const baseResult = await getAppConfig();
+      expect(baseResult).toEqual(deps._baseConfig);
       expect(mockGetConfigs).not.toHaveBeenCalled();
 
       mockGetConfigs.mockResolvedValueOnce([
         { priority: 10, overrides: { restricted: true }, isActive: true },
       ]);
-      const config = await getAppConfig({ role: 'ADMIN' });
+      const scopedResult = await getAppConfig({ role: 'ADMIN' });
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(1);
-      expect((config as TestConfig).restricted).toBe(true);
+      expect((scopedResult as TestConfig).restricted).toBe(true);
     });
 
     it('does not short-circuit other users when one user has no overrides', async () => {
@@ -231,7 +231,7 @@ describe('createAppConfigService', () => {
       expect((config as TestConfig).x).toBe('admin-only');
     });
 
-    it('skips getApplicableConfigs when buildPrincipals returns empty', async () => {
+    it('caches baseConfig and skips DB query when buildPrincipals returns empty', async () => {
       const deps = createDeps({
         getUserPrincipals: jest.fn().mockResolvedValue([]),
       });
@@ -242,28 +242,32 @@ describe('createAppConfigService', () => {
       expect(deps.getUserPrincipals).toHaveBeenCalledWith({ userId: 'uid1', role: 'USER' });
       expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
       expect(config).toEqual(deps._baseConfig);
+      expect(deps._cache.set).toHaveBeenCalledWith(
+        expect.stringContaining('_OVERRIDE_'),
+        deps._baseConfig,
+        60_000,
+      );
+
+      await getAppConfig({ userId: 'uid1', role: 'USER' });
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(1);
     });
 
-    it('skips getApplicableConfigs when no role or userId is provided', async () => {
-      const deps = createDeps();
-      const { getAppConfig } = createAppConfigService(deps);
-
-      const config = await getAppConfig();
-
-      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
-      expect(config).toEqual(deps._baseConfig);
-    });
-
-    it('falls back to base config on buildPrincipals error', async () => {
+    it('does not cache on buildPrincipals error — retries on next request', async () => {
       const deps = createDeps({
-        getUserPrincipals: jest.fn().mockRejectedValue(new Error('principal lookup failed')),
+        getUserPrincipals: jest
+          .fn()
+          .mockRejectedValueOnce(new Error('transient'))
+          .mockResolvedValue([{ principalType: 'role', principalId: 'USER' }]),
       });
       const { getAppConfig } = createAppConfigService(deps);
 
-      const config = await getAppConfig({ userId: 'uid1', role: 'USER' });
-
+      const first = await getAppConfig({ userId: 'uid1', role: 'USER' });
+      expect(first).toEqual(deps._baseConfig);
       expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
-      expect(config).toEqual(deps._baseConfig);
+
+      await getAppConfig({ userId: 'uid1', role: 'USER' });
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(2);
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to base config on getApplicableConfigs error', async () => {

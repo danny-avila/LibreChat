@@ -168,11 +168,11 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       }
     }
 
-    let principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>;
-    try {
-      principals = await buildPrincipals(role, userId);
-    } catch (error) {
+    const principals = await buildPrincipals(role, userId).catch((error: unknown) => {
       logger.error('[getAppConfig] Error building principals, falling back to base:', error);
+      return null as null;
+    });
+    if (principals === null) {
       return baseConfig;
     }
 
