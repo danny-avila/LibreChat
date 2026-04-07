@@ -104,14 +104,31 @@ export function NewJerseyLanding() {
                           <use href={`${icons}#school`} />
                         </svg>
                       </Link>{' '}
-                      and{' '}
+                      ,{' '}
                       <a
                         href="https://innovation.nj.gov/skills/ai-how-tos/"
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
                         target="_blank"
                         rel="noreferrer"
                       >
-                        Generative AI How-to guides
+                        GenAI How-to guides
+                        <svg
+                          className="usa-icon usa-icon--size-2"
+                          aria-hidden="true"
+                          focusable="false"
+                          role="img"
+                        >
+                          <use href={`${icons}#launch`} />
+                        </svg>
+                      </a>
+                      and the{' '}
+                      <a
+                        href="https://innovation.nj.gov/ai-faq-state-employees/"
+                        className="inline-flex items-center gap-1 underline hover:decoration-2"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        State Guidelines on AI Use
                         <svg
                           className="usa-icon usa-icon--size-2"
                           aria-hidden="true"
@@ -128,23 +145,18 @@ export function NewJerseyLanding() {
 
                   <div className="mb-5 flex gap-3">
                     <p>
-                      Read the{' '}
+                      Join weekly AI Office Hours to learn more about AI and prompting, the NJ AI
+                      Assistant, or get help on a project you&apos;re working on.{' '}
                       <a
-                        href="https://innovation.nj.gov/ai-faq-state-employees/"
+                        href="https://teams.microsoft.com/meet/27661582151645?p=78SP1n7rYEGoorbxsn"
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
                         target="_blank"
                         rel="noreferrer"
                       >
-                        State Guidelines on Generative AI use for Public Professionals
-                        <svg
-                          className="usa-icon usa-icon--size-2"
-                          aria-hidden="true"
-                          focusable="false"
-                          role="img"
-                        >
-                          <use href={`${icons}#launch`} />
-                        </svg>
-                      </a>
+                        {' '}
+                        Use this link to join
+                      </a>{' '}
+                      every Thursday from 12:30 - 1:30 pm.
                     </p>
                   </div>
 

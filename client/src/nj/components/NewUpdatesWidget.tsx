@@ -50,7 +50,7 @@ function CollapsedWidget({ onExpand }: CollapsedWidgetProps) {
       className="hover:bg-text-primary/90 flex items-center gap-2 rounded-full bg-text-primary px-4 py-2 text-sm font-medium text-surface-primary shadow-lg"
     >
       <Icon name="notifications" style={{ color: '#FFBE2E' }} />
-      <span>New updates</span>
+      <span>AI Office Hours</span>
       <Icon name="expand_more" />
     </motion.button>
   );
