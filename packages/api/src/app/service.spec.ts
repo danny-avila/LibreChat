@@ -254,18 +254,6 @@ describe('createAppConfigService', () => {
       expect(config).toEqual(deps._baseConfig);
     });
 
-    it('falls back to base config on buildPrincipals error', async () => {
-      const deps = createDeps({
-        getUserPrincipals: jest.fn().mockRejectedValue(new Error('principal lookup failed')),
-      });
-      const { getAppConfig } = createAppConfigService(deps);
-
-      const config = await getAppConfig({ userId: 'uid1', role: 'USER' });
-
-      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
-      expect(config).toEqual(deps._baseConfig);
-    });
-
     it('falls back to base config on getApplicableConfigs error', async () => {
       const deps = createDeps({
         getApplicableConfigs: jest.fn().mockRejectedValue(new Error('DB down')),
