@@ -71,6 +71,10 @@ jobs:
           npm run build:data-provider
           npm run build:data-schemas
           npm run build:api
+          npm run build:client-package
+
+      - name: Build client
+        run: npm run build:client
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
