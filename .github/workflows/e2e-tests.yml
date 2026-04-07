@@ -78,6 +78,16 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Build frontend for server
+        run: npm run frontend
+
+      - name: Start backend
+        run: |
+          npm run backend &
+
+      - name: Wait for app to be ready
+        run: npx wait-on http://localhost:3080
+
       - name: Run Playwright tests
         env:
           CI: true
