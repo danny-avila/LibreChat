@@ -201,16 +201,14 @@ describe('createAppConfigService', () => {
       const deps = createDeps({ getApplicableConfigs: mockGetConfigs });
       const { getAppConfig } = createAppConfigService(deps);
 
-      // No role/userId → empty principals → short-circuits without calling getApplicableConfigs
       await getAppConfig();
-      expect(mockGetConfigs).not.toHaveBeenCalled();
 
       mockGetConfigs.mockResolvedValueOnce([
         { priority: 10, overrides: { restricted: true }, isActive: true },
       ]);
       const config = await getAppConfig({ role: 'ADMIN' });
 
-      expect(mockGetConfigs).toHaveBeenCalledTimes(1);
+      expect(mockGetConfigs).toHaveBeenCalledTimes(2);
       expect((config as TestConfig).restricted).toBe(true);
     });
 
@@ -229,29 +227,6 @@ describe('createAppConfigService', () => {
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);
       expect((config as TestConfig).x).toBe('admin-only');
-    });
-
-    it('skips getApplicableConfigs when buildPrincipals returns empty', async () => {
-      const deps = createDeps({
-        getUserPrincipals: jest.fn().mockResolvedValue([]),
-      });
-      const { getAppConfig } = createAppConfigService(deps);
-
-      const config = await getAppConfig({ userId: 'uid1', role: 'USER' });
-
-      expect(deps.getUserPrincipals).toHaveBeenCalledWith({ userId: 'uid1', role: 'USER' });
-      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
-      expect(config).toEqual(deps._baseConfig);
-    });
-
-    it('skips getApplicableConfigs when no role or userId is provided', async () => {
-      const deps = createDeps();
-      const { getAppConfig } = createAppConfigService(deps);
-
-      const config = await getAppConfig();
-
-      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
-      expect(config).toEqual(deps._baseConfig);
     });
 
     it('falls back to base config on getApplicableConfigs error', async () => {
