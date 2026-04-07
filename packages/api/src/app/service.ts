@@ -5,7 +5,7 @@ import type { AppConfig, IConfig } from '@librechat/data-schemas';
 
 const BASE_CONFIG_KEY = '_BASE_';
 
-export const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
+const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -173,11 +173,6 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       return null;
     });
     if (principals === null) {
-      return baseConfig;
-    }
-
-    if (principals.length === 0) {
-      await cache.set(cacheKey, baseConfig, overrideCacheTtl);
       return baseConfig;
     }
 

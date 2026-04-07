@@ -1,5 +1,5 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import { createAppConfigService, DEFAULT_OVERRIDE_CACHE_TTL } from './service';
+import { createAppConfigService } from './service';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
 interface TestConfig extends AppConfig {
@@ -201,17 +201,15 @@ describe('createAppConfigService', () => {
       const deps = createDeps({ getApplicableConfigs: mockGetConfigs });
       const { getAppConfig } = createAppConfigService(deps);
 
-      const baseResult = await getAppConfig();
-      expect(baseResult).toEqual(deps._baseConfig);
-      expect(mockGetConfigs).not.toHaveBeenCalled();
+      await getAppConfig();
 
       mockGetConfigs.mockResolvedValueOnce([
         { priority: 10, overrides: { restricted: true }, isActive: true },
       ]);
-      const scopedResult = await getAppConfig({ role: 'ADMIN' });
+      const config = await getAppConfig({ role: 'ADMIN' });
 
-      expect(mockGetConfigs).toHaveBeenCalledTimes(1);
-      expect((scopedResult as TestConfig).restricted).toBe(true);
+      expect(mockGetConfigs).toHaveBeenCalledTimes(2);
+      expect((config as TestConfig).restricted).toBe(true);
     });
 
     it('does not short-circuit other users when one user has no overrides', async () => {
@@ -231,7 +229,7 @@ describe('createAppConfigService', () => {
       expect((config as TestConfig).x).toBe('admin-only');
     });
 
-    it('caches baseConfig and skips DB query when buildPrincipals returns empty', async () => {
+    it('passes empty principals to getApplicableConfigs when buildPrincipals returns empty', async () => {
       const deps = createDeps({
         getUserPrincipals: jest.fn().mockResolvedValue([]),
       });
@@ -240,16 +238,8 @@ describe('createAppConfigService', () => {
       const config = await getAppConfig({ userId: 'uid1', role: 'USER' });
 
       expect(deps.getUserPrincipals).toHaveBeenCalledWith({ userId: 'uid1', role: 'USER' });
-      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+      expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
       expect(config).toEqual(deps._baseConfig);
-      expect(deps._cache.set).toHaveBeenCalledWith(
-        expect.stringContaining('_OVERRIDE_'),
-        deps._baseConfig,
-        DEFAULT_OVERRIDE_CACHE_TTL,
-      );
-
-      await getAppConfig({ userId: 'uid1', role: 'USER' });
-      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(1);
     });
 
     it('does not cache on buildPrincipals error — retries on next request', async () => {
