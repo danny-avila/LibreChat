@@ -1,9 +1,5 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import {
-  createAppConfigService,
-  _resetOverrideStrictCache,
-  DEFAULT_OVERRIDE_CACHE_TTL,
-} from './service';
+import { createAppConfigService, _resetOverrideStrictCache } from './service';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
 interface TestConfig extends AppConfig {
@@ -256,7 +252,7 @@ describe('createAppConfigService', () => {
         _resetOverrideStrictCache();
       });
 
-      it('skips DB query and caches baseConfig for empty principals without tenantId', async () => {
+      it('skips DB query for empty principals without tenantId and does not cache', async () => {
         const deps = createDeps();
         const { getAppConfig } = createAppConfigService(deps);
 
@@ -264,14 +260,9 @@ describe('createAppConfigService', () => {
 
         expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
         expect(config).toEqual(deps._baseConfig);
-        expect(deps._cache.set).toHaveBeenCalledWith(
-          expect.stringContaining('_OVERRIDE_'),
-          deps._baseConfig,
-          DEFAULT_OVERRIDE_CACHE_TTL,
-        );
 
-        await getAppConfig();
-        expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+        const setCalls = deps._cache.set.mock.calls.filter(([key]: [string]) => key !== '_BASE_');
+        expect(setCalls).toHaveLength(0);
       });
 
       it('queries DB when tenantId is present', async () => {
