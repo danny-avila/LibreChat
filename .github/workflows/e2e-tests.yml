@@ -5,16 +5,7 @@ on:
     branches:
       - newjersey
     paths:
-      - 'api/**'
-      - 'client/**'
-      - 'config/**'
-      - 'e2e/**'
-      - 'helm/**'
-      - 'nj/**'
-      - 'packages/**'
-      - 'src/**'
-      - 'utils/**'
-      - '.github/workflows/e2e-tests.yml'
+      - '.github/workflows/e2e-tests.yml' # run it when the workflow file itself is changed (for testing)
   push:
     branches:
       - newjersey

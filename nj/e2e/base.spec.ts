@@ -15,5 +15,5 @@ test('Debug app load', async ({ page }) => {
   console.log('Status:', response?.status());
   console.log('URL:', page.url());
   console.log('Title:', await page.title());
-  console.log('HTML snippet:', (await page.content()).slice(0, 500));
+  console.log('HTML snippet:', await page.content());
 });
