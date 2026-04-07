@@ -4,7 +4,7 @@ import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
-import type { TRegisterUser, TError } from 'librechat-data-provider';
+import type { TRegisterUser, TRegisterUserResponse, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
@@ -40,14 +40,24 @@ const Registration: React.FC = () => {
     onMutate: () => {
       setIsSubmitting(true);
     },
-    onSuccess: () => {
+    onSuccess: (data: TRegisterUserResponse) => {
       setIsSubmitting(false);
+
+      if (data.token && data.user) {
+        sessionStorage.setItem(
+          'registrationAuth',
+          JSON.stringify({ token: data.token, user: data.user }),
+        );
+        navigate('/c/new', { replace: true });
+        return;
+      }
+
       setCountdown(3);
       const timer = setInterval(() => {
         setCountdown((prevCountdown) => {
           if (prevCountdown <= 1) {
             clearInterval(timer);
-            navigate('/c/new', { replace: true });
+            navigate('/login', { replace: true });
             return 0;
           } else {
             return prevCountdown - 1;

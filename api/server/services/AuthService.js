@@ -222,6 +222,9 @@ const registerUser = async (user, additionalData = {}) => {
 
     const newUser = await createUser(newUserData, appConfig.balance, disableTTL, true);
     newUserId = newUser._id;
+
+    const requiresEmailVerification = emailEnabled && !newUser.emailVerified && !disableTTL;
+
     if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({
         _id: newUserId,
@@ -232,7 +235,11 @@ const registerUser = async (user, additionalData = {}) => {
       await updateUser(newUserId, { emailVerified: true });
     }
 
-    return { status: 200, message: genericVerificationMessage };
+    if (requiresEmailVerification) {
+      return { status: 200, message: genericVerificationMessage };
+    }
+
+    return { status: 200, user: newUser };
   } catch (err) {
     logger.error('[registerUser] Error in registering user:', err);
     if (newUserId) {

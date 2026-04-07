@@ -18,7 +18,17 @@ const { getOpenIdConfig } = require('~/strategies');
 const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body);
-    const { status, message } = response;
+    const { status, message, user: registeredUser } = response;
+
+    if (registeredUser) {
+      const { password: _p, __v, ...user } = registeredUser.toObject
+        ? registeredUser.toObject()
+        : registeredUser;
+      user.id = user._id.toString();
+      const token = await setAuthTokens(registeredUser._id, res);
+      return res.status(status).send({ token, user });
+    }
+
     res.status(status).send({ message });
   } catch (err) {
     logger.error('[registrationController]', err);
