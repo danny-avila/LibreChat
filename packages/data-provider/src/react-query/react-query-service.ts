@@ -237,7 +237,7 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<
 
 export const useRegisterUserMutation = (
   options?: m.RegistrationOptions,
-): UseMutationResult<t.TError, unknown, t.TRegisterUser, unknown> => {
+): UseMutationResult<t.TRegisterUserResponse, t.TError, t.TRegisterUser, unknown> => {
   const queryClient = useQueryClient();
   return useMutation<t.TRegisterUserResponse, t.TError, t.TRegisterUser>(
     (payload: t.TRegisterUser) => dataService.register(payload),
