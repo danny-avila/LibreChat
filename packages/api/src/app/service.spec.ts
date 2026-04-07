@@ -298,6 +298,25 @@ describe('createAppConfigService', () => {
 
         warnSpy.mockRestore();
       });
+
+      it('short-circuit matches fall-through result — getApplicableConfigs([]) returns baseConfig', async () => {
+        const deps = createDeps({
+          getApplicableConfigs: jest.fn().mockResolvedValue([]),
+        });
+        const { getAppConfig } = createAppConfigService(deps);
+
+        const shortCircuitResult = await getAppConfig();
+
+        expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+        expect(shortCircuitResult).toEqual(deps._baseConfig);
+
+        // Prove the fall-through path (with tenantId, bypassing short-circuit)
+        // returns the same result when getApplicableConfigs([]) yields no overrides
+        const fallThroughResult = await getAppConfig({ tenantId: 'tenant-a' });
+
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+        expect(fallThroughResult).toEqual(shortCircuitResult);
+      });
     });
 
     describe('non-strict mode (TENANT_ISOLATION_STRICT unset)', () => {
