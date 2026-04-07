@@ -1,5 +1,10 @@
 import { PrincipalType } from 'librechat-data-provider';
-import { logger, mergeConfigOverrides, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
+import {
+  logger,
+  getTenantId,
+  mergeConfigOverrides,
+  BASE_CONFIG_PRINCIPAL_ID,
+} from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { AppConfig, IConfig } from '@librechat/data-schemas';
 
@@ -169,10 +174,10 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       return baseConfig;
     }
 
-    // Strict-isolation + no tenant = pathological path (middleware bypass or system call).
-    // Legitimate system calls use baseOnly:true; admin calls always carry tenantId.
-    // The __base__ DB override has no tenant scope to apply here, so YAML config is correct.
-    if (principals.length === 0 && !tenantId && isStrictOverrideMode()) {
+    // Strict-isolation + no tenant (param or ALS) = pathological path (middleware bypass or
+    // system call). Legitimate system calls use baseOnly:true; admin calls always carry tenantId.
+    // If ALS has a tenant, Mongoose will scope queries to that tenant's overrides — must fall through.
+    if (principals.length === 0 && !tenantId && !getTenantId() && isStrictOverrideMode()) {
       await cache.set(cacheKey, baseConfig, overrideCacheTtl).catch((error: unknown) => {
         logger.warn('[getAppConfig] Failed to cache base config for strict-mode path:', error);
       });

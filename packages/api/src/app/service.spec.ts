@@ -299,23 +299,19 @@ describe('createAppConfigService', () => {
         warnSpy.mockRestore();
       });
 
-      it('short-circuit matches fall-through result — getApplicableConfigs([]) returns baseConfig', async () => {
+      it('falls through to DB when ALS has tenant context despite no tenantId param', async () => {
+        const { tenantStorage } = jest.requireActual('@librechat/data-schemas');
         const deps = createDeps({
-          getApplicableConfigs: jest.fn().mockResolvedValue([]),
+          getApplicableConfigs: jest
+            .fn()
+            .mockResolvedValue([{ priority: 5, overrides: { restricted: true }, isActive: true }]),
         });
         const { getAppConfig } = createAppConfigService(deps);
 
-        const shortCircuitResult = await getAppConfig();
-
-        expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
-        expect(shortCircuitResult).toEqual(deps._baseConfig);
-
-        // Prove the fall-through path (with tenantId, bypassing short-circuit)
-        // returns the same result when getApplicableConfigs([]) yields no overrides
-        const fallThroughResult = await getAppConfig({ tenantId: 'tenant-a' });
+        const config = await tenantStorage.run({ tenantId: 'tenant-a' }, () => getAppConfig());
 
         expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
-        expect(fallThroughResult).toEqual(shortCircuitResult);
+        expect((config as TestConfig).restricted).toBe(true);
       });
     });
 
