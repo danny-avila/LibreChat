@@ -66,16 +66,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Cache Turbo build outputs
-        uses: actions/cache@v5
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
-
       - name: Build all packages with Turbo
-        run: npm run build
+        run: npm run build -- --force
 
       - name: Cache Playwright browsers
         uses: actions/cache@v5
