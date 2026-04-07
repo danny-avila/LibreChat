@@ -103,7 +103,7 @@ jobs:
           REFRESH_TOKEN_EXPIRY: 300000
           EMAIL_HOST: ''
           SEARCH: false
-        run: npm run e2e:ci -- --reporter=list --timeout=60000
+        run: npm run e2e:nj -- --reporter=list --timeout=60000
 
       - name: Upload Playwright report
         if: failure()

@@ -60,6 +60,7 @@
     "e2e:codegen": "npx playwright codegen --load-storage=e2e/storageState.json http://localhost:3080/c/new",
     "e2e:login": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/login",
     "e2e:github": "act -W .github/workflows/playwright.yml --secret-file my.secrets",
+    "e2e:nj": "playwright test --project=nj --config=e2e/playwright.config.ts",
     "test:client": "cd client && npm run test:ci",
     "test:api": "cd api && npm run test:ci",
     "test:packages:api": "cd packages/api && npm run test:ci",
