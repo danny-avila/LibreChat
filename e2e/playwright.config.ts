@@ -42,7 +42,9 @@ export default defineConfig({
     },
     {
       name: 'nj',
-      testMatch: 'nj/e2e/*.spec.ts',
+      testDir: '../nj/e2e',
+      testMatch: '*.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
     },
     /* Test against mobile viewports. */
     // {
