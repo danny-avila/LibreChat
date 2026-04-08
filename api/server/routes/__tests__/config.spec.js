@@ -333,6 +333,7 @@ describe('GET /api/config', () => {
       const response = await request(app).get('/api/config');
 
       expect(response.body.allowAccountDeletion).toBe(true);
+      expect(mockHasCapability).toHaveBeenCalled();
     });
 
     it('should not call hasCapability when allowAccountDeletion is already true', async () => {
