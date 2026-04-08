@@ -1,7 +1,8 @@
 const express = require('express');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
 const { defaultSocialLogins } = require('librechat-data-provider');
-const { logger, getTenantId } = require('@librechat/data-schemas');
+const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 
@@ -77,6 +78,10 @@ function buildSharedPayload() {
     publicSharedLinksEnabled,
     analyticsGtmId: process.env.ANALYTICS_GTM_ID,
     openidReuseTokens,
+    /** Read inline (not module-level) for per-request evaluation and test isolation */
+    allowAccountDeletion:
+      process.env.ALLOW_ACCOUNT_DELETION === undefined ||
+      isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
   };
 
   const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
@@ -170,6 +175,23 @@ router.get('/', async function (req, res) {
     const webSearch = buildWebSearchConfig(appConfig);
     if (webSearch) {
       payload.webSearch = webSearch;
+    }
+
+    if (!payload.allowAccountDeletion) {
+      try {
+        const userId = req.user.id ?? req.user._id?.toString();
+        if (userId) {
+          const canDelete = await hasCapability(
+            { id: userId, role: req.user.role ?? '', tenantId: req.user.tenantId },
+            SystemCapabilities.ACCESS_ADMIN,
+          );
+          if (canDelete) {
+            payload.allowAccountDeletion = true;
+          }
+        }
+      } catch (err) {
+        logger.warn(`[config] ACCESS_ADMIN capability check failed: ${err.message}`);
+      }
     }
 
     return res.status(200).send(payload);
