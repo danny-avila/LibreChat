@@ -23,6 +23,8 @@ const WEB_SEARCH_URL_KEYS = new Set<TWebSearchKeys>([
   'searxngInstanceUrl',
   'firecrawlApiUrl',
   'jinaApiUrl',
+  'tavilySearchUrl',
+  'tavilyExtractUrl',
 ]);
 
 /**
@@ -247,8 +249,16 @@ export async function loadWebSearchAuth({
 
   authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
   authResult.scraperTimeout =
-    webSearchConfig?.scraperTimeout ?? webSearchConfig?.firecrawlOptions?.timeout ?? 7500;
+    webSearchConfig?.scraperTimeout ??
+    webSearchConfig?.firecrawlOptions?.timeout ??
+    webSearchConfig?.tavilyScraperOptions?.timeout ??
+    7500;
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
+  authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
+
+  if (webSearchConfig?.tavilyScraperOptions) {
+    authResult.tavilyScraperOptions = webSearchConfig.tavilyScraperOptions;
+  }
 
   return {
     authTypes,

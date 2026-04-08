@@ -628,9 +628,40 @@ endpoints:
 #   serperApiKey: '${SERPER_API_KEY}'
 #   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
 #   searxngApiKey: '${SEARXNG_API_KEY}'
+#   # Tavily (search provider and/or scraper)
+#   tavilyApiKey: '${TAVILY_API_KEY}'
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#
+# Tavily as both search and scraper provider example:
+# webSearch:
+#   searchProvider: tavily
+#   scraperProvider: tavily
+#   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # Optional: custom API URLs (defaults to https://api.tavily.com/search and https://api.tavily.com/extract)
+#   # tavilySearchUrl: '${TAVILY_SEARCH_URL}'
+#   # tavilyExtractUrl: '${TAVILY_EXTRACT_URL}'
+#   tavilySearchOptions:
+#     searchDepth: advanced     # 'basic' or 'advanced' (default: advanced)
+#     maxResults: 10            # 1-20 results per search (default: 8)
+#     topic: general            # 'general', 'news', or 'finance'
+#     # includeAnswer: true     # Include AI-generated answer summary
+#     # includeImages: true     # Include images in results
+#     # includeDomains:         # Restrict search to specific domains
+#     #   - 'example.com'
+#     #   - 'docs.example.com'
+#     # excludeDomains:         # Exclude specific domains from results
+#     #   - 'spam.com'
+#     # timeRange: week         # 'day', 'week', 'month', or 'year'
+#     # timeout: 15000          # Request timeout in milliseconds
+#   tavilyScraperOptions:
+#     extractDepth: basic       # 'basic' or 'advanced' (default: basic)
+#     # includeImages: false    # Include images in extracted content
+#     # includeFavicon: false   # Include favicon URL
+#     # chunksPerSource: 1      # Number of chunks per source (1-5)
+#     # format: markdown        # 'markdown' or 'text'
+#     # timeout: 15000          # Request timeout in milliseconds
 
 # Memory configuration for user memories
 # memory:

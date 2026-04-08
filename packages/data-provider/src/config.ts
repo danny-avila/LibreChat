@@ -1026,11 +1026,13 @@ export enum SearchCategories {
 export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
+  TAVILY = 'tavily',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
+  TAVILY = 'tavily',
 }
 
 export enum RerankerTypes {
@@ -1052,6 +1054,9 @@ export const webSearchSchema = z.object({
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
+  tavilyApiKey: z.string().optional().default('${TAVILY_API_KEY}'),
+  tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
+  tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
@@ -1091,6 +1096,32 @@ export const webSearchSchema = z.object({
           tag: z.string().nullable().optional(),
         })
         .optional(),
+    })
+    .optional(),
+  tavilySearchOptions: z
+    .object({
+      searchDepth: z.enum(['basic', 'advanced']).optional(),
+      maxResults: z.number().int().min(1).max(20).optional(),
+      includeImages: z.boolean().optional(),
+      includeAnswer: z.boolean().optional(),
+      includeRawContent: z.boolean().optional(),
+      includeDomains: z.array(z.string()).optional(),
+      excludeDomains: z.array(z.string()).optional(),
+      topic: z.enum(['general', 'news', 'finance']).optional(),
+      timeRange: z.enum(['day', 'week', 'month', 'year', 'd', 'w', 'm', 'y']).optional(),
+      days: z.number().int().min(1).optional(),
+      includeImageDescriptions: z.boolean().optional(),
+      timeout: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
+  tavilyScraperOptions: z
+    .object({
+      extractDepth: z.enum(['basic', 'advanced']).optional(),
+      includeImages: z.boolean().optional(),
+      includeFavicon: z.boolean().optional(),
+      chunksPerSource: z.number().int().min(1).max(5).optional(),
+      format: z.enum(['markdown', 'text']).optional(),
+      timeout: z.number().int().nonnegative().optional(),
     })
     .optional(),
 });

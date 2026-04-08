@@ -129,6 +129,34 @@ export interface FirecrawlConfig {
   };
 }
 
+export interface TavilyConfig {
+  tavilyApiKey?: string;
+  tavilySearchUrl?: string;
+  tavilyExtractUrl?: string;
+  tavilySearchOptions?: {
+    searchDepth?: 'basic' | 'advanced';
+    maxResults?: number;
+    includeImages?: boolean;
+    includeAnswer?: boolean;
+    includeRawContent?: boolean;
+    includeDomains?: string[];
+    excludeDomains?: string[];
+    topic?: 'general' | 'news' | 'finance';
+    timeRange?: 'day' | 'week' | 'month' | 'year' | 'd' | 'w' | 'm' | 'y';
+    days?: number;
+    includeImageDescriptions?: boolean;
+    timeout?: number;
+  };
+  tavilyScraperOptions?: {
+    extractDepth?: 'basic' | 'advanced';
+    includeImages?: boolean;
+    includeFavicon?: boolean;
+    chunksPerSource?: number;
+    format?: 'markdown' | 'text';
+    timeout?: number;
+  };
+}
+
 export interface ScraperContentResult {
   content: string;
 }
