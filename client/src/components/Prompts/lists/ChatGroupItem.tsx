@@ -12,6 +12,7 @@ import {
   TooltipAnchor,
   DropdownPopup,
   OGDialogTemplate,
+  useToastContext,
 } from '@librechat/client';
 import { useLocalize, useAuthContext, useSubmitMessage, useResourcePermissions } from '~/hooks';
 import { useRecordPromptUsage, useDeletePromptGroup } from '~/data-provider';
@@ -36,6 +37,7 @@ function ChatGroupItem({
   const recordUsage = useRecordPromptUsage();
   const { announcePolite } = useLiveAnnouncer();
 
+  const { showToast } = useToastContext();
   const menuId = useId();
   const isSharedPrompt = group.author !== user?.id && Boolean(group.authorName);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -55,6 +57,7 @@ function ChatGroupItem({
 
   const deleteGroup = useDeletePromptGroup({
     onSuccess: () => {
+      setDeleteOpen(false);
       announcePolite({
         message: localize('com_ui_prompt_deleted_group', { 0: group.name }),
         isStatus: true,
@@ -62,6 +65,9 @@ function ChatGroupItem({
       if (!isChatRoute && params.promptId === group._id) {
         navigate(`${promptPath}/new`, { replace: true });
       }
+    },
+    onError: () => {
+      showToast({ status: 'error', message: localize('com_ui_error') });
     },
   });
 
@@ -223,16 +229,25 @@ function ChatGroupItem({
           )}
         </div>
       </div>
-      <PreviewPrompt
-        group={group}
-        open={isPreviewDialogOpen}
-        onOpenChange={setPreviewDialogOpen}
-        onCloseAutoFocus={() => {
-          requestAnimationFrame(() => {
-            menuButtonRef.current?.focus({ preventScroll: true });
-          });
-        }}
-      />
+      {isChatRoute && (
+        <>
+          <PreviewPrompt
+            group={group}
+            open={isPreviewDialogOpen}
+            onOpenChange={setPreviewDialogOpen}
+            onCloseAutoFocus={() => {
+              requestAnimationFrame(() => {
+                menuButtonRef.current?.focus({ preventScroll: true });
+              });
+            }}
+          />
+          <VariableDialog
+            open={isVariableDialogOpen}
+            onClose={() => setVariableDialogOpen(false)}
+            group={group}
+          />
+        </>
+      )}
       <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <OGDialogTemplate
           title={localize('com_ui_delete_prompt')}
@@ -245,11 +260,6 @@ function ChatGroupItem({
           }
         />
       </OGDialog>
-      <VariableDialog
-        open={isVariableDialogOpen}
-        onClose={() => setVariableDialogOpen(false)}
-        group={group}
-      />
     </>
   );
 }

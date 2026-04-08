@@ -28,6 +28,11 @@ const AuthLayout = () => (
   </AuthContextProvider>
 );
 
+const loadInlinePromptsView = () =>
+  import('~/components/Prompts/layouts/InlinePromptsView').then((m) => ({
+    Component: m.default,
+  }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -117,17 +122,11 @@ export const router = createBrowserRouter(
             },
             {
               path: 'prompts/new',
-              lazy: () =>
-                import('~/components/Prompts/layouts/InlinePromptsView').then((m) => ({
-                  Component: m.default,
-                })),
+              lazy: loadInlinePromptsView,
             },
             {
               path: 'prompts/:promptId',
-              lazy: () =>
-                import('~/components/Prompts/layouts/InlinePromptsView').then((m) => ({
-                  Component: m.default,
-                })),
+              lazy: loadInlinePromptsView,
             },
             {
               path: 'agents',

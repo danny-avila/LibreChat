@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useId } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { Switch, InfoHoverCard, ESide } from '@librechat/client';
 import { PromptsEditorMode } from '~/common';
@@ -24,7 +24,7 @@ export default function AdvancedPrompts() {
     [setMode, setAlwaysMakeProd],
   );
 
-  const labelId = 'advancedPrompts-label';
+  const labelId = useId();
 
   return (
     <div className="flex items-center justify-between">
