@@ -22,7 +22,6 @@ const {
   Time,
   CacheKeys,
   Constants,
-  ContentTypes,
   EModelEndpoint,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
