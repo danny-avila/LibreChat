@@ -17,7 +17,7 @@ const configMiddleware = async (req, res, next) => {
     });
 
     try {
-      req.config = await getAppConfig();
+      req.config = await getAppConfig({ tenantId: req.user?.tenantId });
       next();
     } catch (fallbackError) {
       logger.error('Fallback config middleware error:', fallbackError);
