@@ -60,9 +60,13 @@ const realUtils = jest.requireActual<typeof import('~/utils')>('~/utils');
 /**
  * Creates minimal mock objects for initializeAgent tests.
  *
- * When `useRealTokenLookup` is true, `getModelMaxTokens` delegates to the real
- * implementation so tests exercise the actual token-map resolution. Otherwise a
- * controlled `modelDefault` is returned.
+ * @param overrides.overrideProvider - Simulates the value returned by `getProviderConfig`.
+ *   Defaults to `provider` (native endpoint where no remapping occurs). Set to a different
+ *   value (e.g. `Providers.OPENAI`) alongside a custom `provider` to simulate a custom
+ *   endpoint whose provider is resolved to a built-in.
+ * @param overrides.useRealTokenLookup - When true, `getModelMaxTokens` delegates to the real
+ *   implementation so tests exercise actual token-map resolution. Otherwise a controlled
+ *   `modelDefault` is returned.
  */
 function createMocks(overrides?: {
   provider?: string;
@@ -124,6 +128,7 @@ function createMocks(overrides?: {
     mockGetModelMaxTokens.mockReturnValue(modelDefault);
   }
 
+  /** Real implementation: treats 0 as a valid (non-empty) value — load-bearing for the maxContextTokens=0 test */
   mockOptionalChainWithEmptyCheck.mockImplementation(realUtils.optionalChainWithEmptyCheck);
 
   const loadTools = jest.fn().mockResolvedValue({
@@ -148,14 +153,15 @@ function createMocks(overrides?: {
 }
 
 describe('initializeAgent — custom provider token lookup', () => {
+  const CUSTOM_PROVIDER = 'EduGPT';
+
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('passes the resolved provider endpoint to getModelMaxTokens, not the custom name', async () => {
-    const customProvider = 'EduGPT';
     const { agent, req, res, loadTools, db } = createMocks({
-      provider: customProvider,
+      provider: CUSTOM_PROVIDER,
       overrideProvider: Providers.OPENAI,
       model: 'qwen3-235b-a22b',
       useRealTokenLookup: true,
@@ -168,7 +174,7 @@ describe('initializeAgent — custom provider token lookup', () => {
         agent,
         loadTools,
         endpointOption: { endpoint: EModelEndpoint.agents },
-        allowedProviders: new Set([customProvider]),
+        allowedProviders: new Set([CUSTOM_PROVIDER]),
         isInitialAgent: true,
       },
       db,
@@ -183,12 +189,11 @@ describe('initializeAgent — custom provider token lookup', () => {
   });
 
   it('uses endpointTokenConfig from the custom endpoint for unrecognized models', async () => {
-    const customProvider = 'EduGPT';
     const customTokenConfig: EndpointTokenConfig = {
       'my-custom-model-v1': { context: 65536, prompt: 1, completion: 1 },
     };
     const { agent, req, res, loadTools, db } = createMocks({
-      provider: customProvider,
+      provider: CUSTOM_PROVIDER,
       overrideProvider: Providers.OPENAI,
       model: 'my-custom-model-v1',
       endpointTokenConfig: customTokenConfig,
@@ -202,7 +207,7 @@ describe('initializeAgent — custom provider token lookup', () => {
         agent,
         loadTools,
         endpointOption: { endpoint: EModelEndpoint.agents },
-        allowedProviders: new Set([customProvider]),
+        allowedProviders: new Set([CUSTOM_PROVIDER]),
         isInitialAgent: true,
       },
       db,
@@ -214,8 +219,9 @@ describe('initializeAgent — custom provider token lookup', () => {
       customTokenConfig,
     );
 
-    // endpointTokenConfig provides the model's real context (65536), not 18000
-    expect(result.maxContextTokens).toBeGreaterThan(18000);
+    // endpointTokenConfig.context=65536, maxOutputTokens=4096 (default)
+    // maxContextTokens = Math.max(1024, Math.round((65536 - 4096) * 0.95)) = 58368
+    expect(result.maxContextTokens).toBe(Math.round((65536 - 4096) * 0.95));
   });
 });
 
