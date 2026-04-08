@@ -2,32 +2,12 @@ import type { Redis, Cluster } from 'ioredis';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { createStreamServices } from '~/stream/createStreamServices';
+import { createMockPublisher } from './helpers/publisher';
 import {
   ioredisClient as staticRedisClient,
   keyvRedisClient as staticKeyvClient,
   keyvRedisClientReady,
 } from '~/cache/redisClients';
-
-/** Mock publisher with Redis command simulation for atomic sequence counters */
-function createMockPublisher() {
-  const counters = new Map<string, number>();
-  return {
-    publish: jest.fn().mockResolvedValue(1),
-    eval: jest.fn().mockImplementation((_script: string, _numKeys: number, key: string) => {
-      const current = (counters.get(key) ?? 0) + 1;
-      counters.set(key, current);
-      return Promise.resolve(current);
-    }),
-    get: jest.fn().mockImplementation((key: string) => {
-      const val = counters.get(key);
-      return Promise.resolve(val != null ? String(val) : null);
-    }),
-    del: jest.fn().mockImplementation((key: string) => {
-      counters.delete(key);
-      return Promise.resolve(1);
-    }),
-  };
-}
 
 /**
  * Regression tests for the reconnect reorder buffer desync bug.

@@ -1,25 +1,5 @@
 import type { Redis, Cluster } from 'ioredis';
-
-/** Mock publisher with Redis command simulation for atomic sequence counters */
-function createMockPublisher() {
-  const counters = new Map<string, number>();
-  return {
-    publish: jest.fn().mockResolvedValue(1),
-    eval: jest.fn().mockImplementation((_script: string, _numKeys: number, key: string) => {
-      const current = (counters.get(key) ?? 0) + 1;
-      counters.set(key, current);
-      return Promise.resolve(current);
-    }),
-    get: jest.fn().mockImplementation((key: string) => {
-      const val = counters.get(key);
-      return Promise.resolve(val != null ? String(val) : null);
-    }),
-    del: jest.fn().mockImplementation((key: string) => {
-      counters.delete(key);
-      return Promise.resolve(1);
-    }),
-  };
-}
+import { createMockPublisher } from './helpers/publisher';
 
 /**
  * Integration tests for RedisEventTransport.
@@ -924,6 +904,52 @@ describe('RedisEventTransport Integration Tests', () => {
 
       // emitChunk swallows errors because callers often fire-and-forget (no await).
       // Throwing would cause unhandled promise rejections.
+      await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
+
+      transport.destroy();
+    });
+
+    test('should swallow emitChunk eval errors (sequence allocation failure)', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = createMockPublisher();
+      mockPublisher.eval.mockRejectedValue(new Error('EVAL failed'));
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-eval-${Date.now()}`;
+
+      await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
+
+      transport.destroy();
+    });
+
+    test('should swallow emitChunk errors when eval returns unexpected type', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = createMockPublisher();
+      mockPublisher.eval.mockResolvedValue(null);
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-eval-type-${Date.now()}`;
+
       await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
 
       transport.destroy();

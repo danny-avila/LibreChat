@@ -23,7 +23,11 @@ const INCR_WITH_TTL_SCRIPT = `local v = redis.call('INCR', KEYS[1])
 redis.call('EXPIRE', KEYS[1], ARGV[1])
 return v`;
 
-/** TTL for sequence keys (seconds). Safety net for orphaned keys; refreshed on every publish. */
+/**
+ * TTL for sequence keys (seconds). Refreshed on every publish, so only
+ * affects stalled or abandoned streams. Chosen to exceed any realistic
+ * single-generation duration (max observed: ~20 min for long agentic tasks).
+ */
 const SEQUENCE_TTL_SECONDS = 3600;
 
 /**
@@ -132,13 +136,13 @@ export class RedisEventTransport implements IEventTransport {
   /** Get next sequence number for a stream (0-indexed, backed by Redis INCR) */
   private async getNextSequence(streamId: string): Promise<number> {
     const key = KEYS.sequence(streamId);
-    const val = (await this.publisher.eval(
-      INCR_WITH_TTL_SCRIPT,
-      1,
-      key,
-      SEQUENCE_TTL_SECONDS,
-    )) as number;
-    return val - 1;
+    const raw = await this.publisher.eval(INCR_WITH_TTL_SCRIPT, 1, key, SEQUENCE_TTL_SECONDS);
+    if (typeof raw !== 'number') {
+      throw new Error(
+        `[RedisEventTransport] Unexpected eval result for ${key}: expected number, got ${typeof raw} (${raw})`,
+      );
+    }
+    return raw - 1;
   }
 
   /** Reset subscriber reorder state and delete the Redis sequence key for a stream (full cleanup only) */
@@ -161,8 +165,9 @@ export class RedisEventTransport implements IEventTransport {
   /** Advance subscriber reorder buffer to the authoritative Redis sequence counter (cross-replica safe) */
   async syncReorderBuffer(streamId: string): Promise<void> {
     const key = KEYS.sequence(streamId);
-    const raw = await this.publisher.get(key);
-    const currentSeq = raw != null ? parseInt(raw, 10) : 0;
+    const rawStr = await this.publisher.get(key);
+    const parsed = rawStr != null ? parseInt(rawStr, 10) : 0;
+    const currentSeq = Number.isNaN(parsed) ? 0 : parsed;
     const state = this.streams.get(streamId);
     if (state) {
       if (state.reorderBuffer.flushTimeout) {
@@ -471,6 +476,9 @@ export class RedisEventTransport implements IEventTransport {
   /**
    * Publish a chunk event to all subscribers across all instances.
    * Includes sequence number for ordered delivery in Redis Cluster mode.
+   *
+   * Performance: each emit requires two sequential Redis round-trips (EVAL + PUBLISH).
+   * This is the unavoidable cost of cross-replica sequence coordination.
    */
   async emitChunk(streamId: string, event: unknown): Promise<void> {
     try {
@@ -655,21 +663,18 @@ export class RedisEventTransport implements IEventTransport {
    * Destroy all resources.
    */
   destroy(): void {
-    // Clear all flush timeouts and buffered messages
-    for (const [, state] of this.streams) {
+    // Clear all flush timeouts, buffered messages, and sequence keys in a single pass
+    for (const [streamId, state] of this.streams) {
       if (state.reorderBuffer.flushTimeout) {
         clearTimeout(state.reorderBuffer.flushTimeout);
         state.reorderBuffer.flushTimeout = null;
       }
       state.reorderBuffer.pending.clear();
+      this.publisher.del(KEYS.sequence(streamId)).catch(() => {});
     }
 
     for (const channel of this.channelSubscriptions.keys()) {
       this.subscriber.unsubscribe(channel).catch(() => {});
-    }
-
-    for (const streamId of this.streams.keys()) {
-      this.publisher.del(KEYS.sequence(streamId)).catch(() => {});
     }
 
     this.channelSubscriptions.clear();

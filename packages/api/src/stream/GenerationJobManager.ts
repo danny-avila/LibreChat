@@ -807,7 +807,14 @@ class GenerationJobManagerClass {
         onChunk(createdEvent);
       }
 
-      await this.eventTransport.syncReorderBuffer?.(streamId);
+      try {
+        await this.eventTransport.syncReorderBuffer?.(streamId);
+      } catch (err) {
+        logger.warn(
+          `[GenerationJobManager] Failed to sync reorder buffer for ${streamId}; proceeding with current nextSeq:`,
+          err,
+        );
+      }
     }
 
     if (isFirst) {
