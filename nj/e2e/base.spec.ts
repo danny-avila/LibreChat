@@ -20,6 +20,4 @@ test('Basic test to make sure the app is running', async ({ page }) => {
 
   // Check that the title contains "NJ AI Assistant"
   await expect(page).toHaveTitle(/NJ AI Assistant/);
-
-  await page.screenshot({ path: 'tmp/screenshot-basic-test.png', fullPage: true });
 });

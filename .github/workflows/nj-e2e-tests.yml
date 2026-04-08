@@ -5,7 +5,7 @@ on:
     branches:
       - newjersey
     paths:
-      - '.github/workflows/e2e-tests.yml' # run it when the workflow file itself is changed (for testing)
+      - '.github/workflows/nj-e2e-tests.yml' # run it when the workflow file itself is changed (for testing)
   push:
     branches:
       - newjersey
@@ -19,7 +19,7 @@ on:
       - 'packages/**'
       - 'src/**'
       - 'utils/**'
-      - '.github/workflows/e2e-tests.yml'
+      - '.github/workflows/nj-e2e-tests.yml'
   workflow_dispatch:
     inputs:
       reason:
