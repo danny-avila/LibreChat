@@ -67,16 +67,16 @@ function ChatGroupItem({
       }
     },
     onError: () => {
-      showToast({ status: 'error', message: localize('com_ui_error') });
+      showToast({ status: 'error', message: localize('com_ui_prompt_delete_error') });
     },
   });
 
-  const handleDelete = useCallback(() => {
+  const handleDelete = () => {
     if (!group._id) {
       return;
     }
     deleteGroup.mutate({ id: group._id });
-  }, [group._id, deleteGroup]);
+  };
 
   const onCardClick = useCallback(() => {
     if (!isChatRoute) {
@@ -246,20 +246,24 @@ function ChatGroupItem({
             onClose={() => setVariableDialogOpen(false)}
             group={group}
           />
+          <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+            <OGDialogTemplate
+              title={localize('com_ui_delete_prompt')}
+              className="w-11/12 max-w-md"
+              main={<Label>{localize('com_ui_prompt_delete_confirm', { 0: group.name })}</Label>}
+              selection={
+                <Button
+                  onClick={handleDelete}
+                  variant="destructive"
+                  disabled={deleteGroup.isLoading}
+                >
+                  {deleteGroup.isLoading ? <Spinner /> : localize('com_ui_delete')}
+                </Button>
+              }
+            />
+          </OGDialog>
         </>
       )}
-      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <OGDialogTemplate
-          title={localize('com_ui_delete_prompt')}
-          className="w-11/12 max-w-md"
-          main={<Label>{localize('com_ui_prompt_delete_confirm', { 0: group.name })}</Label>}
-          selection={
-            <Button onClick={handleDelete} variant="destructive" disabled={deleteGroup.isLoading}>
-              {deleteGroup.isLoading ? <Spinner /> : localize('com_ui_delete')}
-            </Button>
-          }
-        />
-      </OGDialog>
     </>
   );
 }

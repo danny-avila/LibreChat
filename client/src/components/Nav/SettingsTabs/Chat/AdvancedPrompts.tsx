@@ -24,7 +24,8 @@ export default function AdvancedPrompts() {
     [setMode, setAlwaysMakeProd],
   );
 
-  const labelId = useId();
+  const rootId = useId();
+  const labelId = `${rootId}-label`;
 
   return (
     <div className="flex items-center justify-between">
@@ -33,7 +34,7 @@ export default function AdvancedPrompts() {
         <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_advanced_prompts_desc')} />
       </div>
       <Switch
-        id="advancedPrompts"
+        id={rootId}
         checked={isAdvanced}
         onCheckedChange={handleChange}
         className="ml-4"

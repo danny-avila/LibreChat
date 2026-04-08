@@ -1275,6 +1275,7 @@
   "com_ui_prompt": "Prompt",
   "com_ui_prompt_category_selector_aria": "Prompt's category selector",
   "com_ui_prompt_delete_confirm": "Are you sure you want to delete the '{{0}}' prompt?",
+  "com_ui_prompt_delete_error": "There was an error deleting the prompt",
   "com_ui_prompt_deleted_group": "Prompt group \"{{0}}\" deleted",
   "com_ui_prompt_details": "{{name}} prompt details",
   "com_ui_prompt_group_button": "{{name}} prompt, {{category}} category",
