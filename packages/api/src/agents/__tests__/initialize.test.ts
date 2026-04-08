@@ -128,7 +128,7 @@ function createMocks(overrides?: {
     mockGetModelMaxTokens.mockReturnValue(modelDefault);
   }
 
-  /** Real implementation: treats 0 as a valid (non-empty) value — load-bearing for the maxContextTokens=0 test */
+  // Real implementation: treats 0 as a valid (non-empty) value — load-bearing for the maxContextTokens=0 test
   mockOptionalChainWithEmptyCheck.mockImplementation(realUtils.optionalChainWithEmptyCheck);
 
   const loadTools = jest.fn().mockResolvedValue({
@@ -219,8 +219,9 @@ describe('initializeAgent — custom provider token lookup', () => {
       customTokenConfig,
     );
 
-    // endpointTokenConfig.context=65536, maxOutputTokens=4096 (default)
-    // maxContextTokens = Math.max(1024, Math.round((65536 - 4096) * 0.95)) = 58368
+    // Pipeline check: verifies endpointTokenConfig.context flows through the full
+    // optionalChainWithEmptyCheck → Math.max formula. The toHaveBeenCalledWith
+    // assertion above catches the actual provider-resolution regression.
     expect(result.maxContextTokens).toBe(Math.round((65536 - 4096) * 0.95));
   });
 });
