@@ -10,7 +10,7 @@ version: 1.3.6
 
 # Cache settings: Set to true to enable caching
 cache: true
-#fileStrategy: "s3"
+fileStrategy: "s3"
 
 # Custom interface configuration
 interface:
