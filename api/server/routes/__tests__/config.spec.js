@@ -76,6 +76,7 @@ afterEach(() => {
   delete process.env.SAML_ISSUER;
   delete process.env.SAML_CERT;
   delete process.env.SAML_SESSION_SECRET;
+  delete process.env.ALLOW_ACCOUNT_DELETION;
 });
 
 describe('GET /api/config', () => {
@@ -179,6 +180,35 @@ describe('GET /api/config', () => {
       expect(response.body.appTitle).toBe('Test App');
       expect(response.body).toHaveProperty('emailLoginEnabled');
       expect(response.body).toHaveProperty('serverDomain');
+    });
+
+    it('should default allowAccountDeletion to true when env var is unset', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.allowAccountDeletion).toBe(true);
+    });
+
+    it('should set allowAccountDeletion to false when ALLOW_ACCOUNT_DELETION=false', async () => {
+      process.env.ALLOW_ACCOUNT_DELETION = 'false';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.allowAccountDeletion).toBe(false);
+    });
+
+    it('should set allowAccountDeletion to true when ALLOW_ACCOUNT_DELETION=true', async () => {
+      process.env.ALLOW_ACCOUNT_DELETION = 'true';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.allowAccountDeletion).toBe(true);
     });
 
     it('should return 500 when getAppConfig throws', async () => {

@@ -18,8 +18,6 @@ const publicSharedLinksEnabled =
 
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
-const accountDeletionEnabled =
-  process.env.ALLOW_ACCOUNT_DELETION === undefined || isEnabled(process.env.ALLOW_ACCOUNT_DELETION);
 
 function isBirthday() {
   const today = new Date();
@@ -79,7 +77,9 @@ function buildSharedPayload() {
     publicSharedLinksEnabled,
     analyticsGtmId: process.env.ANALYTICS_GTM_ID,
     openidReuseTokens,
-    allowAccountDeletion: accountDeletionEnabled,
+    allowAccountDeletion:
+      process.env.ALLOW_ACCOUNT_DELETION === undefined ||
+      isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
   };
 
   const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);

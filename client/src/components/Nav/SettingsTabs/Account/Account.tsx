@@ -1,4 +1,5 @@
 import React from 'react';
+import { SystemRoles } from 'librechat-data-provider';
 import DisplayUsernameMessages from './DisplayUsernameMessages';
 import DeleteAccount from './DeleteAccount';
 import Avatar from './Avatar';
@@ -31,7 +32,8 @@ function Account() {
           )}
         </>
       )}
-      {startupConfig?.allowAccountDeletion !== false && (
+      {/* Admins retain access even when deletion is disabled; matches canDeleteAccount middleware bypass */}
+      {(user?.role === SystemRoles.ADMIN || startupConfig?.allowAccountDeletion !== false) && (
         <div className="pb-3">
           <DeleteAccount />
         </div>
