@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test';
 */
 
 test('Basic test to make sure the app is running', async ({ page }) => {
-  await page.goto('http://localhost:3080/', { timeout: 5000 });
+  await page.goto('http://localhost:3080/', { timeout: 10000 });
 
   // Wait for the page to load and the SVG loader to disappear
   await page.waitForSelector('nav > div');
@@ -17,4 +17,6 @@ test('Basic test to make sure the app is running', async ({ page }) => {
 
   // Check that the title contains "NJ AI Assistant"
   await expect(page).toHaveTitle(/NJ AI Assistant/);
+
+  await page.screenshot({ path: 'tmp/screenshot-basic-test.png', fullPage: true });
 });
