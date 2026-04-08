@@ -12,8 +12,11 @@ test('Basic test to make sure the app is running', async ({ page }) => {
   await page.waitForSelector('nav > div');
   await page.waitForSelector('nav > div > div > svg', { state: 'detached' });
 
-  // Check that the main app container is visible and the title is correct
+  // Check that the main app container is visible
   await expect(page.locator('#root')).toBeVisible();
+
+  // Wait for the title to be set (React hydration + config loading)
+  await page.waitForFunction(() => document.title.includes('NJ AI Assistant'), { timeout: 10000 });
 
   // Check that the title contains "NJ AI Assistant"
   await expect(page).toHaveTitle(/NJ AI Assistant/);
