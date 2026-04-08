@@ -41,6 +41,7 @@ env:
   CREDS_IV: 0123456789abcdef0123456789abcdef
   SESSION_SECRET: test-session-secret-for-ci-${{ github.run_id }}
   CONFIG_PATH: /tmp/ci-librechat.yaml
+  APP_TITLE: NJ AI Assistant
   ALLOW_REGISTRATION: true
   SESSION_EXPIRY: 60000
   REFRESH_TOKEN_EXPIRY: 300000
