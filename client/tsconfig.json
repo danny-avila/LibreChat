@@ -32,6 +32,7 @@
     "src/**/*",
     "test/**/*",
     "../e2e/**/*",
+    "../nj/**/*",
     "test/setupTests.js",
     "env.d.ts",
     "../config/translations/**/*.ts",
