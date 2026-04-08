@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { Tools } from 'librechat-data-provider';
+import { Tools, Constants } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ToolCall from '../ToolCall';
 
@@ -53,9 +53,20 @@ jest.mock('../ToolCallInfo', () => ({
 
 jest.mock('../ProgressText', () => ({
   __esModule: true,
-  default: ({ onClick, inProgressText, finishedText, _error, _hasInput, _isExpanded }: any) => (
+  default: ({
+    onClick,
+    inProgressText,
+    finishedText,
+    subtitle,
+  }: {
+    onClick?: () => void;
+    inProgressText?: string;
+    finishedText?: string;
+    subtitle?: string;
+  }) => (
     <div data-testid="progress-text" onClick={onClick}>
       {finishedText || inProgressText}
+      {subtitle && <span data-testid="subtitle">{subtitle}</span>}
     </div>
   ),
 }));
@@ -343,6 +354,141 @@ describe('ToolCall', () => {
 
       const attachmentGroup = screen.getByTestId('attachment-group');
       expect(JSON.parse(attachmentGroup.textContent!)).toEqual(complexAttachments);
+    });
+  });
+
+  describe('MCP OAuth detection', () => {
+    const d = Constants.mcp_delimiter;
+
+    it('should detect MCP OAuth from delimiter in tool-call name', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          name={`oauth${d}my-server`}
+          initialProgress={0.5}
+          isSubmitting={true}
+          auth="https://auth.example.com"
+        />,
+      );
+      const subtitle = screen.getByTestId('subtitle');
+      expect(subtitle.textContent).toBe('via my-server');
+    });
+
+    it('should preserve full server name when it contains the delimiter substring', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          name={`oauth${d}foo${d}bar`}
+          initialProgress={0.5}
+          isSubmitting={true}
+          auth="https://auth.example.com"
+        />,
+      );
+      const subtitle = screen.getByTestId('subtitle');
+      expect(subtitle.textContent).toBe(`via foo${d}bar`);
+    });
+
+    it('should display server name (not "oauth") as function_name for OAuth tool calls', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          name={`oauth${d}my-server`}
+          initialProgress={1}
+          isSubmitting={false}
+          output="done"
+          auth="https://auth.example.com"
+        />,
+      );
+      const progressText = screen.getByTestId('progress-text');
+      expect(progressText.textContent).toContain('Completed my-server');
+      expect(progressText.textContent).not.toContain('Completed oauth');
+    });
+
+    it('should display server name even when auth is cleared (post-completion)', () => {
+      // After OAuth completes, createOAuthEnd re-emits the toolCall without auth.
+      // The display should still show the server name, not literal "oauth".
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          name={`oauth${d}my-server`}
+          initialProgress={1}
+          isSubmitting={false}
+          output="done"
+        />,
+      );
+      const progressText = screen.getByTestId('progress-text');
+      expect(progressText.textContent).toContain('Completed my-server');
+      expect(progressText.textContent).not.toContain('Completed oauth');
+    });
+
+    it('should fallback to auth URL redirect_uri when name lacks delimiter', () => {
+      const authUrl =
+        'https://oauth.example.com/authorize?redirect_uri=' +
+        encodeURIComponent('https://app.example.com/api/mcp/my-server/oauth/callback');
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          name="bare_name"
+          initialProgress={0.5}
+          isSubmitting={true}
+          auth={authUrl}
+        />,
+      );
+      const subtitle = screen.getByTestId('subtitle');
+      expect(subtitle.textContent).toBe('via my-server');
+    });
+
+    it('should display server name (not raw tool-call ID) in fallback path finished text', () => {
+      const authUrl =
+        'https://oauth.example.com/authorize?redirect_uri=' +
+        encodeURIComponent('https://app.example.com/api/mcp/my-server/oauth/callback');
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          name="bare_name"
+          initialProgress={1}
+          isSubmitting={false}
+          output="done"
+          auth={authUrl}
+        />,
+      );
+      const progressText = screen.getByTestId('progress-text');
+      expect(progressText.textContent).toContain('Completed my-server');
+      expect(progressText.textContent).not.toContain('bare_name');
+    });
+
+    it('should show normalized server name when it contains _mcp_ after prefixing', () => {
+      // Server named oauth@mcp@server normalizes to oauth_mcp_server,
+      // gets prefixed to oauth_mcp_oauth_mcp_server. Client parses:
+      // func="oauth", server="oauth_mcp_server". Visually awkward but
+      // semantically correct — the normalized name IS oauth_mcp_server.
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          name={`oauth${d}oauth${d}server`}
+          initialProgress={0.5}
+          isSubmitting={true}
+          auth="https://auth.example.com"
+        />,
+      );
+      const subtitle = screen.getByTestId('subtitle');
+      expect(subtitle.textContent).toBe(`via oauth${d}server`);
+    });
+
+    it('should not misidentify non-MCP action auth as MCP via fallback', () => {
+      const authUrl =
+        'https://oauth.example.com/authorize?redirect_uri=' +
+        encodeURIComponent('https://app.example.com/api/actions/xyz/oauth/callback');
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          name="action_name"
+          initialProgress={0.5}
+          isSubmitting={true}
+          auth={authUrl}
+        />,
+      );
+      expect(screen.queryByTestId('subtitle')).not.toBeInTheDocument();
     });
   });
 

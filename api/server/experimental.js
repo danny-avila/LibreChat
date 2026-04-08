@@ -19,6 +19,7 @@ const {
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
+  preAuthTenantMiddleware,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -31,6 +32,7 @@ const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
+const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
@@ -312,7 +314,7 @@ if (cluster.isMaster) {
     app.use('/api/endpoints', routes.endpoints);
     app.use('/api/balance', routes.balance);
     app.use('/api/models', routes.models);
-    app.use('/api/config', routes.config);
+    app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
     app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
