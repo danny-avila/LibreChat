@@ -27,6 +27,8 @@ on:
         required: false
         default: 'Manual e2e test run'
 
+# A bunch of variables we need, some might get flagged as secrets, but they aren't
+# (they're just config values that we need to run the tests, and don't contain any sensitive info)
 env:
   CI: true
   NODE_ENV: CI
@@ -66,6 +68,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # Some of these actions require Node 24, so we set it up early
       - name: Use Node.js 24.x 
         uses: actions/setup-node@v6
         with:
@@ -86,23 +89,14 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
-
+      
+      # Turn off s3 in CI (since we don't have credentials, and it adds complexity to the tests)
       - name: Create CI config override
         run: |
           cat > /tmp/ci-librechat.yaml << 'EOF'
           version: 1.0.0
           fileStrategy: local
           EOF
-
-      # - name: Build frontend for server
-      #   run: npm run frontend
-
-      # - name: Start backend
-      #   run: |
-      #     npm run backend &
-
-      # - name: Wait for app to be ready
-      #   run: npx wait-on http://localhost:3080
 
       - name: Run Playwright tests
         run: npm run e2e:nj -- --reporter=list --timeout=60000
@@ -112,7 +106,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ github.run_id }}
-          path: /e2e/playwright-report/
+          path: e2e/playwright-report/
           retention-days: 30
 
       - name: Upload test results
@@ -120,11 +114,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ github.run_id }}
-          path: /e2e/specs/.test-results/
+          path: e2e/specs/.test-results/
           retention-days: 30
-
-      - name: Upload screenshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-screenshot-${{ github.run_id }}
-          path: /tmp/page.png

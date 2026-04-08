@@ -1,21 +1,20 @@
 import { expect, test } from '@playwright/test';
 
+/*
+  General test to make sure the app is running.
+  Authentication and other setup steps are handled in the global setup file (e2e/setup/authenticate.ts).
+*/
+
 test('Basic test to make sure the app is running', async ({ page }) => {
-  await page.goto('http://localhost:3080/');
+  await page.goto('http://localhost:3080/', { timeout: 5000 });
 
+  // Wait for the page to load and the SVG loader to disappear
+  await page.waitForSelector('nav > div');
+  await page.waitForSelector('nav > div > div > svg', { state: 'detached' });
+
+  // Check that the main app container is visible and the title is correct
   await expect(page.locator('#root')).toBeVisible();
-  await expect(page).toHaveTitle(/LibreChat/);
-});
 
-test('Debug app load', async ({ page }) => {
-  const response = await page.goto('http://localhost:3080/', {
-    waitUntil: 'domcontentloaded',
-  });
-
-  console.log('Status:', response?.status());
-  console.log('URL:', page.url());
-  console.log('Title:', await page.title());
-  console.log('HTML snippet:', await page.content());
-
-  await page.screenshot({ path: '/tmp/page.png', fullPage: true });
+  // Check that the title contains "NJ AI Assistant"
+  await expect(page).toHaveTitle(/NJ AI Assistant/);
 });
