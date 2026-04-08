@@ -1183,6 +1183,54 @@ describe('RedisEventTransport Integration Tests', () => {
       transport.destroy();
     });
 
+    test('should propagate when emitDone eval returns unexpected type', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = createMockPublisher();
+      mockPublisher.eval.mockResolvedValue(null);
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-done-eval-${Date.now()}`;
+
+      await expect(transport.emitDone(streamId, { finished: true })).rejects.toThrow(
+        'Unexpected eval result',
+      );
+
+      transport.destroy();
+    });
+
+    test('should propagate when emitError eval throws', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = createMockPublisher();
+      mockPublisher.eval.mockRejectedValue(new Error('EVAL failed'));
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-error-eval-${Date.now()}`;
+
+      await expect(transport.emitError(streamId, 'some error')).rejects.toThrow('EVAL failed');
+
+      transport.destroy();
+    });
+
     test('should still deliver events successfully when publish succeeds', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');

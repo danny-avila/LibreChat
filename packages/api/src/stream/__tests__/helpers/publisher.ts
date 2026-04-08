@@ -1,5 +1,12 @@
+interface MockPublisher {
+  publish: jest.Mock;
+  eval: jest.Mock;
+  get: jest.Mock;
+  del: jest.Mock;
+}
+
 /** Mock publisher with Redis command simulation for atomic sequence counters */
-export function createMockPublisher() {
+export function createMockPublisher(): MockPublisher {
   const counters = new Map<string, number>();
   return {
     publish: jest.fn().mockResolvedValue(1),

@@ -162,7 +162,13 @@ export class RedisEventTransport implements IEventTransport {
     }
   }
 
-  /** Advance subscriber reorder buffer to the authoritative Redis sequence counter (cross-replica safe) */
+  /**
+   * Advance subscriber reorder buffer to the authoritative Redis sequence counter (cross-replica safe).
+   *
+   * Any entries already in `pending` are live messages that arrived during the async GET window
+   * (the previous unsubscribe always calls `pending.clear()`). We must preserve them by lowering
+   * `nextSeq` to the minimum pending sequence so `flushPendingMessages` delivers them immediately.
+   */
   async syncReorderBuffer(streamId: string): Promise<void> {
     const key = KEYS.sequence(streamId);
     const rawStr = await this.publisher.get(key);
@@ -174,11 +180,11 @@ export class RedisEventTransport implements IEventTransport {
         clearTimeout(state.reorderBuffer.flushTimeout);
         state.reorderBuffer.flushTimeout = null;
       }
-      state.reorderBuffer.nextSeq = currentSeq;
-      for (const seq of state.reorderBuffer.pending.keys()) {
-        if (seq < currentSeq) {
-          state.reorderBuffer.pending.delete(seq);
-        }
+      if (state.reorderBuffer.pending.size > 0) {
+        const minPending = Math.min(...state.reorderBuffer.pending.keys());
+        state.reorderBuffer.nextSeq = Math.min(currentSeq, minPending);
+      } else {
+        state.reorderBuffer.nextSeq = currentSeq;
       }
       this.flushPendingMessages(streamId, state);
     }
@@ -663,14 +669,16 @@ export class RedisEventTransport implements IEventTransport {
    * Destroy all resources.
    */
   destroy(): void {
-    // Clear all flush timeouts, buffered messages, and sequence keys in a single pass
-    for (const [streamId, state] of this.streams) {
+    // Clear all flush timeouts and buffered messages.
+    // Sequence keys are NOT deleted here — they are shared across replicas.
+    // A shutting-down replica must not nuke the counter for active publishers.
+    // Keys expire naturally via their TTL; cleanup() handles single-stream teardown.
+    for (const [, state] of this.streams) {
       if (state.reorderBuffer.flushTimeout) {
         clearTimeout(state.reorderBuffer.flushTimeout);
         state.reorderBuffer.flushTimeout = null;
       }
       state.reorderBuffer.pending.clear();
-      this.publisher.del(KEYS.sequence(streamId)).catch(() => {});
     }
 
     for (const channel of this.channelSubscriptions.keys()) {

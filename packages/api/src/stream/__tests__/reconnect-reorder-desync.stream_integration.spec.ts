@@ -233,6 +233,67 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
     });
   });
 
+  describe('syncReorderBuffer race: message arrives during async GET window (Unit)', () => {
+    test('should not drop a chunk that lands in pending while GET is in-flight', async () => {
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = 'race-get-window-test';
+      const chunks: unknown[] = [];
+
+      // Emit seq 0 so the Redis counter is 1
+      await transport.emitChunk(streamId, { index: 0 });
+
+      // Subscribe (nextSeq starts at 0)
+      transport.subscribe(streamId, {
+        onChunk: (event) => chunks.push(event),
+      });
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+      const channel = `stream:{${streamId}}:events`;
+
+      // Pause the GET: intercept with a deferred promise
+      let resolveGet!: (val: string | null) => void;
+      mockPublisher.get.mockImplementationOnce(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveGet = resolve;
+          }),
+      );
+
+      const syncPromise = transport.syncReorderBuffer(streamId);
+
+      // While GET is in-flight, the publisher emits seq 1 (INCR → counter=2)
+      // and the subscriber receives it via pub/sub → pending[1]
+      await transport.emitChunk(streamId, { index: 1 });
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 1, data: { index: 1 } }));
+
+      // Resolve GET with counter=2 (reflects the INCR for seq 1)
+      resolveGet('2');
+      await syncPromise;
+
+      // seq 1 MUST be delivered — it arrived during the GET window and must not be pruned
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(1);
+
+      // Subsequent chunks must also deliver immediately
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 2, data: { index: 2 } }));
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(2);
+
+      transport.destroy();
+    });
+  });
+
   describe('End-to-end reconnect with GenerationJobManager (Integration)', () => {
     let originalEnv: NodeJS.ProcessEnv;
     let ioredisClient: Redis | Cluster | null = null;
