@@ -23,6 +23,7 @@ jobs:
       - name: Checkout newjersey
         uses: actions/checkout@v6
         with:
+          token: ${{ steps.app-token.outputs.token }}
           ref: newjersey
           fetch-depth: 0
 
