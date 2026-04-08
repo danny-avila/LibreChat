@@ -23,15 +23,16 @@ import {
   bedrockDocumentExtensions,
   isDocumentSupportedProvider,
 } from 'librechat-data-provider';
-import type { EndpointFileConfig } from 'librechat-data-provider';
+import type { EndpointFileConfig, TConversation } from 'librechat-data-provider';
+import type { ExtendedFile, FileSetter } from '~/common';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
   useGetAgentsConfig,
-  useFileHandling,
+  useFileHandlingNoChatContext,
   useLocalize,
 } from '~/hooks';
-import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
+import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -53,6 +54,10 @@ interface AttachFileMenuProps {
   endpointType?: EModelEndpoint | string;
   endpointFileConfig?: EndpointFileConfig;
   useResponsesApi?: boolean;
+  files: Map<string, ExtendedFile>;
+  setFiles: FileSetter;
+  setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  conversation: TConversation | null;
 }
 
 const AttachFileMenu = ({
@@ -63,6 +68,10 @@ const AttachFileMenu = ({
   conversationId,
   endpointFileConfig,
   useResponsesApi,
+  files,
+  setFiles,
+  setFilesLoading,
+  conversation,
 }: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
@@ -72,10 +81,17 @@ const AttachFileMenu = ({
     ephemeralAgentByConvoId(conversationId),
   );
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
-  const { handleFileChange } = useFileHandling();
-  const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    toolResource,
+  const { handleFileChange } = useFileHandlingNoChatContext(undefined, {
+    files,
+    setFiles,
+    setFilesLoading,
+    conversation,
   });
+  const { handleSharePointFiles, isProcessing, downloadProgress } =
+    useSharePointFileHandlingNoChatContext(
+      { toolResource },
+      { files, setFiles, setFilesLoading, conversation },
+    );
 
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();

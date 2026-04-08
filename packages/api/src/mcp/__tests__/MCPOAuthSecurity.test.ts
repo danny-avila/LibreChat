@@ -304,10 +304,10 @@ describe('MCP OAuth allowedDomains SSRF exemption for admin-trusted hosts', () =
   });
 
   it('should allow private revocationEndpoint when hostname is in allowedDomains', async () => {
-    const mockFetch = jest.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-    } as Response);
+    const mockFetch = Object.assign(
+      jest.fn().mockResolvedValue({ ok: true, status: 200 } as Response),
+      { preconnect: jest.fn() },
+    );
     const originalFetch = global.fetch;
     global.fetch = mockFetch;
 
@@ -333,14 +333,17 @@ describe('MCP OAuth allowedDomains SSRF exemption for admin-trusted hosts', () =
   });
 
   it('should allow localhost token_url in refreshOAuthTokens when localhost is in allowedDomains', async () => {
-    const mockFetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        access_token: 'new-access-token',
-        token_type: 'Bearer',
-        expires_in: 3600,
-      }),
-    } as Response);
+    const mockFetch = Object.assign(
+      jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-access-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        }),
+      } as Response),
+      { preconnect: jest.fn() },
+    );
     const originalFetch = global.fetch;
     global.fetch = mockFetch;
 

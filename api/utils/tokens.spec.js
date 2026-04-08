@@ -1813,3 +1813,57 @@ describe('GLM Model Tests (Zhipu AI)', () => {
     });
   });
 });
+
+describe('Mistral Model Tests', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for mistral-large-3 (256k context)', () => {
+      expect(getModelMaxTokens('mistral-large-3', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large-3'],
+      );
+    });
+
+    test('should match mistral-large-3 for suffixed variants', () => {
+      expect(getModelMaxTokens('mistral-large-3-instruct', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large-3'],
+      );
+    });
+
+    test('should not match mistral-large-3 for generic mistral-large', () => {
+      expect(getModelMaxTokens('mistral-large', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large'],
+      );
+      expect(getModelMaxTokens('mistral-large-latest', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large'],
+      );
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match mistral-large-3 exactly', () => {
+      expect(matchModelName('mistral-large-3', EModelEndpoint.custom)).toBe('mistral-large-3');
+    });
+
+    test('should match mistral-large-3 for prefixed/suffixed variants', () => {
+      expect(matchModelName('mistral/mistral-large-3', EModelEndpoint.custom)).toBe(
+        'mistral-large-3',
+      );
+      expect(matchModelName('mistral-large-3-instruct', EModelEndpoint.custom)).toBe(
+        'mistral-large-3',
+      );
+    });
+
+    test('should match generic mistral-large for non-3 variants', () => {
+      expect(matchModelName('mistral-large-latest', EModelEndpoint.custom)).toBe('mistral-large');
+    });
+  });
+
+  describe('findMatchingPattern', () => {
+    test('should prefer mistral-large-3 over mistral-large for mistral-large-3 variants', () => {
+      const result = findMatchingPattern(
+        'mistral-large-3-instruct',
+        maxTokensMap[EModelEndpoint.custom],
+      );
+      expect(result).toBe('mistral-large-3');
+    });
+  });
+});

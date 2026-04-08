@@ -53,6 +53,12 @@ export class FlowStateManager<T = unknown> {
     process.on('SIGHUP', cleanup);
   }
 
+  /**
+   * Flow keys are intentionally NOT tenant-scoped. OAuth callbacks arrive
+   * without tenant ALS context (the provider redirect doesn't carry
+   * X-Tenant-Id). Flow IDs are random UUIDs with no collision risk, and
+   * flow data is ephemeral (TTL-bounded, no sensitive user content).
+   */
   private getFlowKey(flowId: string, type: string): string {
     return `${type}:${flowId}`;
   }
@@ -253,7 +259,9 @@ export class FlowStateManager<T = unknown> {
 
     if (!flowState) {
       logger.warn(
-        '[FlowStateManager] Flow state not found during completion — cannot recover metadata, skipping',
+        `[FlowStateManager] completeFlow: flow not found — key=${flowKey}. ` +
+          'Possible causes: flow TTL expired before callback arrived, flow was never created, or ' +
+          'the callback is routing to a different instance without shared Keyv storage.',
         { flowId, type },
       );
       return false;

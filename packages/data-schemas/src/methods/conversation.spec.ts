@@ -4,6 +4,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { IConversation } from '../types';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ConversationMethods, createConversationMethods } from './conversation';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -905,6 +906,52 @@ describe('Conversation Operations', () => {
 
       expect(result?.conversations).toHaveLength(25);
       expect(result?.nextCursor).toBeNull(); // No next page
+    });
+  });
+
+  describe('tenantId stripping', () => {
+    it('saveConvo should not write caller-supplied tenantId to the document', async () => {
+      const conversationId = uuidv4();
+      const result = await saveConvo(
+        { userId: 'user123' },
+        { conversationId, tenantId: 'malicious-tenant', title: 'Tenant Test' },
+      );
+
+      expect(result).not.toBeNull();
+      const doc = await Conversation.findOne({ conversationId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.title).toBe('Tenant Test');
+      expect(doc?.tenantId).toBeUndefined();
+    });
+
+    it('bulkSaveConvos should not overwrite tenantId via update payload', async () => {
+      const conversationId = uuidv4();
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await Conversation.create({
+          conversationId,
+          user: 'user123',
+          title: 'Original',
+          endpoint: EModelEndpoint.openAI,
+        });
+      });
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await methods.bulkSaveConvos([
+          {
+            conversationId,
+            user: 'user123',
+            title: 'Updated',
+            tenantId: 'malicious-tenant',
+            endpoint: EModelEndpoint.openAI,
+          },
+        ]);
+      });
+
+      const doc = await runAsSystem(async () => Conversation.findOne({ conversationId }).lean());
+      expect(doc).not.toBeNull();
+      expect(doc?.title).toBe('Updated');
+      expect(doc?.tenantId).toBe('real-tenant');
     });
   });
 });

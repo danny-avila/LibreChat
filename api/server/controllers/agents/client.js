@@ -21,6 +21,7 @@ const {
   recordCollectedUsage,
   GenerationJobManager,
   getTransactionsConfig,
+  resolveRecursionLimit,
   createMemoryProcessor,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
@@ -50,6 +51,7 @@ const {
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
+const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
@@ -377,6 +379,9 @@ class AgentClient extends BaseClient {
      */
     const ephemeralAgent = this.options.req.body.ephemeralAgent;
     const mcpManager = getMCPManager();
+
+    const configServers = await resolveConfigServers(this.options.req);
+
     await Promise.all(
       allAgents.map(({ agent, agentId }) =>
         applyContextToAgent({
@@ -384,6 +389,7 @@ class AgentClient extends BaseClient {
           agentId,
           logger,
           mcpManager,
+          configServers,
           sharedRunContext,
           ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
         }),
@@ -728,7 +734,7 @@ class AgentClient extends BaseClient {
           },
           user: createSafeUser(this.options.req.user),
         },
-        recursionLimit: agentsEConfig?.recursionLimit ?? 50,
+        recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
@@ -774,17 +780,6 @@ class AgentClient extends BaseClient {
         // - Agents without incoming edges become start nodes and run in parallel automatically
         if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
-        }
-
-        if (agents[0].recursion_limit && typeof agents[0].recursion_limit === 'number') {
-          config.recursionLimit = agents[0].recursion_limit;
-        }
-
-        if (
-          agentsEConfig?.maxRecursionLimit &&
-          config.recursionLimit > agentsEConfig?.maxRecursionLimit
-        ) {
-          config.recursionLimit = agentsEConfig?.maxRecursionLimit;
         }
 
         // TODO: needs to be added as part of AgentContext initialization

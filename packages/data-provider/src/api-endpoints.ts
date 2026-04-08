@@ -361,7 +361,8 @@ export const getAllPromptGroups = () => `${prompts()}/all`;
 
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
-export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;
+export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
+export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(roleName)}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;

@@ -179,6 +179,7 @@ describe('Environment Variable Extraction (MCP)', () => {
   describe('processMCPEnv', () => {
     it('should create a deep clone of the input object', () => {
       const originalObj: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -202,6 +203,7 @@ describe('Environment Variable Extraction (MCP)', () => {
 
     it('should process environment variables in env field', () => {
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -252,6 +254,7 @@ describe('Environment Variable Extraction (MCP)', () => {
 
     it('should not modify objects without env or headers', () => {
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         timeout: 5000,
@@ -433,6 +436,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         ldapId: 'ldap-user-123',
       });
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -599,6 +603,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         CUSTOM_VAR_2: 'custom-value-2',
       };
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -674,6 +679,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         PROFILE_NAME: 'production-profile',
       };
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'npx',
         args: [
           '-y',
@@ -734,6 +740,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         UNUSED_VAR: 'unused-value',
       };
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -959,6 +966,7 @@ describe('Environment Variable Extraction (MCP)', () => {
       }) as unknown as IUser;
 
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['mcp-server.js', '--user', '{{LIBRECHAT_USER_USERNAME}}'],
         env: {

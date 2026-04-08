@@ -1,6 +1,6 @@
 import type { Document, Types } from 'mongoose';
 import type { PrincipalType } from 'librechat-data-provider';
-import type { SystemCapability } from '~/systemCapabilities';
+import type { SystemCapability } from '~/types/admin';
 
 export type SystemGrant = {
   /** The type of principal — matches PrincipalType enum values */

@@ -11,7 +11,8 @@ import {
   TUpdateFeedbackRequest,
 } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import { useChatContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
+import type { TMessageChatContext } from '~/common/types';
+import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetAddedConvo } from '~/hooks/Chat';
@@ -23,24 +24,33 @@ export type TMessageActions = Pick<
   'message' | 'currentEditId' | 'setCurrentEditId'
 > & {
   searchResults?: { [key: string]: SearchResultData };
+  /**
+   * Stable context object passed from wrapper components to avoid subscribing
+   * to ChatContext inside memo'd components (which would bypass React.memo).
+   * The `isSubmitting` property uses a getter backed by a ref, so it always
+   * returns the current value at call-time without triggering re-renders.
+   */
+  chatContext: TMessageChatContext;
 };
 
 export default function useMessageActions(props: TMessageActions) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
-  const { message, currentEditId, setCurrentEditId, searchResults } = props;
+  const { message, currentEditId, setCurrentEditId, searchResults, chatContext } = props;
 
   const {
     ask,
     index,
     regenerate,
-    isSubmitting,
     conversation,
     latestMessageId,
     latestMessageDepth,
     handleContinue,
-  } = useChatContext();
+    // NOTE: isSubmitting is intentionally NOT destructured here.
+    // chatContext.isSubmitting is a getter backed by a ref — destructuring
+    // would capture a one-time snapshot. Always access via chatContext.isSubmitting.
+  } = chatContext;
 
   const getAddedConvo = useGetAddedConvo();
 
@@ -98,13 +108,18 @@ export default function useMessageActions(props: TMessageActions) {
     }
   }, [agentsMap, conversation?.agent_id, conversation?.endpoint, message?.model]);
 
+  /**
+   * chatContext.isSubmitting is a getter backed by the wrapper's ref,
+   * so it always returns the current value at call-time — even for
+   * non-latest messages that don't re-render during streaming.
+   */
   const regenerateMessage = useCallback(() => {
-    if ((isSubmitting && isCreatedByUser === true) || !message) {
+    if ((chatContext.isSubmitting && isCreatedByUser === true) || !message) {
       return;
     }
 
     regenerate(message, { addedConvo: getAddedConvo() });
-  }, [isSubmitting, isCreatedByUser, message, regenerate, getAddedConvo]);
+  }, [chatContext, isCreatedByUser, message, regenerate, getAddedConvo]);
 
   const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
 
