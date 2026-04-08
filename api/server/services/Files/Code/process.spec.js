@@ -90,6 +90,11 @@ jest.mock('~/server/services/Files/images/convert', () => ({
   convertImage: jest.fn(),
 }));
 
+// Mock getRetentionExpiry from Files/process
+jest.mock('~/server/services/Files/process', () => ({
+  getRetentionExpiry: jest.fn(() => ({})),
+}));
+
 // Mock determineFileType
 jest.mock('~/server/utils', () => ({
   determineFileType: jest.fn(),
