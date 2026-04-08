@@ -11,6 +11,22 @@ const CHANNELS = {
 };
 
 /**
+ * Redis keys for shared state (hash-tagged for cluster slot compatibility)
+ */
+const KEYS = {
+  /** Atomic sequence counter: shared across all replicas for a given stream */
+  sequence: (streamId: string) => `stream:{${streamId}}:seq`,
+};
+
+/** Lua script: atomically INCR the sequence counter and refresh its TTL */
+const INCR_WITH_TTL_SCRIPT = `local v = redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+return v`;
+
+/** TTL for sequence keys (seconds). Safety net for orphaned keys; refreshed on every publish. */
+const SEQUENCE_TTL_SECONDS = 3600;
+
+/**
  * Event types for pub/sub messages
  */
 const EventTypes = {
@@ -96,8 +112,6 @@ export class RedisEventTransport implements IEventTransport {
   private channelSubscriptions = new Map<string, Promise<void>>();
   /** Counter for generating unique subscriber IDs */
   private subscriberIdCounter = 0;
-  /** Sequence counters per stream for publishing (ensures ordered delivery in cluster mode) */
-  private sequenceCounters = new Map<string, number>();
 
   /**
    * Create a new Redis event transport.
@@ -115,16 +129,24 @@ export class RedisEventTransport implements IEventTransport {
     });
   }
 
-  /** Get next sequence number for a stream (0-indexed) */
-  private getNextSequence(streamId: string): number {
-    const current = this.sequenceCounters.get(streamId) ?? 0;
-    this.sequenceCounters.set(streamId, current + 1);
-    return current;
+  /** Get next sequence number for a stream (0-indexed, backed by Redis INCR) */
+  private async getNextSequence(streamId: string): Promise<number> {
+    const key = KEYS.sequence(streamId);
+    const val = (await this.publisher.eval(
+      INCR_WITH_TTL_SCRIPT,
+      1,
+      key,
+      SEQUENCE_TTL_SECONDS,
+    )) as number;
+    return val - 1;
   }
 
-  /** Reset publish sequence counter and subscriber reorder state for a stream (full cleanup only) */
+  /** Reset subscriber reorder state and delete the Redis sequence key for a stream (full cleanup only) */
   resetSequence(streamId: string): void {
-    this.sequenceCounters.delete(streamId);
+    const key = KEYS.sequence(streamId);
+    this.publisher.del(key).catch((err) => {
+      logger.error(`[RedisEventTransport] Failed to delete sequence key ${key}:`, err);
+    });
     const state = this.streams.get(streamId);
     if (state) {
       if (state.reorderBuffer.flushTimeout) {
@@ -136,9 +158,11 @@ export class RedisEventTransport implements IEventTransport {
     }
   }
 
-  /** Advance subscriber reorder buffer to current publisher sequence without resetting publisher (cross-replica safe) */
-  syncReorderBuffer(streamId: string): void {
-    const currentSeq = this.sequenceCounters.get(streamId) ?? 0;
+  /** Advance subscriber reorder buffer to the authoritative Redis sequence counter (cross-replica safe) */
+  async syncReorderBuffer(streamId: string): Promise<void> {
+    const key = KEYS.sequence(streamId);
+    const raw = await this.publisher.get(key);
+    const currentSeq = raw != null ? parseInt(raw, 10) : 0;
     const state = this.streams.get(streamId);
     if (state) {
       if (state.reorderBuffer.flushTimeout) {
@@ -445,7 +469,7 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitChunk(streamId: string, event: unknown): Promise<void> {
     const channel = CHANNELS.events(streamId);
-    const seq = this.getNextSequence(streamId);
+    const seq = await this.getNextSequence(streamId);
     const message: PubSubMessage = { type: EventTypes.CHUNK, seq, data: event };
 
     try {
@@ -461,7 +485,7 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitDone(streamId: string, event: unknown): Promise<void> {
     const channel = CHANNELS.events(streamId);
-    const seq = this.getNextSequence(streamId);
+    const seq = await this.getNextSequence(streamId);
     const message: PubSubMessage = { type: EventTypes.DONE, seq, data: event };
 
     try {
@@ -478,7 +502,7 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitError(streamId: string, error: string): Promise<void> {
     const channel = CHANNELS.events(streamId);
-    const seq = this.getNextSequence(streamId);
+    const seq = await this.getNextSequence(streamId);
     const message: PubSubMessage = { type: EventTypes.ERROR, seq, error };
 
     try {
@@ -640,9 +664,12 @@ export class RedisEventTransport implements IEventTransport {
       this.subscriber.unsubscribe(channel).catch(() => {});
     }
 
+    for (const streamId of this.streams.keys()) {
+      this.publisher.del(KEYS.sequence(streamId)).catch(() => {});
+    }
+
     this.channelSubscriptions.clear();
     this.streams.clear();
-    this.sequenceCounters.clear();
 
     try {
       this.subscriber.disconnect();

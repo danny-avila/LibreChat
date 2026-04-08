@@ -807,7 +807,7 @@ class GenerationJobManagerClass {
         onChunk(createdEvent);
       }
 
-      this.eventTransport.syncReorderBuffer?.(streamId);
+      await this.eventTransport.syncReorderBuffer?.(streamId);
     }
 
     if (isFirst) {

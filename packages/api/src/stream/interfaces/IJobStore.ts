@@ -341,7 +341,7 @@ export interface IEventTransport {
   resetSequence?(streamId: string): void;
 
   /** Advance subscriber reorder buffer to match publisher sequence (cross-replica safe: doesn't reset publisher counter) */
-  syncReorderBuffer?(streamId: string): void;
+  syncReorderBuffer?(streamId: string): void | Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

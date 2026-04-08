@@ -8,6 +8,27 @@ import {
   keyvRedisClientReady,
 } from '~/cache/redisClients';
 
+/** Mock publisher with Redis command simulation for atomic sequence counters */
+function createMockPublisher() {
+  const counters = new Map<string, number>();
+  return {
+    publish: jest.fn().mockResolvedValue(1),
+    eval: jest.fn().mockImplementation((_script: string, _numKeys: number, key: string) => {
+      const current = (counters.get(key) ?? 0) + 1;
+      counters.set(key, current);
+      return Promise.resolve(current);
+    }),
+    get: jest.fn().mockImplementation((key: string) => {
+      const val = counters.get(key);
+      return Promise.resolve(val != null ? String(val) : null);
+    }),
+    del: jest.fn().mockImplementation((key: string) => {
+      counters.delete(key);
+      return Promise.resolve(1);
+    }),
+  };
+}
+
 /**
  * Regression tests for the reconnect reorder buffer desync bug.
  *
@@ -26,9 +47,7 @@ import {
 describe('Reconnect Reorder Buffer Desync (Regression)', () => {
   describe('Callback preservation across reconnect cycles (Unit)', () => {
     test('allSubscribersLeft callback fires on every disconnect, not just the first', () => {
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -70,9 +89,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
     });
 
     test('abort callback survives across reconnect cycles', () => {
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -125,9 +142,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
      * immediately regardless of how many reconnect cycles have occurred.
      */
     test('syncReorderBuffer works correctly on third+ reconnect', async () => {
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -159,7 +174,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
         });
 
         // Sync reorder buffer (as GenerationJobManager.subscribe does)
-        transport.syncReorderBuffer(streamId);
+        await transport.syncReorderBuffer(streamId);
 
         const baseSeq = cycle * 10;
 
@@ -189,9 +204,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
     });
 
     test('reorder buffer works correctly when syncReorderBuffer IS called', async () => {
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -216,8 +229,8 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
         onChunk: (event) => chunks.push(event),
       });
 
-      // This is the critical call - sync nextSeq to match publisher
-      transport.syncReorderBuffer(streamId);
+      // This is the critical call - sync nextSeq to match publisher (reads from Redis)
+      await transport.syncReorderBuffer(streamId);
 
       // Deliver messages starting at seq 20
       const messageHandler = mockSubscriber.on.mock.calls.find(

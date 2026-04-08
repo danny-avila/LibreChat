@@ -1,5 +1,26 @@
 import type { Redis, Cluster } from 'ioredis';
 
+/** Mock publisher with Redis command simulation for atomic sequence counters */
+function createMockPublisher() {
+  const counters = new Map<string, number>();
+  return {
+    publish: jest.fn().mockResolvedValue(1),
+    eval: jest.fn().mockImplementation((_script: string, _numKeys: number, key: string) => {
+      const current = (counters.get(key) ?? 0) + 1;
+      counters.set(key, current);
+      return Promise.resolve(current);
+    }),
+    get: jest.fn().mockImplementation((key: string) => {
+      const val = counters.get(key);
+      return Promise.resolve(val != null ? String(val) : null);
+    }),
+    del: jest.fn().mockImplementation((key: string) => {
+      counters.delete(key);
+      return Promise.resolve(1);
+    }),
+  };
+}
+
 /**
  * Integration tests for RedisEventTransport.
  *
@@ -318,9 +339,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should reorder out-of-sequence messages', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -359,9 +378,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should buffer early messages and deliver when gaps are filled', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -407,9 +424,7 @@ describe('RedisEventTransport Integration Tests', () => {
 
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -450,9 +465,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should handle messages without sequence numbers (backward compatibility)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -492,9 +505,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should deliver done event after all pending chunks (terminal event ordering)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         subscribe: jest.fn().mockResolvedValue(undefined),
         unsubscribe: jest.fn().mockResolvedValue(undefined),
@@ -547,9 +558,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should deliver error event after all pending chunks (terminal event ordering)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         subscribe: jest.fn().mockResolvedValue(undefined),
         unsubscribe: jest.fn().mockResolvedValue(undefined),
@@ -898,9 +907,8 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should swallow emitChunk publish errors (callers fire-and-forget)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
-      };
+      const mockPublisher = createMockPublisher();
+      mockPublisher.publish.mockRejectedValue(new Error('Redis connection lost'));
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -924,9 +932,8 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should throw when emitDone publish fails', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
-      };
+      const mockPublisher = createMockPublisher();
+      mockPublisher.publish.mockRejectedValue(new Error('Redis connection lost'));
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -950,9 +957,8 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should throw when emitError publish fails', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
-      };
+      const mockPublisher = createMockPublisher();
+      mockPublisher.publish.mockRejectedValue(new Error('Redis connection lost'));
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
