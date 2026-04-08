@@ -57,6 +57,7 @@ router.post(
   middleware.loginLimiter,
   middleware.checkBan,
   middleware.requireLocalAuth,
+  tenantContextMiddleware,
   requireAdminAccess,
   setBalanceConfig,
   loginController,
