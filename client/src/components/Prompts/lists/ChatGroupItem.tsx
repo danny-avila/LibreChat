@@ -22,6 +22,8 @@ import PreviewPrompt from '../dialogs/PreviewPrompt';
 import CategoryIcon from '../utils/CategoryIcon';
 import { detectVariables, cn } from '~/utils';
 
+const PROMPT_PATH = '/prompts';
+
 function ChatGroupItem({
   group,
   isChatRoute = true,
@@ -53,8 +55,6 @@ function ChatGroupItem({
 
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const promptPath = '/prompts';
-
   const deleteGroup = useDeletePromptGroup({
     onSuccess: () => {
       setDeleteOpen(false);
@@ -63,7 +63,7 @@ function ChatGroupItem({
         isStatus: true,
       });
       if (!isChatRoute && params.promptId === group._id) {
-        navigate(`${promptPath}/new`, { replace: true });
+        navigate(`${PROMPT_PATH}/new`, { replace: true });
       }
     },
     onError: () => {
@@ -80,7 +80,7 @@ function ChatGroupItem({
 
   const onCardClick = useCallback(() => {
     if (!isChatRoute) {
-      navigate(`${promptPath}/${group._id}`, { replace: true });
+      navigate(`${PROMPT_PATH}/${group._id}`, { replace: true });
       return;
     }
 
@@ -98,7 +98,7 @@ function ChatGroupItem({
     if (group._id) {
       recordUsage.mutate(group._id);
     }
-  }, [group, submitPrompt, recordUsage, isChatRoute, navigate, promptPath]);
+  }, [group, submitPrompt, recordUsage, isChatRoute, navigate]);
 
   const snippet =
     typeof group.oneliner === 'string' && group.oneliner.length > 0
@@ -120,7 +120,7 @@ function ChatGroupItem({
     if (canEdit) {
       items.push({
         label: localize('com_ui_edit'),
-        onClick: () => navigate(`${promptPath}/${group._id}`),
+        onClick: () => navigate(`${PROMPT_PATH}/${group._id}`),
         icon: <SquarePen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
       });
     }
