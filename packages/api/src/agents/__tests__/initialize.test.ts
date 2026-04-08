@@ -1,7 +1,7 @@
 import { Providers } from '@librechat/agents';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent } from 'librechat-data-provider';
-import type { ServerRequest, InitializeResultBase } from '~/types';
+import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
 
 // Mock logger
@@ -147,7 +147,7 @@ describe('initializeAgent — custom provider token lookup', () => {
     customProvider?: string;
     model?: string;
     maxOutputTokens?: number;
-    endpointTokenConfig?: Record<string, number>;
+    endpointTokenConfig?: EndpointTokenConfig;
   }) {
     const {
       customProvider = 'EduGPT',
@@ -260,7 +260,9 @@ describe('initializeAgent — custom provider token lookup', () => {
   });
 
   it('uses endpointTokenConfig from the custom endpoint for unrecognized models', async () => {
-    const customTokenConfig = { 'my-custom-model-v1': 65536 };
+    const customTokenConfig: EndpointTokenConfig = {
+      'my-custom-model-v1': { context: 65536, prompt: 1, completion: 1 },
+    };
     const { agent, req, res, loadTools, db, customProvider } = createCustomProviderMocks({
       model: 'my-custom-model-v1',
       endpointTokenConfig: customTokenConfig,
