@@ -32,7 +32,7 @@ const {
   getFlowStateManager,
   getMCPManager,
 } = require('~/config');
-const { findToken, createToken, updateToken } = require('~/models');
+const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { getGraphApiToken } = require('./GraphTokenService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
@@ -720,6 +720,7 @@ function createToolInstance({
           findToken,
           createToken,
           updateToken,
+          deleteTokens,
         },
         oauthStart,
         oauthEnd,

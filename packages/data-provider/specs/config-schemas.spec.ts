@@ -1,10 +1,15 @@
 import {
-  endpointSchema,
   paramDefinitionSchema,
   agentsEndpointSchema,
   azureEndpointSchema,
+  endpointSchema,
+  configSchema,
+  interfaceSchema,
+  fileStorageSchema,
+  fileStrategiesSchema,
 } from '../src/config';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
+import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
   it('accepts a minimal definition with only key', () => {
@@ -222,6 +227,109 @@ describe('endpointSchema deprecated fields', () => {
   });
 });
 
+describe('endpointSchema addParams validation', () => {
+  const validEndpoint = {
+    name: 'CustomEndpoint',
+    apiKey: 'test-key',
+    baseURL: 'https://api.example.com',
+    models: { default: ['model-1'] },
+  };
+  const nestedAddParams = {
+    provider: {
+      only: ['z-ai'],
+      quantizations: ['int4'],
+    },
+  };
+
+  it('accepts nested addParams objects and arrays', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      addParams: nestedAddParams,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.addParams).toEqual(nestedAddParams);
+    }
+  });
+
+  it('keeps configSchema validation intact with nested custom addParams', () => {
+    const result = configSchema.safeParse({
+      version: '1.0.0',
+      endpoints: {
+        custom: [
+          {
+            ...validEndpoint,
+            addParams: nestedAddParams,
+          },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts boolean web_search in addParams', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      addParams: {
+        provider: {
+          only: ['z-ai'],
+        },
+        web_search: true,
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts scalar addParams values', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      addParams: {
+        model: 'custom-model',
+        retries: 2,
+        metadata: null,
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects non-boolean web_search objects in addParams', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      addParams: {
+        provider: {
+          only: ['z-ai'],
+        },
+        web_search: {
+          enabled: true,
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects configSchema entries with non-boolean web_search objects in custom addParams', () => {
+    const result = configSchema.safeParse({
+      version: '1.0.0',
+      endpoints: {
+        custom: [
+          {
+            ...validEndpoint,
+            addParams: {
+              provider: {
+                only: ['z-ai'],
+              },
+              web_search: {
+                enabled: true,
+              },
+            },
+          },
+        ],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('agentsEndpointSchema', () => {
   it('does not accept baseURL', () => {
     const result = agentsEndpointSchema.safeParse({
@@ -250,5 +358,147 @@ describe('azureEndpointSchema', () => {
     if (result.success) {
       expect(result.data).not.toHaveProperty('plugins');
     }
+  });
+
+  it('accepts nested addParams in azure groups', () => {
+    const result = azureEndpointSchema.safeParse({
+      groups: [
+        {
+          group: 'test-group',
+          apiKey: 'test-key',
+          models: { 'gpt-4': true },
+          addParams: {
+            provider: {
+              only: ['z-ai'],
+            },
+          },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.groups[0].addParams).toEqual({
+        provider: {
+          only: ['z-ai'],
+        },
+      });
+    }
+  });
+
+  it('accepts boolean web_search in azure addParams', () => {
+    const result = azureEndpointSchema.safeParse({
+      groups: [
+        {
+          group: 'test-group',
+          apiKey: 'test-key',
+          models: { 'gpt-4': true },
+          addParams: {
+            provider: {
+              only: ['z-ai'],
+            },
+            web_search: false,
+          },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects non-boolean web_search objects in azure addParams', () => {
+    const result = azureEndpointSchema.safeParse({
+      groups: [
+        {
+          group: 'test-group',
+          apiKey: 'test-key',
+          models: { 'gpt-4': true },
+          addParams: {
+            provider: {
+              only: ['z-ai'],
+            },
+            web_search: {
+              enabled: true,
+            },
+          },
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('fileStorageSchema', () => {
+  const validStrategies = [
+    FileSources.local,
+    FileSources.firebase,
+    FileSources.s3,
+    FileSources.azure_blob,
+  ];
+  const invalidStrategies = [
+    FileSources.openai,
+    FileSources.azure,
+    FileSources.vectordb,
+    FileSources.execute_code,
+    FileSources.mistral_ocr,
+    FileSources.azure_mistral_ocr,
+    FileSources.vertexai_mistral_ocr,
+    FileSources.text,
+    FileSources.document_parser,
+  ];
+
+  for (const strategy of validStrategies) {
+    it(`accepts storage strategy "${strategy}"`, () => {
+      expect(fileStorageSchema.safeParse(strategy).success).toBe(true);
+    });
+  }
+
+  for (const strategy of invalidStrategies) {
+    it(`rejects processing strategy "${strategy}"`, () => {
+      expect(fileStorageSchema.safeParse(strategy).success).toBe(false);
+    });
+  }
+});
+
+describe('fileStrategiesSchema', () => {
+  it('accepts valid storage strategies for all sub-fields', () => {
+    const result = fileStrategiesSchema.safeParse({
+      default: FileSources.s3,
+      avatar: FileSources.local,
+      image: FileSources.firebase,
+      document: FileSources.azure_blob,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects processing strategies in sub-fields', () => {
+    const result = fileStrategiesSchema.safeParse({
+      default: FileSources.vectordb,
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('configSchema fileStrategy', () => {
+  it('rejects a processing strategy as fileStrategy', () => {
+    const result = configSchema.safeParse({ version: '1.3.7', fileStrategy: FileSources.vectordb });
+    expect(result.success).toBe(false);
+  });
+
+  it('defaults fileStrategy to local when absent', () => {
+    const result = configSchema.safeParse({ version: '1.3.7' });
+    expect(result.success).toBe(true);
+    expect(result.data?.fileStrategy).toBe(FileSources.local);
+  });
+});
+
+describe('interfaceSchema', () => {
+  it('silently strips removed legacy fields', () => {
+    const result = interfaceSchema.parse({
+      endpointsMenu: true,
+      sidePanel: true,
+      modelSelect: false,
+    });
+    expect(result).not.toHaveProperty('endpointsMenu');
+    expect(result).not.toHaveProperty('sidePanel');
+    expect(result.modelSelect).toBe(false);
   });
 });

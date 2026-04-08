@@ -1,5 +1,5 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import { createAppConfigService } from './service';
+import { createAppConfigService, _resetOverrideStrictCache } from './service';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
 interface TestConfig extends AppConfig {
@@ -34,7 +34,7 @@ function createMockCache(namespace = 'app_config') {
 
 function createDeps(overrides = {}) {
   const cache = createMockCache();
-  const baseConfig = { interfaceConfig: { endpointsMenu: true }, endpoints: ['openAI'] };
+  const baseConfig = { interfaceConfig: { modelSelect: true }, endpoints: ['openAI'] };
 
   return {
     loadBaseConfig: jest.fn().mockResolvedValue(baseConfig),
@@ -79,7 +79,7 @@ describe('createAppConfigService', () => {
         getApplicableConfigs: jest
           .fn()
           .mockResolvedValue([
-            { priority: 10, overrides: { interface: { endpointsMenu: false } }, isActive: true },
+            { priority: 10, overrides: { interface: { modelSelect: false } }, isActive: true },
           ]),
       });
       const { getAppConfig } = createAppConfigService(deps);
@@ -125,7 +125,7 @@ describe('createAppConfigService', () => {
         getApplicableConfigs: jest
           .fn()
           .mockResolvedValue([
-            { priority: 10, overrides: { interface: { endpointsMenu: false } }, isActive: true },
+            { priority: 10, overrides: { interface: { modelSelect: false } }, isActive: true },
           ]),
       });
       const { getAppConfig } = createAppConfigService(deps);
@@ -133,7 +133,7 @@ describe('createAppConfigService', () => {
       const config = await getAppConfig({ role: 'ADMIN' });
 
       const merged = config as TestConfig;
-      expect(merged.interfaceConfig?.endpointsMenu).toBe(false);
+      expect(merged.interfaceConfig?.modelSelect).toBe(false);
       expect(merged.endpoints).toEqual(['openAI']);
     });
 
@@ -227,6 +227,124 @@ describe('createAppConfigService', () => {
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);
       expect((config as TestConfig).x).toBe('admin-only');
+    });
+
+    it('passes empty principals to getApplicableConfigs when buildPrincipals returns empty', async () => {
+      const deps = createDeps({
+        getUserPrincipals: jest.fn().mockResolvedValue([]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ userId: 'uid1', role: 'USER' });
+
+      expect(deps.getUserPrincipals).toHaveBeenCalledWith({ userId: 'uid1', role: 'USER' });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+      expect(config).toEqual(deps._baseConfig);
+    });
+
+    describe('strict mode (TENANT_ISOLATION_STRICT=true)', () => {
+      beforeEach(() => {
+        process.env.TENANT_ISOLATION_STRICT = 'true';
+        _resetOverrideStrictCache();
+      });
+      afterEach(() => {
+        delete process.env.TENANT_ISOLATION_STRICT;
+        _resetOverrideStrictCache();
+      });
+
+      it('skips DB query for empty principals without tenantId and does not cache', async () => {
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
+
+        const config = await getAppConfig();
+
+        expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+        expect(config).toEqual(deps._baseConfig);
+
+        const setCalls = deps._cache.set.mock.calls.filter(
+          ([key]: [string, unknown]) => key !== '_BASE_',
+        );
+        expect(setCalls).toHaveLength(0);
+      });
+
+      it('queries DB when tenantId is present', async () => {
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
+
+        await getAppConfig({ tenantId: 'tenant-a' });
+
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+      });
+
+      it('warns once when non-empty principals proceed without tenantId', async () => {
+        const { logger } = jest.requireActual('@librechat/data-schemas');
+        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
+
+        await getAppConfig({ role: 'USER' });
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('No tenantId in strict mode'));
+        const warnCount = warnSpy.mock.calls.length;
+
+        await getAppConfig({ role: 'ADMIN' });
+        expect(warnSpy).toHaveBeenCalledTimes(warnCount);
+
+        warnSpy.mockRestore();
+      });
+
+      it('falls through to getApplicableConfigs when ALS has tenant context despite no tenantId param', async () => {
+        const { tenantStorage } = jest.requireActual('@librechat/data-schemas');
+        const deps = createDeps({
+          getApplicableConfigs: jest
+            .fn()
+            .mockResolvedValue([{ priority: 5, overrides: { restricted: true }, isActive: true }]),
+        });
+        const { getAppConfig } = createAppConfigService(deps);
+
+        const config = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          getAppConfig(),
+        );
+
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+        expect((config as TestConfig).restricted).toBe(true);
+      });
+    });
+
+    describe('non-strict mode (TENANT_ISOLATION_STRICT unset)', () => {
+      beforeEach(() => {
+        delete process.env.TENANT_ISOLATION_STRICT;
+        _resetOverrideStrictCache();
+      });
+      afterEach(() => {
+        _resetOverrideStrictCache();
+      });
+
+      it('passes empty principals through to getApplicableConfigs', async () => {
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
+
+        await getAppConfig();
+
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+      });
+    });
+
+    it('does not cache on buildPrincipals error — retries on next request', async () => {
+      const deps = createDeps({
+        getUserPrincipals: jest
+          .fn()
+          .mockRejectedValueOnce(new Error('transient'))
+          .mockResolvedValue([{ principalType: 'role', principalId: 'USER' }]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const first = await getAppConfig({ userId: 'uid1', role: 'USER' });
+      expect(first).toEqual(deps._baseConfig);
+      expect(deps.getApplicableConfigs).not.toHaveBeenCalled();
+
+      await getAppConfig({ userId: 'uid1', role: 'USER' });
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(2);
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to base config on getApplicableConfigs error', async () => {

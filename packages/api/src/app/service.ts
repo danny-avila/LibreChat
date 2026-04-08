@@ -1,11 +1,16 @@
 import { PrincipalType } from 'librechat-data-provider';
-import { logger, mergeConfigOverrides, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
+import {
+  logger,
+  getTenantId,
+  mergeConfigOverrides,
+  BASE_CONFIG_PRINCIPAL_ID,
+} from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { AppConfig, IConfig } from '@librechat/data-schemas';
 
 const BASE_CONFIG_KEY = '_BASE_';
 
-const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
+export const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -50,9 +55,9 @@ function isStrictOverrideMode(): boolean {
   return (_strictOverride ??= process.env.TENANT_ISOLATION_STRICT === 'true');
 }
 
-/** @internal Resets the cached strict-override flag. Exposed for test teardown only. */
 let _warnedNoTenantInStrictMode = false;
 
+/** @internal Resets the memoized strict-override flag and one-time no-tenantId warning gate. Exposed for test teardown only. */
 export function _resetOverrideStrictCache(): void {
   _strictOverride = undefined;
   _warnedNoTenantInStrictMode = false;
@@ -60,13 +65,6 @@ export function _resetOverrideStrictCache(): void {
 
 function overrideCacheKey(role?: string, userId?: string, tenantId?: string): string {
   const tenant = tenantId || '__default__';
-  if (!tenantId && isStrictOverrideMode() && !_warnedNoTenantInStrictMode) {
-    _warnedNoTenantInStrictMode = true;
-    logger.warn(
-      '[overrideCacheKey] No tenantId in strict mode — falling back to __default__. ' +
-        'This likely indicates a code path that bypasses the tenant context middleware.',
-    );
-  }
   if (userId && role) {
     return `_OVERRIDE_:${tenant}:${role}:${userId}`;
   }
@@ -168,8 +166,32 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       }
     }
 
+    const principals = await buildPrincipals(role, userId).catch((error: unknown) => {
+      logger.error('[getAppConfig] Error building principals, falling back to base:', error);
+      return null;
+    });
+    if (principals === null) {
+      return baseConfig;
+    }
+
+    // Strict-isolation + no tenant (param or ALS) = pathological path (middleware bypass or
+    // unauthenticated startup). Pre-tenant calls use baseOnly:true; admin calls carry tenantId.
+    // If ALS has a tenant, Mongoose scopes queries to that tenant's overrides — must fall through.
+    // Not cached: the cache key doesn't include ALS context, so a cached __default__ entry would
+    // be served to later ALS-scoped calls that share the same param-derived key.
+    if (principals.length === 0 && !tenantId && !getTenantId() && isStrictOverrideMode()) {
+      return baseConfig;
+    }
+
+    if (!tenantId && isStrictOverrideMode() && !_warnedNoTenantInStrictMode) {
+      _warnedNoTenantInStrictMode = true;
+      logger.warn(
+        '[getAppConfig] No tenantId in strict mode — falling back to __default__. ' +
+          'This likely indicates a code path that bypasses the tenant context middleware.',
+      );
+    }
+
     try {
-      const principals = await buildPrincipals(role, userId);
       const configs = await getApplicableConfigs(principals);
 
       if (configs.length === 0) {
