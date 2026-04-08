@@ -853,6 +853,184 @@ describe('RedisEventTransport Integration Tests', () => {
     });
   });
 
+  /**
+   * Cross-Replica Sequence Synchronization (#12575)
+   *
+   * These tests reproduce the exact failure from the issue: two separate
+   * transport instances (simulating two ECS tasks / replicas) sharing the
+   * same Redis. Replica A publishes chunks; Replica B subscribes later and
+   * calls syncReorderBuffer. Before the fix, Replica B's reorder buffer
+   * always started at nextSeq=0 because the sequence counter was in-memory.
+   * Now the counter lives in Redis, so Replica B reads the authoritative
+   * value and delivers chunks immediately.
+   */
+  describe('Cross-Replica Sequence Synchronization (#12575)', () => {
+    test('late subscriber on a different replica syncs to the shared counter and receives chunks immediately', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      // Replica A: publisher
+      const subscriberA = (ioredisClient as Redis).duplicate();
+      const replicaA = new RedisEventTransport(ioredisClient, subscriberA);
+
+      // Replica B: consumer (separate transport, never publishes)
+      const subscriberB = (ioredisClient as Redis).duplicate();
+      // Duplicate another connection for Replica B's publisher client
+      // (it needs its own publisher for GET/EVAL, but never calls emitChunk)
+      const publisherB = (ioredisClient as Redis).duplicate();
+      const replicaB = new RedisEventTransport(publisherB, subscriberB);
+
+      const streamId = `cross-replica-sync-${Date.now()}`;
+
+      // Replica A publishes 20 chunks (advances the shared Redis counter to 20)
+      for (let i = 0; i < 20; i++) {
+        await replicaA.emitChunk(streamId, { index: i });
+      }
+
+      // Replica B subscribes AFTER those 20 chunks were published
+      const receivedChunks: unknown[] = [];
+      const sub = replicaB.subscribe(streamId, {
+        onChunk: (event) => receivedChunks.push(event),
+      });
+
+      // Wait for the Redis subscription to activate
+      if (sub.ready) {
+        await sub.ready;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Replica B syncs its reorder buffer from the shared Redis counter
+      await replicaB.syncReorderBuffer(streamId);
+
+      // Replica A publishes 5 more chunks (seq 20–24)
+      for (let i = 20; i < 25; i++) {
+        await replicaA.emitChunk(streamId, { index: i });
+      }
+
+      // Wait for cross-instance pub/sub delivery
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Replica B should receive exactly the 5 new chunks — immediately,
+      // with no 500ms timeout or force-flush. This is the core assertion
+      // that was broken before the fix: nextSeq was 0, so chunks 20–24
+      // were buffered waiting for seq 0 which never arrived.
+      expect(receivedChunks.length).toBe(5);
+      expect(receivedChunks.map((c) => (c as { index: number }).index)).toEqual([
+        20, 21, 22, 23, 24,
+      ]);
+
+      sub.unsubscribe();
+      replicaA.destroy();
+      replicaB.destroy();
+      subscriberA.disconnect();
+      subscriberB.disconnect();
+      publisherB.disconnect();
+    });
+
+    test('multiple subscribe/unsubscribe cycles across replicas maintain correct sequence', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriberA = (ioredisClient as Redis).duplicate();
+      const replicaA = new RedisEventTransport(ioredisClient, subscriberA);
+
+      const subscriberB = (ioredisClient as Redis).duplicate();
+      const publisherB = (ioredisClient as Redis).duplicate();
+      const replicaB = new RedisEventTransport(publisherB, subscriberB);
+
+      const streamId = `cross-replica-reconnect-${Date.now()}`;
+
+      // Run 3 cycles: each time Replica A publishes 10 chunks,
+      // Replica B subscribes, syncs, receives, then unsubscribes.
+      for (let cycle = 0; cycle < 3; cycle++) {
+        const baseSeq = cycle * 10;
+
+        // Replica A publishes 10 chunks
+        for (let i = 0; i < 10; i++) {
+          await replicaA.emitChunk(streamId, { index: baseSeq + i });
+        }
+
+        // Replica B subscribes and syncs
+        const chunks: unknown[] = [];
+        const sub = replicaB.subscribe(streamId, {
+          onChunk: (event) => chunks.push(event),
+        });
+        if (sub.ready) {
+          await sub.ready;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await replicaB.syncReorderBuffer(streamId);
+
+        // Replica A publishes 5 more chunks
+        for (let i = 0; i < 5; i++) {
+          await replicaA.emitChunk(streamId, { index: baseSeq + 10 + i });
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        // Replica B should get exactly the 5 post-sync chunks
+        expect(chunks.length).toBe(5);
+        expect(chunks.map((c) => (c as { index: number }).index)).toEqual(
+          Array.from({ length: 5 }, (_, i) => baseSeq + 10 + i),
+        );
+
+        sub.unsubscribe();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      replicaA.destroy();
+      replicaB.destroy();
+      subscriberA.disconnect();
+      subscriberB.disconnect();
+      publisherB.disconnect();
+    });
+
+    test('shared counter is cleaned up on stream cleanup', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+
+      const streamId = `cross-replica-cleanup-${Date.now()}`;
+
+      // Publish chunks to create the Redis counter key
+      for (let i = 0; i < 5; i++) {
+        await transport.emitChunk(streamId, { index: i });
+      }
+
+      // Verify the key exists
+      const key = `stream:{${streamId}}:seq`;
+      const valBefore = await ioredisClient.get(key);
+      expect(valBefore).toBe('5');
+
+      // Cleanup the stream
+      transport.cleanup(streamId);
+
+      // Allow the fire-and-forget DEL to execute
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify the key was deleted
+      const valAfter = await ioredisClient.get(key);
+      expect(valAfter).toBeNull();
+
+      transport.destroy();
+      subscriber.disconnect();
+    });
+  });
+
   describe('Cleanup', () => {
     test('should clean up stream resources', async () => {
       if (!ioredisClient) {
