@@ -170,7 +170,12 @@ export class RedisEventTransport implements IEventTransport {
         state.reorderBuffer.flushTimeout = null;
       }
       state.reorderBuffer.nextSeq = currentSeq;
-      state.reorderBuffer.pending.clear();
+      for (const seq of state.reorderBuffer.pending.keys()) {
+        if (seq < currentSeq) {
+          state.reorderBuffer.pending.delete(seq);
+        }
+      }
+      this.flushPendingMessages(streamId, state);
     }
   }
 
@@ -468,11 +473,10 @@ export class RedisEventTransport implements IEventTransport {
    * Includes sequence number for ordered delivery in Redis Cluster mode.
    */
   async emitChunk(streamId: string, event: unknown): Promise<void> {
-    const channel = CHANNELS.events(streamId);
-    const seq = await this.getNextSequence(streamId);
-    const message: PubSubMessage = { type: EventTypes.CHUNK, seq, data: event };
-
     try {
+      const channel = CHANNELS.events(streamId);
+      const seq = await this.getNextSequence(streamId);
+      const message: PubSubMessage = { type: EventTypes.CHUNK, seq, data: event };
       await this.publisher.publish(channel, JSON.stringify(message));
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish chunk:`, err);
