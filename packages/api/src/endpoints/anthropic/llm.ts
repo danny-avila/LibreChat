@@ -1,7 +1,12 @@
 import { Dispatcher, ProxyAgent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
+import {
+  anthropicSettings,
+  removeNullishValues,
+  AuthKeys,
+  Constants,
+} from 'librechat-data-provider';
 import type {
   AnthropicLLMConfigResult,
   AnthropicConfigOptions,
@@ -189,8 +194,11 @@ function getLLMConfig(
   }
 
   const headers = getClaudeHeaders(requestOptions.model ?? '', supportsCacheControl);
-  if (headers && requestOptions.clientOptions) {
-    requestOptions.clientOptions.defaultHeaders = headers;
+  if (requestOptions.clientOptions) {
+    requestOptions.clientOptions.defaultHeaders = {
+      'User-Agent': `LibreChat/${Constants.VERSION}`,
+      ...(headers || {}),
+    };
   }
 
   if (options.proxy && requestOptions.clientOptions) {
@@ -274,6 +282,7 @@ function getLLMConfig(
       }
 
       requestOptions.clientOptions.defaultHeaders = {
+        'User-Agent': `LibreChat/${Constants.VERSION}`,
         ...requestOptions.clientOptions.defaultHeaders,
         'anthropic-beta': 'web-search-2025-03-05',
       };
