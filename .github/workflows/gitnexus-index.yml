@@ -49,15 +49,12 @@ jobs:
         with:
           node-version: 24
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Cache bun store
+      - name: Cache npm store
         uses: actions/cache@v4
         with:
-          path: ~/.bun/install/cache
-          key: gitnexus-bun-${{ runner.os }}-${{ env.GITNEXUS_VERSION }}
-          restore-keys: gitnexus-bun-${{ runner.os }}-
+          path: ~/.npm
+          key: gitnexus-npm-${{ runner.os }}-${{ env.GITNEXUS_VERSION }}
+          restore-keys: gitnexus-npm-${{ runner.os }}-
 
       - name: Run GitNexus Analyze
         run: |
@@ -68,7 +65,7 @@ jobs:
           if [ "${{ inputs.force }}" = "true" ]; then
             FLAGS="$FLAGS --force"
           fi
-          bunx gitnexus@${{ env.GITNEXUS_VERSION }} analyze . $FLAGS
+          npx --yes gitnexus@${{ env.GITNEXUS_VERSION }} analyze . $FLAGS
 
       - name: Verify index
         run: |
