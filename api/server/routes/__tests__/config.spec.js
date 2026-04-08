@@ -9,6 +9,11 @@ jest.mock('~/server/services/Config/ldap', () => ({
   getLdapConfig: jest.fn(() => null),
 }));
 
+const mockHasCapability = jest.fn();
+jest.mock('~/server/middleware/roles/capabilities', () => ({
+  hasCapability: (...args) => mockHasCapability(...args),
+}));
+
 const mockGetTenantId = jest.fn(() => undefined);
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -305,6 +310,39 @@ describe('GET /api/config', () => {
           startBalance: 50000,
         }),
       );
+    });
+
+    it('should set allowAccountDeletion to false for authenticated users without ACCESS_ADMIN', async () => {
+      process.env.ALLOW_ACCOUNT_DELETION = 'false';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(false);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.allowAccountDeletion).toBe(false);
+      expect(mockHasCapability).toHaveBeenCalled();
+    });
+
+    it('should override allowAccountDeletion to true for users with ACCESS_ADMIN capability', async () => {
+      process.env.ALLOW_ACCOUNT_DELETION = 'false';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.allowAccountDeletion).toBe(true);
+    });
+
+    it('should not call hasCapability when allowAccountDeletion is already true', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.allowAccountDeletion).toBe(true);
+      expect(mockHasCapability).not.toHaveBeenCalled();
     });
 
     it('should return 500 when getAppConfig throws', async () => {

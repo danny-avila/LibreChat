@@ -1,7 +1,6 @@
 import React from 'react';
 import { SystemRoles } from 'librechat-data-provider';
 import { render, screen } from '@testing-library/react';
-import '@testing-library/jest-dom/extend-expect';
 import type { TUser } from 'librechat-data-provider';
 import Account from './Account';
 
@@ -50,19 +49,10 @@ describe('Account', () => {
       expect(screen.getByTestId('delete-account')).toBeInTheDocument();
     });
 
-    it('hides DeleteAccount when allowAccountDeletion is false for regular users', () => {
+    it('hides DeleteAccount when allowAccountDeletion is false', () => {
       mockUseGetStartupConfig.mockReturnValue({ data: { allowAccountDeletion: false } });
       render(<Account />);
       expect(screen.queryByTestId('delete-account')).not.toBeInTheDocument();
-    });
-
-    it('shows DeleteAccount for admin users even when allowAccountDeletion is false', () => {
-      mockUseAuthContext.mockReturnValue({
-        user: { ...baseUser, role: SystemRoles.ADMIN },
-      });
-      mockUseGetStartupConfig.mockReturnValue({ data: { allowAccountDeletion: false } });
-      render(<Account />);
-      expect(screen.getByTestId('delete-account')).toBeInTheDocument();
     });
 
     it('shows DeleteAccount when startup config is still loading', () => {
