@@ -88,4 +88,5 @@ jobs:
               || github.ref_name
             }}
           path: .gitnexus/
+          include-hidden-files: true
           retention-days: 30
