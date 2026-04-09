@@ -182,7 +182,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { hasAccess } = usePromptGroupsContext();
+  const { hasAccess } = usePromptGroupsContext() ?? {};
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const promptId = promptIdProp || params.promptId || '';
 
@@ -236,7 +236,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
 
   const selectedPromptId = useMemo(() => selectedPrompt?._id, [selectedPrompt?._id]);
 
-  const { groupsQuery } = usePromptGroupsContext();
+  const { groupsQuery } = usePromptGroupsContext() ?? {};
 
   const updateGroupMutation = useUpdatePromptGroup({
     onError: () => {
@@ -432,8 +432,8 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
   }
 
   // Show read-only view if user doesn't have edit permission
-  if (!canEdit && !permissionsLoading && groupsQuery.data) {
-    const fetchedPrompt = findPromptGroup(groupsQuery.data, (group) => group._id === promptId);
+  if (!canEdit && !permissionsLoading && groupsQuery?.data) {
+    const fetchedPrompt = findPromptGroup(groupsQuery?.data, (group) => group._id === promptId);
     if (!fetchedPrompt && !canView) {
       return <NoPromptGroup />;
     }

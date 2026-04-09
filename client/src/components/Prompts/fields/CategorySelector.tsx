@@ -24,7 +24,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
   const { t } = useTranslation();
   const formContext = useFormContext();
   const [isOpen, setIsOpen] = useState(false);
-  const { hasAccess } = usePromptGroupsContext();
+  const { hasAccess } = usePromptGroupsContext() ?? {};
   const { categories, emptyCategory } = useCategories({ hasAccess });
 
   const control = formContext?.control;

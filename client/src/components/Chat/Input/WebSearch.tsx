@@ -7,18 +7,20 @@ import { useBadgeRowContext } from '~/Providers';
 
 function WebSearch() {
   const localize = useLocalize();
-  const { webSearch: webSearchData, searchApiKeyForm } = useBadgeRowContext();
-  const { toggleState: webSearch, debouncedChange, isPinned, authData } = webSearchData;
-  const { badgeTriggerRef } = searchApiKeyForm;
-
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
     permission: Permissions.USE,
   });
-
+  const context = useBadgeRowContext();
   if (!canUseWebSearch) {
     return null;
   }
+  if (!context) {
+    return null;
+  }
+  const { webSearch: webSearchData, searchApiKeyForm } = context;
+  const { toggleState: webSearch, debouncedChange, isPinned, authData } = webSearchData;
+  const { badgeTriggerRef } = searchApiKeyForm;
 
   return (
     (isPinned || (webSearch && authData?.authenticated)) && (
