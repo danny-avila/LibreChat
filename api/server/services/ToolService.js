@@ -444,8 +444,8 @@ const nativeTools = new Set([Tools.execute_code, Tools.file_search, Tools.web_se
 const isBuiltInTool = (toolName) =>
   Boolean(
     manifestToolMap[toolName] ||
-    toolkits.some((t) => t.pluginKey === toolName) ||
-    nativeTools.has(toolName),
+      toolkits.some((t) => t.pluginKey === toolName) ||
+      nativeTools.has(toolName),
   );
 
 /**
