@@ -860,7 +860,7 @@ describe('RedisEventTransport Integration Tests', () => {
    * Cross-Replica Sequence Synchronization (#12575)
    *
    * The core cross-replica sync logic (Redis INCR counter, async GET in
-   * syncReorderBuffer, clearPending flag) is verified by:
+   * syncReorderBuffer, pruneStaleEntries flag) is verified by:
    * - Unit tests with mock publishers (deterministic, no cluster timing)
    * - GenerationJobManager integration tests (end-to-end with earlyEventBuffer)
    * - The race-condition unit test (paused GET with injected message)
@@ -985,6 +985,7 @@ describe('RedisEventTransport Integration Tests', () => {
       const streamId = `error-prop-incr-${Date.now()}`;
 
       await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
+      expect(mockPublisher.publish).not.toHaveBeenCalled();
 
       transport.destroy();
     });

@@ -1,4 +1,4 @@
-interface MockPublisher {
+export interface MockPublisher {
   publish: jest.Mock;
   incr: jest.Mock;
   get: jest.Mock;

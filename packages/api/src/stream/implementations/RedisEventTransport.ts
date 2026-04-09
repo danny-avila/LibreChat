@@ -134,12 +134,8 @@ export class RedisEventTransport implements IEventTransport {
     return val - 1;
   }
 
-  /** Reset subscriber reorder state and delete the Redis sequence key for a stream (full cleanup only) */
-  resetSequence(streamId: string): void {
-    const key = KEYS.sequence(streamId);
-    this.publisher.del(key).catch((err) => {
-      logger.error(`[RedisEventTransport] Failed to delete sequence key ${key}:`, err);
-    });
+  /** Reset subscriber reorder buffer state to initial values */
+  private resetReorderBuffer(streamId: string): void {
     const state = this.streams.get(streamId);
     if (state) {
       if (state.reorderBuffer.flushTimeout) {
@@ -154,13 +150,12 @@ export class RedisEventTransport implements IEventTransport {
   /**
    * Advance subscriber reorder buffer to the authoritative Redis sequence counter (cross-replica safe).
    *
-   * @param clearPending - When true (same-replica), entries with seq < currentSeq are duplicates
-   *   of earlyEventBuffer and are pruned; entries with seq >= currentSeq are NEW chunks from
-   *   ongoing generation that arrived during the async GET and must be preserved.
-   *   When false/undefined (cross-replica), all pending entries are live chunks from the GET
-   *   window — preserved via Math.min so none are dropped.
+   * @param pruneStaleEntries - When true (same-replica), prunes pending entries below the current
+   *   Redis counter (duplicates of earlyEventBuffer) while preserving entries at or above it
+   *   (live chunks from ongoing generation that arrived during the async GET window).
+   *   When false/undefined (cross-replica), all pending entries are treated as live and preserved.
    */
-  async syncReorderBuffer(streamId: string, clearPending?: boolean): Promise<void> {
+  async syncReorderBuffer(streamId: string, pruneStaleEntries?: boolean): Promise<void> {
     const key = KEYS.sequence(streamId);
     const rawStr = await this.publisher.get(key);
     const parsed = rawStr != null ? parseInt(rawStr, 10) : 0;
@@ -171,7 +166,7 @@ export class RedisEventTransport implements IEventTransport {
         clearTimeout(state.reorderBuffer.flushTimeout);
         state.reorderBuffer.flushTimeout = null;
       }
-      if (clearPending) {
+      if (pruneStaleEntries) {
         // Same-replica: prune entries below currentSeq (duplicates of earlyEventBuffer),
         // but keep entries at or above currentSeq (new chunks from ongoing generation).
         for (const seq of state.reorderBuffer.pending.keys()) {
@@ -185,7 +180,12 @@ export class RedisEventTransport implements IEventTransport {
         state.reorderBuffer.nextSeq = currentSeq;
       } else {
         // Cross-replica: all pending entries are live — lower nextSeq to deliver them.
-        const minPending = Math.min(...state.reorderBuffer.pending.keys());
+        let minPending = Infinity;
+        for (const seq of state.reorderBuffer.pending.keys()) {
+          if (seq < minPending) {
+            minPending = seq;
+          }
+        }
         state.reorderBuffer.nextSeq = Math.min(currentSeq, minPending);
         this.flushPendingMessages(streamId, state);
       }
@@ -490,7 +490,7 @@ export class RedisEventTransport implements IEventTransport {
    * Publish a chunk event to all subscribers across all instances.
    * Includes sequence number for ordered delivery in Redis Cluster mode.
    *
-   * Performance: each emit requires two sequential Redis round-trips (EVAL + PUBLISH).
+   * Performance: each emit requires two sequential Redis round-trips (INCR + PUBLISH).
    * This is the unavoidable cost of cross-replica sequence coordination.
    */
   async emitChunk(streamId: string, event: unknown): Promise<void> {
@@ -647,20 +647,19 @@ export class RedisEventTransport implements IEventTransport {
     const state = this.streams.get(streamId);
 
     if (state) {
-      // Clear flush timeout
-      if (state.reorderBuffer.flushTimeout) {
-        clearTimeout(state.reorderBuffer.flushTimeout);
-        state.reorderBuffer.flushTimeout = null;
-      }
-      // Clear all handlers and callbacks
       state.handlers.clear();
       state.allSubscribersLeftCallbacks = [];
       state.abortCallbacks = [];
-      state.reorderBuffer.pending.clear();
     }
 
-    // Reset sequence counter for this stream
-    this.resetSequence(streamId);
+    this.resetReorderBuffer(streamId);
+
+    // Delete the shared sequence key — safe because cleanup() is only called
+    // when the stream's job is complete (no more publishes will happen).
+    const seqKey = KEYS.sequence(streamId);
+    this.publisher.del(seqKey).catch((err) => {
+      logger.error(`[RedisEventTransport] Failed to delete sequence key ${seqKey}:`, err);
+    });
 
     if (this.channelSubscriptions.has(channel)) {
       this.subscriber.unsubscribe(channel).catch((err) => {
@@ -679,7 +678,7 @@ export class RedisEventTransport implements IEventTransport {
     // Clear all flush timeouts and buffered messages.
     // Sequence keys are NOT deleted here — they are shared across replicas.
     // A shutting-down replica must not nuke the counter for active publishers.
-    // Keys expire naturally via their TTL; cleanup() handles single-stream teardown.
+    // Keys have no TTL; cleanup()/resetSequence() delete them on normal stream teardown.
     for (const [, state] of this.streams) {
       if (state.reorderBuffer.flushTimeout) {
         clearTimeout(state.reorderBuffer.flushTimeout);

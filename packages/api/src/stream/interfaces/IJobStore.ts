@@ -337,15 +337,14 @@ export interface IEventTransport {
   /** Listen for all subscribers leaving */
   onAllSubscribersLeft(streamId: string, callback: () => void): void;
 
-  /** Reset publish sequence counter for a stream (used during full stream cleanup) */
-  resetSequence?(streamId: string): void;
-
   /**
    * Advance subscriber reorder buffer to match publisher sequence (cross-replica safe).
-   * @param clearPending - When true, discard all pending entries (earlyEventBuffer already delivered them).
-   *   When false, preserve pending entries that arrived during the async GET window (cross-replica).
+   * @param pruneStaleEntries - When true (same-replica), prunes pending entries below the current
+   *   Redis counter (duplicates of earlyEventBuffer) while preserving entries at or above it
+   *   (live chunks that arrived during the async GET window).
+   *   When false/undefined (cross-replica), all pending entries are treated as live and preserved.
    */
-  syncReorderBuffer?(streamId: string, clearPending?: boolean): void | Promise<void>;
+  syncReorderBuffer?(streamId: string, pruneStaleEntries?: boolean): void | Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;
