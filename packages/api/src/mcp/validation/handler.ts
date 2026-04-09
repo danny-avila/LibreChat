@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
@@ -66,7 +67,8 @@ export class MCPToolCallValidationHandler {
   }
 
   public static generateValidationId(userId: string, serverName: string, toolName: string): string {
-    return `${userId}:${serverName}:${toolName}:${Date.now()}`;
+    const nonce = randomBytes(8).toString('hex');
+    return `${userId}:${serverName}:${toolName}:${Date.now()}:${nonce}`;
   }
 
   public static getFlowType(): string {

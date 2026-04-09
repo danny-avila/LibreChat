@@ -636,7 +636,11 @@ function createToolInstance({
 
       // Tool call validation flow - only if tool requires approval
       if (cachedNeedsApproval === undefined) {
-        const appConfig = await getAppConfig({ role: config?.configurable?.user?.role });
+        const appConfig = await getAppConfig({
+          role: config?.configurable?.user?.role,
+          userId,
+          tenantId: config?.configurable?.user?.tenantId,
+        });
         const toolApprovalConfig = appConfig?.endpoints?.[EModelEndpoint.agents]?.toolApproval;
         cachedNeedsApproval = requiresApproval(normalizedToolKey, toolApprovalConfig);
       }

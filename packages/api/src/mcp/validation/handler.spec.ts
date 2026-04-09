@@ -24,7 +24,7 @@ describe('MCPToolCallValidationHandler', () => {
         { key: 'value' },
       );
 
-      expect(result.validationId).toMatch(/^user1:server1:tool1:\d+$/);
+      expect(result.validationId).toMatch(/^user1:server1:tool1:\d+:[0-9a-f]{16}$/);
       expect(result.flowMetadata).toEqual({
         userId: 'user1',
         serverName: 'server1',
@@ -147,13 +147,20 @@ describe('MCPToolCallValidationHandler', () => {
   });
 
   describe('generateValidationId', () => {
-    it('should include userId, serverName, toolName, and timestamp', () => {
+    it('should include userId, serverName, toolName, timestamp, and nonce', () => {
       const id = MCPToolCallValidationHandler.generateValidationId('user1', 'server1', 'tool1');
       const parts = id.split(':');
       expect(parts[0]).toBe('user1');
       expect(parts[1]).toBe('server1');
       expect(parts[2]).toBe('tool1');
       expect(Number(parts[3])).toBeGreaterThan(0);
+      expect(parts[4]).toMatch(/^[0-9a-f]{16}$/);
+    });
+
+    it('should generate unique IDs for same-millisecond calls', () => {
+      const id1 = MCPToolCallValidationHandler.generateValidationId('user1', 'server1', 'tool1');
+      const id2 = MCPToolCallValidationHandler.generateValidationId('user1', 'server1', 'tool1');
+      expect(id1).not.toBe(id2);
     });
   });
 

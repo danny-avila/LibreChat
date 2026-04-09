@@ -529,9 +529,7 @@ describe('ToolCall', () => {
     });
 
     it('should not render validation buttons when validation is absent', () => {
-      renderWithRecoil(
-        <ToolCall {...mockProps} initialProgress={0.5} isSubmitting={true} />,
-      );
+      renderWithRecoil(<ToolCall {...mockProps} initialProgress={0.5} isSubmitting={true} />);
 
       expect(screen.queryByText('com_ui_confirm_tool_call')).not.toBeInTheDocument();
       expect(screen.queryByText('com_ui_reject_tool_call')).not.toBeInTheDocument();
