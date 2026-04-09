@@ -1,8 +1,9 @@
 import { useCallback } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { useHasAccess } from '~/hooks';
+import EmptyPromptPreview from '../display/EmptyPromptPreview';
 import CreatePromptForm from '../forms/CreatePromptForm';
+import { useHasAccess } from '~/hooks';
 import PromptForm from '../forms/PromptForm';
 
 export default function InlinePromptsView() {
@@ -32,7 +33,7 @@ export default function InlinePromptsView() {
   }
 
   if (isNew && !hasCreateAccess) {
-    return <Navigate to="/c/new" replace />;
+    return <EmptyPromptPreview />;
   }
 
   return (

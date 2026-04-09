@@ -197,73 +197,64 @@ function ChatGroupItem({
               {snippet}
             </p>
           </div>
-          {/* Dropdown menu — hidden on the prompts dashboard since actions are in the detail view */}
-          {isChatRoute && (
-            <div className="relative z-10 shrink-0">
-              <DropdownPopup
-                portal={true}
-                menuId={menuId}
-                focusLoop={true}
-                className="z-[125]"
-                unmountOnHide={true}
-                isOpen={menuOpen}
-                setIsOpen={setMenuOpen}
-                trigger={
-                  <Ariakit.MenuButton
-                    ref={menuButtonRef}
-                    aria-label={localize('com_nav_convo_menu_options')}
-                    className={cn(
-                      'flex size-7 items-center justify-center rounded-md text-text-secondary transition-opacity hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                      menuOpen
-                        ? 'opacity-100'
-                        : 'opacity-0 focus-visible:opacity-100 group-hover/prompt:opacity-100',
-                    )}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Ellipsis className="size-4" aria-hidden="true" />
-                  </Ariakit.MenuButton>
-                }
-                items={dropdownItems}
-              />
-            </div>
-          )}
+          <div className="relative z-10 shrink-0">
+            <DropdownPopup
+              portal={true}
+              menuId={menuId}
+              focusLoop={true}
+              className="z-[125]"
+              unmountOnHide={true}
+              isOpen={menuOpen}
+              setIsOpen={setMenuOpen}
+              trigger={
+                <Ariakit.MenuButton
+                  ref={menuButtonRef}
+                  aria-label={localize('com_nav_convo_menu_options')}
+                  className={cn(
+                    'flex size-7 items-center justify-center rounded-md text-text-secondary transition-opacity hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                    menuOpen
+                      ? 'opacity-100'
+                      : 'opacity-0 focus-visible:opacity-100 group-hover/prompt:opacity-100',
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Ellipsis className="size-4" aria-hidden="true" />
+                </Ariakit.MenuButton>
+              }
+              items={dropdownItems}
+            />
+          </div>
         </div>
       </div>
+      <PreviewPrompt
+        group={group}
+        open={isPreviewDialogOpen}
+        onOpenChange={setPreviewDialogOpen}
+        onCloseAutoFocus={() => {
+          requestAnimationFrame(() => {
+            menuButtonRef.current?.focus({ preventScroll: true });
+          });
+        }}
+      />
       {isChatRoute && (
-        <>
-          <PreviewPrompt
-            group={group}
-            open={isPreviewDialogOpen}
-            onOpenChange={setPreviewDialogOpen}
-            onCloseAutoFocus={() => {
-              requestAnimationFrame(() => {
-                menuButtonRef.current?.focus({ preventScroll: true });
-              });
-            }}
-          />
-          <VariableDialog
-            open={isVariableDialogOpen}
-            onClose={() => setVariableDialogOpen(false)}
-            group={group}
-          />
-          <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-            <OGDialogTemplate
-              title={localize('com_ui_delete_prompt')}
-              className="w-11/12 max-w-md"
-              main={<Label>{localize('com_ui_prompt_delete_confirm', { 0: group.name })}</Label>}
-              selection={
-                <Button
-                  onClick={handleDelete}
-                  variant="destructive"
-                  disabled={deleteGroup.isLoading}
-                >
-                  {deleteGroup.isLoading ? <Spinner /> : localize('com_ui_delete')}
-                </Button>
-              }
-            />
-          </OGDialog>
-        </>
+        <VariableDialog
+          open={isVariableDialogOpen}
+          onClose={() => setVariableDialogOpen(false)}
+          group={group}
+        />
       )}
+      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <OGDialogTemplate
+          title={localize('com_ui_delete_prompt')}
+          className="w-11/12 max-w-md"
+          main={<Label>{localize('com_ui_prompt_delete_confirm', { 0: group.name })}</Label>}
+          selection={
+            <Button onClick={handleDelete} variant="destructive" disabled={deleteGroup.isLoading}>
+              {deleteGroup.isLoading ? <Spinner /> : localize('com_ui_delete')}
+            </Button>
+          }
+        />
+      </OGDialog>
     </>
   );
 }
