@@ -52,8 +52,8 @@ const PromptTextCard = ({ mainText }: PromptTextCardProps) => {
   }, [mainText, showToast, localize, isCopied]);
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-border-light bg-transparent shadow-md">
-      <header className="flex shrink-0 items-center justify-between border-b border-border-light p-3">
+    <div className="flex h-full flex-col rounded-xl border border-border-medium bg-transparent">
+      <header className="flex shrink-0 items-center justify-between border-b border-border-medium p-3">
         <div className="flex items-center gap-2">
           <FileText className="h-5 w-5 text-text-secondary" aria-hidden="true" />
           <h3 className="text-base font-semibold text-text-primary">
@@ -74,9 +74,9 @@ const PromptTextCard = ({ mainText }: PromptTextCardProps) => {
               aria-live="polite"
             >
               {isCopied ? (
-                <Check className="size-4" aria-hidden="true" />
+                <Check className="size-4 text-text-secondary" aria-hidden="true" />
               ) : (
-                <Copy className="size-4" aria-hidden="true" />
+                <Copy className="size-4 text-text-secondary" aria-hidden="true" />
               )}
             </Button>
           }
