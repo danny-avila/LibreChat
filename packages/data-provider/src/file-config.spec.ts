@@ -1,6 +1,8 @@
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  isPermissiveMimeConfig,
+  convertStringsToRegex,
   documentParserMimeTypes,
   getEndpointFileConfig,
   applicationMimeTypes,
@@ -1244,5 +1246,64 @@ describe('getEndpointFileConfig', () => {
       expect(result.totalSizeLimit).toBe(0);
       expect(result.supportedMimeTypes).toEqual([]);
     });
+  });
+});
+
+describe('isPermissiveMimeConfig', () => {
+  it('returns true for wildcard .* pattern', () => {
+    expect(isPermissiveMimeConfig([/.*/])).toBe(true);
+  });
+
+  it('returns true for .+ pattern', () => {
+    expect(isPermissiveMimeConfig([/.+/])).toBe(true);
+  });
+
+  it('returns true for anchored ^.*$ pattern', () => {
+    expect(isPermissiveMimeConfig([/^.*$/])).toBe(true);
+  });
+
+  it('returns true for anchored ^.+$ pattern', () => {
+    expect(isPermissiveMimeConfig([/^.+$/])).toBe(true);
+  });
+
+  it('returns true when at least one pattern is permissive', () => {
+    expect(isPermissiveMimeConfig([/^image\/.*$/, /.*/])).toBe(true);
+  });
+
+  it('returns false for image-only patterns', () => {
+    expect(isPermissiveMimeConfig([/^image\/(jpeg|png)$/])).toBe(false);
+  });
+
+  it('returns false for category patterns', () => {
+    expect(isPermissiveMimeConfig([/^image\/.*$/, /^text\/.*$/])).toBe(false);
+  });
+
+  it('returns false for specific MIME type patterns', () => {
+    expect(isPermissiveMimeConfig([/^application\/pdf$/])).toBe(false);
+  });
+
+  it('returns false for broad application category pattern', () => {
+    expect(isPermissiveMimeConfig([/^application\/.*$/])).toBe(false);
+  });
+
+  it('returns false for multi-category pattern', () => {
+    expect(isPermissiveMimeConfig([/^(application|text)\/.*$/])).toBe(false);
+  });
+
+  it('returns false for default supportedMimeTypes', () => {
+    expect(isPermissiveMimeConfig(supportedMimeTypes)).toBe(false);
+  });
+
+  it('returns false for undefined', () => {
+    expect(isPermissiveMimeConfig(undefined)).toBe(false);
+  });
+
+  it('returns false for empty array', () => {
+    expect(isPermissiveMimeConfig([])).toBe(false);
+  });
+
+  it('returns true for regex produced by convertStringsToRegex with .*', () => {
+    const converted = convertStringsToRegex(['.*']);
+    expect(isPermissiveMimeConfig(converted)).toBe(true);
   });
 });
