@@ -56,7 +56,7 @@ export default function GroupSidePanel({
         </div>
       )}
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className="scrollbar-gutter-stable flex h-full min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden px-3 text-text-primary">
+        <div className="scrollbar-gutter-stable flex h-full min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden pl-3 pr-1 text-text-primary">
           <div className="shrink-0 space-y-2">{children}</div>
           <div className="flex min-h-0 flex-1 flex-col">
             <List
