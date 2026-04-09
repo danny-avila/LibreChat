@@ -23,8 +23,11 @@ export default function GroupSidePanel({
   const localize = useLocalize();
   const isChatRoute = isChatRouteProp ?? location.pathname?.startsWith('/c/') ?? false;
 
-  const { promptGroups, groupsQuery, nextPage, prevPage, hasNextPage, hasPreviousPage } =
-    usePromptGroupsContext();
+  const context = usePromptGroupsContext();
+  if (!context) {
+    return null;
+  }
+  const { promptGroups, groupsQuery, nextPage, prevPage, hasNextPage, hasPreviousPage } = context;
 
   return (
     <div
@@ -52,9 +55,9 @@ export default function GroupSidePanel({
           />
         </div>
       )}
-      <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
-        {children}
-        <div className={cn('relative flex h-full flex-col', isChatRoute ? '' : 'px-2 md:px-0')}>
+      <div className="scrollbar-gutter-stable flex h-full min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden px-3 pb-3 text-text-primary">
+        <div className="shrink-0 space-y-2">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col">
           <List
             groups={promptGroups}
             isLoading={!!groupsQuery.isLoading}
@@ -62,7 +65,7 @@ export default function GroupSidePanel({
           />
         </div>
       </div>
-      <div className={cn(isChatRoute ? '' : 'px-2 pb-3 pt-2 md:px-0')}>
+      <div className={cn(isChatRoute ? 'px-3 pb-2 pt-1' : 'px-2 pb-3 pt-2 md:px-0')}>
         <PanelNavigation
           onPrevious={prevPage}
           onNext={nextPage}
