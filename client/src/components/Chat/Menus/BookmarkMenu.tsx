@@ -61,9 +61,9 @@ const BookmarkMenu: FC = () => {
 
   const isActiveConvo = Boolean(
     conversation &&
-    conversationId &&
-    conversationId !== Constants.NEW_CONVO &&
-    conversationId !== 'search',
+      conversationId &&
+      conversationId !== Constants.NEW_CONVO &&
+      conversationId !== 'search',
   );
 
   const handleSubmit = useCallback(

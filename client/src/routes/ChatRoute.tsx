@@ -64,8 +64,8 @@ export default function ChatRoute() {
 
   const isTemporaryChat = Boolean(
     conversation &&
-    (conversation.isTemporary ||
-      (conversation.isTemporary === undefined && conversation.expiredAt != null)),
+      (conversation.isTemporary ||
+        (conversation.isTemporary === undefined && conversation.expiredAt != null)),
   );
 
   useEffect(() => {
