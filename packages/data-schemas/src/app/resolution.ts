@@ -12,6 +12,9 @@ const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
  * a key field rather than replaced wholesale. `deepMerge` matches items by
  * the given key, deep-merges matching pairs, preserves unmatched base items,
  * and appends new override-only items.
+ *
+ * Paths use AppConfig key names (post-OVERRIDE_KEY_MAP remapping),
+ * not YAML-level key names. E.g. use `interfaceConfig.x`, not `interface.x`.
  */
 const ARRAY_MERGE_KEYS: Record<string, string> = {
   'endpoints.custom': 'name',
@@ -41,13 +44,11 @@ function mergeArrayByKey(
   path: string,
 ): AnyObject[] {
   const sourceByKey = new Map<unknown, AnyObject>();
-  const sourceOrder: unknown[] = [];
   for (const item of source) {
     if (item != null && typeof item === 'object') {
       const key = item[keyField];
       if (key != null) {
         sourceByKey.set(key, item);
-        sourceOrder.push(key);
       }
     }
   }
@@ -63,16 +64,16 @@ function mergeArrayByKey(
         result.push(deepMerge(item, override, depth + 1, path));
         seen.add(key);
       } else {
-        result.push(item);
+        result.push({ ...item });
       }
     } else {
       result.push(item);
     }
   }
 
-  for (const key of sourceOrder) {
+  for (const key of sourceByKey.keys()) {
     if (!seen.has(key)) {
-      result.push(sourceByKey.get(key)!);
+      result.push(deepMerge({} as AnyObject, sourceByKey.get(key)!, depth + 1, path));
     }
   }
 

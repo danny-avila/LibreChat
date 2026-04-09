@@ -127,6 +127,72 @@ describe('mergeConfigOverrides', () => {
     expect(custom[1].name).toBe('ep2');
   });
 
+  it('deduplicates when source contains repeated endpoint names', () => {
+    const base = {
+      endpoints: { custom: [] },
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig(
+        {
+          endpoints: {
+            custom: [
+              { name: 'dup', baseURL: 'https://first.com' },
+              { name: 'dup', baseURL: 'https://second.com' },
+            ],
+          },
+        },
+        10,
+      ),
+    ];
+
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const custom = (result.endpoints as Record<string, unknown>).custom as Array<
+      Record<string, unknown>
+    >;
+
+    expect(custom).toHaveLength(1);
+    expect(custom[0].name).toBe('dup');
+    expect(custom[0].baseURL).toBe('https://second.com');
+  });
+
+  it('does not mutate base custom endpoint items', () => {
+    const base = {
+      endpoints: { custom: [{ name: 'ep1', baseURL: 'https://ep1.com' }] },
+    } as unknown as AppConfig;
+
+    const configs = [fakeConfig({ endpoints: { custom: [] } }, 10)];
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const custom = (result.endpoints as Record<string, unknown>).custom as Array<
+      Record<string, unknown>
+    >;
+
+    custom[0].baseURL = 'https://mutated.com';
+    const original = (base as unknown as Record<string, unknown>).endpoints as Record<
+      string,
+      unknown
+    >;
+    expect((original.custom as Array<Record<string, unknown>>)[0].baseURL).toBe('https://ep1.com');
+  });
+
+  it('respects priority for custom endpoint merges — higher priority wins', () => {
+    const base = {
+      endpoints: { custom: [{ name: 'shared', baseURL: 'https://yaml.com' }] },
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig({ endpoints: { custom: [{ name: 'shared', baseURL: 'https://low.com' }] } }, 10),
+      fakeConfig({ endpoints: { custom: [{ name: 'shared', baseURL: 'https://high.com' }] } }, 100),
+    ];
+
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const custom = (result.endpoints as Record<string, unknown>).custom as Array<
+      Record<string, unknown>
+    >;
+
+    expect(custom[0].baseURL).toBe('https://high.com');
+  });
+
   it('does not mutate the base config', () => {
     const original = JSON.parse(JSON.stringify(baseConfig));
     const configs = [fakeConfig({ interface: { modelSelect: false } }, 10)];
