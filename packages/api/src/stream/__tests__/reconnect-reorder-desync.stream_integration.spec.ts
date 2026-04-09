@@ -1,12 +1,16 @@
+import { logger } from '@librechat/data-schemas';
 import type { Redis, Cluster } from 'ioredis';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { createStreamServices } from '~/stream/createStreamServices';
+import { createMockPublisher } from './helpers/publisher';
 import {
   ioredisClient as staticRedisClient,
   keyvRedisClient as staticKeyvClient,
   keyvRedisClientReady,
 } from '~/cache/redisClients';
+
+logger.silent = true;
 
 /**
  * Regression tests for the reconnect reorder buffer desync bug.
@@ -26,9 +30,7 @@ import {
 describe('Reconnect Reorder Buffer Desync (Regression)', () => {
   describe('Callback preservation across reconnect cycles (Unit)', () => {
     test('allSubscribersLeft callback fires on every disconnect, not just the first', () => {
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -70,9 +72,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
     });
 
     test('abort callback survives across reconnect cycles', () => {
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -125,9 +125,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
      * immediately regardless of how many reconnect cycles have occurred.
      */
     test('syncReorderBuffer works correctly on third+ reconnect', async () => {
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -159,7 +157,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
         });
 
         // Sync reorder buffer (as GenerationJobManager.subscribe does)
-        transport.syncReorderBuffer(streamId);
+        await transport.syncReorderBuffer(streamId);
 
         const baseSeq = cycle * 10;
 
@@ -189,9 +187,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
     });
 
     test('reorder buffer works correctly when syncReorderBuffer IS called', async () => {
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -216,8 +212,8 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
         onChunk: (event) => chunks.push(event),
       });
 
-      // This is the critical call - sync nextSeq to match publisher
-      transport.syncReorderBuffer(streamId);
+      // This is the critical call - sync nextSeq to match publisher (reads from Redis)
+      await transport.syncReorderBuffer(streamId);
 
       // Deliver messages starting at seq 20
       const messageHandler = mockSubscriber.on.mock.calls.find(
@@ -236,6 +232,187 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
       expect(chunks.map((c) => (c as { index: number }).index)).toEqual([20, 21, 22, 23, 24]);
 
       sub.unsubscribe();
+      transport.destroy();
+    });
+  });
+
+  describe('syncReorderBuffer race: message arrives during async GET window (Unit)', () => {
+    test('should not drop a chunk that lands in pending while GET is in-flight', async () => {
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = 'race-get-window-test';
+      const chunks: unknown[] = [];
+
+      // Emit seq 0 so the Redis counter is 1
+      await transport.emitChunk(streamId, { index: 0 });
+
+      // Subscribe (nextSeq starts at 0)
+      transport.subscribe(streamId, {
+        onChunk: (event) => chunks.push(event),
+      });
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+      const channel = `stream:{${streamId}}:events`;
+
+      // Pause the GET: intercept with a deferred promise
+      let resolveGet!: (val: string | null) => void;
+      mockPublisher.get.mockImplementationOnce(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveGet = resolve;
+          }),
+      );
+
+      const syncPromise = transport.syncReorderBuffer(streamId);
+
+      // While GET is in-flight, the publisher emits seq 1 (INCR → counter=2)
+      // and the subscriber receives it via pub/sub → pending[1]
+      await transport.emitChunk(streamId, { index: 1 });
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 1, data: { index: 1 } }));
+
+      // Resolve GET with counter=2 (reflects the INCR for seq 1)
+      resolveGet('2');
+      await syncPromise;
+
+      // seq 1 MUST be delivered — it arrived during the GET window and must not be pruned
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(1);
+
+      // Subsequent chunks must also deliver immediately
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 2, data: { index: 2 } }));
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(2);
+
+      transport.destroy();
+    });
+
+    test('same-replica: should not drop a live chunk when INCR advances past earlyReplayCount during GET', async () => {
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = 'race-same-replica-test';
+      const chunks: unknown[] = [];
+
+      // Emit seqs 0–4 (earlyEventBuffer would have held these; counter = 5)
+      for (let i = 0; i < 5; i++) {
+        await transport.emitChunk(streamId, { index: i });
+      }
+
+      // Subscribe (nextSeq starts at 0)
+      transport.subscribe(streamId, {
+        onChunk: (event) => chunks.push(event),
+      });
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+      const channel = `stream:{${streamId}}:events`;
+
+      // Pause the GET
+      let resolveGet!: (val: string | null) => void;
+      mockPublisher.get.mockImplementationOnce(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveGet = resolve;
+          }),
+      );
+
+      // Call syncReorderBuffer with earlyReplayCount=5 (seqs 0–4 were replayed)
+      const syncPromise = transport.syncReorderBuffer(streamId, 5);
+
+      // During GET window: LLM emits seq 5 (INCR → counter=6), subscriber receives it
+      await transport.emitChunk(streamId, { index: 5 });
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 5, data: { index: 5 } }));
+
+      // GET returns 6 (counter advanced past seq 5)
+      resolveGet('6');
+      await syncPromise;
+
+      // seq 5 MUST be delivered — it's live (seq 5 >= earlyReplayCount 5), not a duplicate.
+      // With the old boolean pruneStaleEntries, 5 < currentSeq(6) would have pruned it.
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(5);
+
+      // Subsequent chunks deliver normally
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 6, data: { index: 6 } }));
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(6);
+
+      transport.destroy();
+    });
+
+    test('same-replica: should not drop chunk whose pub/sub arrives AFTER GET resolves', async () => {
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = 'race-post-get-test';
+      const chunks: unknown[] = [];
+
+      // Emit seqs 0–4 (earlyEventBuffer would have held these; counter = 5)
+      for (let i = 0; i < 5; i++) {
+        await transport.emitChunk(streamId, { index: i });
+      }
+
+      transport.subscribe(streamId, {
+        onChunk: (event) => chunks.push(event),
+      });
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+      const channel = `stream:{${streamId}}:events`;
+
+      let resolveGet!: (val: string | null) => void;
+      mockPublisher.get.mockImplementationOnce(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveGet = resolve;
+          }),
+      );
+
+      const syncPromise = transport.syncReorderBuffer(streamId, 5);
+
+      // LLM emits seq 5 during the GET window (INCR → counter=6)
+      // but do NOT deliver via messageHandler yet — simulates pub/sub arriving late
+      await transport.emitChunk(streamId, { index: 5 });
+
+      // GET resolves with counter=6 while pending is EMPTY (pub/sub hasn't arrived)
+      resolveGet('6');
+      await syncPromise;
+
+      // Now pub/sub for seq 5 arrives AFTER sync completed
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 5, data: { index: 5 } }));
+
+      // seq 5 must be delivered — nextSeq should have been capped at earlyReplayCount (5),
+      // not advanced to currentSeq (6) which would have dropped it.
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(5);
+
       transport.destroy();
     });
   });
