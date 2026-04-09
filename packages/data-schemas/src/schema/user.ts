@@ -137,10 +137,10 @@ const userSchema = new Schema<IUser>(
       type: [
         {
           _id: false,
-          agentId: String, // for agent
-          model: String, // for model
-          endpoint: String, // for model
-          spec: String, // for model spec
+          agentId: { type: String, maxlength: 256 },
+          model: { type: String, maxlength: 256 },
+          endpoint: { type: String, maxlength: 256 },
+          spec: { type: String, maxlength: 256 },
         },
       ],
       default: [],

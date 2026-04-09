@@ -33,6 +33,7 @@ type FavoriteItem = {
   agentId?: string;
   model?: string;
   endpoint?: string;
+  spec?: string;
 };
 
 // Mock dataService
@@ -68,17 +69,30 @@ jest.mock('~/hooks/Input/useSelectMention', () => () => ({
   onSelectEndpoint: jest.fn(),
 }));
 
+const mockUseGetStartupConfig = jest.fn(() => ({
+  data: { modelSpecs: { list: [] as unknown[] } },
+}));
+
 jest.mock('~/data-provider', () => ({
   useGetEndpointsQuery: () => ({ data: {} }),
+  useGetStartupConfig: () => mockUseGetStartupConfig(),
 }));
 
 jest.mock('../FavoriteItem', () => ({
   __esModule: true,
-  default: ({ item, type }: { item: any; type: string }) => (
-    <div data-testid="favorite-item" data-type={type}>
-      {type === 'agent' ? item.name : item.model}
-    </div>
-  ),
+  default: ({ item, type }: { item: any; type: string }) => {
+    let label = item.model;
+    if (type === 'agent') {
+      label = item.name;
+    } else if (type === 'spec') {
+      label = item.label;
+    }
+    return (
+      <div data-testid="favorite-item" data-type={type}>
+        {label}
+      </div>
+    );
+  },
 }));
 
 const createTestQueryClient = () =>
@@ -107,6 +121,14 @@ describe('FavoritesList', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFavorites.length = 0;
+    mockUseFavorites.mockImplementation(() => ({
+      favorites: mockFavorites,
+      reorderFavorites: jest.fn(),
+      isLoading: false,
+    }));
+    mockUseGetStartupConfig.mockImplementation(() => ({
+      data: { modelSpecs: { list: [] } },
+    }));
   });
 
   describe('rendering', () => {
@@ -268,6 +290,72 @@ describe('FavoritesList', () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(mockReorderFavorites).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('model spec rendering', () => {
+    it('renders a spec favorite when startupConfig has a matching spec', async () => {
+      mockUseGetStartupConfig.mockImplementation(() => ({
+        data: {
+          modelSpecs: {
+            list: [
+              {
+                name: 'fast-spec',
+                label: 'Fast Spec',
+                preset: { endpoint: 'openai', model: 'gpt-5' },
+              },
+            ],
+          },
+        },
+      }));
+      mockFavorites.push({ spec: 'fast-spec' });
+
+      const { findAllByTestId } = renderWithProviders(<FavoritesList />);
+      const items = await findAllByTestId('favorite-item');
+
+      expect(items).toHaveLength(1);
+      expect(items[0]).toHaveAttribute('data-type', 'spec');
+      expect(items[0]).toHaveTextContent('Fast Spec');
+    });
+
+    it('skips a spec favorite when the spec is no longer in startupConfig', () => {
+      mockUseGetStartupConfig.mockImplementation(() => ({
+        data: { modelSpecs: { list: [] } },
+      }));
+      mockFavorites.push({ spec: 'stale-spec' });
+
+      const { queryAllByTestId } = renderWithProviders(<FavoritesList />);
+      expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+    });
+
+    it('renders a mix of agents, models, and specs', async () => {
+      const validAgent: t.Agent = {
+        id: 'a1',
+        name: 'Agent One',
+        author: 'me',
+      } as t.Agent;
+      mockUseGetStartupConfig.mockImplementation(() => ({
+        data: {
+          modelSpecs: {
+            list: [
+              {
+                name: 's1',
+                label: 'Spec One',
+                preset: { endpoint: 'openai', model: 'gpt-5' },
+              },
+            ],
+          },
+        },
+      }));
+      mockFavorites.push({ agentId: 'a1' }, { model: 'gpt-5', endpoint: 'openai' }, { spec: 's1' });
+      (dataService.getAgentById as jest.Mock).mockResolvedValue(validAgent);
+
+      const { findAllByTestId } = renderWithProviders(<FavoritesList />);
+      const items = await findAllByTestId('favorite-item');
+
+      expect(items).toHaveLength(3);
+      const types = items.map((el) => el.getAttribute('data-type'));
+      expect(types).toEqual(['agent', 'model', 'spec']);
     });
   });
 });

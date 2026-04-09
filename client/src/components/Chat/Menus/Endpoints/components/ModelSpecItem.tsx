@@ -34,9 +34,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
       key={spec.name}
       onClick={() => handleSelectSpec(spec)}
       aria-selected={isSelected || undefined}
-      className={cn(
-        'group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm',
-      )}
+      className="group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
     >
       <div
         className={cn(
@@ -61,7 +59,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
         onClick={handleFavoriteClick}
         aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
         className={cn(
-          'rounded-md p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+          'rounded-md p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
           isFavorite
             ? 'visible'
             : 'invisible group-focus-within:visible group-hover:visible group-data-[active-item]:visible',

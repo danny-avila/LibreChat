@@ -44,16 +44,15 @@ const updateFavoritesController = async (req, res) => {
           .status(400)
           .json({ message: `endpoint exceeds maximum length of ${MAX_STRING_LENGTH}` });
       }
-      if (fav.spec != null && typeof fav.spec !== 'string') {
-        return res.status(400).json({ message: 'spec must be a string' });
-      }
-      if (typeof fav.spec === 'string' && fav.spec.length === 0) {
-        return res.status(400).json({ message: 'spec must not be empty' });
-      }
-      if (fav.spec && fav.spec.length > MAX_STRING_LENGTH) {
-        return res
-          .status(400)
-          .json({ message: `spec exceeds maximum length of ${MAX_STRING_LENGTH}` });
+      if (fav.spec !== undefined && fav.spec !== null) {
+        if (typeof fav.spec !== 'string' || fav.spec.length === 0) {
+          return res.status(400).json({ message: 'spec must be a non-empty string' });
+        }
+        if (fav.spec.length > MAX_STRING_LENGTH) {
+          return res
+            .status(400)
+            .json({ message: `spec exceeds maximum length of ${MAX_STRING_LENGTH}` });
+        }
       }
 
       const typeCount = [hasAgent, hasModel, hasSpec].filter(Boolean).length;
@@ -79,7 +78,7 @@ const updateFavoritesController = async (req, res) => {
     res.status(200).json(user.favorites);
   } catch (error) {
     console.error('Error updating favorites:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 };
 
@@ -102,7 +101,7 @@ const getFavoritesController = async (req, res) => {
     res.status(200).json(favorites);
   } catch (error) {
     console.error('Error fetching favorites:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 };
 

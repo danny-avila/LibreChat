@@ -3,9 +3,8 @@ import * as Menu from '@ariakit/react/menu';
 import { Ellipsis, PinOff } from 'lucide-react';
 import { DropdownPopup } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
+import type { Agent, TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import type { FavoriteModel } from '~/store/favorites';
-import type t from 'librechat-data-provider';
 import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { useFavorites, useLocalize } from '~/hooks';
@@ -24,7 +23,7 @@ type FavoriteItemBaseProps = {
 
 type AgentFavoriteProps = FavoriteItemBaseProps & {
   type: 'agent';
-  item: t.Agent;
+  item: Agent;
   onSelectEndpoint?: (endpoint?: EModelEndpoint | string | null, kwargs?: Kwargs) => void;
 };
 
@@ -44,7 +43,7 @@ type SpecFavoriteProps = FavoriteItemBaseProps & {
 type FavoriteItemProps = AgentFavoriteProps | ModelFavoriteProps | SpecFavoriteProps;
 
 export default function FavoriteItem(props: FavoriteItemProps) {
-  const { type, onRemoveFocus } = props;
+  const { onRemoveFocus } = props;
   const localize = useLocalize();
   const { removeFavoriteAgent, removeFavoriteModel, removeFavoriteSpec } = useFavorites();
   const [isPopoverActive, setIsPopoverActive] = useState(false);
@@ -117,11 +116,11 @@ export default function FavoriteItem(props: FavoriteItemProps) {
   };
 
   const name = getName();
-  const getTypeLabel = () => {
-    if (type === 'agent') {
+  const getTypeLabel = (): string => {
+    if (props.type === 'agent') {
       return localize('com_ui_agent');
     }
-    if (type === 'spec') {
+    if (props.type === 'spec') {
       return localize('com_ui_model_spec');
     }
     return localize('com_ui_model');

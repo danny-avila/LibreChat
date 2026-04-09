@@ -1,6 +1,15 @@
 import { useRef, useState, useEffect } from 'react';
+import type { RefObject } from 'react';
 
-export default function useIsActiveItem<T extends HTMLElement = HTMLElement>() {
+/**
+ * Mirrors Ariakit's composite `data-active-item` attribute into a React state value.
+ * The ref must be attached to an element that mounts synchronously on first render;
+ * late-mounting refs will not be observed.
+ */
+export default function useIsActiveItem<T extends HTMLElement = HTMLElement>(): {
+  ref: RefObject<T>;
+  isActive: boolean;
+} {
   const ref = useRef<T>(null);
   const [isActive, setIsActive] = useState(false);
 

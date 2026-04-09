@@ -1,12 +1,13 @@
 import React, { useRef, useCallback, useMemo, useEffect } from 'react';
 import { LayoutGrid } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
-import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import type t from 'librechat-data-provider';
+import type { Agent, TEndpointsConfig, TModelSpec } from 'librechat-data-provider';
+import type { AgentQueryResult } from '~/common';
 import {
   useGetConversation,
   useFavorites,
@@ -16,7 +17,6 @@ import {
 } from '~/hooks';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
-import type { AgentQueryResult } from '~/common';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
@@ -133,7 +133,7 @@ export default function FavoritesList({
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();
   const agentsMap = useAgentsMapContext();
-  const { data: endpointsConfig = {} as t.TEndpointsConfig } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const { data: startupConfig } = useGetStartupConfig();
 
   const modelSpecs = useMemo(
@@ -142,7 +142,7 @@ export default function FavoritesList({
   );
 
   const specsMap = useMemo(() => {
-    const map: Record<string, t.TModelSpec> = {};
+    const map: Record<string, TModelSpec> = {};
     for (const spec of modelSpecs) {
       map[spec.name] = spec;
     }
@@ -271,7 +271,7 @@ export default function FavoritesList({
     if (agentsMap === undefined) {
       return undefined;
     }
-    const combined: Record<string, t.Agent> = {};
+    const combined: Record<string, Agent> = {};
     for (const [key, value] of Object.entries(agentsMap)) {
       if (value) {
         combined[key] = value;
