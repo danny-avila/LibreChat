@@ -37,7 +37,6 @@ const localStorageAtoms = {
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
   rememberDefaultFork: atomWithLocalStorage(LocalStorageKeys.REMEMBER_FORK_OPTION, false),
-  showThinking: atomWithLocalStorage('showThinking', false),
   saveBadgesState: atomWithLocalStorage('saveBadgesState', false),
 
   // Beta features settings

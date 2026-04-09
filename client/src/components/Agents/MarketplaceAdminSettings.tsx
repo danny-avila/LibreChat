@@ -10,7 +10,7 @@ const permissions: PermissionConfig[] = [
   { permission: Permissions.USE, labelKey: 'com_ui_marketplace_allow_use' },
 ];
 
-const MarketplaceAdminSettings = () => {
+const MarketplaceAdminSettings = ({ compact = false }: { compact?: boolean }) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
 
@@ -23,7 +23,16 @@ const MarketplaceAdminSettings = () => {
     },
   });
 
-  const trigger = (
+  const trigger = compact ? (
+    <Button
+      size="icon"
+      variant="outline"
+      className="rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt"
+      aria-label={localize('com_ui_admin_settings')}
+    >
+      <ShieldEllipsis className="icon-md" aria-hidden="true" />
+    </Button>
+  ) : (
     <Button
       variant="outline"
       className="relative h-12 rounded-xl border-border-medium font-medium"

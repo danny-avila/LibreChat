@@ -17,11 +17,11 @@ import {
   useGetAllEffectivePermissionsQuery,
 } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-data-provider';
+import type { MCPServerInitState } from '~/store/mcp';
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
-import type { MCPServerInitState } from '~/store/mcp';
 
 export interface MCPServerDefinition {
   serverName: string;

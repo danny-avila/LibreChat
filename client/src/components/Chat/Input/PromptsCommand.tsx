@@ -62,8 +62,9 @@ function PromptsCommand({
 }) {
   const localize = useLocalize();
   const { mutate: recordUsage } = useRecordPromptUsage();
-  const { allPromptGroups, hasAccess } = usePromptGroupsContext();
-  const { data, isLoading } = allPromptGroups;
+  const promptGroupsContext = usePromptGroupsContext();
+  const { allPromptGroups, hasAccess } = promptGroupsContext ?? {};
+  const { data, isLoading } = allPromptGroups ?? {};
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);

@@ -18,7 +18,7 @@ export default function FilterPrompts({
   dropdownClassName?: string;
 }) {
   const localize = useLocalize();
-  const { name, setName, hasAccess, promptGroups } = usePromptGroupsContext();
+  const { name, setName, hasAccess, promptGroups } = usePromptGroupsContext() ?? {};
   const { categories } = useCategories({ className: 'h-4 w-4', hasAccess });
   const [searchTerm, setSearchTerm] = useState(name || '');
   const [categoryFilter, setCategory] = useRecoilState(store.promptsCategory);
@@ -77,6 +77,9 @@ export default function FilterPrompts({
   }, [name]);
 
   useEffect(() => {
+    if (!setName) {
+      return;
+    }
     setName(debouncedSearchTerm);
   }, [debouncedSearchTerm, setName]);
 

@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { showThinkingAtom } from '~/store/showThinking';
+import AdvancedPrompts from './AdvancedPrompts';
 import FontSizeSelector from './FontSizeSelector';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
@@ -119,6 +120,9 @@ function Chat() {
           />
         </div>
       ))}
+      <div className="pb-3">
+        <AdvancedPrompts />
+      </div>
       <ForkSettings />
     </div>
   );
