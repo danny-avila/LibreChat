@@ -444,8 +444,8 @@ const nativeTools = new Set([Tools.execute_code, Tools.file_search, Tools.web_se
 const isBuiltInTool = (toolName) =>
   Boolean(
     manifestToolMap[toolName] ||
-      toolkits.some((t) => t.pluginKey === toolName) ||
-      nativeTools.has(toolName),
+    toolkits.some((t) => t.pluginKey === toolName) ||
+    nativeTools.has(toolName),
   );
 
 /**
@@ -813,6 +813,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
  * @param {ServerRequest} params.req - The request object
  * @param {ServerResponse} params.res - The response object
  * @param {Object} params.agent - The agent configuration
+ */
+
 /**
  * Wraps a tool with approval validation flow.
  * The wrapped tool sends an SSE event and waits for user approval before executing.
@@ -828,14 +830,13 @@ function wrapToolWithApproval({ tool, res, streamId }) {
   const serverName = getToolServerName(toolName);
 
   tool._call = async (toolArguments, runManager, parentConfig) => {
-    const config = parentConfig;
-    const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
+    const userId = parentConfig?.configurable?.user?.id || parentConfig?.configurable?.user_id;
 
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
-    const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
+    const derivedSignal = parentConfig?.signal ? AbortSignal.any([parentConfig.signal]) : undefined;
 
-    const { args: _args, stepId, ...toolCall } = config?.toolCall ?? {};
+    const { args: _args, stepId, ...toolCall } = parentConfig?.toolCall ?? {};
 
     const { validationId, flowMetadata } =
       await MCPToolCallValidationHandler.initiateValidationFlow(
@@ -845,13 +846,16 @@ function wrapToolWithApproval({ tool, res, streamId }) {
         typeof toolArguments === 'string' ? { input: toolArguments } : toolArguments,
       );
 
+    const validationFlowType = MCPToolCallValidationHandler.getFlowType();
+    await flowManager.initFlow(validationId, validationFlowType, flowMetadata);
+
     const validationData = {
       id: stepId,
       delta: {
         type: StepTypes.TOOL_CALLS,
         tool_calls: [{ ...toolCall, args: '' }],
         validation: validationId,
-        expires_at: Date.now() + Time.TEN_MINUTES,
+        expires_at: Date.now() + Time.ONE_MINUTE * 3,
       },
     };
 
@@ -864,7 +868,6 @@ function wrapToolWithApproval({ tool, res, streamId }) {
       sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data: validationData });
     }
 
-    const validationFlowType = MCPToolCallValidationHandler.getFlowType();
     try {
       await flowManager.createFlow(validationId, validationFlowType, flowMetadata, derivedSignal);
 
@@ -1387,6 +1390,14 @@ async function loadToolsForExecution({
       `[loadToolsForExecution] Capability "${AgentCapabilities.actions}" disabled. ` +
         `Skipping action tool execution. User: ${req.user.id} | Agent: ${agent.id} | Tools: ${actionToolNames.join(', ')}`,
     );
+  }
+
+  const toolApprovalConfig = appConfig?.endpoints?.[EModelEndpoint.agents]?.toolApproval;
+  for (let i = 0; i < allLoadedTools.length; i++) {
+    const tool = allLoadedTools[i];
+    if (res && tool.mcp !== true && requiresApproval(tool.name, toolApprovalConfig)) {
+      allLoadedTools[i] = wrapToolWithApproval({ tool, res, streamId });
+    }
   }
 
   if (isPTC && allLoadedTools.length > 0) {

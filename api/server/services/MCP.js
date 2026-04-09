@@ -592,6 +592,8 @@ function createToolInstance({
 
   const normalizedToolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
 
+  let cachedNeedsApproval;
+
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
     const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
@@ -633,13 +635,14 @@ function createToolInstance({
       }
 
       // Tool call validation flow - only if tool requires approval
-      const appConfig = await getAppConfig({ role: config?.configurable?.user?.role });
-      const toolApprovalConfig = appConfig?.endpoints?.[EModelEndpoint.agents]?.toolApproval;
-      const toolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
-      const needsApproval = requiresApproval(toolKey, toolApprovalConfig);
+      if (cachedNeedsApproval === undefined) {
+        const appConfig = await getAppConfig({ role: config?.configurable?.user?.role });
+        const toolApprovalConfig = appConfig?.endpoints?.[EModelEndpoint.agents]?.toolApproval;
+        cachedNeedsApproval = requiresApproval(normalizedToolKey, toolApprovalConfig);
+      }
+      const needsApproval = cachedNeedsApproval;
 
       if (needsApproval) {
-        const validationFlowType = MCPToolCallValidationHandler.getFlowType();
         const { validationId, flowMetadata } =
           await MCPToolCallValidationHandler.initiateValidationFlow(
             userId,
@@ -648,6 +651,9 @@ function createToolInstance({
             typeof toolArguments === 'string' ? { input: toolArguments } : toolArguments,
           );
 
+        const validationFlowType = MCPToolCallValidationHandler.getFlowType();
+        await flowManager.initFlow(validationId, validationFlowType, flowMetadata);
+
         /** @type {{ id: string; delta: AgentToolCallDelta }} */
         const validationData = {
           id: stepId,
@@ -655,7 +661,7 @@ function createToolInstance({
             type: StepTypes.TOOL_CALLS,
             tool_calls: [{ ...toolCall, args: '' }],
             validation: validationId,
-            expires_at: Date.now() + Time.TEN_MINUTES,
+            expires_at: Date.now() + Time.ONE_MINUTE * 3,
           },
         };
 

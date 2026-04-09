@@ -512,4 +512,57 @@ describe('ToolCall', () => {
       expect(liveRegion!.className).toContain('sr-only');
     });
   });
+
+  describe('tool approval validation', () => {
+    it('should render Approve and Reject buttons when validation prop is present', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          initialProgress={0.5}
+          isSubmitting={true}
+          validation="user1:server1:tool1:123"
+        />,
+      );
+
+      expect(screen.getByText('com_ui_confirm_tool_call')).toBeInTheDocument();
+      expect(screen.getByText('com_ui_reject_tool_call')).toBeInTheDocument();
+    });
+
+    it('should not render validation buttons when validation is absent', () => {
+      renderWithRecoil(
+        <ToolCall {...mockProps} initialProgress={0.5} isSubmitting={true} />,
+      );
+
+      expect(screen.queryByText('com_ui_confirm_tool_call')).not.toBeInTheDocument();
+      expect(screen.queryByText('com_ui_reject_tool_call')).not.toBeInTheDocument();
+    });
+
+    it('should not render validation buttons when progress is complete', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          initialProgress={1}
+          isSubmitting={false}
+          validation="user1:server1:tool1:123"
+        />,
+      );
+
+      expect(screen.queryByText('com_ui_confirm_tool_call')).not.toBeInTheDocument();
+      expect(screen.queryByText('com_ui_reject_tool_call')).not.toBeInTheDocument();
+    });
+
+    it('should not render validation buttons when cancelled', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          initialProgress={0.5}
+          isSubmitting={false}
+          validation="user1:server1:tool1:123"
+        />,
+      );
+
+      expect(screen.queryByText('com_ui_confirm_tool_call')).not.toBeInTheDocument();
+      expect(screen.queryByText('com_ui_reject_tool_call')).not.toBeInTheDocument();
+    });
+  });
 });

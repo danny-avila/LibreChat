@@ -69,15 +69,3 @@ export function getToolServerName(toolName: string): string {
   }
   return 'builtin';
 }
-
-export function getBaseToolName(toolName: string): string {
-  if (toolName.includes(':::mcp:::')) {
-    const parts = toolName.split(':::mcp:::');
-    return parts[0] || toolName;
-  }
-  const mcpMatch = toolName.match(/^(.+)_mcp_[^_]+$/);
-  if (mcpMatch) {
-    return mcpMatch[1];
-  }
-  return toolName;
-}

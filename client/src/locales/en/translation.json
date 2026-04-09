@@ -846,7 +846,7 @@
   "com_ui_confirm_admin_use_change": "Changing this setting will block access for admins, including yourself. Are you sure you want to proceed?",
   "com_ui_confirm_change": "Confirm Change",
   "com_ui_confirm_tool_call": "Approve",
-  "com_ui_confirming": "Approving...",
+  "com_ui_approving": "Approving...",
   "com_ui_connecting": "Connecting",
   "com_ui_contact_admin_if_issue_persists": "Contact the Admin if the issue persists",
   "com_ui_context": "Context",

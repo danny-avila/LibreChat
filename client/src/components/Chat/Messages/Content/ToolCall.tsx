@@ -38,7 +38,6 @@ export default function ToolCall({
   attachments?: TAttachment[];
   auth?: string;
   validation?: string;
-  expires_at?: number;
 }) {
   const localize = useLocalize();
   const autoExpand = useRecoilValue(store.autoExpandTools);
@@ -317,47 +316,40 @@ export default function ToolCall({
           </p>
         </div>
       )}
-      {validation != null &&
-        validation &&
-        progress < 1 &&
-        !cancelled &&
-        !validationConfirmed &&
-        !validationRejected && (
-          <div className="flex w-full flex-col gap-2.5">
-            <div className="mb-1 mt-2 flex gap-2">
-              <Button
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium"
-                variant="default"
-                disabled={isConfirming || isRejecting}
-                onClick={handleValidationConfirm}
-              >
-                <CheckCircle className="h-4 w-4" />
-                {isConfirming
-                  ? localize('com_ui_confirming')
-                  : localize('com_ui_confirm_tool_call')}
-              </Button>
-              <Button
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium"
-                variant="outline"
-                disabled={isConfirming || isRejecting}
-                onClick={handleValidationReject}
-              >
-                <XCircle className="h-4 w-4" />
-                {isRejecting ? localize('com_ui_rejecting') : localize('com_ui_reject_tool_call')}
-              </Button>
-            </div>
-            {validationError && (
-              <p className="flex items-center text-xs text-text-warning">
-                <TriangleAlert className="mr-1.5 inline-block h-4 w-4" aria-hidden="true" />
-                {validationError}
-              </p>
-            )}
-            <p className="flex items-center text-xs text-text-secondary">
-              <TriangleAlert className="mr-1.5 inline-block h-4 w-4" aria-hidden="true" />
-              {localize('com_ui_tool_call_requires_approval')}
-            </p>
+      {validation && progress < 1 && !cancelled && !validationConfirmed && !validationRejected && (
+        <div className="flex w-full flex-col gap-2.5">
+          <div className="mb-1 mt-2 flex gap-2">
+            <Button
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium"
+              variant="default"
+              disabled={isConfirming || isRejecting}
+              onClick={handleValidationConfirm}
+            >
+              <CheckCircle className="h-4 w-4" />
+              {isConfirming ? localize('com_ui_approving') : localize('com_ui_confirm_tool_call')}
+            </Button>
+            <Button
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium"
+              variant="outline"
+              disabled={isConfirming || isRejecting}
+              onClick={handleValidationReject}
+            >
+              <XCircle className="h-4 w-4" />
+              {isRejecting ? localize('com_ui_rejecting') : localize('com_ui_reject_tool_call')}
+            </Button>
           </div>
-        )}
+          {validationError && (
+            <p className="flex items-center text-xs text-text-warning">
+              <TriangleAlert className="mr-1.5 inline-block h-4 w-4" aria-hidden="true" />
+              {validationError}
+            </p>
+          )}
+          <p className="flex items-center text-xs text-text-secondary">
+            <TriangleAlert className="mr-1.5 inline-block h-4 w-4" aria-hidden="true" />
+            {localize('com_ui_tool_call_requires_approval')}
+          </p>
+        </div>
+      )}
       {validation != null && validationConfirmed && (
         <p className="mt-2 flex items-center text-xs text-green-600 dark:text-green-400">
           <CheckCircle className="mr-1.5 inline-block h-4 w-4" aria-hidden="true" />
