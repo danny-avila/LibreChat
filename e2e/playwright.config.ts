@@ -40,6 +40,12 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'nj',
+      testDir: '../nj/e2e',
+      testMatch: '*.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
     /* Test against mobile viewports. */
     // {
     //   name: 'Mobile Chrome',

@@ -39,7 +39,7 @@ async function authenticate(config: FullConfig, user: User) {
   console.log('🤖: using baseURL', baseURL);
   console.dir(user, { depth: null });
   const browser = await chromium.launch({
-    headless: false,
+    headless: !!process.env.CI,
   });
   try {
     const page = await browser.newPage();

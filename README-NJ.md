@@ -62,6 +62,15 @@ NOTE: `reinstall` builds all the code in `/packages/`, but does not do live rebu
 `/packages`, you'll need to run `build:watch` in their respective directories:
 `$ npm run build:watch --prefix packages/[directory]`
 
+### Running e2e tests
+
+Our tests live in: ./nj/e2e/* and they can be run on their own with the following command:
+
+1. Build everything
+   - `$ npm run reinstall`
+2. Run the tests
+   - `npm run e2e:nj`
+
 ## How to Work in This Repo
 
 ### Minimize Upstream Conflicts

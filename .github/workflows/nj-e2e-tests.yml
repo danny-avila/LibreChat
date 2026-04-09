@@ -1,0 +1,119 @@
+name: E2E Tests (Playwright)
+
+on:
+  pull_request:
+    branches:
+      - newjersey
+    paths:
+      - '.github/workflows/nj-e2e-tests.yml' # run it when the workflow file itself is changed (for testing)
+  push:
+    branches:
+      - newjersey
+    paths:
+      - 'api/**'
+      - 'client/**'
+      - 'config/**'
+      - 'e2e/**'
+      - 'helm/**'
+      - 'nj/**'
+      - 'packages/**'
+      - 'src/**'
+      - 'utils/**'
+      - '.github/workflows/nj-e2e-tests.yml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual e2e test run'
+
+# A bunch of variables we need, some might get flagged as secrets, but they aren't
+# (they're just config values that we need to run the tests, and don't contain any sensitive info)
+env:
+  CI: true
+  NODE_ENV: CI
+  MONGO_URI: mongodb://localhost:27017/LibreChat
+  E2E_USER_EMAIL: e2e-test-${{ github.run_id }}@test.local
+  E2E_USER_PASSWORD: Test123!@#${{ github.run_id }}
+  JWT_SECRET: test-jwt-secret-for-ci-${{ github.run_id }}
+  JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci-${{ github.run_id }}
+  CREDS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  CREDS_IV: 0123456789abcdef0123456789abcdef
+  SESSION_SECRET: test-session-secret-for-ci-${{ github.run_id }}
+  CONFIG_PATH: /tmp/ci-librechat.yaml
+  APP_TITLE: NJ AI Assistant
+  ALLOW_REGISTRATION: true
+  SESSION_EXPIRY: 60000
+  REFRESH_TOKEN_EXPIRY: 300000
+  EMAIL_HOST: ''
+  SEARCH: false
+
+jobs:
+  playwright_tests:
+    name: Run Playwright E2E Tests
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # Some of these actions require Node 24, so we set it up early
+      - name: Use Node.js 24.x 
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages with Turbo
+        run: npm run build -- --force
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      
+      # Turn off s3 in CI (since we don't have credentials, and it adds complexity to the tests)
+      - name: Create CI config override
+        run: |
+          cat > /tmp/ci-librechat.yaml << 'EOF'
+          version: 1.0.0
+          fileStrategy: local
+          EOF
+
+      - name: Run Playwright tests
+        run: npm run e2e:nj -- --reporter=list --timeout=60000
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: /e2e/playwright-report/
+          retention-days: 30
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ github.run_id }}
+          path: /e2e/specs/.test-results/
+          retention-days: 30
