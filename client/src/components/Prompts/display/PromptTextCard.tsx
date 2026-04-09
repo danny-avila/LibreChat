@@ -74,9 +74,9 @@ const PromptTextCard = ({ mainText }: PromptTextCardProps) => {
               aria-live="polite"
             >
               {isCopied ? (
-                <Check className="size-4" aria-hidden="true" />
+                <Check className="size-4 text-text-secondary" aria-hidden="true" />
               ) : (
-                <Copy className="size-4" aria-hidden="true" />
+                <Copy className="size-4 text-text-secondary" aria-hidden="true" />
               )}
             </Button>
           }
