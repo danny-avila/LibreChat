@@ -8,13 +8,16 @@ import {
   Permissions,
   ArtifactModes,
   PermissionTypes,
+  LocalStorageKeys,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
+import { useLocalize, useHasAccess, useAgentCapabilities, useSetIndexOptions } from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { useGetStartupConfig } from '~/data-provider';
 import { useBadgeRowContext } from '~/Providers';
+import { useChatContext } from '~/Providers/ChatContext';
+import useLocalStorage from '~/hooks/useLocalStorageAlt';
 import { cn } from '~/utils';
 
 interface ToolsDropdownProps {
@@ -36,6 +39,8 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     searchApiKeyForm,
   } = useBadgeRowContext();
   const { data: startupConfig } = useGetStartupConfig();
+  const { conversation } = useChatContext();
+  const { setOption } = useSetIndexOptions();
 
   const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
     useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
@@ -49,6 +54,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     setIsPinned: setIsSearchPinned,
     authData: webSearchAuthData,
   } = webSearch;
+  const [isNativeWebSearchPinned, setIsNativeWebSearchPinned] = useLocalStorage<boolean>(
+    `${LocalStorageKeys.LAST_NATIVE_WEB_SEARCH_TOGGLE_}pinned`,
+    false,
+  );
   const {
     isPinned: isCodePinned,
     setIsPinned: setIsCodePinned,
@@ -77,6 +86,8 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     permission: Permissions.USE,
   });
 
+  const shouldShowNativeWebSearch = !canUseWebSearch;
+
   const showWebSearchSettings = useMemo(() => {
     const authTypes = webSearchAuthData?.authTypes ?? [];
     if (authTypes.length === 0) return true;
@@ -92,6 +103,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     const newValue = !webSearch.toggleState;
     webSearch.debouncedChange({ value: newValue });
   }, [webSearch]);
+
+  const handleNativeWebSearchToggle = useCallback(() => {
+    const currentValue = conversation?.web_search ?? false;
+    setOption('web_search')(!currentValue);
+  }, [conversation?.web_search, setOption]);
 
   const handleCodeInterpreterToggle = useCallback(() => {
     const newValue = !codeInterpreter.toggleState;
@@ -215,6 +231,38 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
               </div>
             </button>
           </div>
+        </div>
+      ),
+    });
+  }
+
+  if (shouldShowNativeWebSearch) {
+    dropdownItems.push({
+      onClick: handleNativeWebSearchToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div {...props}>
+          <div className="flex items-center gap-2">
+            <Globe className="icon-md" />
+            <span>{localize('com_ui_web_search')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsNativeWebSearchPinned(!isNativeWebSearchPinned);
+            }}
+            className={cn(
+              'rounded p-1 transition-all duration-200',
+              'hover:bg-surface-secondary hover:shadow-sm',
+              !isNativeWebSearchPinned && 'text-text-secondary hover:text-text-primary',
+            )}
+            aria-label={isNativeWebSearchPinned ? localize('com_ui_unpin') : localize('com_ui_pin')}
+          >
+            <div className="h-4 w-4">
+              <PinIcon unpin={isNativeWebSearchPinned} />
+            </div>
+          </button>
         </div>
       ),
     });

@@ -21,6 +21,7 @@ import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
+import NativeWebSearch from './NativeWebSearch';
 import store from '~/store';
 
 interface BadgeRowProps {
@@ -371,6 +372,7 @@ function BadgeRow({
         {showEphemeralBadges === true && (
           <>
             <WebSearch />
+            <NativeWebSearch />
             <CodeInterpreter />
             <FileSearch />
             <Artifacts />
