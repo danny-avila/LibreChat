@@ -90,7 +90,6 @@ jest.mock('~/server/services/Files/images/convert', () => ({
   convertImage: jest.fn(),
 }));
 
-// Mock getRetentionExpiry from Files/process
 jest.mock('~/server/services/Files/process', () => ({
   getRetentionExpiry: jest.fn(() => ({})),
 }));
@@ -103,6 +102,7 @@ jest.mock('~/server/utils', () => ({
 const http = require('http');
 const https = require('https');
 const { createFile, getFiles } = require('~/models');
+const { getRetentionExpiry } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
@@ -186,6 +186,7 @@ describe('Code Process', () => {
 
       expect(result.file_id).toBe('mock-uuid-1234');
       expect(result.usage).toBe(1);
+      expect(getRetentionExpiry).toHaveBeenCalledWith(baseParams.req);
     });
   });
 

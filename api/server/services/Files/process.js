@@ -53,8 +53,9 @@ function getRetentionExpiry(req) {
   if (req?.body?.isTemporary || req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
     try {
       return { expiredAt: createTempChatExpirationDate(req.config?.interfaceConfig) };
-    } catch (_err) {
-      return {};
+    } catch (err) {
+      logger.error('[getRetentionExpiry] Error creating file expiration date:', err);
+      return { expiredAt: null };
     }
   }
   return {};

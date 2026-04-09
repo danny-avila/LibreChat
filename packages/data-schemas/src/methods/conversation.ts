@@ -174,11 +174,7 @@ export function createConversationMethods(
         update.conversationId = newConversationId;
       }
 
-      if (isTemporary) {
-        update.isTemporary = true;
-      } else {
-        update.isTemporary = false;
-      }
+      update.isTemporary = isTemporary === true;
 
       if (isTemporary || interfaceConfig?.retentionMode === RetentionMode.ALL) {
         try {
@@ -285,7 +281,13 @@ export function createConversationMethods(
     }
 
     filters.push({
-      $or: [{ isTemporary: false }, { isTemporary: { $exists: false } }],
+      $or: [
+        { isTemporary: false },
+        {
+          isTemporary: { $exists: false },
+          $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
+        },
+      ],
     } as FilterQuery<IConversation>);
 
     if (search) {
@@ -406,7 +408,13 @@ export function createConversationMethods(
       const results = await Conversation.find({
         user,
         conversationId: { $in: conversationIds },
-        $or: [{ isTemporary: false }, { isTemporary: { $exists: false } }],
+        $or: [
+          { isTemporary: false },
+          {
+            isTemporary: { $exists: false },
+            $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
+          },
+        ],
       }).lean();
 
       results.sort(

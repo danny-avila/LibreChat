@@ -398,6 +398,28 @@ describe('Conversation Operations', () => {
       expect(secondSave?.expiredAt).toBeNull();
     });
 
+    it('should set expiredAt for non-temporary conversation when retentionMode is ALL', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: 'all',
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.isTemporary).toBe(false);
+    });
+
+    it('should not set expiredAt when retentionMode is temporary and not isTemporary', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: 'temporary',
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.expiredAt).toBeNull();
+      expect(result?.isTemporary).toBe(false);
+    });
+
     it('should filter out temporary conversations in getConvosByCursor', async () => {
       // Create some test conversations
       const newNonTemporaryConvo = await Conversation.create({
@@ -442,7 +464,7 @@ describe('Conversation Operations', () => {
       expect(convoIds).toContain(oldNonTemporaryConvo.conversationId);
     });
 
-    it('should filter out expired conversations in getConvosQueried', async () => {
+    it('should filter out temporary conversations in getConvosQueried', async () => {
       const newNonTemporaryConvo = await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
