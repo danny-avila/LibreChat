@@ -1018,6 +1018,62 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('should proactively SREM from user jobs set on updateJob to aborted', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `srem-aborted-user-${Date.now()}`;
+      const streamId = `srem-aborted-stream-${Date.now()}`;
+
+      await store.createJob(streamId, userId, streamId);
+
+      const userKey = `stream:user:{${userId}}:jobs`;
+      let members = await ioredisClient.smembers(userKey);
+      expect(members).toContain(streamId);
+
+      await store.updateJob(streamId, { status: 'aborted', completedAt: Date.now() });
+
+      members = await ioredisClient.smembers(userKey);
+      expect(members).not.toContain(streamId);
+
+      await store.destroy();
+    });
+
+    test('should proactively SREM from user jobs set on updateJob to error', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `srem-error-user-${Date.now()}`;
+      const streamId = `srem-error-stream-${Date.now()}`;
+
+      await store.createJob(streamId, userId, streamId);
+
+      const userKey = `stream:user:{${userId}}:jobs`;
+      let members = await ioredisClient.smembers(userKey);
+      expect(members).toContain(streamId);
+
+      await store.updateJob(streamId, {
+        status: 'error',
+        error: 'Test error',
+        completedAt: Date.now(),
+      });
+
+      members = await ioredisClient.smembers(userKey);
+      expect(members).not.toContain(streamId);
+
+      await store.destroy();
+    });
+
     test('should proactively SREM from user jobs set on deleteJob', async () => {
       if (!ioredisClient) {
         return;
@@ -1043,6 +1099,37 @@ describe('RedisJobStore Integration Tests', () => {
       // Directly check the Redis set
       members = await ioredisClient.smembers(userKey);
       expect(members).not.toContain(streamId);
+
+      await store.destroy();
+    });
+
+    test('should set TTL on tenant-qualified user jobs set', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `tenant-user-${Date.now()}`;
+      const tenantId = `tenant-${Date.now()}`;
+      const streamId = `tenant-stream-${Date.now()}`;
+
+      await store.createJob(streamId, userId, streamId, tenantId);
+
+      const userKey = `stream:user:{${tenantId}:${userId}}:jobs`;
+      const members = await ioredisClient.smembers(userKey);
+      expect(members).toContain(streamId);
+
+      const ttl = await ioredisClient.ttl(userKey);
+      expect(ttl).toBeGreaterThan(0);
+      expect(ttl).toBeLessThanOrEqual(86400);
+
+      // Non-tenant key should NOT contain this entry
+      const wrongKey = `stream:user:{${userId}}:jobs`;
+      const wrongMembers = await ioredisClient.smembers(wrongKey);
+      expect(wrongMembers).not.toContain(streamId);
 
       await store.destroy();
     });

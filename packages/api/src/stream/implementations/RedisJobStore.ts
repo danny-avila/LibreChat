@@ -266,6 +266,8 @@ export class RedisJobStore implements IJobStore {
   }
 
   async deleteJob(streamId: string): Promise<void> {
+    this.localGraphCache.delete(streamId);
+    this.localCollectedUsageCache.delete(streamId);
     const job = await this.getJob(streamId);
     const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
     return this.deleteJobInternal(streamId, userJobsKey);
@@ -350,9 +352,8 @@ export class RedisJobStore implements IJobStore {
 
           // Job completed but still in running set (shouldn't happen, but handle it)
           if (job.status !== 'running') {
-            await this.redis.srem(KEYS.runningJobs, streamId);
-            this.localGraphCache.delete(streamId);
-            this.localCollectedUsageCache.delete(streamId);
+            const userJobsKey = job.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
+            await this.deleteJobInternal(streamId, userJobsKey);
             return 1;
           }
 
