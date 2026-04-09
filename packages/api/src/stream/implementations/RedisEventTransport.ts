@@ -178,9 +178,10 @@ export class RedisEventTransport implements IEventTransport {
           }
         }
       }
-      // Set nextSeq from remaining state: use Math.min to preserve any live pending entries.
+      // Set nextSeq from remaining state. Never regress nextSeq — handleOrderedChunk may
+      // have already advanced it past currentSeq during the async GET window.
       if (state.reorderBuffer.pending.size === 0) {
-        state.reorderBuffer.nextSeq = currentSeq;
+        state.reorderBuffer.nextSeq = Math.max(state.reorderBuffer.nextSeq, currentSeq);
       } else {
         let minPending = Infinity;
         for (const seq of state.reorderBuffer.pending.keys()) {
@@ -188,7 +189,10 @@ export class RedisEventTransport implements IEventTransport {
             minPending = seq;
           }
         }
-        state.reorderBuffer.nextSeq = Math.min(currentSeq, minPending);
+        state.reorderBuffer.nextSeq = Math.max(
+          state.reorderBuffer.nextSeq,
+          Math.min(currentSeq, minPending),
+        );
         this.flushPendingMessages(streamId, state);
       }
       // Re-arm flush timeout if gaps remain after sync — without this,
