@@ -134,7 +134,7 @@ export interface TavilyConfig {
   tavilySearchUrl?: string;
   tavilyExtractUrl?: string;
   tavilySearchOptions?: {
-    searchDepth?: 'basic' | 'advanced';
+    searchDepth?: 'basic' | 'advanced' | 'fast' | 'ultra-fast';
     maxResults?: number;
     includeImages?: boolean;
     includeAnswer?: boolean;
@@ -145,6 +145,8 @@ export interface TavilyConfig {
     timeRange?: 'day' | 'week' | 'month' | 'year' | 'd' | 'w' | 'm' | 'y';
     days?: number;
     includeImageDescriptions?: boolean;
+    includeFavicon?: boolean;
+    chunksPerSource?: number;
     timeout?: number;
   };
   tavilyScraperOptions?: {

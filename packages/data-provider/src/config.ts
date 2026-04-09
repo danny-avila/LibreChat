@@ -1100,8 +1100,8 @@ export const webSearchSchema = z.object({
     .optional(),
   tavilySearchOptions: z
     .object({
-      searchDepth: z.enum(['basic', 'advanced']).optional(),
-      maxResults: z.number().int().min(1).max(20).optional(),
+      searchDepth: z.enum(['basic', 'advanced', 'fast', 'ultra-fast']).optional(),
+      maxResults: z.number().int().min(0).max(20).optional(),
       includeImages: z.boolean().optional(),
       includeAnswer: z.boolean().optional(),
       includeRawContent: z.boolean().optional(),
@@ -1111,6 +1111,8 @@ export const webSearchSchema = z.object({
       timeRange: z.enum(['day', 'week', 'month', 'year', 'd', 'w', 'm', 'y']).optional(),
       days: z.number().int().min(1).optional(),
       includeImageDescriptions: z.boolean().optional(),
+      includeFavicon: z.boolean().optional(),
+      chunksPerSource: z.number().int().min(1).max(3).optional(),
       timeout: z.number().int().nonnegative().optional(),
     })
     .optional(),
