@@ -116,7 +116,7 @@ const AttachFileMenu = ({
       return;
     }
     inputRef.current.value = '';
-    if (fileType != null && isPermissiveMimeConfig(endpointFileConfig?.supportedMimeTypes)) {
+    if (fileType !== undefined && isPermissiveMimeConfig(endpointFileConfig?.supportedMimeTypes)) {
       inputRef.current.accept = '';
     } else if (fileType === 'image') {
       inputRef.current.accept = 'image/*,.heif,.heic';
@@ -250,6 +250,7 @@ const AttachFileMenu = ({
     endpointType,
     capabilities,
     useResponsesApi,
+    endpointFileConfig,
     setToolResource,
     setEphemeralAgent,
     sharePointEnabled,

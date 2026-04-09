@@ -1282,6 +1282,14 @@ describe('isPermissiveMimeConfig', () => {
     expect(isPermissiveMimeConfig([/^application\/pdf$/])).toBe(false);
   });
 
+  it('returns false for broad application category pattern', () => {
+    expect(isPermissiveMimeConfig([/^application\/.*$/])).toBe(false);
+  });
+
+  it('returns false for multi-category pattern', () => {
+    expect(isPermissiveMimeConfig([/^(application|text)\/.*$/])).toBe(false);
+  });
+
   it('returns false for default supportedMimeTypes', () => {
     expect(isPermissiveMimeConfig(supportedMimeTypes)).toBe(false);
   });
