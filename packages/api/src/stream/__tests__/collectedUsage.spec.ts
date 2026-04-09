@@ -8,6 +8,9 @@
 
 import type { UsageMetadata } from '../interfaces/IJobStore';
 
+/** Suppress winston Console transport output (survives jest.resetModules) */
+jest.spyOn(console, 'log').mockImplementation();
+
 describe('CollectedUsage - InMemoryJobStore', () => {
   beforeEach(() => {
     jest.resetModules();

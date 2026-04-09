@@ -3,6 +3,9 @@ import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
 import { StandardGraph } from '@librechat/agents';
 
+/** Suppress winston Console transport output (survives jest.resetModules) */
+jest.spyOn(console, 'log').mockImplementation();
+
 /**
  * Integration tests for RedisJobStore.
  *
