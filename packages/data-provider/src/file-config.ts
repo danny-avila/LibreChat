@@ -497,6 +497,13 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
     return acc;
   }, []);
 
+export const isPermissiveMimeConfig = (types?: RegExp[]): boolean => {
+  if (!types || types.length === 0) {
+    return false;
+  }
+  return types.some((regex) => regex.test('application/x-librechat-any'));
+};
+
 /**
  * Gets the appropriate endpoint file configuration with standardized lookup logic.
  *
