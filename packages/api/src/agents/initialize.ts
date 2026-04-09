@@ -354,7 +354,7 @@ export async function initializeAgent(
     maxContextTokens,
     getModelMaxTokens(
       tokensModel ?? '',
-      providerEndpointMap[provider as keyof typeof providerEndpointMap],
+      providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
       options.endpointTokenConfig,
     ),
     18000,
