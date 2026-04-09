@@ -30,10 +30,7 @@ export default function GroupSidePanel({
   const { promptGroups, groupsQuery, nextPage, prevPage, hasNextPage, hasPreviousPage } = context;
 
   return (
-    <div
-      id="prompts-panel"
-      className={cn('flex h-full w-full flex-col md:mr-2 md:w-[450px] md:shrink-0', className)}
-    >
+    <div id="prompts-panel" className={cn('flex h-full w-full flex-col', className)}>
       {onClose && (
         <div className="flex items-center justify-end px-2 py-[2px] md:py-2">
           <TooltipAnchor
@@ -58,18 +55,15 @@ export default function GroupSidePanel({
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div className="scrollbar-gutter-stable flex h-full min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden pl-3 pr-1 text-text-primary">
           <div className="shrink-0 space-y-2">{children}</div>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <List
-              groups={promptGroups}
-              isLoading={!!groupsQuery.isLoading}
-              isChatRoute={isChatRoute}
-            />
-          </div>
+          <List
+            groups={promptGroups}
+            isLoading={!!groupsQuery.isLoading}
+            isChatRoute={isChatRoute}
+          />
         </div>
         <div
           className={cn(
-            'pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-surface-primary-alt from-60% to-transparent',
-            isChatRoute ? 'px-3 pb-2 pt-6' : 'px-2 pb-3 pt-2 md:px-0',
+            'pointer-events-none inset-x-0 bottom-0 bg-gradient-to-t from-surface-primary-alt from-60% to-transparent px-3 pb-2',
           )}
         >
           <div className="pointer-events-auto">

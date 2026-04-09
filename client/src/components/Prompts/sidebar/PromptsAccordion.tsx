@@ -10,7 +10,7 @@ export default function PromptsAccordion() {
   const groupsNav = usePromptGroupsContext() ?? {};
   const { user } = useAuthContext();
   return (
-    <PromptSidePanel className="space-y-2 md:mr-0 md:min-w-0 lg:w-full xl:w-full" {...groupsNav}>
+    <PromptSidePanel className="space-y-2" {...groupsNav}>
       <FilterPrompts />
       {user?.role === SystemRoles.ADMIN && <AdminSettings />}
       <AutoSendPrompt />
