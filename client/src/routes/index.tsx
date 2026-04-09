@@ -28,6 +28,11 @@ const AuthLayout = () => (
   </AuthContextProvider>
 );
 
+const loadInlinePromptsView = () =>
+  import('~/components/Prompts/layouts/InlinePromptsView').then((m) => ({
+    Component: m.default,
+  }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -110,6 +115,18 @@ export const router = createBrowserRouter(
             {
               path: 'search',
               element: <Search />,
+            },
+            {
+              path: 'prompts',
+              element: <Navigate to="/prompts/new" replace={true} />,
+            },
+            {
+              path: 'prompts/new',
+              lazy: loadInlinePromptsView,
+            },
+            {
+              path: 'prompts/:promptId',
+              lazy: loadInlinePromptsView,
             },
             {
               path: 'agents',

@@ -1,0 +1,91 @@
+name: GitNexus Index
+
+on:
+  push:
+    branches: [main, dev]
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.github/**']
+  pull_request:
+    branches: [main, dev]
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.github/**']
+  workflow_dispatch:
+    inputs:
+      embeddings:
+        description: 'Enable embedding generation (slow, increases index size)'
+        type: boolean
+        default: false
+      force:
+        description: 'Force full re-index'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitnexus-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITNEXUS_VERSION: '1.5.3'
+
+jobs:
+  index:
+    # Allow push + dispatch unconditionally; filter PRs to contributors only
+    if: |
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Cache npm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: gitnexus-npm-${{ runner.os }}-${{ env.GITNEXUS_VERSION }}
+          restore-keys: gitnexus-npm-${{ runner.os }}-
+
+      - name: Run GitNexus Analyze
+        run: |
+          FLAGS="--skip-agents-md --verbose"
+          if [ "${{ inputs.embeddings }}" = "true" ]; then
+            FLAGS="$FLAGS --embeddings"
+          fi
+          if [ "${{ inputs.force }}" = "true" ]; then
+            FLAGS="$FLAGS --force"
+          fi
+          npx --yes gitnexus@${{ env.GITNEXUS_VERSION }} analyze . $FLAGS
+
+      - name: Verify index
+        run: |
+          if [ ! -d ".gitnexus" ] || [ ! -f ".gitnexus/meta.json" ]; then
+            echo "::error::GitNexus index was not created"
+            exit 1
+          fi
+          echo "::group::Index metadata"
+          cat .gitnexus/meta.json
+          echo ""
+          echo "::endgroup::"
+
+      - name: Upload GitNexus index
+        uses: actions/upload-artifact@v4
+        with:
+          name: >-
+            gitnexus-index-${{
+              github.event_name == 'pull_request'
+              && format('pr-{0}', github.event.pull_request.number)
+              || github.ref_name
+            }}
+          path: .gitnexus/
+          retention-days: 30

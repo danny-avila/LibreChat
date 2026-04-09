@@ -8,6 +8,11 @@
 </p>
 
 <p align="center">
+  <strong>English</strong> ·
+  <a href="README.zh.md">中文</a>
+</p>
+
+<p align="center">
   <a href="https://discord.librechat.ai"> 
     <img
       src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet">
@@ -27,7 +32,7 @@
 </p>
 
 <p align="center">
-<a href="https://railway.com/deploy/b5k2mn?referralCode=HI9hWz">
+<a href="https://railway.com/deploy/librechat-official?referralCode=HI9hWz&utm_medium=integration&utm_source=readme&utm_campaign=librechat">
   <img src="https://railway.com/button.svg" alt="Deploy on Railway" height="30">
 </a>
 <a href="https://zeabur.com/templates/0X2ZY8">
