@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import { MCPIcon, OpenAIMinimalIcon, AttachmentIcon } from '@librechat/client';
+import { MCPIcon, OpenAIMinimalIcon } from '@librechat/client';
 import {
   Bot,
   Brain,
   Bookmark,
+  Paperclip,
   NotebookPen,
   ArrowRightToLine,
   SlidersHorizontal,
@@ -149,7 +150,7 @@ export default function useSideNavLinks({
     links.push({
       title: 'com_sidepanel_attach_files',
       label: '',
-      icon: AttachmentIcon,
+      icon: Paperclip,
       id: 'files',
       Component: FilesPanel,
     });
