@@ -351,9 +351,15 @@ export class RedisJobStore implements IJobStore {
           }
 
           // Job completed but still in running set (shouldn't happen, but handle it)
+          // Only remove from tracking sets — do NOT delete the job hash, which has
+          // its own completedTtl so clients can still poll for final status.
           if (job.status !== 'running') {
-            const userJobsKey = job.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
-            await this.deleteJobInternal(streamId, userJobsKey);
+            await this.redis.srem(KEYS.runningJobs, streamId);
+            if (job.userId) {
+              await this.redis.srem(KEYS.userJobs(job.userId, job.tenantId), streamId);
+            }
+            this.localGraphCache.delete(streamId);
+            this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
 
