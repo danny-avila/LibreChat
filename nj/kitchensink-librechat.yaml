@@ -103,3 +103,9 @@ fileConfig:
       fileLimit: 10
       fileSizeLimit: 50 # mb
       totalSizeLimit: 60 # mb
+
+memory:
+  tokenLimit: 2000
+  agent:
+    provider: "bedrock"
+    model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
