@@ -18,18 +18,6 @@ const KEYS = {
   sequence: (streamId: string) => `stream:{${streamId}}:seq`,
 };
 
-/** Lua script: atomically INCR the sequence counter and refresh its TTL */
-const INCR_WITH_TTL_SCRIPT = `local v = redis.call('INCR', KEYS[1])
-redis.call('EXPIRE', KEYS[1], ARGV[1])
-return v`;
-
-/**
- * TTL for sequence keys (seconds). Refreshed on every publish, so only
- * affects stalled or abandoned streams. Chosen to exceed any realistic
- * single-generation duration (max observed: ~20 min for long agentic tasks).
- */
-const SEQUENCE_TTL_SECONDS = 3600;
-
 /**
  * Event types for pub/sub messages
  */
@@ -133,16 +121,17 @@ export class RedisEventTransport implements IEventTransport {
     });
   }
 
-  /** Get next sequence number for a stream (0-indexed, backed by Redis INCR) */
+  /**
+   * Get next sequence number for a stream (0-indexed, backed by Redis INCR).
+   * No TTL — keys are cleaned up explicitly by cleanup()/resetSequence().
+   * This avoids the risk of a TTL expiring mid-stream during long quiet periods
+   * (e.g., slow tool calls), which would restart the counter from zero and cause
+   * subscribers to silently drop all subsequent messages.
+   */
   private async getNextSequence(streamId: string): Promise<number> {
     const key = KEYS.sequence(streamId);
-    const raw = await this.publisher.eval(INCR_WITH_TTL_SCRIPT, 1, key, SEQUENCE_TTL_SECONDS);
-    if (typeof raw !== 'number') {
-      throw new Error(
-        `[RedisEventTransport] Unexpected eval result for ${key}: expected number, got ${typeof raw} (${raw})`,
-      );
-    }
-    return raw - 1;
+    const val = await this.publisher.incr(key);
+    return val - 1;
   }
 
   /** Reset subscriber reorder state and delete the Redis sequence key for a stream (full cleanup only) */
@@ -165,10 +154,11 @@ export class RedisEventTransport implements IEventTransport {
   /**
    * Advance subscriber reorder buffer to the authoritative Redis sequence counter (cross-replica safe).
    *
-   * @param clearPending - When true, discard all pending entries because the caller already
-   *   delivered those events via earlyEventBuffer (same-replica). When false (cross-replica),
-   *   preserve pending entries that arrived during the async GET window and lower nextSeq
-   *   to deliver them immediately.
+   * @param clearPending - When true (same-replica), entries with seq < currentSeq are duplicates
+   *   of earlyEventBuffer and are pruned; entries with seq >= currentSeq are NEW chunks from
+   *   ongoing generation that arrived during the async GET and must be preserved.
+   *   When false/undefined (cross-replica), all pending entries are live chunks from the GET
+   *   window — preserved via Math.min so none are dropped.
    */
   async syncReorderBuffer(streamId: string, clearPending?: boolean): Promise<void> {
     const key = KEYS.sequence(streamId);
@@ -181,10 +171,20 @@ export class RedisEventTransport implements IEventTransport {
         clearTimeout(state.reorderBuffer.flushTimeout);
         state.reorderBuffer.flushTimeout = null;
       }
-      if (clearPending || state.reorderBuffer.pending.size === 0) {
+      if (clearPending) {
+        // Same-replica: prune entries below currentSeq (duplicates of earlyEventBuffer),
+        // but keep entries at or above currentSeq (new chunks from ongoing generation).
+        for (const seq of state.reorderBuffer.pending.keys()) {
+          if (seq < currentSeq) {
+            state.reorderBuffer.pending.delete(seq);
+          }
+        }
         state.reorderBuffer.nextSeq = currentSeq;
-        state.reorderBuffer.pending.clear();
+        this.flushPendingMessages(streamId, state);
+      } else if (state.reorderBuffer.pending.size === 0) {
+        state.reorderBuffer.nextSeq = currentSeq;
       } else {
+        // Cross-replica: all pending entries are live — lower nextSeq to deliver them.
         const minPending = Math.min(...state.reorderBuffer.pending.keys());
         state.reorderBuffer.nextSeq = Math.min(currentSeq, minPending);
         this.flushPendingMessages(streamId, state);

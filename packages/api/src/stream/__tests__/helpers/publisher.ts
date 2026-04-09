@@ -1,6 +1,6 @@
 interface MockPublisher {
   publish: jest.Mock;
-  eval: jest.Mock;
+  incr: jest.Mock;
   get: jest.Mock;
   del: jest.Mock;
 }
@@ -10,7 +10,7 @@ export function createMockPublisher(): MockPublisher {
   const counters = new Map<string, number>();
   return {
     publish: jest.fn().mockResolvedValue(1),
-    eval: jest.fn().mockImplementation((_script: string, _numKeys: number, key: string) => {
+    incr: jest.fn().mockImplementation((key: string) => {
       const current = (counters.get(key) ?? 0) + 1;
       counters.set(key, current);
       return Promise.resolve(current);

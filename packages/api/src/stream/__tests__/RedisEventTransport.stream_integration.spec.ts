@@ -966,11 +966,11 @@ describe('RedisEventTransport Integration Tests', () => {
       transport.destroy();
     });
 
-    test('should swallow emitChunk eval errors (sequence allocation failure)', async () => {
+    test('should swallow emitChunk incr errors (sequence allocation failure)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
       const mockPublisher = createMockPublisher();
-      mockPublisher.eval.mockRejectedValue(new Error('EVAL failed'));
+      mockPublisher.incr.mockRejectedValue(new Error('INCR failed'));
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -982,30 +982,7 @@ describe('RedisEventTransport Integration Tests', () => {
         mockSubscriber as unknown as Redis,
       );
 
-      const streamId = `error-prop-eval-${Date.now()}`;
-
-      await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
-
-      transport.destroy();
-    });
-
-    test('should swallow emitChunk errors when eval returns unexpected type', async () => {
-      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
-
-      const mockPublisher = createMockPublisher();
-      mockPublisher.eval.mockResolvedValue(null);
-      const mockSubscriber = {
-        on: jest.fn(),
-        subscribe: jest.fn().mockResolvedValue(undefined),
-        unsubscribe: jest.fn().mockResolvedValue(undefined),
-      };
-
-      const transport = new RedisEventTransport(
-        mockPublisher as unknown as Redis,
-        mockSubscriber as unknown as Redis,
-      );
-
-      const streamId = `error-prop-eval-type-${Date.now()}`;
+      const streamId = `error-prop-incr-${Date.now()}`;
 
       await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
 
@@ -1062,11 +1039,11 @@ describe('RedisEventTransport Integration Tests', () => {
       transport.destroy();
     });
 
-    test('should propagate when emitDone eval returns unexpected type', async () => {
+    test('should propagate when emitDone incr fails', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
       const mockPublisher = createMockPublisher();
-      mockPublisher.eval.mockResolvedValue(null);
+      mockPublisher.incr.mockRejectedValue(new Error('INCR failed'));
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -1078,20 +1055,18 @@ describe('RedisEventTransport Integration Tests', () => {
         mockSubscriber as unknown as Redis,
       );
 
-      const streamId = `error-prop-done-eval-${Date.now()}`;
+      const streamId = `error-prop-done-incr-${Date.now()}`;
 
-      await expect(transport.emitDone(streamId, { finished: true })).rejects.toThrow(
-        'Unexpected eval result',
-      );
+      await expect(transport.emitDone(streamId, { finished: true })).rejects.toThrow('INCR failed');
 
       transport.destroy();
     });
 
-    test('should propagate when emitError eval throws', async () => {
+    test('should propagate when emitError incr fails', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
       const mockPublisher = createMockPublisher();
-      mockPublisher.eval.mockRejectedValue(new Error('EVAL failed'));
+      mockPublisher.incr.mockRejectedValue(new Error('INCR failed'));
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -1103,9 +1078,9 @@ describe('RedisEventTransport Integration Tests', () => {
         mockSubscriber as unknown as Redis,
       );
 
-      const streamId = `error-prop-error-eval-${Date.now()}`;
+      const streamId = `error-prop-error-incr-${Date.now()}`;
 
-      await expect(transport.emitError(streamId, 'some error')).rejects.toThrow('EVAL failed');
+      await expect(transport.emitError(streamId, 'some error')).rejects.toThrow('INCR failed');
 
       transport.destroy();
     });
