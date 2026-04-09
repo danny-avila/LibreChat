@@ -135,7 +135,9 @@ export class RedisEventTransport implements IEventTransport {
     const key = KEYS.sequence(streamId);
     const val = await this.publisher.incr(key);
     if (val === 1) {
-      this.publisher.expire(key, RedisEventTransport.SEQUENCE_TTL_SECONDS).catch(() => {});
+      this.publisher.expire(key, RedisEventTransport.SEQUENCE_TTL_SECONDS).catch((err) => {
+        logger.warn(`[RedisEventTransport] Failed to set TTL on sequence key ${key}:`, err);
+      });
     }
     return val - 1;
   }
