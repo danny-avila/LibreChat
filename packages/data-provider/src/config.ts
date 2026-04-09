@@ -1109,7 +1109,6 @@ export const webSearchSchema = z.object({
       excludeDomains: z.array(z.string()).optional(),
       topic: z.enum(['general', 'news', 'finance']).optional(),
       timeRange: z.enum(['day', 'week', 'month', 'year', 'd', 'w', 'm', 'y']).optional(),
-      days: z.number().int().min(1).optional(),
       includeImageDescriptions: z.boolean().optional(),
       includeFavicon: z.boolean().optional(),
       chunksPerSource: z.number().int().min(1).max(3).optional(),
