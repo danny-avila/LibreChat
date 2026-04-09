@@ -55,6 +55,12 @@ const updateFavoritesController = async (req, res) => {
         }
       }
 
+      const hasPartialModel = !hasModel && !!(fav.model || fav.endpoint);
+
+      if (hasPartialModel && !hasAgent && !hasSpec) {
+        return res.status(400).json({ message: 'model and endpoint must be provided together' });
+      }
+
       const typeCount = [hasAgent, hasModel, hasSpec].filter(Boolean).length;
       if (typeCount === 0) {
         return res.status(400).json({
@@ -67,6 +73,17 @@ const updateFavoritesController = async (req, res) => {
           message: 'Favorite cannot have multiple types (agentId, model/endpoint, or spec)',
         });
       }
+
+      if (hasSpec && (fav.agentId || fav.model || fav.endpoint)) {
+        return res
+          .status(400)
+          .json({ message: 'spec cannot be combined with agentId, model, or endpoint' });
+      }
+      if (hasAgent && (fav.model || fav.endpoint)) {
+        return res
+          .status(400)
+          .json({ message: 'agentId cannot be combined with model or endpoint' });
+      }
     }
 
     const user = await updateUser(userId, { favorites });
@@ -75,7 +92,7 @@ const updateFavoritesController = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.status(200).json(user.favorites);
+    return res.status(200).json(user.favorites);
   } catch (error) {
     console.error('Error updating favorites:', error);
     return res.status(500).json({ message: 'Internal server error' });
@@ -98,7 +115,7 @@ const getFavoritesController = async (req, res) => {
       await updateUser(userId, { favorites: [] });
     }
 
-    res.status(200).json(favorites);
+    return res.status(200).json(favorites);
   } catch (error) {
     console.error('Error fetching favorites:', error);
     return res.status(500).json({ message: 'Internal server error' });

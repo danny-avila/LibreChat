@@ -1,6 +1,6 @@
 import React from 'react';
-import { CheckCircle2, Pin, PinOff } from 'lucide-react';
 import { VisuallyHidden } from '@ariakit/react';
+import { CheckCircle2, Pin, PinOff } from 'lucide-react';
 import type { TModelSpec } from 'librechat-data-provider';
 import { useFavorites, useLocalize, useIsActiveItem } from '~/hooks';
 import { useModelSelectorContext } from '../ModelSelectorContext';
@@ -31,7 +31,6 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   return (
     <MenuItem
       ref={itemRef}
-      key={spec.name}
       onClick={() => handleSelectSpec(spec)}
       aria-selected={isSelected || undefined}
       className="group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
@@ -55,6 +54,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
         </div>
       </div>
       <button
+        type="button"
         tabIndex={isActive ? 0 : -1}
         onClick={handleFavoriteClick}
         aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}

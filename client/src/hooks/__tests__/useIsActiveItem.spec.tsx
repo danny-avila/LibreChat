@@ -20,29 +20,6 @@ describe('useIsActiveItem', () => {
     expect(getProbe(container).getAttribute('data-active')).toBe('false');
   });
 
-  it('initializes isActive=true when data-active-item is already set pre-mount', () => {
-    // Render wrapper that sets the attribute BEFORE Probe mounts.
-    function Wrapper() {
-      const [mounted, setMounted] = React.useState(false);
-      return (
-        <div>
-          {mounted && <Probe />}
-          <button
-            data-testid="mount-trigger"
-            onClick={() => {
-              setMounted(true);
-            }}
-          />
-        </div>
-      );
-    }
-    // Simplest: assert default is false (initial mount has no attribute); the pre-mount
-    // hydration case is effectively the same code path covered by the update test below.
-    const { container } = render(<Wrapper />);
-    // Not strictly asserting here — initial-attribute path is exercised below via mutation.
-    expect(container).toBeTruthy();
-  });
-
   it('flips isActive to true when data-active-item is added after mount', async () => {
     const { container } = render(<Probe />);
     const probe = getProbe(container);

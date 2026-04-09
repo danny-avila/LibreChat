@@ -166,6 +166,66 @@ describe('FavoritesController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
+    it('rejects spec with stray endpoint field', async () => {
+      const req = makeReq({ favorites: [{ spec: 's1', endpoint: 'openai' }] });
+      const res = makeRes();
+      await updateFavoritesController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'spec cannot be combined with agentId, model, or endpoint',
+      });
+    });
+
+    it('rejects spec with stray model field', async () => {
+      const req = makeReq({ favorites: [{ spec: 's1', model: 'gpt-5' }] });
+      const res = makeRes();
+      await updateFavoritesController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'spec cannot be combined with agentId, model, or endpoint',
+      });
+    });
+
+    it('rejects agentId with stray model field (no endpoint)', async () => {
+      const req = makeReq({ favorites: [{ agentId: 'a1', model: 'gpt-5' }] });
+      const res = makeRes();
+      await updateFavoritesController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'agentId cannot be combined with model or endpoint',
+      });
+    });
+
+    it('rejects agentId with stray endpoint field (no model)', async () => {
+      const req = makeReq({ favorites: [{ agentId: 'a1', endpoint: 'openai' }] });
+      const res = makeRes();
+      await updateFavoritesController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'agentId cannot be combined with model or endpoint',
+      });
+    });
+
+    it('rejects model without endpoint (partial model pair)', async () => {
+      const req = makeReq({ favorites: [{ model: 'gpt-5' }] });
+      const res = makeRes();
+      await updateFavoritesController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'model and endpoint must be provided together',
+      });
+    });
+
+    it('rejects endpoint without model (partial model pair)', async () => {
+      const req = makeReq({ favorites: [{ endpoint: 'openai' }] });
+      const res = makeRes();
+      await updateFavoritesController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'model and endpoint must be provided together',
+      });
+    });
+
     it('accepts a mixed array of valid single-type favorites', async () => {
       const favorites = [{ agentId: 'a1' }, { model: 'gpt-5', endpoint: 'openai' }, { spec: 's1' }];
       updateUser.mockResolvedValue({ favorites });

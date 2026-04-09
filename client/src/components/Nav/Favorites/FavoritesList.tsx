@@ -267,6 +267,28 @@ export default function FavoritesList({
     }
   }, [staleAgentIdsKey, safeFavorites, reorderFavorites]);
 
+  const staleSpecNamesKey = useMemo(() => {
+    return safeFavorites
+      .filter((f) => f.spec && !specsMap[f.spec])
+      .map((f) => f.spec as string)
+      .sort()
+      .join(',');
+  }, [safeFavorites, specsMap]);
+
+  const specCleanupAttemptedRef = useRef('');
+
+  useEffect(() => {
+    if (!staleSpecNamesKey || specCleanupAttemptedRef.current === staleSpecNamesKey) {
+      return;
+    }
+    const staleSet = new Set(staleSpecNamesKey.split(','));
+    const cleaned = safeFavorites.filter((f) => !f.spec || !staleSet.has(f.spec));
+    if (cleaned.length < safeFavorites.length) {
+      specCleanupAttemptedRef.current = staleSpecNamesKey;
+      reorderFavorites(cleaned, true);
+    }
+  }, [staleSpecNamesKey, safeFavorites, reorderFavorites]);
+
   const combinedAgentsMap = useMemo(() => {
     if (agentsMap === undefined) {
       return undefined;

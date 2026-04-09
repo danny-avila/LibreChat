@@ -101,7 +101,7 @@ describe('useFavorites — spec methods', () => {
       expect(mockMutateAsync).toHaveBeenCalledWith([{ spec: 'keep' }]);
     });
 
-    it('is a no-op when spec is not present', async () => {
+    it('still persists when the target spec is absent', async () => {
       const { result } = renderUseFavorites([{ spec: 'keep' }]);
       await act(async () => {
         result.current.removeFavoriteSpec('missing');

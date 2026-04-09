@@ -2,10 +2,10 @@ import React from 'react';
 import { VisuallyHidden } from '@ariakit/react';
 import { CheckCircle2, EarthIcon, Pin, PinOff } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import type { Endpoint } from '~/common';
 import { useFavorites, useLocalize, useIsActiveItem } from '~/hooks';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
-import type { Endpoint } from '~/common';
 import { cn } from '~/utils';
 
 interface EndpointModelItemProps {
@@ -109,6 +109,7 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
         {isGlobal && <EarthIcon className="ml-1 size-4 text-surface-submit" />}
       </div>
       <button
+        type="button"
         tabIndex={isActive ? 0 : -1}
         onClick={handleFavoriteClick}
         aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}

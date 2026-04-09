@@ -105,27 +105,18 @@ export default function FavoriteItem(props: FavoriteItemProps) {
     );
   };
 
-  const getName = (): string => {
-    if (props.type === 'agent') {
-      return props.item.name ?? '';
-    }
-    if (props.type === 'spec') {
-      return props.item.label;
-    }
-    return props.item.model;
-  };
-
-  const name = getName();
-  const getTypeLabel = (): string => {
-    if (props.type === 'agent') {
-      return localize('com_ui_agent');
-    }
-    if (props.type === 'spec') {
-      return localize('com_ui_model_spec');
-    }
-    return localize('com_ui_model');
-  };
-  const typeLabel = getTypeLabel();
+  const name =
+    props.type === 'agent'
+      ? (props.item.name ?? '')
+      : props.type === 'spec'
+        ? props.item.label
+        : props.item.model;
+  const typeLabel =
+    props.type === 'agent'
+      ? localize('com_ui_agent')
+      : props.type === 'spec'
+        ? localize('com_ui_model_spec')
+        : localize('com_ui_model');
   const ariaLabel = `${name} (${typeLabel})`;
 
   const menuId = React.useId();

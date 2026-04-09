@@ -65,8 +65,10 @@ jest.mock('~/Providers', () => ({
   useAgentsMapContext: () => ({}),
 }));
 
+const mockOnSelectSpec = jest.fn();
 jest.mock('~/hooks/Input/useSelectMention', () => () => ({
   onSelectEndpoint: jest.fn(),
+  onSelectSpec: mockOnSelectSpec,
 }));
 
 const mockUseGetStartupConfig = jest.fn(() => ({
