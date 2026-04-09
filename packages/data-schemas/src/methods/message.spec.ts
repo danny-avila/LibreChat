@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
 import { createMessageMethods } from './message';
@@ -54,7 +55,7 @@ describe('Message Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
-    interfaceConfig?: { temporaryChatRetention?: number };
+    interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockMessageData: Partial<IMessage> = {
     messageId: 'msg123',
@@ -479,7 +480,7 @@ describe('Message Operations', () => {
       mockCtx.isTemporary = false;
       mockCtx.interfaceConfig = {
         temporaryChatRetention: 24,
-        retentionMode: 'all',
+        retentionMode: RetentionMode.ALL,
       };
       const result = await saveMessage(mockCtx, mockMessageData);
       expect(result?.expiredAt).toBeDefined();
@@ -490,7 +491,7 @@ describe('Message Operations', () => {
       mockCtx.isTemporary = false;
       mockCtx.interfaceConfig = {
         temporaryChatRetention: 24,
-        retentionMode: 'temporary',
+        retentionMode: RetentionMode.TEMPORARY,
       };
       const result = await saveMessage(mockCtx, mockMessageData);
       expect(result?.expiredAt).toBeNull();
