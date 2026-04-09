@@ -19,10 +19,11 @@ function MCPSelectContent() {
   const isOpen = menuStore.useState('open');
 
   const selectedServers = useMemo(() => {
-    if (!manager?.mcpValues || manager?.mcpValues.length === 0) {
+    if (!manager?.mcpValues || manager.mcpValues.length === 0) {
       return [];
     }
-    return manager?.selectableServers?.filter((s) => manager?.mcpValues?.includes(s.serverName));
+    const selectedSet = new Set(manager.mcpValues);
+    return manager.selectableServers?.filter((s) => selectedSet.has(s.serverName));
   }, [manager?.selectableServers, manager?.mcpValues]);
 
   const displayText = useMemo(() => {

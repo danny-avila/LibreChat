@@ -32,7 +32,6 @@ export default function AutoSendPrompt({
         tabIndex={-1}
         aria-hidden="true"
         className="pointer-events-none"
-        aria-labelledby={localize('com_nav_auto_send_prompts')}
       />
       {localize('com_nav_auto_send_prompts')}
     </Button>

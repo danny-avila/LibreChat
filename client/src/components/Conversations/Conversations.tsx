@@ -267,10 +267,13 @@ const Conversations: FC<ConversationsProps> = ({
   }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
 
   useEffect(() => {
-    cache.clearAll();
-    if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
-      containerRef.current.recomputeRowHeights(0);
-    }
+    const frameId = requestAnimationFrame(() => {
+      cache.clearAll();
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
   }, [search.query, cache, containerRef]);
 
   const rowRenderer = useCallback(

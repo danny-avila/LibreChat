@@ -182,7 +182,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { hasAccess } = usePromptGroupsContext() ?? {};
+  const { hasAccess, groupsQuery } = usePromptGroupsContext() ?? {};
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const promptId = promptIdProp || params.promptId || '';
 
@@ -235,8 +235,6 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
   );
 
   const selectedPromptId = useMemo(() => selectedPrompt?._id, [selectedPrompt?._id]);
-
-  const { groupsQuery } = usePromptGroupsContext() ?? {};
 
   const updateGroupMutation = useUpdatePromptGroup({
     onError: () => {

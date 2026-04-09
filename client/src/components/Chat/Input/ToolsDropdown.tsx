@@ -50,7 +50,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   });
 
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const isDisabled = useMemo(() => disabled ?? false, [disabled]);
+  const isDisabled = disabled ?? false;
   const {
     webSearch,
     artifacts,
