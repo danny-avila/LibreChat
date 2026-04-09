@@ -1,7 +1,10 @@
 import { StepTypes } from 'librechat-data-provider';
 import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
+import { logger } from '@librechat/data-schemas';
 import { StandardGraph } from '@librechat/agents';
+
+logger.silent = true;
 
 /**
  * Integration tests for RedisJobStore.

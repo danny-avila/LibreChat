@@ -6,7 +6,10 @@
  * tokens spent when a conversation is aborted.
  */
 
+import { logger } from '@librechat/data-schemas';
 import type { UsageMetadata } from '../interfaces/IJobStore';
+
+logger.silent = true;
 
 describe('CollectedUsage - InMemoryJobStore', () => {
   beforeEach(() => {
