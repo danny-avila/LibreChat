@@ -1,7 +1,6 @@
 /* eslint jest/no-standalone-expect: ["error", { "additionalTestBlockFunctions": ["testRedis"] }] */
 import type { Redis, Cluster } from 'ioredis';
 import type { ServerSentEvent, StreamEvent, CreatedEvent } from '~/types';
-import { logger } from '@librechat/data-schemas';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
@@ -15,7 +14,8 @@ import {
   keyvRedisClientReady,
 } from '~/cache/redisClients';
 
-logger.silent = true;
+/** Suppress winston Console transport output (survives jest.resetModules) */
+jest.spyOn(console, 'log').mockImplementation();
 
 /**
  * Integration tests for GenerationJobManager.
