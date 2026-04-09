@@ -107,7 +107,41 @@ const createSocialUser = async ({
   return await getUserById(newUserId);
 };
 
+/**
+ * Migrates an existing local account to a social provider while preserving the same user record.
+ *
+ * @param {Object} params
+ * @param {IUser} params.existingUser
+ * @param {string} params.avatarUrl
+ * @param {string} params.provider
+ * @param {string} params.providerKey
+ * @param {string} params.providerId
+ * @param {AppConfig} params.appConfig
+ * @param {boolean} params.emailVerified
+ * @returns {Promise<IUser>}
+ */
+const migrateLocalUserToSocial = async ({
+  existingUser,
+  avatarUrl,
+  provider,
+  providerKey,
+  providerId,
+  appConfig,
+  emailVerified,
+}) => {
+  const migratedUser = await updateUser(existingUser._id, {
+    provider,
+    [providerKey]: providerId,
+    emailVerified: emailVerified ?? existingUser.emailVerified,
+  });
+
+  await handleExistingUser(migratedUser ?? existingUser, avatarUrl, appConfig);
+
+  return migratedUser ?? existingUser;
+};
+
 module.exports = {
   handleExistingUser,
   createSocialUser,
+  migrateLocalUserToSocial,
 };

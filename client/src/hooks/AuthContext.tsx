@@ -170,6 +170,19 @@ const AuthContextProvider = ({
       doSetError(undefined);
     }
     if (token == null || !token || !isAuthenticated) {
+      const registrationAuth = sessionStorage.getItem('registrationAuth');
+      if (registrationAuth) {
+        sessionStorage.removeItem('registrationAuth');
+        try {
+          const authData = JSON.parse(registrationAuth);
+          if (authData.token && authData.user) {
+            setUserContext({ token: authData.token, isAuthenticated: true, user: authData.user });
+            return;
+          }
+        } catch (e) {
+          // Invalid data, fall through to silentRefresh
+        }
+      }
       silentRefresh();
     }
   }, [
