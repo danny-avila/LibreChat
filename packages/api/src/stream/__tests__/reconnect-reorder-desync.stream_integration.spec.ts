@@ -357,6 +357,64 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
 
       transport.destroy();
     });
+
+    test('same-replica: should not drop chunk whose pub/sub arrives AFTER GET resolves', async () => {
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = 'race-post-get-test';
+      const chunks: unknown[] = [];
+
+      // Emit seqs 0–4 (earlyEventBuffer would have held these; counter = 5)
+      for (let i = 0; i < 5; i++) {
+        await transport.emitChunk(streamId, { index: i });
+      }
+
+      transport.subscribe(streamId, {
+        onChunk: (event) => chunks.push(event),
+      });
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+      const channel = `stream:{${streamId}}:events`;
+
+      let resolveGet!: (val: string | null) => void;
+      mockPublisher.get.mockImplementationOnce(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveGet = resolve;
+          }),
+      );
+
+      const syncPromise = transport.syncReorderBuffer(streamId, 5);
+
+      // LLM emits seq 5 during the GET window (INCR → counter=6)
+      // but do NOT deliver via messageHandler yet — simulates pub/sub arriving late
+      await transport.emitChunk(streamId, { index: 5 });
+
+      // GET resolves with counter=6 while pending is EMPTY (pub/sub hasn't arrived)
+      resolveGet('6');
+      await syncPromise;
+
+      // Now pub/sub for seq 5 arrives AFTER sync completed
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 5, data: { index: 5 } }));
+
+      // seq 5 must be delivered — nextSeq should have been capped at earlyReplayCount (5),
+      // not advanced to currentSeq (6) which would have dropped it.
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(5);
+
+      transport.destroy();
+    });
   });
 
   describe('End-to-end reconnect with GenerationJobManager (Integration)', () => {

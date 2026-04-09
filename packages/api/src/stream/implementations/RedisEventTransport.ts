@@ -121,16 +121,22 @@ export class RedisEventTransport implements IEventTransport {
     });
   }
 
+  /** Safety-net TTL (seconds) set once on first INCR. Not refreshed — prevents mid-stream resets. */
+  private static readonly SEQUENCE_TTL_SECONDS = 86400;
+
   /**
    * Get next sequence number for a stream (0-indexed, backed by Redis INCR).
-   * No TTL — keys are cleaned up explicitly by cleanup().
-   * This avoids the risk of a TTL expiring mid-stream during long quiet periods
-   * (e.g., slow tool calls), which would restart the counter from zero and cause
-   * subscribers to silently drop all subsequent messages.
+   * A 24-hour TTL is set on the first INCR only (val === 1) as a safety net
+   * for orphaned keys from crashed processes. It is never refreshed, so an
+   * active stream cannot have its counter reset mid-generation.
+   * Keys are also deleted explicitly by cleanup() on normal stream teardown.
    */
   private async getNextSequence(streamId: string): Promise<number> {
     const key = KEYS.sequence(streamId);
     const val = await this.publisher.incr(key);
+    if (val === 1) {
+      this.publisher.expire(key, RedisEventTransport.SEQUENCE_TTL_SECONDS).catch(() => {});
+    }
     return val - 1;
   }
 
@@ -178,10 +184,14 @@ export class RedisEventTransport implements IEventTransport {
           }
         }
       }
-      // Set nextSeq from remaining state. Never regress nextSeq — handleOrderedChunk may
-      // have already advanced it past currentSeq during the async GET window.
+      // Set nextSeq from remaining state. Never regress — handleOrderedChunk may have
+      // already advanced it during the async GET window.
       if (state.reorderBuffer.pending.size === 0) {
-        state.reorderBuffer.nextSeq = Math.max(state.reorderBuffer.nextSeq, currentSeq);
+        // Same-replica: INCR precedes PUBLISH, so currentSeq may reflect allocated-but-
+        // not-yet-delivered events. Cap at earlyReplayCount to avoid skipping in-flight chunks.
+        // Cross-replica (earlyReplayCount=0): trust the Redis counter.
+        const ceiling = earlyReplayCount > 0 ? earlyReplayCount : currentSeq;
+        state.reorderBuffer.nextSeq = Math.max(state.reorderBuffer.nextSeq, ceiling);
       } else {
         let minPending = Infinity;
         for (const seq of state.reorderBuffer.pending.keys()) {
@@ -684,7 +694,8 @@ export class RedisEventTransport implements IEventTransport {
     // Clear all flush timeouts and buffered messages.
     // Sequence keys are NOT deleted here — they are shared across replicas.
     // A shutting-down replica must not nuke the counter for active publishers.
-    // Keys have no TTL; cleanup() deletes them on normal stream teardown.
+    // cleanup() deletes keys on normal teardown; a 24h safety-net TTL (set once
+    // at first INCR, never refreshed) caps orphan lifetime on abnormal shutdown.
     for (const [, state] of this.streams) {
       if (state.reorderBuffer.flushTimeout) {
         clearTimeout(state.reorderBuffer.flushTimeout);

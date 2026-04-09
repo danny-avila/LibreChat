@@ -898,11 +898,13 @@ describe('RedisEventTransport Integration Tests', () => {
       // Cleanup the stream
       transport.cleanup(streamId);
 
-      // Allow the fire-and-forget DEL to execute
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Verify the key was deleted
-      const valAfter = await ioredisClient.get(key);
+      // Poll for the fire-and-forget DEL to complete (robust under CI load)
+      const start = Date.now();
+      let valAfter: string | null = 'pending';
+      while (valAfter !== null && Date.now() - start < 2000) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        valAfter = await ioredisClient.get(key);
+      }
       expect(valAfter).toBeNull();
 
       transport.destroy();

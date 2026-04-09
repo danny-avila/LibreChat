@@ -771,20 +771,24 @@ class GenerationJobManagerClass {
       runtime.hasSubscriber = true;
 
       /**
-       * Capture the buffer length BEFORE the skip/replay decision so syncReorderBuffer
-       * can prune duplicate pub/sub entries (seqs 0..earlyReplayCount-1) regardless of
-       * whether earlyEventBuffer was replayed directly or delivered via resume sync payload.
-       * Using the count instead of the Redis counter as the prune cutoff prevents dropping
-       * in-flight chunks when INCR advances past them during the async GET window.
+       * Pass earlyReplayCount to syncReorderBuffer so it can prune duplicate pub/sub
+       * entries (seqs 0..count-1) without touching live in-flight chunks.
+       *
+       * Only set when the buffer was actually replayed — those specific seqs were
+       * delivered via onChunk and their pub/sub copies are duplicates.
+       * When skipBufferReplay is true, the resume sync payload delivers aggregated
+       * content up to the Redis counter, so syncReorderBuffer should trust currentSeq
+       * as the frontier (earlyReplayCount = 0).
        */
-      const earlyReplayCount = runtime.earlyEventBuffer.length;
+      let earlyReplayCount = 0;
 
-      if (earlyReplayCount > 0) {
+      if (runtime.earlyEventBuffer.length > 0) {
         if (options?.skipBufferReplay) {
           logger.debug(
-            `[GenerationJobManager] Skipping ${earlyReplayCount} buffered events for ${streamId} (skipBufferReplay)`,
+            `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (skipBufferReplay)`,
           );
         } else {
+          earlyReplayCount = runtime.earlyEventBuffer.length;
           logger.debug(
             `[GenerationJobManager] Replaying ${earlyReplayCount} buffered events for ${streamId}`,
           );
