@@ -31,6 +31,10 @@ jest.mock('~/app/clients/tools/util', () => ({
 }));
 
 const mockLoadActionSets = jest.fn();
+const mockDomainParser = jest.fn();
+const mockLegacyDomainEncode = jest.fn();
+const mockDecryptMetadata = jest.fn();
+const mockCreateActionTool = jest.fn();
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn().mockResolvedValue({}),
 }));
@@ -52,9 +56,10 @@ jest.mock('~/server/services/Files/Code/process', () => ({
 }));
 jest.mock('../ActionService', () => ({
   loadActionSets: (...args) => mockLoadActionSets(...args),
-  decryptMetadata: jest.fn(),
-  createActionTool: jest.fn(),
-  domainParser: jest.fn(),
+  decryptMetadata: (...args) => mockDecryptMetadata(...args),
+  createActionTool: (...args) => mockCreateActionTool(...args),
+  domainParser: (...args) => mockDomainParser(...args),
+  legacyDomainEncode: (...args) => mockLegacyDomainEncode(...args),
 }));
 jest.mock('~/server/services/Threads', () => ({
   recordUsage: jest.fn(),
@@ -534,6 +539,153 @@ describe('ToolService - Action Capability Gating', () => {
       );
 
       expect(enabledCapabilities.has(AgentCapabilities.deferred_tools)).toBe(true);
+    });
+  });
+
+  describe('multi-action domain collision regression', () => {
+    // Two distinct OpenAPI Actions whose `servers[0].url` resolves to the
+    // same hostname must both contribute their tools to the agent. The
+    // previous implementation indexed processed action sets by encoded
+    // domain, so the second action overwrote the first in the map and one
+    // action's tools silently disappeared from the LLM payload.
+    //
+    // The encoded domain we use as the lookup key for the action sets is
+    // mocked to a fixed string for both actions to make the collision
+    // condition deterministic without depending on the real base64
+    // truncation rules.
+    const SHARED_DOMAIN = 'https://api.example.com';
+    const ENCODED_DOMAIN = 'shared_dom';
+    const LEGACY_ENCODED_DOMAIN = 'legacy_dom';
+
+    const buildSpec = (operationId, path) =>
+      JSON.stringify({
+        openapi: '3.0.3',
+        info: { title: `Mock ${operationId}`, version: '1.0.0' },
+        servers: [{ url: SHARED_DOMAIN }],
+        paths: {
+          [path]: {
+            get: {
+              operationId,
+              summary: `Mock ${operationId}`,
+              responses: {
+                200: {
+                  description: 'OK',
+                  content: { 'application/json': { schema: { type: 'object' } } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+    const actionA = {
+      action_id: 'action_a',
+      metadata: {
+        domain: SHARED_DOMAIN,
+        raw_spec: buildSpec('echoMessage', '/echo'),
+      },
+    };
+    const actionB = {
+      action_id: 'action_b',
+      metadata: {
+        domain: SHARED_DOMAIN,
+        raw_spec: buildSpec('listItems', '/items'),
+      },
+    };
+
+    const toolNameA = `echoMessage${actionDelimiter}${ENCODED_DOMAIN}`;
+    const toolNameB = `listItems${actionDelimiter}${ENCODED_DOMAIN}`;
+
+    beforeEach(() => {
+      // Both actions share a hostname → both call sites get the same encoded
+      // value back. This is precisely the collision shape that triggered
+      // the bug in production.
+      mockDomainParser.mockResolvedValue(ENCODED_DOMAIN);
+      mockLegacyDomainEncode.mockReturnValue(LEGACY_ENCODED_DOMAIN);
+      mockDecryptMetadata.mockImplementation(async (metadata) => metadata);
+      mockCreateActionTool.mockImplementation(async ({ name, requestBuilder }) => ({
+        name,
+        // Surface the request builder identity on the returned tool so
+        // assertions can verify each tool was wired to the correct action's
+        // builder, not its sibling's.
+        _builder: requestBuilder,
+        _call: jest.fn(),
+        schema: {},
+        description: '',
+      }));
+    });
+
+    const expectBothActionsResolved = (calls) => {
+      const callsByName = new Map(calls.map((c) => [c[0].name, c[0]]));
+      expect(callsByName.has(toolNameA)).toBe(true);
+      expect(callsByName.has(toolNameB)).toBe(true);
+      // Each tool's request builder must come from the matching action's
+      // own parsed spec — not the sibling's. The previous bug would either
+      // route both to the same action's builders (and drop one as
+      // undefined) or silently skip one entirely.
+      const builderA = callsByName.get(toolNameA).requestBuilder;
+      const builderB = callsByName.get(toolNameB).requestBuilder;
+      expect(builderA).toBeDefined();
+      expect(builderB).toBeDefined();
+      expect(builderA).not.toBe(builderB);
+      // Each builder targets its own operation path — confirms the
+      // request builder lookup didn't cross-contaminate between actions.
+      expect(builderA.path).toBe('/echo');
+      expect(builderB.path).toBe('/items');
+    };
+
+    it('loadAgentTools resolves both actions when they share a hostname', async () => {
+      mockLoadActionSets.mockResolvedValue([actionA, actionB]);
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.actions];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_collision', tools: [toolNameA, toolNameB] },
+        definitionsOnly: false,
+      });
+
+      expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
+      expectBothActionsResolved(mockCreateActionTool.mock.calls);
+    });
+
+    it('loadAgentTools is order-invariant for two actions sharing a hostname', async () => {
+      // Reverse the actionSets order — what used to flip the "winner" of
+      // the encoded-domain Map overwrite must now make zero observable
+      // difference.
+      mockLoadActionSets.mockResolvedValue([actionB, actionA]);
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.actions];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_collision', tools: [toolNameA, toolNameB] },
+        definitionsOnly: false,
+      });
+
+      expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
+      expectBothActionsResolved(mockCreateActionTool.mock.calls);
+    });
+
+    it('loadToolsForExecution resolves both actions when they share a hostname', async () => {
+      mockLoadActionSets.mockResolvedValue([actionA, actionB]);
+      const req = createMockReq([AgentCapabilities.actions]);
+      req.config = {};
+
+      await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_collision' },
+        toolNames: [toolNameA, toolNameB],
+        actionsEnabled: true,
+      });
+
+      expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
+      expectBothActionsResolved(mockCreateActionTool.mock.calls);
     });
   });
 });
