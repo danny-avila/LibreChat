@@ -165,11 +165,12 @@ export class RedisEventTransport implements IEventTransport {
   /**
    * Advance subscriber reorder buffer to the authoritative Redis sequence counter (cross-replica safe).
    *
-   * Any entries already in `pending` are live messages that arrived during the async GET window
-   * (the previous unsubscribe always calls `pending.clear()`). We must preserve them by lowering
-   * `nextSeq` to the minimum pending sequence so `flushPendingMessages` delivers them immediately.
+   * @param clearPending - When true, discard all pending entries because the caller already
+   *   delivered those events via earlyEventBuffer (same-replica). When false (cross-replica),
+   *   preserve pending entries that arrived during the async GET window and lower nextSeq
+   *   to deliver them immediately.
    */
-  async syncReorderBuffer(streamId: string): Promise<void> {
+  async syncReorderBuffer(streamId: string, clearPending?: boolean): Promise<void> {
     const key = KEYS.sequence(streamId);
     const rawStr = await this.publisher.get(key);
     const parsed = rawStr != null ? parseInt(rawStr, 10) : 0;
@@ -180,13 +181,14 @@ export class RedisEventTransport implements IEventTransport {
         clearTimeout(state.reorderBuffer.flushTimeout);
         state.reorderBuffer.flushTimeout = null;
       }
-      if (state.reorderBuffer.pending.size > 0) {
+      if (clearPending || state.reorderBuffer.pending.size === 0) {
+        state.reorderBuffer.nextSeq = currentSeq;
+        state.reorderBuffer.pending.clear();
+      } else {
         const minPending = Math.min(...state.reorderBuffer.pending.keys());
         state.reorderBuffer.nextSeq = Math.min(currentSeq, minPending);
-      } else {
-        state.reorderBuffer.nextSeq = currentSeq;
+        this.flushPendingMessages(streamId, state);
       }
-      this.flushPendingMessages(streamId, state);
     }
   }
 

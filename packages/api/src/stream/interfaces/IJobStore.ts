@@ -340,8 +340,12 @@ export interface IEventTransport {
   /** Reset publish sequence counter for a stream (used during full stream cleanup) */
   resetSequence?(streamId: string): void;
 
-  /** Advance subscriber reorder buffer to match publisher sequence (cross-replica safe: doesn't reset publisher counter) */
-  syncReorderBuffer?(streamId: string): void | Promise<void>;
+  /**
+   * Advance subscriber reorder buffer to match publisher sequence (cross-replica safe).
+   * @param clearPending - When true, discard all pending entries (earlyEventBuffer already delivered them).
+   *   When false, preserve pending entries that arrived during the async GET window (cross-replica).
+   */
+  syncReorderBuffer?(streamId: string, clearPending?: boolean): void | Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

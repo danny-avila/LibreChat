@@ -1,5 +1,8 @@
 import type { Redis, Cluster } from 'ioredis';
+import { logger } from '@librechat/data-schemas';
 import { createMockPublisher } from './helpers/publisher';
+
+logger.silent = true;
 
 /**
  * Integration tests for RedisEventTransport.

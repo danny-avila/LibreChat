@@ -1,4 +1,5 @@
 import type { Redis, Cluster } from 'ioredis';
+import { logger } from '@librechat/data-schemas';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { createStreamServices } from '~/stream/createStreamServices';
@@ -8,6 +9,8 @@ import {
   keyvRedisClient as staticKeyvClient,
   keyvRedisClientReady,
 } from '~/cache/redisClients';
+
+logger.silent = true;
 
 /**
  * Regression tests for the reconnect reorder buffer desync bug.
