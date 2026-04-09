@@ -35,13 +35,36 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
   ): Promise<IUser | null> {
-    const User = mongoose.models.User;
+    const User = mongoose.models.User as mongoose.Model<IUser>;
     const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
     const query = User.findOne(normalizedCriteria);
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return (await query.lean()) as IUser | null;
+    return await query.lean();
+  }
+
+  async function findUsers(
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
+  ): Promise<IUser[]> {
+    const User = mongoose.models.User as mongoose.Model<IUser>;
+    const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
+    const query = User.find(normalizedCriteria);
+    if (fieldsToSelect) {
+      query.select(fieldsToSelect);
+    }
+    if (options?.sort != null) {
+      query.sort(options.sort);
+    }
+    if (options?.offset != null) {
+      query.skip(options.offset);
+    }
+    if (options?.limit != null && options.limit > 0) {
+      query.limit(options.limit);
+    }
+    return (await query.lean()) as IUser[];
   }
 
   /**
@@ -288,8 +311,6 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       .sort((a, b) => b._searchScore - a._searchScore)
       .slice(0, limit)
       .map((user) => {
-        // Remove the search score from final results
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { _searchScore, ...userWithoutScore } = user;
         return userWithoutScore;
       });
@@ -323,6 +344,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
 
   return {
     findUser,
+    findUsers,
     countUsers,
     createUser,
     updateUser,

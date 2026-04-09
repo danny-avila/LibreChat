@@ -1,8 +1,7 @@
 import presetSchema, { IPreset } from '~/schema/preset';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 
-/**
- * Creates or returns the Preset model using the provided mongoose instance and schema
- */
 export function createPresetModel(mongoose: typeof import('mongoose')) {
+  applyTenantIsolation(presetSchema);
   return mongoose.models.Preset || mongoose.model<IPreset>('Preset', presetSchema);
 }

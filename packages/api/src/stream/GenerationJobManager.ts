@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { StandardGraph } from '@librechat/agents';
 import { parseTextParts } from 'librechat-data-provider';
 import type { Agents, TMessageContentParts } from 'librechat-data-provider';
@@ -197,7 +197,9 @@ class GenerationJobManagerClass {
     userId: string,
     conversationId?: string,
   ): Promise<t.GenerationJob> {
-    const jobData = await this.jobStore.createJob(streamId, userId, conversationId);
+    const tenantId = getTenantId();
+    const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
+    const jobData = await this.jobStore.createJob(streamId, userId, conversationId, safeTenantId);
 
     /**
      * Create runtime state with readyPromise.
@@ -355,6 +357,7 @@ class GenerationJobManagerClass {
       error: jobData.error,
       metadata: {
         userId: jobData.userId,
+        tenantId: jobData.tenantId,
         conversationId: jobData.conversationId,
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
@@ -767,14 +770,27 @@ class GenerationJobManagerClass {
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
 
+      /**
+       * Pass earlyReplayCount to syncReorderBuffer so it can prune duplicate pub/sub
+       * entries (seqs 0..count-1) without touching live in-flight chunks.
+       *
+       * Only set when the buffer was actually replayed — those specific seqs were
+       * delivered via onChunk and their pub/sub copies are duplicates.
+       * When skipBufferReplay is true, the resume sync payload delivers aggregated
+       * content up to the Redis counter, so syncReorderBuffer should trust currentSeq
+       * as the frontier (earlyReplayCount = 0).
+       */
+      let earlyReplayCount = 0;
+
       if (runtime.earlyEventBuffer.length > 0) {
         if (options?.skipBufferReplay) {
           logger.debug(
             `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (skipBufferReplay)`,
           );
         } else {
+          earlyReplayCount = runtime.earlyEventBuffer.length;
           logger.debug(
-            `[GenerationJobManager] Replaying ${runtime.earlyEventBuffer.length} buffered events for ${streamId}`,
+            `[GenerationJobManager] Replaying ${earlyReplayCount} buffered events for ${streamId}`,
           );
           for (const bufferedEvent of runtime.earlyEventBuffer) {
             onChunk(bufferedEvent);
@@ -804,7 +820,14 @@ class GenerationJobManagerClass {
         onChunk(createdEvent);
       }
 
-      this.eventTransport.syncReorderBuffer?.(streamId);
+      try {
+        await this.eventTransport.syncReorderBuffer?.(streamId, earlyReplayCount);
+      } catch (err) {
+        logger.warn(
+          `[GenerationJobManager] Failed to sync reorder buffer for ${streamId}; proceeding with current nextSeq:`,
+          err,
+        );
+      }
     }
 
     if (isFirst) {
@@ -1255,8 +1278,8 @@ class GenerationJobManagerClass {
    * @param userId - The user ID to query
    * @returns Array of conversation IDs with active jobs
    */
-  async getActiveJobIdsForUser(userId: string): Promise<string[]> {
-    return this.jobStore.getActiveJobIdsByUser(userId);
+  async getActiveJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
+    return this.jobStore.getActiveJobIdsByUser(userId, tenantId);
   }
 
   /**

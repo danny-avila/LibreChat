@@ -1,6 +1,6 @@
 import throttle from 'lodash/throttle';
 import { Constants } from 'librechat-data-provider';
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { getTextKey, TEXT_KEY_DIVIDER, logger } from '~/utils';
 import { useMessagesViewContext } from '~/Providers';
@@ -56,23 +56,24 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
     }
   }, [hasNoChildren, message, setLatestMessage, conversation?.conversationId]);
 
-  const handleScroll = useCallback(
-    (event: unknown | TouchEvent | WheelEvent) => {
-      throttle(() => {
+  /** Use ref for isSubmitting to stabilize handleScroll across isSubmitting changes */
+  const isSubmittingRef = useRef(isSubmitting);
+  isSubmittingRef.current = isSubmitting;
+
+  const handleScroll = useMemo(
+    () =>
+      throttle((event: unknown) => {
         logger.log(
           'message_scrolling',
-          `useMessageProcess: setting abort scroll to ${isSubmitting}, handleScroll event`,
+          `useMessageProcess: setting abort scroll to ${isSubmittingRef.current}, handleScroll event`,
           event,
         );
-        if (isSubmitting) {
-          setAbortScroll(true);
-        } else {
-          setAbortScroll(false);
-        }
-      }, 500)();
-    },
-    [isSubmitting, setAbortScroll],
+        setAbortScroll(isSubmittingRef.current);
+      }, 500),
+    [setAbortScroll],
   );
+
+  useEffect(() => () => handleScroll.cancel(), [handleScroll]);
 
   return {
     handleScroll,

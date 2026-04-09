@@ -5,7 +5,7 @@
  * @module packages/api/src/tools/definitions
  */
 
-import { Constants, actionDelimiter } from 'librechat-data-provider';
+import { Constants, isActionTool } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { ToolDefinition } from './classification';
@@ -99,7 +99,7 @@ export async function loadToolDefinitions(
   const mcpAllPattern = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
 
   for (const toolName of tools) {
-    if (toolName.includes(actionDelimiter)) {
+    if (isActionTool(toolName)) {
       actionToolNames.push(toolName);
       continue;
     }

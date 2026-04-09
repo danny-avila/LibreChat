@@ -40,7 +40,7 @@ function FileSearchCheckbox() {
           <label
             id="file-search-label"
             htmlFor="file-search-checkbox"
-            className="form-check-label text-token-text-primary cursor-pointer"
+            className="form-check-label text-token-text-primary cursor-pointer text-sm"
           >
             {localize('com_agents_enable_file_search')}
           </label>

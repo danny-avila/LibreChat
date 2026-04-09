@@ -2,6 +2,7 @@ const {
   Tools,
   Constants,
   EModelEndpoint,
+  isActionTool,
   actionDelimiter,
   AgentCapabilities,
   defaultAgentCapabilities,
@@ -63,6 +64,9 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/config', () => ({
   getFlowStateManager: jest.fn(() => ({})),
+}));
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
 }));
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({})),
@@ -140,6 +144,42 @@ describe('ToolService - Action Capability Gating', () => {
     });
   });
 
+  describe('isActionTool — cross-delimiter collision guard', () => {
+    it('should identify real action tools', () => {
+      expect(isActionTool(`get_weather${actionDelimiter}api_example_com`)).toBe(true);
+      expect(isActionTool(`fetch_data${actionDelimiter}my---domain---com`)).toBe(true);
+    });
+
+    it('should identify action tools whose operationId contains _mcp_', () => {
+      expect(isActionTool(`sync_mcp_state${actionDelimiter}api---example---com`)).toBe(true);
+      expect(isActionTool(`get_mcp_config${actionDelimiter}internal---api---com`)).toBe(true);
+    });
+
+    it('should reject MCP tools whose name ends with _action', () => {
+      expect(isActionTool(`get_action${Constants.mcp_delimiter}myserver`)).toBe(false);
+      expect(isActionTool(`fetch_action${Constants.mcp_delimiter}server_name`)).toBe(false);
+      expect(isActionTool(`retrieve_action${Constants.mcp_delimiter}srv`)).toBe(false);
+    });
+
+    it('should reject MCP tools with _action_ in the middle of their name', () => {
+      expect(isActionTool(`get_action_data${Constants.mcp_delimiter}myserver`)).toBe(false);
+      expect(isActionTool(`create_action_item${Constants.mcp_delimiter}server`)).toBe(false);
+    });
+
+    it('should reject tools without the action delimiter', () => {
+      expect(isActionTool('calculator')).toBe(false);
+      expect(isActionTool(`web_search${Constants.mcp_delimiter}myserver`)).toBe(false);
+    });
+
+    it('known limitation: non-RFC domain with _mcp_ substring yields false negative', () => {
+      // RFC 952/1123 prohibit underscores in hostnames, so this is not expected in practice.
+      // Encoded domain `api_mcp_internal_com` places `_mcp_` after `_action_`, which
+      // the guard interprets as the MCP suffix.
+      const edgeCaseTool = `getData${actionDelimiter}api_mcp_internal_com`;
+      expect(isActionTool(edgeCaseTool)).toBe(false);
+    });
+  });
+
   describe('loadAgentTools (definitionsOnly=true) — action tool filtering', () => {
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = 'calculator';
@@ -178,6 +218,25 @@ describe('ToolService - Action Capability Gating', () => {
       const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
       expect(callArgs.tools).toContain(regularTool);
       expect(callArgs.tools).toContain(actionToolName);
+    });
+
+    it('should not filter MCP tools whose name contains _action (cross-delimiter collision)', async () => {
+      const mcpToolWithAction = `get_action${Constants.mcp_delimiter}myserver`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [regularTool, mcpToolWithAction] },
+        definitionsOnly: true,
+      });
+
+      expect(mockLoadToolDefinitions).toHaveBeenCalledTimes(1);
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).toContain(mcpToolWithAction);
+      expect(callArgs.tools).toContain(regularTool);
     });
 
     it('should return actionsEnabled in the result', async () => {

@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { PermissionBits, ResourceType, isEphemeralAgentId } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
-const { getAgent } = require('~/models/Agent');
+const { getAgent } = require('~/models');
 
 /**
  * @param {Object} agent - The agent document (lean)

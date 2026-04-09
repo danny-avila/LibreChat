@@ -1,8 +1,9 @@
-import { DynamicStructuredTool } from '@langchain/core/tools';
 import { Constants } from 'librechat-data-provider';
+import { DynamicStructuredTool } from '@langchain/core/tools';
 import type { Agent, TEphemeralAgent } from 'librechat-data-provider';
 import type { LCTool } from '@librechat/agents';
 import type { Logger } from 'winston';
+import type { ParsedServerConfig } from '~/mcp/types';
 import type { MCPManager } from '~/mcp/MCPManager';
 
 /**
@@ -63,12 +64,16 @@ export async function getMCPInstructionsForServers(
   mcpServers: string[],
   mcpManager: MCPManager,
   logger?: Logger,
+  configServers?: Record<string, ParsedServerConfig>,
 ): Promise<string> {
   if (!mcpServers.length) {
     return '';
   }
   try {
-    const mcpInstructions = await mcpManager.formatInstructionsForContext(mcpServers);
+    const mcpInstructions = await mcpManager.formatInstructionsForContext(
+      mcpServers,
+      configServers,
+    );
     if (mcpInstructions && logger) {
       logger.debug('[AgentContext] Fetched MCP instructions for servers:', mcpServers);
     }
@@ -125,6 +130,7 @@ export async function applyContextToAgent({
   ephemeralAgent,
   agentId,
   logger,
+  configServers,
 }: {
   agent: AgentWithTools;
   sharedRunContext: string;
@@ -132,12 +138,18 @@ export async function applyContextToAgent({
   ephemeralAgent?: TEphemeralAgent;
   agentId?: string;
   logger?: Logger;
+  configServers?: Record<string, ParsedServerConfig>;
 }): Promise<void> {
   const baseInstructions = agent.instructions || '';
 
   try {
     const mcpServers = ephemeralAgent?.mcp?.length ? ephemeralAgent.mcp : extractMCPServers(agent);
-    const mcpInstructions = await getMCPInstructionsForServers(mcpServers, mcpManager, logger);
+    const mcpInstructions = await getMCPInstructionsForServers(
+      mcpServers,
+      mcpManager,
+      logger,
+      configServers,
+    );
 
     agent.instructions = buildAgentInstructions({
       sharedRunContext,

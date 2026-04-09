@@ -16,6 +16,10 @@ const sessionSchema: Schema<ISession> = new Schema({
     ref: 'User',
     required: true,
   },
+  tenantId: {
+    type: String,
+    index: true,
+  },
 });
 
 export default sessionSchema;

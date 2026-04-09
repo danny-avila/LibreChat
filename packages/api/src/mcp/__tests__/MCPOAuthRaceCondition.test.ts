@@ -23,6 +23,8 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     debug: jest.fn(),
   },
+  getTenantId: jest.fn(),
+  SYSTEM_TENANT_ID: '__SYSTEM__',
   encryptV2: jest.fn(async (val: string) => `enc:${val}`),
   decryptV2: jest.fn(async (val: string) => val.replace(/^enc:/, '')),
 }));
@@ -258,7 +260,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       expect(stateAfterComplete).toBeUndefined();
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('cannot recover metadata'),
+        expect.stringContaining('flow not found'),
         expect.any(Object),
       );
     });

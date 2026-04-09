@@ -1,4 +1,8 @@
-import { EModelEndpoint, getConfigDefaults } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  getConfigDefaults,
+  summarizationConfigSchema,
+} from 'librechat-data-provider';
 import type { TCustomConfig, FileSources, DeepPartial } from 'librechat-data-provider';
 import type { AppConfig, FunctionTool } from '~/types/app';
 import { loadDefaultInterface } from './interface';
@@ -9,6 +13,25 @@ import { processModelSpecs } from './specs';
 import { loadMemoryConfig } from './memory';
 import { loadEndpoints } from './endpoints';
 import { loadOCRConfig } from './ocr';
+import logger from '~/config/winston';
+
+function loadSummarizationConfig(config: DeepPartial<TCustomConfig>): AppConfig['summarization'] {
+  const raw = config.summarization;
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+
+  const parsed = summarizationConfigSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.warn('[AppService] Invalid summarization config', parsed.error.flatten());
+    return undefined;
+  }
+
+  return {
+    ...parsed.data,
+    enabled: parsed.data.enabled !== false,
+  };
+}
 
 export type Paths = {
   root: string;
@@ -41,6 +64,7 @@ export const AppService = async (params?: {
   const ocr = loadOCRConfig(config.ocr);
   const webSearch = loadWebSearchConfig(config.webSearch);
   const memory = loadMemoryConfig(config.memory);
+  const summarization = loadSummarizationConfig(config);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = (config.fileStrategy ?? configDefaults.fileStrategy) as
@@ -76,18 +100,19 @@ export const AppService = async (params?: {
     speech,
     balance,
     actions,
-    transactions,
-    mcpConfig: mcpServersConfig,
-    mcpSettings,
     webSearch,
+    mcpSettings,
+    transactions,
     fileStrategy,
     registration,
     filteredTools,
     includedTools,
+    summarization,
     availableTools,
     imageOutputType,
     interfaceConfig,
     turnstileConfig,
+    mcpConfig: mcpServersConfig,
     fileStrategies: config.fileStrategies,
   };
 

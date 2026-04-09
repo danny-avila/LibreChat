@@ -14,6 +14,9 @@ import {
   keyvRedisClientReady,
 } from '~/cache/redisClients';
 
+/** Suppress winston Console transport output (survives jest.resetModules) */
+jest.spyOn(console, 'log').mockImplementation();
+
 /**
  * Integration tests for GenerationJobManager.
  *
@@ -800,9 +803,8 @@ describe('GenerationJobManager Integration Tests', () => {
       GenerationJobManager.initialize();
 
       const received: unknown[] = [];
-      const subscription = await GenerationJobManager.subscribe(
-        streamId,
-        (event) => received.push(event),
+      const subscription = await GenerationJobManager.subscribe(streamId, (event) =>
+        received.push(event),
       );
 
       expect(subscription).not.toBeNull();
@@ -839,9 +841,8 @@ describe('GenerationJobManager Integration Tests', () => {
       GenerationJobManager.initialize();
 
       const received: unknown[] = [];
-      const subscription = await GenerationJobManager.subscribe(
-        streamId,
-        (event) => received.push(event),
+      const subscription = await GenerationJobManager.subscribe(streamId, (event) =>
+        received.push(event),
       );
 
       expect(subscription).not.toBeNull();

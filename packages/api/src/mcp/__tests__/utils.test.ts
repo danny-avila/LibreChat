@@ -1,4 +1,10 @@
-import { normalizeServerName, redactServerSecrets, redactAllServerSecrets } from '~/mcp/utils';
+import {
+  buildOAuthToolCallName,
+  normalizeServerName,
+  redactAllServerSecrets,
+  redactServerSecrets,
+  isUserSourced,
+} from '~/mcp/utils';
 import type { ParsedServerConfig } from '~/mcp/types';
 
 describe('normalizeServerName', () => {
@@ -25,6 +31,49 @@ describe('normalizeServerName', () => {
     const result = normalizeServerName('!server-name!');
     expect(result).toBe('server-name');
     expect(result).toMatch(/^[a-zA-Z0-9_.-]+$/);
+  });
+});
+
+describe('buildOAuthToolCallName', () => {
+  it('should prefix a simple server name with oauth_mcp_', () => {
+    expect(buildOAuthToolCallName('my-server')).toBe('oauth_mcp_my-server');
+  });
+
+  it('should not double-wrap a name that already starts with oauth_mcp_', () => {
+    expect(buildOAuthToolCallName('oauth_mcp_my-server')).toBe('oauth_mcp_my-server');
+  });
+
+  it('should correctly handle server names containing _mcp_ substring', () => {
+    const result = buildOAuthToolCallName('my_mcp_server');
+    expect(result).toBe('oauth_mcp_my_mcp_server');
+  });
+
+  it('should normalize non-ASCII server names before prefixing', () => {
+    const result = buildOAuthToolCallName('我的服务');
+    expect(result).toMatch(/^oauth_mcp_server_\d+$/);
+  });
+
+  it('should normalize special characters before prefixing', () => {
+    expect(buildOAuthToolCallName('server@name!')).toBe('oauth_mcp_server_name');
+  });
+
+  it('should handle empty string server name gracefully', () => {
+    const result = buildOAuthToolCallName('');
+    expect(result).toMatch(/^oauth_mcp_server_\d+$/);
+  });
+
+  it('should treat a name already starting with oauth_mcp_ as pre-wrapped', () => {
+    // At the function level, a name starting with the oauth prefix is
+    // indistinguishable from a pre-wrapped name — guard prevents double-wrapping.
+    // Server names with this prefix should be blocked at registration time.
+    expect(buildOAuthToolCallName('oauth_mcp_github')).toBe('oauth_mcp_github');
+  });
+
+  it('should not treat special chars that normalize to oauth_mcp_* as pre-wrapped', () => {
+    // oauth@mcp@server does NOT start with 'oauth_mcp_' before normalization,
+    // so the guard correctly does not fire and the prefix is added.
+    const result = buildOAuthToolCallName('oauth@mcp@server');
+    expect(result).toBe('oauth_mcp_oauth_mcp_server');
   });
 });
 
@@ -223,5 +272,31 @@ describe('redactAllServerSecrets', () => {
     expect(redacted['server-b'].oauth?.client_secret).toBeUndefined();
     expect(redacted['server-b'].oauth?.client_id).toBe('cid-b');
     expect((redacted['server-c'] as Record<string, unknown>).command).toBeUndefined();
+  });
+});
+
+describe('isUserSourced', () => {
+  it('returns false when source is yaml', () => {
+    expect(isUserSourced({ source: 'yaml' })).toBe(false);
+  });
+
+  it('returns false when source is config', () => {
+    expect(isUserSourced({ source: 'config' })).toBe(false);
+  });
+
+  it('returns true when source is user', () => {
+    expect(isUserSourced({ source: 'user' })).toBe(true);
+  });
+
+  it('falls back to dbId when source is undefined — dbId present means user-sourced', () => {
+    expect(isUserSourced({ source: undefined, dbId: 'abc123' })).toBe(true);
+  });
+
+  it('falls back to dbId when source is undefined — no dbId means trusted', () => {
+    expect(isUserSourced({ source: undefined, dbId: undefined })).toBe(false);
+  });
+
+  it('returns false when both source and dbId are absent (pre-upgrade YAML server)', () => {
+    expect(isUserSourced({})).toBe(false);
   });
 });

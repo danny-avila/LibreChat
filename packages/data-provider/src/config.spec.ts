@@ -1,7 +1,7 @@
 import type { TEndpointsConfig } from './types';
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
-import { resolveEndpointType } from './config';
+import { resolveEndpointType, excludedKeys } from './config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -12,6 +12,16 @@ const endpointsConfig: TEndpointsConfig = {
   'Some Endpoint': { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
+
+describe('excludedKeys', () => {
+  it.each(['_id', 'user', 'conversationId', '__v'])('excludes system field "%s"', (field) => {
+    expect(excludedKeys.has(field)).toBe(true);
+  });
+
+  it('does not exclude tenantId (plugin-level guard owns this)', () => {
+    expect(excludedKeys.has('tenantId')).toBe(false);
+  });
+});
 
 describe('resolveEndpointType', () => {
   describe('non-agents endpoints', () => {

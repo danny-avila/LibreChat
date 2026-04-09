@@ -2,15 +2,23 @@ const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 const { ensureRequiredCollectionsExist } = require('@librechat/api');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME } = require('librechat-data-provider').Constants;
 
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
 
 const { grantPermission } = require('~/server/services/PermissionService');
-const { getProjectByName } = require('~/models/Project');
 const { findRoleByIdentifier } = require('~/models');
-const { PromptGroup } = require('~/db/models');
+const { PromptGroup, AclEntry } = require('~/db/models');
+
+const GLOBAL_PROJECT_NAME = 'instance';
+
+/** Queries the raw `projects` collection (which may still exist in the DB even though the model is removed) */
+async function getGlobalProjectPromptGroupIds(db) {
+  const project = await db
+    .collection('projects')
+    .findOne({ name: GLOBAL_PROJECT_NAME }, { projection: { promptGroupIds: 1 } });
+  return new Set((project?.promptGroupIds || []).map((id) => id.toString()));
+}
 
 async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 } = {}) {
   await connect();
@@ -24,7 +32,6 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
     await ensureRequiredCollectionsExist(db);
   }
 
-  // Verify required roles exist
   const ownerRole = await findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_OWNER);
   const viewerRole = await findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);
   const editorRole = await findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_EDITOR);
@@ -33,60 +40,25 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
     throw new Error('Required promptGroup roles not found. Run role seeding first.');
   }
 
-  // Get global project prompt group IDs
-  const globalProject = await getProjectByName(GLOBAL_PROJECT_NAME, ['promptGroupIds']);
-  const globalPromptGroupIds = new Set(
-    (globalProject?.promptGroupIds || []).map((id) => id.toString()),
-  );
+  const globalPromptGroupIds = db ? await getGlobalProjectPromptGroupIds(db) : new Set();
 
   logger.info(`Found ${globalPromptGroupIds.size} prompt groups in global project`);
 
-  // Find promptGroups without ACL entries
-  const promptGroupsToMigrate = await PromptGroup.aggregate([
-    {
-      $lookup: {
-        from: 'aclentries',
-        localField: '_id',
-        foreignField: 'resourceId',
-        as: 'aclEntries',
-      },
-    },
-    {
-      $addFields: {
-        promptGroupAclEntries: {
-          $filter: {
-            input: '$aclEntries',
-            as: 'aclEntry',
-            cond: {
-              $and: [
-                { $eq: ['$$aclEntry.resourceType', ResourceType.PROMPTGROUP] },
-                { $eq: ['$$aclEntry.principalType', PrincipalType.USER] },
-              ],
-            },
-          },
-        },
-      },
-    },
-    {
-      $match: {
-        author: { $exists: true, $ne: null },
-        promptGroupAclEntries: { $size: 0 },
-      },
-    },
-    {
-      $project: {
-        _id: 1,
-        name: 1,
-        author: 1,
-        authorName: 1,
-        category: 1,
-      },
-    },
-  ]);
+  const migratedGroupIds = await AclEntry.distinct('resourceId', {
+    resourceType: ResourceType.PROMPTGROUP,
+    principalType: PrincipalType.USER,
+  });
+
+  const promptGroupsToMigrate = await PromptGroup.find({
+    _id: { $nin: migratedGroupIds },
+    author: { $exists: true, $ne: null },
+  })
+    .select('_id name author authorName category')
+    .lean();
 
   const categories = {
-    globalViewAccess: [], // PromptGroup in global project -> Public VIEW
-    privateGroups: [], // Not in global project -> Private (owner only)
+    globalViewAccess: [],
+    privateGroups: [],
   };
 
   promptGroupsToMigrate.forEach((group) => {
@@ -146,7 +118,6 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
     ownerGrants: 0,
   };
 
-  // Process in batches
   for (let i = 0; i < promptGroupsToMigrate.length; i += batchSize) {
     const batch = promptGroupsToMigrate.slice(i, i + batchSize);
 
@@ -158,7 +129,6 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
       try {
         const isGlobalGroup = globalPromptGroupIds.has(group._id.toString());
 
-        // Always grant owner permission to author
         await grantPermission({
           principalType: PrincipalType.USER,
           principalId: group.author,
@@ -169,7 +139,6 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
         });
         results.ownerGrants++;
 
-        // Grant public view permissions for promptGroups in global project
         if (isGlobalGroup) {
           await grantPermission({
             principalType: PrincipalType.PUBLIC,
@@ -201,7 +170,6 @@ async function migrateToPromptGroupPermissions({ dryRun = true, batchSize = 100 
       }
     }
 
-    // Brief pause between batches
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 

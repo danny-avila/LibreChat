@@ -83,10 +83,14 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
   return <DragDropContext.Provider value={contextValue}>{children}</DragDropContext.Provider>;
 }
 
+const defaultDragDropValue: DragDropContextValue = {
+  conversationId: undefined,
+  agentId: undefined,
+  endpoint: undefined,
+  endpointType: undefined,
+  useResponsesApi: undefined,
+};
+
 export function useDragDropContext() {
-  const context = useContext(DragDropContext);
-  if (!context) {
-    throw new Error('useDragDropContext must be used within DragDropProvider');
-  }
-  return context;
+  return useContext(DragDropContext) ?? defaultDragDropValue;
 }

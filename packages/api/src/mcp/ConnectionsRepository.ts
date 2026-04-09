@@ -2,7 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { hasCustomUserVars } from './utils';
+import { hasCustomUserVars, isUserSourced } from './utils';
 import { MCPConnection } from './connection';
 
 const CONNECT_CONCURRENCY = 3;
@@ -82,7 +82,7 @@ export class ConnectionsRepository {
       {
         serverName,
         serverConfig,
-        dbSourced: !!(serverConfig as t.ParsedServerConfig).dbId,
+        dbSourced: isUserSourced(serverConfig as t.ParsedServerConfig),
         useSSRFProtection: registry.shouldEnableSSRFProtection(),
         allowedDomains: registry.getAllowedDomains(),
       },

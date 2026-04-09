@@ -206,7 +206,7 @@ export default function ActionsInput({
         <div className="mb-1 flex flex-wrap items-center justify-between gap-4">
           <label
             htmlFor="schemaInput"
-            className="text-token-text-primary whitespace-nowrap font-medium"
+            className="text-token-text-primary whitespace-nowrap text-sm font-medium"
           >
             {localize('com_ui_schema')}
           </label>
@@ -248,7 +248,7 @@ export default function ActionsInput({
       {!!data && (
         <div className="my-2">
           <div className="flex items-center">
-            <label className="text-token-text-primary block font-medium">
+            <label className="text-token-text-primary block text-sm font-medium">
               {localize('com_assistants_available_actions')}
             </label>
           </div>
@@ -258,7 +258,7 @@ export default function ActionsInput({
       <div className="relative my-1">
         <ActionCallback action_id={action?.action_id} />
         <div className="mb-1.5 flex items-center">
-          <label className="text-token-text-primary block font-medium">
+          <label className="text-token-text-primary block text-sm font-medium">
             {localize('com_ui_privacy_policy_url')}
           </label>
         </div>

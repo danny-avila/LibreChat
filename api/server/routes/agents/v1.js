@@ -3,7 +3,7 @@ const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
 const { requireJwtAuth, configMiddleware, canAccessAgentResource } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
-const { getRoleByName } = require('~/models/Role');
+const { getRoleByName } = require('~/models');
 const actions = require('./actions');
 const tools = require('./tools');
 
@@ -18,15 +18,6 @@ const checkAgentAccess = generateCheckAccess({
 const checkAgentCreate = generateCheckAccess({
   permissionType: PermissionTypes.AGENTS,
   permissions: [Permissions.USE, Permissions.CREATE],
-  getRoleByName,
-});
-
-const checkGlobalAgentShare = generateCheckAccess({
-  permissionType: PermissionTypes.AGENTS,
-  permissions: [Permissions.USE, Permissions.CREATE],
-  bodyProps: {
-    [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-  },
   getRoleByName,
 });
 
@@ -99,7 +90,7 @@ router.get(
  */
 router.patch(
   '/:id',
-  checkGlobalAgentShare,
+  checkAgentCreate,
   canAccessAgentResource({
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
@@ -148,7 +139,7 @@ router.delete(
  */
 router.post(
   '/:id/revert',
-  checkGlobalAgentShare,
+  checkAgentCreate,
   canAccessAgentResource({
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',

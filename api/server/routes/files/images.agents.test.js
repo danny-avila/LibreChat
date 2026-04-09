@@ -10,7 +10,7 @@ const {
   ResourceType,
   PrincipalType,
 } = require('librechat-data-provider');
-const { createAgent } = require('~/models/Agent');
+const { createAgent } = require('~/models');
 
 jest.mock('~/server/services/Files/process', () => ({
   processAgentFileUpload: jest.fn().mockImplementation(async ({ res }) => {

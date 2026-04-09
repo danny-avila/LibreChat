@@ -9,6 +9,15 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
 }
 
 /**
+ * Determines whether a server config is user-sourced (sandboxed placeholder resolution).
+ * When `source` is set, it is authoritative. When absent (pre-upgrade cached configs),
+ * falls back to the legacy `dbId` heuristic for backward compatibility.
+ */
+export function isUserSourced(config: Pick<ParsedServerConfig, 'source' | 'dbId'>): boolean {
+  return config.source != null ? config.source === 'user' : !!config.dbId;
+}
+
+/**
  * Allowlist-based sanitization for API responses. Only explicitly listed fields are included;
  * new fields added to ParsedServerConfig are excluded by default until allowlisted here.
  *
@@ -31,6 +40,8 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
     initDuration: config.initDuration,
     updatedAt: config.updatedAt,
     dbId: config.dbId,
+    /** Trust tier (yaml/config/user) — safe to expose; used by the UI for display purposes. */
+    source: config.source,
     consumeOnly: config.consumeOnly,
     inspectionFailed: config.inspectionFailed,
     customUserVars: config.customUserVars,
@@ -95,6 +106,22 @@ export function normalizeServerName(serverName: string): string {
   }
 
   return normalized;
+}
+
+/**
+ * Builds the synthetic tool-call name used during MCP OAuth flows.
+ * Format: `oauth<mcp_delimiter><normalizedServerName>`
+ *
+ * Guards against the caller passing a pre-wrapped name (one that already
+ * starts with the oauth prefix in its original, un-normalized form) to
+ * prevent double-wrapping.
+ */
+export function buildOAuthToolCallName(serverName: string): string {
+  const oauthPrefix = `oauth${Constants.mcp_delimiter}`;
+  if (serverName.startsWith(oauthPrefix)) {
+    return normalizeServerName(serverName);
+  }
+  return `${oauthPrefix}${normalizeServerName(serverName)}`;
 }
 
 /**

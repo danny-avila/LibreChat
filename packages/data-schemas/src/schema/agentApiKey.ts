@@ -9,6 +9,7 @@ export interface IAgentApiKey extends Document {
   expiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  tenantId?: string;
 }
 
 const agentApiKeySchema: Schema<IAgentApiKey> = new Schema(
@@ -42,11 +43,15 @@ const agentApiKeySchema: Schema<IAgentApiKey> = new Schema(
     expiresAt: {
       type: Date,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );
 
-agentApiKeySchema.index({ userId: 1, name: 1 });
+agentApiKeySchema.index({ userId: 1, name: 1, tenantId: 1 });
 
 /**
  * TTL index for automatic cleanup of expired keys.

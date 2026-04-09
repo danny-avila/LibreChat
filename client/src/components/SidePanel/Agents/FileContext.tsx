@@ -100,7 +100,7 @@ function FileContext({
     },
   ];
   const menuTrigger = (
-    <Ariakit.MenuButton className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium">
+    <Ariakit.MenuButton className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium">
       <div className="flex w-full items-center justify-center gap-1">
         <AttachmentIcon className="text-token-text-primary h-4 w-4" />
         {localize('com_ui_upload_file_context')}
@@ -113,7 +113,7 @@ function FileContext({
         <div className="mb-2 flex items-center gap-2">
           <HoverCardTrigger asChild>
             <span className="flex items-center gap-2">
-              <label className="text-token-text-primary block font-medium">
+              <label className="text-token-text-primary block text-sm font-medium">
                 {localize('com_agents_file_context_label')}
               </label>
               <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
@@ -157,7 +157,7 @@ function FileContext({
             <button
               type="button"
               disabled={isEphemeralAgent(agent_id)}
-              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
               onClick={handleLocalFileClick}
             >
               <div className="flex w-full items-center justify-center gap-1">

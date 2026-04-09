@@ -1,4 +1,6 @@
 import path from 'path';
+import * as fs from 'fs';
+import JSZip from 'jszip';
 import { parseDocument } from './crud';
 
 describe('Document Parser', () => {
@@ -71,6 +73,72 @@ describe('Document Parser', () => {
       filepath: 'document_parser',
       images: [],
       text: 'Sheet One:\nData,on,first,sheet\nSecond Sheet:\nData,On\nSecond,Sheet\n',
+    });
+  });
+
+  test('parseDocument() parses text from odt', async () => {
+    const file = {
+      originalname: 'sample.odt',
+      path: path.join(__dirname, 'sample.odt'),
+      mimetype: 'application/vnd.oasis.opendocument.text',
+    } as Express.Multer.File;
+
+    const document = await parseDocument({ file });
+
+    expect(document).toEqual({
+      bytes: 50,
+      filename: 'sample.odt',
+      filepath: 'document_parser',
+      images: [],
+      text: 'This is a sample ODT file.\n\nIt has two paragraphs.',
+    });
+  });
+
+  test('parseDocument() throws for odt with no extractable text', async () => {
+    const file = {
+      originalname: 'empty.odt',
+      path: path.join(__dirname, 'empty.odt'),
+      mimetype: 'application/vnd.oasis.opendocument.text',
+    } as Express.Multer.File;
+
+    await expect(parseDocument({ file })).rejects.toThrow('No text found in document');
+  });
+
+  test('parseDocument() aborts decompression when content.xml exceeds the size limit', async () => {
+    const zip = new JSZip();
+    zip.file('mimetype', 'application/vnd.oasis.opendocument.text', { compression: 'STORE' });
+    zip.file('content.xml', 'x'.repeat(51 * 1024 * 1024), { compression: 'DEFLATE' });
+    const buf = await zip.generateAsync({ type: 'nodebuffer' });
+
+    const tmpPath = path.join(__dirname, 'bomb.odt');
+    await fs.promises.writeFile(tmpPath, buf);
+    try {
+      const file = {
+        originalname: 'bomb.odt',
+        path: tmpPath,
+        mimetype: 'application/vnd.oasis.opendocument.text',
+      } as Express.Multer.File;
+      await expect(parseDocument({ file })).rejects.toThrow(/exceeds the 50MB decompressed limit/);
+    } finally {
+      await fs.promises.unlink(tmpPath);
+    }
+  });
+
+  test('parseDocument() decodes XML entities and normalizes tab and spacing elements to spaces from odt', async () => {
+    const file = {
+      originalname: 'sample-entities.odt',
+      path: path.join(__dirname, 'sample-entities.odt'),
+      mimetype: 'application/vnd.oasis.opendocument.text',
+    } as Express.Multer.File;
+
+    const document = await parseDocument({ file });
+
+    expect(document).toEqual({
+      bytes: 19,
+      filename: 'sample-entities.odt',
+      filepath: 'document_parser',
+      images: [],
+      text: 'AT&T and A>B\n\nx y z',
     });
   });
 

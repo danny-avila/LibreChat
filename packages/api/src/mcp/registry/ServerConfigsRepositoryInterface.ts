@@ -9,6 +9,9 @@ export interface IServerConfigsRepositoryInterface {
   //ACL Entry check if update is possible
   update(serverName: string, config: ParsedServerConfig, userId?: string): Promise<void>;
 
+  /** Atomic add-or-update without requiring callers to inspect error messages. */
+  upsert(serverName: string, config: ParsedServerConfig, userId?: string): Promise<void>;
+
   //ACL Entry check if remove is possible
   remove(serverName: string, userId?: string): Promise<void>;
 

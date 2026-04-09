@@ -20,9 +20,14 @@ const {
   isImageVisionTool,
   actionDomainSeparator,
 } = require('librechat-data-provider');
-const { findToken, updateToken, createToken } = require('~/models');
-const { getActions, deleteActions } = require('~/models/Action');
-const { deleteAssistant } = require('~/models/Assistant');
+const {
+  findToken,
+  updateToken,
+  createToken,
+  getActions,
+  deleteActions,
+  deleteAssistant,
+} = require('~/models');
 const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 

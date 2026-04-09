@@ -1,10 +1,9 @@
 import promptGroupSchema from '~/schema/promptGroup';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 import type { IPromptGroupDocument } from '~/types/prompts';
 
-/**
- * Creates or returns the PromptGroup model using the provided mongoose instance and schema
- */
 export function createPromptGroupModel(mongoose: typeof import('mongoose')) {
+  applyTenantIsolation(promptGroupSchema);
   return (
     mongoose.models.PromptGroup ||
     mongoose.model<IPromptGroupDocument>('PromptGroup', promptGroupSchema)

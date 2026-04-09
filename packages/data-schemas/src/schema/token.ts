@@ -33,6 +33,10 @@ const tokenSchema: Schema<IToken> = new Schema({
     type: Map,
     of: Schema.Types.Mixed,
   },
+  tenantId: {
+    type: String,
+    index: true,
+  },
 });
 
 tokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

@@ -160,7 +160,7 @@ describe('MCPTokenStorage', () => {
         serverName: 'srv1',
         tokens: { access_token: 'at1', token_type: 'Bearer', expires_in: 3600 },
         createToken: store.createToken,
-        clientInfo: { client_id: 'cid', client_secret: 'csec', redirect_uris: [] },
+        clientInfo: { client_id: 'cid', client_secret: 'csec' },
       });
 
       const clientSaved = await store.findToken({
@@ -525,7 +525,7 @@ describe('MCPTokenStorage', () => {
           refresh_token: 'my-refresh-token',
         },
         createToken: store.createToken,
-        clientInfo: { client_id: 'cid', client_secret: 'sec', redirect_uris: [] },
+        clientInfo: { client_id: 'cid', client_secret: 'sec' },
       });
 
       const result = await MCPTokenStorage.getTokens({
