@@ -771,20 +771,20 @@ class GenerationJobManagerClass {
       runtime.hasSubscriber = true;
 
       /**
-       * Capture the replay count so syncReorderBuffer can prune only true duplicates
-       * (seqs 0..earlyReplayCount-1) without touching live chunks that arrive during
-       * the async GET window. Using the count instead of the Redis counter as the
-       * prune cutoff prevents dropping in-flight chunks when INCR advances past them.
+       * Capture the buffer length BEFORE the skip/replay decision so syncReorderBuffer
+       * can prune duplicate pub/sub entries (seqs 0..earlyReplayCount-1) regardless of
+       * whether earlyEventBuffer was replayed directly or delivered via resume sync payload.
+       * Using the count instead of the Redis counter as the prune cutoff prevents dropping
+       * in-flight chunks when INCR advances past them during the async GET window.
        */
-      let earlyReplayCount = 0;
+      const earlyReplayCount = runtime.earlyEventBuffer.length;
 
-      if (runtime.earlyEventBuffer.length > 0) {
+      if (earlyReplayCount > 0) {
         if (options?.skipBufferReplay) {
           logger.debug(
-            `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (skipBufferReplay)`,
+            `[GenerationJobManager] Skipping ${earlyReplayCount} buffered events for ${streamId} (skipBufferReplay)`,
           );
         } else {
-          earlyReplayCount = runtime.earlyEventBuffer.length;
           logger.debug(
             `[GenerationJobManager] Replaying ${earlyReplayCount} buffered events for ${streamId}`,
           );
