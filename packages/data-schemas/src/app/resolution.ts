@@ -43,12 +43,12 @@ function mergeArrayByKey(
   depth: number,
   path: string,
 ): AnyObject[] {
-  // Items without a key field value are skipped — they have no stable
-  // identity and cannot be matched to a base item or safely appended.
   const sourceByKey = new Map<unknown, AnyObject>();
   for (const item of source) {
     if (item != null && typeof item === 'object') {
       const key = item[keyField];
+      // Source items without a key value are skipped: no stable identity
+      // for matching or appending. (Keyless target items are preserved as-is below.)
       if (key != null) {
         sourceByKey.set(key, item);
       }
