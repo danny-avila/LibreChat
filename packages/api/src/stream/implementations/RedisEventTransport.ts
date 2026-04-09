@@ -150,12 +150,15 @@ export class RedisEventTransport implements IEventTransport {
   /**
    * Advance subscriber reorder buffer to the authoritative Redis sequence counter (cross-replica safe).
    *
-   * @param pruneStaleEntries - When true (same-replica), prunes pending entries below the current
-   *   Redis counter (duplicates of earlyEventBuffer) while preserving entries at or above it
-   *   (live chunks from ongoing generation that arrived during the async GET window).
-   *   When false/undefined (cross-replica), all pending entries are treated as live and preserved.
+   * @param earlyReplayCount - Number of events replayed from earlyEventBuffer (same-replica).
+   *   Pending entries with seq < earlyReplayCount are duplicates and are pruned; entries at or
+   *   above are live chunks from ongoing generation that arrived during the async GET window.
+   *   Using the replay count (not the Redis counter) as the prune cutoff is critical: INCR can
+   *   advance the counter past a live chunk's seq during the GET window, so currentSeq is not
+   *   a safe proxy for "already delivered via earlyEventBuffer."
+   *   When 0/undefined (cross-replica), all pending entries are treated as live and preserved.
    */
-  async syncReorderBuffer(streamId: string, pruneStaleEntries?: boolean): Promise<void> {
+  async syncReorderBuffer(streamId: string, earlyReplayCount = 0): Promise<void> {
     const key = KEYS.sequence(streamId);
     const rawStr = await this.publisher.get(key);
     const parsed = rawStr != null ? parseInt(rawStr, 10) : 0;
@@ -166,20 +169,19 @@ export class RedisEventTransport implements IEventTransport {
         clearTimeout(state.reorderBuffer.flushTimeout);
         state.reorderBuffer.flushTimeout = null;
       }
-      if (pruneStaleEntries) {
-        // Same-replica: prune entries below currentSeq (duplicates of earlyEventBuffer),
-        // but keep entries at or above currentSeq (new chunks from ongoing generation).
+      // Prune true duplicates: entries with seq < earlyReplayCount were already delivered
+      // via earlyEventBuffer. Entries at or above are live (possibly from ongoing generation).
+      if (earlyReplayCount > 0) {
         for (const seq of state.reorderBuffer.pending.keys()) {
-          if (seq < currentSeq) {
+          if (seq < earlyReplayCount) {
             state.reorderBuffer.pending.delete(seq);
           }
         }
-        state.reorderBuffer.nextSeq = currentSeq;
-        this.flushPendingMessages(streamId, state);
-      } else if (state.reorderBuffer.pending.size === 0) {
+      }
+      // Set nextSeq from remaining state: use Math.min to preserve any live pending entries.
+      if (state.reorderBuffer.pending.size === 0) {
         state.reorderBuffer.nextSeq = currentSeq;
       } else {
-        // Cross-replica: all pending entries are live — lower nextSeq to deliver them.
         let minPending = Infinity;
         for (const seq of state.reorderBuffer.pending.keys()) {
           if (seq < minPending) {

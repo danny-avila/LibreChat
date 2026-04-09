@@ -339,12 +339,12 @@ export interface IEventTransport {
 
   /**
    * Advance subscriber reorder buffer to match publisher sequence (cross-replica safe).
-   * @param pruneStaleEntries - When true (same-replica), prunes pending entries below the current
-   *   Redis counter (duplicates of earlyEventBuffer) while preserving entries at or above it
-   *   (live chunks that arrived during the async GET window).
-   *   When false/undefined (cross-replica), all pending entries are treated as live and preserved.
+   * @param earlyReplayCount - Number of events replayed from earlyEventBuffer (same-replica).
+   *   Pending entries with seq < earlyReplayCount are duplicates and are pruned; entries at or
+   *   above are live chunks that arrived during the async GET window and are preserved.
+   *   When 0/undefined (cross-replica), all pending entries are treated as live.
    */
-  syncReorderBuffer?(streamId: string, pruneStaleEntries?: boolean): void | Promise<void>;
+  syncReorderBuffer?(streamId: string, earlyReplayCount?: number): void | Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

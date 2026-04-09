@@ -771,12 +771,12 @@ class GenerationJobManagerClass {
       runtime.hasSubscriber = true;
 
       /**
-       * Track whether earlyEventBuffer was replayed so syncReorderBuffer knows
-       * whether to prune stale entries (same-replica: pending entries below the
-       * current counter are duplicates of earlyEventBuffer) or preserve all pending
-       * (cross-replica: pending entries are live chunks from the async GET window).
+       * Capture the replay count so syncReorderBuffer can prune only true duplicates
+       * (seqs 0..earlyReplayCount-1) without touching live chunks that arrive during
+       * the async GET window. Using the count instead of the Redis counter as the
+       * prune cutoff prevents dropping in-flight chunks when INCR advances past them.
        */
-      let hadBufferReplay = false;
+      let earlyReplayCount = 0;
 
       if (runtime.earlyEventBuffer.length > 0) {
         if (options?.skipBufferReplay) {
@@ -784,13 +784,13 @@ class GenerationJobManagerClass {
             `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (skipBufferReplay)`,
           );
         } else {
+          earlyReplayCount = runtime.earlyEventBuffer.length;
           logger.debug(
-            `[GenerationJobManager] Replaying ${runtime.earlyEventBuffer.length} buffered events for ${streamId}`,
+            `[GenerationJobManager] Replaying ${earlyReplayCount} buffered events for ${streamId}`,
           );
           for (const bufferedEvent of runtime.earlyEventBuffer) {
             onChunk(bufferedEvent);
           }
-          hadBufferReplay = true;
         }
         runtime.earlyEventBuffer = [];
       } else if (this._isRedis && !options?.skipBufferReplay && jobData?.userMessage) {
@@ -817,7 +817,7 @@ class GenerationJobManagerClass {
       }
 
       try {
-        await this.eventTransport.syncReorderBuffer?.(streamId, hadBufferReplay);
+        await this.eventTransport.syncReorderBuffer?.(streamId, earlyReplayCount);
       } catch (err) {
         logger.warn(
           `[GenerationJobManager] Failed to sync reorder buffer for ${streamId}; proceeding with current nextSeq:`,

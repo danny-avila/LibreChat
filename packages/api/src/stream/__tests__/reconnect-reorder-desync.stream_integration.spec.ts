@@ -295,6 +295,68 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
 
       transport.destroy();
     });
+
+    test('same-replica: should not drop a live chunk when INCR advances past earlyReplayCount during GET', async () => {
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = 'race-same-replica-test';
+      const chunks: unknown[] = [];
+
+      // Emit seqs 0–4 (earlyEventBuffer would have held these; counter = 5)
+      for (let i = 0; i < 5; i++) {
+        await transport.emitChunk(streamId, { index: i });
+      }
+
+      // Subscribe (nextSeq starts at 0)
+      transport.subscribe(streamId, {
+        onChunk: (event) => chunks.push(event),
+      });
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+      const channel = `stream:{${streamId}}:events`;
+
+      // Pause the GET
+      let resolveGet!: (val: string | null) => void;
+      mockPublisher.get.mockImplementationOnce(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveGet = resolve;
+          }),
+      );
+
+      // Call syncReorderBuffer with earlyReplayCount=5 (seqs 0–4 were replayed)
+      const syncPromise = transport.syncReorderBuffer(streamId, 5);
+
+      // During GET window: LLM emits seq 5 (INCR → counter=6), subscriber receives it
+      await transport.emitChunk(streamId, { index: 5 });
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 5, data: { index: 5 } }));
+
+      // GET returns 6 (counter advanced past seq 5)
+      resolveGet('6');
+      await syncPromise;
+
+      // seq 5 MUST be delivered — it's live (seq 5 >= earlyReplayCount 5), not a duplicate.
+      // With the old boolean pruneStaleEntries, 5 < currentSeq(6) would have pruned it.
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(5);
+
+      // Subsequent chunks deliver normally
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 6, data: { index: 6 } }));
+      expect(chunks.map((c) => (c as { index: number }).index)).toContain(6);
+
+      transport.destroy();
+    });
   });
 
   describe('End-to-end reconnect with GenerationJobManager (Integration)', () => {
