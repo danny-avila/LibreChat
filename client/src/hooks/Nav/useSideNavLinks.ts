@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
+import { MCPIcon, OpenAIMinimalIcon, AttachmentIcon } from '@librechat/client';
 import {
   Bot,
+  Brain,
   Bookmark,
   NotebookPen,
-  BrainCircuit,
   ArrowRightToLine,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -82,16 +82,6 @@ export default function useSideNavLinks({
   const Links = useMemo(() => {
     const links: NavLink[] = [];
 
-    if (hasAccessToPrompts) {
-      links.push({
-        title: 'com_ui_prompts',
-        label: '',
-        icon: NotebookPen,
-        id: 'prompts',
-        Component: PromptsAccordion,
-      });
-    }
-
     if (
       endpointsConfig?.[EModelEndpoint.agents] &&
       hasAccessToAgents &&
@@ -120,9 +110,19 @@ export default function useSideNavLinks({
       links.push({
         title: 'com_sidepanel_assistant_builder',
         label: '',
-        icon: Blocks,
+        icon: OpenAIMinimalIcon,
         id: EModelEndpoint.assistants,
         Component: PanelSwitch,
+      });
+    }
+
+    if (hasAccessToPrompts) {
+      links.push({
+        title: 'com_ui_prompts',
+        label: '',
+        icon: NotebookPen,
+        id: 'prompts',
+        Component: PromptsAccordion,
       });
     }
 
@@ -130,7 +130,7 @@ export default function useSideNavLinks({
       links.push({
         title: 'com_ui_memories',
         label: '',
-        icon: BrainCircuit,
+        icon: Brain,
         id: 'memories',
         Component: MemoryPanel,
       });
