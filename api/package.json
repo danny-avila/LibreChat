@@ -91,7 +91,7 @@
     "multer": "^2.1.1",
     "nanoid": "^3.3.7",
     "node-fetch": "^2.7.0",
-    "nodemailer": "^8.0.4",
+    "nodemailer": "^8.0.5",
     "ollama": "^0.5.0",
     "openai": "5.8.2",
     "openid-client": "^6.5.0",
