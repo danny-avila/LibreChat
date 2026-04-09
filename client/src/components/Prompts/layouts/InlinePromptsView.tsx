@@ -15,6 +15,11 @@ export default function InlinePromptsView() {
     permission: Permissions.USE,
   });
 
+  const hasCreateAccess = useHasAccess({
+    permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.CREATE,
+  });
+
   const handleCreateSuccess = useCallback(
     (groupId: string) => {
       navigate(`/prompts/${groupId}`, { replace: true });
@@ -23,6 +28,10 @@ export default function InlinePromptsView() {
   );
 
   if (!hasAccess) {
+    return <Navigate to="/c/new" replace />;
+  }
+
+  if (isNew && !hasCreateAccess) {
     return <Navigate to="/c/new" replace />;
   }
 
