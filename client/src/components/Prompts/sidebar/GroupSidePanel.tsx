@@ -55,25 +55,34 @@ export default function GroupSidePanel({
           />
         </div>
       )}
-      <div className="scrollbar-gutter-stable flex h-full min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden px-3 pb-3 text-text-primary">
-        <div className="shrink-0 space-y-2">{children}</div>
-        <div className="flex min-h-0 flex-1 flex-col">
-          <List
-            groups={promptGroups}
-            isLoading={!!groupsQuery.isLoading}
-            isChatRoute={isChatRoute}
-          />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="scrollbar-gutter-stable flex h-full min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden px-3 text-text-primary">
+          <div className="shrink-0 space-y-2">{children}</div>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <List
+              groups={promptGroups}
+              isLoading={!!groupsQuery.isLoading}
+              isChatRoute={isChatRoute}
+            />
+          </div>
         </div>
-      </div>
-      <div className={cn(isChatRoute ? 'px-3 pb-2 pt-1' : 'px-2 pb-3 pt-2 md:px-0')}>
-        <PanelNavigation
-          onPrevious={prevPage}
-          onNext={nextPage}
-          hasNextPage={hasNextPage}
-          hasPreviousPage={hasPreviousPage}
-          isLoading={groupsQuery.isFetching}
-          isChatRoute={isChatRoute}
-        />
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-surface-primary-alt from-60% to-transparent',
+            isChatRoute ? 'px-3 pb-2 pt-6' : 'px-2 pb-3 pt-2 md:px-0',
+          )}
+        >
+          <div className="pointer-events-auto">
+            <PanelNavigation
+              onPrevious={prevPage}
+              onNext={nextPage}
+              hasNextPage={hasNextPage}
+              hasPreviousPage={hasPreviousPage}
+              isLoading={groupsQuery.isFetching}
+              isChatRoute={isChatRoute}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
