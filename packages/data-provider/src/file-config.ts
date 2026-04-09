@@ -497,6 +497,14 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
     return acc;
   }, []);
 
+/** Detects whether the given MIME type patterns accept all file types (e.g., `.*` or `.+`). */
+export const isPermissiveMimeConfig = (types?: RegExp[]): boolean => {
+  if (!types || types.length === 0) {
+    return false;
+  }
+  return types.some((regex) => regex.test('x-librechat/x-probe'));
+};
+
 /**
  * Gets the appropriate endpoint file configuration with standardized lookup logic.
  *
