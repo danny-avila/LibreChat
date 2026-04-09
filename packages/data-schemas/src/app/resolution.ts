@@ -43,6 +43,8 @@ function mergeArrayByKey(
   depth: number,
   path: string,
 ): AnyObject[] {
+  // Items without a key field value are skipped — they have no stable
+  // identity and cannot be matched to a base item or safely appended.
   const sourceByKey = new Map<unknown, AnyObject>();
   for (const item of source) {
     if (item != null && typeof item === 'object') {
@@ -56,6 +58,9 @@ function mergeArrayByKey(
   const result: AnyObject[] = [];
   const seen = new Set<unknown>();
 
+  // Pass the array container path (not a per-element path) so item
+  // properties build paths like 'endpoints.custom.baseURL' for any
+  // nested ARRAY_MERGE_KEYS lookups.
   for (const item of target) {
     if (item != null && typeof item === 'object') {
       const key = item[keyField];

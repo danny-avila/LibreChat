@@ -153,7 +153,26 @@ describe('mergeConfigOverrides', () => {
 
     expect(custom).toHaveLength(1);
     expect(custom[0].name).toBe('dup');
+    // last-write-wins: Map.set overwrites on duplicate keys
     expect(custom[0].baseURL).toBe('https://second.com');
+  });
+
+  it('silently drops source items without a name field', () => {
+    const base = {
+      endpoints: { custom: [{ name: 'ep1', baseURL: 'https://ep1.com' }] },
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig({ endpoints: { custom: [{ baseURL: 'https://nameless.com' }] } }, 10),
+    ];
+
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const custom = (result.endpoints as Record<string, unknown>).custom as Array<
+      Record<string, unknown>
+    >;
+
+    expect(custom).toHaveLength(1);
+    expect(custom[0].name).toBe('ep1');
   });
 
   it('does not mutate base custom endpoint items', () => {
