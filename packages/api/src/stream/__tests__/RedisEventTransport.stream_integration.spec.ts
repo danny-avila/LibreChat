@@ -880,12 +880,10 @@ describe('RedisEventTransport Integration Tests', () => {
       const subscriberA = (ioredisClient as Redis).duplicate();
       const replicaA = new RedisEventTransport(ioredisClient, subscriberA);
 
-      // Replica B: consumer (separate transport, never publishes)
+      // Replica B: consumer (separate transport, never publishes).
+      // Shares ioredisClient as publisher so GET/EVAL route correctly in Redis Cluster.
       const subscriberB = (ioredisClient as Redis).duplicate();
-      // Duplicate another connection for Replica B's publisher client
-      // (it needs its own publisher for GET/EVAL, but never calls emitChunk)
-      const publisherB = (ioredisClient as Redis).duplicate();
-      const replicaB = new RedisEventTransport(publisherB, subscriberB);
+      const replicaB = new RedisEventTransport(ioredisClient, subscriberB);
 
       const streamId = `cross-replica-sync-${Date.now()}`;
 
@@ -931,7 +929,6 @@ describe('RedisEventTransport Integration Tests', () => {
       replicaB.destroy();
       subscriberA.disconnect();
       subscriberB.disconnect();
-      publisherB.disconnect();
     });
 
     test('multiple subscribe/unsubscribe cycles across replicas maintain correct sequence', async () => {
@@ -945,9 +942,9 @@ describe('RedisEventTransport Integration Tests', () => {
       const subscriberA = (ioredisClient as Redis).duplicate();
       const replicaA = new RedisEventTransport(ioredisClient, subscriberA);
 
+      // Share ioredisClient as publisher so GET/EVAL route correctly in Redis Cluster
       const subscriberB = (ioredisClient as Redis).duplicate();
-      const publisherB = (ioredisClient as Redis).duplicate();
-      const replicaB = new RedisEventTransport(publisherB, subscriberB);
+      const replicaB = new RedisEventTransport(ioredisClient, subscriberB);
 
       const streamId = `cross-replica-reconnect-${Date.now()}`;
 
@@ -993,7 +990,6 @@ describe('RedisEventTransport Integration Tests', () => {
       replicaB.destroy();
       subscriberA.disconnect();
       subscriberB.disconnect();
-      publisherB.disconnect();
     });
 
     test('shared counter is cleaned up on stream cleanup', async () => {
