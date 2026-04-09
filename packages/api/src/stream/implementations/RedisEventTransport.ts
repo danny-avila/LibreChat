@@ -189,6 +189,11 @@ export class RedisEventTransport implements IEventTransport {
         state.reorderBuffer.nextSeq = Math.min(currentSeq, minPending);
         this.flushPendingMessages(streamId, state);
       }
+      // Re-arm flush timeout if gaps remain after sync — without this,
+      // buffered messages could sit indefinitely if no new messages arrive.
+      if (state.reorderBuffer.pending.size > 0) {
+        this.scheduleFlushTimeout(streamId, state);
+      }
     }
   }
 
