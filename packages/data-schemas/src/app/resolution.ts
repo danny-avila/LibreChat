@@ -8,6 +8,16 @@ const MAX_MERGE_DEPTH = 10;
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
+ * Paths within the config tree where arrays of objects should be merged by
+ * a key field rather than replaced wholesale. `deepMerge` matches items by
+ * the given key, deep-merges matching pairs, preserves unmatched base items,
+ * and appends new override-only items.
+ */
+const ARRAY_MERGE_KEYS: Record<string, string> = {
+  'endpoints.custom': 'name',
+};
+
+/**
  * Maps YAML-level override keys (TCustomConfig) to their AppConfig equivalents.
  * Overrides are stored with YAML keys but merged into the already-processed AppConfig
  * where some fields have been renamed by AppService.
@@ -23,12 +33,59 @@ const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = 
   turnstile: 'turnstileConfig',
 };
 
-function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0): T {
+function mergeArrayByKey(
+  target: AnyObject[],
+  source: AnyObject[],
+  keyField: string,
+  depth: number,
+  path: string,
+): AnyObject[] {
+  const sourceByKey = new Map<unknown, AnyObject>();
+  const sourceOrder: unknown[] = [];
+  for (const item of source) {
+    if (item != null && typeof item === 'object') {
+      const key = item[keyField];
+      if (key != null) {
+        sourceByKey.set(key, item);
+        sourceOrder.push(key);
+      }
+    }
+  }
+
+  const result: AnyObject[] = [];
+  const seen = new Set<unknown>();
+
+  for (const item of target) {
+    if (item != null && typeof item === 'object') {
+      const key = item[keyField];
+      const override = key != null ? sourceByKey.get(key) : undefined;
+      if (override) {
+        result.push(deepMerge(item, override, depth + 1, path));
+        seen.add(key);
+      } else {
+        result.push(item);
+      }
+    } else {
+      result.push(item);
+    }
+  }
+
+  for (const key of sourceOrder) {
+    if (!seen.has(key)) {
+      result.push(sourceByKey.get(key)!);
+    }
+  }
+
+  return result;
+}
+
+function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0, path = ''): T {
   const result = { ...target } as AnyObject;
   for (const key of Object.keys(source)) {
     if (UNSAFE_KEYS.has(key)) {
       continue;
     }
+    const currentPath = path ? `${path}.${key}` : key;
     const sourceVal = source[key];
     const targetVal = result[key];
     if (
@@ -40,7 +97,25 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0)
       typeof targetVal === 'object' &&
       !Array.isArray(targetVal)
     ) {
-      result[key] = deepMerge(targetVal as AnyObject, sourceVal as AnyObject, depth + 1);
+      result[key] = deepMerge(
+        targetVal as AnyObject,
+        sourceVal as AnyObject,
+        depth + 1,
+        currentPath,
+      );
+    } else if (
+      depth < MAX_MERGE_DEPTH &&
+      Array.isArray(sourceVal) &&
+      Array.isArray(targetVal) &&
+      ARRAY_MERGE_KEYS[currentPath]
+    ) {
+      result[key] = mergeArrayByKey(
+        targetVal as AnyObject[],
+        sourceVal as AnyObject[],
+        ARRAY_MERGE_KEYS[currentPath],
+        depth,
+        currentPath,
+      );
     } else {
       result[key] = sourceVal;
     }
