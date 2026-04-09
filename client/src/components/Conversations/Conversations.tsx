@@ -266,6 +266,13 @@ const Conversations: FC<ConversationsProps> = ({
     return () => cancelAnimationFrame(frameId);
   }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
 
+  useEffect(() => {
+    cache.clearAll();
+    if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+      containerRef.current.recomputeRowHeights(0);
+    }
+  }, [search.query, cache, containerRef]);
+
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
       const item = flattenedItems[index];
