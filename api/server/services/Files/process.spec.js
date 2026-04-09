@@ -30,11 +30,6 @@ jest.mock('~/server/controllers/assistants/v2', () => ({
   deleteResourceFileId: jest.fn(),
 }));
 
-jest.mock('~/models/Agent', () => ({
-  addAgentResourceFile: jest.fn().mockResolvedValue({}),
-  removeAgentResourceFiles: jest.fn(),
-}));
-
 jest.mock('~/server/controllers/assistants/helpers', () => ({
   getOpenAIClient: jest.fn(),
 }));
@@ -47,6 +42,8 @@ jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({ file_id: 'created-file-id' }),
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
+  addAgentResourceFile: jest.fn().mockResolvedValue({}),
+  removeAgentResourceFiles: jest.fn(),
 }));
 
 jest.mock('~/server/utils/getFileStrategy', () => ({

@@ -12,6 +12,7 @@ export type JobStatus = 'running' | 'complete' | 'error' | 'aborted';
 export interface SerializableJobData {
   streamId: string;
   userId: string;
+  tenantId?: string;
   status: JobStatus;
   createdAt: number;
   completedAt?: number;
@@ -65,12 +66,18 @@ export interface SerializableJobData {
  * ```
  */
 export interface UsageMetadata {
+  /** Logical usage bucket for accounting/reporting. Defaults to model response usage. */
+  usage_type?: 'message' | 'summarization';
   /** Total input tokens (prompt tokens) */
   input_tokens?: number;
   /** Total output tokens (completion tokens) */
   output_tokens?: number;
+  /** Total billed tokens when provided by the model/runtime */
+  total_tokens?: number;
   /** Model identifier that generated this usage */
   model?: string;
+  /** Provider identifier that generated this usage */
+  provider?: string;
   /**
    * OpenAI-style cache token details.
    * Present for OpenAI models (GPT-4, o1, etc.)
@@ -143,6 +150,7 @@ export interface IJobStore {
     streamId: string,
     userId: string,
     conversationId?: string,
+    tenantId?: string,
   ): Promise<SerializableJobData>;
 
   /** Get a job by streamId (streamId === conversationId) */
@@ -180,7 +188,7 @@ export interface IJobStore {
    * @param userId - The user ID to query
    * @returns Array of conversation IDs with active jobs
    */
-  getActiveJobIdsByUser(userId: string): Promise<string[]>;
+  getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]>;
 
   // ===== Content State Methods =====
   // These methods manage volatile content state tied to each job.

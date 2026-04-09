@@ -13,6 +13,7 @@ const {
   checkEmailConfig,
   isEmailDomainAllowed,
   shouldUseSecureCookie,
+  resolveAppConfigForUser,
 } = require('@librechat/api');
 const {
   findUser,
@@ -189,7 +190,7 @@ const registerUser = async (user, additionalData = {}) => {
 
   let newUserId;
   try {
-    const appConfig = await getAppConfig();
+    const appConfig = await getAppConfig({ baseOnly: true });
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
@@ -255,19 +256,52 @@ const registerUser = async (user, additionalData = {}) => {
 };
 
 /**
- * Request password reset
+ * Request password reset.
+ *
+ * Uses a two-phase domain check: fast-fail with the memory-cached base config
+ * (zero DB queries) to block globally denied domains before user lookup, then
+ * re-check with tenant-scoped config after user lookup so tenant-specific
+ * restrictions are enforced.
+ *
+ * Phase 1 (base check) returns an Error (HTTP 400) — this intentionally reveals
+ * that the domain is globally blocked, but fires before any DB lookup so it
+ * cannot confirm user existence. Phase 2 (tenant check) returns the generic
+ * success message (HTTP 200) to prevent user-enumeration via status codes.
+ *
  * @param {ServerRequest} req
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
-  const appConfig = await getAppConfig();
-  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+
+  const baseConfig = await getAppConfig({ baseOnly: true });
+  if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
+    logger.warn(
+      `[requestPasswordReset] Blocked - email domain not allowed [Email: ${email}] [IP: ${req.ip}]`,
+    );
     const error = new Error(ErrorTypes.AUTH_FAILED);
     error.code = ErrorTypes.AUTH_FAILED;
     error.message = 'Email domain not allowed';
     return error;
   }
-  const user = await findUser({ email }, 'email _id');
+
+  const user = await findUser({ email }, 'email _id role tenantId');
+  let appConfig = baseConfig;
+  if (user?.tenantId) {
+    try {
+      appConfig = await resolveAppConfigForUser(getAppConfig, user);
+    } catch (err) {
+      logger.error('[requestPasswordReset] Failed to resolve tenant config, using base:', err);
+    }
+  }
+
+  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+    logger.warn(
+      `[requestPasswordReset] Tenant config blocked domain [Email: ${email}] [IP: ${req.ip}]`,
+    );
+    return {
+      message: 'If an account with that email exists, a password reset link has been sent to it.',
+    };
+  }
   const emailEnabled = checkEmailConfig();
 
   logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);

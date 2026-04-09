@@ -1,23 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
-const { bulkSaveConvos: _bulkSaveConvos } = require('~/models/Conversation');
 const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
-const { bulkSaveMessages } = require('~/models/Message');
-const getLogStores = require('~/cache/getLogStores');
+const { bulkSaveMessages, bulkSaveConvos: _bulkSaveConvos } = require('~/models');
 
-jest.mock('~/cache/getLogStores');
-const mockedCacheGet = jest.fn();
-getLogStores.mockImplementation(() => ({
-  get: mockedCacheGet,
+const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
+  [EModelEndpoint.openAI]: { userProvide: false },
+});
+
+jest.mock('~/server/services/Config', () => ({
+  getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
 }));
 
 // Mock the database methods
-jest.mock('~/models/Conversation', () => ({
+jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
-}));
-jest.mock('~/models/Message', () => ({
   bulkSaveMessages: jest.fn(),
 }));
 
@@ -761,7 +759,7 @@ describe('importLibreChatConvo', () => {
   );
 
   it('should import conversation correctly', async () => {
-    mockedCacheGet.mockResolvedValue({
+    mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.openAI]: {},
     });
     const expectedNumberOfMessages = 6;
@@ -787,7 +785,7 @@ describe('importLibreChatConvo', () => {
   });
 
   it('should import linear, non-recursive thread correctly with correct endpoint', async () => {
-    mockedCacheGet.mockResolvedValue({
+    mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.azureOpenAI]: {},
     });
 
@@ -927,7 +925,7 @@ describe('importLibreChatConvo', () => {
   });
 
   it('should retain properties from the original conversation as well as new settings', async () => {
-    mockedCacheGet.mockResolvedValue({
+    mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.azureOpenAI]: {},
     });
     const requestUserId = 'user-123';

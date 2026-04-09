@@ -10,7 +10,7 @@ const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {
     version: '1.0.0',
     cache: true,
     interface: {
-      endpointsMenu: true,
+      modelSelect: true,
     },
     registration: {
       socialLogins: [],

@@ -36,11 +36,24 @@ jest.mock('uuid', () => ({
   v4: jest.fn(() => 'mock-uuid-1234'),
 }));
 
-// Mock axios
-jest.mock('axios');
-const axios = require('axios');
+// Mock axios — process.js now uses createAxiosInstance() from @librechat/api
+const mockAxios = jest.fn();
+mockAxios.post = jest.fn();
+mockAxios.isAxiosError = jest.fn(() => false);
 
-// Mock logger
+jest.mock('@librechat/api', () => {
+  const http = require('http');
+  const https = require('https');
+  return {
+    logAxiosError: jest.fn(),
+    getBasePath: jest.fn(() => ''),
+    sanitizeFilename: jest.fn((name) => name),
+    createAxiosInstance: jest.fn(() => mockAxios),
+    codeServerHttpAgent: new http.Agent({ keepAlive: false }),
+    codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
+  };
+});
+
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     warn: jest.fn(),
@@ -49,15 +62,8 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-// Mock getCodeBaseURL
 jest.mock('@librechat/agents', () => ({
   getCodeBaseURL: jest.fn(() => 'https://code-api.example.com'),
-}));
-
-// Mock logAxiosError and getBasePath
-jest.mock('@librechat/api', () => ({
-  logAxiosError: jest.fn(),
-  getBasePath: jest.fn(() => ''),
 }));
 
 // Mock models
@@ -89,14 +95,16 @@ jest.mock('~/server/utils', () => ({
   determineFileType: jest.fn(),
 }));
 
+const http = require('http');
+const https = require('https');
 const { createFile, getFiles } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
+const { codeServerHttpAgent, codeServerHttpsAgent } = require('@librechat/api');
 
-// Import after mocks
-const { processCodeOutput } = require('./process');
+const { processCodeOutput, getSessionInfo } = require('./process');
 
 describe('Code Process', () => {
   const mockReq = {
@@ -144,7 +152,7 @@ describe('Code Process', () => {
       });
 
       const smallBuffer = Buffer.alloc(100);
-      axios.mockResolvedValue({ data: smallBuffer });
+      mockAxios.mockResolvedValue({ data: smallBuffer });
 
       const result = await processCodeOutput(baseParams);
 
@@ -167,7 +175,7 @@ describe('Code Process', () => {
       });
 
       const smallBuffer = Buffer.alloc(100);
-      axios.mockResolvedValue({ data: smallBuffer });
+      mockAxios.mockResolvedValue({ data: smallBuffer });
 
       const result = await processCodeOutput(baseParams);
 
@@ -181,7 +189,7 @@ describe('Code Process', () => {
       it('should process image files using convertImage', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
         const imageBuffer = Buffer.alloc(500);
-        axios.mockResolvedValue({ data: imageBuffer });
+        mockAxios.mockResolvedValue({ data: imageBuffer });
 
         const convertedFile = {
           filepath: '/uploads/converted-image.webp',
@@ -211,7 +219,7 @@ describe('Code Process', () => {
         });
 
         const imageBuffer = Buffer.alloc(500);
-        axios.mockResolvedValue({ data: imageBuffer });
+        mockAxios.mockResolvedValue({ data: imageBuffer });
         convertImage.mockResolvedValue({ filepath: '/images/user-123/existing-img-id.webp' });
 
         const result = await processCodeOutput(imageParams);
@@ -234,7 +242,7 @@ describe('Code Process', () => {
     describe('non-image file processing', () => {
       it('should process non-image files using saveBuffer', async () => {
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
 
         const mockSaveBuffer = jest.fn().mockResolvedValue('/uploads/saved-file.txt');
         getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
@@ -255,7 +263,7 @@ describe('Code Process', () => {
 
       it('should detect MIME type from buffer', async () => {
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
         determineFileType.mockResolvedValue({ mime: 'application/pdf' });
 
         const result = await processCodeOutput({ ...baseParams, name: 'document.pdf' });
@@ -266,7 +274,7 @@ describe('Code Process', () => {
 
       it('should fallback to application/octet-stream for unknown types', async () => {
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
         determineFileType.mockResolvedValue(null);
 
         const result = await processCodeOutput({ ...baseParams, name: 'unknown.xyz' });
@@ -281,7 +289,7 @@ describe('Code Process', () => {
         fileSizeLimitConfig.value = 1000; // 1KB limit
 
         const largeBuffer = Buffer.alloc(5000); // 5KB - exceeds 1KB limit
-        axios.mockResolvedValue({ data: largeBuffer });
+        mockAxios.mockResolvedValue({ data: largeBuffer });
 
         const result = await processCodeOutput(baseParams);
 
@@ -299,7 +307,7 @@ describe('Code Process', () => {
     describe('fallback behavior', () => {
       it('should fallback to download URL when saveBuffer is not available', async () => {
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
         getStrategyFunctions.mockReturnValue({ saveBuffer: null });
 
         const result = await processCodeOutput(baseParams);
@@ -312,7 +320,7 @@ describe('Code Process', () => {
       });
 
       it('should fallback to download URL on axios error', async () => {
-        axios.mockRejectedValue(new Error('Network error'));
+        mockAxios.mockRejectedValue(new Error('Network error'));
 
         const result = await processCodeOutput(baseParams);
 
@@ -326,7 +334,7 @@ describe('Code Process', () => {
     describe('usage counter increment', () => {
       it('should set usage to 1 for new files', async () => {
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
 
         const result = await processCodeOutput(baseParams);
 
@@ -340,7 +348,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01',
         });
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
 
         const result = await processCodeOutput(baseParams);
 
@@ -353,7 +361,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01',
         });
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
 
         const result = await processCodeOutput(baseParams);
 
@@ -364,7 +372,7 @@ describe('Code Process', () => {
     describe('metadata and file properties', () => {
       it('should include fileIdentifier in metadata', async () => {
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
 
         const result = await processCodeOutput(baseParams);
 
@@ -375,7 +383,7 @@ describe('Code Process', () => {
 
       it('should set correct context for code-generated files', async () => {
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
 
         const result = await processCodeOutput(baseParams);
 
@@ -384,7 +392,7 @@ describe('Code Process', () => {
 
       it('should include toolCallId and messageId in result', async () => {
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
 
         const result = await processCodeOutput(baseParams);
 
@@ -394,7 +402,7 @@ describe('Code Process', () => {
 
       it('should call createFile with upsert enabled', async () => {
         const smallBuffer = Buffer.alloc(100);
-        axios.mockResolvedValue({ data: smallBuffer });
+        mockAxios.mockResolvedValue({ data: smallBuffer });
 
         await processCodeOutput(baseParams);
 
@@ -405,6 +413,37 @@ describe('Code Process', () => {
           }),
           true, // upsert flag
         );
+      });
+    });
+
+    describe('socket pool isolation', () => {
+      it('should pass dedicated keepAlive:false agents to axios for processCodeOutput', async () => {
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+
+        await processCodeOutput(baseParams);
+
+        const callConfig = mockAxios.mock.calls[0][0];
+        expect(callConfig.httpAgent).toBe(codeServerHttpAgent);
+        expect(callConfig.httpsAgent).toBe(codeServerHttpsAgent);
+        expect(callConfig.httpAgent).toBeInstanceOf(http.Agent);
+        expect(callConfig.httpsAgent).toBeInstanceOf(https.Agent);
+        expect(callConfig.httpAgent.keepAlive).toBe(false);
+        expect(callConfig.httpsAgent.keepAlive).toBe(false);
+      });
+
+      it('should pass dedicated keepAlive:false agents to axios for getSessionInfo', async () => {
+        mockAxios.mockResolvedValue({
+          data: [{ name: 'sess/fid', lastModified: new Date().toISOString() }],
+        });
+
+        await getSessionInfo('sess/fid', 'api-key');
+
+        const callConfig = mockAxios.mock.calls[0][0];
+        expect(callConfig.httpAgent).toBe(codeServerHttpAgent);
+        expect(callConfig.httpsAgent).toBe(codeServerHttpsAgent);
+        expect(callConfig.httpAgent.keepAlive).toBe(false);
+        expect(callConfig.httpsAgent.keepAlive).toBe(false);
       });
     });
   });

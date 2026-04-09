@@ -4,8 +4,9 @@ import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
-import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import { removeCharIfLast, detectVariables } from '~/utils';
+import { useRecordPromptUsage } from '~/data-provider';
+import { VariableDialog } from '~/components/Prompts';
 import { usePromptGroupsContext } from '~/Providers';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';
@@ -60,8 +61,10 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
-  const { allPromptGroups, hasAccess } = usePromptGroupsContext();
-  const { data, isLoading } = allPromptGroups;
+  const { mutate: recordUsage } = useRecordPromptUsage();
+  const promptGroupsContext = usePromptGroupsContext();
+  const { allPromptGroups, hasAccess } = promptGroupsContext ?? {};
+  const { data, isLoading } = allPromptGroups ?? {};
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -107,9 +110,20 @@ function PromptsCommand({
         return;
       } else {
         submitPrompt(group.productionPrompt?.prompt ?? '');
+        if (group._id) {
+          recordUsage(group._id);
+        }
       }
     },
-    [setSearchValue, setOpen, setShowPromptsPopover, textAreaRef, promptsMap, submitPrompt],
+    [
+      setSearchValue,
+      setOpen,
+      setShowPromptsPopover,
+      textAreaRef,
+      promptsMap,
+      submitPrompt,
+      recordUsage,
+    ],
   );
 
   useEffect(() => {

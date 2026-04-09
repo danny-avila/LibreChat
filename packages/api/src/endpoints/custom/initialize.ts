@@ -9,9 +9,10 @@ import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
-import { isUserProvided, checkUserKeyExpiry } from '~/utils';
+import { validateEndpointURL } from '~/auth';
 import { standardCache } from '~/cache';
 
 const { PROXY } = process.env;
@@ -31,10 +32,8 @@ function buildCustomOptions(
     customParams: endpointConfig.customParams,
     titleConvo: endpointConfig.titleConvo,
     titleModel: endpointConfig.titleModel,
-    summaryModel: endpointConfig.summaryModel,
     modelDisplayLabel: endpointConfig.modelDisplayLabel,
     titleMethod: endpointConfig.titleMethod ?? 'completion',
-    contextStrategy: endpointConfig.summarize ? 'summarize' : null,
     directEndpoint: endpointConfig.directEndpoint,
     titleMessageRole: endpointConfig.titleMessageRole,
     streamRate: endpointConfig.streamRate,
@@ -90,9 +89,15 @@ export async function initializeCustom({
   const userProvidesKey = isUserProvided(CUSTOM_API_KEY);
   const userProvidesURL = isUserProvided(CUSTOM_BASE_URL);
 
-  let userValues = null;
+  // Expiry is only checked when present: the Agents API sends an OpenAI-compatible
+  // request body that does not include `key` (the expiry timestamp), so expiresAt
+  // will be undefined in that flow. The key is still fetched regardless.
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
     checkUserKeyExpiry(expiresAt, endpoint);
+  }
+
+  let userValues = null;
+  if (userProvidesKey || userProvidesURL) {
     userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 
@@ -121,6 +126,10 @@ export async function initializeCustom({
 
   if (!baseURL) {
     throw new Error(`${endpoint} Base URL not provided.`);
+  }
+
+  if (userProvidesURL) {
+    await validateEndpointURL(baseURL, endpoint);
   }
 
   let endpointTokenConfig: EndpointTokenConfig | undefined;

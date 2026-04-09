@@ -1,6 +1,7 @@
 export * from './avatars';
 export * from './chain';
 export * from './client';
+export * from './config';
 export * from './context';
 export * from './edges';
 export * from './handlers';
@@ -16,3 +17,5 @@ export * from './responses';
 export * from './run';
 export * from './tools';
 export * from './validation';
+export * from './added';
+export * from './load';
