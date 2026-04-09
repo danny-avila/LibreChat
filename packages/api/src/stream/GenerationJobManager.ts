@@ -772,9 +772,9 @@ class GenerationJobManagerClass {
 
       /**
        * Track whether earlyEventBuffer was replayed so syncReorderBuffer knows
-       * whether to clear pending (same-replica: pending entries are duplicates of
-       * earlyEventBuffer) or preserve them (cross-replica: pending entries are live
-       * chunks that arrived during the async GET window).
+       * whether to prune stale entries (same-replica: pending entries below the
+       * current counter are duplicates of earlyEventBuffer) or preserve all pending
+       * (cross-replica: pending entries are live chunks from the async GET window).
        */
       let hadBufferReplay = false;
 

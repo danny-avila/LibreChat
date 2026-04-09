@@ -123,7 +123,7 @@ export class RedisEventTransport implements IEventTransport {
 
   /**
    * Get next sequence number for a stream (0-indexed, backed by Redis INCR).
-   * No TTL — keys are cleaned up explicitly by cleanup()/resetSequence().
+   * No TTL — keys are cleaned up explicitly by cleanup().
    * This avoids the risk of a TTL expiring mid-stream during long quiet periods
    * (e.g., slow tool calls), which would restart the counter from zero and cause
    * subscribers to silently drop all subsequent messages.
@@ -678,7 +678,7 @@ export class RedisEventTransport implements IEventTransport {
     // Clear all flush timeouts and buffered messages.
     // Sequence keys are NOT deleted here — they are shared across replicas.
     // A shutting-down replica must not nuke the counter for active publishers.
-    // Keys have no TTL; cleanup()/resetSequence() delete them on normal stream teardown.
+    // Keys have no TTL; cleanup() delete them on normal stream teardown.
     for (const [, state] of this.streams) {
       if (state.reorderBuffer.flushTimeout) {
         clearTimeout(state.reorderBuffer.flushTimeout);
