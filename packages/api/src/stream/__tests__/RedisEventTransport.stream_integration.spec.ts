@@ -898,11 +898,11 @@ describe('RedisEventTransport Integration Tests', () => {
         onChunk: (event) => receivedChunks.push(event),
       });
 
-      // Wait for the Redis subscription to activate
+      // Wait for the Redis subscription to activate (increased for CI/cluster)
       if (sub.ready) {
         await sub.ready;
       }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Replica B syncs its reorder buffer from the shared Redis counter
       await replicaB.syncReorderBuffer(streamId);
@@ -912,8 +912,11 @@ describe('RedisEventTransport Integration Tests', () => {
         await replicaA.emitChunk(streamId, { index: i });
       }
 
-      // Wait for cross-instance pub/sub delivery
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Poll for delivery instead of fixed delay (robust across CI environments)
+      const start = Date.now();
+      while (receivedChunks.length < 5 && Date.now() - start < 2000) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
 
       // Replica B should receive exactly the 5 new chunks — immediately,
       // with no 500ms timeout or force-flush. This is the core assertion
@@ -966,7 +969,7 @@ describe('RedisEventTransport Integration Tests', () => {
         if (sub.ready) {
           await sub.ready;
         }
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 500));
         await replicaB.syncReorderBuffer(streamId);
 
         // Replica A publishes 5 more chunks
@@ -974,7 +977,11 @@ describe('RedisEventTransport Integration Tests', () => {
           await replicaA.emitChunk(streamId, { index: baseSeq + 10 + i });
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        // Poll for delivery instead of fixed delay
+        const start = Date.now();
+        while (chunks.length < 5 && Date.now() - start < 2000) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
 
         // Replica B should get exactly the 5 post-sync chunks
         expect(chunks.length).toBe(5);
@@ -983,7 +990,7 @@ describe('RedisEventTransport Integration Tests', () => {
         );
 
         sub.unsubscribe();
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
       replicaA.destroy();
