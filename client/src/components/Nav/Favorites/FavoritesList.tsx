@@ -268,12 +268,15 @@ export default function FavoritesList({
   }, [staleAgentIdsKey, safeFavorites, reorderFavorites]);
 
   const staleSpecNamesKey = useMemo(() => {
+    if (startupConfig === undefined) {
+      return '';
+    }
     return safeFavorites
       .filter((f) => f.spec && !specsMap[f.spec])
       .map((f) => f.spec as string)
       .sort()
       .join(',');
-  }, [safeFavorites, specsMap]);
+  }, [safeFavorites, specsMap, startupConfig]);
 
   const specCleanupAttemptedRef = useRef('');
 
