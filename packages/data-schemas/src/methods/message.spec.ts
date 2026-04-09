@@ -475,6 +475,27 @@ describe('Message Operations', () => {
       );
     });
 
+    it('should set expiredAt for non-temporary message when retentionMode is ALL', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: 'all',
+      };
+      const result = await saveMessage(mockCtx, mockMessageData);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeInstanceOf(Date);
+    });
+
+    it('should not set expiredAt when retentionMode is temporary and not isTemporary', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: 'temporary',
+      };
+      const result = await saveMessage(mockCtx, mockMessageData);
+      expect(result?.expiredAt).toBeNull();
+    });
+
     it('should handle missing config gracefully', async () => {
       // Simulate missing config - should use default retention period
       delete mockCtx.interfaceConfig;
