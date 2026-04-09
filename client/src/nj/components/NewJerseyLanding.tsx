@@ -37,8 +37,8 @@ export function NewJerseyLanding() {
         </p>
       </div>
 
-      <Collapsible.Root open={open} onOpenChange={setOpen}>
-        <div className="rounded border-2 border-border-light bg-surface-primary-alt">
+      <Collapsible.Root className="group" open={open} onOpenChange={setOpen}>
+        <div className="rounded border-2 border-border-light bg-surface-primary-alt transition-[background-color,box-shadow] duration-200 hover:bg-[#F6F6F2] hover:shadow-[0_3px_5.3px_1px_rgba(46,46,42,0.08)] group-data-[state=open]:bg-[#F6F6F2] group-data-[state=open]:shadow-[0_3px_5.3px_1px_rgba(46,46,42,0.08)]">
           <Collapsible.Trigger className="flex w-full items-center justify-between px-6 py-5">
             <span>
               {open
