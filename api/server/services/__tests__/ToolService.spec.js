@@ -80,6 +80,7 @@ jest.mock('~/cache', () => ({
 const {
   loadAgentTools,
   loadToolsForExecution,
+  processRequiredActions,
   resolveAgentCapabilities,
 } = require('../ToolService');
 
@@ -686,6 +687,116 @@ describe('ToolService - Action Capability Gating', () => {
 
       expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
       expectBothActionsResolved(mockCreateActionTool.mock.calls);
+    });
+
+    it('processRequiredActions resolves both actions when they share a hostname', async () => {
+      // The assistants/threads path received the same structural rewrite
+      // as the agent paths. Cover it directly so future regressions in the
+      // `toolToAction` map shape or the lookup normalization don't slip
+      // through just because the agent-path tests still pass.
+      mockLoadActionSets.mockResolvedValue([actionA, actionB]);
+      const client = {
+        req: {
+          user: { id: 'user_123' },
+          body: {
+            assistant_id: 'assistant_collision',
+            model: 'gpt-4o-mini',
+            endpoint: 'openAI',
+          },
+          config: {},
+        },
+        res: {},
+        apiKey: 'sk-test',
+        mappedOrder: new Map(),
+        seenToolCalls: new Map(),
+        addContentData: jest.fn(),
+      };
+
+      await processRequiredActions(client, [
+        {
+          tool: toolNameA,
+          toolInput: {},
+          toolCallId: 'call_a',
+          thread_id: 'thread_1',
+          run_id: 'run_1',
+        },
+        {
+          tool: toolNameB,
+          toolInput: {},
+          toolCallId: 'call_b',
+          thread_id: 'thread_1',
+          run_id: 'run_1',
+        },
+      ]);
+
+      // The assistants path intentionally doesn't forward `name` to
+      // createActionTool (see ToolService.js — "intentionally not passing
+      // zodSchema, name, and description for assistants API"), so key
+      // resolution assertions off the request builder path instead.
+      expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
+      const builderPaths = mockCreateActionTool.mock.calls.map(
+        (c) => c[0].requestBuilder?.path,
+      );
+      expect(builderPaths).toEqual(expect.arrayContaining(['/echo', '/items']));
+      // Each call must carry a distinct builder — guards against the bug
+      // where the surviving action's builders got routed to every tool.
+      expect(builderPaths[0]).not.toBe(builderPaths[1]);
+    });
+
+    it('loadAgentTools resolves legacy-format tool names via the legacy encoding branch', async () => {
+      // Agents whose tool names predate the current domain encoding store
+      // them under `legacyDomainEncode`'s output. The map registers both
+      // encodings per function so these keep resolving after the fix;
+      // this test exercises the `if (legacyNormalized !== normalizedDomain)`
+      // branch, which was previously never hit by any test.
+      mockLoadActionSets.mockResolvedValue([actionA]);
+      const legacyToolName = `echoMessage${actionDelimiter}${LEGACY_ENCODED_DOMAIN}`;
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.actions];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_legacy', tools: [legacyToolName] },
+        definitionsOnly: false,
+      });
+
+      expect(mockCreateActionTool).toHaveBeenCalledTimes(1);
+      const [callArgs] = mockCreateActionTool.mock.calls[0];
+      expect(callArgs.name).toBe(legacyToolName);
+      expect(callArgs.requestBuilder.path).toBe('/echo');
+    });
+
+    it('loadAgentTools resolves raw `---`-separated tool names from agent.tools', async () => {
+      // Hostnames at or below ENCODED_DOMAIN_LENGTH round-trip through
+      // `domainParser(..., true)` as a `---`-separated string, and agents
+      // persist that raw form in `agent.tools`. The map is always keyed
+      // with the `_`-collapsed form, so the lookup must normalize the
+      // incoming name or short-hostname tools silently drop out.
+      mockDomainParser.mockResolvedValue('shared---dom');
+      mockLoadActionSets.mockResolvedValue([actionA, actionB]);
+      const rawNameA = `echoMessage${actionDelimiter}shared---dom`;
+      const rawNameB = `listItems${actionDelimiter}shared---dom`;
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.actions];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_short', tools: [rawNameA, rawNameB] },
+        definitionsOnly: false,
+      });
+
+      expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
+      const callsByName = new Map(
+        mockCreateActionTool.mock.calls.map((c) => [c[0].name, c[0]]),
+      );
+      expect(callsByName.has(rawNameA)).toBe(true);
+      expect(callsByName.has(rawNameB)).toBe(true);
+      expect(callsByName.get(rawNameA).requestBuilder.path).toBe('/echo');
+      expect(callsByName.get(rawNameB).requestBuilder.path).toBe('/items');
     });
   });
 });

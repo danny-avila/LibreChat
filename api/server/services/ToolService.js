@@ -72,6 +72,43 @@ const { getLogStores } = require('~/cache');
 const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
 /**
+ * Collapse every `actionDomainSeparator` sequence in a fully-qualified
+ * action tool name to an underscore. Agents can store tool names in the
+ * raw `domainParser(..., true)` output, which for short hostnames is a
+ * `---`-separated string (e.g. `medium---com`). The lookup maps below
+ * are always keyed with the `_`-collapsed form, so every read must
+ * normalize first or short-hostname tools silently fail to resolve.
+ */
+const normalizeActionToolName = (toolName) => toolName.replace(domainSeparatorRegex, '_');
+
+/**
+ * Populate a `toolToAction` map with one slot per fully-qualified tool
+ * name (`<operationId><actionDelimiter><encoded-domain>`). Both the new
+ * and the legacy encodings of the domain are registered for every
+ * function so agents whose stored tool names predate the current
+ * encoding still resolve correctly.
+ *
+ * Indexing on the full tool name instead of the encoded domain alone is
+ * what makes multi-action agents work when two actions share a hostname:
+ * the operationId disambiguates them, so neither overwrites the other.
+ */
+const registerActionTools = ({
+  toolToAction,
+  functionSignatures,
+  normalizedDomain,
+  legacyNormalized,
+  makeEntry,
+}) => {
+  for (const sig of functionSignatures) {
+    const entry = makeEntry(sig);
+    toolToAction.set(`${sig.name}${actionDelimiter}${normalizedDomain}`, entry);
+    if (legacyNormalized !== normalizedDomain) {
+      toolToAction.set(`${sig.name}${actionDelimiter}${legacyNormalized}`, entry);
+    }
+  }
+};
+
+/**
  * Resolves the set of enabled agent capabilities from endpoints config,
  * falling back to app-level or default capabilities for ephemeral agents.
  * @param {ServerRequest} req
@@ -328,36 +365,31 @@ async function processRequiredActions(client, requiredActions) {
           const decryptedAction = { ...action };
           decryptedAction.metadata = await decryptMetadata(action.metadata);
 
-          for (const sig of functionSignatures) {
-            const entry = {
+          registerActionTools({
+            toolToAction,
+            functionSignatures,
+            normalizedDomain,
+            legacyNormalized,
+            makeEntry: (sig) => ({
               action: decryptedAction,
               requestBuilder: requestBuilders[sig.name],
               encrypted,
-            };
-            toolToAction.set(`${sig.name}${actionDelimiter}${normalizedDomain}`, entry);
-            if (legacyNormalized !== normalizedDomain) {
-              toolToAction.set(`${sig.name}${actionDelimiter}${legacyNormalized}`, entry);
-            }
-          }
+            }),
+          });
 
           // Store builders for reuse
           ActionBuildersMap[action.metadata.domain] = requestBuilders;
         }
 
-        actionSetsData = { toolToAction };
+        actionSetsData = toolToAction;
       }
 
-      const entry = actionSetsData.toolToAction.get(currentAction.tool);
+      const entry = actionSetsData.get(normalizeActionToolName(currentAction.tool));
       if (!entry) {
         continue;
       }
 
       const { action, requestBuilder, encrypted } = entry;
-
-      if (!requestBuilder) {
-        // throw new Error(`Tool ${currentAction.tool} not found.`);
-        continue;
-      }
 
       // We've already decrypted the metadata, so we can pass it directly
       const _allowedDomains = appConfig?.actions?.allowedDomains;
@@ -1058,19 +1090,19 @@ async function loadAgentTools({
       true,
     );
 
-    for (const sig of functionSignatures) {
-      const entry = {
+    registerActionTools({
+      toolToAction,
+      functionSignatures,
+      normalizedDomain,
+      legacyNormalized,
+      makeEntry: (sig) => ({
         action: decryptedAction,
         requestBuilder: requestBuilders[sig.name],
         zodSchema: zodSchemas[sig.name],
         functionSignature: sig,
         encrypted,
-      };
-      toolToAction.set(`${sig.name}${actionDelimiter}${normalizedDomain}`, entry);
-      if (legacyNormalized !== normalizedDomain) {
-        toolToAction.set(`${sig.name}${actionDelimiter}${legacyNormalized}`, entry);
-      }
-    }
+      }),
+    });
   }
 
   // Now map tools to the processed action sets
@@ -1081,7 +1113,7 @@ async function loadAgentTools({
       continue;
     }
 
-    const entry = toolToAction.get(toolName);
+    const entry = toolToAction.get(normalizeActionToolName(toolName));
     if (!entry) {
       continue;
     }
@@ -1382,23 +1414,23 @@ async function loadActionToolsForExecution({
       true,
     );
 
-    for (const sig of functionSignatures) {
-      const entry = {
+    registerActionTools({
+      toolToAction,
+      functionSignatures,
+      normalizedDomain,
+      legacyNormalized,
+      makeEntry: (sig) => ({
         action: decryptedAction,
         requestBuilder: requestBuilders[sig.name],
         zodSchema: zodSchemas[sig.name],
         functionSignature: sig,
         encrypted,
-      };
-      toolToAction.set(`${sig.name}${actionDelimiter}${normalizedDomain}`, entry);
-      if (legacyNormalized !== normalizedDomain) {
-        toolToAction.set(`${sig.name}${actionDelimiter}${legacyNormalized}`, entry);
-      }
-    }
+      }),
+    });
   }
 
   for (const toolName of actionToolNames) {
-    const entry = toolToAction.get(toolName);
+    const entry = toolToAction.get(normalizeActionToolName(toolName));
     if (!entry) {
       continue;
     }
@@ -1413,7 +1445,7 @@ async function loadActionToolsForExecution({
       encrypted,
       requestBuilder,
       name: toolName,
-      description: functionSignature?.description ?? '',
+      description: functionSignature.description,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
     });
 
