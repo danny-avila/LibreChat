@@ -3,7 +3,7 @@
 
 import { DropdownMenuSeparator } from '@librechat/client';
 import * as Menu from '@ariakit/react/menu';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import icons from '@uswds/uswds/img/sprite.svg';
 import React, { useState } from 'react';
 import ModelInformationModal from './ModelInformationModal';
@@ -15,6 +15,7 @@ import ArchiveIcon from '~/nj/svgs/ArchiveIcon';
  */
 export function NewJerseySelectItems() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [modelInfoOpen, setModelInfoOpen] = useState(false);
   const [archivedChatsOpen, setArchivedChatsOpen] = useState(false);
 
@@ -50,12 +51,21 @@ export function NewJerseySelectItems() {
 
       <DropdownMenuSeparator />
 
-      <Menu.MenuItem onClick={() => setModelInfoOpen(true)} className="select-item text-sm">
-        <svg className="usa-icon usa-icon--size-2" aria-hidden="true" focusable="false" role="img">
-          <use href={`${icons}#help`} />
-        </svg>
-        Model information
-      </Menu.MenuItem>
+      {/* We only want to show model info option when you're actually talking w/ a model.
+      Otherwise, it's ambiguous what model you're working with (if support multiple models) */}
+      {pathname.startsWith('/c/') && (
+        <Menu.MenuItem onClick={() => setModelInfoOpen(true)} className="select-item text-sm">
+          <svg
+            className="usa-icon usa-icon--size-2"
+            aria-hidden="true"
+            focusable="false"
+            role="img"
+          >
+            <use href={`${icons}#help`} />
+          </svg>
+          Model information
+        </Menu.MenuItem>
+      )}
 
       <Menu.MenuItem
         onClick={() => window.open('https://forms.office.com/g/zLiSuXxJ0Y', '_blank')}
