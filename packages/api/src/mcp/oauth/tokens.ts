@@ -5,10 +5,12 @@ import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthMetadata } from './types
 import { isSystemUserId } from '~/mcp/enum';
 
 export class ReauthenticationRequiredError extends Error {
-  constructor(serverName: string, reason: 'expired' | 'missing') {
-    super(
-      `Re-authentication required for "${serverName}": access token ${reason} and no refresh token available`,
-    );
+  constructor(serverName: string, reason: 'expired' | 'missing' | 'invalid_client') {
+    const detail =
+      reason === 'invalid_client'
+        ? 'stored client registration is no longer valid'
+        : `access token ${reason} and no refresh token available`;
+    super(`Re-authentication required for "${serverName}": ${detail}`);
     this.name = 'ReauthenticationRequiredError';
   }
 }
@@ -47,6 +49,7 @@ interface GetTokensParams {
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
   updateToken?: TokenMethods['updateToken'];
+  deleteTokens?: TokenMethods['deleteTokens'];
 }
 
 export class MCPTokenStorage {
@@ -254,6 +257,7 @@ export class MCPTokenStorage {
     findToken,
     createToken,
     updateToken,
+    deleteTokens,
     refreshTokens,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
@@ -389,6 +393,19 @@ export class MCPTokenStorage {
             logger.info(
               `${logPrefix} Server does not support refresh tokens for this client. New authentication required.`,
             );
+          }
+          if (errorMessage.includes('invalid_client') && deleteTokens) {
+            logger.info(
+              `${logPrefix} Client registration rejected during token refresh, clearing stale registration`,
+            );
+            await MCPTokenStorage.deleteClientRegistration({
+              userId,
+              serverName,
+              deleteTokens,
+            }).catch((err) => {
+              logger.warn(`${logPrefix} Failed to clear stale client registration`, err);
+            });
+            throw new ReauthenticationRequiredError(serverName, 'invalid_client');
           }
           return null;
         }
