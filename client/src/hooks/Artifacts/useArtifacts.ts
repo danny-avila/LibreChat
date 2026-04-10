@@ -52,11 +52,15 @@ export default function useArtifacts() {
   }, [conversationId, resetArtifacts, resetCurrentArtifactId]);
 
   useEffect(() => {
-    if (orderedArtifactIds.length > 0) {
-      const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
-      setCurrentArtifactId(latestArtifactId);
+    if (orderedArtifactIds.length === 0) {
+      return;
     }
-  }, [setCurrentArtifactId, orderedArtifactIds]);
+    if (currentArtifactId != null && orderedArtifactIds.includes(currentArtifactId)) {
+      return;
+    }
+    const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
+    setCurrentArtifactId(latestArtifactId);
+  }, [currentArtifactId, setCurrentArtifactId, orderedArtifactIds]);
 
   /**
    * Manage artifact selection and code tab switching for non-enclosed artifacts
