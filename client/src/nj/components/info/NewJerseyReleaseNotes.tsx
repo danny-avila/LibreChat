@@ -7,6 +7,8 @@ import { RelatedLinkType } from '~/nj/components/info/RelatedLinks';
 import { logEvent } from '~/nj/analytics/logEvent';
 
 export default function NewJerseyReleaseNotes() {
+  document.title = 'NJ AI Assistant - Release Notes';
+
   useEffect(() => {
     logEvent('view_release_notes');
   });
