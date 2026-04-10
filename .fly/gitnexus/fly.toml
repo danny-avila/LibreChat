@@ -13,7 +13,10 @@ primary_region = 'iad'
 
 [[vm]]
   size = 'shared-cpu-1x'
-  memory = '512mb'
+  memory = '1gb'
+
+# 512MB swap file to absorb transient memory spikes
+swap_size_mb = 512
 
 [checks]
   [checks.health]
