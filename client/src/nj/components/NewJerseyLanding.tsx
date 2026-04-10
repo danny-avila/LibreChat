@@ -145,18 +145,18 @@ export function NewJerseyLanding() {
 
                   <div className="mb-5 flex gap-3">
                     <p>
-                      Join weekly AI Office Hours to learn more about AI and prompting, the NJ AI
-                      Assistant, or get help on a project you&apos;re working on.{' '}
+                      Join weekly AI Office Hours to discuss AI, a project you’re working on, or
+                      feedback about the NJ AI Assistant.{' '}
                       <a
-                        href="https://teams.microsoft.com/meet/27661582151645?p=78SP1n7rYEGoorbxsn"
+                        href="https://outlook.office365.com/book/AIOfficeHours1@SoNJ.onmicrosoft.com/s/5Hx9mVbMJUK8H1YcXwEr6A2?ismsaljsauthenabled"
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
                         target="_blank"
                         rel="noreferrer"
+                        aria-label="Book time on any Thursday (opens in new window)"
                       >
-                        {' '}
-                        Use this link to join
+                        Book time on any Thursday
                       </a>{' '}
-                      every Thursday from 12:30 - 1:30 pm.
+                      with the team.
                     </p>
                   </div>
 

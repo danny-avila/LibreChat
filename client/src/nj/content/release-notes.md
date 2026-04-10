@@ -6,9 +6,7 @@
 
 Features Released:
 
-* **AI Office Hours** — Join weekly AI Office Hours to learn more about AI and prompting, the NJ AI Assistant, or get help on a project you’re working on.
-  * Office Hours are weekly on Thursdays from 12:30 \- 1:30 pm. You can use [this Teams link](https://teams.microsoft.com/meet/27661582151645?p=78SP1n7rYEGoorbxsn) to access it.
-  * If you have a question and cannot make office hours, feel free to email us at [AI.Assistant@innovation.nj.gov](mailto:AI.Assistant@innovation.nj.gov) instead
+* **AI Office Hours** — Join weekly AI Office Hours to discuss AI, a project you’re working on, or feedback about the NJ AI Assistant. [Book time on any Thursday](https://outlook.office365.com/book/AIOfficeHours1@SoNJ.onmicrosoft.com/s/5Hx9mVbMJUK8H1YcXwEr6A2?ismsaljsauthenabled) with the team.
   * Note: You can also access this information on the [FAQs and Guides page](https://ai-assistant.nj.gov/nj/guide) under the “Help & Support” section.
 * **Alert for Announcements and Updates** — This alert will surface new features and resources that are particularly useful for users. You can see it in the top right corner when there is new information to share
 * **Release notes page** — Users can easily see the new features, bugs fixed, or infrastructure changes made in the release notes.

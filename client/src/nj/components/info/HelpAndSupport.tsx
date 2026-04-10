@@ -2,8 +2,28 @@
 /* ^ We're not worried about i18n for this app ^ */
 
 import FaqSection, { FAQ, FAQSectionProps } from '~/nj/components/info/FaqSection';
+import React from 'react';
 
 const helpSupportFAQs: FAQ[] = [
+  {
+    question: 'Are there AI Office Hours to support my AI work?',
+    answer: (
+      <p className="mb-6">
+        Join weekly AI Office Hours to discuss AI, a project you’re working on, or feedback about
+        the NJ AI Assistant.{' '}
+        <a
+          href="https://outlook.office365.com/book/AIOfficeHours1@SoNJ.onmicrosoft.com/s/5Hx9mVbMJUK8H1YcXwEr6A2?ismsaljsauthenabled"
+          className="inline-flex items-center gap-1 underline hover:decoration-2"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Book time on any Thursday (opens in new window)"
+        >
+          Book time on any Thursday
+        </a>{' '}
+        with the team.
+      </p>
+    ),
+  },
   {
     question: 'How can I get in touch with the team?',
     answer: (
@@ -24,43 +44,6 @@ const helpSupportFAQs: FAQ[] = [
           AI.Assistant@innovation.nj.gov
         </a>{' '}
         — both go directly to the team.
-      </p>
-    ),
-  },
-  {
-    question: 'How do I attend AI Office Hours?',
-    answer: (
-      <p className="mb-6">
-        Join weekly AI Office Hours to learn more about AI and prompting, the NJ AI Assistant, or
-        get help on a project you’re working on.
-        <ul className="list-inside list-disc">
-          <li>
-            Office Hours are weekly on Thursdays from 12:30 - 1:30 pm. You can use{' '}
-            <a
-              href="https://teams.microsoft.com/meet/27661582151645?p=78SP1n7rYEGoorbxsn"
-              className="underline hover:decoration-2"
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Teams Meeting Link (opens in new window)"
-            >
-              this Teams link
-            </a>{' '}
-            to access it.
-          </li>
-          <li>
-            If you have a question and cannot make office hours, feel free to email us at{' '}
-            <a
-              href="mailto:AI.Assistant@innovation.nj.gov"
-              className="underline hover:decoration-2"
-              target="_blank"
-              rel="noreferrer"
-              aria-label="AI.Assistant@innovation.nj.gov (opens in new window)"
-            >
-              AI.Assistant@innovation.nj.gov
-            </a>{' '}
-            instead.
-          </li>
-        </ul>
       </p>
     ),
   },
