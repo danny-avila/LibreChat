@@ -1,0 +1,219 @@
+# Deploys GitNexus indexes to a DigitalOcean droplet via SSH + rsync.
+#
+# Architecture:
+#   GitHub Actions (deploy)
+#     1. Resolves latest successful main + dev index runs
+#     2. Downloads both .gitnexus/ artifacts
+#     3. rsync's them to /opt/gitnexus/indexes/<name>/.gitnexus/ on the droplet
+#     4. docker compose pulls latest image + restarts gitnexus container
+#   The caddy container is untouched — no TLS churn.
+#
+# First-time droplet bootstrap (run once, manually):
+#   1. Create 2GB+ Ubuntu 24.04 droplet, add SSH key
+#   2. Point DNS A record for your subdomain at the droplet IP
+#   3. SSH in and run:
+#        curl -fsSL https://get.docker.com | sh
+#        systemctl enable --now docker
+#        mkdir -p /opt/gitnexus/indexes
+#        useradd -m -s /bin/bash deploy
+#        usermod -aG docker deploy
+#        mkdir -p /home/deploy/.ssh
+#        # Add deploy pubkey to /home/deploy/.ssh/authorized_keys
+#        chown -R deploy:deploy /home/deploy/.ssh /opt/gitnexus
+#        chmod 700 /home/deploy/.ssh
+#        ufw allow 22,80,443/tcp
+#        ufw --force enable
+#   4. Copy .do/gitnexus/docker-compose.yml and Caddyfile into /opt/gitnexus/
+#   5. Create /opt/gitnexus/.env with: GITNEXUS_DOMAIN=... and API_TOKEN=...
+#   6. cd /opt/gitnexus && docker compose up -d
+#
+# Required GitHub secrets:
+#   DO_HOST        — droplet IP or hostname
+#   DO_USER        — SSH user (e.g. "deploy")
+#   DO_SSH_KEY     — private key matching the authorized pubkey
+#   GHCR_PAT       — (optional) PAT with read:packages if image is private
+
+name: GitNexus Deploy (DigitalOcean)
+
+on:
+  workflow_run:
+    workflows: ['GitNexus Index']
+    branches: [main, dev]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  packages: write # push image to GHCR
+
+concurrency:
+  group: gitnexus-deploy-do
+  cancel-in-progress: false
+
+env:
+  GITNEXUS_VERSION: '1.5.3'
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/librechat-gitnexus
+
+jobs:
+  # Rebuilds the long-lived image only when anything in .do/gitnexus/ changes.
+  # Skipped on every other run, so index-only pushes are fast.
+  build-image:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image_tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect image changes
+        id: changes
+        run: |
+          if git diff --quiet HEAD~1 HEAD -- .do/gitnexus/Dockerfile .do/gitnexus/entrypoint.sh .do/gitnexus/install-extensions.js; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute image tag
+        id: tag
+        run: echo "value=v${{ env.GITNEXUS_VERSION }}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: steps.changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        if: steps.changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: .do/gitnexus
+          file: .do/gitnexus/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.value }}
+          build-args: |
+            GITNEXUS_VERSION=${{ env.GITNEXUS_VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout deploy config
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .do/gitnexus
+          fetch-depth: 1
+
+      - name: Resolve latest successful index runs per branch
+        id: resolve
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branches = ['main', 'dev'];
+            const result = {};
+            for (const branch of branches) {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'gitnexus-index.yml',
+                branch,
+                status: 'success',
+                per_page: 1,
+              });
+              if (data.workflow_runs.length) {
+                result[branch] = data.workflow_runs[0].id;
+                core.info(`${branch}: run ${result[branch]}`);
+              } else {
+                core.warning(`No successful index run found for ${branch}`);
+              }
+            }
+            if (!Object.keys(result).length) {
+              core.setFailed('No successful index runs found for any branch');
+              return;
+            }
+            core.setOutput('main_run', result.main || '');
+            core.setOutput('dev_run', result.dev || '');
+
+      - name: Download main index
+        if: steps.resolve.outputs.main_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: gitnexus-index-main
+          path: staging/LibreChat/.gitnexus
+          run-id: ${{ steps.resolve.outputs.main_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download dev index
+        if: steps.resolve.outputs.dev_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: gitnexus-index-dev
+          path: staging/LibreChat-dev/.gitnexus
+          run-id: ${{ steps.resolve.outputs.dev_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show staged indexes
+        run: |
+          echo "Staged for rsync:"
+          du -sh staging/*/.gitnexus/ 2>/dev/null || echo "(none)"
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DO_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Upload config files
+        run: |
+          rsync -az -e "ssh -i ~/.ssh/deploy_key" \
+            .do/gitnexus/docker-compose.yml \
+            .do/gitnexus/Caddyfile \
+            ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}:/opt/gitnexus/
+
+      - name: Rsync indexes to droplet
+        run: |
+          for dir in staging/*/; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            echo "Syncing $name"
+            ssh -i ~/.ssh/deploy_key ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} \
+              "mkdir -p /opt/gitnexus/indexes/$name"
+            rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" \
+              "$dir" \
+              ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}:/opt/gitnexus/indexes/$name/
+          done
+
+      - name: Pull image and restart gitnexus container
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} bash <<'REMOTE'
+            set -e
+            cd /opt/gitnexus
+            docker compose pull gitnexus
+            docker compose up -d --force-recreate gitnexus
+            sleep 5
+            docker compose ps
+            echo "--- Caddy logs (last 20 lines) ---"
+            docker compose logs --tail 20 caddy || true
+            echo "--- GitNexus logs (last 30 lines) ---"
+            docker compose logs --tail 30 gitnexus || true
+          REMOTE
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

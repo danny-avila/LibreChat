@@ -1,0 +1,55 @@
+# GitNexus stack for the DigitalOcean droplet.
+#
+# Two services: the gitnexus server (bound to an internal network only)
+# and a Caddy reverse proxy that handles TLS + auth.
+#
+# Index data lives on the host at /opt/gitnexus/indexes/ and is
+# bind-mounted read-write into the gitnexus container. The deploy
+# workflow rsyncs fresh indexes into that directory and restarts
+# only the gitnexus container — Caddy keeps running undisturbed.
+
+name: gitnexus
+
+services:
+  gitnexus:
+    image: ghcr.io/danny-avila/librechat-gitnexus:latest
+    container_name: gitnexus
+    restart: unless-stopped
+    networks:
+      - gitnexus-net
+    volumes:
+      - /opt/gitnexus/indexes:/indexes
+    mem_limit: 1792m
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:4747/api/info']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: gitnexus-caddy
+    restart: unless-stopped
+    depends_on:
+      - gitnexus
+    ports:
+      - '80:80'
+      - '443:443'
+    networks:
+      - gitnexus-net
+    volumes:
+      - /opt/gitnexus/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      GITNEXUS_DOMAIN: ${GITNEXUS_DOMAIN}
+      API_TOKEN: ${API_TOKEN}
+
+networks:
+  gitnexus-net:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:
