@@ -2,8 +2,12 @@ FROM node:24-slim
 
 ARG GITNEXUS_VERSION=1.5.3
 
-# Build tools for native addons (LadybugDB, tree-sitter), cleaned up after install
-RUN apt-get update \
+# Upgrade libstdc++ from Debian Trixie — @ladybugdb/core prebuilt binary
+# needs GLIBCXX_3.4.32 which Bookworm (3.4.31) doesn't ship
+RUN echo "deb http://deb.debian.org/debian trixie main" > /etc/apt/sources.list.d/trixie.list \
+    && apt-get update \
+    && apt-get install -y -t trixie libstdc++6 \
+    && rm /etc/apt/sources.list.d/trixie.list \
     && apt-get install -y --no-install-recommends python3 make g++ caddy curl \
     && npm install -g gitnexus@${GITNEXUS_VERSION} \
     && apt-get purge -y --auto-remove python3 make g++ \
