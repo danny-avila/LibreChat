@@ -84,7 +84,7 @@ const usingAIFAQs = [
             Maximum number of files: 10 files per prompt (whether images or text)
           </li>
           <li className="mb-2">
-            Maximum file size: 50 MB max per each file, and a total maximum size of 60 MB for all
+            Maximum file size: 15 MB max per each file, and a total maximum size of 60 MB for all
             files uploaded per prompt
           </li>
         </ul>

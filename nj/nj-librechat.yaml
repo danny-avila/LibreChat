@@ -83,9 +83,9 @@ ocr:
   strategy: "document_parser"
 
 fileConfig:
-  serverFileSizeLimit: 50 # Global multer limit (MB)
+  serverFileSizeLimit: 15 # Global multer limit (MB)
   endpoints:
     default:
       fileLimit: 10
-      fileSizeLimit: 50 # mb
+      fileSizeLimit: 15 # mb
       totalSizeLimit: 60 # mb
