@@ -38,8 +38,9 @@ import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
 import { usePauseGlobalAudio } from './Audio';
+import { useSetAtom } from 'jotai';
 import { useHasAccess } from '~/hooks';
-import store from '~/store';
+import store, { mcpNewChatGenAtom } from '~/store';
 
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
@@ -65,6 +66,7 @@ const useNewConvo = (index = 0) => {
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
   const resetBadges = useResetChatBadges();
+  const bumpMcpGen = useSetAtom(mcpNewChatGenAtom);
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -279,6 +281,9 @@ const useNewConvo = (index = 0) => {
       if (!saveBadgesState) {
         resetBadges();
       }
+      if (!keepAddedConvos) {
+        bumpMcpGen((g) => g + 1);
+      }
 
       const templateConvoId = _template.conversationId ?? '';
       const paramEndpoint =
@@ -360,6 +365,7 @@ const useNewConvo = (index = 0) => {
       saveDrafts,
       mutateAsync,
       resetBadges,
+      bumpMcpGen,
       startupConfig,
       saveBadgesState,
       pauseGlobalAudio,

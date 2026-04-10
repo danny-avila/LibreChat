@@ -29,6 +29,23 @@ export const mcpPinnedAtom = atomWithStorage<boolean>(LocalStorageKeys.PIN_MCP_,
 });
 
 /**
+ * Stores which MCP servers should be auto-enabled when starting a new conversation.
+ * Persisted in localStorage so it survives restarts.
+ */
+export const mcpDefaultEnabledAtom = atomWithStorage<string[]>(
+  'librechat_mcp_default_enabled',
+  [],
+  undefined,
+  { getOnInit: true },
+);
+
+/**
+ * Bumped each time "New Chat" is clicked. useMCPSelect watches this to
+ * know when to reapply defaults. NOT persisted — starts at 0 each page load.
+ */
+export const mcpNewChatGenAtom = atom<number>(0);
+
+/**
  * Server initialization state - shared globally so chat dropdown and settings panel
  * both see the same OAuth/initialization state.
  *

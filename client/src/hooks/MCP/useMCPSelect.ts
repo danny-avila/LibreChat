@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useAtom } from 'jotai';
 import isEqual from 'lodash/isEqual';
 import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
-import { ephemeralAgentByConvoId, mcpValuesAtomFamily, mcpPinnedAtom } from '~/store';
+import {
+  ephemeralAgentByConvoId,
+  mcpValuesAtomFamily,
+  mcpPinnedAtom,
+  mcpDefaultEnabledAtom,
+  mcpNewChatGenAtom,
+} from '~/store';
 import { setTimestamp } from '~/utils/timestamps';
 import { MCPServerDefinition } from './useMCPServerManager';
 
@@ -32,6 +38,34 @@ export function useMCPSelect({
   const [isPinned, setIsPinned] = useAtom(mcpPinnedAtom);
   const [mcpValues, setMCPValuesRaw] = useAtom(mcpValuesAtomFamily(mcpAtomKey));
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+  const [defaultEnabled] = useAtom(mcpDefaultEnabledAtom);
+  const [newChatGen] = useAtom(mcpNewChatGenAtom);
+  const lastAppliedGenRef = useRef(0);
+
+  useEffect(() => {
+    if (!isNewConvo || newChatGen === 0 || newChatGen === lastAppliedGenRef.current) {
+      return;
+    }
+    if (!Array.isArray(defaultEnabled) || defaultEnabled.length === 0) {
+      lastAppliedGenRef.current = newChatGen;
+      return;
+    }
+    if (configuredServers.size === 0) {
+      return;
+    }
+    lastAppliedGenRef.current = newChatGen;
+
+    const applicableDefaults = defaultEnabled.filter((name) => configuredServers.has(name));
+    if (applicableDefaults.length > 0) {
+      setMCPValuesRaw(applicableDefaults);
+      setEphemeralAgent((prev) => {
+        if (!isEqual(prev?.mcp, applicableDefaults)) {
+          return { ...(prev ?? {}), mcp: applicableDefaults };
+        }
+        return prev;
+      });
+    }
+  }, [newChatGen, isNewConvo, defaultEnabled, configuredServers, setMCPValuesRaw, setEphemeralAgent]);
 
   // Sync ephemeral agent MCP → Jotai atom (strip unconfigured servers)
   useEffect(() => {
