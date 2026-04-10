@@ -26,13 +26,16 @@ RUN echo "deb http://deb.debian.org/debian trixie main" > /etc/apt/sources.list.
 COPY install-extensions.js /tmp/install-extensions.js
 RUN node /tmp/install-extensions.js && rm -rf /tmp/install-extensions.js /tmp/lbug-ext-install
 
-# 4. Patch pool-adapter.js to also LOAD EXTENSION vector after FTS.
+# 4. Patch mcp/core/lbug-adapter.js to also LOAD EXTENSION vector after FTS.
 #    Upstream only loads FTS at serve time; without vector extension
 #    loaded, semantic search's CALL QUERY_VECTOR_INDEX fails silently.
-RUN POOL_ADAPTER=/usr/local/lib/node_modules/gitnexus/dist/core/lbug/pool-adapter.js \
-    && grep -q "LOAD EXTENSION fts" "$POOL_ADAPTER" \
-    && sed -i "s|await available\[0\]\.query('LOAD EXTENSION fts');|await available[0].query('LOAD EXTENSION fts'); try { await available[0].query('LOAD EXTENSION vector'); } catch (e) { /* vector extension may not be installed */ }|g" "$POOL_ADAPTER" \
-    && echo "pool-adapter.js patched to load vector extension"
+#    Note: the published npm package compiles the source pool-adapter.ts
+#    to dist/mcp/core/lbug-adapter.js (not a 'pool-adapter.js' file).
+RUN LBUG_ADAPTER=/usr/local/lib/node_modules/gitnexus/dist/mcp/core/lbug-adapter.js \
+    && grep -q "LOAD EXTENSION fts" "$LBUG_ADAPTER" \
+    && sed -i "s|await available\[0\]\.query('LOAD EXTENSION fts');|await available[0].query('LOAD EXTENSION fts'); try { await available[0].query('LOAD EXTENSION vector'); } catch (e) { /* vector extension may not be installed */ }|g" "$LBUG_ADAPTER" \
+    && grep -c "LOAD EXTENSION vector" "$LBUG_ADAPTER" \
+    && echo "lbug-adapter.js patched to load vector extension"
 
 # Copy pre-built GitNexus indexes (one per branch) and register each.
 # The directory name becomes the repo name in `list_repos` output, so
