@@ -28,10 +28,9 @@
 #   6. cd /opt/gitnexus && docker compose up -d
 #
 # Required GitHub secrets:
-#   DO_HOST        — droplet IP or hostname
-#   DO_USER        — SSH user (e.g. "deploy")
-#   DO_SSH_KEY     — private key matching the authorized pubkey
-#   GHCR_PAT       — (optional) PAT with read:packages if image is private
+#   GITNEXUS_DO_HOST     — droplet IP or hostname
+#   GITNEXUS_DO_USER     — SSH user (e.g. "deploy")
+#   GITNEXUS_DO_SSH_KEY  — private key matching the authorized pubkey
 
 name: GitNexus Deploy (DigitalOcean)
 
@@ -175,16 +174,16 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/deploy_key
+          echo "${{ secrets.GITNEXUS_DO_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.DO_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H ${{ secrets.GITNEXUS_DO_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Upload config files
         run: |
           rsync -az -e "ssh -i ~/.ssh/deploy_key" \
             .do/gitnexus/docker-compose.yml \
             .do/gitnexus/Caddyfile \
-            ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}:/opt/gitnexus/
+            ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }}:/opt/gitnexus/
 
       - name: Rsync indexes to droplet
         run: |
@@ -192,16 +191,16 @@ jobs:
             [ -d "$dir" ] || continue
             name=$(basename "$dir")
             echo "Syncing $name"
-            ssh -i ~/.ssh/deploy_key ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} \
+            ssh -i ~/.ssh/deploy_key ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }} \
               "mkdir -p /opt/gitnexus/indexes/$name"
             rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" \
               "$dir" \
-              ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}:/opt/gitnexus/indexes/$name/
+              ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }}:/opt/gitnexus/indexes/$name/
           done
 
       - name: Pull image and restart gitnexus container
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} bash <<'REMOTE'
+          ssh -i ~/.ssh/deploy_key ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }} bash <<'REMOTE'
             set -e
             cd /opt/gitnexus
             docker compose pull gitnexus
