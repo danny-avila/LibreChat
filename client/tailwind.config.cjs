@@ -11,7 +11,8 @@ module.exports = {
   darkMode: ['class'],
   theme: {
     fontFamily: {
-      sans: ['Inter', 'sans-serif'],
+      // NJ: using Public Sans for base typography
+      sans: ['Public Sans', 'Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],
     },
     // fontFamily: {

@@ -62,7 +62,7 @@
   --font-size-xl: 1.25rem;
   --markdown-font-size: 1rem;
 
-  /* Special colors for NJ */
+  /* NJ-specific colors */
   --jersey-blue: #0c5295;
   --info-lighter: #e7f6f8;
   --info: #00bde3;
@@ -3013,6 +3013,40 @@ html {
   background-color: #f5f5f5;
 }
 
+/* NJ-specific Global Styles and Font Faces */
+@font-face {
+  font-family: 'Public Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('$fonts/PublicSans-Regular.woff2') format('woff2');
+  size-adjust: 97%;
+}
+
+@font-face {
+  font-family: 'Public Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('$fonts/PublicSans-SemiBold.woff2') format('woff2');
+  size-adjust: 97%;
+}
+
+@font-face {
+  font-family: 'Public Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('$fonts/PublicSans-Bold.woff2') format('woff2');
+  size-adjust: 97%;
+}
+
+html,
+body {
+  font-family: 'Public Sans', 'Inter', sans-serif;
+}
+/* End of NJ-specific Global Styles and Font Faces */
+
 /* Customization for feedback widget - no easier way to customize, sadly */
 .feedback-container {
   background-color: #edeff0 !important;
@@ -3098,7 +3132,7 @@ html {
   width: 4.5rem;
 }
 
-/* React Markdown styling (for our release notes page) */
+/* NJ React Markdown styling (for our release notes page) */
 .prose-nj h1 {
   font-size: 1.875rem;
   line-height: 2.25rem;
@@ -3120,5 +3154,5 @@ html {
 
 .prose-nj hr {
   margin-top: 1.5rem;
-  margin-bottom: .5rem;
+  margin-bottom: 0.5rem;
 }
