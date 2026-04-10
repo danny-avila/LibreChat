@@ -7,6 +7,11 @@ if [ -z "$API_TOKEN" ]; then
   exit 1
 fi
 
+# Cap Node heap to match the Fly machine (leaves headroom for Caddy + OS).
+# Without this, gitnexus defaults to --max-old-space-size=8192 which over-commits
+# and gets killed by the OOM killer on small machines.
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
+
 # Start gitnexus serve in background, pipe output to stdout/stderr
 gitnexus serve --host 127.0.0.1 --port 4747 2>&1 &
 GITNEXUS_PID=$!
