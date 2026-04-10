@@ -4,7 +4,7 @@ ARG GITNEXUS_VERSION=1.5.3
 
 # Build tools for native addons (LadybugDB, tree-sitter), cleaned up after install
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ caddy \
+    && apt-get install -y --no-install-recommends python3 make g++ caddy curl \
     && npm install -g gitnexus@${GITNEXUS_VERSION} \
     && apt-get purge -y --auto-remove python3 make g++ \
     && rm -rf /var/lib/apt/lists/* /root/.npm
