@@ -1,0 +1,51 @@
+# Removes a PR's GitNexus index from the droplet when the PR is closed
+# (merged or not). The deploy workflow also prunes stale folders as a
+# safety net, but this gives us immediate cleanup without waiting for
+# the next deploy trigger.
+
+name: GitNexus Cleanup PR
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitnexus-cleanup-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GITNEXUS_DO_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.GITNEXUS_DO_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Remove PR index from droplet
+        env:
+          PR_NUM: ${{ github.event.pull_request.number }}
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }} bash <<REMOTE
+            set -e
+            TARGET="/opt/gitnexus/indexes/LibreChat-pr-$PR_NUM"
+            if [ -d "\$TARGET" ]; then
+              echo "Removing \$TARGET"
+              rm -rf "\$TARGET"
+              cd /opt/gitnexus
+              docker compose up -d --force-recreate gitnexus
+              echo "GitNexus restarted without PR #$PR_NUM"
+            else
+              echo "No index to clean up for PR #$PR_NUM"
+            fi
+          REMOTE
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

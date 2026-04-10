@@ -2,10 +2,15 @@
 #
 # Architecture:
 #   GitHub Actions (deploy)
-#     1. Resolves latest successful main + dev index runs
-#     2. Downloads both .gitnexus/ artifacts
-#     3. rsync's them to /opt/gitnexus/indexes/<name>/.gitnexus/ on the droplet
-#     4. docker compose pulls latest image + restarts gitnexus container
+#     1. Resolves latest successful index runs for main, dev, and every
+#        open PR that already has an index artifact (contributor-gated
+#        upstream by the index workflow's author_association check)
+#     2. Downloads each matching .gitnexus/ artifact
+#     3. Rsyncs them into /opt/gitnexus/indexes/<name>/ on the droplet
+#     4. Removes any stale folders on the droplet for PRs that closed
+#        (even though gitnexus-cleanup-pr.yml also handles that path,
+#        this is a safety net in case the close event was missed)
+#     5. docker compose pulls latest image + restarts gitnexus container
 #   The caddy container is untouched — no TLS churn.
 #
 # First-time droplet bootstrap (run once, manually):
@@ -37,26 +42,30 @@ name: GitNexus Deploy (DigitalOcean)
 on:
   workflow_run:
     workflows: ['GitNexus Index']
-    branches: [main, dev]
     types: [completed]
   workflow_dispatch:
 
 permissions:
   actions: read
   contents: read
+  pull-requests: read
   packages: write # push image to GHCR
 
+# Per-ref concurrency: rapid pushes to the same branch/PR coalesce, but
+# deploys targeting different refs can still run in parallel. Safe because
+# each deploy only rsync's its own folder; final step always reflects the
+# latest state for all refs discovered at resolve time.
 concurrency:
-  group: gitnexus-deploy-do
-  cancel-in-progress: false
+  group: gitnexus-deploy-do-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: true
 
 env:
   GITNEXUS_VERSION: '1.5.3'
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/librechat-gitnexus
 
 jobs:
-  # Rebuilds the long-lived image only when anything in .do/gitnexus/ changes.
-  # Skipped on every other run, so index-only pushes are fast.
+  # Rebuilds the long-lived image only when Dockerfile/entrypoint/extensions
+  # change. Skipped on every other run, so index-only deploys are fast.
   build-image:
     if: |
       github.event_name == 'workflow_dispatch' ||
@@ -110,7 +119,7 @@ jobs:
   deploy:
     needs: build-image
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout deploy config
         uses: actions/checkout@v4
@@ -118,14 +127,19 @@ jobs:
           sparse-checkout: .do/gitnexus
           fetch-depth: 1
 
-      - name: Resolve latest successful index runs per branch
+      # Resolve every index to serve. For main/dev this is simple: latest
+      # successful run per branch. For PRs, we list artifacts across recent
+      # workflow runs, match gitnexus-index-pr-<N>, then cross-reference
+      # GitHub PR state and only keep artifacts whose PR is still open.
+      - name: Resolve indexes to serve
         id: resolve
         uses: actions/github-script@v7
         with:
           script: |
-            const branches = ['main', 'dev'];
-            const result = {};
-            for (const branch of branches) {
+            const serve = []; // [{ name, artifactName, runId }]
+
+            // --- main and dev branches ---
+            for (const branch of ['main', 'dev']) {
               const { data } = await github.rest.actions.listWorkflowRuns({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -135,39 +149,76 @@ jobs:
                 per_page: 1,
               });
               if (data.workflow_runs.length) {
-                result[branch] = data.workflow_runs[0].id;
-                core.info(`${branch}: run ${result[branch]}`);
+                const runId = data.workflow_runs[0].id;
+                const name = branch === 'main' ? 'LibreChat' : `LibreChat-${branch}`;
+                serve.push({ name, artifactName: `gitnexus-index-${branch}`, runId });
+                core.info(`${branch}: run ${runId} -> ${name}`);
               } else {
                 core.warning(`No successful index run found for ${branch}`);
               }
             }
-            if (!Object.keys(result).length) {
-              core.setFailed('No successful index runs found for any branch');
+
+            // --- open PRs with at least one successful index run ---
+            const { data: openPrs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            core.info(`Found ${openPrs.length} open PRs`);
+
+            for (const pr of openPrs) {
+              // PR branches live on forks too. listWorkflowRuns for a fork
+              // branch name doesn't return anything useful, so we instead
+              // query artifacts directly filtered by name.
+              const artifactName = `gitnexus-index-pr-${pr.number}`;
+              const { data: arts } = await github.rest.actions.listArtifactsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: artifactName,
+                per_page: 5,
+              });
+              // Pick the most recent non-expired artifact
+              const fresh = arts.artifacts
+                .filter((a) => !a.expired)
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+              if (!fresh) continue;
+              serve.push({
+                name: `LibreChat-pr-${pr.number}`,
+                artifactName,
+                runId: fresh.workflow_run.id,
+              });
+              core.info(`PR #${pr.number}: run ${fresh.workflow_run.id} -> LibreChat-pr-${pr.number}`);
+            }
+
+            if (!serve.length) {
+              core.setFailed('No indexes to serve');
               return;
             }
-            core.setOutput('main_run', result.main || '');
-            core.setOutput('dev_run', result.dev || '');
 
-      - name: Download main index
-        if: steps.resolve.outputs.main_run != ''
-        uses: actions/download-artifact@v4
-        with:
-          name: gitnexus-index-main
-          path: staging/LibreChat/.gitnexus
-          run-id: ${{ steps.resolve.outputs.main_run }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+            core.setOutput('matrix', JSON.stringify(serve));
+            core.setOutput('active_names', serve.map((s) => s.name).join(','));
 
-      - name: Download dev index
-        if: steps.resolve.outputs.dev_run != ''
-        uses: actions/download-artifact@v4
-        with:
-          name: gitnexus-index-dev
-          path: staging/LibreChat-dev/.gitnexus
-          run-id: ${{ steps.resolve.outputs.dev_run }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Show staged indexes
+      - name: Download each index artifact
+        env:
+          MATRIX: ${{ steps.resolve.outputs.matrix }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -e
+          mkdir -p staging
+          echo "$MATRIX" | jq -c '.[]' | while read -r entry; do
+            name=$(echo "$entry" | jq -r '.name')
+            artifact=$(echo "$entry" | jq -r '.artifactName')
+            runId=$(echo "$entry" | jq -r '.runId')
+            target="staging/${name}/.gitnexus"
+            echo "Downloading $artifact from run $runId -> $target"
+            mkdir -p "$target"
+            gh run download "$runId" \
+              --repo "${{ github.repository }}" \
+              --name "$artifact" \
+              --dir "$target"
+          done
+          echo ""
           echo "Staged for rsync:"
           du -sh staging/*/.gitnexus/ 2>/dev/null || echo "(none)"
 
@@ -185,8 +236,12 @@ jobs:
             .do/gitnexus/Caddyfile \
             ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }}:/opt/gitnexus/
 
-      - name: Rsync indexes to droplet
+      - name: Rsync indexes and prune stale ones
+        env:
+          ACTIVE_NAMES: ${{ steps.resolve.outputs.active_names }}
         run: |
+          set -e
+          # Push every active index up
           for dir in staging/*/; do
             [ -d "$dir" ] || continue
             name=$(basename "$dir")
@@ -197,6 +252,27 @@ jobs:
               "$dir" \
               ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }}:/opt/gitnexus/indexes/$name/
           done
+
+          # Prune any folders on the droplet that aren't in the active set.
+          # This cleans up closed PRs the cleanup workflow might have missed,
+          # and is safe because main/dev/PR-<N> are always present if active.
+          echo "Pruning stale indexes (keeping: $ACTIVE_NAMES)"
+          ssh -i ~/.ssh/deploy_key ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }} bash <<REMOTE
+            set -e
+            cd /opt/gitnexus/indexes || exit 0
+            IFS=',' read -ra ACTIVE <<< "$ACTIVE_NAMES"
+            for dir in */; do
+              dir="\${dir%/}"
+              keep=false
+              for a in "\${ACTIVE[@]}"; do
+                if [ "\$dir" = "\$a" ]; then keep=true; break; fi
+              done
+              if [ "\$keep" = false ]; then
+                echo "Removing stale index: \$dir"
+                rm -rf "\$dir"
+              fi
+            done
+          REMOTE
 
       - name: Pull image and restart gitnexus container
         run: |
