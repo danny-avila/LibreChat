@@ -102,6 +102,7 @@ jobs:
           cp .fly/gitnexus/Dockerfile deploy/Dockerfile
           cp .fly/gitnexus/Caddyfile deploy/Caddyfile
           cp .fly/gitnexus/entrypoint.sh deploy/entrypoint.sh
+          cp .fly/gitnexus/install-extensions.js deploy/install-extensions.js
           echo "Deploy context:"
           ls -la deploy/
           echo "Indexes staged:"
