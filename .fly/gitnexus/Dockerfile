@@ -1,6 +1,7 @@
 FROM node:24-slim
 
 ARG GITNEXUS_VERSION=1.5.3
+ARG REPO_NAME=LibreChat
 
 # 1. Build native addons with Bookworm toolchain, then remove build tools
 RUN apt-get update \
@@ -18,16 +19,16 @@ RUN echo "deb http://deb.debian.org/debian trixie main" > /etc/apt/sources.list.
     && rm /etc/apt/sources.list.d/trixie.list \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /repo
+# Use repo name as directory so gitnexus registers it with a proper name
+WORKDIR /${REPO_NAME}
 
 # Copy the pre-built GitNexus index (from CI artifact)
 COPY .gitnexus/ .gitnexus/
 
 # Register the index so `gitnexus serve` can discover it
-RUN gitnexus index /repo --allow-non-git
+RUN gitnexus index /${REPO_NAME} --allow-non-git
 
 # Caddy reverse proxy: bearer token auth in front of gitnexus serve
-# Token is set via FLY_API_SECRET (flyctl secrets set API_TOKEN=...)
 COPY Caddyfile /etc/caddy/Caddyfile
 
 COPY entrypoint.sh /entrypoint.sh
