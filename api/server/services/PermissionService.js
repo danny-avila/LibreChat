@@ -468,8 +468,9 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
  * 2. Try to add user to existing groups (fast, no Graph API calls)
  * 3. Query DB to identify which groups don't exist (indexed query, fast)
  * 4. For missing groups only, fetch details from Graph API in batches
- * 5. Create missing groups using syncUserEntraGroups
- * 6. Remove user from groups they're no longer member of
+ * 5. Upsert missing groups using upsertGroupByExternalId (race-safe)
+ * 6. Add user to newly created/upserted groups via bulkUpdate
+ * 7. Remove user from groups they're no longer member of
  *
  * @param {Object} user - User object with authentication context
  * @param {string} user.openidId - User's OpenID subject identifier
@@ -478,7 +479,6 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
  * @param {string} accessToken - Access token for Graph API calls
  * @param {mongoose.ClientSession} [session] - Optional MongoDB session for transactions
  * @returns {Promise<void>}
- * @throws {Error} Re-throws errors to allow calling code to handle failures
  */
 const syncUserEntraGroupMemberships = async (user, accessToken, session = null) => {
   try {
