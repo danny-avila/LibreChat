@@ -13,19 +13,73 @@ import logger from '~/config/winston';
 
 /** ---------- Validation helpers (pure) ---------- */
 
+/**
+ * A single validation issue emitted by a skill validator. Most issues are
+ * errors and block the mutation; some are warnings (e.g. "description is
+ * awfully short, Claude may undertrigger the skill") that surface inline
+ * coaching without rejecting the request.
+ */
 export type ValidationIssue = {
   field: string;
   code: string;
   message: string;
+  /**
+   * Defaults to `'error'` when omitted. Errors cause `createSkill` /
+   * `updateSkill` to throw with code `SKILL_VALIDATION_FAILED`; warnings
+   * are surfaced on successful responses so the UI can show inline feedback.
+   */
+  severity?: 'error' | 'warning';
 };
+
+/** Partition an issue list into blocking errors and non-blocking warnings. */
+export function partitionIssues(issues: ValidationIssue[]): {
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+} {
+  const errors: ValidationIssue[] = [];
+  const warnings: ValidationIssue[] = [];
+  for (const issue of issues) {
+    if (issue.severity === 'warning') {
+      warnings.push(issue);
+    } else {
+      errors.push(issue);
+    }
+  }
+  return { errors, warnings };
+}
 
 const SKILL_NAME_MAX = 64;
 const SKILL_DESCRIPTION_MAX = 1024;
+const SKILL_DESCRIPTION_SHORT_THRESHOLD = 20;
 const SKILL_DISPLAY_TITLE_MAX = 128;
 const SKILL_BODY_MAX = 100_000;
 const SKILL_FILE_PATH_MAX = 500;
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const RELATIVE_PATH_CHARS = /^[a-zA-Z0-9._\-/]+$/;
+
+/**
+ * Brand namespaces reserved for Anthropic-published skills and first-party
+ * bundles. Matched as prefixes, so `anthropic-helper` is rejected but
+ * `research-anthropic-helper` is fine.
+ */
+const RESERVED_NAME_PREFIXES = ['anthropic-', 'claude-'];
+
+/**
+ * Slash-command names that collide with LibreChat / Claude Code CLI commands.
+ * A skill with one of these names would shadow a real command in any
+ * slash-command UI. Matched exactly (not as prefix).
+ */
+const RESERVED_NAME_WORDS = new Set([
+  'help',
+  'clear',
+  'compact',
+  'model',
+  'exit',
+  'quit',
+  'settings',
+  'anthropic',
+  'claude',
+]);
 
 export function validateSkillName(name: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -49,11 +103,18 @@ export function validateSkillName(name: unknown): ValidationIssue[] {
     });
   }
   const lowered = name.toLowerCase();
-  if (lowered.includes('anthropic') || lowered.includes('claude')) {
+  if (RESERVED_NAME_PREFIXES.some((prefix) => lowered.startsWith(prefix))) {
     issues.push({
       field: 'name',
-      code: 'RESERVED',
-      message: 'Name cannot contain "anthropic" or "claude"',
+      code: 'RESERVED_PREFIX',
+      message: `Name cannot start with ${RESERVED_NAME_PREFIXES.map((p) => `"${p}"`).join(' or ')}`,
+    });
+  }
+  if (RESERVED_NAME_WORDS.has(lowered)) {
+    issues.push({
+      field: 'name',
+      code: 'RESERVED_WORD',
+      message: `"${name}" is a reserved name`,
     });
   }
   return issues;
@@ -74,6 +135,15 @@ export function validateSkillDescription(description: unknown): ValidationIssue[
       field: 'description',
       code: 'TOO_LONG',
       message: `Description must be ${SKILL_DESCRIPTION_MAX} characters or less`,
+    });
+  }
+  if (description.trim().length < SKILL_DESCRIPTION_SHORT_THRESHOLD) {
+    issues.push({
+      field: 'description',
+      code: 'TOO_SHORT',
+      severity: 'warning',
+      message:
+        'Short descriptions may cause Claude to miss triggering opportunities — aim for a concrete "when to use this skill" sentence.',
     });
   }
   return issues;
@@ -114,6 +184,166 @@ export function validateSkillDisplayTitle(displayTitle: unknown): ValidationIssu
     ];
   }
   return [];
+}
+
+/**
+ * Known fields allowed inside a skill's YAML frontmatter. Anything else is
+ * rejected in strict mode. The list is derived from Anthropic's Agent Skills
+ * spec plus the fields LibreChat needs to pass through (`name`/`description`
+ * are duplicated from the top-level columns because real `SKILL.md` files
+ * include them in their frontmatter block).
+ */
+const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
+  'name',
+  'description',
+  'when-to-use',
+  'allowed-tools',
+  'arguments',
+  'argument-hint',
+  'user-invocable',
+  'disable-model-invocation',
+  'model',
+  'effort',
+  'context',
+  'agent',
+  'paths',
+  'shell',
+  'hooks',
+  'version',
+  'metadata',
+]);
+
+const FRONTMATTER_MAX_STRING = 2000;
+const FRONTMATTER_MAX_ARRAY = 100;
+const FRONTMATTER_MAX_DEPTH = 4;
+
+type FrontmatterKind = 'string' | 'number' | 'boolean' | 'stringArray';
+
+const FRONTMATTER_KIND: Record<string, FrontmatterKind | FrontmatterKind[]> = {
+  name: 'string',
+  description: 'string',
+  'when-to-use': 'string',
+  'allowed-tools': ['string', 'stringArray'],
+  arguments: ['string', 'stringArray'],
+  'argument-hint': 'string',
+  'user-invocable': 'boolean',
+  'disable-model-invocation': 'boolean',
+  model: 'string',
+  effort: ['string', 'number'],
+  context: 'string',
+  agent: 'string',
+  paths: ['string', 'stringArray'],
+  shell: 'string',
+  version: 'string',
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= FRONTMATTER_MAX_ARRAY &&
+    value.every((v) => typeof v === 'string' && v.length <= FRONTMATTER_MAX_STRING)
+  );
+}
+
+function matchesKind(value: unknown, kind: FrontmatterKind): boolean {
+  if (kind === 'string') {
+    return typeof value === 'string' && value.length <= FRONTMATTER_MAX_STRING;
+  }
+  if (kind === 'number') {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+  if (kind === 'boolean') {
+    return typeof value === 'boolean';
+  }
+  return isStringArray(value);
+}
+
+/**
+ * Shallow structural sanity check for `hooks`/`metadata` objects. We don't
+ * know their full schema yet, so we just verify they are plain objects with
+ * JSON-serializable leaf values up to a max depth — enough to block pathological
+ * payloads without constraining legitimate frontmatter extensions.
+ */
+function isJsonSafe(value: unknown, depth: number): boolean {
+  if (depth > FRONTMATTER_MAX_DEPTH) {
+    return false;
+  }
+  if (value === null) return true;
+  const t = typeof value;
+  if (t === 'string') return (value as string).length <= FRONTMATTER_MAX_STRING;
+  if (t === 'number') return Number.isFinite(value);
+  if (t === 'boolean') return true;
+  if (Array.isArray(value)) {
+    if (value.length > FRONTMATTER_MAX_ARRAY) return false;
+    return value.every((v) => isJsonSafe(v, depth + 1));
+  }
+  if (isPlainObject(value)) {
+    return Object.values(value).every((v) => isJsonSafe(v, depth + 1));
+  }
+  return false;
+}
+
+/**
+ * Validate a skill's structured YAML frontmatter. Strict mode: unknown keys
+ * are rejected so any expansion of the allowed set is an intentional code
+ * change. Known keys are type-checked against `FRONTMATTER_KIND`; `hooks` and
+ * `metadata` fall back to a shallow JSON-safety check because their full
+ * schemas live outside this module.
+ */
+export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[] {
+  if (frontmatter === undefined || frontmatter === null) {
+    return [];
+  }
+  if (!isPlainObject(frontmatter)) {
+    return [
+      {
+        field: 'frontmatter',
+        code: 'INVALID_TYPE',
+        message: 'Frontmatter must be a plain object',
+      },
+    ];
+  }
+
+  const issues: ValidationIssue[] = [];
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (!ALLOWED_FRONTMATTER_KEYS.has(key)) {
+      issues.push({
+        field: `frontmatter.${key}`,
+        code: 'UNKNOWN_KEY',
+        message: `"${key}" is not a recognized frontmatter key`,
+      });
+      continue;
+    }
+
+    if (key === 'hooks' || key === 'metadata') {
+      if (!isPlainObject(value) || !isJsonSafe(value, 0)) {
+        issues.push({
+          field: `frontmatter.${key}`,
+          code: 'INVALID_SHAPE',
+          message: `"${key}" must be a plain JSON-safe object (max depth ${FRONTMATTER_MAX_DEPTH}, max string ${FRONTMATTER_MAX_STRING})`,
+        });
+      }
+      continue;
+    }
+
+    const expected = FRONTMATTER_KIND[key];
+    if (!expected) {
+      continue;
+    }
+    const kinds = Array.isArray(expected) ? expected : [expected];
+    if (!kinds.some((kind) => matchesKind(value, kind))) {
+      issues.push({
+        field: `frontmatter.${key}`,
+        code: 'INVALID_TYPE',
+        message: `"${key}" must be ${kinds.join(' or ')}`,
+      });
+    }
+  }
+  return issues;
 }
 
 export function validateRelativePath(relativePath: unknown): ValidationIssue[] {
@@ -244,9 +474,18 @@ export type ListSkillsByAccessResult = {
 };
 
 export type UpdateSkillResult =
-  | { status: 'updated'; skill: ISkill & { _id: Types.ObjectId } }
+  | {
+      status: 'updated';
+      skill: ISkill & { _id: Types.ObjectId };
+      warnings: ValidationIssue[];
+    }
   | { status: 'conflict'; current: ISkill & { _id: Types.ObjectId } }
   | { status: 'not_found' };
+
+export type CreateSkillResult = {
+  skill: ISkill & { _id: Types.ObjectId };
+  warnings: ValidationIssue[];
+};
 
 export function createSkillMethods(mongoose: typeof import('mongoose'), deps: SkillDeps) {
   const { ObjectId } = mongoose.Types;
@@ -299,15 +538,18 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     ).toString('base64');
   }
 
-  async function createSkill(data: CreateSkillInput): Promise<ISkill & { _id: Types.ObjectId }> {
-    const nameIssues = validateSkillName(data.name);
-    const descIssues = validateSkillDescription(data.description);
-    const bodyIssues = validateSkillBody(data.body);
-    const titleIssues = validateSkillDisplayTitle(data.displayTitle);
-    const issues = [...nameIssues, ...descIssues, ...bodyIssues, ...titleIssues];
-    if (issues.length > 0) {
+  async function createSkill(data: CreateSkillInput): Promise<CreateSkillResult> {
+    const issues: ValidationIssue[] = [
+      ...validateSkillName(data.name),
+      ...validateSkillDescription(data.description),
+      ...validateSkillBody(data.body),
+      ...validateSkillDisplayTitle(data.displayTitle),
+      ...validateSkillFrontmatter(data.frontmatter),
+    ];
+    const { errors, warnings } = partitionIssues(issues);
+    if (errors.length > 0) {
       const error = new Error('Skill validation failed');
-      (error as Error & { issues?: ValidationIssue[]; code?: string }).issues = issues;
+      (error as Error & { issues?: ValidationIssue[]; code?: string }).issues = errors;
       (error as Error & { code?: string }).code = 'SKILL_VALIDATION_FAILED';
       throw error;
     }
@@ -346,7 +588,10 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       fileCount: 0,
       tenantId: data.tenantId,
     });
-    return doc.toObject() as unknown as ISkill & { _id: Types.ObjectId };
+    return {
+      skill: doc.toObject() as unknown as ISkill & { _id: Types.ObjectId },
+      warnings,
+    };
   }
 
   async function getSkillById(
@@ -423,9 +668,12 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     if (update.body !== undefined) issues.push(...validateSkillBody(update.body));
     if (update.displayTitle !== undefined)
       issues.push(...validateSkillDisplayTitle(update.displayTitle));
-    if (issues.length > 0) {
+    if (update.frontmatter !== undefined)
+      issues.push(...validateSkillFrontmatter(update.frontmatter));
+    const { errors, warnings } = partitionIssues(issues);
+    if (errors.length > 0) {
       const error = new Error('Skill validation failed');
-      (error as Error & { issues?: ValidationIssue[]; code?: string }).issues = issues;
+      (error as Error & { issues?: ValidationIssue[]; code?: string }).issues = errors;
       (error as Error & { code?: string }).code = 'SKILL_VALIDATION_FAILED';
       throw error;
     }
@@ -449,6 +697,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       return {
         status: 'updated',
         skill: result as unknown as ISkill & { _id: Types.ObjectId },
+        warnings,
       };
     }
 
@@ -511,6 +760,22 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
    * Atomically bumps `Skill.version` and adjusts `fileCount` by `delta`.
    * `delta` is `+1` when a new file is inserted, `-1` when one is deleted, and
    * `0` when an existing file is replaced in place.
+   *
+   * NOTE on consistency: this runs as a **separate** MongoDB operation from
+   * the `upsertSkillFile` / `deleteSkillFile` that triggers it. MongoDB only
+   * provides multi-document ACID via transactions (which require a replica
+   * set), and LibreChat does not currently require that deployment shape. In
+   * the rare case where a SkillFile write succeeds but the subsequent
+   * `findByIdAndUpdate` here fails (connection drop, primary failover mid-
+   * request), the `fileCount` on the parent Skill will drift from the true
+   * row count until the next successful upsert/delete corrects it. Options if
+   * this ever shows up in practice:
+   *   - wrap both ops in a transaction (requires a replica set)
+   *   - periodic reconciliation: `fileCount = count(skill_files where skillId = ?)`
+   *   - treat `fileCount` as advisory and recompute on read when accuracy
+   *     matters
+   * For phase 1, skill files are stubbed at the upload boundary, so the risk
+   * window doesn't open in practice.
    */
   async function bumpSkillVersionAndAdjustFileCount(
     skillId: Types.ObjectId | string,

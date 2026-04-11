@@ -11,6 +11,7 @@ import { createAclEntryMethods } from './aclEntry';
 import {
   validateSkillName,
   validateSkillDescription,
+  validateSkillFrontmatter,
   validateRelativePath,
   inferSkillFileCategory,
 } from './skill';
@@ -137,9 +138,22 @@ function makeSkillInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe('skill validation helpers', () => {
-  it('rejects reserved names', () => {
-    const issues = validateSkillName('anthropic-helper');
-    expect(issues.some((i) => i.code === 'RESERVED')).toBe(true);
+  it('rejects names starting with reserved brand prefixes', () => {
+    expect(validateSkillName('anthropic-helper').some((i) => i.code === 'RESERVED_PREFIX')).toBe(
+      true,
+    );
+    expect(validateSkillName('claude-helper').some((i) => i.code === 'RESERVED_PREFIX')).toBe(true);
+  });
+
+  it('allows names that merely contain reserved words as substrings', () => {
+    expect(validateSkillName('research-anthropic-helper')).toEqual([]);
+    expect(validateSkillName('about-claude')).toEqual([]);
+  });
+
+  it('rejects reserved CLI command names', () => {
+    for (const word of ['help', 'clear', 'compact', 'model', 'exit', 'quit', 'settings']) {
+      expect(validateSkillName(word).some((i) => i.code === 'RESERVED_WORD')).toBe(true);
+    }
   });
 
   it('rejects non-kebab-case names', () => {
@@ -165,6 +179,20 @@ describe('skill validation helpers', () => {
     expect(validateSkillDescription('x'.repeat(1025)).some((i) => i.code === 'TOO_LONG')).toBe(
       true,
     );
+  });
+
+  it('emits a warning (not an error) for short descriptions', () => {
+    const issues = validateSkillDescription('too short');
+    const warnings = issues.filter((i) => i.severity === 'warning' && i.code === 'TOO_SHORT');
+    const errors = issues.filter((i) => i.severity !== 'warning');
+    expect(warnings.length).toBe(1);
+    expect(errors.length).toBe(0);
+  });
+
+  it('does not warn for descriptions at or above the threshold', () => {
+    expect(
+      validateSkillDescription('This description is comfortably over the threshold length.'),
+    ).toEqual([]);
   });
 
   it('rejects path traversal', () => {
@@ -193,16 +221,122 @@ describe('skill validation helpers', () => {
     expect(inferSkillFileCategory('assets/image.png')).toBe('asset');
     expect(inferSkillFileCategory('readme.txt')).toBe('other');
   });
+
+  describe('validateSkillFrontmatter', () => {
+    it('accepts an undefined or empty frontmatter', () => {
+      expect(validateSkillFrontmatter(undefined)).toEqual([]);
+      expect(validateSkillFrontmatter(null)).toEqual([]);
+      expect(validateSkillFrontmatter({})).toEqual([]);
+    });
+
+    it('rejects non-object frontmatter', () => {
+      expect(validateSkillFrontmatter('not an object').some((i) => i.code === 'INVALID_TYPE')).toBe(
+        true,
+      );
+      expect(validateSkillFrontmatter([]).some((i) => i.code === 'INVALID_TYPE')).toBe(true);
+    });
+
+    it('rejects unknown keys in strict mode', () => {
+      const issues = validateSkillFrontmatter({ 'not-a-real-key': 'value' });
+      expect(issues.some((i) => i.code === 'UNKNOWN_KEY')).toBe(true);
+    });
+
+    it('accepts known keys with correct types', () => {
+      expect(
+        validateSkillFrontmatter({
+          name: 'demo-skill',
+          description: 'A demo skill',
+          'when-to-use': 'When the user needs a demo.',
+          'allowed-tools': ['read', 'write'],
+          'user-invocable': true,
+          effort: 5,
+          version: '1.0.0',
+          hooks: { 'pre-run': 'echo hi' },
+        }),
+      ).toEqual([]);
+    });
+
+    it('rejects known keys with wrong types', () => {
+      expect(
+        validateSkillFrontmatter({ 'user-invocable': 'yes' }).some(
+          (i) => i.code === 'INVALID_TYPE',
+        ),
+      ).toBe(true);
+      expect(
+        validateSkillFrontmatter({ 'allowed-tools': [1, 2, 3] }).some(
+          (i) => i.code === 'INVALID_TYPE',
+        ),
+      ).toBe(true);
+    });
+
+    it('rejects hooks object with excessive nesting', () => {
+      const deep = { a: { b: { c: { d: { e: { f: 'too deep' } } } } } };
+      expect(
+        validateSkillFrontmatter({ hooks: deep }).some((i) => i.code === 'INVALID_SHAPE'),
+      ).toBe(true);
+    });
+  });
 });
 
 describe('Skill CRUD methods', () => {
   it('creates a skill with version 1 and default fileCount 0', async () => {
-    const skill = await methods.createSkill(makeSkillInput());
+    const { skill, warnings } = await methods.createSkill(makeSkillInput());
     expect(skill.name).toBe('demo-skill');
     expect(skill.version).toBe(1);
     expect(skill.fileCount).toBe(0);
     expect(skill.source).toBe('inline');
     expect(skill.author.toString()).toBe(owner._id.toString());
+    expect(warnings).toEqual([]);
+  });
+
+  it('emits a too-short warning when the description is under 20 chars', async () => {
+    const { skill, warnings } = await methods.createSkill(
+      makeSkillInput({ name: 'short-desc-skill', description: 'Too short.' }),
+    );
+    expect(skill._id).toBeDefined();
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        field: 'description',
+        code: 'TOO_SHORT',
+        severity: 'warning',
+      }),
+    ]);
+  });
+
+  it('rejects frontmatter with unknown keys (strict mode)', async () => {
+    await expect(
+      methods.createSkill(
+        makeSkillInput({
+          name: 'strict-frontmatter',
+          frontmatter: { 'bogus-key': 'nope' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+  });
+
+  it('rejects names that start with reserved brand prefixes', async () => {
+    await expect(
+      methods.createSkill(makeSkillInput({ name: 'anthropic-helper' })),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    await expect(
+      methods.createSkill(makeSkillInput({ name: 'claude-helper' })),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+  });
+
+  it('allows names that merely contain the reserved words as substrings', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'research-anthropic-helper' }),
+    );
+    expect(skill.name).toBe('research-anthropic-helper');
+  });
+
+  it('rejects reserved CLI command names', async () => {
+    await expect(methods.createSkill(makeSkillInput({ name: 'help' }))).rejects.toMatchObject({
+      code: 'SKILL_VALIDATION_FAILED',
+    });
+    await expect(methods.createSkill(makeSkillInput({ name: 'settings' }))).rejects.toMatchObject({
+      code: 'SKILL_VALIDATION_FAILED',
+    });
   });
 
   it('enforces name uniqueness per author', async () => {
@@ -217,12 +351,12 @@ describe('Skill CRUD methods', () => {
   });
 
   it('optimistic concurrency — stale version returns conflict with current state', async () => {
-    const skill = await methods.createSkill(makeSkillInput());
+    const { skill } = await methods.createSkill(makeSkillInput());
     const id = skill._id.toString();
     const first = await methods.updateSkill({
       id,
       expectedVersion: 1,
-      update: { description: 'First update' },
+      update: { description: 'First update description (long enough).' },
     });
     expect(first.status).toBe('updated');
     if (first.status === 'updated') {
@@ -232,17 +366,17 @@ describe('Skill CRUD methods', () => {
     const stale = await methods.updateSkill({
       id,
       expectedVersion: 1,
-      update: { description: 'Second update' },
+      update: { description: 'Second update description (long enough).' },
     });
     expect(stale.status).toBe('conflict');
     if (stale.status === 'conflict') {
       expect(stale.current.version).toBe(2);
-      expect(stale.current.description).toBe('First update');
+      expect(stale.current.description).toBe('First update description (long enough).');
     }
   });
 
   it('deleteSkill cascades ACL entries and skill files', async () => {
-    const skill = await methods.createSkill(makeSkillInput());
+    const { skill } = await methods.createSkill(makeSkillInput());
     await grantOwner(skill._id);
     await methods.upsertSkillFile({
       skillId: skill._id,
@@ -266,23 +400,25 @@ describe('Skill CRUD methods', () => {
   });
 
   it('listSkillsByAccess returns only accessible skills and paginates by cursor', async () => {
-    const skills: Array<Awaited<ReturnType<typeof methods.createSkill>>> = [];
+    const ids: mongoose.Types.ObjectId[] = [];
     for (let i = 0; i < 3; i++) {
-      const s = await methods.createSkill(
-        makeSkillInput({ name: `demo-skill-${i}`, description: `skill ${i}` }),
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: `demo-skill-${i}`,
+          description: `A demo skill used to test pagination (${i}).`,
+        }),
       );
-      skills.push(s);
+      ids.push(skill._id);
       await new Promise((r) => setTimeout(r, 5));
     }
 
-    const accessible = skills.map((s) => s._id);
-    const page1 = await methods.listSkillsByAccess({ accessibleIds: accessible, limit: 2 });
+    const page1 = await methods.listSkillsByAccess({ accessibleIds: ids, limit: 2 });
     expect(page1.skills.length).toBe(2);
     expect(page1.has_more).toBe(true);
     expect(page1.after).not.toBeNull();
 
     const page2 = await methods.listSkillsByAccess({
-      accessibleIds: accessible,
+      accessibleIds: ids,
       limit: 2,
       cursor: page1.after,
     });
@@ -291,9 +427,15 @@ describe('Skill CRUD methods', () => {
   });
 
   it('listSkillsByAccess filters by category and search', async () => {
-    const a = await methods.createSkill(makeSkillInput({ name: 'alpha-skill', category: 'tools' }));
+    const { skill: a } = await methods.createSkill(
+      makeSkillInput({ name: 'alpha-skill', category: 'tools' }),
+    );
     await methods.createSkill(
-      makeSkillInput({ name: 'beta-skill', category: 'other', description: 'beta desc' }),
+      makeSkillInput({
+        name: 'beta-skill',
+        category: 'other',
+        description: 'A beta description that is long enough.',
+      }),
     );
     const ids = await Skill.find().distinct('_id');
 
@@ -317,7 +459,7 @@ describe('Skill CRUD methods', () => {
 
 describe('SkillFile methods', () => {
   it('upsertSkillFile bumps parent skill version and updates fileCount', async () => {
-    const skill = await methods.createSkill(makeSkillInput());
+    const { skill } = await methods.createSkill(makeSkillInput());
     expect(skill.version).toBe(1);
     expect(skill.fileCount).toBe(0);
 
@@ -339,7 +481,7 @@ describe('SkillFile methods', () => {
   });
 
   it('upsertSkillFile replaces an existing row and bumps version again', async () => {
-    const skill = await methods.createSkill(makeSkillInput());
+    const { skill } = await methods.createSkill(makeSkillInput());
     await methods.upsertSkillFile({
       skillId: skill._id,
       relativePath: 'scripts/parse.sh',
@@ -371,7 +513,7 @@ describe('SkillFile methods', () => {
   });
 
   it('deleteSkillFile recounts and bumps version', async () => {
-    const skill = await methods.createSkill(makeSkillInput());
+    const { skill } = await methods.createSkill(makeSkillInput());
     await methods.upsertSkillFile({
       skillId: skill._id,
       relativePath: 'scripts/a.sh',
@@ -402,7 +544,7 @@ describe('SkillFile methods', () => {
   });
 
   it('rejects invalid paths via upsertSkillFile', async () => {
-    const skill = await methods.createSkill(makeSkillInput());
+    const { skill } = await methods.createSkill(makeSkillInput());
     await expect(
       methods.upsertSkillFile({
         skillId: skill._id,
@@ -421,7 +563,7 @@ describe('SkillFile methods', () => {
 
 describe('deleteUserSkills', () => {
   it('removes sole-owned skills only', async () => {
-    const mine = await methods.createSkill(makeSkillInput({ name: 'mine' }));
+    const { skill: mine } = await methods.createSkill(makeSkillInput({ name: 'mine' }));
     await grantOwner(mine._id);
 
     // Create a second skill owned by someone else

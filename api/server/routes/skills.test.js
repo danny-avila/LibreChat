@@ -165,13 +165,14 @@ async function setupTestData() {
 }
 
 async function createSkillAsOwner(overrides = {}) {
+  // Description is deliberately kept above the 20-char short-description
+  // warning threshold so existing tests don't trip the coaching warning.
   const res = await request(app)
     .post('/api/skills')
     .send({
       name: 'demo-skill',
-      description: 'A small demo skill',
+      description: 'A small demo skill used in routing integration tests.',
       body: '# Demo',
-      frontmatter: { name: 'demo-skill', description: 'A small demo skill' },
       ...overrides,
     });
   return res;
@@ -191,6 +192,8 @@ describe('Skill routes', () => {
       expect(res.body._id).toBeDefined();
       expect(res.body.version).toBe(1);
       expect(res.body.name).toBe('demo-skill');
+      // No warnings on a description that comfortably clears the threshold.
+      expect(res.body.warnings).toBeUndefined();
 
       const acl = await AclEntry.findOne({
         resourceType: ResourceType.SKILL,
@@ -200,6 +203,51 @@ describe('Skill routes', () => {
       });
       expect(acl).toBeTruthy();
       expect(acl.roleId.toString()).toBe(testRoles.owner._id.toString());
+    });
+
+    it('attaches a TOO_SHORT warning on create when description is under 20 chars', async () => {
+      const res = await createSkillAsOwner({
+        name: 'short-desc-skill',
+        description: 'Too short.',
+      });
+      expect(res.status).toBe(201);
+      expect(res.body._id).toBeDefined();
+      expect(Array.isArray(res.body.warnings)).toBe(true);
+      expect(res.body.warnings).toEqual([
+        expect.objectContaining({
+          field: 'description',
+          code: 'TOO_SHORT',
+          severity: 'warning',
+        }),
+      ]);
+    });
+
+    it('rejects names starting with reserved brand prefixes', async () => {
+      const anthropic = await createSkillAsOwner({ name: 'anthropic-helper' });
+      expect(anthropic.status).toBe(400);
+      const claude = await createSkillAsOwner({ name: 'claude-helper' });
+      expect(claude.status).toBe(400);
+    });
+
+    it('allows names that merely contain reserved brand words as substrings', async () => {
+      const res = await createSkillAsOwner({ name: 'research-anthropic-helper' });
+      expect(res.status).toBe(201);
+    });
+
+    it('rejects reserved CLI command names', async () => {
+      const res = await createSkillAsOwner({ name: 'settings' });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects frontmatter with unknown keys', async () => {
+      const res = await createSkillAsOwner({
+        name: 'bad-frontmatter-skill',
+        frontmatter: { 'not-a-real-key': 'value' },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'UNKNOWN_KEY' })]),
+      );
     });
 
     it('rejects missing description with 400', async () => {

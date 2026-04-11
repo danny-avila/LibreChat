@@ -12,6 +12,7 @@ import type {
   ISkillFile,
   ISkillSummary,
   CreateSkillInput,
+  CreateSkillResult,
   UpdateSkillInput,
   ListSkillsByAccessResult,
   UpdateSkillResult,
@@ -21,6 +22,7 @@ import type {
   TSkill,
   TSkillFile,
   TSkillSummary,
+  TSkillWarning,
   TCreateSkill,
   TUpdateSkillPayload,
   TListSkillFilesResponse,
@@ -43,7 +45,7 @@ type DuplicateKeyError = Error & { code?: number | string };
  */
 export interface SkillsHandlersDeps {
   /** Skill CRUD — from `@librechat/data-schemas` `createMethods` output. */
-  createSkill: (data: CreateSkillInput) => Promise<ISkill & { _id: Types.ObjectId }>;
+  createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   listSkillsByAccess: (params: {
     accessibleIds: Types.ObjectId[];
@@ -179,6 +181,28 @@ function serializeSkillFile(file: ISkillFile & { _id: Types.ObjectId }): TSkillF
   };
 }
 
+/**
+ * Attach non-blocking coaching warnings to a serialized skill response.
+ * Called from `createHandler` and `patchHandler` so clients can show inline
+ * feedback (e.g. "description too short") without the write being rejected.
+ * Only warning-severity issues come through here — errors are thrown by
+ * `createSkill`/`updateSkill` before we reach this point.
+ */
+function attachWarnings(skill: TSkill, warnings: ValidationIssue[]): TSkill {
+  if (!warnings || warnings.length === 0) {
+    return skill;
+  }
+  return {
+    ...skill,
+    warnings: warnings.map((w) => ({
+      field: w.field,
+      code: w.code,
+      message: w.message,
+      severity: 'warning' as const,
+    })) satisfies TSkillWarning[],
+  };
+}
+
 function isValidationError(error: unknown): error is SkillValidationError {
   if (!error || typeof error !== 'object') {
     return false;
@@ -308,9 +332,9 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       const authorId = (user._id ?? user.id) as unknown as Types.ObjectId;
       const authorName = user.name ?? user.username ?? 'Unknown';
 
-      let skill: ISkill & { _id: Types.ObjectId };
+      let createResult: CreateSkillResult;
       try {
-        skill = await createSkill({
+        createResult = await createSkill({
           name: body.name,
           displayTitle: body.displayTitle,
           description: body.description,
@@ -330,6 +354,8 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         }
         throw error;
       }
+
+      const { skill, warnings } = createResult;
 
       try {
         await grantPermission({
@@ -358,7 +384,9 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
 
       // A freshly created skill has no PUBLIC ACL entry, so `isPublic` is
       // always false. Skip the DB round-trip.
-      return res.status(201).json(serializeSkill(skill, new Set<string>()));
+      return res
+        .status(201)
+        .json(attachWarnings(serializeSkill(skill, new Set<string>()), warnings));
     } catch (error) {
       logger.error('[POST /skills] Error creating skill', error);
       return res.status(500).json({ error: 'Error creating skill' });
@@ -446,7 +474,9 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         };
         return res.status(409).json(conflict);
       }
-      return res.status(200).json(serializeSkill(result.skill, publicSet));
+      return res
+        .status(200)
+        .json(attachWarnings(serializeSkill(result.skill, publicSet), result.warnings));
     } catch (error) {
       logger.error('[PATCH /skills/:id] Error updating skill', error);
       return res.status(500).json({ error: 'Error updating skill' });

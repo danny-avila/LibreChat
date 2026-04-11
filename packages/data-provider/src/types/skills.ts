@@ -35,11 +35,43 @@ export type SkillFrontmatter = {
 /**
  * Provenance metadata for skills that originated from an external source
  * (e.g. a GitHub commit SHA or a Notion page id).
+ *
+ * Reserved for phase 2+ external sync — no code path currently populates this
+ * in phase 1, but the column exists so a future sync worker can use it
+ * without a schema migration.
  */
 export type SkillSourceMetadata = Record<string, string | number | boolean>;
 
 /**
+ * A non-blocking coaching hint surfaced alongside a successful create/update
+ * response. Unlike validation errors (which return 400 and block the write),
+ * warnings ride on the 2xx response so the UI can show inline feedback
+ * without rejecting the user's input. Example: "description is too short,
+ * Claude may undertrigger this skill".
+ */
+export type TSkillWarning = {
+  field: string;
+  code: string;
+  message: string;
+  severity: 'warning';
+};
+
+/**
  * API shape for a full skill (returned by GET `/api/skills/:id`).
+ *
+ * Field semantics:
+ * - `name` is the machine-readable kebab-case identifier Claude sees in its
+ *   skill manifest. It's what drives triggering and must be stable across
+ *   edits. Unique per author+tenant.
+ * - `displayTitle` is the human-readable UI label only. NOT sent to Claude,
+ *   NOT part of the trigger path — purely cosmetic.
+ * - `description` is the "when to use this skill" sentence. Highest-leverage
+ *   field for trigger accuracy; a short/vague one causes undertriggering.
+ * - `frontmatter` is the structured YAML bag minus `name`/`description`
+ *   (those live as top-level columns). Validated strictly against a known
+ *   key set server-side.
+ * - `source`/`sourceMetadata` are reserved for phase 2+ external sync and
+ *   always `'inline'` / absent in phase 1.
  */
 export type TSkill = {
   _id: string;
@@ -59,6 +91,12 @@ export type TSkill = {
   tenantId?: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Present on POST/PATCH responses when the server emitted non-blocking
+   * coaching warnings (e.g. description too short). Never present on GET
+   * responses.
+   */
+  warnings?: TSkillWarning[];
 };
 
 /**

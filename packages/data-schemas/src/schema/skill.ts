@@ -15,8 +15,39 @@ const SKILL_DISPLAY_TITLE_MAX_LENGTH = 128;
 
 const skillNamePattern = /^[a-z0-9][a-z0-9-]*$/;
 
+/**
+ * Brand namespaces reserved for first-party skills. Matched as prefixes —
+ * `anthropic-helper` is rejected but `my-helper` is fine. Keep this in sync
+ * with `RESERVED_NAME_PREFIXES` in `methods/skill.ts`.
+ */
+const RESERVED_NAME_PREFIXES = ['anthropic-', 'claude-'];
+
+/**
+ * Slash-command names that collide with LibreChat / Claude Code CLI commands.
+ * Matched exactly against the full skill name. Keep this in sync with
+ * `RESERVED_NAME_WORDS` in `methods/skill.ts`.
+ */
+const RESERVED_NAME_WORDS = new Set([
+  'help',
+  'clear',
+  'compact',
+  'model',
+  'exit',
+  'quit',
+  'settings',
+  'anthropic',
+  'claude',
+]);
+
 const skillSchema: Schema<ISkillDocument> = new Schema(
   {
+    /**
+     * Machine-readable identifier. Kebab-case, max 64 chars, unique per
+     * (author, tenantId). This is what Claude sees in its system prompt when
+     * deciding to trigger the skill, and what slash-command integrations key
+     * off — so it must be stable, concise, and ASCII-friendly. User-facing
+     * labels live on `displayTitle` instead.
+     */
     name: {
       type: String,
       required: true,
@@ -28,12 +59,25 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
             return false;
           }
           const lowered = value.toLowerCase();
-          return !lowered.includes('anthropic') && !lowered.includes('claude');
+          if (RESERVED_NAME_PREFIXES.some((prefix) => lowered.startsWith(prefix))) {
+            return false;
+          }
+          if (RESERVED_NAME_WORDS.has(lowered)) {
+            return false;
+          }
+          return true;
         },
         message:
-          'Name must be kebab-case (lowercase letters, digits, hyphens) and cannot contain "anthropic" or "claude".',
+          'Name must be kebab-case (lowercase letters, digits, hyphens), cannot start with "anthropic-" or "claude-", and cannot be a reserved CLI word.',
       },
     },
+    /**
+     * Human-readable label shown in the LibreChat UI (skill list, detail
+     * header, sharing dialogs). NOT sent to Claude and NOT used to trigger
+     * the skill — `name` + `description` drive triggering. Purely cosmetic:
+     * useful when the author wants a prettier label than the kebab-case
+     * identifier while keeping the identifier stable.
+     */
     displayTitle: {
       type: String,
       maxlength: [
@@ -41,6 +85,13 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
         `Display title cannot exceed ${SKILL_DISPLAY_TITLE_MAX_LENGTH} characters`,
       ],
     },
+    /**
+     * "When to use this skill" sentence that Claude reads from the system
+     * prompt to decide whether to invoke the skill. This is the highest-
+     * leverage field for triggering accuracy — a vague description causes
+     * undertriggering. Denormalized from the YAML frontmatter for indexed
+     * querying.
+     */
     description: {
       type: String,
       required: true,
@@ -49,11 +100,18 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
         `Description cannot exceed ${SKILL_DESCRIPTION_MAX_LENGTH} characters`,
       ],
     },
+    /** The SKILL.md body (markdown after the YAML frontmatter). */
     body: {
       type: String,
       default: '',
       maxlength: [SKILL_BODY_MAX_LENGTH, `Body cannot exceed ${SKILL_BODY_MAX_LENGTH} characters`],
     },
+    /**
+     * Structured YAML frontmatter bag (everything except `name`/`description`,
+     * which live as first-class columns). Validated in strict mode against
+     * `validateSkillFrontmatter` before write — unknown keys are rejected
+     * so any expansion of the allowed set is an explicit code change.
+     */
     frontmatter: {
       type: Schema.Types.Mixed,
       default: {},
@@ -78,11 +136,27 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
       default: 1,
       min: 1,
     },
+    /**
+     * Provenance of this skill's canonical definition.
+     *
+     * - `inline` — authored directly inside LibreChat (the only path wired
+     *   up in phase 1).
+     * - `github` / `notion` — **reserved for phase 2+ external sync**. No
+     *   code path currently produces these values. The column exists now so
+     *   a future sync worker can populate `source` + `sourceMetadata` without
+     *   a schema migration.
+     */
     source: {
       type: String,
       enum: ['inline', 'github', 'notion'],
       default: 'inline',
     },
+    /**
+     * Arbitrary JSON provenance payload keyed by `source`. Phase 2+ sync
+     * workers will use this to store the upstream commit SHA (github),
+     * page id (notion), etc. Unused in phase 1 — kept `Mixed` to avoid
+     * committing to a shape before the sync paths exist.
+     */
     sourceMetadata: {
       type: Schema.Types.Mixed,
     },

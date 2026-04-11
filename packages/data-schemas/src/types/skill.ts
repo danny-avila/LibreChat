@@ -6,21 +6,52 @@ import type { Document, Types } from 'mongoose';
  * The `version` field is an integer monotonic counter used for optimistic concurrency.
  */
 export interface ISkill {
+  /**
+   * Machine-readable kebab-case identifier. This is what Claude sees in the
+   * system-prompt skill manifest and what slash-command integrations key off.
+   * Unique per `(author, tenantId)`. Must be stable across edits — a rename
+   * invalidates any external reference to the skill.
+   */
   name: string;
+  /**
+   * Human-readable label shown only in the LibreChat UI (skill list, detail
+   * header, sharing dialogs). NOT sent to Claude and NOT part of the trigger
+   * path — `name` + `description` drive triggering. Purely cosmetic: lets an
+   * author keep a stable kebab-case `name` while showing something prettier
+   * in the UI.
+   */
   displayTitle?: string;
+  /**
+   * "When to use this skill" sentence. This is the highest-leverage field for
+   * Claude's triggering decision — vague or missing descriptions cause
+   * undertriggering. Denormalized from the YAML frontmatter onto its own
+   * column so listings can filter/sort on it without loading `body`.
+   */
   description: string;
+  /** The SKILL.md body (markdown after the YAML frontmatter). */
   body: string;
   /**
    * Structured YAML frontmatter (excluding `name` and `description`, which live as
    * top-level columns). Stored as Mongoose Mixed so callers can extend without schema
-   * churn; the API-level type (in `librechat-data-provider`) constrains the wire shape.
+   * churn; validated in strict mode via `validateSkillFrontmatter` — unknown keys
+   * are rejected so expanding the allowed set is an intentional code change.
    */
   frontmatter: Record<string, unknown>;
   category?: string;
   author: Types.ObjectId;
   authorName: string;
   version: number;
+  /**
+   * Provenance of this skill's canonical definition.
+   * - `inline` — authored inside LibreChat (the only value phase 1 produces).
+   * - `github` / `notion` — reserved for phase 2+ external sync. Kept in the
+   *   enum so a future sync worker can populate it without a migration.
+   */
   source: 'inline' | 'github' | 'notion';
+  /**
+   * Provenance payload keyed by `source`. Phase 2+ sync workers will store
+   * upstream identifiers (commit SHA, page id, etc.) here. Unused in phase 1.
+   */
   sourceMetadata?: Record<string, unknown>;
   /** Denormalized count of associated `SkillFile` rows. Kept in sync by skill methods. */
   fileCount: number;
