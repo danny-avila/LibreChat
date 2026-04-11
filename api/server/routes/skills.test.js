@@ -329,6 +329,60 @@ describe('Skill routes', () => {
     });
   });
 
+  describe('DELETE /api/skills/:id/files/:relativePath', () => {
+    const { upsertSkillFile } = require('~/models');
+
+    it('deletes an existing skill file, bumps skill version, and returns 200', async () => {
+      const created = await createSkillAsOwner();
+      await upsertSkillFile({
+        skillId: created.body._id,
+        relativePath: 'scripts/parse.sh',
+        file_id: 'file-1',
+        filename: 'parse.sh',
+        filepath: '/tmp/parse.sh',
+        source: 'local',
+        mimeType: 'text/x-shellscript',
+        bytes: 42,
+        author: testUsers.owner._id,
+      });
+
+      const beforeSkill = await request(app).get(`/api/skills/${created.body._id}`);
+      expect(beforeSkill.body.fileCount).toBe(1);
+      expect(beforeSkill.body.version).toBe(2);
+
+      const res = await request(app).delete(
+        `/api/skills/${created.body._id}/files/scripts%2Fparse.sh`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        skillId: created.body._id,
+        relativePath: 'scripts/parse.sh',
+        deleted: true,
+      });
+
+      const afterSkill = await request(app).get(`/api/skills/${created.body._id}`);
+      expect(afterSkill.body.fileCount).toBe(0);
+      expect(afterSkill.body.version).toBe(3);
+    });
+
+    it('returns 404 when the file does not exist', async () => {
+      const created = await createSkillAsOwner();
+      const res = await request(app).delete(
+        `/api/skills/${created.body._id}/files/scripts%2Fmissing.sh`,
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 for a non-owner', async () => {
+      const created = await createSkillAsOwner();
+      setTestUser(testUsers.noAccess);
+      const res = await request(app).delete(
+        `/api/skills/${created.body._id}/files/scripts%2Fparse.sh`,
+      );
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe('Sharing via ACL (editor grant)', () => {
     it('allows an editor to patch a shared skill', async () => {
       const created = await createSkillAsOwner();

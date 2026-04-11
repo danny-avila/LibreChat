@@ -13,6 +13,7 @@ import {
   AgentUpdateParams,
 } from './assistants';
 import { Action, ActionMetadata } from './agents';
+import type { InfiniteData, QueryKey } from '@tanstack/react-query';
 import type {
   TSkill,
   TSkillFile,
@@ -292,10 +293,18 @@ export type UpdatePermResponse = r.TRole;
 
 /* Skill mutations */
 
+/**
+ * Cache entries that can appear under the `[QueryKeys.skills, ...]` key prefix.
+ * Flat responses come from `useListSkillsQuery`; infinite responses come from
+ * `useSkillsInfiniteQuery`. The context carries both shapes for rollback.
+ */
+export type TSkillCacheEntry = TSkillListResponse | InfiniteData<TSkillListResponse> | undefined;
+
 export type TUpdateSkillContext =
   | {
       previousSkill?: TSkill;
-      previousListData?: TSkillListResponse;
+      previousListSnapshots?: Array<[QueryKey, TSkillCacheEntry]>;
+      userContext?: unknown;
     }
   | undefined;
 

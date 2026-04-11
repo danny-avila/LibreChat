@@ -476,25 +476,28 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     return { deleted: true };
   }
 
-  async function deleteUserSkills(userId: Types.ObjectId): Promise<number> {
+  async function deleteUserSkills(userId: Types.ObjectId | string): Promise<number> {
+    const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
-    const soleOwned = await deps.getSoleOwnedResourceIds(userId, ResourceType.SKILL);
+    const soleOwned = await deps.getSoleOwnedResourceIds(userObjectId, ResourceType.SKILL);
     if (soleOwned.length === 0) {
       return 0;
     }
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     await SkillFile.deleteMany({ skillId: { $in: soleOwned } });
     const res = await Skill.deleteMany({ _id: { $in: soleOwned } });
-    for (const rid of soleOwned) {
-      try {
-        await deps.removeAllPermissions({
-          resourceType: ResourceType.SKILL,
-          resourceId: rid.toString(),
-        });
-      } catch (error) {
-        logger.error(`[deleteUserSkills] Error removing permissions for ${rid}:`, error);
-      }
-    }
+    await Promise.allSettled(
+      soleOwned.map((rid) =>
+        deps
+          .removeAllPermissions({
+            resourceType: ResourceType.SKILL,
+            resourceId: rid.toString(),
+          })
+          .catch((error) =>
+            logger.error(`[deleteUserSkills] Error removing permissions for ${rid}:`, error),
+          ),
+      ),
+    );
     return res.deletedCount ?? 0;
   }
 
@@ -503,13 +506,21 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     return SkillFile.countDocuments({ skillId });
   }
 
-  async function bumpSkillVersionAndRecount(skillId: Types.ObjectId | string): Promise<void> {
+  /**
+   * Atomically bumps `Skill.version` and adjusts `fileCount` by `delta`.
+   * `delta` is `+1` when a new file is inserted, `-1` when one is deleted, and
+   * `0` when an existing file is replaced in place.
+   */
+  async function bumpSkillVersionAndAdjustFileCount(
+    skillId: Types.ObjectId | string,
+    delta: number,
+  ): Promise<void> {
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
-    const count = await countSkillFiles(skillId);
-    await Skill.findByIdAndUpdate(skillId, {
-      $inc: { version: 1 },
-      $set: { fileCount: count },
-    });
+    const updateOps: Record<string, Record<string, number>> = { $inc: { version: 1 } };
+    if (delta !== 0) {
+      updateOps.$inc.fileCount = delta;
+    }
+    await Skill.findByIdAndUpdate(skillId, updateOps);
   }
 
   async function listSkillFiles(
@@ -532,6 +543,15 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     }
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     const category = inferSkillFileCategory(row.relativePath);
+    // Detect new-vs-replace by pre-checking existence; doing it inside the same
+    // method lets us avoid a recount race with concurrent operations.
+    const existing = await SkillFile.findOne({
+      skillId: row.skillId,
+      relativePath: row.relativePath,
+    })
+      .select('_id')
+      .lean();
+
     const upserted = await SkillFile.findOneAndUpdate(
       { skillId: row.skillId, relativePath: row.relativePath },
       {
@@ -552,7 +572,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       },
       { new: true, upsert: true },
     ).lean();
-    await bumpSkillVersionAndRecount(row.skillId);
+
+    await bumpSkillVersionAndAdjustFileCount(row.skillId, existing ? 0 : 1);
     return upserted as unknown as ISkillFile & { _id: Types.ObjectId };
   }
 
@@ -565,7 +586,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     if (!res.deletedCount) {
       return { deleted: false };
     }
-    await bumpSkillVersionAndRecount(skillId);
+    await bumpSkillVersionAndAdjustFileCount(skillId, -1);
     return { deleted: true };
   }
 

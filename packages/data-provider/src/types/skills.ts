@@ -21,13 +21,15 @@ export type SkillFileCategory = 'script' | 'reference' | 'asset' | 'other';
 export type SkillFrontmatterValue = string | number | boolean | string[] | null;
 
 /**
- * Structured YAML frontmatter for a skill.
- * `name` and `description` are always required; additional keys must use
- * `SkillFrontmatterValue` shapes so the wire format remains serializable.
+ * Structured YAML frontmatter for a skill. All keys are optional on the wire
+ * because not every skill document carries a complete frontmatter block —
+ * `name` and `description` live as first-class columns on `TSkill` itself,
+ * and frontmatter is an extension bag for additional fields like `when-to-use`,
+ * `allowed-tools`, etc.
  */
 export type SkillFrontmatter = {
-  name: string;
-  description: string;
+  name?: string;
+  description?: string;
 } & Record<string, SkillFrontmatterValue | undefined>;
 
 /**
@@ -45,7 +47,7 @@ export type TSkill = {
   displayTitle?: string;
   description: string;
   body: string;
-  frontmatter: SkillFrontmatter;
+  frontmatter?: SkillFrontmatter;
   category?: string;
   author: string;
   authorName: string;

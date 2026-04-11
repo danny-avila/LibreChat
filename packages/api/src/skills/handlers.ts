@@ -91,6 +91,29 @@ export interface SkillsHandlersDeps {
 /** Sentinel used by the PATCH stub for an invalid `expectedVersion`. */
 const EXPECTED_VERSION_ERROR = 'expectedVersion is required and must be a number';
 
+/**
+ * Narrow an opaque `Record<string, unknown>` frontmatter (as stored in Mongoose
+ * `Mixed`) to the wire type. Returns `undefined` for empty/missing frontmatter
+ * so clients see a clear absence instead of an empty `{}`.
+ */
+function serializeFrontmatter(
+  frontmatter: Record<string, unknown> | undefined,
+): TSkill['frontmatter'] {
+  if (!frontmatter || typeof frontmatter !== 'object' || Object.keys(frontmatter).length === 0) {
+    return undefined;
+  }
+  return frontmatter as TSkill['frontmatter'];
+}
+
+function serializeSourceMetadata(
+  metadata: Record<string, unknown> | undefined,
+): TSkill['sourceMetadata'] {
+  if (!metadata || typeof metadata !== 'object' || Object.keys(metadata).length === 0) {
+    return undefined;
+  }
+  return metadata as TSkill['sourceMetadata'];
+}
+
 /** Converts a skill document to the wire format returned by the API. */
 function serializeSkill(skill: ISkill & { _id: Types.ObjectId }, publicSet: Set<string>): TSkill {
   return {
@@ -99,13 +122,13 @@ function serializeSkill(skill: ISkill & { _id: Types.ObjectId }, publicSet: Set<
     displayTitle: skill.displayTitle,
     description: skill.description,
     body: skill.body,
-    frontmatter: skill.frontmatter as TSkill['frontmatter'],
+    frontmatter: serializeFrontmatter(skill.frontmatter),
     category: skill.category,
     author: skill.author.toString(),
     authorName: skill.authorName,
     version: skill.version,
     source: skill.source,
-    sourceMetadata: skill.sourceMetadata as TSkill['sourceMetadata'],
+    sourceMetadata: serializeSourceMetadata(skill.sourceMetadata),
     fileCount: skill.fileCount,
     isPublic: publicSet.has(skill._id.toString()),
     tenantId: skill.tenantId,
@@ -128,7 +151,7 @@ function serializeSkillSummary(
     authorName: skill.authorName,
     version: skill.version,
     source: skill.source,
-    sourceMetadata: skill.sourceMetadata as TSkill['sourceMetadata'],
+    sourceMetadata: serializeSourceMetadata(skill.sourceMetadata),
     fileCount: skill.fileCount,
     isPublic: publicSet.has(skill._id.toString()),
     tenantId: skill.tenantId,
@@ -320,9 +343,18 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         });
       } catch (permissionError) {
         logger.error(
-          `[POST /skills] Failed to grant owner permission for skill ${skill._id.toString()}:`,
+          `[POST /skills] Failed to grant owner permission for skill ${skill._id.toString()}, rolling back:`,
           permissionError,
         );
+        try {
+          await deleteSkill(skill._id.toString());
+        } catch (rollbackError) {
+          logger.error(
+            `[POST /skills] Compensating delete failed for orphaned skill ${skill._id.toString()}:`,
+            rollbackError,
+          );
+        }
+        return res.status(500).json({ error: 'Failed to initialize skill permissions' });
       }
 
       const publicSet = await getPublicSkillIdSet();
@@ -336,7 +368,15 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
   async function getHandler(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as { id: string };
-      const skill = await getSkillById(id);
+      // The canAccessSkillResource middleware already resolved the skill via
+      // getSkillById as its idResolver and stashed it on req.resourceAccess.resourceInfo.
+      // Reuse it to avoid a second DB round-trip.
+      const resolved = (
+        req as ServerRequest & {
+          resourceAccess?: { resourceInfo?: ISkill & { _id: Types.ObjectId } };
+        }
+      ).resourceAccess?.resourceInfo;
+      const skill = resolved ?? (await getSkillById(id));
       if (!skill) {
         return res.status(404).json({ error: 'Skill not found' });
       }
@@ -357,14 +397,19 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         return res.status(400).json({ error: EXPECTED_VERSION_ERROR });
       }
 
-      const update: UpdateSkillInput = {
-        name: rest.name,
-        displayTitle: rest.displayTitle,
-        description: rest.description,
-        body: rest.body,
-        frontmatter: rest.frontmatter as Record<string, unknown> | undefined,
-        category: rest.category,
-      };
+      const update: UpdateSkillInput = {};
+      if (rest.name !== undefined) update.name = rest.name;
+      if (rest.displayTitle !== undefined) update.displayTitle = rest.displayTitle;
+      if (rest.description !== undefined) update.description = rest.description;
+      if (rest.body !== undefined) update.body = rest.body;
+      if (rest.frontmatter !== undefined) {
+        update.frontmatter = rest.frontmatter as Record<string, unknown>;
+      }
+      if (rest.category !== undefined) update.category = rest.category;
+
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({ error: 'At least one field must be provided for update' });
+      }
 
       let result: UpdateSkillResult;
       try {

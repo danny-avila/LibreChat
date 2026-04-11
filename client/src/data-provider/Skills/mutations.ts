@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import type { UseMutationResult } from '@tanstack/react-query';
+import type { InfiniteData, QueryKey, UseMutationResult } from '@tanstack/react-query';
 import type {
   TSkill,
   TSkillFile,
@@ -9,6 +9,7 @@ import type {
   TUpdateSkillResponse,
   TDeleteSkillResponse,
   TSkillListResponse,
+  TSkillCacheEntry,
   TUploadSkillFileVariables,
   TDeleteSkillFileVariables,
   TDeleteSkillFileResponse,
@@ -20,40 +21,68 @@ import type {
   DeleteSkillFileOptions,
 } from 'librechat-data-provider';
 
-/** Prepend a newly-created skill to every cached skill list. */
+function isInfiniteSkillData(
+  data: TSkillListResponse | InfiniteData<TSkillListResponse>,
+): data is InfiniteData<TSkillListResponse> {
+  return Array.isArray((data as InfiniteData<TSkillListResponse>).pages);
+}
+
+/**
+ * Apply a page-level transform to both flat and infinite skill caches.
+ * The transform receives a single `TSkillListResponse` page and returns the
+ * updated page.
+ */
+function updateSkillCaches(
+  queryClient: ReturnType<typeof useQueryClient>,
+  transform: (page: TSkillListResponse) => TSkillListResponse,
+): void {
+  queryClient.setQueriesData<TSkillCacheEntry>([QueryKeys.skills], (data) => {
+    if (!data) return data;
+    if (isInfiniteSkillData(data)) {
+      return {
+        ...data,
+        pages: data.pages.map((page) => transform(page)),
+      };
+    }
+    return transform(data);
+  });
+}
+
+/** Prepend a newly-created skill into the first page of every cached skill list. */
 function addSkillToCachedLists(
   queryClient: ReturnType<typeof useQueryClient>,
   skill: TSkill,
 ): void {
-  queryClient.setQueriesData<TSkillListResponse>([QueryKeys.skills], (data) => {
-    if (!data) return data;
-    return { ...data, skills: [skill, ...data.skills] };
+  let prepended = false;
+  updateSkillCaches(queryClient, (page) => {
+    if (prepended) return page;
+    prepended = true;
+    return { ...page, skills: [skill, ...page.skills] };
   });
+  // For infinite queries we only want to prepend once on page 0.
+  // The closure above handles that via the `prepended` flag per query.
 }
 
-/** Replace a skill in every cached list that contains it. */
+/** Replace a skill by id in every cached page that contains it. */
 function replaceSkillInCachedLists(
   queryClient: ReturnType<typeof useQueryClient>,
   skill: TSkill,
 ): void {
-  queryClient.setQueriesData<TSkillListResponse>([QueryKeys.skills], (data) => {
-    if (!data) return data;
-    return {
-      ...data,
-      skills: data.skills.map((existing) => (existing._id === skill._id ? skill : existing)),
-    };
-  });
+  updateSkillCaches(queryClient, (page) => ({
+    ...page,
+    skills: page.skills.map((existing) => (existing._id === skill._id ? skill : existing)),
+  }));
 }
 
-/** Remove a deleted skill from every cached list. */
+/** Remove a deleted skill id from every cached page that contains it. */
 function removeSkillFromCachedLists(
   queryClient: ReturnType<typeof useQueryClient>,
   id: string,
 ): void {
-  queryClient.setQueriesData<TSkillListResponse>([QueryKeys.skills], (data) => {
-    if (!data) return data;
-    return { ...data, skills: data.skills.filter((s) => s._id !== id) };
-  });
+  updateSkillCaches(queryClient, (page) => ({
+    ...page,
+    skills: page.skills.filter((s) => s._id !== id),
+  }));
 }
 
 /**
@@ -78,6 +107,7 @@ export const useCreateSkillMutation = (
 
 /**
  * Update a skill. Uses optimistic updates mirroring `useUpdatePromptGroup`:
+ *   - cancel in-flight queries so a late refetch can't clobber the optimistic state
  *   - snapshot the previous skill + list data in `onMutate`
  *   - apply the patch locally
  *   - roll back on error
@@ -92,19 +122,23 @@ export const useUpdateSkillMutation = (
     mutationFn: (vars: TUpdateSkillVariables) => dataService.updateSkill(vars),
     ...rest,
     onMutate: async (variables) => {
+      // Prevent in-flight refetches from overwriting the optimistic update.
+      await queryClient.cancelQueries([QueryKeys.skill, variables.id]);
+      await queryClient.cancelQueries([QueryKeys.skills]);
+
       const previousSkill = queryClient.getQueryData<TSkill>([QueryKeys.skill, variables.id]);
-      const previousListSnapshots = queryClient.getQueriesData<TSkillListResponse>([
+      const previousListSnapshots = queryClient.getQueriesData<TSkillCacheEntry>([
         QueryKeys.skills,
-      ]);
+      ]) as Array<[QueryKey, TSkillCacheEntry]>;
 
       if (previousSkill) {
         const optimistic: TSkill = {
           ...previousSkill,
           ...variables.payload,
           frontmatter: {
-            ...previousSkill.frontmatter,
+            ...(previousSkill.frontmatter ?? {}),
             ...(variables.payload.frontmatter ?? {}),
-          },
+          } as TSkill['frontmatter'],
         };
         queryClient.setQueryData<TSkill>([QueryKeys.skill, variables.id], optimistic);
         replaceSkillInCachedLists(queryClient, optimistic);

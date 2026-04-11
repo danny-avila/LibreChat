@@ -24,7 +24,6 @@ export const useListSkillsQuery = (
     [QueryKeys.skills, params?.category ?? '', params?.search ?? '', params?.limit ?? 20],
     () => dataService.listSkills(params),
     {
-      staleTime: 1000 * 10,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,

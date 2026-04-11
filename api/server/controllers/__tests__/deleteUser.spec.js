@@ -132,6 +132,7 @@ function stubDeletionMocks() {
   mockDeleteToolCalls.mockResolvedValue();
   mockDeleteUserAgents.mockResolvedValue();
   mockDeleteUserPrompts.mockResolvedValue();
+  mockDeleteUserSkills.mockResolvedValue(0);
 }
 
 beforeEach(() => {
@@ -150,6 +151,9 @@ describe('deleteUserController - 2FA enforcement', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith({ message: 'User deleted' });
     expect(mockDeleteMessages).toHaveBeenCalled();
+    expect(mockDeleteUserAgents).toHaveBeenCalledWith('user1');
+    expect(mockDeleteUserPrompts).toHaveBeenCalledWith('user1');
+    expect(mockDeleteUserSkills).toHaveBeenCalledWith('user1');
     expect(mockVerifyOTPOrBackupCode).not.toHaveBeenCalled();
   });
 
