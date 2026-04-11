@@ -62,11 +62,11 @@ export type TSkill = {
 };
 
 /**
- * Summary shape used in list endpoints — omits `body` to keep list payloads small.
+ * Summary shape used in list endpoints — omits `body` and `frontmatter` to keep
+ * list payloads small. Callers that need the full body/frontmatter must fetch
+ * the detail via `GET /api/skills/:id`.
  */
-export type TSkillSummary = Omit<TSkill, 'body' | 'frontmatter'> & {
-  frontmatter?: SkillFrontmatter;
-};
+export type TSkillSummary = Omit<TSkill, 'body' | 'frontmatter'>;
 
 /**
  * Metadata for a single file bundled inside a skill.

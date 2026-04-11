@@ -373,7 +373,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       .sort({ updatedAt: -1, _id: 1 })
       .limit(limit + 1)
       .select(
-        'name displayTitle description category author authorName version source fileCount tenantId createdAt updatedAt',
+        'name displayTitle description category author authorName version source sourceMetadata fileCount tenantId createdAt updatedAt',
       )
       .lean();
 
@@ -451,23 +451,18 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     };
   }
 
-  async function deleteSkillFilesBySkillId(skillId: Types.ObjectId | string): Promise<number> {
-    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    const res = await SkillFile.deleteMany({ skillId });
-    return res.deletedCount ?? 0;
-  }
-
   async function deleteSkill(id: string): Promise<{ deleted: boolean }> {
     if (!isValidObjectIdString(id)) {
       return { deleted: false };
     }
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     const objectId = new ObjectId(id);
     const res = await Skill.deleteOne({ _id: objectId });
     if (!res.deletedCount) {
       return { deleted: false };
     }
-    await deleteSkillFilesBySkillId(objectId);
+    await SkillFile.deleteMany({ skillId: objectId });
     try {
       await deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id });
     } catch (error) {
@@ -499,11 +494,6 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       ),
     );
     return res.deletedCount ?? 0;
-  }
-
-  async function countSkillFiles(skillId: Types.ObjectId | string): Promise<number> {
-    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    return SkillFile.countDocuments({ skillId });
   }
 
   /**
@@ -543,16 +533,12 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     }
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     const category = inferSkillFileCategory(row.relativePath);
-    // Detect new-vs-replace by pre-checking existence; doing it inside the same
-    // method lets us avoid a recount race with concurrent operations.
-    const existing = await SkillFile.findOne({
-      skillId: row.skillId,
-      relativePath: row.relativePath,
-    })
-      .select('_id')
-      .lean();
-
-    const upserted = await SkillFile.findOneAndUpdate(
+    // Atomic new-vs-replace detection: with `new: false, upsert: true`,
+    // `findOneAndUpdate` returns the pre-update document (or null if the doc
+    // did not exist and was just inserted). Checking the return value replaces
+    // a non-atomic `findOne` + `upsert` pair that could double-count on
+    // concurrent uploads of the same (skillId, relativePath).
+    const previous = await SkillFile.findOneAndUpdate(
       { skillId: row.skillId, relativePath: row.relativePath },
       {
         $set: {
@@ -570,11 +556,17 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
           tenantId: row.tenantId,
         },
       },
-      { new: true, upsert: true },
+      { new: false, upsert: true },
     ).lean();
+    const delta = previous ? 0 : 1;
+    await bumpSkillVersionAndAdjustFileCount(row.skillId, delta);
 
-    await bumpSkillVersionAndAdjustFileCount(row.skillId, existing ? 0 : 1);
-    return upserted as unknown as ISkillFile & { _id: Types.ObjectId };
+    // Return the current (post-upsert) document for the caller.
+    const current = await SkillFile.findOne({
+      skillId: row.skillId,
+      relativePath: row.relativePath,
+    }).lean();
+    return current as unknown as ISkillFile & { _id: Types.ObjectId };
   }
 
   async function deleteSkillFile(
@@ -590,15 +582,9 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     return { deleted: true };
   }
 
-  async function getSkillFile(
-    skillId: Types.ObjectId | string,
-    relativePath: string,
-  ): Promise<(ISkillFile & { _id: Types.ObjectId }) | null> {
-    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    const doc = await SkillFile.findOne({ skillId, relativePath }).lean();
-    return (doc as unknown as (ISkillFile & { _id: Types.ObjectId }) | null) ?? null;
-  }
-
+  // The public surface is scoped to methods that handlers and the user
+  // deletion controller actually call. The per-skill file cascade on
+  // `deleteSkill` is inlined; there's no need for a separate export.
   return {
     createSkill,
     getSkillById,
@@ -609,9 +595,6 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     listSkillFiles,
     upsertSkillFile,
     deleteSkillFile,
-    getSkillFile,
-    deleteSkillFilesBySkillId,
-    countSkillFiles,
   };
 }
 

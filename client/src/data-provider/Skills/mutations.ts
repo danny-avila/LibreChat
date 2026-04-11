@@ -28,39 +28,32 @@ function isInfiniteSkillData(
 }
 
 /**
- * Apply a page-level transform to both flat and infinite skill caches.
- * The transform receives a single `TSkillListResponse` page and returns the
- * updated page.
+ * Prepend a newly-created skill into every cached skill list. For infinite
+ * queries the new skill is inserted at the top of page 0 only (it belongs
+ * strictly "before" every other page by the cursor contract). For flat
+ * queries it's prepended to the single page.
+ *
+ * Each call to the `setQueriesData` updater is scoped to one cache entry, so
+ * we do NOT share state between invocations — a previous attempt at this used
+ * a hoisted `prepended` flag, which silently dropped the update on whichever
+ * cache entry was processed second.
  */
-function updateSkillCaches(
+function addSkillToCachedLists(
   queryClient: ReturnType<typeof useQueryClient>,
-  transform: (page: TSkillListResponse) => TSkillListResponse,
+  skill: TSkill,
 ): void {
   queryClient.setQueriesData<TSkillCacheEntry>([QueryKeys.skills], (data) => {
     if (!data) return data;
     if (isInfiniteSkillData(data)) {
       return {
         ...data,
-        pages: data.pages.map((page) => transform(page)),
+        pages: data.pages.map((page, i) =>
+          i === 0 ? { ...page, skills: [skill, ...page.skills] } : page,
+        ),
       };
     }
-    return transform(data);
+    return { ...data, skills: [skill, ...data.skills] };
   });
-}
-
-/** Prepend a newly-created skill into the first page of every cached skill list. */
-function addSkillToCachedLists(
-  queryClient: ReturnType<typeof useQueryClient>,
-  skill: TSkill,
-): void {
-  let prepended = false;
-  updateSkillCaches(queryClient, (page) => {
-    if (prepended) return page;
-    prepended = true;
-    return { ...page, skills: [skill, ...page.skills] };
-  });
-  // For infinite queries we only want to prepend once on page 0.
-  // The closure above handles that via the `prepended` flag per query.
 }
 
 /** Replace a skill by id in every cached page that contains it. */
@@ -68,10 +61,22 @@ function replaceSkillInCachedLists(
   queryClient: ReturnType<typeof useQueryClient>,
   skill: TSkill,
 ): void {
-  updateSkillCaches(queryClient, (page) => ({
-    ...page,
-    skills: page.skills.map((existing) => (existing._id === skill._id ? skill : existing)),
-  }));
+  queryClient.setQueriesData<TSkillCacheEntry>([QueryKeys.skills], (data) => {
+    if (!data) return data;
+    if (isInfiniteSkillData(data)) {
+      return {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          skills: page.skills.map((existing) => (existing._id === skill._id ? skill : existing)),
+        })),
+      };
+    }
+    return {
+      ...data,
+      skills: data.skills.map((existing) => (existing._id === skill._id ? skill : existing)),
+    };
+  });
 }
 
 /** Remove a deleted skill id from every cached page that contains it. */
@@ -79,10 +84,19 @@ function removeSkillFromCachedLists(
   queryClient: ReturnType<typeof useQueryClient>,
   id: string,
 ): void {
-  updateSkillCaches(queryClient, (page) => ({
-    ...page,
-    skills: page.skills.filter((s) => s._id !== id),
-  }));
+  queryClient.setQueriesData<TSkillCacheEntry>([QueryKeys.skills], (data) => {
+    if (!data) return data;
+    if (isInfiniteSkillData(data)) {
+      return {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          skills: page.skills.filter((s) => s._id !== id),
+        })),
+      };
+    }
+    return { ...data, skills: data.skills.filter((s) => s._id !== id) };
+  });
 }
 
 /**

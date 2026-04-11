@@ -25,7 +25,13 @@ jest.mock('~/models', () => {
       }
     },
   });
-  return methods;
+  // Override getRoleByName to return a permissive SKILLS capability block for all
+  // test users. The real role seeding relies on `initializeRoles` which this
+  // suite intentionally skips to keep setup minimal.
+  return {
+    ...methods,
+    getRoleByName: jest.fn(),
+  };
 });
 
 jest.mock('~/server/middleware', () => ({
@@ -139,6 +145,23 @@ async function setupTestData() {
       role: SystemRoles.USER,
     }),
   };
+
+  const { getRoleByName } = require('~/models');
+  getRoleByName.mockImplementation((roleName) => {
+    if (roleName === SystemRoles.USER || roleName === SystemRoles.ADMIN) {
+      return {
+        permissions: {
+          SKILLS: {
+            USE: true,
+            CREATE: true,
+            SHARE: true,
+            SHARE_PUBLIC: true,
+          },
+        },
+      };
+    }
+    return null;
+  });
 }
 
 async function createSkillAsOwner(overrides = {}) {

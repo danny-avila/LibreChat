@@ -1,7 +1,7 @@
 const express = require('express');
-const { createSkillsHandlers } = require('@librechat/api');
+const { createSkillsHandlers, generateCheckAccess } = require('@librechat/api');
 const { isValidObjectIdString } = require('@librechat/data-schemas');
-const { PermissionBits } = require('librechat-data-provider');
+const { PermissionBits, PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   createSkill,
   getSkillById,
@@ -10,6 +10,7 @@ const {
   deleteSkill,
   listSkillFiles,
   deleteSkillFile,
+  getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
 const {
@@ -20,7 +21,22 @@ const {
 
 const router = express.Router();
 
+// Role-based capability gates. Mirrors prompts.js — the ACL middleware on each
+// route handles per-resource permissions; these check that the caller's role
+// is even allowed to use / create skills at all.
+const checkSkillAccess = generateCheckAccess({
+  permissionType: PermissionTypes.SKILLS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
+const checkSkillCreate = generateCheckAccess({
+  permissionType: PermissionTypes.SKILLS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
+
 router.use(requireJwtAuth);
+router.use(checkSkillAccess);
 
 const handlers = createSkillsHandlers({
   createSkill,
@@ -37,7 +53,7 @@ const handlers = createSkillsHandlers({
 });
 
 router.get('/', handlers.list);
-router.post('/', handlers.create);
+router.post('/', checkSkillCreate, handlers.create);
 
 router.get(
   '/:id',
@@ -47,12 +63,14 @@ router.get(
 
 router.patch(
   '/:id',
+  checkSkillCreate,
   canAccessSkillResource({ requiredPermission: PermissionBits.EDIT }),
   handlers.patch,
 );
 
 router.delete(
   '/:id',
+  checkSkillCreate,
   canAccessSkillResource({ requiredPermission: PermissionBits.DELETE }),
   handlers.delete,
 );

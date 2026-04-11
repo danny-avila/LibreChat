@@ -25,6 +25,7 @@ import type {
   TListSkillFilesResponse,
   TDeleteSkillResponse,
   TDeleteSkillFileResponse,
+  TSkillConflictResponse,
 } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types/http';
 
@@ -87,9 +88,6 @@ export interface SkillsHandlersDeps {
   /** ObjectId validation helper from data-schemas. */
   isValidObjectIdString: (value: unknown) => boolean;
 }
-
-/** Sentinel used by the PATCH stub for an invalid `expectedVersion`. */
-const EXPECTED_VERSION_ERROR = 'expectedVersion is required and must be a number';
 
 /**
  * Narrow an opaque `Record<string, unknown>` frontmatter (as stored in Mongoose
@@ -357,8 +355,9 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         return res.status(500).json({ error: 'Failed to initialize skill permissions' });
       }
 
-      const publicSet = await getPublicSkillIdSet();
-      return res.status(201).json(serializeSkill(skill, publicSet));
+      // A freshly created skill has no PUBLIC ACL entry, so `isPublic` is
+      // always false. Skip the DB round-trip.
+      return res.status(201).json(serializeSkill(skill, new Set<string>()));
     } catch (error) {
       logger.error('[POST /skills] Error creating skill', error);
       return res.status(500).json({ error: 'Error creating skill' });
@@ -393,8 +392,19 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       const { id } = req.params as { id: string };
       const body = (req.body ?? {}) as TUpdateSkillPayload & { expectedVersion?: number };
       const { expectedVersion, ...rest } = body;
-      if (typeof expectedVersion !== 'number') {
-        return res.status(400).json({ error: EXPECTED_VERSION_ERROR });
+      // `typeof NaN === 'number'` is true, so we need the stricter isFinite/isInteger
+      // checks below to avoid NaN passing through and triggering a misleading 409
+      // (MongoDB's `{ version: NaN }` never matches, so the handler would fall
+      // through to the conflict branch and leak the current skill state).
+      if (
+        typeof expectedVersion !== 'number' ||
+        !Number.isFinite(expectedVersion) ||
+        !Number.isInteger(expectedVersion) ||
+        expectedVersion < 1
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'expectedVersion is required and must be a positive integer' });
       }
 
       const update: UpdateSkillInput = {};
@@ -429,10 +439,11 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       }
       const publicSet = await getPublicSkillIdSet();
       if (result.status === 'conflict') {
-        return res.status(409).json({
+        const conflict: TSkillConflictResponse = {
           error: 'skill_version_conflict',
           current: serializeSkill(result.current, publicSet),
-        });
+        };
+        return res.status(409).json(conflict);
       }
       return res.status(200).json(serializeSkill(result.skill, publicSet));
     } catch (error) {
@@ -492,7 +503,12 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
   async function deleteFileHandler(req: ServerRequest, res: Response) {
     try {
       const { id, relativePath } = req.params as { id: string; relativePath: string };
-      const decodedPath = decodeURIComponent(relativePath);
+      let decodedPath: string;
+      try {
+        decodedPath = decodeURIComponent(relativePath);
+      } catch {
+        return res.status(400).json({ error: 'Invalid file path encoding' });
+      }
       const result = await deleteSkillFile(id, decodedPath);
       if (!result.deleted) {
         return res.status(404).json({ error: 'Skill file not found' });

@@ -21,7 +21,13 @@ export const useListSkillsQuery = (
   config?: UseQueryOptions<TSkillListResponse>,
 ): QueryObserverResult<TSkillListResponse> => {
   return useQuery<TSkillListResponse>(
-    [QueryKeys.skills, params?.category ?? '', params?.search ?? '', params?.limit ?? 20],
+    [
+      QueryKeys.skills,
+      params?.category ?? '',
+      params?.search ?? '',
+      params?.limit ?? 20,
+      params?.cursor ?? '',
+    ],
     () => dataService.listSkills(params),
     {
       refetchOnWindowFocus: false,
