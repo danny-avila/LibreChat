@@ -51,6 +51,7 @@ export interface IUser extends Document {
   }>;
   expiresAt?: Date;
   termsAccepted?: boolean;
+  secondTermsAccepted?: boolean;
   personalization?: {
     memories?: boolean;
   };

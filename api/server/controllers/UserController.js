@@ -77,7 +77,11 @@ const getTermsStatusController = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.status(200).json({ termsAccepted: !!user.termsAccepted });
+    res.status(200).json({
+      termsAccepted: !!user.termsAccepted,
+      secondTermsAccepted: !!user.secondTermsAccepted,
+      farmerProfileCompleted: !!user.farmerProfile?.farmerName,
+    });
   } catch (error) {
     logger.error('Error fetching terms acceptance status:', error);
     res.status(500).json({ message: 'Error fetching terms acceptance status' });
@@ -94,6 +98,23 @@ const acceptTermsController = async (req, res) => {
   } catch (error) {
     logger.error('Error accepting terms:', error);
     res.status(500).json({ message: 'Error accepting terms' });
+  }
+};
+
+const acceptSecondTermsController = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { secondTermsAccepted: true },
+      { new: true },
+    );
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ message: 'Second terms accepted successfully' });
+  } catch (error) {
+    logger.error('Error accepting second terms:', error);
+    res.status(500).json({ message: 'Error accepting second terms' });
   }
 };
 
@@ -427,6 +448,7 @@ module.exports = {
   getUserController,
   getTermsStatusController,
   acceptTermsController,
+  acceptSecondTermsController,
   saveFarmerProfileController,
   deleteUserController,
   verifyEmailController,

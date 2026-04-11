@@ -30,7 +30,7 @@ export default function Root() {
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
 
-  const { isAuthenticated, logout, user } = useAuthContext();
+  const { isAuthenticated, logout } = useAuthContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   // Global health check - runs once per authenticated session
@@ -47,32 +47,25 @@ export default function Root() {
 
   useSearchEnabled(isAuthenticated);
 
-  const noticeKey = `hasAcceptedTestingNotice_${user?.id ?? 'guest'}`;
-  const farmerProfileKey = `hasCompletedFarmerProfile_${user?.id ?? 'guest'}`;
-
   useEffect(() => {
-    if (termsData) {
-      setShowTerms(!termsData.termsAccepted);
-      if (termsData.termsAccepted) {
-        const hasAcceptedNotice = localStorage.getItem(noticeKey);
-        if (!hasAcceptedNotice) {
-          setShowTestingNotice(true);
-        } else {
-          const hasCompletedFarmerProfile = localStorage.getItem(farmerProfileKey);
-          if (!hasCompletedFarmerProfile) {
-            setShowFarmerProfile(true);
-          }
-        }
-      }
+    if (!termsData) {
+      return;
     }
-  }, [termsData, noticeKey, farmerProfileKey]);
+    if (!termsData.termsAccepted) {
+      setShowTerms(true);
+      return;
+    }
+    if (!termsData.secondTermsAccepted) {
+      setShowTestingNotice(true);
+      return;
+    }
+    if (!termsData.farmerProfileCompleted) {
+      setShowFarmerProfile(true);
+    }
+  }, [termsData]);
 
   const handleAcceptTerms = () => {
     setShowTerms(false);
-    const hasAcceptedNotice = localStorage.getItem(noticeKey);
-    if (!hasAcceptedNotice) {
-      setShowTestingNotice(true);
-    }
   };
 
   const handleDeclineTerms = () => {
@@ -80,11 +73,11 @@ export default function Root() {
     logout('/login?redirect=false');
   };
 
+  // ImportantNoticeModal handles the DB write itself via useAcceptSecondTermsMutation.
+  // This callback fires after the mutation succeeds.
   const handleAcceptTestingNotice = () => {
-    localStorage.setItem(noticeKey, 'true');
     setShowTestingNotice(false);
-    const hasCompletedFarmerProfile = localStorage.getItem(farmerProfileKey);
-    if (!hasCompletedFarmerProfile) {
+    if (!termsData?.farmerProfileCompleted) {
       setShowFarmerProfile(true);
     }
   };
@@ -95,7 +88,6 @@ export default function Root() {
   };
 
   const handleFarmerProfileComplete = () => {
-    localStorage.setItem(farmerProfileKey, 'true');
     setShowFarmerProfile(false);
   };
 

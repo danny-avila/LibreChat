@@ -155,6 +155,10 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    secondTermsAccepted: {
+      type: Boolean,
+      default: false,
+    },
     personalization: {
       type: {
         memories: {
