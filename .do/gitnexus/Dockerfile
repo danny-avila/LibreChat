@@ -9,9 +9,10 @@ FROM node:24-slim
 
 ARG GITNEXUS_VERSION=1.5.3
 
-# 1. Build native addons with Bookworm toolchain, then remove build tools
+# 1. Build native addons with Bookworm toolchain, then remove build tools.
+#    curl stays for the docker healthcheck; Caddy lives in its own container.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ caddy curl \
+    && apt-get install -y --no-install-recommends python3 make g++ curl \
     && npm install -g gitnexus@${GITNEXUS_VERSION} \
     && apt-get purge -y --auto-remove python3 make g++ \
     && rm -rf /var/lib/apt/lists/* /root/.npm

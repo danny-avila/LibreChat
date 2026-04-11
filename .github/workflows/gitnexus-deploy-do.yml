@@ -10,7 +10,8 @@
 #     4. Removes any stale folders on the droplet for PRs that closed
 #        (even though gitnexus-cleanup-pr.yml also handles that path,
 #        this is a safety net in case the close event was missed)
-#     5. docker compose pulls latest image + restarts gitnexus container
+#     5. Pulls latest image, force-recreates gitnexus, reloads Caddy,
+#        and polls docker health until the container reports healthy
 #   The caddy container is untouched — no TLS churn.
 #
 # First-time droplet bootstrap (run once, manually):
@@ -32,10 +33,21 @@
 #   5. Create /opt/gitnexus/.env with: GITNEXUS_DOMAIN=... and API_TOKEN=...
 #   6. cd /opt/gitnexus && docker compose up -d
 #
+#   Then capture the droplet's SSH host key from your workstation and
+#   save it as the GITNEXUS_DO_KNOWN_HOST secret (below) so CI can pin it:
+#     ssh-keyscan -H gitnexus.yourdomain.com
+#
+#   GHCR image: the workflow runs `docker login ghcr.io` on the droplet
+#   on every deploy using GITHUB_TOKEN, so the package can stay private.
+#   If you'd rather not have CI manage droplet auth, make the package
+#   public under repo Settings -> Packages.
+#
 # Required GitHub secrets:
-#   GITNEXUS_DO_HOST     — droplet IP or hostname
-#   GITNEXUS_DO_USER     — SSH user (e.g. "deploy")
-#   GITNEXUS_DO_SSH_KEY  — private key matching the authorized pubkey
+#   GITNEXUS_DO_HOST        — droplet IP or hostname
+#   GITNEXUS_DO_USER        — SSH user (e.g. "deploy")
+#   GITNEXUS_DO_SSH_KEY     — private key matching the authorized pubkey
+#   GITNEXUS_DO_KNOWN_HOST  — output of `ssh-keyscan -H <host>` pinning the
+#                             droplet's host keys (prevents MITM/TOFU risk)
 
 name: GitNexus Deploy (DigitalOcean)
 
@@ -49,7 +61,6 @@ permissions:
   actions: read
   contents: read
   pull-requests: read
-  packages: write # push image to GHCR
 
 # Per-ref concurrency: rapid pushes to the same branch/PR coalesce, but
 # deploys targeting different refs can still run in parallel. Safe because
@@ -72,6 +83,9 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write # push image to GHCR
     outputs:
       image_tag: ${{ steps.tag.outputs.value }}
     steps:
@@ -83,7 +97,11 @@ jobs:
       - name: Detect image changes
         id: changes
         run: |
-          if git diff --quiet HEAD~1 HEAD -- .do/gitnexus/Dockerfile .do/gitnexus/entrypoint.sh .do/gitnexus/install-extensions.js; then
+          # Default to rebuild when we can't cleanly diff (first commit,
+          # workflow_run from a PR branch where HEAD isn't the trigger, etc).
+          # Rebuild on miss > skip when we should have rebuilt.
+          if git rev-parse --verify HEAD~1 >/dev/null 2>&1 && \
+             git diff --quiet HEAD~1 HEAD -- .do/gitnexus/Dockerfile .do/gitnexus/entrypoint.sh .do/gitnexus/install-extensions.js; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -120,6 +138,10 @@ jobs:
     needs: build-image
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout deploy config
         uses: actions/checkout@v4
@@ -166,6 +188,13 @@ jobs:
               per_page: 100,
             });
             core.info(`Found ${openPrs.length} open PRs`);
+            if (openPrs.length === 100) {
+              core.warning(
+                'Open PR list was truncated at 100 (GitHub API maximum). ' +
+                  'Some PR indexes may be skipped. Add pagination if the repo ' +
+                  'regularly exceeds 100 concurrent open PRs.',
+              );
+            }
 
             for (const pr of openPrs) {
               // PR branches live on forks too. listWorkflowRuns for a fork
@@ -223,21 +252,53 @@ jobs:
           du -sh staging/*/.gitnexus/ 2>/dev/null || echo "(none)"
 
       - name: Setup SSH
+        env:
+          SSH_KEY: ${{ secrets.GITNEXUS_DO_SSH_KEY }}
+          KNOWN_HOST: ${{ secrets.GITNEXUS_DO_KNOWN_HOST }}
         run: |
+          set -e
           mkdir -p ~/.ssh
-          echo "${{ secrets.GITNEXUS_DO_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.GITNEXUS_DO_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          # Pin the droplet's SSH host key from a repository secret instead
+          # of trusting whatever ssh-keyscan returns at deploy time. The
+          # secret is populated from `ssh-keyscan -H <host>` at bootstrap.
+          if [ -z "$KNOWN_HOST" ]; then
+            echo "::error::GITNEXUS_DO_KNOWN_HOST secret is empty. Run ssh-keyscan -H <host> and paste the output as this secret."
+            exit 1
+          fi
+          printf '%s\n' "$KNOWN_HOST" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Authenticate droplet with GHCR
+        # GHCR packages pushed by GITHUB_TOKEN start private. The droplet
+        # pulls the image on every deploy, so we re-authenticate it here
+        # using the same short-lived token. If the package is public, this
+        # step is redundant but harmless.
+        env:
+          SSH_USER: ${{ secrets.GITNEXUS_DO_USER }}
+          SSH_HOST: ${{ secrets.GITNEXUS_DO_HOST }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
+            "echo '$GH_TOKEN' | docker login ghcr.io -u '$GH_ACTOR' --password-stdin"
 
       - name: Upload config files
+        env:
+          SSH_USER: ${{ secrets.GITNEXUS_DO_USER }}
+          SSH_HOST: ${{ secrets.GITNEXUS_DO_HOST }}
         run: |
           rsync -az -e "ssh -i ~/.ssh/deploy_key" \
             .do/gitnexus/docker-compose.yml \
             .do/gitnexus/Caddyfile \
-            ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }}:/opt/gitnexus/
+            "$SSH_USER@$SSH_HOST:/opt/gitnexus/"
 
       - name: Rsync indexes and prune stale ones
         env:
+          SSH_USER: ${{ secrets.GITNEXUS_DO_USER }}
+          SSH_HOST: ${{ secrets.GITNEXUS_DO_HOST }}
           ACTIVE_NAMES: ${{ steps.resolve.outputs.active_names }}
         run: |
           set -e
@@ -246,42 +307,80 @@ jobs:
             [ -d "$dir" ] || continue
             name=$(basename "$dir")
             echo "Syncing $name"
-            ssh -i ~/.ssh/deploy_key ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }} \
+            ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
               "mkdir -p /opt/gitnexus/indexes/$name"
             rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" \
               "$dir" \
-              ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }}:/opt/gitnexus/indexes/$name/
+              "$SSH_USER@$SSH_HOST:/opt/gitnexus/indexes/$name/"
           done
 
           # Prune any folders on the droplet that aren't in the active set.
           # This cleans up closed PRs the cleanup workflow might have missed,
           # and is safe because main/dev/PR-<N> are always present if active.
           echo "Pruning stale indexes (keeping: $ACTIVE_NAMES)"
-          ssh -i ~/.ssh/deploy_key ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }} bash <<REMOTE
+          ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
+            ACTIVE_NAMES="$ACTIVE_NAMES" bash <<'REMOTE'
             set -e
             cd /opt/gitnexus/indexes || exit 0
             IFS=',' read -ra ACTIVE <<< "$ACTIVE_NAMES"
             for dir in */; do
-              dir="\${dir%/}"
+              dir="${dir%/}"
               keep=false
-              for a in "\${ACTIVE[@]}"; do
-                if [ "\$dir" = "\$a" ]; then keep=true; break; fi
+              for a in "${ACTIVE[@]}"; do
+                if [ "$dir" = "$a" ]; then keep=true; break; fi
               done
-              if [ "\$keep" = false ]; then
-                echo "Removing stale index: \$dir"
-                rm -rf "\$dir"
+              if [ "$keep" = false ]; then
+                echo "Removing stale index: $dir"
+                rm -rf "$dir"
               fi
             done
           REMOTE
 
-      - name: Pull image and restart gitnexus container
+      - name: Pull image, restart gitnexus, reload Caddy, wait for healthy
+        env:
+          SSH_USER: ${{ secrets.GITNEXUS_DO_USER }}
+          SSH_HOST: ${{ secrets.GITNEXUS_DO_HOST }}
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.GITNEXUS_DO_USER }}@${{ secrets.GITNEXUS_DO_HOST }} bash <<'REMOTE'
+          ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" bash <<'REMOTE'
             set -e
             cd /opt/gitnexus
             docker compose pull gitnexus
             docker compose up -d --force-recreate gitnexus
-            sleep 5
+
+            # Reload Caddy in-place so a changed Caddyfile takes effect
+            # without losing TLS certs or restarting connections. If caddy
+            # isn't running yet (first-time bootstrap), bring it up.
+            if docker compose ps --status running caddy 2>/dev/null | grep -q caddy; then
+              echo "Reloading Caddy config"
+              docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile || {
+                echo "Caddy reload failed — forcing restart"
+                docker compose up -d --force-recreate caddy
+              }
+            else
+              echo "Caddy not running — starting"
+              docker compose up -d caddy
+            fi
+
+            # Poll gitnexus health until ready or timeout (120s).
+            # start_period in compose is 60s, so a fresh container can
+            # legitimately take that long before the first healthcheck.
+            echo "Waiting for gitnexus to report healthy..."
+            for i in $(seq 1 24); do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' gitnexus 2>/dev/null || echo unknown)
+              echo "[$i/24] gitnexus health: $STATUS"
+              if [ "$STATUS" = "healthy" ]; then
+                echo "gitnexus is healthy"
+                break
+              fi
+              if [ "$i" -eq 24 ]; then
+                echo "ERROR: gitnexus failed to become healthy after 120s"
+                docker compose ps
+                docker compose logs --tail 80 gitnexus
+                exit 1
+              fi
+              sleep 5
+            done
+
             docker compose ps
             echo "--- Caddy logs (last 20 lines) ---"
             docker compose logs --tail 20 caddy || true
