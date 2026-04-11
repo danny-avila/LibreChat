@@ -89,7 +89,7 @@ export default function CustomUserVarsDefinitionSection() {
                   />
                   {errors.customUserVars?.[index]?.key && (
                     <p role="alert" className="text-xs text-text-destructive">
-                      {errors.customUserVars[index].key?.message}
+                      {errors.customUserVars?.[index]?.key?.message}
                     </p>
                   )}
                 </div>
@@ -118,7 +118,7 @@ export default function CustomUserVarsDefinitionSection() {
                   />
                   {errors.customUserVars?.[index]?.title && (
                     <p role="alert" className="text-xs text-text-destructive">
-                      {errors.customUserVars[index].title?.message}
+                      {errors.customUserVars?.[index]?.title?.message}
                     </p>
                   )}
                 </div>

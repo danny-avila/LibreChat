@@ -9,22 +9,17 @@ import {
 import { useToastContext } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { extractServerNameFromUrl, isValidUrl, normalizeUrl } from '../utils/urlUtils';
-import { buildHeaders, buildCustomUserVars } from '../utils/formHelpers';
+import {
+  buildCompleteConfig,
+  deriveDefaultValues,
+  getNewServerDefaults,
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+} from '../utils/formHelpers';
 import type { MCPServerDefinition } from '~/hooks';
 
-// Auth type enum
-export enum AuthTypeEnum {
-  None = 'none',
-  ServiceHttp = 'service_http',
-  OAuth = 'oauth',
-}
-
-// Authorization type enum
-export enum AuthorizationTypeEnum {
-  Basic = 'basic',
-  Bearer = 'bearer',
-  Custom = 'custom',
-}
+// Re-export enums for backwards compatibility
+export { AuthTypeEnum, AuthorizationTypeEnum };
 
 // Auth configuration interface
 export interface AuthConfig {
@@ -93,105 +88,9 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
   // Check if editing existing server
   const isEditMode = !!server;
 
-  // Default form values
+  // Default form values - use extracted helper functions
   const defaultValues = useMemo<MCPServerFormData>(() => {
-    if (server) {
-      let authType = AuthTypeEnum.None;
-      if (server.config.oauth) {
-        authType = AuthTypeEnum.OAuth;
-      } else if ('apiKey' in server.config && server.config.apiKey) {
-        authType = AuthTypeEnum.ServiceHttp;
-      }
-
-      const apiKeyConfig = 'apiKey' in server.config ? server.config.apiKey : undefined;
-
-      const headersConfig =
-        'headers' in server.config && server.config.headers ? server.config.headers : {};
-      const customUserVarsConfig = server.config.customUserVars ?? {};
-      const rawSecretHeaderKeys =
-        'secretHeaderKeys' in server.config ? server.config.secretHeaderKeys : undefined;
-      const secretHeaderKeysSet = new Set(rawSecretHeaderKeys ?? []);
-
-      const si = server.config.serverInstructions;
-      let serverInstructionsMode: ServerInstructionsMode = 'none';
-      if (typeof si === 'string') {
-        // Normalize case-insensitive "true"/"false" strings from YAML configs
-        const normalized = si.toLowerCase().trim();
-        if (normalized === 'true') {
-          serverInstructionsMode = 'server';
-        } else if (normalized === 'false' || normalized === '') {
-          serverInstructionsMode = 'none';
-        } else {
-          serverInstructionsMode = 'custom';
-        }
-      } else if (si === true) {
-        serverInstructionsMode = 'server';
-      }
-
-      return {
-        title: server.config.title || '',
-        description: server.config.description || '',
-        url: 'url' in server.config ? server.config.url : '',
-        type: (server.config.type as 'streamable-http' | 'sse') || 'streamable-http',
-        icon: server.config.iconPath || '',
-        auth: {
-          auth_type: authType,
-          api_key: '', // Never pre-fill secrets
-          api_key_source: (apiKeyConfig?.source as 'admin' | 'user') || 'admin',
-          api_key_authorization_type:
-            (apiKeyConfig?.authorization_type as AuthorizationTypeEnum) ||
-            AuthorizationTypeEnum.Bearer,
-          api_key_custom_header: apiKeyConfig?.custom_header || '',
-          oauth_client_id: server.config.oauth?.client_id || '',
-          oauth_client_secret: '', // Never pre-fill secrets
-          oauth_authorization_url: server.config.oauth?.authorization_url || '',
-          oauth_token_url: server.config.oauth?.token_url || '',
-          oauth_scope: server.config.oauth?.scope || '',
-          server_id: server.serverName,
-        },
-        trust: true, // Pre-checked for existing servers
-        headers: Object.entries(headersConfig).map(([key, value]) => ({
-          key,
-          value,
-          isSecret: secretHeaderKeysSet.has(key),
-        })),
-        customUserVars: Object.entries(customUserVarsConfig).map(([key, cfg]) => ({
-          key,
-          title: cfg.title,
-          description: cfg.description,
-        })),
-        chatMenu: server.config.chatMenu !== false,
-        serverInstructionsMode,
-        serverInstructionsCustom:
-          serverInstructionsMode === 'custom' && typeof si === 'string' ? si : '',
-      };
-    }
-
-    return {
-      title: '',
-      description: '',
-      url: '',
-      type: 'streamable-http',
-      icon: '',
-      auth: {
-        auth_type: AuthTypeEnum.None,
-        api_key: '',
-        api_key_source: 'admin',
-        api_key_authorization_type: AuthorizationTypeEnum.Bearer,
-        api_key_custom_header: '',
-        oauth_client_id: '',
-        oauth_client_secret: '',
-        oauth_authorization_url: '',
-        oauth_token_url: '',
-        oauth_scope: '',
-      },
-      trust: false,
-      headers: [],
-      customUserVars: [],
-      chatMenu: true,
-      serverInstructionsMode: 'none' as ServerInstructionsMode,
-      serverInstructionsCustom: '',
-    };
+    return server ? deriveDefaultValues(server) : getNewServerDefaults();
   }, [server]);
 
   // Form instance
@@ -236,70 +135,8 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
   const onSubmit = methods.handleSubmit(async (formData: MCPServerFormData) => {
     setIsSubmitting(true);
     try {
-      const config: Record<string, unknown> = {
-        type: formData.type,
-        url: formData.url,
-        title: formData.title,
-        ...(formData.description && { description: formData.description }),
-        ...(formData.icon && { iconPath: formData.icon }),
-        ...(!formData.chatMenu && { chatMenu: false }),
-        ...(formData.serverInstructionsMode === 'server' && { serverInstructions: true }),
-        ...(formData.serverInstructionsMode === 'custom' &&
-          formData.serverInstructionsCustom.trim() && {
-            serverInstructions: formData.serverInstructionsCustom.trim(),
-          }),
-      };
-
-      // Add HTTP headers using extracted helper
-      const headersResult = buildHeaders(formData.headers, isEditMode);
-      if (headersResult.headers) {
-        config.headers = headersResult.headers;
-        config.secretHeaderKeys = headersResult.secretHeaderKeys;
-      }
-
-      // Add custom user variable definitions using extracted helper
-      const customUserVarsMap = buildCustomUserVars(formData.customUserVars);
-      if (customUserVarsMap) {
-        config.customUserVars = customUserVarsMap;
-      }
-
-      // Add OAuth configuration
-      if (
-        formData.auth.auth_type === AuthTypeEnum.OAuth &&
-        (formData.auth.oauth_client_id ||
-          formData.auth.oauth_client_secret ||
-          formData.auth.oauth_authorization_url ||
-          formData.auth.oauth_token_url ||
-          formData.auth.oauth_scope)
-      ) {
-        config.oauth = {
-          ...(formData.auth.oauth_client_id && { client_id: formData.auth.oauth_client_id }),
-          ...(formData.auth.oauth_client_secret && {
-            client_secret: formData.auth.oauth_client_secret,
-          }),
-          ...(formData.auth.oauth_authorization_url && {
-            authorization_url: formData.auth.oauth_authorization_url,
-          }),
-          ...(formData.auth.oauth_token_url && { token_url: formData.auth.oauth_token_url }),
-          ...(formData.auth.oauth_scope && { scope: formData.auth.oauth_scope }),
-        };
-      }
-
-      // Add API Key configuration
-      if (formData.auth.auth_type === AuthTypeEnum.ServiceHttp) {
-        const source = formData.auth.api_key_source || 'admin';
-        const authorizationType = formData.auth.api_key_authorization_type || 'bearer';
-
-        config.apiKey = {
-          source,
-          authorization_type: authorizationType,
-          ...(source === 'admin' && formData.auth.api_key && { key: formData.auth.api_key }),
-          ...(authorizationType === 'custom' &&
-            formData.auth.api_key_custom_header && {
-              custom_header: formData.auth.api_key_custom_header,
-            }),
-        };
-      }
+      // Build config using extracted helper
+      const config = buildCompleteConfig(formData, isEditMode);
 
       const params: MCPServerCreateParams = { config };
 

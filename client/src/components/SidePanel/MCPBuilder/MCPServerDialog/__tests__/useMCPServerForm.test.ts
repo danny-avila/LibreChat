@@ -11,105 +11,22 @@ import type { MCPServerDefinition } from '~/hooks';
 // ---------------------------------------------------------------------------
 // Import shared helpers from production code
 // ---------------------------------------------------------------------------
-import { buildHeaders, buildCustomUserVars } from '../utils/formHelpers';
-import { AuthTypeEnum, AuthorizationTypeEnum } from '../hooks/useMCPServerForm';
-import type { MCPServerFormData, ServerInstructionsMode } from '../hooks/useMCPServerForm';
+import {
+  buildHeaders,
+  buildCustomUserVars,
+  deriveDefaultValues,
+  buildBaseConfig,
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+} from '../utils/formHelpers';
+import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 
 /**
- * Mirrors the defaultValues derivation for an existing server so we can test it
- * without mounting the full hook (which requires React context).
- */
-function deriveDefaultValues(server: MCPServerDefinition): MCPServerFormData {
-  let authType = AuthTypeEnum.None;
-  if (server.config.oauth) {
-    authType = AuthTypeEnum.OAuth;
-  } else if ('apiKey' in server.config && server.config.apiKey) {
-    authType = AuthTypeEnum.ServiceHttp;
-  }
-
-  const apiKeyConfig = 'apiKey' in server.config ? server.config.apiKey : undefined;
-  const headersConfig =
-    'headers' in server.config && server.config.headers
-      ? (server.config.headers as Record<string, string>)
-      : {};
-  const customUserVarsConfig = server.config.customUserVars ?? {};
-  const rawSecretHeaderKeys =
-    'secretHeaderKeys' in server.config
-      ? (server.config.secretHeaderKeys as string[] | undefined)
-      : undefined;
-  const secretHeaderKeysSet = new Set(rawSecretHeaderKeys ?? []);
-
-  const si = server.config.serverInstructions;
-  let serverInstructionsMode: ServerInstructionsMode = 'none';
-  if (typeof si === 'string') {
-    // Normalize case-insensitive "true"/"false" strings from YAML configs
-    const normalized = si.toLowerCase().trim();
-    if (normalized === 'true') {
-      serverInstructionsMode = 'server';
-    } else if (normalized === 'false' || normalized === '') {
-      serverInstructionsMode = 'none';
-    } else {
-      serverInstructionsMode = 'custom';
-    }
-  } else if (si === true) {
-    serverInstructionsMode = 'server';
-  }
-
-  return {
-    title: server.config.title || '',
-    description: server.config.description || '',
-    url: 'url' in server.config ? (server.config as { url: string }).url : '',
-    type: (server.config.type as 'streamable-http' | 'sse') || 'streamable-http',
-    icon: server.config.iconPath || '',
-    auth: {
-      auth_type: authType,
-      api_key: '',
-      api_key_source: (apiKeyConfig?.source as 'admin' | 'user') || 'admin',
-      api_key_authorization_type:
-        (apiKeyConfig?.authorization_type as AuthorizationTypeEnum) || AuthorizationTypeEnum.Bearer,
-      api_key_custom_header: apiKeyConfig?.custom_header || '',
-      oauth_client_id: server.config.oauth?.client_id || '',
-      oauth_client_secret: '',
-      oauth_authorization_url: server.config.oauth?.authorization_url || '',
-      oauth_token_url: server.config.oauth?.token_url || '',
-      oauth_scope: server.config.oauth?.scope || '',
-      server_id: server.serverName,
-    },
-    trust: true,
-    headers: Object.entries(headersConfig).map(([key, value]) => ({
-      key,
-      value,
-      isSecret: secretHeaderKeysSet.has(key),
-    })),
-    customUserVars: Object.entries(customUserVarsConfig).map(([key, cfg]) => ({
-      key,
-      title: cfg.title,
-      description: cfg.description,
-    })),
-    chatMenu: server.config.chatMenu !== false,
-    serverInstructionsMode,
-    serverInstructionsCustom: typeof si === 'string' ? si : '',
-  };
-}
-
-/**
- * Mirrors the config-building snippet from onSubmit so we can test the output
- * payload without the full React + react-hook-form stack.
+ * Builds a simple config for testing (base config without auth).
+ * This is a simplified wrapper around buildBaseConfig for test purposes.
  */
 function buildConfig(formData: MCPServerFormData): Record<string, unknown> {
-  return {
-    type: formData.type,
-    url: formData.url,
-    title: formData.title,
-    ...(formData.description && { description: formData.description }),
-    ...(formData.icon && { iconPath: formData.icon }),
-    ...(!formData.chatMenu && { chatMenu: false }),
-    ...(formData.serverInstructionsMode === 'server' && { serverInstructions: true }),
-    ...(formData.serverInstructionsMode === 'custom' &&
-      formData.serverInstructionsCustom.trim() && {
-        serverInstructions: formData.serverInstructionsCustom.trim(),
-      }),
-  };
+  return buildBaseConfig(formData, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -519,10 +436,11 @@ describe('buildHeaders', () => {
     expect(result.secretHeaderKeys).toEqual(['Authorization']);
   });
 
-  it('keeps secret headers with empty value (preserved masked value in edit mode)', () => {
+  it('omits secret headers with blank values (avoids overwriting server-side encrypted values)', () => {
+    // Blank secret headers should be omitted from the payload entirely,
+    // allowing the backend to preserve existing encrypted values.
     const result = buildHeaders([{ key: 'X-Secret', value: '', isSecret: true }], true);
-    expect(result.headers).toEqual({ 'X-Secret': '' });
-    expect(result.secretHeaderKeys).toEqual(['X-Secret']);
+    expect(result).toEqual({});
   });
 
   it('skips non-secret headers with blank values', () => {

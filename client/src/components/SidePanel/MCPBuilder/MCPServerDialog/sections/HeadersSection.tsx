@@ -95,7 +95,7 @@ function HeaderRow({
         />
         {errors.headers?.[index]?.key && (
           <p role="alert" className="text-xs text-text-destructive">
-            {errors.headers[index].key?.message}
+            {errors.headers?.[index]?.key?.message}
           </p>
         )}
       </div>
@@ -158,7 +158,7 @@ function HeaderRow({
           )}
           {errors.headers?.[index]?.value && (
             <p role="alert" className="text-xs text-text-destructive">
-              {errors.headers[index].value?.message}
+              {errors.headers?.[index]?.value?.message}
             </p>
           )}
         </div>
@@ -245,10 +245,18 @@ export default function HeadersSection({ isEditMode }: HeadersSectionProps) {
   const initialHeaderKeysRef = useRef<Set<string>>(new Set());
   // Track which headers were initially secret (not just which existed)
   const initialSecretHeaderKeysRef = useRef<Set<string>>(new Set());
+  // Track the field IDs to detect when the form has been completely reset
+  const previousFieldIdsRef = useRef<string>('');
 
   // Capture initial header keys and secret status when the field array is first populated
+  // or when it's been completely reset (dialog reused for a different server)
   useEffect(() => {
-    if (initialHeaderKeysRef.current.size === 0 && fields.length > 0) {
+    const currentFieldIds = fields.map((f) => f.id).join(',');
+    const hasBeenReset =
+      previousFieldIdsRef.current !== '' && currentFieldIds !== previousFieldIdsRef.current;
+    const shouldInitialize = initialHeaderKeysRef.current.size === 0 || hasBeenReset;
+
+    if (shouldInitialize && fields.length > 0) {
       const keys = new Set<string>();
       const secretKeys = new Set<string>();
       fields.forEach((f) => {
@@ -263,6 +271,12 @@ export default function HeadersSection({ isEditMode }: HeadersSectionProps) {
       });
       initialHeaderKeysRef.current = keys;
       initialSecretHeaderKeysRef.current = secretKeys;
+      previousFieldIdsRef.current = currentFieldIds;
+    } else if (fields.length === 0 && previousFieldIdsRef.current !== '') {
+      // When fields are cleared, reset everything so the next population is treated as fresh
+      initialHeaderKeysRef.current = new Set();
+      initialSecretHeaderKeysRef.current = new Set();
+      previousFieldIdsRef.current = '';
     }
   }, [fields]);
 
