@@ -256,7 +256,13 @@ jobs:
                   exit 1
                   ;;
                 *)
-                  echo "::warning::Failed to download PR artifact $artifact — skipping"
+                  # The name stays in active_names so the prune step
+                  # won't remove the droplet's existing copy. The old
+                  # index keeps being served instead of being wiped to
+                  # nothing — stale beats empty — but observability
+                  # requires an explicit notice since this path is
+                  # invisible in the happy-path deploy log.
+                  echo "::warning::Failed to download PR artifact $artifact — skipping fresh sync; previous index (if any) will continue being served from the droplet"
                   rm -rf "staging/${name}"
                   ;;
               esac
@@ -294,8 +300,10 @@ jobs:
         #
         # The token MUST travel through SSH stdin (not as a command arg)
         # so it's never visible in the droplet's process table via
-        # /proc/<pid>/cmdline. `printf '%s'` avoids a trailing newline
-        # which `docker login --password-stdin` would otherwise reject.
+        # /proc/<pid>/cmdline. `printf '%s'` is preferred over `echo`
+        # so the exact byte sequence sent is explicit — docker login
+        # tolerates a trailing newline but `printf` makes the intent
+        # obvious and portable across shells.
         env:
           SSH_USER: ${{ secrets.GITNEXUS_DO_USER }}
           SSH_HOST: ${{ secrets.GITNEXUS_DO_HOST }}
@@ -386,20 +394,23 @@ jobs:
               docker compose up -d caddy
             fi
 
-            # Poll gitnexus health until ready or timeout (180s).
-            # Docker's own unhealthy detection takes up to 150s
-            # (start_period 60s + retries 3 * interval 30s), so the
-            # poll ceiling must clear that to avoid false negatives
-            # when gitnexus legitimately takes ~2.5 min to warm up.
+            # Poll gitnexus health until ready or timeout. Docker's own
+            # unhealthy detection takes up to 150s (start_period 60s +
+            # retries 3 * interval 30s), so the poll ceiling must clear
+            # that to avoid false negatives when gitnexus legitimately
+            # takes ~2.5 min to warm up.
+            # Max wait = 36 sleeps * 5s = 180s (final iteration exits
+            # before its sleep on failure, so 37 iterations is the
+            # correct upper bound for a true 180s ceiling).
             echo "Waiting for gitnexus to report healthy..."
-            for i in $(seq 1 36); do
+            for i in $(seq 1 37); do
               STATUS=$(docker inspect --format='{{.State.Health.Status}}' gitnexus 2>/dev/null || echo unknown)
-              echo "[$i/36] gitnexus health: $STATUS"
+              echo "[$i/37] gitnexus health: $STATUS"
               if [ "$STATUS" = "healthy" ]; then
                 echo "gitnexus is healthy"
                 break
               fi
-              if [ "$i" -eq 36 ]; then
+              if [ "$i" -eq 37 ]; then
                 echo "ERROR: gitnexus failed to become healthy after 180s"
                 docker compose ps
                 docker compose logs --tail 80 gitnexus
