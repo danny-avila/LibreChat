@@ -1,9 +1,9 @@
 # Long-lived GitNexus image for DigitalOcean droplet deployment.
 #
-# Unlike the Fly variant, this image does NOT bake in the index data.
-# Indexes are mounted from the host at /indexes/<repo>/.gitnexus/ and
-# registered at container startup. This means a fresh index only
-# requires rsync + container restart — no image rebuild on every push.
+# This image does NOT bake in the index data. Indexes are mounted from
+# the host at /indexes/<repo>/.gitnexus/ and registered at container
+# startup. A fresh index only requires rsync + container restart — no
+# image rebuild on every push.
 
 FROM node:24-slim
 
