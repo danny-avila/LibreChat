@@ -1,4 +1,5 @@
 import { useForm, Controller } from 'react-hook-form';
+import STATE_DISTRICTS from '~/data/stateDistricts';
 import {
   OGDialog,
   OGDialogContent,
@@ -77,8 +78,12 @@ const FarmerProfileModal = ({
     handleSubmit,
     control,
     reset,
+    watch,
+    setValue,
     formState: { errors, isValid },
   } = useForm<FarmerProfileForm>({ mode: 'onChange' });
+
+  const selectedState = watch('state') ?? '';
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => {
@@ -120,13 +125,13 @@ const FarmerProfileModal = ({
 
   return (
     <OGDialog open={open} onOpenChange={handleOpenChange}>
-      <OGDialogContent className="w-11/12 max-w-2xl sm:w-3/4 md:w-2/3 lg:w-1/2 max-h-[90vh] flex flex-col overflow-y-hidden">
+      <OGDialogContent showCloseButton={false} className="w-11/12 max-w-2xl sm:w-3/4 md:w-2/3 lg:w-1/2 max-h-[90vh] flex flex-col overflow-y-hidden">
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-bold text-text-primary">
             Farmer Profile Registration
           </OGDialogTitle>
-          <p className="text-sm text-text-secondary">
-            Please fill in all the details below to complete your registration.
+          <p className="text-base font-medium text-red-500">
+            * Please fill in all the details below to complete your registration.
           </p>
         </OGDialogHeader>
 
@@ -177,7 +182,7 @@ const FarmerProfileModal = ({
                         <SelectTrigger className="mt-1 w-full">
                           <SelectValue placeholder="Select gender" />
                         </SelectTrigger>
-                        <SelectContent className="z-[200] bg-surface-primary">
+                        <SelectContent className="z-[200] max-h-60 overflow-y-auto bg-surface-primary">
                           <SelectItem value="Male">Male</SelectItem>
                           <SelectItem value="Female">Female</SelectItem>
                           <SelectItem value="Other">Other</SelectItem>
@@ -189,20 +194,73 @@ const FarmerProfileModal = ({
                 </div>
               </div>
 
-              <div className={fieldClass}>
-                <Label htmlFor="villageName">Village Name</Label>
-                <Input
-                  id="villageName"
-                  placeholder="Enter village name"
-                  className={inputClass}
-                  {...register('villageName', { required: 'Village name is required' })}
-                />
-                {errors.villageName && <p className={errorClass}>{errors.villageName.message}</p>}
+              <div className="grid grid-cols-2 gap-4">
+                <div className={fieldClass}>
+                  <Label>State</Label>
+                  <Controller
+                    name="state"
+                    control={control}
+                    rules={{ required: 'State is required' }}
+                    render={({ field }) => (
+                      <Select
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          setValue('district', '');
+                        }}
+                        value={field.value}
+                      >
+                        <SelectTrigger className="mt-1 w-full">
+                          <SelectValue placeholder="Select state" />
+                        </SelectTrigger>
+                        <SelectContent className="z-[200] max-h-60 overflow-y-auto bg-surface-primary">
+                          {Object.keys(STATE_DISTRICTS).map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {s}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {errors.state && <p className={errorClass}>{errors.state.message}</p>}
+                </div>
+
+                <div className={fieldClass}>
+                  <Label>District</Label>
+                  <Controller
+                    name="district"
+                    control={control}
+                    rules={{ required: 'District is required' }}
+                    render={({ field }) => (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        disabled={!selectedState}
+                      >
+                        <SelectTrigger className="mt-1 w-full">
+                          <SelectValue
+                            placeholder={selectedState ? 'Select district' : 'Select state first'}
+                          />
+                        </SelectTrigger>
+                        <SelectContent className="z-[200] max-h-60 overflow-y-auto bg-surface-primary">
+                          {(selectedState ? (STATE_DISTRICTS[selectedState] ?? []) : []).map(
+                            (d) => (
+                              <SelectItem key={d} value={d}>
+                                {d}
+                              </SelectItem>
+                            ),
+                          )}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {errors.district && <p className={errorClass}>{errors.district.message}</p>}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className={fieldClass}>
-                  <Label htmlFor="blockName">Block Name</Label>
+                  <Label htmlFor="blockName">Block</Label>
                   <Input
                     id="blockName"
                     placeholder="Enter block name"
@@ -213,29 +271,18 @@ const FarmerProfileModal = ({
                 </div>
 
                 <div className={fieldClass}>
-                  <Label htmlFor="district">District</Label>
+                  <Label htmlFor="villageName">Village</Label>
                   <Input
-                    id="district"
-                    placeholder="Enter district"
+                    id="villageName"
+                    placeholder="Enter village name"
                     className={inputClass}
-                    {...register('district', { required: 'District is required' })}
+                    {...register('villageName', { required: 'Village name is required' })}
                   />
-                  {errors.district && <p className={errorClass}>{errors.district.message}</p>}
+                  {errors.villageName && <p className={errorClass}>{errors.villageName.message}</p>}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className={fieldClass}>
-                  <Label htmlFor="state">State</Label>
-                  <Input
-                    id="state"
-                    placeholder="Enter state"
-                    className={inputClass}
-                    {...register('state', { required: 'State is required' })}
-                  />
-                  {errors.state && <p className={errorClass}>{errors.state.message}</p>}
-                </div>
-
                 <div className={fieldClass}>
                   <Label htmlFor="phoneNo">Phone No.</Label>
                   <Input
@@ -249,32 +296,32 @@ const FarmerProfileModal = ({
                   />
                   {errors.phoneNo && <p className={errorClass}>{errors.phoneNo.message}</p>}
                 </div>
-              </div>
 
-              <div className={fieldClass}>
-                <Label>Language Preference</Label>
-                <Controller
-                  name="languagePreference"
-                  control={control}
-                  rules={{ required: 'Language preference is required' }}
-                  render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger className="mt-1 w-full">
-                        <SelectValue placeholder="Select language" />
-                      </SelectTrigger>
-                      <SelectContent className="z-[200] bg-surface-primary">
-                        {INDIAN_LANGUAGES.map((lang) => (
-                          <SelectItem key={lang} value={lang}>
-                            {lang}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className={fieldClass}>
+                  <Label>Language Preference</Label>
+                  <Controller
+                    name="languagePreference"
+                    control={control}
+                    rules={{ required: 'Language preference is required' }}
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger className="mt-1 w-full">
+                          <SelectValue placeholder="Select language" />
+                        </SelectTrigger>
+                        <SelectContent className="z-[200] max-h-60 overflow-y-auto bg-surface-primary">
+                          {INDIAN_LANGUAGES.map((lang) => (
+                            <SelectItem key={lang} value={lang}>
+                              {lang}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {errors.languagePreference && (
+                    <p className={errorClass}>{errors.languagePreference.message}</p>
                   )}
-                />
-                {errors.languagePreference && (
-                  <p className={errorClass}>{errors.languagePreference.message}</p>
-                )}
+                </div>
               </div>
             </div>
 
@@ -418,7 +465,7 @@ const FarmerProfileModal = ({
                       <SelectTrigger className="mt-1 w-full">
                         <SelectValue placeholder="Select education level" />
                       </SelectTrigger>
-                      <SelectContent className="z-[200] bg-surface-primary">
+                      <SelectContent className="z-[200] max-h-60 overflow-y-auto bg-surface-primary">
                         <SelectItem value="UnderGraduate">Under Graduate</SelectItem>
                         <SelectItem value="Graduate">Graduate</SelectItem>
                         <SelectItem value="PostGraduate">Post Graduate</SelectItem>
