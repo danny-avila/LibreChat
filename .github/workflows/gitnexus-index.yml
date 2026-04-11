@@ -78,9 +78,17 @@ jobs:
       - name: Run GitNexus Analyze
         run: |
           FLAGS="--skip-agents-md --verbose"
-          # Auto-enable embeddings for main branch pushes; opt-in via dispatch input elsewhere
-          if [ "${{ inputs.embeddings }}" = "true" ] || \
-             ([ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]); then
+          # Enable embeddings by default for every automatic trigger
+          # (push to main/dev, contributor pull_request events) so all
+          # served indexes support semantic search. workflow_dispatch
+          # still respects the explicit input toggle (default false)
+          # so operators can run a quick graph-only re-index when they
+          # don't want to wait for embedding generation.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.embeddings }}" = "true" ]; then
+              FLAGS="$FLAGS --embeddings"
+            fi
+          else
             FLAGS="$FLAGS --embeddings"
           fi
           if [ "${{ inputs.force }}" = "true" ]; then
