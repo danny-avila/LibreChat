@@ -17,12 +17,25 @@ on:
         description: 'Force full re-index'
         type: boolean
         default: false
+      # When invoked from the /gitnexus index PR command, the command
+      # workflow fills these so the index is built from the PR's head
+      # ref and uploaded under the PR-numbered artifact name.
+      pr_number:
+        description: 'PR number to index (set by /gitnexus command)'
+        type: string
+        default: ''
+      pr_ref:
+        description: 'PR head SHA or ref to check out (set by /gitnexus command)'
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: gitnexus-${{ github.ref }}
+  # When triggered by the /gitnexus command, group by PR number so rapid
+  # re-runs coalesce. Otherwise group by git ref as before.
+  group: gitnexus-${{ inputs.pr_number != '' && format('pr-{0}', inputs.pr_number) || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -30,7 +43,10 @@ env:
 
 jobs:
   index:
-    # Allow push + dispatch unconditionally; filter PRs to contributors only
+    # Allow push + dispatch unconditionally; filter native pull_request
+    # events to contributors only. The /gitnexus command workflow does
+    # its own contributor check before it dispatches this workflow, so
+    # workflow_dispatch is always trusted here.
     if: |
       github.event_name != 'pull_request' ||
       github.event.pull_request.author_association == 'OWNER' ||
@@ -42,6 +58,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # When the /gitnexus command dispatches us with a pr_ref, check
+          # out that exact SHA. Otherwise fall back to the default ref.
+          ref: ${{ inputs.pr_ref || '' }}
           fetch-depth: 1
 
       - name: Setup Node.js
@@ -83,11 +102,17 @@ jobs:
       - name: Upload GitNexus index
         uses: actions/upload-artifact@v4
         with:
+          # Artifact naming order of precedence:
+          #   1. /gitnexus command dispatch: inputs.pr_number -> pr-<N>
+          #   2. Native pull_request event: github.event.pull_request.number
+          #   3. Push or manual dispatch without pr_number: github.ref_name
           name: >-
             gitnexus-index-${{
-              github.event_name == 'pull_request'
-              && format('pr-{0}', github.event.pull_request.number)
-              || github.ref_name
+              inputs.pr_number != ''
+              && format('pr-{0}', inputs.pr_number)
+              || (github.event_name == 'pull_request'
+                  && format('pr-{0}', github.event.pull_request.number)
+                  || github.ref_name)
             }}
           path: .gitnexus/
           include-hidden-files: true
