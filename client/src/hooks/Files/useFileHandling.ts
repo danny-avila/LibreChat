@@ -275,23 +275,28 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
     abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
-    /* Validate files */
+    /* Validate files — skip client-side validation when fileConfig hasn't loaded yet;
+       server-side validation will still enforce limits */
     let filesAreValid: boolean;
     try {
-      const endpointFileConfig = getEndpointFileConfig({
-        endpoint,
-        fileConfig,
-        endpointType,
-      });
+      if (fileConfig != null) {
+        const endpointFileConfig = getEndpointFileConfig({
+          endpoint,
+          fileConfig,
+          endpointType,
+        });
 
-      filesAreValid = validateFiles({
-        files,
-        fileList,
-        setError,
-        fileConfig,
-        endpointFileConfig,
-        toolResource: _toolResource,
-      });
+        filesAreValid = validateFiles({
+          files,
+          fileList,
+          setError,
+          fileConfig,
+          endpointFileConfig,
+          toolResource: _toolResource,
+        });
+      } else {
+        filesAreValid = true;
+      }
     } catch (error) {
       console.error('file validation error', error);
       setError('com_error_files_validation');
