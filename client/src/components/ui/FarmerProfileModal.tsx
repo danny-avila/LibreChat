@@ -266,6 +266,7 @@ const FarmerProfileModal = ({
                     placeholder="Age"
                     defaultValue={18}
                     min={18}
+                    max={120}
                     className={inputClass}
                     {...register('age', {
                       required: 'Age is required',
