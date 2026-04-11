@@ -76,19 +76,43 @@ jobs:
           restore-keys: gitnexus-npm-${{ runner.os }}-
 
       - name: Run GitNexus Analyze
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FLAGS="--skip-agents-md --verbose"
-          # Enable embeddings by default for every automatic trigger
-          # (push to main/dev, contributor pull_request events) so all
-          # served indexes support semantic search. workflow_dispatch
-          # still respects the explicit input toggle (default false)
-          # so operators can run a quick graph-only re-index when they
-          # don't want to wait for embedding generation.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ inputs.embeddings }}" = "true" ]; then
-              FLAGS="$FLAGS --embeddings"
-            fi
-          else
+
+          # Decide whether to generate embeddings. Rules:
+          #   push (main/dev)      -> always embed
+          #   pull_request         -> embed ONLY when the PR changes files
+          #                           under paths that also trigger backend
+          #                           or frontend unit tests (api/, client/,
+          #                           packages/). Docs/config-only PRs skip
+          #                           embeddings to save ~3-5 min of CI.
+          #   workflow_dispatch    -> respect the explicit `embeddings` input
+          #                           (default false). This also covers the
+          #                           /gitnexus index [embeddings] command.
+          ENABLE_EMBEDDINGS=false
+          case "${{ github.event_name }}" in
+            workflow_dispatch)
+              [ "${{ inputs.embeddings }}" = "true" ] && ENABLE_EMBEDDINGS=true
+              ;;
+            push)
+              ENABLE_EMBEDDINGS=true
+              ;;
+            pull_request)
+              PR_NUM="${{ github.event.pull_request.number }}"
+              CHANGED=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUM/files" \
+                --paginate --jq '.[].filename' 2>/dev/null || echo "")
+              if printf '%s\n' "$CHANGED" | grep -qE '^(api/|client/|packages/)'; then
+                echo "PR #$PR_NUM touches unit-test paths (api|client|packages) — enabling embeddings"
+                ENABLE_EMBEDDINGS=true
+              else
+                echo "PR #$PR_NUM does not touch unit-test paths — graph-only index"
+              fi
+              ;;
+          esac
+
+          if [ "$ENABLE_EMBEDDINGS" = "true" ]; then
             FLAGS="$FLAGS --embeddings"
           fi
           if [ "${{ inputs.force }}" = "true" ]; then
