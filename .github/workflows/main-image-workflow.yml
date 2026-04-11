@@ -3,6 +3,10 @@ name: Docker Compose Build Latest Main Image Tag (Manual Dispatch)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
