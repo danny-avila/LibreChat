@@ -4,278 +4,333 @@
 
 This plan covers only the **LibreChat fork** work required to add reusable white-label capabilities to LibreChat.
 
-This is **Phase 1** of the larger Umniah rollout and should be executed **before** the infra repo plan.
+This is the capability layer that tenant-specific rollouts, such as Umniah, should build on later.
 
-The broader program is:
-
-1. Phase 1: implement tenant-agnostic white-label capabilities in this fork
-2. Phase 2: configure and deploy those capabilities for Umniah in the infra repo on `umniah.ai.shqear.online`
+The goal is not to hardcode a tenant into the fork. The goal is to expose white-label extension points in a way that follows the patterns already established in this codebase.
 
 ---
 
-## Summary
+## Core Design Principle
 
-Use this fork as the source for generic white-label features that can later be configured for Umniah or any other tenant.
+White-label customization in this repo should be split into **two distinct mechanisms**, because the code already splits the product that way:
 
-The fork work should:
+1. **Runtime app configuration**
+   This is for in-app behavior and branding that can be resolved after the server starts and sent through startup config.
 
-- keep LibreChat’s supported config-driven customization where it already exists
-- patch source only where the product still hardcodes branding or unsupported UI behavior
-- produce a buildable LibreChat source tree with reusable white-label capabilities for infra to configure during deployment
+2. **Build-time shell branding**
+   This is for browser shell and static asset identity that must exist before `/api/config` is fetched.
 
-The output of this repo is not a tenant-branded app hardcoded for one customer. It is a reusable application variant that exposes the branding and behavior extension points infra needs.
+The plan must follow the architecture already present in the repo:
 
----
+- `custom config` -> `AppConfig` resolution -> `/api/config` -> frontend startup usage
+- Vite/env/public-assets for static shell identity and boot-time branding
+- ThemeProvider for dynamic color theme injection
 
-## Investigated Code Paths
+This means white-label capability should **not** be implemented as:
 
-The required customization points are already clear from the source:
-
-- [`client/src/components/Auth/AuthLayout.tsx`](/Users/shqear/workspace/LibreChat/client/src/components/Auth/AuthLayout.tsx)
-  - auth page logo is hardcoded as `assets/logo.svg`
-- [`client/index.html`](/Users/shqear/workspace/LibreChat/client/index.html)
-  - static title, description, browser theme color, favicon links are hardcoded
-- [`client/vite.config.ts`](/Users/shqear/workspace/LibreChat/client/vite.config.ts)
-  - PWA manifest identity and icons are hardcoded
-- [`client/src/style.css`](/Users/shqear/workspace/LibreChat/client/src/style.css)
-  - product-wide color tokens are defined here
-- [`client/src/components/Chat/Input/Files/AttachFileMenu.tsx`](/Users/shqear/workspace/LibreChat/client/src/components/Chat/Input/Files/AttachFileMenu.tsx)
-  - `Upload to Provider`, `Upload as Text`, and `File Search` menu items are explicitly built here
-- [`api/server/routes/config.js`](/Users/shqear/workspace/LibreChat/api/server/routes/config.js)
-  - startup config payload is assembled here
-- [`packages/data-provider/src/config.ts`](/Users/shqear/workspace/LibreChat/packages/data-provider/src/config.ts)
-  - startup config schema/types live here
-
-Also confirmed:
-
-- `APP_TITLE` is already supported through startup config
-- `interface.customWelcome` is already supported
-- `privacyPolicy`, `termsOfService`, and `customFooter` are already supported
-- `modelSpecs.iconURL`, labels, descriptions, grouping, and defaults are already supported
-
-So those do **not** need source-level reinvention.
+- tenant-specific hardcoding in components
+- a one-off `style.css` rewrite per customer
+- a separate parallel config mechanism unrelated to `getAppConfig`
 
 ---
 
-## Implementation Changes
+## What Is Already Supported
 
-### 1. Extend startup config for generic UI overrides
-
-Add a formal startup-config section for frontend behavior that is not currently configurable.
-
-Add a field like:
-
-```ts
-uiOverrides?: {
-  hideProviderUploadForEndpoints?: string[];
-}
-```
-
-Plumb it through:
-
-- [`packages/data-provider/src/config.ts`](/Users/shqear/workspace/LibreChat/packages/data-provider/src/config.ts)
-- [`api/server/routes/config.js`](/Users/shqear/workspace/LibreChat/api/server/routes/config.js)
-
-This should be a real part of `TStartupConfig`, not a local-only constant.
-
-### 2. Keep supported branding in runtime config
-
-Continue using supported runtime config for:
+These capabilities already exist and should remain runtime-config driven:
 
 - `APP_TITLE`
 - `interface.customWelcome`
-- `customFooter`
 - `privacyPolicy`
 - `termsOfService`
-- model labels/descriptions/defaults
-- model `iconURL`
-- auth and registration behavior
+- `customFooter`
+- `modelSpecs` labels, descriptions, defaults, grouping, and `iconURL`
+- auth and registration toggles
 
-This avoids unnecessary fork drift and keeps the white-label maintainable.
+Confirmed code paths:
 
-The fork should remain secret-free:
+- [`api/server/routes/config.js`](/Users/shqear/workspace/LibreChat/api/server/routes/config.js)
+- [`packages/data-provider/src/config.ts`](/Users/shqear/workspace/LibreChat/packages/data-provider/src/config.ts)
+- [`packages/api/src/app/service.ts`](/Users/shqear/workspace/LibreChat/packages/api/src/app/service.ts)
+- [`packages/data-schemas/src/app/resolution.ts`](/Users/shqear/workspace/LibreChat/packages/data-schemas/src/app/resolution.ts)
+- [`client/src/hooks/Config/useAppStartup.ts`](/Users/shqear/workspace/LibreChat/client/src/hooks/Config/useAppStartup.ts)
+- [`client/src/routes/Layouts/Startup.tsx`](/Users/shqear/workspace/LibreChat/client/src/routes/Layouts/Startup.tsx)
 
-- do not commit production secrets in this repo
-- do not introduce tenant-specific `UMNIAH_*` parsing in application code unless there is a strong reason
-- expect infra to provide standard LibreChat runtime env names such as `APP_TITLE`, `DOMAIN_CLIENT`, `DOMAIN_SERVER`, and OAuth settings
+These should not be reimplemented through source patching unless there is a concrete gap.
 
-Tenant isolation belongs in infra. The fork should stay as close as possible to normal LibreChat runtime expectations.
+---
 
-### 3. Replace hardcoded static assets with configurable branding assets
+## What Is Still Hardcoded
 
-Add a generic white-label asset mechanism under [`client/public/assets`](/Users/shqear/workspace/LibreChat/client/public/assets) and/or through runtime-configurable asset references.
+These areas are not cleanly exposed through existing runtime config today:
 
-The fork should support a full branded asset set such as:
+- auth logo
+  - [`client/src/components/Auth/AuthLayout.tsx`](/Users/shqear/workspace/LibreChat/client/src/components/Auth/AuthLayout.tsx)
+- HTML shell title, description, theme color, favicon tags
+  - [`client/index.html`](/Users/shqear/workspace/LibreChat/client/index.html)
+- PWA manifest identity and icons
+  - [`client/vite.config.ts`](/Users/shqear/workspace/LibreChat/client/vite.config.ts)
+- attachment menu behavior for `Upload to Provider`
+  - [`client/src/components/Chat/Input/Files/AttachFileMenu.tsx`](/Users/shqear/workspace/LibreChat/client/src/components/Chat/Input/Files/AttachFileMenu.tsx)
 
-- `logo.svg`
-- `favicon-16x16.png`
-- `favicon-32x32.png`
-- `apple-touch-icon-180x180.png`
-- `icon-192x192.png`
-- `maskable-icon.png`
+These are the correct targets for new capability work.
 
-These should be treated as white-label inputs, not as Umniah-only files baked permanently into the fork.
+---
 
-For the Umniah rollout specifically, the infra/execution work will source the initial branding inputs from:
+## Proper Capability Model
 
-- official Umniah branding from `umniah.com`
-- current palette signal from site investigation:
-  - `#323E48`
-  - `#CE0037`
-  - white and neutral grays
-- current logo source discovered from the official site:
-  - `https://www.umniah.com/storage/umnia-beyon-2.png`
+### 1. Add a formal `branding` config block
 
-If a proper SVG/brand kit becomes available, it should replace the temporary web-fetched source material.
+Do not keep expanding startup config with unrelated top-level fields like ad hoc `uiOverrides`.
 
-The fork requirement is to support branded assets cleanly. The Umniah-specific asset acquisition strategy is:
+Instead, add a real white-label block to custom config, then resolve it the same way the project already resolves `interface`, `mcpServers`, and `turnstile`.
 
-- fetch the current public Umniah logo and favicon-compatible source material from official Umniah web properties
-- treat `umniah.com` as the source of truth, with Logodix used only as a visual reference and not as the authoritative asset source
-- generate the initial app asset set from those web-fetched inputs
+Proposed shape at the custom-config level:
 
-The fork should make these deliverables possible:
+```ts
+branding?: {
+  appLogo?: string;
+  authLogo?: string;
+  favicon?: string;
+  theme?: {
+    light?: IThemeRGB;
+    dark?: IThemeRGB;
+  };
+  ui?: {
+    hideProviderUploadForEndpoints?: string[];
+  };
+  meta?: {
+    title?: string;
+    description?: string;
+    themeColor?: string;
+    pwaName?: string;
+    pwaShortName?: string;
+    pwaBackgroundColor?: string;
+    pwaThemeColor?: string;
+  };
+}
+```
 
-- `client/public/assets/logo.svg`
-- `client/public/assets/favicon-16x16.png`
-- `client/public/assets/favicon-32x32.png`
-- `client/public/assets/apple-touch-icon-180x180.png`
-- `client/public/assets/icon-192x192.png`
-- `client/public/assets/maskable-icon.png`
+This should be modeled as part of `TCustomConfig`, then resolved into `brandingConfig` on `AppConfig`, following the existing resolution pattern.
 
-The plan assumes the execution work for Umniah will fetch the latest usable public assets from the web, then normalize them into the required LibreChat asset formats before commit or packaging.
+Why this is the correct approach:
 
-### 4. Patch auth and shell branding to use configurable white-label identity
+- it fits `getAppConfig`
+- it fits DB overrides and tenant-specific merges
+- it gives infra a standard config contract
+- it keeps tenant data out of source code
 
-Update:
+### 2. Resolve branding through the existing app-config pipeline
 
-- [`client/src/components/Auth/AuthLayout.tsx`](/Users/shqear/workspace/LibreChat/client/src/components/Auth/AuthLayout.tsx)
-  - ensure auth uses a configurable logo source
-  - keep alt text based on runtime `appTitle`
+The project standard is:
+
+- load custom config
+- process it into `AppConfig`
+- merge override records
+- expose safe frontend fields in `/api/config`
+
+White-label capability should follow that exact pattern.
+
+Concretely:
+
+- extend `TCustomConfig` in [`packages/data-provider/src/config.ts`](/Users/shqear/workspace/LibreChat/packages/data-provider/src/config.ts)
+- extend `AppConfig` in [`packages/data-schemas/src/types/app.ts`](/Users/shqear/workspace/LibreChat/packages/data-schemas/src/types/app.ts)
+- add config-key remapping only if needed in [`packages/data-schemas/src/app/resolution.ts`](/Users/shqear/workspace/LibreChat/packages/data-schemas/src/app/resolution.ts)
+- ensure branding survives `mergeConfigOverrides` in [`packages/data-schemas/src/app/resolution.ts`](/Users/shqear/workspace/LibreChat/packages/data-schemas/src/app/resolution.ts)
+- expose a frontend-safe subset in [`api/server/routes/config.js`](/Users/shqear/workspace/LibreChat/api/server/routes/config.js)
+
+This is the realistic, standards-aligned path.
+
+---
+
+## Runtime Customization Strategy
+
+These capabilities should be controlled through startup config and not hardcoded in source.
+
+### A. In-app branding
+
+Use startup config for:
+
+- app title
+- welcome copy
+- footer content
+- privacy/terms links
+- model labels/descriptions/icons
+- auth behavior
+
+This is already aligned with the project.
+
+### B. UI behavior overrides
+
+Use branding UI config for things like:
+
+- hiding `Upload to Provider` on selected endpoints
+
+Implementation target:
+
+- [`client/src/components/Chat/Input/Files/AttachFileMenu.tsx`](/Users/shqear/workspace/LibreChat/client/src/components/Chat/Input/Files/AttachFileMenu.tsx)
+
+Required behavior:
+
+- if `startupConfig.branding.ui.hideProviderUploadForEndpoints` contains the current endpoint
+- then omit `com_ui_upload_provider`
+- while preserving:
+  - `com_ui_upload_ocr_text`
+  - `com_ui_upload_file_search`
+  - other valid menu items
+
+This should be driven from startup config because the component already reads startup config and that is consistent with the project’s frontend pattern.
+
+### C. Runtime theme colors
+
+Do not make `style.css` itself the tenant customization API.
+
+The repo already has a dynamic theme pipeline:
+
+- [`client/src/App.jsx`](/Users/shqear/workspace/LibreChat/client/src/App.jsx)
+- [`client/src/utils/getThemeFromEnv.js`](/Users/shqear/workspace/LibreChat/client/src/utils/getThemeFromEnv.js)
+- [`packages/client/src/theme/context/ThemeProvider.tsx`](/Users/shqear/workspace/LibreChat/packages/client/src/theme/context/ThemeProvider.tsx)
+- [`packages/client/src/theme/types/index.ts`](/Users/shqear/workspace/LibreChat/packages/client/src/theme/types/index.ts)
+
+The realistic white-label approach is:
+
+- keep `client/src/style.css` as the default fallback theme
+- support tenant theme colors via `branding.theme`
+- feed resolved theme colors into the frontend through startup config or a boot-time config bridge
+- use `ThemeProvider` to apply the tenant palette
+
+If the tenant palette must be available before login or before user state loads, use the same boot-time path consistently for all tenants rather than rewriting CSS per tenant.
+
+`style.css` should only be patched where the default token model is missing values, not as the main tenant-customization interface.
+
+---
+
+## Build-Time Customization Strategy
+
+Some branding must exist before the app fetches startup config. Those capabilities should be treated as **build-time shell branding**.
+
+### A. Static assets
+
+Use `client/public/assets` as the stable asset contract for:
+
+- logo
+- favicons
+- apple touch icon
+- PWA icons
+
+This is already how the app references these assets.
+
+Capability requirement:
+
+- make the app able to consume tenant-provided assets cleanly
+- do not hardcode Umniah-specific asset names into component logic
+
+### B. HTML shell metadata
+
+These belong to build-time inputs, not startup config:
+
+- HTML title fallback
+- meta description
+- browser `theme-color`
+- favicon tag paths
+
+Implementation targets:
+
 - [`client/index.html`](/Users/shqear/workspace/LibreChat/client/index.html)
-  - replace hardcoded title/description/theme-color defaults with configurable branding inputs
-  - point icon links at configurable branded assets
 - [`client/vite.config.ts`](/Users/shqear/workspace/LibreChat/client/vite.config.ts)
-  - support configurable PWA `name`
-  - support configurable `short_name`
-  - support configurable `theme_color`
-  - support configurable `background_color`
-  - point manifest icons at branded assets
 
-This covers:
+The white-label capability should make these values tenant-configurable at build time.
 
-- auth branding
-- browser tab identity
-- favicon identity
-- installed-app identity
+### C. Auth/app logos
 
-### 5. Patch theme tokens to support tenant branding
+`AuthLayout.tsx` currently points directly to `assets/logo.svg`.
 
-Update [`client/src/style.css`](/Users/shqear/workspace/LibreChat/client/src/style.css) so tenant branding colors can be represented at the token layer.
+The realistic capability is:
 
-Focus on:
+- keep the component simple
+- make the logo path come from resolved branding config when available
+- otherwise fall back to the default asset path
 
-- `--text-*`
-- `--surface-*`
-- `--header-*`
-- `--border-*`
-- `--ring-primary`
-- `--primary`
-- any remaining product accent tokens that currently assume LibreChat defaults
+This lets the capability follow the same runtime-config pattern while still using static assets.
 
-This is the correct place to apply white-label color treatment because the existing UI already consumes these variables broadly. The fork should expose the mechanism; infra chooses the actual tenant palette.
+---
 
-### 6. Hide `Upload to Provider` through generic endpoint-level UI controls
+## Concrete Implementation Work
 
-Patch [`client/src/components/Chat/Input/Files/AttachFileMenu.tsx`](/Users/shqear/workspace/LibreChat/client/src/components/Chat/Input/Files/AttachFileMenu.tsx) so that:
+### 1. Config and types
 
-- if the current endpoint is listed in `startupConfig.uiOverrides.hideProviderUploadForEndpoints`
-- the `com_ui_upload_provider` menu item is omitted
-- `Upload as Text` and `File Search` remain available when their capabilities are enabled
+Add `branding` to the config schema and app config pipeline:
 
-This must be driven from startup config, not from an inline hardcoded `if (endpoint === 'LiteLLM')` branch.
+- [`packages/data-provider/src/config.ts`](/Users/shqear/workspace/LibreChat/packages/data-provider/src/config.ts)
+- [`packages/data-schemas/src/types/app.ts`](/Users/shqear/workspace/LibreChat/packages/data-schemas/src/types/app.ts)
+- app config resolution layer
+- startup payload types
 
-### 7. Keep model presentation config-driven
+### 2. Startup payload
 
-Do not patch model menus just to rename or decorate models.
+Expose a frontend-safe branding subset from:
 
-Use `modelSpecs` for:
+- [`api/server/routes/config.js`](/Users/shqear/workspace/LibreChat/api/server/routes/config.js)
 
-- labels
-- descriptions
-- default spec
-- grouping
-- `iconURL`
+Do not expose unnecessary server-only values.
 
-This is already supported and should remain data-driven.
+### 3. Frontend runtime wiring
+
+Update the frontend to consume `startupConfig.branding` for:
+
+- auth logo path
+- UI visibility overrides
+- optional runtime theme payload
+
+### 4. Theme integration
+
+Unify white-label theming with the existing `ThemeProvider` system instead of treating `style.css` as the tenant API.
+
+If needed, extend the current theme env loader pattern into a startup-config-based theme loader so both build and runtime branding models can coexist cleanly.
+
+### 5. Shell identity
+
+Add build-time branding inputs for:
+
+- `index.html`
+- PWA manifest config in `vite.config.ts`
+- public assets
 
 ---
 
 ## Validation
 
+### Automated
+
 Add or extend tests for:
 
-- startup config schema includes `uiOverrides`
-- startup payload includes `uiOverrides` when configured
-- attachment menu omits provider upload when the override is active
-- text/file-search upload options still work under the override
-- branded assets are referenced by auth shell, HTML shell, and PWA manifest
-- app title still derives correctly from startup config
+- config schema accepts `branding`
+- resolved app config includes branding
+- startup payload includes branding subset
+- attachment menu hides provider upload when configured
+- auth branding path resolution works
+- theme payload shape matches `ThemeProvider` expectations
 
-Manual verification in the fork build:
+### Manual
 
-- auth screen shows the configured tenant logo
-- browser tab and favicon reflect configured tenant identity
-- theme reflects configured tenant branding
-- `Upload to Provider` is hidden for the intended endpoint
-- `Upload as Text` remains visible
+Verify a branded build shows:
 
-## Fork Handoff Checklist
-
-Before infra work starts, this fork must have all of the following complete:
-
-- generic branding asset support implemented
-- auth branding extension points implemented
-- HTML shell branding extension points implemented
-- PWA manifest branding extension points implemented
-- theme token branding extension points implemented
-- startup config extension for `uiOverrides.hideProviderUploadForEndpoints` implemented
-- attachment menu behavior patched and verified
-- local build/test verification completed for the affected areas
-- a pinned fork branch, tag, or commit selected for infra deployment
+- branded auth logo
+- branded browser title and favicon
+- branded PWA metadata
+- branded in-app color palette
+- hidden `Upload to Provider` where configured
+- preserved `Upload as Text` and `File Search`
 
 ---
 
-## Build Handoff to Infra
+## Output of Phase 1
 
-This fork is not required to publish a Docker image before rollout.
+This fork should produce:
 
-The deployment contract is:
+- a reusable white-label capability model
+- a config-driven runtime branding path
+- a build-time shell-branding path
+- no tenant-specific source hardcoding
+- a clean contract that infra can use for Umniah or any other tenant later
 
-- this repo carries the source patches and assets for the Umniah variant
-- this repo should remain tenant-agnostic and expose reusable branding capabilities rather than hardcoding one tenant
-- infra builds that source during deployment on the VPS
-- infra owns the `UMNIAH_*` env namespace and maps it into standard LibreChat runtime envs at compose level
-- the infra compose setup should follow the same build-on-deploy pattern previously used in this repo for LibreChat, with a pinned repo/ref instead of a floating upstream image
-
-That means the fork work must stay compatible with a deterministic Docker build from source, but image publication is not part of Phase 1.
-
-## Output of This Repo
-
-This repo should produce:
-
-- a buildable LibreChat source tree with generic white-label capabilities
-- the source patches required to support tenant-level white-labeling in infra
-- any new startup config fields required by the customized frontend
-- a clear repo/ref contract for infra to build during deploy
-
-That output becomes the input artifact for the infra repo plan.
-
----
-
-## Decision Summary
-
-- Execute this fork plan first.
-- Use runtime config where LibreChat already supports customization.
-- Patch source only where branding or behavior is hardcoded.
-- Keep the fork tenant-agnostic; Umniah-specific values belong in infra/runtime configuration.
+The fork should remain tenant-agnostic. The tenant selection, asset sourcing, env wiring, and deployment isolation belong in infra.
