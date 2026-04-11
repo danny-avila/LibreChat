@@ -13,6 +13,18 @@ import {
   AgentUpdateParams,
 } from './assistants';
 import { Action, ActionMetadata } from './agents';
+import type {
+  TSkill,
+  TSkillFile,
+  TCreateSkill,
+  TUpdateSkillVariables,
+  TUpdateSkillResponse,
+  TDeleteSkillResponse,
+  TUploadSkillFileVariables,
+  TDeleteSkillFileVariables,
+  TDeleteSkillFileResponse,
+  TSkillListResponse,
+} from './skills';
 
 export type MutationOptions<
   Response,
@@ -277,6 +289,32 @@ export type UpdatePeoplePickerPermVars = UpdatePermVars<p.TPeoplePickerPermissio
 export type UpdateMCPServersPermVars = UpdatePermVars<p.TMcpServersPermissions>;
 
 export type UpdatePermResponse = r.TRole;
+
+/* Skill mutations */
+
+export type TUpdateSkillContext =
+  | {
+      previousSkill?: TSkill;
+      previousListData?: TSkillListResponse;
+    }
+  | undefined;
+
+export type CreateSkillOptions = MutationOptions<TSkill, TCreateSkill>;
+
+export type UpdateSkillOptions = MutationOptions<
+  TUpdateSkillResponse,
+  TUpdateSkillVariables,
+  TUpdateSkillContext
+>;
+
+export type DeleteSkillOptions = MutationOptions<TDeleteSkillResponse, { id: string }>;
+
+export type UploadSkillFileOptions = MutationOptions<TSkillFile, TUploadSkillFileVariables>;
+
+export type DeleteSkillFileOptions = MutationOptions<
+  TDeleteSkillFileResponse,
+  TDeleteSkillFileVariables
+>;
 
 export type UpdatePromptPermOptions = MutationOptions<
   UpdatePermResponse,

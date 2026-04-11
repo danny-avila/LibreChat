@@ -72,6 +72,12 @@ const checkResourcePermissionAccess = (requiredPermission) => (req, res, next) =
       resourceIdParam: 'resourceId',
       idResolver: findMCPServerByObjectId,
     });
+  } else if (resourceType === ResourceType.SKILL) {
+    middleware = canAccessResource({
+      resourceType: ResourceType.SKILL,
+      requiredPermission,
+      resourceIdParam: 'resourceId',
+    });
   } else {
     return res.status(400).json({
       error: 'Bad Request',
