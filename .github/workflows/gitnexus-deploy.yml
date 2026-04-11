@@ -1,4 +1,4 @@
-# Deploys GitNexus indexes to a DigitalOcean droplet via SSH + rsync.
+# Deploys GitNexus indexes to a droplet via SSH + rsync.
 #
 # Architecture:
 #   GitHub Actions (deploy)
@@ -49,26 +49,39 @@
 #   GITNEXUS_DO_KNOWN_HOST  — output of `ssh-keyscan -H <host>` pinning the
 #                             droplet's host keys (prevents MITM/TOFU risk)
 
-name: GitNexus Deploy (DigitalOcean)
+name: GitNexus Deploy
 
 on:
   workflow_run:
     workflows: ['GitNexus Index']
     types: [completed]
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Optional PR number to post completion comment on (set by bot-triggered dispatches from gitnexus-index.yml)'
+        type: string
+        default: ''
 
 permissions:
   actions: read
   contents: read
-  pull-requests: read
+  pull-requests: write # post completion comments on served PR indexes
 
-# Per-ref concurrency: rapid pushes to the same branch/PR coalesce, but
-# deploys targeting different refs can still run in parallel. Safe because
-# each deploy only rsync's its own folder; final step always reflects the
-# latest state for all refs discovered at resolve time.
+# Global serialization. Earlier versions used per-ref concurrency with
+# cancel-in-progress so rapid pushes to the same ref coalesced but deploys
+# targeting different refs ran in parallel. That had a data race: the
+# prune-stale-indexes step computes its active_names up front, so if
+# deploy A is rsyncing /opt/gitnexus/indexes/LibreChat-pr-12580 while
+# deploy B (started slightly later with a different ref) prunes, B can
+# rm -rf a folder A is still uploading into.
+#
+# All deploys now queue behind a single group. cancel-in-progress is
+# false so a running rsync/docker-compose restart never gets killed
+# mid-operation (which would leave the droplet in a partial state).
+# The 20-minute job timeout bounds total queue depth.
 concurrency:
-  group: gitnexus-deploy-do-${{ github.event.workflow_run.head_branch || github.ref }}
-  cancel-in-progress: true
+  group: gitnexus-deploy
+  cancel-in-progress: false
 
 env:
   GITNEXUS_VERSION: '1.5.3'
@@ -145,7 +158,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-      pull-requests: read
+      pull-requests: write # post deploy-complete comments on served PR indexes
     steps:
       - name: Checkout deploy config
         uses: actions/checkout@v4
@@ -449,6 +462,70 @@ jobs:
             echo "--- GitNexus logs (last 30 lines) ---"
             docker compose logs --tail 30 gitnexus || true
           REMOTE
+
+      # When the deploy was triggered by a PR command path, post a
+      # terminal status comment on that one PR only. Two sub-cases:
+      #
+      #   1. workflow_run trigger: the PR's native auto-index run fired
+      #      workflow_run, so github.event.workflow_run.id is the trigger.
+      #      Find the matching PR via the matrix entry whose runId matches.
+      #
+      #   2. workflow_dispatch trigger with inputs.pr_number set: the
+      #      index workflow's bot-fallback path dispatched us directly
+      #      because workflow_run is suppressed for GITHUB_TOKEN triggers.
+      #      Use inputs.pr_number as the comment target.
+      #
+      # Broadcast-commenting on every active PR would be noise — only the
+      # PR that asked for a fresh index gets a reply.
+      - name: Comment on PR — deploy complete
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          MATRIX: ${{ steps.resolve.outputs.matrix }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          DISPATCH_PR_NUMBER: ${{ github.event.inputs.pr_number }}
+          DEPLOY_STATUS: ${{ job.status }}
+        with:
+          script: |
+            let prNum = null;
+
+            // Case 1: dispatched directly with pr_number (bot-fallback path)
+            if (process.env.DISPATCH_PR_NUMBER && process.env.DISPATCH_PR_NUMBER !== '') {
+              prNum = parseInt(process.env.DISPATCH_PR_NUMBER, 10);
+            }
+            // Case 2: workflow_run trigger from a PR index run
+            else if (context.eventName === 'workflow_run') {
+              const matrix = JSON.parse(process.env.MATRIX || '[]');
+              const triggerRunId = Number(process.env.TRIGGER_RUN_ID);
+              const match = matrix.find(
+                (m) => m.runId === triggerRunId && m.name.startsWith('LibreChat-pr-'),
+              );
+              if (match) {
+                prNum = parseInt(match.name.replace('LibreChat-pr-', ''), 10);
+              }
+            }
+
+            if (!prNum) {
+              core.info('No PR to comment on (trigger was not a PR-scoped index); skipping.');
+              return;
+            }
+
+            const deployUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const ok = process.env.DEPLOY_STATUS === 'success';
+            const body = [
+              `### GitNexus: ${ok ? '🚀 deployed' : '❌ deploy failed'}`,
+              '',
+              ok
+                ? `The \`LibreChat-pr-${prNum}\` index is now live on the MCP server.`
+                : `The deploy failed — the previous index (if any) continues to be served.`,
+              `[Deploy run](${deployUrl})`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNum,
+              body,
+            });
 
       - name: Cleanup SSH key
         if: always()
