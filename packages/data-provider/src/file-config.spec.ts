@@ -1246,6 +1246,64 @@ describe('getEndpointFileConfig', () => {
       expect(result.totalSizeLimit).toBe(0);
       expect(result.supportedMimeTypes).toEqual([]);
     });
+
+    it('should propagate disableProviderUpload from endpoint config', () => {
+      const dynamicConfig = {
+        endpoints: {
+          litellm: {
+            disableProviderUpload: true,
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: 'litellm',
+        endpointType: EModelEndpoint.custom,
+      });
+
+      expect(result.disableProviderUpload).toBe(true);
+    });
+
+    it('should propagate disableProviderUpload from user default when not set on endpoint', () => {
+      const dynamicConfig = {
+        endpoints: {
+          default: {
+            disableProviderUpload: true,
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.google,
+      });
+
+      expect(result.disableProviderUpload).toBe(true);
+    });
+
+    it('endpoint-level disableProviderUpload overrides default', () => {
+      const dynamicConfig = {
+        endpoints: {
+          default: {
+            disableProviderUpload: true,
+          },
+          [EModelEndpoint.openAI]: {
+            disableProviderUpload: false,
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      expect(result.disableProviderUpload).toBe(false);
+    });
   });
 });
 

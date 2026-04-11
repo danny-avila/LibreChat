@@ -450,6 +450,7 @@ export const endpointFileConfigSchema = z.object({
   fileSizeLimit: z.number().min(0).optional(),
   totalSizeLimit: z.number().min(0).optional(),
   supportedMimeTypes: supportedMimeTypesSchema.optional(),
+  disableProviderUpload: z.boolean().optional(),
 });
 
 export const fileConfigSchema = z.object({
@@ -534,6 +535,7 @@ function mergeWithDefault(
     fileSizeLimit: endpointConfig.fileSizeLimit ?? defaultConfig.fileSizeLimit,
     totalSizeLimit: endpointConfig.totalSizeLimit ?? defaultConfig.totalSizeLimit,
     supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultMimeTypes,
+    disableProviderUpload: endpointConfig.disableProviderUpload ?? defaultConfig.disableProviderUpload,
   };
 }
 
@@ -746,6 +748,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
     if (dynamicEndpoint.disabled !== undefined) {
       mergedEndpoint.disabled = dynamicEndpoint.disabled;
+    }
+
+    if (dynamicEndpoint.disableProviderUpload !== undefined) {
+      mergedEndpoint.disableProviderUpload = dynamicEndpoint.disableProviderUpload;
     }
 
     if (dynamicEndpoint.supportedMimeTypes) {

@@ -42,6 +42,7 @@ export type EndpointFileConfig = {
   fileSizeLimit?: number;
   totalSizeLimit?: number;
   supportedMimeTypes?: RegExp[];
+  disableProviderUpload?: boolean;
 };
 
 export type FileConfig = {

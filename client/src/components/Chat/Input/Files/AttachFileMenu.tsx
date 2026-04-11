@@ -61,7 +61,6 @@ interface AttachFileMenuProps {
   conversation: TConversation | null;
 }
 
-const normalizeEndpointName = (value?: string | null) => value?.trim().toLowerCase();
 
 const AttachFileMenu = ({
   agentId,
@@ -99,7 +98,6 @@ const AttachFileMenu = ({
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
-  const hiddenProviderUploads = startupConfig?.interface?.hideProviderUploadForEndpoints ?? [];
 
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
@@ -157,14 +155,8 @@ const AttachFileMenu = ({
 
       const isAzureWithResponsesApi =
         currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
-      const normalizedProvider = normalizeEndpointName(currentProvider);
-      const normalizedEndpointType = normalizeEndpointName(endpointType);
-      const hideProviderUpload = hiddenProviderUploads.some((entry) => {
-        const normalizedEntry = normalizeEndpointName(entry);
-        return normalizedEntry === normalizedProvider || normalizedEntry === normalizedEndpointType;
-      });
       const canUploadToProvider =
-        !hideProviderUpload &&
+        !endpointFileConfig?.disableProviderUpload &&
         (isDocumentSupportedProvider(endpointType) ||
           isDocumentSupportedProvider(currentProvider) ||
           isAzureWithResponsesApi);
@@ -270,7 +262,7 @@ const AttachFileMenu = ({
     setToolResource,
     setEphemeralAgent,
     sharePointEnabled,
-    hiddenProviderUploads,
+    endpointFileConfig,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,

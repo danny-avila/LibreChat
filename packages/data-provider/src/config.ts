@@ -744,7 +744,6 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
-    hideProviderUploadForEndpoints: z.array(z.string()).optional(),
   })
   .default({
     modelSelect: true,
