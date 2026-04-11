@@ -1,10 +1,10 @@
 import { Schema } from 'mongoose';
 import type { ISkillDocument } from '~/types/skill';
 
-/** Max length for a skill `name` (kebab-case identifier). Matches Anthropic's API. */
+/** Max length for a skill `name` (kebab-case identifier). */
 const SKILL_NAME_MAX_LENGTH = 64;
 
-/** Max length for a skill `description`. Matches Anthropic's API. */
+/** Max length for a skill `description`. */
 const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
 
 /** Max length for the skill `body` (the SKILL.md content). */

@@ -302,6 +302,24 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     }
 
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+
+    // Application-level uniqueness check on (name, author, tenantId).
+    // The unique index in the schema is the persistent guarantee, but Mongoose
+    // creates indexes asynchronously and tests can race ahead of index creation,
+    // so we also enforce it here for deterministic behavior and a clean error.
+    const existing = await Skill.findOne({
+      name: data.name,
+      author: data.author,
+      tenantId: data.tenantId ?? null,
+    })
+      .select('_id')
+      .lean();
+    if (existing) {
+      const error = new Error(`A skill with name "${data.name}" already exists for this author`);
+      (error as Error & { code?: string | number }).code = 11000;
+      throw error;
+    }
+
     const doc = await Skill.create({
       name: data.name,
       displayTitle: data.displayTitle,
