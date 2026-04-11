@@ -1041,9 +1041,56 @@ export const useAcceptTermsMutation = (
   const queryClient = useQueryClient();
   return useMutation(() => dataService.acceptTerms(), {
     onSuccess: (data, variables, context) => {
-      queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], {
-        termsAccepted: true,
-      });
+      queryClient.setQueryData<t.TUserTermsResponse>(
+        [QueryKeys.userTerms],
+        (prev) =>
+          ({
+            ...prev,
+            termsAccepted: true,
+          }) as t.TUserTermsResponse,
+      );
+      options?.onSuccess?.(data, variables, context);
+    },
+    onError: options?.onError,
+    onMutate: options?.onMutate,
+  });
+};
+
+export const useAcceptSecondTermsMutation = (
+  options?: t.AcceptSecondTermsMutationOptions,
+): UseMutationResult<t.TAcceptTermsResponse, unknown, void, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.acceptSecondTerms(), {
+    onSuccess: (data, variables, context) => {
+      queryClient.setQueryData<t.TUserTermsResponse>(
+        [QueryKeys.userTerms],
+        (prev) =>
+          ({
+            ...prev,
+            secondTermsAccepted: true,
+          }) as t.TUserTermsResponse,
+      );
+      options?.onSuccess?.(data, variables, context);
+    },
+    onError: options?.onError,
+    onMutate: options?.onMutate,
+  });
+};
+
+export const useSaveFarmerProfileMutation = (
+  options?: t.SaveFarmerProfileMutationOptions,
+): UseMutationResult<{ message: string }, unknown, t.IFarmerProfile, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation((profile: t.IFarmerProfile) => dataService.saveFarmerProfile(profile), {
+    onSuccess: (data, variables, context) => {
+      queryClient.setQueryData<t.TUserTermsResponse>(
+        [QueryKeys.userTerms],
+        (prev) =>
+          ({
+            ...prev,
+            farmerProfileCompleted: true,
+          }) as t.TUserTermsResponse,
+      );
       options?.onSuccess?.(data, variables, context);
     },
     onError: options?.onError,

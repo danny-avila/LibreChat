@@ -18,18 +18,19 @@ import {
 } from '~/Providers';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
-import { TermsAndConditionsModal, ImportantNoticeModal } from '~/components/ui';
+import { TermsAndConditionsModal, ImportantNoticeModal, FarmerProfileModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const [showTestingNotice, setShowTestingNotice] = useState(false);
+  const [showFarmerProfile, setShowFarmerProfile] = useState(false);
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
 
-  const { isAuthenticated, logout, user } = useAuthContext();
+  const { isAuthenticated, logout } = useAuthContext();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   // Global health check - runs once per authenticated session
@@ -46,26 +47,25 @@ export default function Root() {
 
   useSearchEnabled(isAuthenticated);
 
-  const noticeKey = `hasAcceptedTestingNotice_${user?.id ?? 'guest'}`;
-
   useEffect(() => {
-    if (termsData) {
-      setShowTerms(!termsData.termsAccepted);
-      if (termsData.termsAccepted) {
-        const hasAcceptedNotice = localStorage.getItem(noticeKey);
-        if (!hasAcceptedNotice) {
-          setShowTestingNotice(true);
-        }
-      }
+    if (!termsData) {
+      return;
     }
-  }, [termsData, noticeKey]);
+    if (!termsData.termsAccepted) {
+      setShowTerms(true);
+      return;
+    }
+    if (!termsData.secondTermsAccepted) {
+      setShowTestingNotice(true);
+      return;
+    }
+    if (!termsData.farmerProfileCompleted) {
+      setShowFarmerProfile(true);
+    }
+  }, [termsData]);
 
   const handleAcceptTerms = () => {
     setShowTerms(false);
-    const hasAcceptedNotice = localStorage.getItem(noticeKey);
-    if (!hasAcceptedNotice) {
-      setShowTestingNotice(true);
-    }
   };
 
   const handleDeclineTerms = () => {
@@ -73,14 +73,27 @@ export default function Root() {
     logout('/login?redirect=false');
   };
 
+  // ImportantNoticeModal handles the DB write itself via useAcceptSecondTermsMutation.
+  // This callback fires after the mutation succeeds.
   const handleAcceptTestingNotice = () => {
-    localStorage.setItem(noticeKey, 'true');
     setShowTestingNotice(false);
+    if (!termsData?.farmerProfileCompleted) {
+      setShowFarmerProfile(true);
+    }
   };
 
   const handleDeclineTestingNotice = () => {
     setShowTestingNotice(false);
     logout('/login');
+  };
+
+  const handleFarmerProfileComplete = () => {
+    setShowFarmerProfile(false);
+  };
+
+  const handleDeclineFarmerProfile = () => {
+    setShowFarmerProfile(false);
+   // logout('/login');
   };
 
   if (!isAuthenticated) {
@@ -131,6 +144,12 @@ export default function Root() {
             onOpenChange={setShowTestingNotice}
             onAccept={handleAcceptTestingNotice}
             onDecline={handleDeclineTestingNotice}
+          />
+          <FarmerProfileModal
+            open={showFarmerProfile}
+            onOpenChange={setShowFarmerProfile}
+            onComplete={handleFarmerProfileComplete}
+            onDecline={handleDeclineFarmerProfile}
           />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>

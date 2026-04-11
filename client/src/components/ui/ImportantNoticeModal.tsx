@@ -1,4 +1,5 @@
-import { OGDialog, DialogTemplate } from '@librechat/client';
+import { OGDialog, DialogTemplate, useToastContext } from '@librechat/client';
+import { useAcceptSecondTermsMutation } from '~/data-provider';
 
 const ImportantNoticeModal = ({
   open,
@@ -11,6 +12,26 @@ const ImportantNoticeModal = ({
   onAccept: () => void;
   onDecline: () => void;
 }) => {
+  const { showToast } = useToastContext();
+  const acceptSecondTermsMutation = useAcceptSecondTermsMutation({
+    onSuccess: () => {
+      onAccept();
+      onOpenChange(false);
+    },
+    onError: () => {
+      showToast({ message: 'Failed to accept notice' });
+    },
+  });
+
+  const handleAccept = () => {
+    acceptSecondTermsMutation.mutate();
+  };
+
+  const handleDecline = () => {
+    onDecline();
+    onOpenChange(false);
+  };
+
   const handleOpenChange = (isOpen: boolean) => {
     if (open && !isOpen) {
       return;
@@ -58,24 +79,22 @@ const ImportantNoticeModal = ({
               <p>ਸਲਾਹਕਾਰੀਆਂ ਪ੍ਰਯੋਗਾਤਮਕ ਹਨ ਅਤੇ ਸਿਰਫ਼ ਚੁਣੇ ਹੋਏ ਰਾਜਾਂ ਲਈ ਝੋਨੇ ਦੀਆਂ ਫ਼ਸਲਾਂ ਤੱਕ ਸੀਮਤ ਹਨ।</p>
               <p>ਮੌਸਮ ਡੇਟਾ ਅਤੇ ਮਾਰਕੀਟ ਡੇਟਾ ਪ੍ਰਮਾਣਿਕ ਸਰਕਾਰੀ ਸਰੋਤਾਂ ਤੋਂ ਹਨ।</p>
               <p><strong>ਅੱਗੇ ਵਧ ਕੇ, ਤੁਸੀਂ ਇਸ ਐਪ ਨੂੰ ਸਿਰਫ਼ ਇੱਕ ਟੈਸਟਰ ਵਜੋਂ ਵਰਤਣ ਲਈ ਸਹਿਮਤ ਹੁੰਦੇ ਹੋ।</strong></p>
-
             </div>
           </section>
         }
         buttons={
           <>
             <button
-              onClick={onDecline}
+              onClick={handleDecline}
               className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800"
             >
-              {/* <span>DECLINE</span> */}
               {'ਅਸਵੀਕਾਰ ਕਰੋ'}
             </button>
             <button
-              onClick={onAccept}
-              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800"
+              onClick={handleAccept}
+              disabled={acceptSecondTermsMutation.isLoading}
+              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 dark:bg-green-700 dark:hover:bg-green-800"
             >
-              {/* <span>I AGREE &amp; PROCEED</span> */}
               {'ਮੈਂ ਸਹਿਮਤ ਹਾਂ & ਅੱਗੇ ਵਧੋ'}
             </button>
           </>

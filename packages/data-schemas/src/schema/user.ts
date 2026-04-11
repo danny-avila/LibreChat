@@ -23,6 +23,29 @@ const BackupCodeSchema = new Schema(
   { _id: false },
 );
 
+const FarmerProfileSchema = new Schema(
+  {
+    farmerName: { type: String },
+    age: { type: Number },
+    gender: { type: String },
+    villageName: { type: String },
+    blockName: { type: String },
+    district: { type: String },
+    state: { type: String },
+    phoneNo: { type: String },
+    languagePreference: { type: String },
+    yearsOfExperience: { type: Number },
+    cropsCultivated: { type: [String], default: [] },
+    primaryCrop: { type: String },
+    secondaryCrop: { type: String },
+    awarenessOfKCC: { type: Boolean },
+    usesAgriApps: { type: Boolean },
+    highestEducatedPerson: { type: String },
+    numberOfSmartphones: { type: Number },
+  },
+  { _id: false },
+);
+
 const userSchema = new Schema<IUser>(
   {
     name: {
@@ -132,6 +155,10 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    secondTermsAccepted: {
+      type: Boolean,
+      default: false,
+    },
     personalization: {
       type: {
         memories: {
@@ -156,6 +183,11 @@ const userSchema = new Schema<IUser>(
     idOnTheSource: {
       type: String,
       sparse: true,
+    },
+    farmerProfile: {
+      type: FarmerProfileSchema,
+      required: false,
+      default: {},
     },
   },
   { timestamps: true },

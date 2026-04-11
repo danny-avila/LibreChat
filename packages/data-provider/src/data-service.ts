@@ -926,6 +926,14 @@ export function acceptTerms(): Promise<t.TAcceptTermsResponse> {
   return request.post(endpoints.acceptUserTerms());
 }
 
+export function acceptSecondTerms(): Promise<t.TAcceptTermsResponse> {
+  return request.post(endpoints.acceptSecondUserTerms());
+}
+
+export function saveFarmerProfile(profile: m.IFarmerProfile): Promise<{ message: string }> {
+  return request.post(endpoints.farmerProfile(), profile);
+}
+
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }

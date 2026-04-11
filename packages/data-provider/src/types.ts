@@ -627,6 +627,8 @@ export type TCustomConfigSpeechResponse = { [key: string]: string };
 
 export type TUserTermsResponse = {
   termsAccepted: boolean;
+  secondTermsAccepted: boolean;
+  farmerProfileCompleted: boolean;
 };
 
 export type TAcceptTermsResponse = {

@@ -347,6 +347,8 @@ export const addTagToConversation = (conversationId: string) =>
 
 export const userTerms = () => `${BASE_URL}/api/user/terms`;
 export const acceptUserTerms = () => `${BASE_URL}/api/user/terms/accept`;
+export const acceptSecondUserTerms = () => `${BASE_URL}/api/user/second-terms/accept`;
+export const farmerProfile = () => `${BASE_URL}/api/user/profile/farmer`;
 export const banner = () => `${BASE_URL}/api/banner`;
 
 // Message Feedback

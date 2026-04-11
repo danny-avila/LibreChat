@@ -32,6 +32,28 @@ export type MutationOptions<
   ) => void;
 };
 
+export interface IFarmerProfile {
+  farmerName: string;
+  age: number;
+  gender: string;
+  villageName: string;
+  blockName: string;
+  district: string;
+  state: string;
+  phoneNo: string;
+  languagePreference: string;
+  yearsOfExperience: number;
+  cropsCultivated: string[];
+  primaryCrop: string;
+  secondaryCrop: string;
+  awarenessOfKCC: boolean;
+  usesAgriApps: boolean;
+  highestEducatedPerson: string;
+  numberOfSmartphones: number;
+}
+
+export type SaveFarmerProfileMutationOptions = MutationOptions<{ message: string }, IFarmerProfile>;
+
 export type TGenTitleRequest = {
   conversationId: string;
 };
@@ -329,6 +351,13 @@ export type UpdateConversationTagOptions = MutationOptions<
 export type DeleteConversationTagOptions = MutationOptions<types.TConversationTag, string>;
 
 export type AcceptTermsMutationOptions = MutationOptions<
+  types.TAcceptTermsResponse,
+  void,
+  unknown,
+  void
+>;
+
+export type AcceptSecondTermsMutationOptions = MutationOptions<
   types.TAcceptTermsResponse,
   void,
   unknown,
