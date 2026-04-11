@@ -10,6 +10,7 @@ import type { Types } from 'mongoose';
 import type {
   ISkill,
   ISkillFile,
+  ISkillSummary,
   CreateSkillInput,
   UpdateSkillInput,
   ListSkillsByAccessResult,
@@ -136,7 +137,7 @@ function serializeSkill(skill: ISkill & { _id: Types.ObjectId }, publicSet: Set<
 }
 
 function serializeSkillSummary(
-  skill: ISkill & { _id: Types.ObjectId },
+  skill: ISkillSummary & { _id: Types.ObjectId },
   publicSet: Set<string>,
 ): TSkillSummary {
   return {

@@ -34,6 +34,13 @@ export interface ISkill {
 export interface ISkillDocument extends ISkill, Document {}
 
 /**
+ * Lean summary projection returned by `listSkillsByAccess`. The list query
+ * uses a narrow `.select()` that omits `body` and `frontmatter` to keep
+ * payloads small, so those fields are truthfully absent on summary rows.
+ */
+export type ISkillSummary = Omit<ISkill, 'body' | 'frontmatter'>;
+
+/**
  * SkillFile — metadata for a file bundled inside a skill.
  * Blob content lives in the existing file storage layer (local/S3/etc.) and is
  * addressed via `source` + `filepath` + `file_id` (mirroring the File schema).

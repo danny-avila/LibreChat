@@ -1,6 +1,12 @@
 import { ResourceType } from 'librechat-data-provider';
 import type { Model, Types, FilterQuery } from 'mongoose';
-import type { ISkill, ISkillDocument, ISkillFile, ISkillFileDocument } from '~/types/skill';
+import type {
+  ISkill,
+  ISkillDocument,
+  ISkillFile,
+  ISkillFileDocument,
+  ISkillSummary,
+} from '~/types/skill';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
@@ -227,7 +233,12 @@ export type ListSkillsByAccessParams = {
 };
 
 export type ListSkillsByAccessResult = {
-  skills: Array<ISkill & { _id: Types.ObjectId }>;
+  /**
+   * Summary rows — `body` and `frontmatter` are intentionally omitted at the
+   * query projection layer to keep list payloads small. Callers that need the
+   * full document must fetch the detail via `getSkillById`.
+   */
+  skills: Array<ISkillSummary & { _id: Types.ObjectId }>;
   has_more: boolean;
   after: string | null;
 };
@@ -389,7 +400,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
         : null;
 
     return {
-      skills: sliced as unknown as Array<ISkill & { _id: Types.ObjectId }>,
+      skills: sliced as unknown as Array<ISkillSummary & { _id: Types.ObjectId }>,
       has_more,
       after,
     };
@@ -561,7 +572,13 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     const delta = previous ? 0 : 1;
     await bumpSkillVersionAndAdjustFileCount(row.skillId, delta);
 
-    // Return the current (post-upsert) document for the caller.
+    // Fetch the current (post-upsert) document for the caller. This second
+    // round-trip is an intentional tradeoff for the TOCTOU-safe detection
+    // above: `new: false` is required to distinguish insert from replace
+    // atomically, which means `findOneAndUpdate` returns the pre-update
+    // document (null on insert). A separate `findOne` is the simplest way
+    // to return the authoritative post-upsert state. Performance impact is
+    // negligible compared to the file upload I/O this sits behind.
     const current = await SkillFile.findOne({
       skillId: row.skillId,
       relativePath: row.relativePath,
