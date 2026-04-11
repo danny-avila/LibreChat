@@ -31,7 +31,8 @@ on:
 
 permissions:
   contents: read
-  actions: write # needed to dispatch gitnexus-deploy-do.yml on bot-triggered runs
+  actions: write # dispatch gitnexus-deploy.yml on bot-triggered runs
+  pull-requests: write # post completion comments for /gitnexus command runs
 
 concurrency:
   # When triggered by the /gitnexus command, group by PR number so rapid
@@ -168,10 +169,48 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            core.info('Triggering actor is github-actions[bot]; workflow_run would not fire. Dispatching gitnexus-deploy-do.yml manually.');
+            core.info('Triggering actor is github-actions[bot]; workflow_run would not fire. Dispatching gitnexus-deploy.yml manually.');
+            // Pass pr_number through so the deploy workflow knows which
+            // PR to post its completion comment on (for /gitnexus
+            // command runs this will be set; for other bot dispatches
+            // it's empty and the deploy step falls back to matrix match).
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: 'gitnexus-deploy-do.yml',
+              workflow_id: 'gitnexus-deploy.yml',
               ref: 'main',
+              inputs: {
+                pr_number: '${{ inputs.pr_number }}',
+              },
+            });
+
+      # Reply on the PR when the /gitnexus command path runs so the
+      # requester knows the index step finished. This only fires when
+      # inputs.pr_number is set (command-triggered) AND the rest of the
+      # job succeeded. A separate comment posts from the deploy workflow
+      # when the live server has the fresh index.
+      - name: Comment on PR — index complete
+        if: always() && inputs.pr_number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const outcome = '${{ job.status }}' === 'success' ? '✅ indexed' : '❌ index failed';
+            const prNum = parseInt('${{ inputs.pr_number }}', 10);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const embeddingsFlag = '${{ inputs.embeddings }}' === 'true' ? 'with embeddings' : 'graph-only';
+            const body = [
+              `### GitNexus: ${outcome}`,
+              ``,
+              `PR #${prNum} was indexed ${embeddingsFlag}.`,
+              `[Index run](${runUrl})`,
+              '',
+              '${{ job.status }}' === 'success'
+                ? '⏳ Waiting for deploy to serve the fresh index…'
+                : '_Index run failed — the previous index (if any) continues to be served._',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNum,
+              body,
             });
