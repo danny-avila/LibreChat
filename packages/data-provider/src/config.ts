@@ -744,6 +744,7 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
+    hideProviderUploadForEndpoints: z.array(z.string()).optional(),
   })
   .default({
     modelSelect: true,
@@ -834,11 +835,6 @@ export const brandingSchema = z
       .object({
         light: brandingThemeSchema,
         dark: brandingThemeSchema,
-      })
-      .optional(),
-    ui: z
-      .object({
-        hideProviderUploadForEndpoints: z.array(z.string()).optional(),
       })
       .optional(),
   })

@@ -114,10 +114,8 @@ function setupMocks(overrides: { provider?: string } = {}) {
   mockUseGetStartupConfig.mockReturnValue({
     data: {
       sharePointFilePickerEnabled: false,
-      branding: {
-        ui: {
-          hideProviderUploadForEndpoints: [],
-        },
+      interface: {
+        hideProviderUploadForEndpoints: [],
       },
     },
   });
@@ -211,7 +209,7 @@ describe('AttachFileMenu', () => {
       expect(screen.getByText('Upload Image')).toBeInTheDocument();
     });
 
-    it('hides "Upload to Provider" when branding disables it for the current provider', () => {
+    it('hides "Upload to Provider" when interface config disables it for the current provider', () => {
       setupMocks({ provider: EModelEndpoint.openAI });
       mockUseAgentCapabilities.mockReturnValue({
         contextEnabled: true,
@@ -221,10 +219,8 @@ describe('AttachFileMenu', () => {
       mockUseGetStartupConfig.mockReturnValue({
         data: {
           sharePointFilePickerEnabled: false,
-          branding: {
-            ui: {
-              hideProviderUploadForEndpoints: [EModelEndpoint.openAI],
-            },
+          interface: {
+            hideProviderUploadForEndpoints: [EModelEndpoint.openAI],
           },
         },
       });

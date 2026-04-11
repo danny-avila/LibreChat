@@ -99,7 +99,7 @@ const AttachFileMenu = ({
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
-  const hiddenProviderUploads = startupConfig?.branding?.ui?.hideProviderUploadForEndpoints ?? [];
+  const hiddenProviderUploads = startupConfig?.interface?.hideProviderUploadForEndpoints ?? [];
 
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
