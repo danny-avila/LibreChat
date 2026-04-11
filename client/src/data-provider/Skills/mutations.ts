@@ -33,10 +33,13 @@ function isInfiniteSkillData(
  * strictly "before" every other page by the cursor contract). For flat
  * queries it's prepended to the single page.
  *
- * Each call to the `setQueriesData` updater is scoped to one cache entry, so
- * we do NOT share state between invocations — a previous attempt at this used
- * a hoisted `prepended` flag, which silently dropped the update on whichever
- * cache entry was processed second.
+ * This mirrors the established prompts pattern (`useUpdatePromptGroup`): we
+ * intentionally write across every `[QueryKeys.skills]` entry regardless of
+ * each entry's embedded filter. In exchange for instant visual feedback on
+ * every open list view, a filtered view may briefly show a non-matching skill
+ * until the next explicit refetch. Trying to match filters from a mutation
+ * callback would couple the hook to every query-key variant's internals,
+ * which is exactly what React Query's `setQueriesData` is designed to avoid.
  */
 function addSkillToCachedLists(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -79,7 +82,11 @@ function replaceSkillInCachedLists(
   });
 }
 
-/** Remove a deleted skill id from every cached page that contains it. */
+/**
+ * Remove a deleted skill id from every cached page that contains it. Id-based
+ * removal is always safe regardless of filter — a deleted skill never belongs
+ * in any list.
+ */
 function removeSkillFromCachedLists(
   queryClient: ReturnType<typeof useQueryClient>,
   id: string,
