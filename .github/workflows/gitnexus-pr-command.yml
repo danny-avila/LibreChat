@@ -19,8 +19,11 @@
 #   - Re-run a failed index
 #
 # Supported commands:
-#   /gitnexus index             — index with defaults (no embeddings)
-#   /gitnexus index embeddings  — index with --embeddings enabled
+#   /gitnexus index             — index the PR with embeddings (default)
+#   /gitnexus index embeddings  — explicit form of the above; same effect
+#   /gitnexus index fast        — graph-only index (skip embeddings), for
+#                                 a quick re-index without waiting ~5 min
+#                                 of embedding generation
 
 name: GitNexus PR Command
 
@@ -59,7 +62,7 @@ jobs:
             const body = context.payload.comment.body.trim();
             const match = body.match(/^\/gitnexus\s+(\w+)(?:\s+(\w+))?/);
             if (!match) {
-              core.setFailed(`Unrecognized command: ${body}. Try: /gitnexus index [embeddings]`);
+              core.setFailed(`Unrecognized command: ${body}. Try: /gitnexus index [fast]`);
               return;
             }
             const [, subcommand, modifier] = match;
@@ -67,7 +70,15 @@ jobs:
               core.setFailed(`Unknown subcommand: ${subcommand}. Only 'index' is supported.`);
               return;
             }
-            const embeddings = modifier === 'embeddings' ? 'true' : 'false';
+            // Default to embeddings on — a contributor typing the command
+            // has already decided they want a full re-index. The `fast`
+            // modifier is the explicit opt-out for graph-only runs.
+            // `embeddings` is accepted as a no-op alias for backwards
+            // compat with the previous command form.
+            let embeddings = 'true';
+            if (modifier === 'fast' || modifier === 'graph-only' || modifier === 'no-embeddings') {
+              embeddings = 'false';
+            }
 
             // Use refs/pull/<N>/head instead of the raw head SHA. GitHub
             // mirrors every PR's head into the base repo as this ref, so
@@ -78,7 +89,7 @@ jobs:
             core.setOutput('pr_ref', `refs/pull/${prNum}/head`);
             core.setOutput('embeddings', embeddings);
             core.info(
-              `Dispatching index for PR #${prNum} at refs/pull/${prNum}/head (embeddings=${embeddings})`,
+              `Dispatching index for PR #${prNum} at refs/pull/${prNum}/head (embeddings=${embeddings}, modifier=${modifier || '(none)'})`,
             );
 
       - name: Dispatch gitnexus-index workflow
