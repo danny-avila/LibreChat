@@ -70,13 +70,13 @@ router.post(
 );
 
 router.get(
-  '/:id/files/:relativePath(*)',
+  '/:id/files/:relativePath',
   canAccessSkillResource({ requiredPermission: PermissionBits.VIEW }),
   handlers.downloadFileStub,
 );
 
 router.delete(
-  '/:id/files/:relativePath(*)',
+  '/:id/files/:relativePath',
   canAccessSkillResource({ requiredPermission: PermissionBits.EDIT }),
   handlers.deleteFile,
 );
