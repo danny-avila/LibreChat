@@ -45,8 +45,10 @@ jobs:
   index:
     # Allow push + dispatch unconditionally; filter native pull_request
     # events to contributors only. The /gitnexus command workflow does
-    # its own contributor check before it dispatches this workflow, so
-    # workflow_dispatch is always trusted here.
+    # its own contributor-commenter check before it dispatches this
+    # workflow, so workflow_dispatch is always trusted here — including
+    # the case where the commenter wants to index a non-contributor or
+    # fork PR (the command uses refs/pull/<N>/head so checkout resolves).
     if: |
       github.event_name != 'pull_request' ||
       github.event.pull_request.author_association == 'OWNER' ||
@@ -58,8 +60,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # When the /gitnexus command dispatches us with a pr_ref, check
-          # out that exact SHA. Otherwise fall back to the default ref.
+          # When the /gitnexus command dispatches us with a pr_ref, it's
+          # a refs/pull/<N>/head ref that GitHub mirrors into the base
+          # repo for every PR, so checkout works for fork PRs too. When
+          # pr_ref is empty (native push/pull_request), fall back to the
+          # default ref actions/checkout would use.
           ref: ${{ inputs.pr_ref || '' }}
           fetch-depth: 1
 
