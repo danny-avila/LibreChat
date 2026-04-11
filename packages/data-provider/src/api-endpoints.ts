@@ -401,6 +401,7 @@ export const updateRemoteAgentsPermissions = (roleName: string) =>
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;
+export const updateSkillPermissions = (roleName: string) => `${getRole(roleName)}/skills`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>

@@ -3,6 +3,7 @@ import {
   QueryKeys,
   dataService,
   promptPermissionsSchema,
+  skillPermissionsSchema,
   memoryPermissionsSchema,
   mcpServersPermissionsSchema,
   marketplacePermissionsSchema,
@@ -105,6 +106,42 @@ export const useUpdateAgentPermissionsMutation = (
           console.error('Failed to update prompt permissions:', error);
         }
         if (onError != null) {
+          onError(...args);
+        }
+      },
+      onMutate,
+    },
+  );
+};
+
+export const useUpdateSkillPermissionsMutation = (
+  options?: t.UpdateSkillPermOptions,
+): UseMutationResult<
+  t.UpdatePermResponse,
+  t.TError | undefined,
+  t.UpdateSkillPermVars,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onMutate, onSuccess, onError } = options ?? {};
+  return useMutation(
+    (variables) => {
+      skillPermissionsSchema.partial().parse(variables.updates);
+      return dataService.updateSkillPermissions(variables);
+    },
+    {
+      onSuccess: (data, variables, context) => {
+        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
+        if (onSuccess) {
+          onSuccess(data, variables, context);
+        }
+      },
+      onError: (...args) => {
+        const error = args[0];
+        if (error != null) {
+          console.error('Failed to update skill permissions:', error);
+        }
+        if (onError) {
           onError(...args);
         }
       },

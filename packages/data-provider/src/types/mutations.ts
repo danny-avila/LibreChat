@@ -361,6 +361,13 @@ export type UpdateMCPServersPermOptions = MutationOptions<
   types.TError | null | undefined
 >;
 
+export type UpdateSkillPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateSkillPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
 export type UpdateRemoteAgentsPermVars = UpdatePermVars<p.TRemoteAgentsPermissions>;
 
 export type UpdateRemoteAgentsPermOptions = MutationOptions<
