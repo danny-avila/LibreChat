@@ -19,6 +19,10 @@ describe('inferMimeType', () => {
     expect(inferMimeType('test.py', 'text/x-python-script')).toBe('text/x-python');
   });
 
+  it('should normalize text/x-markdown to text/markdown', () => {
+    expect(inferMimeType('test.md', 'text/x-markdown')).toBe('text/markdown');
+  });
+
   it('should return a type that matches textMimeTypes after normalization', () => {
     const normalized = inferMimeType('test.py', 'text/x-python-script');
     expect(textMimeTypes.test(normalized)).toBe(true);
@@ -45,8 +49,17 @@ describe('inferMimeType', () => {
     expect(baseFileConfig.checkType(normalized)).toBe(true);
   });
 
+  it('should produce a type accepted by checkType after normalizing text/x-markdown', () => {
+    const normalized = inferMimeType('test.md', 'text/x-markdown');
+    expect(baseFileConfig.checkType(normalized)).toBe(true);
+  });
+
   it('should reject raw text/x-python-script without normalization', () => {
     expect(baseFileConfig.checkType('text/x-python-script')).toBe(false);
+  });
+
+  it('should reject raw text/x-markdown without normalization', () => {
+    expect(baseFileConfig.checkType('text/x-markdown')).toBe(false);
   });
 });
 

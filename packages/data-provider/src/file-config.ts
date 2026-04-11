@@ -362,6 +362,7 @@ export const imageTypeMapping: { [key: string]: string } = {
 /** Normalizes non-standard MIME types that browsers may report to their canonical forms */
 export const mimeTypeAliases: Readonly<Record<string, string>> = {
   'text/x-python-script': 'text/x-python',
+  'text/x-markdown': 'text/markdown',
 };
 
 /**
