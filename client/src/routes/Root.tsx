@@ -18,12 +18,13 @@ import {
 } from '~/Providers';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
-import { TermsAndConditionsModal, ImportantNoticeModal } from '~/components/ui';
+import { TermsAndConditionsModal, ImportantNoticeModal, FarmerProfileModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const [showTestingNotice, setShowTestingNotice] = useState(false);
+  const [showFarmerProfile, setShowFarmerProfile] = useState(false);
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
@@ -47,6 +48,7 @@ export default function Root() {
   useSearchEnabled(isAuthenticated);
 
   const noticeKey = `hasAcceptedTestingNotice_${user?.id ?? 'guest'}`;
+  const farmerProfileKey = `hasCompletedFarmerProfile_${user?.id ?? 'guest'}`;
 
   useEffect(() => {
     if (termsData) {
@@ -55,10 +57,15 @@ export default function Root() {
         const hasAcceptedNotice = localStorage.getItem(noticeKey);
         if (!hasAcceptedNotice) {
           setShowTestingNotice(true);
+        } else {
+          const hasCompletedFarmerProfile = localStorage.getItem(farmerProfileKey);
+          if (!hasCompletedFarmerProfile) {
+            setShowFarmerProfile(true);
+          }
         }
       }
     }
-  }, [termsData, noticeKey]);
+  }, [termsData, noticeKey, farmerProfileKey]);
 
   const handleAcceptTerms = () => {
     setShowTerms(false);
@@ -76,10 +83,24 @@ export default function Root() {
   const handleAcceptTestingNotice = () => {
     localStorage.setItem(noticeKey, 'true');
     setShowTestingNotice(false);
+    const hasCompletedFarmerProfile = localStorage.getItem(farmerProfileKey);
+    if (!hasCompletedFarmerProfile) {
+      setShowFarmerProfile(true);
+    }
   };
 
   const handleDeclineTestingNotice = () => {
     setShowTestingNotice(false);
+    logout('/login');
+  };
+
+  const handleFarmerProfileComplete = () => {
+    localStorage.setItem(farmerProfileKey, 'true');
+    setShowFarmerProfile(false);
+  };
+
+  const handleDeclineFarmerProfile = () => {
+    setShowFarmerProfile(false);
     logout('/login');
   };
 
@@ -131,6 +152,12 @@ export default function Root() {
             onOpenChange={setShowTestingNotice}
             onAccept={handleAcceptTestingNotice}
             onDecline={handleDeclineTestingNotice}
+          />
+          <FarmerProfileModal
+            open={showFarmerProfile}
+            onOpenChange={setShowFarmerProfile}
+            onComplete={handleFarmerProfileComplete}
+            onDecline={handleDeclineFarmerProfile}
           />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>

@@ -97,6 +97,23 @@ const acceptTermsController = async (req, res) => {
   }
 };
 
+const saveFarmerProfileController = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { farmerProfile: req.body },
+      { new: true },
+    );
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ message: 'Farmer profile saved successfully' });
+  } catch (error) {
+    logger.error('Error saving farmer profile:', error);
+    res.status(500).json({ message: 'Error saving farmer profile' });
+  }
+};
+
 const deleteUserFiles = async (req) => {
   try {
     const userFiles = await getFiles({ user: req.user.id });
@@ -410,6 +427,7 @@ module.exports = {
   getUserController,
   getTermsStatusController,
   acceptTermsController,
+  saveFarmerProfileController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,

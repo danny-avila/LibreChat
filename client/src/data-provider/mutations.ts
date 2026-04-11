@@ -1050,3 +1050,13 @@ export const useAcceptTermsMutation = (
     onMutate: options?.onMutate,
   });
 };
+
+export const useSaveFarmerProfileMutation = (
+  options?: t.SaveFarmerProfileMutationOptions,
+): UseMutationResult<{ message: string }, unknown, t.IFarmerProfile, unknown> => {
+  return useMutation((profile: t.IFarmerProfile) => dataService.saveFarmerProfile(profile), {
+    onSuccess: options?.onSuccess,
+    onError: options?.onError,
+    onMutate: options?.onMutate,
+  });
+};

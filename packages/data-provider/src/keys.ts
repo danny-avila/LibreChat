@@ -92,4 +92,5 @@ export enum MutationKeys {
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
   updateMemoryPreferences = 'updateMemoryPreferences',
+  saveFarmerProfile = 'saveFarmerProfile',
 }

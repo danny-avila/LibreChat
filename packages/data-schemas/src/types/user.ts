@@ -1,6 +1,26 @@
 import type { Document, Types } from 'mongoose';
 import { CursorPaginationParams } from '~/common';
 
+export interface IFarmerProfile {
+  farmerName?: string;
+  age?: number;
+  gender?: string;
+  villageName?: string;
+  blockName?: string;
+  district?: string;
+  state?: string;
+  phoneNo?: string;
+  languagePreference?: string;
+  yearsOfExperience?: number;
+  cropsCultivated?: string[];
+  primaryCrop?: string;
+  secondaryCrop?: string;
+  awarenessOfKCC?: boolean;
+  usesAgriApps?: boolean;
+  highestEducatedPerson?: string;
+  numberOfSmartphones?: number;
+}
+
 export interface IUser extends Document {
   name?: string;
   username?: string;
@@ -43,6 +63,7 @@ export interface IUser extends Document {
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
+  farmerProfile?: IFarmerProfile;
 }
 
 export interface BalanceConfig {
