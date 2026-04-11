@@ -359,6 +359,33 @@ export const getCategories = () => `${BASE_URL}/api/categories`;
 
 export const getAllPromptGroups = () => `${prompts()}/all`;
 
+/* Skills */
+export const skills = () => `${BASE_URL}/api/skills`;
+
+export const getSkill = (id: string) => `${skills()}/${encodeURIComponent(id)}`;
+
+export const listSkillsWithFilters = (
+  filter: Record<string, string | number | undefined | null>,
+) => {
+  const cleaned = Object.entries(filter).reduce(
+    (acc, [key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        acc[key] = String(value);
+      }
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+  const query =
+    Object.keys(cleaned).length > 0 ? `?${new URLSearchParams(cleaned).toString()}` : '';
+  return `${skills()}${query}`;
+};
+
+export const skillFiles = (id: string) => `${getSkill(id)}/files`;
+
+export const skillFile = (id: string, relativePath: string) =>
+  `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
+
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
 export const adminRoles = () => `${BASE_URL}/api/admin/roles`;

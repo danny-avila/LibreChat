@@ -6,6 +6,7 @@ import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
+import * as sk from './types/skills';
 import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
@@ -857,6 +858,46 @@ export function getRandomPrompts(
   variables: t.TGetRandomPromptsRequest,
 ): Promise<t.TGetRandomPromptsResponse> {
   return request.get(endpoints.getRandomPrompts(variables.limit, variables.skip));
+}
+
+/* Skills */
+
+export function listSkills(params?: sk.TSkillListRequest): Promise<sk.TSkillListResponse> {
+  return request.get(endpoints.listSkillsWithFilters(params ?? {}));
+}
+
+export function getSkill(id: string): Promise<sk.TSkill> {
+  return request.get(endpoints.getSkill(id));
+}
+
+export function createSkill(payload: sk.TCreateSkill): Promise<sk.TSkill> {
+  return request.post(endpoints.skills(), payload);
+}
+
+export function updateSkill(variables: sk.TUpdateSkillVariables): Promise<sk.TUpdateSkillResponse> {
+  return request.patch(endpoints.getSkill(variables.id), {
+    expectedVersion: variables.expectedVersion,
+    ...variables.payload,
+  });
+}
+
+export function deleteSkill(id: string): Promise<sk.TDeleteSkillResponse> {
+  return request.delete(endpoints.getSkill(id));
+}
+
+export function listSkillFiles(skillId: string): Promise<sk.TListSkillFilesResponse> {
+  return request.get(endpoints.skillFiles(skillId));
+}
+
+export function uploadSkillFile(skillId: string, formData: FormData): Promise<sk.TSkillFile> {
+  return request.postMultiPart(endpoints.skillFiles(skillId), formData);
+}
+
+export function deleteSkillFile(
+  skillId: string,
+  relativePath: string,
+): Promise<sk.TDeleteSkillFileResponse> {
+  return request.delete(endpoints.skillFile(skillId, relativePath));
 }
 
 /* Roles */

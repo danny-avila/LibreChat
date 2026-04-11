@@ -13,6 +13,19 @@ import {
   AgentUpdateParams,
 } from './assistants';
 import { Action, ActionMetadata } from './agents';
+import type { InfiniteData, QueryKey } from '@tanstack/react-query';
+import type {
+  TSkill,
+  TSkillFile,
+  TCreateSkill,
+  TUpdateSkillVariables,
+  TUpdateSkillResponse,
+  TDeleteSkillResponse,
+  TUploadSkillFileVariables,
+  TDeleteSkillFileVariables,
+  TDeleteSkillFileResponse,
+  TSkillListResponse,
+} from './skills';
 
 export type MutationOptions<
   Response,
@@ -275,8 +288,43 @@ export type UpdateMemoryPermVars = UpdatePermVars<p.TMemoryPermissions>;
 export type UpdateAgentPermVars = UpdatePermVars<p.TAgentPermissions>;
 export type UpdatePeoplePickerPermVars = UpdatePermVars<p.TPeoplePickerPermissions>;
 export type UpdateMCPServersPermVars = UpdatePermVars<p.TMcpServersPermissions>;
+export type UpdateSkillPermVars = UpdatePermVars<p.TSkillPermissions>;
 
 export type UpdatePermResponse = r.TRole;
+
+/* Skill mutations */
+
+/**
+ * Cache entries that can appear under the `[QueryKeys.skills, ...]` key prefix.
+ * Flat responses come from `useListSkillsQuery`; infinite responses come from
+ * `useSkillsInfiniteQuery`. The context carries both shapes for rollback.
+ */
+export type TSkillCacheEntry = TSkillListResponse | InfiniteData<TSkillListResponse> | undefined;
+
+export type TUpdateSkillContext =
+  | {
+      previousSkill?: TSkill;
+      previousListSnapshots?: Array<[QueryKey, TSkillCacheEntry]>;
+      userContext?: unknown;
+    }
+  | undefined;
+
+export type CreateSkillOptions = MutationOptions<TSkill, TCreateSkill>;
+
+export type UpdateSkillOptions = MutationOptions<
+  TUpdateSkillResponse,
+  TUpdateSkillVariables,
+  TUpdateSkillContext
+>;
+
+export type DeleteSkillOptions = MutationOptions<TDeleteSkillResponse, { id: string }>;
+
+export type UploadSkillFileOptions = MutationOptions<TSkillFile, TUploadSkillFileVariables>;
+
+export type DeleteSkillFileOptions = MutationOptions<
+  TDeleteSkillFileResponse,
+  TDeleteSkillFileVariables
+>;
 
 export type UpdatePromptPermOptions = MutationOptions<
   UpdatePermResponse,

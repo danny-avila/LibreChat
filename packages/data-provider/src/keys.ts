@@ -65,6 +65,10 @@ export enum QueryKeys {
   activeJobs = 'activeJobs',
   /* Agent API Keys */
   agentApiKeys = 'agentApiKeys',
+  /* Skills */
+  skills = 'skills',
+  skill = 'skill',
+  skillFiles = 'skillFiles',
 }
 
 // Dynamic query keys that require parameters
