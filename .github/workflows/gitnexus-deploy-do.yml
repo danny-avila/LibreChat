@@ -235,6 +235,10 @@ jobs:
         run: |
           set -e
           mkdir -p staging
+          # main/dev artifact download failures are fatal — a missing
+          # main/dev index is a real deploy failure. PR artifact failures
+          # are soft — a PR artifact deleted mid-deploy shouldn't abort
+          # the whole deploy and take main/dev down with it.
           echo "$MATRIX" | jq -c '.[]' | while read -r entry; do
             name=$(echo "$entry" | jq -r '.name')
             artifact=$(echo "$entry" | jq -r '.artifactName')
@@ -242,10 +246,21 @@ jobs:
             target="staging/${name}/.gitnexus"
             echo "Downloading $artifact from run $runId -> $target"
             mkdir -p "$target"
-            gh run download "$runId" \
-              --repo "${{ github.repository }}" \
-              --name "$artifact" \
-              --dir "$target"
+            if ! gh run download "$runId" \
+                --repo "${{ github.repository }}" \
+                --name "$artifact" \
+                --dir "$target"; then
+              case "$name" in
+                LibreChat|LibreChat-dev)
+                  echo "::error::Failed to download critical artifact $artifact"
+                  exit 1
+                  ;;
+                *)
+                  echo "::warning::Failed to download PR artifact $artifact — skipping"
+                  rm -rf "staging/${name}"
+                  ;;
+              esac
+            fi
           done
           echo ""
           echo "Staged for rsync:"
@@ -276,14 +291,19 @@ jobs:
         # pulls the image on every deploy, so we re-authenticate it here
         # using the same short-lived token. If the package is public, this
         # step is redundant but harmless.
+        #
+        # The token MUST travel through SSH stdin (not as a command arg)
+        # so it's never visible in the droplet's process table via
+        # /proc/<pid>/cmdline. `printf '%s'` avoids a trailing newline
+        # which `docker login --password-stdin` would otherwise reject.
         env:
           SSH_USER: ${{ secrets.GITNEXUS_DO_USER }}
           SSH_HOST: ${{ secrets.GITNEXUS_DO_HOST }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_ACTOR: ${{ github.actor }}
         run: |
-          ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
-            "echo '$GH_TOKEN' | docker login ghcr.io -u '$GH_ACTOR' --password-stdin"
+          printf '%s' "$GH_TOKEN" | ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
+            "docker login ghcr.io -u '$GH_ACTOR' --password-stdin"
 
       - name: Upload config files
         env:
@@ -322,6 +342,11 @@ jobs:
             ACTIVE_NAMES="$ACTIVE_NAMES" bash <<'REMOTE'
             set -e
             cd /opt/gitnexus/indexes || exit 0
+            # nullglob makes `for dir in */` expand to nothing when the
+            # directory is empty (first deploy), instead of the literal
+            # string "*/". Explicit no-op > relying on rm -f to silently
+            # tolerate a nonexistent file named "*".
+            shopt -s nullglob
             IFS=',' read -ra ACTIVE <<< "$ACTIVE_NAMES"
             for dir in */; do
               dir="${dir%/}"
@@ -361,19 +386,21 @@ jobs:
               docker compose up -d caddy
             fi
 
-            # Poll gitnexus health until ready or timeout (120s).
-            # start_period in compose is 60s, so a fresh container can
-            # legitimately take that long before the first healthcheck.
+            # Poll gitnexus health until ready or timeout (180s).
+            # Docker's own unhealthy detection takes up to 150s
+            # (start_period 60s + retries 3 * interval 30s), so the
+            # poll ceiling must clear that to avoid false negatives
+            # when gitnexus legitimately takes ~2.5 min to warm up.
             echo "Waiting for gitnexus to report healthy..."
-            for i in $(seq 1 24); do
+            for i in $(seq 1 36); do
               STATUS=$(docker inspect --format='{{.State.Health.Status}}' gitnexus 2>/dev/null || echo unknown)
-              echo "[$i/24] gitnexus health: $STATUS"
+              echo "[$i/36] gitnexus health: $STATUS"
               if [ "$STATUS" = "healthy" ]; then
                 echo "gitnexus is healthy"
                 break
               fi
-              if [ "$i" -eq 24 ]; then
-                echo "ERROR: gitnexus failed to become healthy after 120s"
+              if [ "$i" -eq 36 ]; then
+                echo "ERROR: gitnexus failed to become healthy after 180s"
                 docker compose ps
                 docker compose logs --tail 80 gitnexus
                 exit 1

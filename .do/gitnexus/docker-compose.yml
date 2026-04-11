@@ -7,8 +7,23 @@
 # bind-mounted read-write into the gitnexus container. The deploy
 # workflow rsyncs fresh indexes into that directory and restarts
 # only the gitnexus container — Caddy keeps running undisturbed.
+#
+# Break-glass: if gitnexus is stuck unhealthy and you need to restart
+# just Caddy (e.g. to push an emergency Caddyfile fix), the
+# `depends_on: condition: service_healthy` would block:
+#     docker compose up -d caddy
+# Use --no-deps to bypass the dependency check:
+#     docker compose up -d --no-deps caddy
 
 name: gitnexus
+
+# Shared logging defaults applied to both services so the droplet's
+# disk doesn't fill up with unbounded json-file logs.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '50m'
+    max-file: '3'
 
 services:
   gitnexus:
@@ -21,7 +36,14 @@ services:
       - gitnexus-net
     volumes:
       - /opt/gitnexus/indexes:/indexes
+    # memswap_limit equal to mem_limit disables swap for this container.
+    # Without it, Docker lets the process silently swap onto host disk,
+    # turning sub-second graph queries into multi-second ones. Hard
+    # OOM-kill is preferable — the container restarts via unless-stopped,
+    # the deploy health poll catches it, and the failure is explicit.
     mem_limit: 1792m
+    memswap_limit: 1792m
+    logging: *default-logging
     healthcheck:
       test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:4747/api/info']
       interval: 30s
@@ -33,9 +55,12 @@ services:
     image: caddy:2-alpine
     container_name: gitnexus-caddy
     restart: unless-stopped
-    # service_healthy (not just service_started) blocks Caddy from
-    # routing traffic until gitnexus passes its healthcheck, preventing
-    # 502 Bad Gateway during the ~60s startup window after a restart.
+    # service_healthy (not just service_started) ensures Caddy doesn't
+    # start routing traffic until gitnexus passes its initial healthcheck
+    # on a cold `compose up`. This only governs initial startup ordering —
+    # during force-recreates of gitnexus, Caddy stays up and may briefly
+    # return 502 while the new gitnexus container binds its port. The
+    # deploy workflow's health poll catches any sustained failure.
     depends_on:
       gitnexus:
         condition: service_healthy
@@ -48,6 +73,7 @@ services:
       - /opt/gitnexus/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    logging: *default-logging
     environment:
       GITNEXUS_DOMAIN: ${GITNEXUS_DOMAIN}
       API_TOKEN: ${API_TOKEN}
