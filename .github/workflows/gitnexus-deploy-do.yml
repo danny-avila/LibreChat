@@ -153,10 +153,18 @@ jobs:
           sparse-checkout: .do/gitnexus
           fetch-depth: 1
 
-      # Resolve every index to serve. For main/dev this is simple: latest
-      # successful run per branch. For PRs, we list artifacts across recent
-      # workflow runs, match gitnexus-index-pr-<N>, then cross-reference
-      # GitHub PR state and only keep artifacts whose PR is still open.
+      # Resolve every index to serve. All resolutions go through
+      # listArtifactsForRepo keyed by the expected artifact name, so a
+      # run's branch or event type doesn't matter — we always pick the
+      # freshest artifact that actually exists.
+      #
+      # Why this matters: a /gitnexus index command dispatches
+      # gitnexus-index.yml with ref=main and an input pr_number, which
+      # produces a run whose head_branch is "main" but whose artifact
+      # is gitnexus-index-pr-<N>. listWorkflowRuns(branch='main') would
+      # happily return that run, and we'd then try to download a
+      # nonexistent gitnexus-index-main artifact from it. Querying by
+      # artifact name directly avoids the whole mess.
       - name: Resolve indexes to serve
         id: resolve
         uses: actions/github-script@v7
@@ -164,58 +172,69 @@ jobs:
           script: |
             const serve = []; // [{ name, artifactName, runId }]
 
-            // --- main and dev branches ---
-            for (const branch of ['main', 'dev']) {
-              const { data } = await github.rest.actions.listWorkflowRuns({
+            // Helper — pick the newest non-expired artifact matching a name.
+            const latestArtifact = async (artifactName) => {
+              const { data } = await github.rest.actions.listArtifactsForRepo({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                workflow_id: 'gitnexus-index.yml',
-                branch,
-                status: 'success',
-                per_page: 1,
+                name: artifactName,
+                per_page: 10,
               });
-              if (data.workflow_runs.length) {
-                const runId = data.workflow_runs[0].id;
-                const name = branch === 'main' ? 'LibreChat' : `LibreChat-${branch}`;
-                serve.push({ name, artifactName: `gitnexus-index-${branch}`, runId });
-                core.info(`${branch}: run ${runId} -> ${name}`);
-              } else {
-                core.warning(`No successful index run found for ${branch}`);
+              return data.artifacts
+                .filter((a) => !a.expired)
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            };
+
+            // --- main and dev branches ---
+            for (const [branch, name] of [
+              ['main', 'LibreChat'],
+              ['dev', 'LibreChat-dev'],
+            ]) {
+              const artifactName = `gitnexus-index-${branch}`;
+              const fresh = await latestArtifact(artifactName);
+              if (!fresh) {
+                core.warning(`No artifact found for ${branch} (expected ${artifactName})`);
+                continue;
               }
+              serve.push({
+                name,
+                artifactName,
+                runId: fresh.workflow_run.id,
+              });
+              core.info(`${branch}: run ${fresh.workflow_run.id} -> ${name}`);
             }
 
             // --- open PRs with at least one successful index run ---
-            const { data: openPrs } = await github.rest.pulls.list({
+            // github.paginate handles the 100-per-page ceiling automatically
+            // so the resolution works on repos with 200+ concurrent open PRs.
+            const openPrs = await github.paginate(github.rest.pulls.list, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
               per_page: 100,
             });
             core.info(`Found ${openPrs.length} open PRs`);
-            if (openPrs.length === 100) {
-              core.warning(
-                'Open PR list was truncated at 100 (GitHub API maximum). ' +
-                  'Some PR indexes may be skipped. Add pagination if the repo ' +
-                  'regularly exceeds 100 concurrent open PRs.',
+
+            // Parallelize artifact lookups in fixed-size batches so the
+            // resolve step runs in seconds instead of minutes on big repos,
+            // without burning the GitHub API rate limit all at once.
+            const BATCH_SIZE = 10;
+            const prMatches = [];
+            for (let i = 0; i < openPrs.length; i += BATCH_SIZE) {
+              const batch = openPrs.slice(i, i + BATCH_SIZE);
+              const results = await Promise.all(
+                batch.map(async (pr) => {
+                  const artifactName = `gitnexus-index-pr-${pr.number}`;
+                  const fresh = await latestArtifact(artifactName);
+                  return fresh ? { pr, artifactName, fresh } : null;
+                }),
               );
+              for (const hit of results) {
+                if (hit) prMatches.push(hit);
+              }
             }
 
-            for (const pr of openPrs) {
-              // PR branches live on forks too. listWorkflowRuns for a fork
-              // branch name doesn't return anything useful, so we instead
-              // query artifacts directly filtered by name.
-              const artifactName = `gitnexus-index-pr-${pr.number}`;
-              const { data: arts } = await github.rest.actions.listArtifactsForRepo({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: artifactName,
-                per_page: 5,
-              });
-              // Pick the most recent non-expired artifact
-              const fresh = arts.artifacts
-                .filter((a) => !a.expired)
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-              if (!fresh) continue;
+            for (const { pr, artifactName, fresh } of prMatches) {
               serve.push({
                 name: `LibreChat-pr-${pr.number}`,
                 artifactName,
@@ -223,6 +242,7 @@ jobs:
               });
               core.info(`PR #${pr.number}: run ${fresh.workflow_run.id} -> LibreChat-pr-${pr.number}`);
             }
+            core.info(`Resolved ${prMatches.length} PR indexes out of ${openPrs.length} open PRs`);
 
             if (!serve.length) {
               core.setFailed('No indexes to serve');

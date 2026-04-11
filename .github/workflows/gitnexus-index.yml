@@ -31,6 +31,7 @@ on:
 
 permissions:
   contents: read
+  actions: write # needed to dispatch gitnexus-deploy-do.yml on bot-triggered runs
 
 concurrency:
   # When triggered by the /gitnexus command, group by PR number so rapid
@@ -154,3 +155,23 @@ jobs:
           path: .gitnexus/
           include-hidden-files: true
           retention-days: 30
+
+      # GitHub suppresses workflow_run events for workflow runs whose
+      # triggering actor is GITHUB_TOKEN (to prevent recursive chaining).
+      # That means when this workflow is dispatched by gitnexus-pr-command
+      # via `gh api workflow_dispatch`, the deploy workflow's workflow_run
+      # trigger never fires. Manually dispatch the deploy here in that
+      # specific case — user-triggered runs continue to rely on the
+      # existing workflow_run trigger, so we don't double-deploy.
+      - name: Trigger deploy workflow for bot-triggered runs
+        if: github.triggering_actor == 'github-actions[bot]'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.info('Triggering actor is github-actions[bot]; workflow_run would not fire. Dispatching gitnexus-deploy-do.yml manually.');
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'gitnexus-deploy-do.yml',
+              ref: 'main',
+            });
