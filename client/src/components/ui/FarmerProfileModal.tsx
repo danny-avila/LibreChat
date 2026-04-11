@@ -190,7 +190,7 @@ const FarmerProfileModal = ({
   });
 
   const handleOpenChange = (isOpen: boolean) => {
-    if (open && !isOpen) { onDecline(); return; }
+    /*if (open && !isOpen) { onDecline(); return; }*/
     onOpenChange(isOpen);
   };
 
@@ -224,6 +224,8 @@ const FarmerProfileModal = ({
     <OGDialog open={open} onOpenChange={handleOpenChange}>
       <OGDialogContent
         showCloseButton={false}
+        onInteractOutside={(e) => e.preventDefault()}
+       onEscapeKeyDown={(e) => e.preventDefault()}
         className="w-11/12 max-w-2xl sm:w-3/4 md:w-2/3 lg:w-1/2 max-h-[90vh] flex flex-col overflow-y-hidden"
       >
         <OGDialogHeader>

@@ -93,7 +93,7 @@ export default function Root() {
 
   const handleDeclineFarmerProfile = () => {
     setShowFarmerProfile(false);
-    logout('/login');
+   // logout('/login');
   };
 
   if (!isAuthenticated) {
