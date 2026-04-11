@@ -812,11 +812,46 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
+export const brandingThemeSchema = z.record(z.string(), z.string()).optional();
+
+export const brandingSchema = z
+  .object({
+    appLogo: z.string().optional(),
+    authLogo: z.string().optional(),
+    favicon: z.string().optional(),
+    meta: z
+      .object({
+        title: z.string().optional(),
+        description: z.string().optional(),
+        themeColor: z.string().optional(),
+        pwaName: z.string().optional(),
+        pwaShortName: z.string().optional(),
+        pwaBackgroundColor: z.string().optional(),
+        pwaThemeColor: z.string().optional(),
+      })
+      .optional(),
+    theme: z
+      .object({
+        light: brandingThemeSchema,
+        dark: brandingThemeSchema,
+      })
+      .optional(),
+    ui: z
+      .object({
+        hideProviderUploadForEndpoints: z.array(z.string()).optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
+export type TBrandingConfig = z.infer<typeof brandingSchema>;
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
+  branding?: TBrandingConfig;
   balance?: TBalanceConfig;
   transactions?: TTransactionsConfig;
   discordLoginEnabled: boolean;
@@ -1069,6 +1104,7 @@ export const configSchema = z.object({
     .optional(),
   interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
+  branding: brandingSchema,
   fileStrategy: fileStorageSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,
   actions: z

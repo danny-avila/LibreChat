@@ -27,35 +27,40 @@ jest.mock('~/components/SharePoint', () => ({
   SharePointPickerDialog: () => null,
 }));
 
-jest.mock('@librechat/client', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const R = require('react');
-  return {
-    FileUpload: (props) => R.createElement('div', { 'data-testid': 'file-upload' }, props.children),
-    TooltipAnchor: (props) => props.render,
-    DropdownPopup: (props) =>
-      R.createElement(
-        'div',
-        null,
-        R.createElement('div', { onClick: () => props.setIsOpen(!props.isOpen) }, props.trigger),
-        props.isOpen &&
-          R.createElement(
-            'div',
-            { 'data-testid': 'dropdown-menu' },
-            props.items.map((item, idx) =>
-              R.createElement(
-                'button',
-                { key: idx, onClick: item.onClick, 'data-testid': `menu-item-${idx}` },
-                item.label,
+jest.mock(
+  '@librechat/client',
+  () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const R = require('react');
+    return {
+      FileUpload: (props) =>
+        R.createElement('div', { 'data-testid': 'file-upload' }, props.children),
+      TooltipAnchor: (props) => props.render,
+      DropdownPopup: (props) =>
+        R.createElement(
+          'div',
+          null,
+          R.createElement('div', { onClick: () => props.setIsOpen(!props.isOpen) }, props.trigger),
+          props.isOpen &&
+            R.createElement(
+              'div',
+              { 'data-testid': 'dropdown-menu' },
+              props.items.map((item, idx) =>
+                R.createElement(
+                  'button',
+                  { key: idx, onClick: item.onClick, 'data-testid': `menu-item-${idx}` },
+                  item.label,
+                ),
               ),
             ),
-          ),
-      ),
-    AttachmentIcon: () => R.createElement('span', { 'data-testid': 'attachment-icon' }),
-    SharePointIcon: () => R.createElement('span', { 'data-testid': 'sharepoint-icon' }),
-    useToastContext: () => ({ showToast: jest.fn() }),
-  };
-});
+        ),
+      AttachmentIcon: () => R.createElement('span', { 'data-testid': 'attachment-icon' }),
+      SharePointIcon: () => R.createElement('span', { 'data-testid': 'sharepoint-icon' }),
+      useToastContext: () => ({ showToast: jest.fn() }),
+    };
+  },
+  { virtual: true },
+);
 
 jest.mock('@ariakit/react', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -106,7 +111,16 @@ function setupMocks(overrides: { provider?: string } = {}) {
   };
   mockUseSharePointFileHandling.mockReturnValue(sharePointReturnValue);
   mockUseSharePointFileHandlingNoChatContext.mockReturnValue(sharePointReturnValue);
-  mockUseGetStartupConfig.mockReturnValue({ data: { sharePointFilePickerEnabled: false } });
+  mockUseGetStartupConfig.mockReturnValue({
+    data: {
+      sharePointFilePickerEnabled: false,
+      branding: {
+        ui: {
+          hideProviderUploadForEndpoints: [],
+        },
+      },
+    },
+  });
   mockUseAgentToolPermissions.mockReturnValue({
     fileSearchAllowedByAgent: false,
     codeAllowedByAgent: false,
@@ -195,6 +209,29 @@ describe('AttachFileMenu', () => {
       renderMenu({ endpointType: EModelEndpoint.azureOpenAI, useResponsesApi: false });
       openMenu();
       expect(screen.getByText('Upload Image')).toBeInTheDocument();
+    });
+
+    it('hides "Upload to Provider" when branding disables it for the current provider', () => {
+      setupMocks({ provider: EModelEndpoint.openAI });
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: true,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+      });
+      mockUseGetStartupConfig.mockReturnValue({
+        data: {
+          sharePointFilePickerEnabled: false,
+          branding: {
+            ui: {
+              hideProviderUploadForEndpoints: [EModelEndpoint.openAI],
+            },
+          },
+        },
+      });
+      renderMenu({ endpointType: EModelEndpoint.openAI });
+      openMenu();
+      expect(screen.queryByText('Upload to Provider')).not.toBeInTheDocument();
+      expect(screen.getByText('Upload as Text')).toBeInTheDocument();
     });
   });
 

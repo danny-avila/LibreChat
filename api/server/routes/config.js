@@ -129,6 +129,7 @@ router.get('/', async function (req, res) {
         ...sharedPayload,
         socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
         turnstile: baseConfig?.turnstileConfig,
+        branding: baseConfig?.brandingConfig,
       };
 
       const interfaceConfig = baseConfig?.interfaceConfig;
@@ -159,6 +160,7 @@ router.get('/', async function (req, res) {
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
+      branding: appConfig?.brandingConfig,
       modelSpecs: appConfig?.modelSpecs,
       balance: balanceConfig,
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,

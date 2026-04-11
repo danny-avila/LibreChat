@@ -39,6 +39,29 @@ describe('mergeConfigOverrides', () => {
     expect(iface.parameters).toBe(true);
   });
 
+  it('remaps branding overrides into brandingConfig', () => {
+    const configs = [
+      fakeConfig(
+        {
+          branding: {
+            authLogo: '/auth-logo.svg',
+            ui: {
+              hideProviderUploadForEndpoints: ['openAI'],
+            },
+          },
+        },
+        10,
+      ),
+    ];
+    const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
+    expect(result.brandingConfig).toEqual({
+      authLogo: '/auth-logo.svg',
+      ui: {
+        hideProviderUploadForEndpoints: ['openAI'],
+      },
+    });
+  });
+
   it('sorts by priority — higher priority wins', () => {
     const configs = [
       fakeConfig({ registration: { enabled: false } }, 100),

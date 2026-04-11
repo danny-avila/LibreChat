@@ -34,6 +34,7 @@ const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = 
   mcpServers: 'mcpConfig',
   interface: 'interfaceConfig',
   turnstile: 'turnstileConfig',
+  branding: 'brandingConfig',
 };
 
 function mergeArrayByKey(

@@ -79,6 +79,8 @@ export interface AppConfig {
   interfaceConfig?: TCustomConfig['interface'];
   /** Turnstile configuration */
   turnstileConfig?: Partial<TCustomConfig['turnstile']>;
+  /** Branding configuration */
+  brandingConfig?: TCustomConfig['branding'];
   /** Balance configuration */
   balance?: Partial<TCustomConfig['balance']>;
   /** Transactions configuration */

@@ -90,6 +90,7 @@ export const AppService = async (params?: {
   const registration = config.registration ?? configDefaults.registration;
   const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
+  const brandingConfig = config.branding;
   const speech = config.speech;
 
   const defaultConfig = {
@@ -112,6 +113,7 @@ export const AppService = async (params?: {
     imageOutputType,
     interfaceConfig,
     turnstileConfig,
+    brandingConfig,
     mcpConfig: mcpServersConfig,
     fileStrategies: config.fileStrategies,
   };

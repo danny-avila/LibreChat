@@ -16,8 +16,15 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
 
 const mockGetTenantId = jest.fn(() => undefined);
 jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
+  logger: {
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+  },
   getTenantId: (...args) => mockGetTenantId(...args),
+  SystemCapabilities: {
+    ACCESS_ADMIN: 'ACCESS_ADMIN',
+  },
 }));
 
 const request = require('supertest');
@@ -43,6 +50,10 @@ const baseAppConfig = {
     privacyPolicy: { externalUrl: 'https://example.com/privacy' },
     termsOfService: { externalUrl: 'https://example.com/tos' },
     modelSelect: true,
+  },
+  brandingConfig: {
+    authLogo: '/assets/auth-logo.svg',
+    ui: { hideProviderUploadForEndpoints: ['openAI'] },
   },
   turnstileConfig: { siteKey: 'test-key' },
   modelSpecs: { list: [{ name: 'test-spec' }] },
@@ -148,6 +159,15 @@ describe('GET /api/config', () => {
 
       expect(response.body.socialLogins).toEqual(['google', 'github']);
       expect(response.body.turnstile).toEqual({ siteKey: 'test-key' });
+    });
+
+    it('should include branding from base config', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.branding).toEqual(baseAppConfig.brandingConfig);
     });
 
     it('should include only privacyPolicy and termsOfService from interface config', async () => {
@@ -276,6 +296,15 @@ describe('GET /api/config', () => {
       const response = await request(app).get('/api/config');
 
       expect(response.body.interface).toEqual(baseAppConfig.interfaceConfig);
+    });
+
+    it('should include branding config for authenticated users', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.branding).toEqual(baseAppConfig.brandingConfig);
     });
 
     it('should include authenticated-only env var fields', async () => {

@@ -3,11 +3,22 @@ import { useRecoilState } from 'recoil';
 import TagManager from 'react-gtm-module';
 import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
+import { isDark, useTheme } from '@librechat/client';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
 import useSpeechSettingsInit from './useSpeechSettingsInit';
 import { useHasAccess } from '~/hooks';
 import store from '~/store';
+
+function setHeadTag(selector: string, attribute: string, value?: string) {
+  if (!value) {
+    return;
+  }
+  const element = document.head.querySelector(selector);
+  if (element) {
+    element.setAttribute(attribute, value);
+  }
+}
 
 export default function useAppStartup({
   startupConfig,
@@ -17,6 +28,7 @@ export default function useAppStartup({
   user?: TUser;
 }) {
   const [defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
+  const { theme, setThemeRGB } = useTheme();
   const canUseMcp = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,
@@ -43,13 +55,47 @@ export default function useAppStartup({
 
   /** Set the app title */
   useEffect(() => {
-    const appTitle = startupConfig?.appTitle ?? '';
+    const appTitle = startupConfig?.branding?.meta?.title ?? startupConfig?.appTitle ?? '';
     if (!appTitle) {
       return;
     }
     document.title = appTitle;
     localStorage.setItem(LocalStorageKeys.APP_TITLE, appTitle);
-  }, [startupConfig]);
+  }, [startupConfig?.appTitle, startupConfig?.branding?.meta?.title]);
+
+  /** Apply runtime branding metadata */
+  useEffect(() => {
+    const branding = startupConfig?.branding;
+    if (!branding) {
+      return;
+    }
+
+    setHeadTag('link[rel="icon"]', 'href', branding.favicon);
+    setHeadTag('meta[name="description"]', 'content', branding.meta?.description);
+    setHeadTag('meta[name="theme-color"]', 'content', branding.meta?.themeColor);
+  }, [
+    startupConfig?.branding,
+    startupConfig?.branding?.favicon,
+    startupConfig?.branding?.meta?.description,
+    startupConfig?.branding?.meta?.themeColor,
+  ]);
+
+  /** Apply tenant theme tokens through the existing ThemeProvider path */
+  useEffect(() => {
+    const themeConfig = startupConfig?.branding?.theme;
+    if (!themeConfig) {
+      return;
+    }
+
+    const palette = isDark(theme)
+      ? (themeConfig.dark ?? themeConfig.light)
+      : (themeConfig.light ?? themeConfig.dark);
+    if (!palette) {
+      return;
+    }
+
+    setThemeRGB(palette);
+  }, [setThemeRGB, startupConfig?.branding?.theme, theme]);
 
   /** Set the default spec's preset as default */
   useEffect(() => {
