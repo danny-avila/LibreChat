@@ -45,8 +45,10 @@ jobs:
   index:
     # Allow push + dispatch unconditionally; filter native pull_request
     # events to contributors only. The /gitnexus command workflow does
-    # its own contributor check before it dispatches this workflow, so
-    # workflow_dispatch is always trusted here.
+    # its own contributor-commenter check before it dispatches this
+    # workflow, so workflow_dispatch is always trusted here — including
+    # the case where the commenter wants to index a non-contributor or
+    # fork PR (the command uses refs/pull/<N>/head so checkout resolves).
     if: |
       github.event_name != 'pull_request' ||
       github.event.pull_request.author_association == 'OWNER' ||
@@ -58,8 +60,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # When the /gitnexus command dispatches us with a pr_ref, check
-          # out that exact SHA. Otherwise fall back to the default ref.
+          # When the /gitnexus command dispatches us with a pr_ref, it's
+          # a refs/pull/<N>/head ref that GitHub mirrors into the base
+          # repo for every PR, so checkout works for fork PRs too. When
+          # pr_ref is empty (native push/pull_request), fall back to the
+          # default ref actions/checkout would use.
           ref: ${{ inputs.pr_ref || '' }}
           fetch-depth: 1
 
@@ -76,11 +81,43 @@ jobs:
           restore-keys: gitnexus-npm-${{ runner.os }}-
 
       - name: Run GitNexus Analyze
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FLAGS="--skip-agents-md --verbose"
-          # Auto-enable embeddings for main branch pushes; opt-in via dispatch input elsewhere
-          if [ "${{ inputs.embeddings }}" = "true" ] || \
-             ([ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]); then
+
+          # Decide whether to generate embeddings. Rules:
+          #   push (main/dev)      -> always embed
+          #   pull_request         -> embed ONLY when the PR changes files
+          #                           under paths that also trigger backend
+          #                           or frontend unit tests (api/, client/,
+          #                           packages/). Docs/config-only PRs skip
+          #                           embeddings to save ~3-5 min of CI.
+          #   workflow_dispatch    -> respect the explicit `embeddings` input
+          #                           (default false). This also covers the
+          #                           /gitnexus index [embeddings] command.
+          ENABLE_EMBEDDINGS=false
+          case "${{ github.event_name }}" in
+            workflow_dispatch)
+              [ "${{ inputs.embeddings }}" = "true" ] && ENABLE_EMBEDDINGS=true
+              ;;
+            push)
+              ENABLE_EMBEDDINGS=true
+              ;;
+            pull_request)
+              PR_NUM="${{ github.event.pull_request.number }}"
+              CHANGED=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUM/files" \
+                --paginate --jq '.[].filename' 2>/dev/null || echo "")
+              if printf '%s\n' "$CHANGED" | grep -qE '^(api/|client/|packages/)'; then
+                echo "PR #$PR_NUM touches unit-test paths (api|client|packages) — enabling embeddings"
+                ENABLE_EMBEDDINGS=true
+              else
+                echo "PR #$PR_NUM does not touch unit-test paths — graph-only index"
+              fi
+              ;;
+          esac
+
+          if [ "$ENABLE_EMBEDDINGS" = "true" ]; then
             FLAGS="$FLAGS --embeddings"
           fi
           if [ "${{ inputs.force }}" = "true" ]; then
