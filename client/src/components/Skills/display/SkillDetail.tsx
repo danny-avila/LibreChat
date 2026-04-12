@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import { Eye, Code, User, Calendar, EarthIcon, ScrollText } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
@@ -55,11 +55,11 @@ function parseFrontmatter(raw: string): {
       const items: string[] = [];
       while (i + 1 < lines.length) {
         const next = lines[i + 1];
-        const trimmed = next.trim();
-        if (!trimmed.startsWith('-')) {
+        const item = next.trim();
+        if (!item.startsWith('-')) {
           break;
         }
-        items.push(trimmed.slice(1).trim());
+        items.push(item.slice(1).trim());
         i++;
       }
       value = items.join(',');
@@ -233,6 +233,3 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
     </article>
   );
 }
-
-// Need React for JSX Fragment
-import React from 'react';

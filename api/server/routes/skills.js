@@ -7,7 +7,7 @@ const {
   createImportHandler,
   generateCheckAccess,
 } = require('@librechat/api');
-const { isValidObjectIdString } = require('@librechat/data-schemas');
+const { isValidObjectIdString, logger } = require('@librechat/data-schemas');
 const {
   PermissionBits,
   PermissionTypes,
@@ -46,7 +46,7 @@ const router = express.Router();
 const ALLOWED_EXTENSIONS = new Set(['.md', '.zip', '.skill']);
 const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
 
-const skillImportStorage = multer.memoryStorage();
+const memoryStorage = multer.memoryStorage();
 
 const skillImportFilter = (_req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
@@ -58,16 +58,15 @@ const skillImportFilter = (_req, file, cb) => {
 };
 
 const skillUpload = multer({
-  storage: skillImportStorage,
+  storage: memoryStorage,
   fileFilter: skillImportFilter,
   limits: { fileSize: MAX_IMPORT_SIZE },
 });
 
 // Per-file upload (for adding individual files to an existing skill)
 const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-const singleFileStorage = multer.memoryStorage();
 const singleFileUpload = multer({
-  storage: singleFileStorage,
+  storage: memoryStorage,
   limits: { fileSize: MAX_SINGLE_FILE_SIZE },
 });
 
@@ -182,10 +181,10 @@ async function uploadFileHandler(req, res) {
 
     return res.status(200).json(result);
   } catch (error) {
-    if (error.message && error.message.includes('SKILL_FILE_VALIDATION')) {
+    if (error.code === 'SKILL_FILE_VALIDATION_FAILED') {
       return res.status(400).json({ message: error.message });
     }
-    console.error('[uploadFile] Error:', error);
+    logger.error('[uploadFile] Error:', error);
     return res.status(500).json({ message: 'Failed to upload file' });
   }
 }
@@ -254,5 +253,14 @@ router.delete(
   canAccessSkillResource({ requiredPermission: PermissionBits.EDIT }),
   handlers.deleteFile,
 );
+
+// Multer error handler — surface file-too-large etc. as 400 instead of 500
+
+router.use((err, _req, res, _next) => {
+  if (err && err.name === 'MulterError') {
+    return res.status(400).json({ message: err.message });
+  }
+  return res.status(500).json({ message: 'Internal server error' });
+});
 
 module.exports = router;

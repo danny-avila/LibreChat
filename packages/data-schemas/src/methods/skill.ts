@@ -841,9 +841,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
           isExecutable: row.isExecutable ?? false,
           author: row.author,
           tenantId: row.tenantId,
-          content: undefined,
-          isBinary: undefined,
         },
+        $unset: { content: '', isBinary: '' },
       },
       { new: false, upsert: true },
     ).lean();

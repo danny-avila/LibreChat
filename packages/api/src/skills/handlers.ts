@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { isBinaryBuffer } from './binary';
 import {
   ResourceType,
   AccessRoleIds,
@@ -616,7 +617,6 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       }
       const buffer = Buffer.concat(chunks);
 
-      const { isBinaryBuffer } = await import('./binary');
       if (isBinaryBuffer(buffer)) {
         await updateSkillFileContent(id, decodedPath, { isBinary: true });
         return res.status(200).json({ ...base, isBinary: true });

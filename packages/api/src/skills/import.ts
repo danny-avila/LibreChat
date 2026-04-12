@@ -15,6 +15,7 @@ import type {
 
 /** Security limits for zip processing. */
 const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50 MB compressed
+const MAX_DECOMPRESSED_BYTES = 500 * 1024 * 1024; // 500 MB total decompressed
 const MAX_ENTRIES = 500;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const SKILL_MD = 'SKILL.md';
@@ -118,7 +119,7 @@ interface ServerRequest extends Request {
  * `POST /api/skills/import`
  *
  * Accepts a single multipart file (.md, .zip, or .skill).
- * Creates the skill + all additional files atomically.
+ * Creates the skill, then processes additional files individually.
  * Grants SKILL_OWNER to the uploader.
  */
 export function createImportHandler(deps: ImportSkillDeps) {
@@ -188,9 +189,7 @@ async function handleMarkdown(
   deps: ImportSkillDeps,
   file: Express.Multer.File,
 ) {
-  const content = file.buffer
-    ? file.buffer.toString('utf-8')
-    : await import('fs').then((fs) => fs.promises.readFile(file.path, 'utf-8'));
+  const content = file.buffer.toString('utf-8');
 
   const { name, description } = parseFrontmatter(content);
   if (!name) {
@@ -222,10 +221,7 @@ async function handleZip(
 ) {
   const userId = req.user.id;
 
-  // Read the zip buffer
-  const zipBuffer = file.buffer
-    ? file.buffer
-    : await import('fs').then((fs) => fs.promises.readFile(file.path));
+  const zipBuffer = file.buffer;
 
   if (zipBuffer.length > MAX_ZIP_BYTES) {
     return res
@@ -296,6 +292,7 @@ async function handleZip(
 
   // Process additional files (everything except SKILL.md)
   const fileResults: Array<{ path: string; status: 'ok' | 'error'; error?: string }> = [];
+  let totalDecompressed = 0;
 
   for (const [entryPath, zipEntry] of Object.entries(zip.files)) {
     if (zipEntry.dir) {
@@ -318,7 +315,29 @@ async function handleZip(
     }
 
     try {
+      // Guard against zip bombs: check declared size before decompressing
+      const declaredSize =
+        (zipEntry as unknown as { _data?: { uncompressedSize?: number } })._data
+          ?.uncompressedSize ?? 0;
+      if (declaredSize > MAX_SINGLE_FILE_BYTES) {
+        fileResults.push({
+          path: relativePath,
+          status: 'error',
+          error: `Declared size too large (${Math.round(declaredSize / 1024 / 1024)}MB, max ${MAX_SINGLE_FILE_BYTES / 1024 / 1024}MB)`,
+        });
+        continue;
+      }
+      if (totalDecompressed + declaredSize > MAX_DECOMPRESSED_BYTES) {
+        fileResults.push({
+          path: relativePath,
+          status: 'error',
+          error: 'Cumulative decompressed size exceeds limit',
+        });
+        continue;
+      }
+
       const fileBuffer = await zipEntry.async('nodebuffer');
+      totalDecompressed += fileBuffer.length;
 
       if (fileBuffer.length > MAX_SINGLE_FILE_BYTES) {
         fileResults.push({
@@ -378,7 +397,9 @@ async function handleZip(
   );
 
   return res.status(201).json({
-    ...JSON.parse(JSON.stringify(skill)),
+    ...('toJSON' in skill && typeof skill.toJSON === 'function'
+      ? (skill.toJSON() as Record<string, unknown>)
+      : skill),
     _importSummary: {
       filesProcessed: fileResults.length,
       filesSucceeded: successCount,
@@ -388,34 +409,33 @@ async function handleZip(
   });
 }
 
-/** Guess MIME type from file extension. */
+const MIME_MAP: Record<string, string> = {
+  '.md': 'text/markdown',
+  '.txt': 'text/plain',
+  '.js': 'application/javascript',
+  '.ts': 'text/typescript',
+  '.jsx': 'text/jsx',
+  '.tsx': 'text/tsx',
+  '.json': 'application/json',
+  '.yaml': 'text/yaml',
+  '.yml': 'text/yaml',
+  '.py': 'text/x-python',
+  '.sh': 'application/x-sh',
+  '.css': 'text/css',
+  '.html': 'text/html',
+  '.xml': 'application/xml',
+  '.csv': 'text/csv',
+  '.toml': 'text/toml',
+  '.ini': 'text/ini',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.pdf': 'application/pdf',
+};
+
 function guessMimeType(filename: string): string {
-  const ext = path.extname(filename).toLowerCase();
-  const map: Record<string, string> = {
-    '.md': 'text/markdown',
-    '.txt': 'text/plain',
-    '.js': 'application/javascript',
-    '.ts': 'text/typescript',
-    '.jsx': 'text/jsx',
-    '.tsx': 'text/tsx',
-    '.json': 'application/json',
-    '.yaml': 'text/yaml',
-    '.yml': 'text/yaml',
-    '.py': 'text/x-python',
-    '.sh': 'application/x-sh',
-    '.css': 'text/css',
-    '.html': 'text/html',
-    '.xml': 'application/xml',
-    '.csv': 'text/csv',
-    '.toml': 'text/toml',
-    '.ini': 'text/ini',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.svg': 'image/svg+xml',
-    '.webp': 'image/webp',
-    '.pdf': 'application/pdf',
-  };
-  return map[ext] || 'application/octet-stream';
+  return MIME_MAP[path.extname(filename).toLowerCase()] || 'application/octet-stream';
 }
