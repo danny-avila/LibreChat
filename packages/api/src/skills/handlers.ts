@@ -93,7 +93,7 @@ export interface SkillsHandlersDeps {
   getSkillFileByPath: (
     skillId: string | Types.ObjectId,
     relativePath: string,
-  ) => Promise<(ISkillFile & { _id: Types.ObjectId }) | null>;
+  ) => Promise<(ISkillFile & { _id: Types.ObjectId; content?: string; isBinary?: boolean }) | null>;
   updateSkillFileContent: (
     skillId: string | Types.ObjectId,
     relativePath: string,
@@ -595,7 +595,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       const stream = await strategy.getDownloadStream(req, file.filepath);
       const chunks: Buffer[] = [];
       for await (const chunk of stream) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
       const buffer = Buffer.concat(chunks);
 
