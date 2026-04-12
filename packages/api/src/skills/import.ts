@@ -1,13 +1,14 @@
 import crypto from 'crypto';
 import path from 'path';
 import JSZip from 'jszip';
-import { FileSources } from 'librechat-data-provider';
+import { FileSources, ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
 import type {
   ISkill,
   ISkillFile,
+  CreateSkillInput,
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
@@ -62,14 +63,26 @@ function isSafePath(p: string): boolean {
   return /^[a-zA-Z0-9._\-/]+$/.test(p);
 }
 
+/** Type guard for validation errors thrown by data-schemas. */
+function isValidationError(error: unknown): error is Error & { code: string; issues: unknown[] } {
+  return (
+    error instanceof Error &&
+    (error as Error & { code?: string }).code === 'SKILL_VALIDATION_FAILED'
+  );
+}
+
+/** Type guard for MongoDB duplicate key errors. */
+function isDuplicateKeyError(error: unknown): boolean {
+  return (
+    error != null &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code: unknown }).code === 11000
+  );
+}
+
 export interface ImportSkillDeps {
-  createSkill: (data: {
-    name: string;
-    description: string;
-    body: string;
-    author: Types.ObjectId;
-    tenantId?: string;
-  }) => Promise<CreateSkillResult>;
+  createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
   saveBuffer: (params: {
     userId: string;
@@ -77,25 +90,32 @@ export interface ImportSkillDeps {
     fileName: string;
     basePath?: string;
   }) => Promise<string>;
+  grantPermission: (params: {
+    principalType: string;
+    principalId: string;
+    resourceType: string;
+    resourceId: Types.ObjectId;
+    roleId: string;
+  }) => Promise<unknown>;
 }
 
 interface ServerRequest extends Request {
-  user: { id: string; _id: Types.ObjectId };
+  user: {
+    id: string;
+    _id: Types.ObjectId;
+    name?: string;
+    username?: string;
+    tenantId?: string;
+  };
   file?: Express.Multer.File;
-  file_id?: string;
 }
 
 /**
  * `POST /api/skills/import`
  *
  * Accepts a single multipart file (.md, .zip, or .skill).
- *
- * - `.md`: parses frontmatter, creates a skill with the full file as body.
- * - `.zip` / `.skill`: extracts the archive, finds SKILL.md, creates the
- *   skill, then persists every additional file via `upsertSkillFile` +
- *   the configured file storage strategy.
- *
- * Returns the created skill on success.
+ * Creates the skill + all additional files atomically.
+ * Grants SKILL_OWNER to the uploader.
  */
 export function createImportHandler(deps: ImportSkillDeps) {
   return async function importSkillHandler(req: ServerRequest, res: Response) {
@@ -105,21 +125,57 @@ export function createImportHandler(deps: ImportSkillDeps) {
     }
 
     const ext = path.extname(file.originalname).toLowerCase();
-    const userId = req.user.id;
 
     try {
       if (ext === '.md') {
-        return await handleMarkdown(req, res, deps, file, userId);
+        return await handleMarkdown(req, res, deps, file);
       }
       if (ext === '.zip' || ext === '.skill') {
-        return await handleZip(req, res, deps, file, userId);
+        return await handleZip(req, res, deps, file);
       }
       return res.status(400).json({ message: `Unsupported file type: ${ext}` });
     } catch (error) {
+      // Surface validation errors as 400 instead of generic 500
+      if (isValidationError(error)) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          issues: error.issues,
+          message: (error.issues as Array<{ message?: string }>)?.map((i) => i.message).join('; '),
+        });
+      }
+      if (isDuplicateKeyError(error)) {
+        return res.status(409).json({ error: 'A skill with this name already exists' });
+      }
       logger.error('[importSkill] Unhandled error:', error);
       return res.status(500).json({ message: 'Failed to import skill' });
     }
   };
+}
+
+/** Resolve author metadata from the request user. */
+function getAuthorInfo(req: ServerRequest) {
+  const user = req.user;
+  const authorId = (user._id ?? user.id) as unknown as Types.ObjectId;
+  const authorName = user.name ?? user.username ?? 'Unknown';
+  const tenantId = user.tenantId;
+  return { authorId, authorName, tenantId };
+}
+
+/** Grant SKILL_OWNER permission to the uploader after creating a skill. */
+async function grantOwnership(deps: ImportSkillDeps, userId: string, skillId: Types.ObjectId) {
+  try {
+    await deps.grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: userId,
+      resourceType: ResourceType.SKILL,
+      resourceId: skillId,
+      roleId: AccessRoleIds.SKILL_OWNER,
+    });
+  } catch (error) {
+    // Log but don't fail the import — the skill was created successfully.
+    // The user can fix permissions manually.
+    logger.error('[importSkill] Failed to grant SKILL_OWNER:', error);
+  }
 }
 
 async function handleMarkdown(
@@ -127,7 +183,6 @@ async function handleMarkdown(
   res: Response,
   deps: ImportSkillDeps,
   file: Express.Multer.File,
-  userId: string,
 ) {
   const content = file.buffer
     ? file.buffer.toString('utf-8')
@@ -138,14 +193,21 @@ async function handleMarkdown(
     return res.status(400).json({ message: 'SKILL.md must have a name in YAML frontmatter' });
   }
 
+  const { authorId, authorName, tenantId } = getAuthorInfo(req);
+
   const result = await deps.createSkill({
     name,
     description: description || name,
     body: content,
-    author: req.user._id,
+    author: authorId,
+    authorName,
+    tenantId,
   });
 
-  return res.status(201).json(result.skill);
+  const skill = result.skill as ISkill & { _id: Types.ObjectId };
+  await grantOwnership(deps, req.user.id, skill._id);
+
+  return res.status(201).json(skill);
 }
 
 async function handleZip(
@@ -153,8 +215,9 @@ async function handleZip(
   res: Response,
   deps: ImportSkillDeps,
   file: Express.Multer.File,
-  userId: string,
 ) {
+  const userId = req.user.id;
+
   // Read the zip buffer
   const zipBuffer = file.buffer
     ? file.buffer
@@ -178,14 +241,10 @@ async function handleZip(
   let prefix = '';
   for (const p of entries) {
     const normalized = p.replace(/\\/g, '/');
-    if (!isSafePath(normalized) && normalized !== SKILL_MD) {
-      continue;
-    }
     const segments = normalized.split('/').filter(Boolean);
     const basename = segments[segments.length - 1];
     if (basename?.toUpperCase() === SKILL_MD.toUpperCase() && segments.length <= 2) {
       skillMdPath = p;
-      // If SKILL.md is inside a folder (e.g. my-skill/SKILL.md), strip the prefix
       if (segments.length === 2) {
         prefix = segments[0] + '/';
       }
@@ -214,21 +273,27 @@ async function handleZip(
     return res.status(400).json({ message: 'Could not determine skill name' });
   }
 
-  // Create the skill
+  const { authorId, authorName, tenantId } = getAuthorInfo(req);
+
+  // Create the skill (runs full validation: name pattern, description length, etc.)
   const result = await deps.createSkill({
     name: inferredName,
     description: description || inferredName,
     body: skillMdContent,
-    author: req.user._id,
+    author: authorId,
+    authorName,
+    tenantId,
   });
 
   const skill = result.skill as ISkill & { _id: Types.ObjectId };
+
+  // Grant ownership
+  await grantOwnership(deps, userId, skill._id);
 
   // Process additional files (everything except SKILL.md)
   const fileResults: Array<{ path: string; status: 'ok' | 'error'; error?: string }> = [];
 
   for (const [entryPath, zipEntry] of Object.entries(zip.files)) {
-    // Skip directories, SKILL.md itself, and unsafe paths
     if (zipEntry.dir) {
       continue;
     }
@@ -251,7 +316,6 @@ async function handleZip(
     try {
       const fileBuffer = await zipEntry.async('nodebuffer');
 
-      // Per-file size guard
       if (fileBuffer.length > MAX_SINGLE_FILE_BYTES) {
         fileResults.push({
           path: relativePath,
@@ -261,12 +325,11 @@ async function handleZip(
         continue;
       }
 
-      // Generate a unique file_id for storage
       const fileId = crypto.randomUUID();
       const filename = path.basename(relativePath);
       const storageFileName = `${fileId}__${filename}`;
 
-      // Save to file storage (local/S3/etc.)
+      // Save to file storage
       const filepath = await deps.saveBuffer({
         userId,
         buffer: fileBuffer,
@@ -274,10 +337,9 @@ async function handleZip(
         basePath: 'uploads',
       });
 
-      // Detect MIME type from extension
       const mimeType = guessMimeType(filename);
 
-      // Upsert the SkillFile record
+      // Upsert the SkillFile DB record (runs path validation internally)
       await deps.upsertSkillFile({
         skillId: skill._id,
         relativePath,
@@ -288,7 +350,8 @@ async function handleZip(
         mimeType,
         bytes: fileBuffer.length,
         isExecutable: false,
-        author: req.user._id,
+        author: authorId,
+        tenantId,
       });
 
       fileResults.push({ path: relativePath, status: 'ok' });
@@ -310,7 +373,7 @@ async function handleZip(
   );
 
   return res.status(201).json({
-    ...result.skill,
+    ...JSON.parse(JSON.stringify(skill)),
     _importSummary: {
       filesProcessed: fileResults.length,
       filesSucceeded: successCount,

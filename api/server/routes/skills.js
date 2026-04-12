@@ -121,6 +121,7 @@ const importHandler = createImportHandler({
   createSkill,
   upsertSkillFile,
   saveBuffer,
+  grantPermission,
 });
 
 // ---------------------------------------------------------------------------
