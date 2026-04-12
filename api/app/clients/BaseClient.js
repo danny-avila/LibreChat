@@ -1233,6 +1233,10 @@ class BaseClient {
         allFiles.push(file);
         continue;
       }
+      if (file.llmDeliveryPath === 'text' || file.llmDeliveryPath === 'none') {
+        allFiles.push(file);
+        continue;
+      }
       if (
         file.embedded === true ||
         file.metadata?.codeEnvRef != null ||
