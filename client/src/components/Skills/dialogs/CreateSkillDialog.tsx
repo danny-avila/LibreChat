@@ -91,11 +91,11 @@ export default function CreateSkillDialog({
 
   return (
     <OGDialog open={isOpen} onOpenChange={setIsOpen}>
-      <OGDialogContent
-        className="w-11/12 max-w-lg overflow-hidden rounded-2xl border-border-medium p-0 shadow-xl"
-        showCloseButton={false}
-      >
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 p-6">
+      <OGDialogContent className="w-11/12 max-w-5xl overflow-hidden">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="flex max-h-[80vh] min-w-0 flex-col gap-3 overflow-hidden p-1 sm:gap-4 sm:p-2"
+        >
           <h2 className="text-lg font-bold text-text-primary">
             {localize('com_ui_skill_write_instructions')}
           </h2>
@@ -139,7 +139,7 @@ export default function CreateSkillDialog({
               maxRows={4}
               placeholder={localize('com_ui_skill_description_placeholder')}
               aria-label={localize('com_ui_description')}
-              className="w-full resize-none rounded-lg border border-border-medium bg-transparent p-3 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+              className="w-full resize-none rounded-lg border border-border-medium bg-transparent p-3 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
               {...register('description', {
                 required: localize('com_ui_skill_description_required'),
                 maxLength: {
@@ -163,7 +163,7 @@ export default function CreateSkillDialog({
               maxRows={12}
               placeholder={localize('com_ui_skill_instructions_placeholder')}
               aria-label={localize('com_ui_skill_instructions')}
-              className="w-full resize-none rounded-lg border border-border-medium bg-transparent p-3 font-mono text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+              className="w-full resize-none rounded-lg border border-border-medium bg-transparent p-3 font-mono text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
               {...register('body')}
             />
           </div>

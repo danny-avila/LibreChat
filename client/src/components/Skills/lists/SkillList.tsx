@@ -41,12 +41,12 @@ export default function SkillList({ skills, isLoading, activeSkillId }: SkillLis
         >
           <ChevronRight
             className={cn(
-              'size-3 shrink-0 text-text-tertiary transition-transform duration-200',
+              'size-3 shrink-0 text-text-secondary transition-transform duration-200',
               sectionOpen && 'rotate-90',
             )}
             aria-hidden="true"
           />
-          <span className="text-xs text-text-tertiary">{localize('com_ui_skills')}</span>
+          <span className="text-xs text-text-secondary">{localize('com_ui_my_skills')}</span>
         </button>
       </div>
 
@@ -54,7 +54,7 @@ export default function SkillList({ skills, isLoading, activeSkillId }: SkillLis
       {sectionOpen && (
         <div className="flex flex-col gap-px">
           {skills.length === 0 ? (
-            <p className="px-3 py-4 text-center text-xs text-text-tertiary">
+            <p className="px-3 py-4 text-center text-xs text-text-secondary">
               {localize('com_ui_skills_empty')}
             </p>
           ) : (

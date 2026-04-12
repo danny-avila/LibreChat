@@ -108,7 +108,7 @@ const SkillContentEditor: React.FC<SkillContentEditorProps> = ({
                 {...field}
                 // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
-                className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary sm:text-base"
+                className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary sm:text-base"
                 minRows={4}
                 maxRows={16}
                 onKeyDown={(e) => {
@@ -126,7 +126,7 @@ const SkillContentEditor: React.FC<SkillContentEditorProps> = ({
                 style={{ maxHeight: '24rem' }}
               >
                 {!field.value ? (
-                  <p className="italic text-text-tertiary">{localize('com_ui_click_to_edit')}</p>
+                  <p className="italic text-text-secondary">{localize('com_ui_click_to_edit')}</p>
                 ) : (
                   <ReactMarkdown
                     /** @ts-ignore - PluggableList vs Pluggable[] shape drift */

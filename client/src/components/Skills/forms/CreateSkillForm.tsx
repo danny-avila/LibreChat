@@ -234,9 +234,9 @@ export default function CreateSkillForm({
                   aria-label={localize('com_ui_description')}
                   aria-invalid={errors.description ? 'true' : 'false'}
                   aria-describedby={errors.description ? 'skill-description-error' : undefined}
-                  className="w-full resize-none rounded-xl border border-border-medium bg-transparent p-3 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+                  className="w-full resize-none rounded-xl border border-border-medium bg-transparent p-3 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
                 />
-                <p className="mt-1 text-xs text-text-tertiary">
+                <p className="mt-1 text-xs text-text-secondary">
                   {localize('com_ui_skill_description_field_hint')}
                 </p>
                 {errors.description && (

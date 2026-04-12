@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useListSkillsQuery } from '~/data-provider';
@@ -14,8 +14,8 @@ interface SkillsSidePanelProps {
 
 /**
  * Claude.ai–style skills sidebar panel.
- * Header: "Skills" + search + add.
- * Body: collapsible "Personal skills" section with skill list.
+ * Header: "Skills" title + search/add icons — or inline search input when toggled.
+ * Body: "Personal skills" collapsible section with skill list.
  */
 export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const localize = useLocalize();
@@ -33,6 +33,11 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const listQuery = useListSkillsQuery({ search: debouncedSearch || undefined, limit: 50 });
   const skills = useMemo(() => listQuery.data?.skills ?? [], [listQuery.data]);
 
+  const handleCloseSearch = () => {
+    setSearchOpen(false);
+    setSearchTerm('');
+  };
+
   return (
     <div
       className={cn(
@@ -40,48 +45,60 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
         className,
       )}
     >
-      {/* Header */}
+      {/* Header — title+icons or inline search input */}
       <div className="flex min-h-[3.5rem] items-center justify-between px-6 py-3">
-        <h2 className="truncate text-lg font-bold text-text-primary">
-          {localize('com_ui_skills')}
-        </h2>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setSearchOpen((prev) => !prev)}
-            className="inline-flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
-            aria-label={localize('com_ui_search')}
-          >
-            <Search className="size-4" />
-          </button>
-          {hasCreateAccess && (
+        {searchOpen ? (
+          <>
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-text-secondary" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={localize('com_ui_search')}
+                aria-label={localize('com_ui_search_skills')}
+                className="h-8 w-full rounded-md border border-border-light bg-transparent pl-8 pr-3 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring-primary"
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+              />
+            </div>
             <button
               type="button"
-              onClick={() => setCreateDialogOpen(true)}
-              className="inline-flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
-              aria-label={localize('com_ui_create_skill')}
+              onClick={handleCloseSearch}
+              className="ml-2 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+              aria-label={localize('com_ui_close')}
             >
-              <Plus className="size-4" />
+              <X className="size-4" />
             </button>
-          )}
-        </div>
+          </>
+        ) : (
+          <>
+            <h2 className="truncate text-lg font-bold text-text-primary">
+              {localize('com_ui_skills')}
+            </h2>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="inline-flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                aria-label={localize('com_ui_search')}
+              >
+                <Search className="size-4" />
+              </button>
+              {hasCreateAccess && (
+                <button
+                  type="button"
+                  onClick={() => setCreateDialogOpen(true)}
+                  className="inline-flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                  aria-label={localize('com_ui_create_skill')}
+                >
+                  <Plus className="size-4" />
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </div>
-
-      {/* Search input (collapsible) */}
-      {searchOpen && (
-        <div className="px-4 pb-2">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={localize('com_ui_search_skills')}
-            aria-label={localize('com_ui_search_skills')}
-            className="h-8 w-full rounded-md border border-border-light bg-transparent px-3 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring-primary"
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-          />
-        </div>
-      )}
 
       {/* Skill list */}
       <div className="flex-1 overflow-y-auto px-4">
