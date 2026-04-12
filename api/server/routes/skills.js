@@ -154,6 +154,11 @@ async function uploadFileHandler(req, res) {
     if (!relativePath) {
       return res.status(400).json({ message: 'relativePath is required in form body' });
     }
+    if (relativePath.toUpperCase() === 'SKILL.MD') {
+      return res
+        .status(400)
+        .json({ message: 'SKILL.md is reserved — update the skill body instead' });
+    }
 
     const fileId = crypto.randomUUID();
     const filename = file.originalname;
@@ -165,6 +170,7 @@ async function uploadFileHandler(req, res) {
       userId: req.user.id,
       buffer: file.buffer,
       fileName: storageFileName,
+      basePath: 'uploads',
     });
 
     const result = await upsertSkillFile({
