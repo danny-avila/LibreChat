@@ -332,7 +332,7 @@ function SkillListItem({
       {/* Inline file tree */}
       <div
         className={cn(
-          'ml-10 overflow-hidden transition-all duration-200 ease-in-out',
+          'ml-5 overflow-hidden transition-all duration-200 ease-in-out',
           expanded && hasFiles ? 'opacity-100' : 'max-h-0 opacity-0',
         )}
         style={expanded && hasFiles ? { maxHeight: `${MAX_HEIGHT}px` } : undefined}
