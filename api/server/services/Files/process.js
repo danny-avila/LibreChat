@@ -452,8 +452,7 @@ const processFileURL = async ({
 };
 
 const resolveDefaultUploadLLMDeliveryPath = ({ file, endpointConfig, fileConfig }) => {
-  const isLegacyFileUploadUX =
-    endpointConfig?.legacyFileUploadUX === true || fileConfig?.legacyFileUploadUX === true;
+  const isLegacyFileUploadUX = endpointConfig?.legacyFileUploadUX === true;
   if (isLegacyFileUploadUX) {
     return 'provider';
   }
@@ -728,7 +727,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
 
   if (agent_id && !tool_resource && !messageAttachment) {
-    if (endpointConfig?.legacyFileUploadUX === true || fileConfig?.legacyFileUploadUX === true) {
+    if (endpointConfig?.legacyFileUploadUX === true) {
       throw new Error('No tool resource provided for agent file upload');
     }
   }
