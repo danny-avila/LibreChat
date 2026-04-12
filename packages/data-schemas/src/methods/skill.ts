@@ -1,4 +1,12 @@
-import { ResourceType } from 'librechat-data-provider';
+import {
+  ResourceType,
+  SKILL_NAME_MAX_LENGTH,
+  SKILL_DESCRIPTION_MAX_LENGTH,
+  SKILL_DESCRIPTION_SHORT_THRESHOLD as SKILL_DESCRIPTION_SHORT_THRESHOLD_SHARED,
+  SKILL_DISPLAY_TITLE_MAX_LENGTH,
+  SKILL_BODY_MAX_LENGTH,
+  SKILL_NAME_PATTERN as SKILL_NAME_PATTERN_SHARED,
+} from 'librechat-data-provider';
 import type { Model, Types, FilterQuery } from 'mongoose';
 import type {
   ISkill,
@@ -48,13 +56,13 @@ export function partitionIssues(issues: ValidationIssue[]): {
   return { errors, warnings };
 }
 
-const SKILL_NAME_MAX = 64;
-const SKILL_DESCRIPTION_MAX = 1024;
-const SKILL_DESCRIPTION_SHORT_THRESHOLD = 20;
-const SKILL_DISPLAY_TITLE_MAX = 128;
-const SKILL_BODY_MAX = 100_000;
+const SKILL_NAME_MAX = SKILL_NAME_MAX_LENGTH;
+const SKILL_DESCRIPTION_MAX = SKILL_DESCRIPTION_MAX_LENGTH;
+const SKILL_DESCRIPTION_SHORT_THRESHOLD = SKILL_DESCRIPTION_SHORT_THRESHOLD_SHARED;
+const SKILL_DISPLAY_TITLE_MAX = SKILL_DISPLAY_TITLE_MAX_LENGTH;
+const SKILL_BODY_MAX = SKILL_BODY_MAX_LENGTH;
 const SKILL_FILE_PATH_MAX = 500;
-const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const SKILL_NAME_PATTERN = SKILL_NAME_PATTERN_SHARED;
 const RELATIVE_PATH_CHARS = /^[a-zA-Z0-9._\-/]+$/;
 
 /**

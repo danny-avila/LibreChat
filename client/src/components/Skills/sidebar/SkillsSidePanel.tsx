@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { FilterInput, Button } from '@librechat/client';
+import { Button, FilterInput } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { useDebounce, useHasAccess, useLocalize } from '~/hooks';
 import { useListSkillsQuery } from '~/data-provider';
-import { useHasAccess, useLocalize } from '~/hooks';
 import SkillList from '../lists/SkillList';
 import { cn } from '~/utils';
 
@@ -12,17 +12,24 @@ interface SkillsSidePanelProps {
   className?: string;
 }
 
+/** Debounce keystrokes to avoid firing one network request per character. */
+const SEARCH_DEBOUNCE_MS = 250;
+
 export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, SEARCH_DEBOUNCE_MS);
 
   const hasCreateAccess = useHasAccess({
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.CREATE,
   });
 
-  const listQuery = useListSkillsQuery({ search: searchTerm || undefined, limit: 50 });
+  const listQuery = useListSkillsQuery({
+    search: debouncedSearchTerm || undefined,
+    limit: 50,
+  });
 
   const skills = useMemo(() => listQuery.data?.skills ?? [], [listQuery.data]);
 

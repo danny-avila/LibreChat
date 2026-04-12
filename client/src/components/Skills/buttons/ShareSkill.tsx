@@ -1,39 +1,31 @@
-import React from 'react';
+import { memo } from 'react';
 import { Share2Icon } from 'lucide-react';
 import { Button, TooltipAnchor } from '@librechat/client';
-import {
-  SystemRoles,
-  Permissions,
-  ResourceType,
-  PermissionBits,
-  PermissionTypes,
-} from 'librechat-data-provider';
+import { Permissions, ResourceType, PermissionTypes } from 'librechat-data-provider';
 import type { TSkill } from 'librechat-data-provider';
-import { useAuthContext, useHasAccess, useLocalize, useResourcePermissions } from '~/hooks';
+import { useHasAccess, useLocalize, useSkillPermissions } from '~/hooks';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
 
-const ShareSkill = React.memo(({ skill, disabled }: { skill: TSkill; disabled?: boolean }) => {
-  const { user } = useAuthContext();
+// Memoed because it renders inside `SkillForm`'s header, which re-renders on
+// every keystroke via react-hook-form state updates. The `skill` prop stays
+// referentially stable between renders as long as the server-side version
+// hasn't changed, so the memo skips that work.
+
+interface ShareSkillProps {
+  skill: TSkill;
+  disabled?: boolean;
+}
+
+function ShareSkill({ skill, disabled }: ShareSkillProps) {
   const localize = useLocalize();
+  const permissions = useSkillPermissions(skill);
 
   const hasAccessToShareSkills = useHasAccess({
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.SHARE,
   });
 
-  const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
-    ResourceType.SKILL,
-    skill._id,
-  );
-
-  const canShareThisSkill = hasPermission(PermissionBits.SHARE);
-
-  const shouldShowShareButton =
-    (skill.author === user?.id || user?.role === SystemRoles.ADMIN || canShareThisSkill) &&
-    hasAccessToShareSkills &&
-    !permissionsLoading;
-
-  if (!shouldShowShareButton) {
+  if (permissions.isLoading || !hasAccessToShareSkills || !permissions.canShare) {
     return null;
   }
 
@@ -61,8 +53,6 @@ const ShareSkill = React.memo(({ skill, disabled }: { skill: TSkill; disabled?: 
       />
     </GenericGrantAccessDialog>
   );
-});
+}
 
-ShareSkill.displayName = 'ShareSkill';
-
-export default ShareSkill;
+export default memo(ShareSkill);

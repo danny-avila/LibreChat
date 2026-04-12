@@ -15,6 +15,7 @@ export * from './Plugins';
 export * from './Prompts';
 export * from './Roles';
 export * from './Sharing';
+export * from './Skills';
 export * from './SSE';
 export * from './AuthContext';
 export * from './ScreenshotContext';

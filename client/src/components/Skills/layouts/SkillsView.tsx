@@ -1,14 +1,14 @@
 import { useCallback } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Spinner } from '@librechat/client';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { useAuthContext, useHasAccess, useLocalize, useSkillPermissions } from '~/hooks';
 import { useGetSkillQuery, useListSkillFilesQuery } from '~/data-provider';
-import { useAuthContext, useHasAccess, useLocalize } from '~/hooks';
-import { SkillFileTree } from '~/components/Skills/tree';
-import CreateSkillForm from '~/components/Skills/forms/CreateSkillForm';
-import SkillForm from '~/components/Skills/forms/SkillForm';
-import SkillState from '~/components/Skills/display/SkillState';
 import SkillsSidePanel from '~/components/Skills/sidebar/SkillsSidePanel';
+import CreateSkillForm from '~/components/Skills/forms/CreateSkillForm';
+import SkillState from '~/components/Skills/display/SkillState';
+import SkillForm from '~/components/Skills/forms/SkillForm';
+import { SkillFileTree } from '~/components/Skills/tree';
 
 const NEW_SENTINEL = 'new';
 
@@ -23,13 +23,12 @@ function NewSkillPanel() {
 
 function SkillDetailPanel({ skillId }: { skillId: string }) {
   const localize = useLocalize();
-  const { user } = useAuthContext();
   const skillQuery = useGetSkillQuery(skillId);
-  const filesQuery = useListSkillFilesQuery(skillId, { enabled: !!skillQuery.data });
   const skill = skillQuery.data;
+  const filesQuery = useListSkillFilesQuery(skillId, { enabled: !!skill });
   const files = filesQuery.data?.files ?? [];
   const showFileTree = files.length > 0;
-  const isOwner = skill?.author === user?.id;
+  const permissions = useSkillPermissions(skill);
 
   if (skillQuery.isLoading) {
     return (
@@ -67,7 +66,7 @@ function SkillDetailPanel({ skillId }: { skillId: string }) {
             </p>
           </div>
           <div className="flex-1 overflow-y-auto py-2">
-            <SkillFileTree skillId={skill._id} files={files} canEdit={!!isOwner} />
+            <SkillFileTree skillId={skill._id} files={files} canEdit={permissions.canEdit} />
           </div>
         </aside>
       )}

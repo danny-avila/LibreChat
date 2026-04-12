@@ -1,15 +1,19 @@
-import React, { useCallback } from 'react';
+import { memo } from 'react';
 import { Trash2 } from 'lucide-react';
 import {
   Button,
   OGDialog,
-  OGDialogTrigger,
   TooltipAnchor,
+  OGDialogTrigger,
   OGDialogTemplate,
   useToastContext,
 } from '@librechat/client';
 import { useDeleteSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+
+// Memoed because it renders inside `SkillForm`'s header, which re-renders on
+// every keystroke via react-hook-form state updates. Props (`skillId`,
+// `skillName`) are stable strings, so the memo skips all of those re-renders.
 
 interface DeleteSkillProps {
   skillId: string;
@@ -18,7 +22,7 @@ interface DeleteSkillProps {
   onDelete?: () => void;
 }
 
-const DeleteSkill = React.memo(({ skillId, skillName, disabled, onDelete }: DeleteSkillProps) => {
+function DeleteSkill({ skillId, skillName, disabled, onDelete }: DeleteSkillProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const deleteSkill = useDeleteSkillMutation({
@@ -31,9 +35,20 @@ const DeleteSkill = React.memo(({ skillId, skillName, disabled, onDelete }: Dele
     },
   });
 
-  const handleDelete = useCallback(() => {
+  /**
+   * No `useCallback` here — `deleteSkill` is a new object on every render
+   * (React Query mutation results are unstable references), so the dependency
+   * array would invalidate every render and the memoized callback would be
+   * recreated anyway, adding overhead for no benefit.
+   */
+  const handleDelete = () => {
+    if (deleteSkill.isLoading) {
+      return;
+    }
     deleteSkill.mutate({ id: skillId });
-  }, [deleteSkill, skillId]);
+  };
+
+  const triggerDisabled = disabled || deleteSkill.isLoading;
 
   return (
     <OGDialog>
@@ -47,7 +62,7 @@ const DeleteSkill = React.memo(({ skillId, skillName, disabled, onDelete }: Dele
               size="icon"
               className="size-9"
               aria-label={localize('com_ui_delete')}
-              disabled={disabled || deleteSkill.isLoading}
+              disabled={triggerDisabled}
               onClick={(e) => e.stopPropagation()}
             >
               <Trash2 className="size-5" aria-hidden="true" />
@@ -73,8 +88,6 @@ const DeleteSkill = React.memo(({ skillId, skillName, disabled, onDelete }: Dele
       />
     </OGDialog>
   );
-});
+}
 
-DeleteSkill.displayName = 'DeleteSkill';
-
-export default DeleteSkill;
+export default memo(DeleteSkill);

@@ -1,14 +1,17 @@
-import { useCallback } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
-import { Button, Input, TextareaAutosize, useToastContext, Label } from '@librechat/client';
-import { AlertTriangle } from 'lucide-react';
-import type { TCreateSkill, TSkill, TSkillWarning } from 'librechat-data-provider';
+import { Label, Input, Button, TextareaAutosize, useToastContext } from '@librechat/client';
+import {
+  SKILL_NAME_PATTERN,
+  SKILL_NAME_MAX_LENGTH,
+  SKILL_DESCRIPTION_MAX_LENGTH,
+} from 'librechat-data-provider';
+import type { TSkill, TCreateSkill, TSkillWarning } from 'librechat-data-provider';
 import { useCreateSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DEFAULT_BODY = `# Overview
 
 Describe what this skill does and how it should be applied.
@@ -76,31 +79,36 @@ export default function CreateSkillForm({ onCancel, onSuccess }: CreateSkillForm
     },
   });
 
-  const onSubmit = useCallback(
-    (values: CreateSkillFormValues) => {
-      const payload: TCreateSkill = {
-        name: values.name.trim(),
-        description: values.description.trim(),
-        body: values.body,
-      };
+  // `useCallback` would be a no-op here: `createSkill` is a React Query
+  // mutation result with an unstable identity, and `handleSubmit` from
+  // react-hook-form doesn't use `onSubmit` as a dependency anywhere.
+  const onSubmit = (values: CreateSkillFormValues) => {
+    if (createSkill.isLoading) {
+      return;
+    }
+    const payload: TCreateSkill = {
+      name: values.name.trim(),
+      description: values.description.trim(),
+      body: values.body,
+    };
 
-      if (!SKILL_NAME_PATTERN.test(payload.name)) {
-        setError('name', { message: localize('com_ui_skill_name_invalid') });
-        return;
-      }
+    if (!SKILL_NAME_PATTERN.test(payload.name)) {
+      setError('name', { message: localize('com_ui_skill_name_invalid') });
+      return;
+    }
 
-      createSkill.mutate(payload);
-    },
-    [createSkill, localize, setError],
-  );
+    createSkill.mutate(payload);
+  };
 
-  const handleCancel = useCallback(() => {
+  const handleCancel = () => {
     if (onCancel) {
       onCancel();
     } else {
       navigate(-1);
     }
-  }, [navigate, onCancel]);
+  };
+
+  const createDisabled = !isValid || isSubmitting || createSkill.isLoading;
 
   return (
     <form
@@ -113,7 +121,7 @@ export default function CreateSkillForm({ onCancel, onSuccess }: CreateSkillForm
           {localize('com_ui_skill_create_title')}
         </h1>
         <p className="mt-1 text-sm text-text-secondary">
-          {localize('com_ui_skill_description_help')}
+          {localize('com_ui_skill_create_subtitle')}
         </p>
       </div>
 
@@ -130,7 +138,10 @@ export default function CreateSkillForm({ onCancel, onSuccess }: CreateSkillForm
               value: SKILL_NAME_PATTERN,
               message: localize('com_ui_skill_name_invalid'),
             },
-            maxLength: { value: 64, message: localize('com_ui_skill_name_invalid') },
+            maxLength: {
+              value: SKILL_NAME_MAX_LENGTH,
+              message: localize('com_ui_skill_name_too_long', { 0: String(SKILL_NAME_MAX_LENGTH) }),
+            },
           }}
           render={({ field }) => (
             <Input
@@ -160,7 +171,12 @@ export default function CreateSkillForm({ onCancel, onSuccess }: CreateSkillForm
           control={control}
           rules={{
             required: localize('com_ui_skill_description_required'),
-            maxLength: { value: 1024, message: localize('com_ui_skill_description_required') },
+            maxLength: {
+              value: SKILL_DESCRIPTION_MAX_LENGTH,
+              message: localize('com_ui_skill_description_too_long', {
+                0: String(SKILL_DESCRIPTION_MAX_LENGTH),
+              }),
+            },
           }}
           render={({ field }) => (
             <TextareaAutosize
@@ -176,7 +192,9 @@ export default function CreateSkillForm({ onCancel, onSuccess }: CreateSkillForm
             />
           )}
         />
-        <p className="text-xs text-text-tertiary">{localize('com_ui_skill_description_help')}</p>
+        <p className="text-xs text-text-tertiary">
+          {localize('com_ui_skill_description_field_hint')}
+        </p>
         {errors.description && (
           <p id="skill-description-error" className="text-sm text-red-500" role="alert">
             {errors.description.message}
@@ -219,8 +237,9 @@ export default function CreateSkillForm({ onCancel, onSuccess }: CreateSkillForm
         </Button>
         <Button
           type="submit"
-          aria-disabled={!isValid || isSubmitting || createSkill.isLoading || undefined}
-          className={cn((!isValid || isSubmitting || createSkill.isLoading) && 'opacity-50')}
+          disabled={createDisabled}
+          aria-disabled={createDisabled || undefined}
+          className={cn(createDisabled && 'opacity-50')}
         >
           {localize('com_ui_create')}
         </Button>

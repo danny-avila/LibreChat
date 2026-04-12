@@ -1,24 +1,34 @@
 import { memo } from 'react';
-import { EarthIcon, User } from 'lucide-react';
+import { User, EarthIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { TooltipAnchor } from '@librechat/client';
-import { useNavigate, useParams } from 'react-router-dom';
 import type { TSkillSummary } from 'librechat-data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 
+// Memoed because `SkillList` renders one of these per skill in the sidebar.
+// The `skill` prop is stable (React Query cache entry), `isActive` is the
+// only prop that flips on navigation, so memo ensures only the previously-
+// active and newly-active items re-render on route change — not all N items.
+
 interface SkillListItemProps {
   skill: TSkillSummary;
+  /**
+   * Whether this item represents the currently-routed skill. Computed in the
+   * parent list so the item can stay a memo'd pure component — reading
+   * `useParams` here instead would force every item to re-render on every
+   * navigation, defeating the memo.
+   */
+  isActive: boolean;
 }
 
-function SkillListItem({ skill }: SkillListItemProps) {
+function SkillListItem({ skill, isActive }: SkillListItemProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const { skillId } = useParams();
   const { user } = useAuthContext();
 
   const isShared = skill.author !== user?.id && Boolean(skill.authorName);
   const isPublic = skill.isPublic === true;
-  const isActive = skillId === skill._id;
 
   return (
     <li>

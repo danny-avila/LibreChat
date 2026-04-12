@@ -1,24 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Info, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import {
-  Button,
-  Input,
-  TextareaAutosize,
   Label,
+  Input,
+  Button,
   Skeleton,
+  TextareaAutosize,
   useToastContext,
 } from '@librechat/client';
-import { AlertTriangle, Info } from 'lucide-react';
-import { ResourceType, PermissionBits, SystemRoles } from 'librechat-data-provider';
-import type { TSkill, TUpdateSkillPayload, TSkillWarning } from 'librechat-data-provider';
-import { useUpdateSkillMutation, useGetSkillQuery } from '~/data-provider';
-import { useResourcePermissions, useLocalize, useAuthContext } from '~/hooks';
-import { ShareSkill } from '../buttons';
+import {
+  SKILL_NAME_PATTERN,
+  SKILL_NAME_MAX_LENGTH,
+  SKILL_DESCRIPTION_MAX_LENGTH,
+} from 'librechat-data-provider';
+import type { TSkill, TSkillWarning, TUpdateSkillPayload } from 'librechat-data-provider';
+import { useGetSkillQuery, useUpdateSkillMutation } from '~/data-provider';
+import { useLocalize, useSkillPermissions } from '~/hooks';
 import DeleteSkill from '../dialogs/DeleteSkill';
+import { ShareSkill } from '../buttons';
 import { cn } from '~/utils';
-
-const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 interface SkillFormValues {
   name: string;
@@ -44,26 +46,12 @@ function toValues(skill: TSkill | undefined): SkillFormValues | undefined {
 export default function SkillForm({ skillId }: SkillFormProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const [warnings, setWarnings] = useState<TSkillWarning[] | null>(null);
 
   const skillQuery = useGetSkillQuery(skillId);
   const skill = skillQuery.data;
-
-  const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
-    ResourceType.SKILL,
-    skillId,
-  );
-  const isOwner = skill?.author === user?.id;
-  const isAdmin = user?.role === SystemRoles.ADMIN;
-  const canEdit = useMemo(() => {
-    if (isOwner || isAdmin) {
-      return true;
-    }
-    return hasPermission(PermissionBits.EDIT);
-  }, [hasPermission, isAdmin, isOwner]);
-  const canDelete = isOwner || isAdmin;
+  const permissions = useSkillPermissions(skill);
 
   const values = useMemo(() => toValues(skill), [skill]);
 
@@ -106,31 +94,31 @@ export default function SkillForm({ skillId }: SkillFormProps) {
     },
   });
 
-  const onSubmit = useCallback(
-    (data: SkillFormValues) => {
-      if (!skill) {
-        return;
-      }
-      const trimmedName = data.name.trim();
-      if (!SKILL_NAME_PATTERN.test(trimmedName)) {
-        setError('name', { message: localize('com_ui_skill_name_invalid') });
-        return;
-      }
-      const payload: TUpdateSkillPayload = {
-        name: trimmedName,
-        description: data.description.trim(),
-        body: data.body,
-      };
-      updateSkill.mutate({
-        id: skill._id,
-        expectedVersion: skill.version,
-        payload,
-      });
-    },
-    [localize, setError, skill, updateSkill],
-  );
+  // `useCallback` would be a no-op: `updateSkill` is a React Query mutation
+  // result with an unstable identity, and `handleSubmit` doesn't use
+  // `onSubmit` as a memo dependency.
+  const onSubmit = (data: SkillFormValues) => {
+    if (!skill || updateSkill.isLoading) {
+      return;
+    }
+    const trimmedName = data.name.trim();
+    if (!SKILL_NAME_PATTERN.test(trimmedName)) {
+      setError('name', { message: localize('com_ui_skill_name_invalid') });
+      return;
+    }
+    const payload: TUpdateSkillPayload = {
+      name: trimmedName,
+      description: data.description.trim(),
+      body: data.body,
+    };
+    updateSkill.mutate({
+      id: skill._id,
+      expectedVersion: skill.version,
+      payload,
+    });
+  };
 
-  if (skillQuery.isLoading || permissionsLoading) {
+  if (skillQuery.isLoading || permissions.isLoading) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6 sm:px-6">
         <Skeleton className="h-8 w-48" />
@@ -141,10 +129,16 @@ export default function SkillForm({ skillId }: SkillFormProps) {
   }
 
   if (skillQuery.isError || !skill) {
-    return null;
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 py-6 text-sm text-text-secondary sm:px-6">
+        <p className="font-medium text-text-primary">{localize('com_ui_skill_not_found')}</p>
+        <p>{localize('com_ui_skill_not_found_description')}</p>
+      </div>
+    );
   }
 
-  const readOnly = !canEdit;
+  const readOnly = !permissions.canEdit;
+  const saveDisabled = !isDirty || !isValid || isSubmitting || updateSkill.isLoading;
 
   return (
     <form
@@ -163,7 +157,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <ShareSkill skill={skill} />
-          {canDelete && (
+          {permissions.canDelete && (
             <DeleteSkill
               skillId={skill._id}
               skillName={skill.name}
@@ -213,7 +207,10 @@ export default function SkillForm({ skillId }: SkillFormProps) {
               value: SKILL_NAME_PATTERN,
               message: localize('com_ui_skill_name_invalid'),
             },
-            maxLength: { value: 64, message: localize('com_ui_skill_name_invalid') },
+            maxLength: {
+              value: SKILL_NAME_MAX_LENGTH,
+              message: localize('com_ui_skill_name_too_long', { 0: String(SKILL_NAME_MAX_LENGTH) }),
+            },
           }}
           render={({ field }) => (
             <Input
@@ -242,7 +239,12 @@ export default function SkillForm({ skillId }: SkillFormProps) {
           control={control}
           rules={{
             required: localize('com_ui_skill_description_required'),
-            maxLength: { value: 1024, message: localize('com_ui_skill_description_required') },
+            maxLength: {
+              value: SKILL_DESCRIPTION_MAX_LENGTH,
+              message: localize('com_ui_skill_description_too_long', {
+                0: String(SKILL_DESCRIPTION_MAX_LENGTH),
+              }),
+            },
           }}
           render={({ field }) => (
             <TextareaAutosize
@@ -253,11 +255,19 @@ export default function SkillForm({ skillId }: SkillFormProps) {
               maxRows={6}
               aria-label={localize('com_ui_description')}
               aria-invalid={errors.description ? 'true' : 'false'}
+              aria-describedby={errors.description ? 'skill-description-error' : undefined}
               className="w-full resize-none rounded-xl border border-border-medium bg-transparent p-3 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
             />
           )}
         />
-        <p className="text-xs text-text-tertiary">{localize('com_ui_skill_description_help')}</p>
+        <p className="text-xs text-text-tertiary">
+          {localize('com_ui_skill_description_field_hint')}
+        </p>
+        {errors.description && (
+          <p id="skill-description-error" className="text-sm text-red-500" role="alert">
+            {errors.description.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -285,19 +295,16 @@ export default function SkillForm({ skillId }: SkillFormProps) {
             type="button"
             variant="outline"
             onClick={() => reset(values)}
-            aria-disabled={!isDirty || undefined}
+            disabled={!isDirty}
             className={cn(!isDirty && 'opacity-50')}
           >
             {localize('com_ui_reset')}
           </Button>
           <Button
             type="submit"
-            aria-disabled={
-              !isDirty || !isValid || isSubmitting || updateSkill.isLoading || undefined
-            }
-            className={cn(
-              (!isDirty || !isValid || isSubmitting || updateSkill.isLoading) && 'opacity-50',
-            )}
+            disabled={saveDisabled}
+            aria-disabled={saveDisabled || undefined}
+            className={cn(saveDisabled && 'opacity-50')}
           >
             {localize('com_ui_save')}
           </Button>
