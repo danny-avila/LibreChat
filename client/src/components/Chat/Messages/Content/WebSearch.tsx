@@ -97,10 +97,20 @@ export default function WebSearch({
   const complete = !isLast && progress === 1;
   const finalizing = isSubmitting && isLast && progress === 1;
 
-  const allSources = useMemo((): ValidSource[] => {
-    if (searchResults && Object.keys(searchResults).length > 0) {
-      return collectSources(searchResults);
+  const ownTurn = useMemo(() => {
+    if (!attachments) {
+      return 0;
     }
+    for (const att of attachments) {
+      if (att.type === Tools.web_search && att[Tools.web_search]) {
+        const turn = att[Tools.web_search].turn;
+        return typeof turn === 'number' ? turn : 0;
+      }
+    }
+    return 0;
+  }, [attachments]);
+
+  const allSources = useMemo((): ValidSource[] => {
     if (attachments) {
       const turnMap: Record<string, SearchResultData> = {};
       for (const att of attachments) {
@@ -114,8 +124,14 @@ export default function WebSearch({
         return collectSources(turnMap);
       }
     }
+    if (searchResults) {
+      const turnKey = String(ownTurn);
+      if (searchResults[turnKey]) {
+        return collectSources({ [turnKey]: searchResults[turnKey] });
+      }
+    }
     return [];
-  }, [searchResults, attachments]);
+  }, [searchResults, attachments, ownTurn]);
 
   const processedSources = useMemo(() => {
     if (complete && !finalizing) {
@@ -124,8 +140,7 @@ export default function WebSearch({
     if (!searchResults) {
       return [];
     }
-    const values = Object.values(searchResults);
-    const result = values[values.length - 1];
+    const result = searchResults[String(ownTurn)];
     if (!result) {
       return [];
     }
@@ -135,20 +150,7 @@ export default function WebSearch({
     return [...(result.organic || []), ...(result.topStories || [])].filter(
       (source) => source.processed === true,
     );
-  }, [searchResults, complete, finalizing]);
-
-  const ownTurn = useMemo(() => {
-    if (!attachments) {
-      return 0;
-    }
-    for (const att of attachments) {
-      if (att.type === Tools.web_search && att[Tools.web_search]) {
-        const turn = att[Tools.web_search].turn;
-        return typeof turn === 'number' ? turn : 0;
-      }
-    }
-    return 0;
-  }, [attachments]);
+  }, [searchResults, complete, finalizing, ownTurn]);
 
   const showSources = processedSources.length > 0;
   const progressText = useMemo(() => {
