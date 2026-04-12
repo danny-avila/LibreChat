@@ -129,7 +129,7 @@ function FileTreeNode({
   style,
   treeData,
 }: {
-  style: React.CSSProperties;
+  style?: React.CSSProperties;
   data: FileNodeData;
   isOpen: boolean;
   setOpen: (state: boolean) => Promise<void>;
@@ -272,10 +272,18 @@ function SkillListItem({
 
   const handleSkillClick = useCallback(() => {
     navigate(`/skills/${skill._id}`);
-    if (hasFiles) {
+    if (hasFiles && !isExpanded) {
       onToggleExpand(skill._id);
     }
-  }, [navigate, skill._id, hasFiles, onToggleExpand]);
+  }, [navigate, skill._id, hasFiles, isExpanded, onToggleExpand]);
+
+  const handleChevronClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onToggleExpand(skill._id);
+    },
+    [skill._id, onToggleExpand],
+  );
 
   const handleFileClick = useCallback(
     (path: string) => {
@@ -298,12 +306,9 @@ function SkillListItem({
           }
         }}
         className={cn(
-          'flex w-full cursor-pointer select-none items-center gap-3 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
-          isActive && !activeFile
-            ? 'bg-surface-active text-text-primary'
-            : isActive && activeFile
-              ? 'text-text-primary'
-              : 'text-text-primary hover:bg-surface-hover',
+          'flex w-full cursor-pointer select-none items-center gap-3 rounded-lg px-3 py-1.5 text-left text-sm text-text-primary transition-colors',
+          isActive && !activeFile && 'bg-surface-active',
+          !isActive && 'hover:bg-surface-hover',
         )}
         aria-current={isActive ? 'true' : undefined}
         aria-expanded={hasFiles ? expanded : undefined}
@@ -319,13 +324,20 @@ function SkillListItem({
         </span>
 
         {hasFiles && (
-          <ChevronDown
-            className={cn(
-              '-mr-1 size-3.5 shrink-0 text-text-secondary transition-transform duration-200',
-              !expanded && '-rotate-90',
-            )}
-            aria-hidden="true"
-          />
+          <button
+            type="button"
+            onClick={handleChevronClick}
+            className="-mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-text-secondary hover:text-text-primary"
+            aria-label="Toggle files"
+            tabIndex={-1}
+          >
+            <ChevronDown
+              className={cn(
+                'size-3.5 transition-transform duration-200',
+                !expanded && '-rotate-90',
+              )}
+            />
+          </button>
         )}
       </div>
 
