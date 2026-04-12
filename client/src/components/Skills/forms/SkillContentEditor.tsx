@@ -94,7 +94,7 @@ const SkillContentEditor: React.FC<SkillContentEditorProps> = ({
           <button
             type="button"
             aria-label={localize('com_ui_edit')}
-            className="absolute inset-0 z-0 rounded-b-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            className="absolute inset-0 z-10 rounded-b-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
             onClick={() => setIsEditing(true)}
           />
         )}
