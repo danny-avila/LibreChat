@@ -5,7 +5,7 @@ import rehypeKatex from 'rehype-katex';
 import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
-import { EditIcon, FileText, Check } from 'lucide-react';
+import { EditIcon, Check } from 'lucide-react';
 import { Controller, useFormContext } from 'react-hook-form';
 import { TextareaAutosize, Button, TooltipAnchor } from '@librechat/client';
 import type { RegisterOptions } from 'react-hook-form';
@@ -58,14 +58,13 @@ const SkillContentEditor: React.FC<SkillContentEditorProps> = ({
   return (
     <div className="flex max-h-[85vh] flex-col sm:max-h-[85vh]">
       <h2 className="sr-only">{localize('com_ui_skill_content')}</h2>
-      <header className="flex items-center justify-between rounded-t-xl border border-border-medium bg-transparent px-2 py-1.5">
-        <div className="ml-1 flex items-center gap-2">
-          <FileText className="size-4 text-text-secondary" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-text-primary">
-            {localize('com_ui_skill_content')}
-          </h3>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+      <div
+        className={cn(
+          'relative w-full flex-1 overflow-auto rounded-xl border border-border-medium p-3 text-left transition-all duration-200 sm:p-4',
+          isEditing ? '' : 'cursor-pointer hover:bg-surface-tertiary',
+        )}
+      >
+        <div className="absolute right-2 top-2 z-10">
           <TooltipAnchor
             description={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
             render={
@@ -83,18 +82,11 @@ const SkillContentEditor: React.FC<SkillContentEditorProps> = ({
             }
           />
         </div>
-      </header>
-      <div
-        className={cn(
-          'relative w-full flex-1 overflow-auto rounded-b-xl border border-t-0 border-border-medium p-3 text-left transition-all duration-200 sm:p-4',
-          isEditing ? '' : 'cursor-pointer hover:bg-surface-tertiary',
-        )}
-      >
         {!isEditing && (
           <button
             type="button"
             aria-label={localize('com_ui_edit')}
-            className="absolute inset-0 z-10 rounded-b-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            className="absolute inset-0 z-10 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
             onClick={() => setIsEditing(true)}
           />
         )}
