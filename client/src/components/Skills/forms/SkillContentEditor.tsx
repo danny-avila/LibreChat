@@ -111,7 +111,6 @@ const SkillContentEditor: React.FC<SkillContentEditorProps> = ({
                 className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary sm:text-base"
                 minRows={4}
                 maxRows={16}
-                onBlur={() => setIsEditing(false)}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     e.preventDefault();

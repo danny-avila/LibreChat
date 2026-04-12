@@ -204,10 +204,6 @@ export default function CreateSkillForm({
         </div>
 
         <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">
-          <InvocationModePicker
-            value={methods.watch('invocationMode')}
-            onChange={(mode) => methods.setValue('invocationMode', mode, { shouldDirty: true })}
-          />
           <Controller
             name="description"
             control={control}
