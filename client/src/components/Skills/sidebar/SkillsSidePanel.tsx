@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
-import { Search, Plus, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useListSkillsQuery } from '~/data-provider';
 import { useDebounce, useHasAccess, useLocalize } from '~/hooks';
-import { CreateSkillDialog } from '../dialogs';
+import { CreateSkillMenu } from '../buttons';
 import SkillListPanel from '../lists/SkillList';
 import { cn } from '~/utils';
 
@@ -14,15 +14,14 @@ interface SkillsSidePanelProps {
 
 /**
  * Claude.ai–style skills sidebar panel.
- * Header: "Skills" title + search/add icons — or inline search input when toggled.
- * Body: "Personal skills" collapsible section with skill list.
+ * Header: "Skills" title + search icon + create menu (+ dropdown).
+ * Body: "My Skills" collapsible section with skill list.
  */
 export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const localize = useLocalize();
   const { skillId: activeSkillId } = useParams();
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const debouncedSearch = useDebounce(searchTerm, 250);
 
   const hasCreateAccess = useHasAccess({
@@ -85,16 +84,7 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
               >
                 <Search className="size-4" />
               </button>
-              {hasCreateAccess && (
-                <button
-                  type="button"
-                  onClick={() => setCreateDialogOpen(true)}
-                  className="inline-flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
-                  aria-label={localize('com_ui_create_skill')}
-                >
-                  <Plus className="size-4" />
-                </button>
-              )}
+              {hasCreateAccess && <CreateSkillMenu />}
             </div>
           </>
         )}
@@ -108,9 +98,6 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
           activeSkillId={activeSkillId}
         />
       </div>
-
-      {/* Create dialog */}
-      <CreateSkillDialog isOpen={createDialogOpen} setIsOpen={setCreateDialogOpen} />
     </div>
   );
 }

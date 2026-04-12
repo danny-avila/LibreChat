@@ -66,7 +66,7 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
                 )}
               </div>
               {/* Metadata: author + date — inline with icons like prompts */}
-              <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
+              <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
                 <span className="flex items-center gap-1">
                   <User className="size-3" aria-hidden="true" />
                   {addedBy}
