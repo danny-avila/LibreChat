@@ -1,7 +1,7 @@
 import { AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
-import { Label, Input, Button, TextareaAutosize, useToastContext } from '@librechat/client';
+import { Input, Button, TextareaAutosize, useToastContext } from '@librechat/client';
 import {
   SKILL_NAME_PATTERN,
   SKILL_NAME_MAX_LENGTH,
@@ -113,59 +113,65 @@ export default function CreateSkillForm({ onCancel, onSuccess }: CreateSkillForm
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="mx-auto flex h-full w-full max-w-3xl flex-col gap-4 px-4 py-6 sm:px-6"
+      className="w-full px-4 py-2"
       aria-label={localize('com_ui_skill_create_title')}
     >
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">
-          {localize('com_ui_skill_create_title')}
-        </h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          {localize('com_ui_skill_create_subtitle')}
-        </p>
+      <h1 className="sr-only">{localize('com_ui_skill_create_title')}</h1>
+      <div className="mb-1 flex flex-col items-center justify-between font-bold sm:text-xl md:mb-0 md:text-2xl">
+        <div className="flex w-full flex-col items-center justify-between sm:flex-row">
+          <Controller
+            name="name"
+            control={control}
+            rules={{
+              required: localize('com_ui_skill_name_required'),
+              pattern: {
+                value: SKILL_NAME_PATTERN,
+                message: localize('com_ui_skill_name_invalid'),
+              },
+              maxLength: {
+                value: SKILL_NAME_MAX_LENGTH,
+                message: localize('com_ui_skill_name_too_long', {
+                  0: String(SKILL_NAME_MAX_LENGTH),
+                }),
+              },
+            }}
+            render={({ field }) => (
+              <div className="relative mb-1 flex w-full flex-col sm:w-auto md:mb-0">
+                <Input
+                  {...field}
+                  id="skill-name"
+                  type="text"
+                  className="peer mr-2 w-full border border-border-medium p-2 text-2xl text-text-primary"
+                  placeholder=" "
+                  tabIndex={0}
+                  aria-label={localize('com_ui_name')}
+                  aria-required="true"
+                  aria-invalid={errors.name ? 'true' : 'false'}
+                  aria-describedby={errors.name ? 'skill-name-error' : undefined}
+                />
+                <label
+                  htmlFor="skill-name"
+                  className="pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded bg-presentation px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
+                >
+                  {localize('com_ui_name')}*
+                </label>
+                <div
+                  id="skill-name-error"
+                  className={cn(
+                    'mt-1 w-56 text-sm text-red-500',
+                    errors.name ? 'visible h-auto' : 'invisible h-0',
+                  )}
+                  role={errors.name ? 'alert' : undefined}
+                >
+                  {errors.name ? errors.name.message : ' '}
+                </div>
+              </div>
+            )}
+          />
+        </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="skill-name">
-          {localize('com_ui_name')} <span className="text-red-500">*</span>
-        </Label>
-        <Controller
-          name="name"
-          control={control}
-          rules={{
-            required: localize('com_ui_skill_name_required'),
-            pattern: {
-              value: SKILL_NAME_PATTERN,
-              message: localize('com_ui_skill_name_invalid'),
-            },
-            maxLength: {
-              value: SKILL_NAME_MAX_LENGTH,
-              message: localize('com_ui_skill_name_too_long', { 0: String(SKILL_NAME_MAX_LENGTH) }),
-            },
-          }}
-          render={({ field }) => (
-            <Input
-              {...field}
-              id="skill-name"
-              placeholder={localize('com_ui_skill_name_placeholder')}
-              aria-invalid={errors.name ? 'true' : 'false'}
-              aria-describedby={errors.name ? 'skill-name-error' : undefined}
-              className="border-border-medium"
-              autoComplete="off"
-            />
-          )}
-        />
-        {errors.name && (
-          <p id="skill-name-error" className="text-sm text-red-500" role="alert">
-            {errors.name.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="skill-description">
-          {localize('com_ui_description')} <span className="text-red-500">*</span>
-        </Label>
+      <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">
         <Controller
           name="description"
           control={control}
@@ -179,70 +185,82 @@ export default function CreateSkillForm({ onCancel, onSuccess }: CreateSkillForm
             },
           }}
           render={({ field }) => (
-            <TextareaAutosize
-              {...field}
-              id="skill-description"
-              minRows={2}
-              maxRows={6}
-              placeholder={localize('com_ui_skill_description_placeholder')}
-              aria-label={localize('com_ui_description')}
-              aria-invalid={errors.description ? 'true' : 'false'}
-              aria-describedby={errors.description ? 'skill-description-error' : undefined}
-              className="w-full resize-none rounded-xl border border-border-medium bg-transparent p-3 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-            />
+            <div className="flex flex-col">
+              <label
+                htmlFor="skill-description"
+                className="mb-1 text-sm font-medium text-text-secondary"
+              >
+                {localize('com_ui_description')}
+                <span className="ml-0.5 text-red-500">*</span>
+              </label>
+              <TextareaAutosize
+                {...field}
+                id="skill-description"
+                minRows={2}
+                maxRows={6}
+                placeholder={localize('com_ui_skill_description_placeholder')}
+                aria-label={localize('com_ui_description')}
+                aria-invalid={errors.description ? 'true' : 'false'}
+                aria-describedby={errors.description ? 'skill-description-error' : undefined}
+                className="w-full resize-none rounded-xl border border-border-medium bg-transparent p-3 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+              />
+              <p className="mt-1 text-xs text-text-tertiary">
+                {localize('com_ui_skill_description_field_hint')}
+              </p>
+              {errors.description && (
+                <p id="skill-description-error" className="mt-1 text-sm text-red-500" role="alert">
+                  {errors.description.message}
+                </p>
+              )}
+            </div>
           )}
         />
-        <p className="text-xs text-text-tertiary">
-          {localize('com_ui_skill_description_field_hint')}
-        </p>
-        {errors.description && (
-          <p id="skill-description-error" className="text-sm text-red-500" role="alert">
-            {errors.description.message}
-          </p>
-        )}
-      </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="skill-body">{localize('com_ui_skill_body')}</Label>
         <Controller
           name="body"
           control={control}
           render={({ field }) => (
-            <TextareaAutosize
-              {...field}
-              id="skill-body"
-              minRows={8}
-              maxRows={20}
-              placeholder={localize('com_ui_skill_body_placeholder')}
-              aria-label={localize('com_ui_skill_body')}
-              className="w-full resize-none rounded-xl border border-border-medium bg-transparent p-3 font-mono text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-            />
+            <div className="flex flex-col">
+              <label htmlFor="skill-body" className="mb-1 text-sm font-medium text-text-secondary">
+                {localize('com_ui_skill_body')}
+              </label>
+              <TextareaAutosize
+                {...field}
+                id="skill-body"
+                minRows={8}
+                maxRows={20}
+                placeholder={localize('com_ui_skill_body_placeholder')}
+                aria-label={localize('com_ui_skill_body')}
+                className="w-full resize-none rounded-xl border border-border-medium bg-transparent p-3 font-mono text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+              />
+            </div>
           )}
         />
-      </div>
 
-      {createSkill.error != null && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-500"
-        >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <span>{localize('com_ui_skill_create_error')}</span>
+        {createSkill.error != null && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-500"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>{localize('com_ui_skill_create_error')}</span>
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <Button type="button" variant="outline" onClick={handleCancel}>
+            {localize('com_ui_cancel')}
+          </Button>
+          <Button
+            aria-label={localize('com_ui_skill_create_title')}
+            type="submit"
+            disabled={createDisabled}
+            aria-disabled={createDisabled || undefined}
+            className={cn('w-full sm:w-auto', createDisabled && 'opacity-50')}
+          >
+            {localize('com_ui_skill_create_title')}
+          </Button>
         </div>
-      )}
-
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button type="button" variant="outline" onClick={handleCancel}>
-          {localize('com_ui_cancel')}
-        </Button>
-        <Button
-          type="submit"
-          disabled={createDisabled}
-          aria-disabled={createDisabled || undefined}
-          className={cn(createDisabled && 'opacity-50')}
-        >
-          {localize('com_ui_create')}
-        </Button>
       </div>
     </form>
   );
