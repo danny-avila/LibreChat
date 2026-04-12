@@ -254,13 +254,13 @@ router.delete(
   handlers.deleteFile,
 );
 
-// Multer error handler — surface file-too-large etc. as 400 instead of 500
+// Multer + file-filter error handler — surface as 400, forward everything else
 
-router.use((err, _req, res, _next) => {
-  if (err && err.name === 'MulterError') {
+router.use((err, _req, res, next) => {
+  if (err && (err.name === 'MulterError' || err.message?.startsWith('Only '))) {
     return res.status(400).json({ message: err.message });
   }
-  return res.status(500).json({ message: 'Internal server error' });
+  return next(err);
 });
 
 module.exports = router;

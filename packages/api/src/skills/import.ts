@@ -339,6 +339,15 @@ async function handleZip(
       const fileBuffer = await zipEntry.async('nodebuffer');
       totalDecompressed += fileBuffer.length;
 
+      if (totalDecompressed > MAX_DECOMPRESSED_BYTES) {
+        fileResults.push({
+          path: relativePath,
+          status: 'error',
+          error: 'Cumulative decompressed size exceeds limit',
+        });
+        break;
+      }
+
       if (fileBuffer.length > MAX_SINGLE_FILE_BYTES) {
         fileResults.push({
           path: relativePath,
@@ -397,9 +406,7 @@ async function handleZip(
   );
 
   return res.status(201).json({
-    ...('toJSON' in skill && typeof skill.toJSON === 'function'
-      ? (skill.toJSON() as Record<string, unknown>)
-      : skill),
+    ...skill,
     _importSummary: {
       filesProcessed: fileResults.length,
       filesSucceeded: successCount,

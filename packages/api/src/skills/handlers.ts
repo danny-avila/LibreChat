@@ -1,5 +1,4 @@
 import { logger } from '@librechat/data-schemas';
-import { isBinaryBuffer } from './binary';
 import {
   ResourceType,
   AccessRoleIds,
@@ -33,6 +32,7 @@ import type {
   TSkillFileContentResponse,
 } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types/http';
+import { isBinaryBuffer } from './binary';
 
 /** Thin error shape the skill methods throw on validation failure. */
 type SkillValidationError = Error & { code?: string; issues?: ValidationIssue[] };
