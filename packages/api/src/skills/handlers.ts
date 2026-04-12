@@ -555,6 +555,23 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         return res.status(400).json({ error: 'Invalid file path encoding' });
       }
 
+      // SKILL.md is the skill body itself, not a SkillFile document
+      if (decodedPath === 'SKILL.md') {
+        const skill = await getSkillById(id);
+        if (!skill) {
+          return res.status(404).json({ error: 'Skill not found' });
+        }
+        const response: TSkillFileContentResponse = {
+          content: skill.body,
+          mimeType: 'text/markdown',
+          isBinary: false,
+          relativePath: 'SKILL.md',
+          filename: 'SKILL.md',
+          bytes: Buffer.byteLength(skill.body, 'utf-8'),
+        };
+        return res.status(200).json(response);
+      }
+
       const file = await getSkillFileByPath(id, decodedPath);
       if (!file) {
         return res.status(404).json({ error: 'Skill file not found' });

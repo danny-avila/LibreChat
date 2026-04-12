@@ -260,11 +260,7 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
 
   const handleFileClick = useCallback(
     (path: string) => {
-      if (path === 'SKILL.md') {
-        navigate(`/skills/${skill._id}`);
-      } else {
-        navigate(`/skills/${skill._id}?file=${encodeURIComponent(path)}`);
-      }
+      navigate(`/skills/${skill._id}?file=${encodeURIComponent(path)}`);
     },
     [navigate, skill._id],
   );

@@ -35,6 +35,7 @@ const {
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createFileLimiters } = require('~/server/middleware/limiters/uploadLimiters');
+const configMiddleware = require('~/server/middleware/config/app');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
 const router = express.Router();
@@ -90,6 +91,7 @@ const checkSkillCreate = generateCheckAccess({
 const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
 
 router.use(requireJwtAuth);
+router.use(configMiddleware);
 router.use(checkSkillAccess);
 
 // ---------------------------------------------------------------------------

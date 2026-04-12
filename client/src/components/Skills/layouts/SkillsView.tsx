@@ -65,8 +65,8 @@ function DetailView({ skillId }: { skillId: string }) {
   const activeFile = searchParams.get('file');
   const skillQuery = useGetSkillByIdQuery(skillId, { enabled: !!skillId });
 
-  // Show file content when a file is selected (not SKILL.md)
-  if (activeFile && activeFile !== 'SKILL.md') {
+  // Show file content when a file is selected from the sidebar tree
+  if (activeFile) {
     return (
       <div className="flex h-full w-full flex-col bg-presentation">
         <SkillFileViewer skillId={skillId} relativePath={activeFile} />
