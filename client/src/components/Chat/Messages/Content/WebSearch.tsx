@@ -97,17 +97,17 @@ export default function WebSearch({
   const complete = !isLast && progress === 1;
   const finalizing = isSubmitting && isLast && progress === 1;
 
-  const ownTurn = useMemo(() => {
+  const ownTurn = useMemo((): string => {
     if (!attachments) {
-      return 0;
+      return '0';
     }
     for (const att of attachments) {
       if (att.type === Tools.web_search && att[Tools.web_search]) {
         const turn = att[Tools.web_search].turn;
-        return typeof turn === 'number' ? turn : 0;
+        return typeof turn === 'number' ? String(turn) : '0';
       }
     }
-    return 0;
+    return '0';
   }, [attachments]);
 
   const allSources = useMemo((): ValidSource[] => {
@@ -124,11 +124,8 @@ export default function WebSearch({
         return collectSources(turnMap);
       }
     }
-    if (searchResults) {
-      const turnKey = String(ownTurn);
-      if (searchResults[turnKey]) {
-        return collectSources({ [turnKey]: searchResults[turnKey] });
-      }
+    if (searchResults?.[ownTurn]) {
+      return collectSources({ [ownTurn]: searchResults[ownTurn] });
     }
     return [];
   }, [searchResults, attachments, ownTurn]);
@@ -140,7 +137,7 @@ export default function WebSearch({
     if (!searchResults) {
       return [];
     }
-    const result = searchResults[String(ownTurn)];
+    const result = searchResults[ownTurn];
     if (!result) {
       return [];
     }
@@ -154,7 +151,8 @@ export default function WebSearch({
 
   const showSources = processedSources.length > 0;
   const progressText = useMemo(() => {
-    let text: ProgressKeys = ownTurn > 0 ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
+    let text: ProgressKeys =
+      ownTurn !== '0' ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
     if (showSources) {
       text = 'com_ui_web_search_processing';
     }
