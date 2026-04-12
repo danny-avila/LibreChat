@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { Skeleton } from '@librechat/client';
 import type { TSkill } from 'librechat-data-provider';
 import SkillListItem from './SkillListItem';
@@ -17,7 +18,10 @@ interface SkillListProps {
  */
 export default function SkillList({ skills, isLoading, activeSkillId }: SkillListProps) {
   const localize = useLocalize();
+  const [searchParams] = useSearchParams();
+  const activeFile = searchParams.get('file');
   const [sectionOpen, setSectionOpen] = useState(true);
+  const [expandedSkillId, setExpandedSkillId] = useState<string | null>(activeSkillId ?? null);
 
   if (isLoading) {
     return (
@@ -59,7 +63,14 @@ export default function SkillList({ skills, isLoading, activeSkillId }: SkillLis
             </p>
           ) : (
             skills.map((skill) => (
-              <SkillListItem key={skill._id} skill={skill} isActive={skill._id === activeSkillId} />
+              <SkillListItem
+                key={skill._id}
+                skill={skill}
+                isActive={skill._id === activeSkillId}
+                isExpanded={skill._id === expandedSkillId}
+                activeFile={skill._id === activeSkillId ? activeFile : null}
+                onToggleExpand={(id) => setExpandedSkillId((prev) => (prev === id ? null : id))}
+              />
             ))
           )}
         </div>

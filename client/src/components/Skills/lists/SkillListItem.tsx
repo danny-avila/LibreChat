@@ -10,6 +10,9 @@ import { cn } from '~/utils';
 interface SkillListItemProps {
   skill: TSkill;
   isActive: boolean;
+  isExpanded: boolean;
+  activeFile: string | null;
+  onToggleExpand: (skillId: string) => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -39,6 +42,7 @@ interface NodeMeta {
 interface TreeItemCallbacks {
   onFileClick: (path: string) => void;
   onToggle: (id: string, isOpen: boolean) => void;
+  activeFile: string | null;
 }
 
 const ITEM_SIZE = 28;
@@ -132,6 +136,7 @@ function FileTreeNode({
   treeData?: TreeItemCallbacks;
 }) {
   const isFolder = data.nodeType === 'folder';
+  const isFileActive = !isFolder && treeData?.activeFile === data.path;
   const indent = data.depth * 16 + (isFolder ? 8 : 24);
 
   return (
@@ -148,7 +153,12 @@ function FileTreeNode({
           treeData?.onFileClick(data.path);
         }
       }}
-      className="flex w-full select-none items-center gap-1.5 rounded-lg text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+      className={cn(
+        'flex w-full select-none items-center gap-1.5 rounded-lg text-sm transition-colors',
+        isFileActive
+          ? 'bg-surface-active font-medium text-text-primary'
+          : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+      )}
       aria-expanded={isFolder ? isOpen : undefined}
     >
       {isFolder && (
@@ -174,9 +184,11 @@ function FileTreeNode({
 
 function InlineFileTree({
   files,
+  activeFile,
   onFileClick,
 }: {
   files: TSkillFile[];
+  activeFile: string | null;
   onFileClick: (path: string) => void;
 }) {
   const treeEntries = useMemo(() => buildFileTree(files), [files]);
@@ -199,8 +211,8 @@ function InlineFileTree({
   }, []);
 
   const callbacks = useMemo<TreeItemCallbacks>(
-    () => ({ onFileClick, onToggle: handleToggle }),
-    [onFileClick, handleToggle],
+    () => ({ onFileClick, onToggle: handleToggle, activeFile }),
+    [onFileClick, handleToggle, activeFile],
   );
 
   type WalkerReturn = ReturnType<TreeWalker<FileNodeData, NodeMeta>>;
@@ -241,13 +253,18 @@ function InlineFileTree({
 /* Main component                                                             */
 /* -------------------------------------------------------------------------- */
 
-function SkillListItem({ skill, isActive }: SkillListItemProps) {
+function SkillListItem({
+  skill,
+  isActive,
+  isExpanded,
+  activeFile,
+  onToggleExpand,
+}: SkillListItemProps) {
   const navigate = useNavigate();
   const hasFiles = skill.fileCount > 0;
-  const [collapsed, setCollapsed] = useState(false);
-  const expanded = hasFiles && (isActive || !collapsed);
+  const expanded = hasFiles && isExpanded;
 
-  // Prefetch files for active skill or expanded skills (eliminates lag)
+  // Prefetch files for active/expanded skills (eliminates first-expand lag)
   const filesQuery = useListSkillFilesQuery(skill._id, {
     enabled: hasFiles && (isActive || expanded),
   });
@@ -256,9 +273,9 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
   const handleSkillClick = useCallback(() => {
     navigate(`/skills/${skill._id}`);
     if (hasFiles) {
-      setCollapsed((prev) => !prev);
+      onToggleExpand(skill._id);
     }
-  }, [navigate, skill._id, hasFiles]);
+  }, [navigate, skill._id, hasFiles, onToggleExpand]);
 
   const handleFileClick = useCallback(
     (path: string) => {
@@ -282,9 +299,11 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
         }}
         className={cn(
           'flex w-full cursor-pointer select-none items-center gap-3 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
-          isActive
+          isActive && !activeFile
             ? 'bg-surface-active text-text-primary'
-            : 'text-text-primary hover:bg-surface-hover',
+            : isActive && activeFile
+              ? 'text-text-primary'
+              : 'text-text-primary hover:bg-surface-hover',
         )}
         aria-current={isActive ? 'true' : undefined}
         aria-expanded={hasFiles ? expanded : undefined}
@@ -319,7 +338,7 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
         style={expanded && hasFiles ? { maxHeight: `${MAX_HEIGHT}px` } : undefined}
         inert={!expanded ? '' : undefined}
       >
-        <InlineFileTree files={files} onFileClick={handleFileClick} />
+        <InlineFileTree files={files} activeFile={activeFile} onFileClick={handleFileClick} />
       </div>
     </div>
   );
