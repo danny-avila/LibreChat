@@ -1,10 +1,9 @@
-import { useRef, useCallback, useMemo } from 'react';
+import { useRef, useCallback, useMemo, useState } from 'react';
 import { Plus, PenLine, Upload, Sparkles } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { Dropdown, useToastContext } from '@librechat/client';
-import type { ParsedSkillMd } from '../utils/parseSkillMd';
 import type { Option } from '~/common';
 import { parseSkillMd } from '../utils/parseSkillMd';
+import { CreateSkillDialog } from '../dialogs';
 import { useLocalize } from '~/hooks';
 
 const CREATE_AI = 'ai';
@@ -13,9 +12,14 @@ const CREATE_UPLOAD = 'upload';
 
 export default function CreateSkillMenu() {
   const localize = useLocalize();
-  const navigate = useNavigate();
   const { showToast } = useToastContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [uploadDefaults, setUploadDefaults] = useState<{
+    name?: string;
+    description?: string;
+    body?: string;
+  }>({});
 
   const handleFileChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -30,8 +34,13 @@ export default function CreateSkillMenu() {
         if (typeof text !== 'string') {
           return;
         }
-        const parsed: ParsedSkillMd = parseSkillMd(text);
-        navigate('/skills/new', { state: { uploadData: parsed } });
+        const parsed = parseSkillMd(text);
+        setUploadDefaults({
+          name: parsed.name || undefined,
+          description: parsed.description || undefined,
+          body: text,
+        });
+        setDialogOpen(true);
       };
       reader.onerror = () => {
         showToast({
@@ -43,7 +52,7 @@ export default function CreateSkillMenu() {
 
       event.target.value = '';
     },
-    [navigate, showToast, localize],
+    [showToast, localize],
   );
 
   const options = useMemo<Option[]>(
@@ -68,16 +77,14 @@ export default function CreateSkillMenu() {
     [localize],
   );
 
-  const handleSelect = useCallback(
-    (value: string) => {
-      if (value === CREATE_MANUAL) {
-        navigate('/skills/new');
-      } else if (value === CREATE_UPLOAD) {
-        setTimeout(() => fileInputRef.current?.click(), 0);
-      }
-    },
-    [navigate],
-  );
+  const handleSelect = useCallback((value: string) => {
+    if (value === CREATE_MANUAL) {
+      setUploadDefaults({});
+      setDialogOpen(true);
+    } else if (value === CREATE_UPLOAD) {
+      setTimeout(() => fileInputRef.current?.click(), 0);
+    }
+  }, []);
 
   return (
     <>
@@ -97,6 +104,13 @@ export default function CreateSkillMenu() {
         className="hidden"
         aria-hidden="true"
         onChange={handleFileChange}
+      />
+      <CreateSkillDialog
+        isOpen={dialogOpen}
+        setIsOpen={setDialogOpen}
+        defaultName={uploadDefaults.name}
+        defaultDescription={uploadDefaults.description}
+        defaultBody={uploadDefaults.body}
       />
     </>
   );

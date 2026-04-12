@@ -26,7 +26,7 @@ function SkillListItem({ skill }: { skill: TSkill }) {
       <button
         type="button"
         className="absolute inset-0 z-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-        onClick={() => navigate(`/skills/${skill._id}/edit`)}
+        onClick={() => navigate(`/skills/${skill._id}`)}
         aria-label={skill.name}
       />
       <div className="flex items-start gap-2.5 px-3 py-2.5">

@@ -135,10 +135,6 @@ export const router = createBrowserRouter(
             },
             {
               path: 'skills',
-              element: <Navigate to="/skills/new" replace={true} />,
-            },
-            {
-              path: 'skills/new',
               lazy: loadSkillsView,
             },
             {
@@ -147,10 +143,6 @@ export const router = createBrowserRouter(
             },
             {
               path: 'skills/:skillId/edit',
-              lazy: loadSkillsView,
-            },
-            {
-              path: 'skills/:skillId/file/:nodeId',
               lazy: loadSkillsView,
             },
             {
