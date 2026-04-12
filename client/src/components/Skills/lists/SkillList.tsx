@@ -1,51 +1,69 @@
-import { FileText } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
 import type { TSkill } from 'librechat-data-provider';
 import SkillListItem from './SkillListItem';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
-export default function SkillList({
-  skills = [],
-  isLoading,
-}: {
-  skills?: TSkill[];
+interface SkillListProps {
+  skills: TSkill[];
   isLoading: boolean;
-}) {
+  activeSkillId?: string;
+}
+
+/**
+ * Claude.ai–style skill list with a collapsible "Personal skills" section.
+ */
+export default function SkillList({ skills, isLoading, activeSkillId }: SkillListProps) {
   const localize = useLocalize();
+  const [sectionOpen, setSectionOpen] = useState(true);
 
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-2 px-1">
-        <Skeleton className="my-2 flex h-[84px] w-full rounded-2xl border-0 px-3 pb-4 pt-3" />
-        <Skeleton className="my-2 flex h-[84px] w-full rounded-2xl border-0 px-3 pb-4 pt-3" />
-      </div>
-    );
-  }
-
-  if (skills.length === 0) {
-    return (
-      <div className="my-2 flex flex-col items-center justify-center rounded-lg border border-border-light bg-transparent p-6 text-center">
-        <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-surface-tertiary">
-          <FileText className="size-5 text-text-secondary" aria-hidden="true" />
-        </div>
-        <p className="text-sm font-medium text-text-primary">
-          {localize('com_ui_no_skills_title')}
-        </p>
-        <p className="mt-0.5 text-xs text-text-secondary">{localize('com_ui_add_first_skill')}</p>
+      <div className="flex flex-col gap-2 px-2 pt-2">
+        <Skeleton className="h-8 w-full rounded-lg" />
+        <Skeleton className="h-8 w-full rounded-lg" />
+        <Skeleton className="h-8 w-full rounded-lg" />
       </div>
     );
   }
 
   return (
-    <section
-      className="flex h-full flex-col overflow-y-auto"
-      aria-label={localize('com_ui_skill_list')}
-    >
-      <div className="overflow-y-auto overflow-x-hidden">
-        {skills.map((skill) => (
-          <SkillListItem key={skill._id} skill={skill} />
-        ))}
+    <div className="flex flex-col gap-px">
+      {/* Section header */}
+      <div className="flex items-center justify-between px-2 pb-2">
+        <button
+          type="button"
+          onClick={() => setSectionOpen((prev) => !prev)}
+          className="flex cursor-pointer items-center gap-1.5"
+          aria-expanded={sectionOpen}
+        >
+          <ChevronRight
+            className={cn(
+              'size-3 shrink-0 text-text-tertiary transition-transform duration-200',
+              sectionOpen && 'rotate-90',
+            )}
+            aria-hidden="true"
+          />
+          <span className="text-xs text-text-tertiary">{localize('com_ui_skills')}</span>
+        </button>
       </div>
-    </section>
+
+      {/* Skill items */}
+      {sectionOpen && (
+        <div className="flex flex-col gap-px">
+          {skills.length === 0 ? (
+            <p className="px-3 py-4 text-center text-xs text-text-tertiary">
+              {localize('com_ui_skills_empty')}
+            </p>
+          ) : (
+            skills.map((skill) => (
+              <SkillListItem key={skill._id} skill={skill} isActive={skill._id === activeSkillId} />
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,74 +1,99 @@
-import { useState, useCallback, useMemo } from 'react';
-import { Button, Sidebar, TooltipAnchor } from '@librechat/client';
+import { useState, useMemo } from 'react';
+import { Search, Plus } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useListSkillsQuery } from '~/data-provider';
-import FilterSkills from './FilterSkills';
-import { useLocalize } from '~/hooks';
-import { SkillList } from '../lists';
+import { useDebounce, useHasAccess, useLocalize } from '~/hooks';
+import { CreateSkillDialog } from '../dialogs';
+import SkillListPanel from '../lists/SkillList';
 import { cn } from '~/utils';
 
-export default function SkillsSidePanel({
-  className = '',
-  closePanelRef,
-  onClose,
-}: {
+interface SkillsSidePanelProps {
   className?: string;
-  closePanelRef?: React.RefObject<HTMLButtonElement>;
-  onClose?: () => void;
-}) {
+}
+
+/**
+ * Claude.ai–style skills sidebar panel.
+ * Header: "Skills" + search + add.
+ * Body: collapsible "Personal skills" section with skill list.
+ */
+export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const localize = useLocalize();
+  const { skillId: activeSkillId } = useParams();
+  const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const debouncedSearch = useDebounce(searchTerm, 250);
 
-  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-  }, []);
-
-  const skillsQuery = useListSkillsQuery(searchTerm ? { search: searchTerm } : {}, {
-    enabled: true,
+  const hasCreateAccess = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
+    permission: Permissions.CREATE,
   });
-  const filteredSkills = useMemo(() => {
-    // Backend list response is `{ skills: TSkillSummary[]; ... }` (renamed
-    // from `.data` in the CRUD PR). Coerce to `TSkill[]` to match the
-    // downstream `SkillList` prop shape — extra fields are ignored there.
-    const skills = (skillsQuery.data?.skills ??
-      []) as unknown as import('librechat-data-provider').TSkill[];
-    if (!searchTerm) {
-      return skills;
-    }
-    const term = searchTerm.toLowerCase();
-    return skills.filter((s) => s.name.toLowerCase().includes(term));
-  }, [skillsQuery.data?.skills, searchTerm]);
 
-  const isLoading = skillsQuery.isLoading;
+  const listQuery = useListSkillsQuery({ search: debouncedSearch || undefined, limit: 50 });
+  const skills = useMemo(() => listQuery.data?.skills ?? [], [listQuery.data]);
 
   return (
-    <div id="skills-panel" className={cn('flex h-full w-full flex-col', className)}>
-      {onClose && (
-        <div className="flex items-center justify-end px-2 py-[2px] md:py-2">
-          <TooltipAnchor
-            description={localize('com_nav_close_sidebar')}
-            render={
-              <Button
-                ref={closePanelRef}
-                size="icon"
-                variant="outline"
-                data-testid="close-skills-panel-button"
-                aria-label={localize('com_nav_close_sidebar')}
-                aria-expanded={true}
-                className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
-                onClick={onClose}
-              >
-                <Sidebar />
-              </Button>
-            }
+    <div
+      className={cn(
+        'flex h-full w-full flex-col overflow-hidden border-r border-border-light',
+        className,
+      )}
+    >
+      {/* Header */}
+      <div className="flex min-h-[3.5rem] items-center justify-between px-6 py-3">
+        <h2 className="truncate text-lg font-bold text-text-primary">
+          {localize('com_ui_skills')}
+        </h2>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setSearchOpen((prev) => !prev)}
+            className="inline-flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+            aria-label={localize('com_ui_search')}
+          >
+            <Search className="size-4" />
+          </button>
+          {hasCreateAccess && (
+            <button
+              type="button"
+              onClick={() => setCreateDialogOpen(true)}
+              className="inline-flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+              aria-label={localize('com_ui_create_skill')}
+            >
+              <Plus className="size-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Search input (collapsible) */}
+      {searchOpen && (
+        <div className="px-4 pb-2">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder={localize('com_ui_search_skills')}
+            aria-label={localize('com_ui_search_skills')}
+            className="h-8 w-full rounded-md border border-border-light bg-transparent px-3 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring-primary"
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
           />
         </div>
       )}
-      <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
-        <FilterSkills searchTerm={searchTerm} onSearchChange={handleSearchChange} />
-        <div className="relative flex h-full flex-col overflow-y-auto">
-          <SkillList skills={filteredSkills} isLoading={isLoading} />
-        </div>
+
+      {/* Skill list */}
+      <div className="flex-1 overflow-y-auto px-4">
+        <SkillListPanel
+          skills={skills as unknown as import('librechat-data-provider').TSkill[]}
+          isLoading={listQuery.isLoading}
+          activeSkillId={activeSkillId}
+        />
       </div>
+
+      {/* Create dialog */}
+      <CreateSkillDialog isOpen={createDialogOpen} setIsOpen={setCreateDialogOpen} />
     </div>
   );
 }
