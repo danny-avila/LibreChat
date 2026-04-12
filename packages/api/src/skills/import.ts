@@ -95,7 +95,7 @@ export interface ImportSkillDeps {
     principalId: string;
     resourceType: string;
     resourceId: Types.ObjectId;
-    roleId: string;
+    accessRoleId: string;
   }) => Promise<unknown>;
 }
 
@@ -169,7 +169,7 @@ async function grantOwnership(deps: ImportSkillDeps, userId: string, skillId: Ty
       principalId: userId,
       resourceType: ResourceType.SKILL,
       resourceId: skillId,
-      roleId: AccessRoleIds.SKILL_OWNER,
+      accessRoleId: AccessRoleIds.SKILL_OWNER,
     });
   } catch (error) {
     // Log but don't fail the import — the skill was created successfully.
