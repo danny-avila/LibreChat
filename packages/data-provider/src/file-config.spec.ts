@@ -1,3 +1,4 @@
+import type { TDefaultLLMDeliveryPathConfig } from './file-config';
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
@@ -1318,5 +1319,92 @@ describe('isPermissiveMimeConfig', () => {
   it('returns true for regex produced by convertStringsToRegex with .*', () => {
     const converted = convertStringsToRegex(['.*']);
     expect(isPermissiveMimeConfig(converted)).toBe(true);
+  });
+});
+
+describe('defaultLLMDeliveryPath config merging', () => {
+  it('should include defaultLLMDeliveryPath and legacyFileUploadUX in merged endpoint config', () => {
+    const merged = mergeFileConfig({
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          defaultLLMDeliveryPath: {
+            fallback: 'none',
+            overrides: { 'image/*': 'text' },
+          },
+          legacyFileUploadUX: true,
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.agents,
+    });
+    expect(endpointConfig.defaultLLMDeliveryPath).toEqual({
+      fallback: 'none',
+      overrides: { 'image/*': 'text' },
+    });
+    expect(endpointConfig.legacyFileUploadUX).toBe(true);
+  });
+
+  it('should merge global defaultLLMDeliveryPath into mergedConfig', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: {
+        fallback: 'provider',
+        overrides: { 'audio/*': 'none' },
+      },
+      legacyFileUploadUX: true,
+    });
+    expect(merged.defaultLLMDeliveryPath).toEqual({
+      fallback: 'provider',
+      overrides: { 'audio/*': 'none' },
+    });
+    expect(merged.legacyFileUploadUX).toBe(true);
+  });
+
+  it('should inherit global legacyFileUploadUX into endpoint config', () => {
+    const merged = mergeFileConfig({
+      legacyFileUploadUX: true,
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(endpointConfig.legacyFileUploadUX).toBe(true);
+  });
+
+  it('should allow endpoint legacyFileUploadUX to override global legacyFileUploadUX', () => {
+    const merged = mergeFileConfig({
+      legacyFileUploadUX: true,
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          legacyFileUploadUX: false,
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(endpointConfig.legacyFileUploadUX).toBe(false);
+  });
+
+  it('should pass through endpoint defaultLLMDeliveryPath in mergeWithDefault', () => {
+    const merged = mergeFileConfig({
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { overrides: { 'application/pdf': 'text' } },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(endpointConfig.defaultLLMDeliveryPath?.overrides?.['application/pdf']).toBe('text');
+  });
+
+  it('should default legacyFileUploadUX to undefined when not set', () => {
+    const merged = mergeFileConfig(undefined);
+    expect(merged.legacyFileUploadUX).toBeUndefined();
   });
 });

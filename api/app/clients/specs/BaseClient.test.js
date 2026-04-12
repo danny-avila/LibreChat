@@ -1,4 +1,4 @@
-const { Constants } = require('librechat-data-provider');
+const { Constants, EModelEndpoint } = require('librechat-data-provider');
 const { initializeFakeClient } = require('./FakeClient');
 
 jest.mock('~/db/connect');
@@ -1254,6 +1254,104 @@ describe('BaseClient', () => {
       );
       expect(userSave[0].files).toHaveLength(1);
       expect(userSave[0].files[0].file_id).toBe('file-abc');
+    });
+  });
+
+  describe('processAttachments llmDeliveryPath handling', () => {
+    beforeEach(() => {
+      TestClient.options = {
+        endpoint: EModelEndpoint.openAI,
+      };
+      TestClient.addImageURLs = jest.fn(async (message, files) => {
+        message.image_urls = ['encoded-image'];
+        return files;
+      });
+      TestClient.addDocuments = jest.fn(async (message, files) => {
+        message.documents = [{ type: 'file' }];
+        return files;
+      });
+      TestClient.addVideos = jest.fn(async (_message, files) => files);
+      TestClient.addAudios = jest.fn(async (_message, files) => files);
+    });
+
+    test('keeps a none image in returned files without adding image URLs', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'none-image',
+        filename: 'image.png',
+        filepath: '/uploads/image.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.image_urls).toBeUndefined();
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('keeps a none PDF in returned files without adding documents', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'none-pdf',
+        filename: 'document.pdf',
+        filepath: '/uploads/document.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.documents).toBeUndefined();
+      expect(TestClient.addDocuments).not.toHaveBeenCalled();
+    });
+
+    test('keeps a text-delivery markdown file in returned files without adding documents', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'text-markdown',
+        filename: 'notes.md',
+        filepath: '/uploads/notes.md',
+        type: 'text/markdown',
+        bytes: 100,
+        source: 'local',
+        text: 'extracted markdown',
+        llmDeliveryPath: 'text',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.documents).toBeUndefined();
+      expect(TestClient.addDocuments).not.toHaveBeenCalled();
+    });
+
+    test('routes legacy files without llmDeliveryPath normally', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'legacy-pdf',
+        filename: 'document.pdf',
+        filepath: '/uploads/document.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.documents).toEqual([{ type: 'file' }]);
+      expect(TestClient.addDocuments).toHaveBeenCalledWith(message, [file]);
     });
   });
 });

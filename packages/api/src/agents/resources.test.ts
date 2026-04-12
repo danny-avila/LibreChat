@@ -1553,4 +1553,114 @@ describe('primeResources', () => {
       expect(result.tool_resources?.[EToolResources.image_edit]).toBeUndefined();
     });
   });
+
+  describe('llmDeliveryPath handling', () => {
+    it('should keep files with llmDeliveryPath "none" in attachments', async () => {
+      const providerFile: TFile = {
+        user: 'user1',
+        file_id: 'provider-file',
+        filename: 'image.png',
+        filepath: '/path/image.png',
+        type: 'image/png',
+        bytes: 1000,
+        object: 'file' as const,
+        usage: 0,
+        embedded: false,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+        width: 100,
+        height: 100,
+      };
+      const noneFile: TFile = {
+        user: 'user1',
+        file_id: 'none-file',
+        filename: 'audio.mp3',
+        filepath: '/path/audio.mp3',
+        type: 'audio/mpeg',
+        bytes: 5000,
+        object: 'file' as const,
+        usage: 0,
+        embedded: false,
+        source: 'local',
+        llmDeliveryPath: 'none',
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([providerFile, noneFile]),
+        requestFileSet,
+        agentId: 'agent1',
+      });
+
+      const attachmentIds = result.attachments.map((f) => f.file_id);
+      expect(attachmentIds).toContain('provider-file');
+      expect(attachmentIds).toContain('none-file');
+    });
+
+    it('should include llmDeliveryPath "none" files in lazy provisioning state', async () => {
+      const noneFile: TFile = {
+        user: 'user1',
+        file_id: 'none-file',
+        filename: 'data.csv',
+        filepath: '/path/data.csv',
+        type: 'text/csv',
+        bytes: 5000,
+        object: 'file' as const,
+        usage: 0,
+        embedded: false,
+        source: 'local',
+        llmDeliveryPath: 'none',
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([noneFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+        loadCodeApiKey: jest.fn().mockResolvedValue('code-key'),
+      });
+
+      expect(result.attachments.map((f) => f.file_id)).toContain('none-file');
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('none-file');
+      expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toContain('none-file');
+    });
+
+    it('should include files with undefined llmDeliveryPath in attachments (legacy files)', async () => {
+      const legacyFile: TFile = {
+        user: 'user1',
+        file_id: 'legacy-file',
+        filename: 'doc.pdf',
+        filepath: '/path/doc.pdf',
+        type: 'application/pdf',
+        bytes: 2000,
+        object: 'file' as const,
+        usage: 0,
+        embedded: false,
+        source: 'local',
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([legacyFile]),
+        requestFileSet,
+        agentId: 'agent1',
+      });
+
+      const attachmentIds = result.attachments.map((f) => f.file_id);
+      expect(attachmentIds).toContain('legacy-file');
+    });
+  });
 });
