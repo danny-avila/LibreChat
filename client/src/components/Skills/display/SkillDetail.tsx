@@ -60,7 +60,7 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
             <button
               type="button"
               onClick={onEdit}
-              className="inline-flex h-8 items-center justify-center rounded-md border border-border-medium px-3 text-xs font-semibold text-text-primary transition-colors hover:bg-surface-hover"
+              className="inline-flex size-9 items-center justify-center rounded-md border border-border-medium text-xs font-semibold text-text-primary transition-colors hover:bg-surface-hover"
             >
               {localize('com_ui_edit')}
             </button>
