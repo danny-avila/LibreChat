@@ -12,6 +12,35 @@ const {
 
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
+  getAppConfig: jest.fn().mockResolvedValue({
+    fileStrategy: 'local',
+    paths: { uploads: '/tmp/uploads', images: '/tmp/images' },
+  }),
+}));
+
+jest.mock('~/server/middleware/config/app', () => (req, _res, next) => {
+  req.config = {
+    fileStrategy: 'local',
+    paths: { uploads: '/tmp/uploads', images: '/tmp/images' },
+  };
+  next();
+});
+
+jest.mock('~/server/services/Files/strategies', () => ({
+  getStrategyFunctions: jest.fn().mockReturnValue({
+    saveBuffer: jest.fn().mockResolvedValue('/uploads/test/file.txt'),
+    getDownloadStream: jest.fn().mockResolvedValue({
+      pipe: jest.fn(),
+      on: jest.fn(),
+      [Symbol.asyncIterator]: async function* () {
+        yield Buffer.from('test content');
+      },
+    }),
+  }),
+}));
+
+jest.mock('~/server/utils/getFileStrategy', () => ({
+  getFileStrategy: jest.fn().mockReturnValue('local'),
 }));
 
 jest.mock('~/models', () => {
@@ -390,13 +419,23 @@ describe('Skill routes', () => {
     });
   });
 
-  describe('GET /api/skills/:id/files/:relativePath (stub)', () => {
-    it('returns 501 stub', async () => {
+  describe('GET /api/skills/:id/files/:relativePath', () => {
+    it('returns SKILL.md content from skill body', async () => {
+      const created = await createSkillAsOwner();
+      const res = await request(app).get(`/api/skills/${created.body._id}/files/SKILL.md`);
+      expect(res.status).toBe(200);
+      expect(res.body.mimeType).toBe('text/markdown');
+      expect(res.body.isBinary).toBe(false);
+      expect(res.body.filename).toBe('SKILL.md');
+      expect(res.body.content).toBeDefined();
+    });
+
+    it('returns 404 for a nonexistent file', async () => {
       const created = await createSkillAsOwner();
       const res = await request(app).get(
-        `/api/skills/${created.body._id}/files/scripts%2Fparse.sh`,
+        `/api/skills/${created.body._id}/files/scripts%2Fmissing.sh`,
       );
-      expect(res.status).toBe(501);
+      expect(res.status).toBe(404);
     });
   });
 
