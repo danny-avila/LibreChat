@@ -39,7 +39,7 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
       aria-label={skill.name}
     >
       {/* Header row — icon + name + actions */}
-      <div className="flex flex-col gap-3 py-2 sm:flex-row sm:items-center sm:gap-4">
+      <div className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:gap-4">
         {/* Icon + text */}
         <div className="min-w-0 flex-1 overflow-hidden">
           <div className="flex min-w-0 items-center gap-3">
