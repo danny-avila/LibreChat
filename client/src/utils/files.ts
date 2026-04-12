@@ -273,10 +273,7 @@ export const validateFiles = ({
     }
 
     let mimeTypesToCheck = supportedMimeTypes;
-    const isUnifiedMode =
-      !toolResource &&
-      endpointFileConfig.defaultFileInteraction != null &&
-      endpointFileConfig.defaultFileInteraction !== 'legacy';
+    const isUnifiedMode = !toolResource && endpointFileConfig?.legacyFileUploadUX !== true;
     if (toolResource === EToolResources.context || isUnifiedMode) {
       mimeTypesToCheck = [
         ...(supportedMimeTypes || []),

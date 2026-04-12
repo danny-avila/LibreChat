@@ -137,6 +137,7 @@ function renderMenu(props: Record<string, unknown> = {}) {
           setFiles={() => {}}
           setFilesLoading={() => {}}
           conversation={null}
+          endpointFileConfig={{ legacyFileUploadUX: true }}
           {...props}
         />
       </RecoilRoot>
@@ -261,6 +262,15 @@ describe('AttachFileMenu', () => {
       setupMocks();
       renderMenu({ disabled: false });
       expect(screen.getByRole('button', { name: /attach file options/i })).not.toBeDisabled();
+    });
+
+    it('renders the unified upload button when legacyFileUploadUX is not true', () => {
+      setupMocks();
+      renderMenu({ endpointFileConfig: { legacyFileUploadUX: false } });
+      expect(screen.getByRole('button', { name: /attach files/i })).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /attach file options/i }),
+      ).not.toBeInTheDocument();
     });
   });
 

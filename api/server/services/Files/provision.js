@@ -13,6 +13,11 @@ const { FileSources } = require('librechat-data-provider');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getStrategyFunctions } = require('./strategies');
 
+// TODO: check and potentially fix — concurrent temp file collision (deterministic path based on file_id)
+// TODO: check and potentially fix — query params not forwarded in checkSessionsAlive batch liveness check
+// TODO: check and potentially fix — direct mutation of shared file objects in provisionFiles callback
+// TODO: check and potentially fix — this file should be TypeScript in packages/api per CLAUDE.md rules
+
 const axios = createAxiosInstance();
 
 /**

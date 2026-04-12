@@ -455,8 +455,14 @@ export const fileConfig = {
 
 const supportedMimeTypesSchema = z.array(z.string()).optional();
 
-export const FileInteractionMode = z.enum(['text', 'provider', 'deferred', 'legacy']);
-export type TFileInteractionMode = z.infer<typeof FileInteractionMode>;
+export const DefaultLLMDeliveryPath = z.enum(['provider', 'text', 'none']);
+export type TDefaultLLMDeliveryPath = z.infer<typeof DefaultLLMDeliveryPath>;
+
+export const defaultLLMDeliveryPathSchema = z.object({
+  fallback: DefaultLLMDeliveryPath.optional(),
+  overrides: z.record(DefaultLLMDeliveryPath).optional(),
+});
+export type TDefaultLLMDeliveryPathConfig = z.infer<typeof defaultLLMDeliveryPathSchema>;
 
 export const endpointFileConfigSchema = z.object({
   disabled: z.boolean().optional(),
@@ -464,7 +470,8 @@ export const endpointFileConfigSchema = z.object({
   fileSizeLimit: z.number().min(0).optional(),
   totalSizeLimit: z.number().min(0).optional(),
   supportedMimeTypes: supportedMimeTypesSchema.optional(),
-  defaultFileInteraction: FileInteractionMode.optional(),
+  defaultLLMDeliveryPath: defaultLLMDeliveryPathSchema.optional(),
+  legacyFileUploadUX: z.boolean().optional(),
 });
 
 const skillFileConfigSchema = z.object({
@@ -501,7 +508,8 @@ export const fileConfigSchema = z.object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
     })
     .optional(),
-  defaultFileInteraction: FileInteractionMode.optional(),
+  defaultLLMDeliveryPath: defaultLLMDeliveryPathSchema.optional(),
+  legacyFileUploadUX: z.boolean().optional(),
 });
 
 export type TFileConfig = z.infer<typeof fileConfigSchema>;
@@ -555,8 +563,9 @@ function mergeWithDefault(
     fileSizeLimit: endpointConfig.fileSizeLimit ?? defaultConfig.fileSizeLimit,
     totalSizeLimit: endpointConfig.totalSizeLimit ?? defaultConfig.totalSizeLimit,
     supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultMimeTypes,
-    defaultFileInteraction:
-      endpointConfig.defaultFileInteraction ?? defaultConfig.defaultFileInteraction,
+    defaultLLMDeliveryPath:
+      endpointConfig.defaultLLMDeliveryPath ?? defaultConfig.defaultLLMDeliveryPath,
+    legacyFileUploadUX: endpointConfig.legacyFileUploadUX ?? defaultConfig.legacyFileUploadUX,
   };
 }
 
@@ -572,11 +581,17 @@ export function getEndpointFileConfig(params: {
   }
 
   /** Compute an effective default by merging user-configured default over the base default */
-  const baseDefaultConfig = fileConfig.endpoints.default;
+  const baseDefaultConfig: EndpointFileConfig = fileConfig.endpoints.default;
+  const globalDefaultConfig: EndpointFileConfig = {
+    ...baseDefaultConfig,
+    defaultLLMDeliveryPath:
+      mergedFileConfig.defaultLLMDeliveryPath ?? baseDefaultConfig.defaultLLMDeliveryPath,
+    legacyFileUploadUX: mergedFileConfig.legacyFileUploadUX ?? baseDefaultConfig.legacyFileUploadUX,
+  };
   const userDefaultConfig = mergedFileConfig.endpoints.default;
   const defaultConfig = userDefaultConfig
-    ? mergeWithDefault(userDefaultConfig, baseDefaultConfig, 'default')
-    : baseDefaultConfig;
+    ? mergeWithDefault(userDefaultConfig, globalDefaultConfig, 'default')
+    : globalDefaultConfig;
 
   const normalizedEndpoint = normalizeEndpointName(endpoint ?? '');
   const standardEndpoints = new Set([
@@ -688,8 +703,12 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     return mergedConfig;
   }
 
-  if (dynamic.defaultFileInteraction !== undefined) {
-    mergedConfig.defaultFileInteraction = dynamic.defaultFileInteraction;
+  if (dynamic.defaultLLMDeliveryPath !== undefined) {
+    mergedConfig.defaultLLMDeliveryPath = dynamic.defaultLLMDeliveryPath;
+  }
+
+  if (dynamic.legacyFileUploadUX !== undefined) {
+    mergedConfig.legacyFileUploadUX = dynamic.legacyFileUploadUX;
   }
 
   if (dynamic.serverFileSizeLimit !== undefined) {
@@ -791,8 +810,12 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       );
     }
 
-    if (dynamicEndpoint.defaultFileInteraction !== undefined) {
-      mergedEndpoint.defaultFileInteraction = dynamicEndpoint.defaultFileInteraction;
+    if (dynamicEndpoint.defaultLLMDeliveryPath !== undefined) {
+      mergedEndpoint.defaultLLMDeliveryPath = dynamicEndpoint.defaultLLMDeliveryPath;
+    }
+
+    if (dynamicEndpoint.legacyFileUploadUX !== undefined) {
+      mergedEndpoint.legacyFileUploadUX = dynamicEndpoint.legacyFileUploadUX;
     }
   }
 

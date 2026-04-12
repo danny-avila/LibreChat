@@ -136,6 +136,10 @@ const file: Schema<IMongoFile> = new Schema(
         default: undefined,
       },
     },
+    llmDeliveryPath: {
+      type: String,
+      enum: ['provider', 'text', 'none'],
+    },
     expiresAt: {
       type: Date,
       expires: 3600, // 1 hour in seconds

@@ -71,6 +71,7 @@ export interface IMongoFile extends Omit<Document, 'model'> {
      */
     codeEnvRef?: CodeEnvRef;
   };
+  llmDeliveryPath?: string;
   expiresAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
