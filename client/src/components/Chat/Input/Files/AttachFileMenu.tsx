@@ -135,9 +135,7 @@ const AttachFileMenu = ({
     ephemeralAgent,
   );
 
-  const isUnifiedMode =
-    endpointFileConfig?.defaultFileInteraction != null &&
-    endpointFileConfig.defaultFileInteraction !== 'legacy';
+  const isUnifiedMode = endpointFileConfig?.legacyFileUploadUX !== true;
 
   const handleUploadClick = useCallback(
     (fileType?: FileUploadType) => {
