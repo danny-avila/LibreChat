@@ -69,6 +69,7 @@ export enum QueryKeys {
   skills = 'skills',
   skill = 'skill',
   skillFiles = 'skillFiles',
+  skillFileContent = 'skillFileContent',
   /* Skill tree (phase 2 — filesystem-style node view) */
   skillTree = 'skillTree',
   skillNodeContent = 'skillNodeContent',

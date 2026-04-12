@@ -12,7 +12,7 @@ const {
   PermissionBits,
   PermissionTypes,
   Permissions,
-  FileSources,
+  FileContext,
 } = require('librechat-data-provider');
 const {
   createSkill,
@@ -23,6 +23,8 @@ const {
   listSkillFiles,
   upsertSkillFile,
   deleteSkillFile,
+  getSkillFileByPath,
+  updateSkillFileContent,
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
@@ -33,6 +35,7 @@ const {
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createFileLimiters } = require('~/server/middleware/limiters/uploadLimiters');
+const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
 const router = express.Router();
 
@@ -100,6 +103,9 @@ const handlers = createSkillsHandlers({
   deleteSkill,
   listSkillFiles,
   deleteSkillFile,
+  getSkillFileByPath,
+  updateSkillFileContent,
+  getStrategyFunctions,
   findAccessibleResources,
   findPubliclyAccessibleResources,
   grantPermission,
@@ -109,9 +115,10 @@ const handlers = createSkillsHandlers({
 // ---------------------------------------------------------------------------
 // File storage helper: resolve the active strategy's saveBuffer
 // ---------------------------------------------------------------------------
-function saveBuffer({ userId, buffer, fileName, basePath = 'uploads' }) {
-  const strategy = getStrategyFunctions(FileSources.local);
-  return strategy.saveBuffer({ userId, buffer, fileName, basePath });
+function resolveSkillStorage(req, { isImage = false } = {}) {
+  const source = getFileStrategy(req.config, { context: FileContext.skill_file, isImage });
+  const strategy = getStrategyFunctions(source);
+  return { saveBuffer: strategy.saveBuffer, source };
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +127,13 @@ function saveBuffer({ userId, buffer, fileName, basePath = 'uploads' }) {
 const importHandler = createImportHandler({
   createSkill,
   upsertSkillFile,
-  saveBuffer,
+  saveBuffer: (req, { userId, buffer, fileName, basePath, isImage }) => {
+    const storage = resolveSkillStorage(req, { isImage });
+    return storage.saveBuffer({ userId, buffer, fileName, basePath }).then((filepath) => ({
+      filepath,
+      source: storage.source,
+    }));
+  },
   grantPermission,
 });
 
@@ -144,7 +157,9 @@ async function uploadFileHandler(req, res) {
     const filename = file.originalname;
     const storageFileName = `${fileId}__${filename}`;
 
-    const filepath = await saveBuffer({
+    const isImage = (file.mimetype || '').startsWith('image/');
+    const storage = resolveSkillStorage(req, { isImage });
+    const filepath = await storage.saveBuffer({
       userId: req.user.id,
       buffer: file.buffer,
       fileName: storageFileName,
@@ -156,7 +171,7 @@ async function uploadFileHandler(req, res) {
       file_id: fileId,
       filename,
       filepath,
-      source: FileSources.local,
+      source: storage.source,
       mimeType: file.mimetype || 'application/octet-stream',
       bytes: file.size,
       isExecutable: false,
@@ -229,7 +244,7 @@ router.post(
 router.get(
   '/:id/files/:relativePath',
   canAccessSkillResource({ requiredPermission: PermissionBits.VIEW }),
-  handlers.downloadFileStub,
+  handlers.downloadFile,
 );
 
 router.delete(

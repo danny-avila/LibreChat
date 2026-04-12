@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import path from 'path';
 import JSZip from 'jszip';
-import { FileSources, ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
+import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
@@ -84,12 +84,16 @@ function isDuplicateKeyError(error: unknown): boolean {
 export interface ImportSkillDeps {
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
-  saveBuffer: (params: {
-    userId: string;
-    buffer: Buffer;
-    fileName: string;
-    basePath?: string;
-  }) => Promise<string>;
+  saveBuffer: (
+    req: Request,
+    params: {
+      userId: string;
+      buffer: Buffer;
+      fileName: string;
+      basePath?: string;
+      isImage?: boolean;
+    },
+  ) => Promise<{ filepath: string; source: string }>;
   grantPermission: (params: {
     principalType: string;
     principalId: string;
@@ -329,15 +333,16 @@ async function handleZip(
       const filename = path.basename(relativePath);
       const storageFileName = `${fileId}__${filename}`;
 
-      // Save to file storage
-      const filepath = await deps.saveBuffer({
+      const mimeType = guessMimeType(filename);
+
+      // Save to file storage (strategy-aware)
+      const { filepath, source } = await deps.saveBuffer(req, {
         userId,
         buffer: fileBuffer,
         fileName: storageFileName,
         basePath: 'uploads',
+        isImage: mimeType.startsWith('image/'),
       });
-
-      const mimeType = guessMimeType(filename);
 
       // Upsert the SkillFile DB record (runs path validation internally)
       await deps.upsertSkillFile({
@@ -346,7 +351,7 @@ async function handleZip(
         file_id: fileId,
         filename,
         filepath,
-        source: FileSources.local,
+        source,
         mimeType,
         bytes: fileBuffer.length,
         isExecutable: false,

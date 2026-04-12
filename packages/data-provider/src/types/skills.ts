@@ -152,6 +152,10 @@ export type TSkillFile = {
   isExecutable: boolean;
   author: string;
   tenantId?: string;
+  /** Lazily cached text content (≤ 512 KB). Excluded from list responses. */
+  content?: string;
+  /** Set on first read. `true` prevents repeated storage reads for non-text files. */
+  isBinary?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -232,6 +236,16 @@ export type TDeleteSkillFileResponse = {
   skillId: string;
   relativePath: string;
   deleted: true;
+};
+
+/** Response from GET `/api/skills/:id/files/:relativePath` (JSON mode). */
+export type TSkillFileContentResponse = {
+  content?: string;
+  mimeType: string;
+  isBinary: boolean;
+  relativePath: string;
+  filename: string;
+  bytes: number;
 };
 
 /** Variables passed into the skill file upload mutation. */

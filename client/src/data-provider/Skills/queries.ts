@@ -10,6 +10,7 @@ import type {
   TSkillListRequest,
   TSkillListResponse,
   TListSkillFilesResponse,
+  TSkillFileContentResponse,
 } from 'librechat-data-provider';
 
 /**
@@ -117,6 +118,32 @@ export const useListSkillFilesQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: false,
+      ...config,
+      enabled: enabled && (config?.enabled ?? true),
+    },
+  );
+};
+
+/**
+ * Fetch a single skill file's content. Returns cached text from the DB when
+ * available; otherwise the backend reads from storage, caches, and returns it.
+ * Uses `staleTime: Infinity` because file content is cached server-side.
+ */
+export const useGetSkillFileContentQuery = (
+  skillId: string | null | undefined,
+  relativePath: string | null | undefined,
+  config?: UseQueryOptions<TSkillFileContentResponse>,
+): QueryObserverResult<TSkillFileContentResponse> => {
+  const enabled = !!skillId && !!relativePath;
+  return useQuery<TSkillFileContentResponse>(
+    [QueryKeys.skillFileContent, skillId, relativePath],
+    () => dataService.getSkillFileContent(skillId as string, relativePath as string),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      staleTime: Infinity,
       ...config,
       enabled: enabled && (config?.enabled ?? true),
     },

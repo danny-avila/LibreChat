@@ -83,6 +83,7 @@ export const fileStrategiesSchema = z
     avatar: fileStorageSchema.optional(),
     image: fileStorageSchema.optional(),
     document: fileStorageSchema.optional(),
+    skills: fileStorageSchema.optional(),
   })
   .optional();
 

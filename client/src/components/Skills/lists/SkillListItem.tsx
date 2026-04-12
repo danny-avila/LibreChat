@@ -253,16 +253,18 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
 
   const handleSkillClick = useCallback(() => {
     navigate(`/skills/${skill._id}`);
-  }, [navigate, skill._id]);
-
-  const handleToggle = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpanded((prev) => !prev);
-  }, []);
+    if (hasFiles) {
+      setExpanded((prev) => !prev);
+    }
+  }, [navigate, skill._id, hasFiles]);
 
   const handleFileClick = useCallback(
-    (_path: string) => {
-      navigate(`/skills/${skill._id}`);
+    (path: string) => {
+      if (path === 'SKILL.md') {
+        navigate(`/skills/${skill._id}`);
+      } else {
+        navigate(`/skills/${skill._id}?file=${encodeURIComponent(path)}`);
+      }
     },
     [navigate, skill._id],
   );
@@ -287,6 +289,7 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
             : 'text-text-primary hover:bg-surface-hover',
         )}
         aria-current={isActive ? 'true' : undefined}
+        aria-expanded={hasFiles ? expanded : undefined}
       >
         <span className="flex size-6 shrink-0 items-center justify-center">
           <span className="flex size-6 items-center justify-center rounded-md border border-border-light bg-surface-primary shadow-sm">
@@ -299,20 +302,13 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
         </span>
 
         {hasFiles && (
-          <button
-            type="button"
-            onClick={handleToggle}
-            className="-mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-text-secondary transition-transform hover:text-text-primary"
-            aria-expanded={expanded}
-            aria-label="Toggle file list"
-          >
-            <ChevronDown
-              className={cn(
-                'size-3.5 transition-transform duration-200',
-                !expanded && '-rotate-90',
-              )}
-            />
-          </button>
+          <ChevronDown
+            className={cn(
+              '-mr-1 size-3.5 shrink-0 text-text-secondary transition-transform duration-200',
+              !expanded && '-rotate-90',
+            )}
+            aria-hidden="true"
+          />
         )}
       </div>
 

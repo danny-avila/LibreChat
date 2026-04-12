@@ -1,8 +1,9 @@
-import { Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { Spinner } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useGetSkillByIdQuery } from '~/data-provider';
 import { useHasAccess, useAuthContext, useLocalize } from '~/hooks';
+import SkillFileViewer from '~/components/Skills/display/SkillFileViewer';
 import SkillDetail from '~/components/Skills/display/SkillDetail';
 import SkillState from '~/components/Skills/display/SkillState';
 import { SkillForm } from '~/components/Skills/forms';
@@ -60,7 +61,18 @@ export default function SkillsView() {
 function DetailView({ skillId }: { skillId: string }) {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const activeFile = searchParams.get('file');
   const skillQuery = useGetSkillByIdQuery(skillId, { enabled: !!skillId });
+
+  // Show file content when a file is selected (not SKILL.md)
+  if (activeFile && activeFile !== 'SKILL.md') {
+    return (
+      <div className="flex h-full w-full flex-col bg-presentation">
+        <SkillFileViewer skillId={skillId} relativePath={activeFile} />
+      </div>
+    );
+  }
 
   if (skillQuery.isLoading) {
     return (

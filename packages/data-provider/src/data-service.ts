@@ -915,6 +915,13 @@ export function importSkill(formData: FormData): Promise<sk.TSkill> {
   return request.postMultiPart(endpoints.importSkill(), formData);
 }
 
+export function getSkillFileContent(
+  skillId: string,
+  relativePath: string,
+): Promise<sk.TSkillFileContentResponse> {
+  return request.get(endpoints.skillFile(skillId, relativePath));
+}
+
 export function deleteSkillFile(
   skillId: string,
   relativePath: string,

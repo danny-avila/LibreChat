@@ -801,7 +801,10 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     skillId: Types.ObjectId | string,
   ): Promise<Array<ISkillFile & { _id: Types.ObjectId }>> {
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    const rows = await SkillFile.find({ skillId }).sort({ relativePath: 1 }).lean();
+    const rows = await SkillFile.find({ skillId })
+      .select('-content')
+      .sort({ relativePath: 1 })
+      .lean();
     return rows as unknown as Array<ISkillFile & { _id: Types.ObjectId }>;
   }
 
@@ -838,6 +841,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
           isExecutable: row.isExecutable ?? false,
           author: row.author,
           tenantId: row.tenantId,
+          content: undefined,
+          isBinary: undefined,
         },
       },
       { new: false, upsert: true },
@@ -873,6 +878,24 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
   }
 
   // The public surface is scoped to methods that handlers and the user
+  async function getSkillFileByPath(
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+  ): Promise<(ISkillFile & { _id: Types.ObjectId }) | null> {
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    const row = await SkillFile.findOne({ skillId, relativePath }).lean();
+    return row as unknown as (ISkillFile & { _id: Types.ObjectId }) | null;
+  }
+
+  async function updateSkillFileContent(
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+    update: { content?: string; isBinary?: boolean },
+  ): Promise<void> {
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    await SkillFile.updateOne({ skillId, relativePath }, { $set: update });
+  }
+
   // deletion controller actually call. The per-skill file cascade on
   // `deleteSkill` is inlined; there's no need for a separate export.
   return {
@@ -885,6 +908,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     listSkillFiles,
     upsertSkillFile,
     deleteSkillFile,
+    getSkillFileByPath,
+    updateSkillFileContent,
   };
 }
 
