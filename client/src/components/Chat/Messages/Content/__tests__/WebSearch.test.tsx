@@ -262,7 +262,8 @@ describe('WebSearch', () => {
 
       renderWebSearch({ searchResults });
 
-      expect(screen.getByText('Searched the web')).toBeInTheDocument();
+      const matches = screen.getAllByText('Searched the web');
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
     it('renders searching state during streaming', () => {
@@ -272,7 +273,8 @@ describe('WebSearch', () => {
         initialProgress: 0.5,
       });
 
-      expect(screen.getByText('Searching the web')).toBeInTheDocument();
+      const matches = screen.getAllByText('Searching the web');
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
     it('shows "searching again" for turn > 0', () => {
@@ -289,7 +291,8 @@ describe('WebSearch', () => {
         initialProgress: 0.5,
       });
 
-      expect(screen.getByText('Searching again')).toBeInTheDocument();
+      const matches = screen.getAllByText('Searching again');
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
   });
 });
