@@ -906,6 +906,15 @@ export function uploadSkillFile(skillId: string, formData: FormData): Promise<sk
   return request.postMultiPart(endpoints.skillFiles(skillId), formData);
 }
 
+/**
+ * Import a skill from a .md, .zip, or .skill file. The backend extracts the
+ * archive, creates the skill from SKILL.md, and persists all additional files.
+ * Single HTTP request — no client-side zip processing needed.
+ */
+export function importSkill(formData: FormData): Promise<sk.TSkill> {
+  return request.postMultiPart(endpoints.importSkill(), formData);
+}
+
 export function deleteSkillFile(
   skillId: string,
   relativePath: string,

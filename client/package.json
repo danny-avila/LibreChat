@@ -77,7 +77,6 @@
     "input-otp": "^1.4.2",
     "jotai": "^2.12.5",
     "js-cookie": "^3.0.5",
-    "jszip": "^3.10.1",
     "librechat-data-provider": "*",
     "lodash": "^4.17.23",
     "lucide-react": "^0.394.0",

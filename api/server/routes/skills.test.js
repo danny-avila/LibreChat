@@ -381,12 +381,12 @@ describe('Skill routes', () => {
     });
   });
 
-  describe('POST /api/skills/:id/files (stub)', () => {
-    it('returns 501 with phase marker', async () => {
+  describe('POST /api/skills/:id/files (live)', () => {
+    it('returns 400 when no file is provided', async () => {
       const created = await createSkillAsOwner();
       const res = await request(app).post(`/api/skills/${created.body._id}/files`);
-      expect(res.status).toBe(501);
-      expect(res.body.phase).toBe(2);
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/no file/i);
     });
   });
 
