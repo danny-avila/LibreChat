@@ -70,11 +70,22 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
   STTService: { getInstance: jest.fn() },
 }));
 
-const { EToolResources, FileSources, AgentCapabilities } = require('librechat-data-provider');
+jest.mock('./VectorDB/crud', () => ({
+  uploadVectors: jest.fn().mockResolvedValue({ embedded: true, filename: 'embedded-upload.bin' }),
+}));
+
+const {
+  EModelEndpoint,
+  EToolResources,
+  FileSources,
+  AgentCapabilities,
+} = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { processAgentFileUpload } = require('./process');
+const { uploadVectors } = require('./VectorDB/crud');
+const { processAgentFileUpload, processImageFile } = require('./process');
 
 const PDF_MIME = 'application/pdf';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -97,6 +108,7 @@ const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
   config: {
     fileConfig: {},
     fileStrategy: 'local',
+    imageOutputType: 'webp',
     ocr: ocrConfig,
   },
 });
@@ -112,11 +124,15 @@ const mockRes = {
   json: jest.fn().mockReturnValue({}),
 };
 
-const makeFileConfig = ({ ocrSupportedMimeTypes = [] } = {}) => ({
+const makeFileConfig = ({
+  ocrSupportedMimeTypes = [],
+  sttSupportedMimeTypes = [],
+  textSupportedMimeTypes = [],
+} = {}) => ({
   checkType: (mime, types) => (types ?? []).includes(mime),
   ocr: { supportedMimeTypes: ocrSupportedMimeTypes },
-  stt: { supportedMimeTypes: [] },
-  text: { supportedMimeTypes: [] },
+  stt: { supportedMimeTypes: sttSupportedMimeTypes },
+  text: { supportedMimeTypes: textSupportedMimeTypes },
 });
 
 describe('processAgentFileUpload', () => {
@@ -125,6 +141,8 @@ describe('processAgentFileUpload', () => {
     mockRes.status.mockReturnThis();
     mockRes.json.mockReturnValue({});
     checkCapability.mockResolvedValue(true);
+    loadAuthValues.mockResolvedValue({ CODE_API_KEY: 'code-key' });
+    uploadVectors.mockResolvedValue({ embedded: true, filename: 'embedded-upload.bin' });
     getStrategyFunctions.mockReturnValue({
       handleFileUpload: jest
         .fn()
@@ -340,5 +358,384 @@ describe('processAgentFileUpload', () => {
         processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
       ).resolves.not.toThrow();
     });
+  });
+
+  describe('text delivery storage', () => {
+    test('stores the original file durably for plain text delivery records', async () => {
+      const { parseText } = require('@librechat/api');
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: ['text/plain'] }));
+      parseText.mockResolvedValueOnce({ text: 'plain extracted text', bytes: 20 });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      const req = makeReq({ mimetype: 'text/plain', ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(storageUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: 'file-uuid-123',
+          file: expect.objectContaining({ originalname: 'upload.bin' }),
+        }),
+      );
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'plain extracted text',
+          bytes: 128,
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          filename: 'upload.bin',
+          type: 'text/plain',
+          llmDeliveryPath: 'text',
+        }),
+        true,
+      );
+    });
+
+    test('stores the original file durably for OCR delivery records', async () => {
+      const { createFile } = require('~/models');
+      const documentUpload = jest.fn().mockResolvedValue({
+        text: 'ocr extracted text',
+        bytes: 42,
+        filepath: 'document_parser',
+      });
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 4096,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === FileSources.document_parser) {
+          return { handleFileUpload: documentUpload };
+        }
+        return { handleFileUpload: storageUpload };
+      });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(documentUpload).toHaveBeenCalled();
+      expect(storageUpload).toHaveBeenCalled();
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'ocr extracted text',
+          bytes: 4096,
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          filename: 'upload.bin',
+          type: PDF_MIME,
+          llmDeliveryPath: 'text',
+        }),
+        true,
+      );
+    });
+  });
+
+  describe('explicit legacy tool delivery path', () => {
+    test('persists llmDeliveryPath none for explicit file_search uploads', async () => {
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue({
+        ...makeFileConfig(),
+        defaultLLMDeliveryPath: {
+          fallback: 'text',
+        },
+      });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          ...makeMetadata(),
+          tool_resource: EToolResources.file_search,
+        },
+      });
+
+      expect(checkCapability).toHaveBeenCalledWith(
+        expect.anything(),
+        AgentCapabilities.file_search,
+      );
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          type: 'text/markdown',
+          embedded: true,
+          llmDeliveryPath: 'none',
+        }),
+        true,
+      );
+    });
+
+    test('persists llmDeliveryPath provider for legacy provider uploads without tool_resource', async () => {
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue({
+        ...makeFileConfig(),
+        legacyFileUploadUX: true,
+        defaultLLMDeliveryPath: {
+          fallback: 'none',
+        },
+      });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          message_file: 'true',
+          file_id: 'file-uuid-123',
+        },
+      });
+
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          type: 'text/markdown',
+          llmDeliveryPath: 'provider',
+        }),
+        true,
+      );
+    });
+
+    test('persists llmDeliveryPath none for explicit execute_code uploads', async () => {
+      const { createFile } = require('~/models');
+      const codeUpload = jest.fn().mockResolvedValue('session-1/file.csv');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === FileSources.execute_code) {
+          return { handleFileUpload: codeUpload };
+        }
+        return { handleFileUpload: storageUpload };
+      });
+      mergeFileConfig.mockReturnValue({
+        ...makeFileConfig(),
+        defaultLLMDeliveryPath: {
+          fallback: 'text',
+        },
+      });
+      const req = makeReq({ mimetype: 'text/csv', ocrConfig: null });
+      req.file.path = __filename;
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          ...makeMetadata(),
+          tool_resource: EToolResources.execute_code,
+        },
+      });
+
+      expect(checkCapability).toHaveBeenCalledWith(
+        expect.anything(),
+        AgentCapabilities.execute_code,
+      );
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          type: 'text/csv',
+          metadata: { fileIdentifier: 'session-1/file.csv' },
+          llmDeliveryPath: 'none',
+        }),
+        true,
+      );
+    });
+
+    test('persists llmDeliveryPath text for explicit context uploads', async () => {
+      const { parseText } = require('@librechat/api');
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: ['text/markdown'] }),
+      );
+      parseText.mockResolvedValueOnce({ text: 'markdown text', bytes: 13 });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          ...makeMetadata(),
+          tool_resource: EToolResources.context,
+        },
+      });
+
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'markdown text',
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          type: 'text/markdown',
+          llmDeliveryPath: 'text',
+        }),
+        true,
+      );
+    });
+
+    test('normalizes explicit ocr uploads to context text delivery', async () => {
+      const { parseText } = require('@librechat/api');
+      const { createFile, addAgentResourceFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: ['text/markdown'] }),
+      );
+      parseText.mockResolvedValueOnce({ text: 'markdown text', bytes: 13 });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          ...makeMetadata(),
+          tool_resource: EToolResources.ocr,
+        },
+      });
+
+      expect(addAgentResourceFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: 'file-uuid-123',
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.context,
+        }),
+      );
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'markdown text',
+          source: FileSources.local,
+          type: 'text/markdown',
+          llmDeliveryPath: 'text',
+        }),
+        true,
+      );
+    });
+  });
+});
+
+describe('processImageFile', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+    mergeFileConfig.mockReturnValue(makeFileConfig());
+  });
+
+  test('persists resolved llmDeliveryPath for image uploads', async () => {
+    const { createFile } = require('~/models');
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.webp',
+      bytes: 256,
+      width: 100,
+      height: 80,
+    });
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      defaultLLMDeliveryPath: {
+        overrides: { 'image/*': 'none' },
+      },
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+
+    await processImageFile({
+      req,
+      res: mockRes,
+      metadata: {
+        file_id: 'image-file-id',
+        temp_file_id: 'temp-image-file-id',
+        endpoint: EModelEndpoint.agents,
+      },
+    });
+
+    expect(createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'image-file-id',
+        temp_file_id: 'temp-image-file-id',
+        filepath: '/images/user-123/image.webp',
+        source: FileSources.local,
+        type: 'image/webp',
+        llmDeliveryPath: 'none',
+      }),
+      true,
+    );
+  });
+
+  test('persists provider llmDeliveryPath for legacy image provider uploads', async () => {
+    const { createFile } = require('~/models');
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.webp',
+      bytes: 256,
+      width: 100,
+      height: 80,
+    });
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      legacyFileUploadUX: true,
+      defaultLLMDeliveryPath: {
+        overrides: { 'image/*': 'none' },
+      },
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+
+    await processImageFile({
+      req,
+      res: mockRes,
+      metadata: {
+        file_id: 'image-file-id',
+        temp_file_id: 'temp-image-file-id',
+        endpoint: EModelEndpoint.agents,
+      },
+    });
+
+    expect(createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'image-file-id',
+        temp_file_id: 'temp-image-file-id',
+        filepath: '/images/user-123/image.webp',
+        source: FileSources.local,
+        type: 'image/webp',
+        llmDeliveryPath: 'provider',
+      }),
+      true,
+    );
   });
 });

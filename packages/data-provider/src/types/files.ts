@@ -1,4 +1,5 @@
 import { EToolResources } from './assistants';
+import type { TDefaultLLMDeliveryPathConfig } from '../file-config';
 
 export enum FileSources {
   local = 'local',
@@ -42,7 +43,8 @@ export type EndpointFileConfig = {
   fileSizeLimit?: number;
   totalSizeLimit?: number;
   supportedMimeTypes?: RegExp[];
-  defaultFileInteraction?: 'text' | 'provider' | 'deferred' | 'legacy';
+  defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
+  legacyFileUploadUX?: boolean;
 };
 
 export type FileConfig = {
@@ -68,7 +70,8 @@ export type FileConfig = {
     supportedMimeTypes?: RegExp[];
   };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
-  defaultFileInteraction?: 'text' | 'provider' | 'deferred' | 'legacy';
+  defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
+  legacyFileUploadUX?: boolean;
 };
 
 export type FileConfigInput = {
@@ -93,7 +96,8 @@ export type FileConfigInput = {
     supportedMimeTypes?: string[];
   };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
-  defaultFileInteraction?: 'text' | 'provider' | 'deferred' | 'legacy';
+  defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
+  legacyFileUploadUX?: boolean;
 };
 
 export type TFile = {
@@ -119,6 +123,7 @@ export type TFile = {
   expiresAt?: string | Date;
   preview?: string;
   metadata?: { fileIdentifier?: string };
+  llmDeliveryPath?: 'provider' | 'text' | 'none';
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };

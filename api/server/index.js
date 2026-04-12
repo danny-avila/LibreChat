@@ -70,6 +70,32 @@ const startServer = async () => {
 
   await runAsSystem(seedDatabase);
   const appConfig = await getAppConfig({ baseOnly: true });
+  if (appConfig?.fileConfig?.defaultLLMDeliveryPath?.overrides) {
+    for (const [mimeType, destination] of Object.entries(
+      appConfig.fileConfig.defaultLLMDeliveryPath.overrides,
+    )) {
+      if (destination === 'none') {
+        logger.warn(
+          `[Config] defaultLLMDeliveryPath: "${mimeType}" is set to "none" — files of this type will only be accessible through tool provisioning`,
+        );
+      }
+    }
+  }
+  if (appConfig?.fileConfig?.endpoints) {
+    for (const [endpoint, config] of Object.entries(appConfig.fileConfig.endpoints)) {
+      if (config?.defaultLLMDeliveryPath?.overrides) {
+        for (const [mimeType, destination] of Object.entries(
+          config.defaultLLMDeliveryPath.overrides,
+        )) {
+          if (destination === 'none') {
+            logger.warn(
+              `[Config] defaultLLMDeliveryPath for "${endpoint}": "${mimeType}" is set to "none" — files of this type will only be accessible through tool provisioning`,
+            );
+          }
+        }
+      }
+    }
+  }
   initializeFileStorage(appConfig);
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);

@@ -74,6 +74,10 @@ const file: Schema<IMongoFile> = new Schema(
     metadata: {
       fileIdentifier: String,
     },
+    llmDeliveryPath: {
+      type: String,
+      enum: ['provider', 'text', 'none'],
+    },
     expiresAt: {
       type: Date,
       expires: 3600, // 1 hour in seconds

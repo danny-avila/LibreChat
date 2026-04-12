@@ -329,20 +329,17 @@ export const primeResources = async ({
           continue;
         }
 
-        // Clear from attachmentFileIds if it was pre-added
         attachmentFileIds.delete(file.file_id);
 
-        // Add to attachments
-        attachments.push(file);
-        attachmentFileIds.add(file.file_id);
-
-        // Categorize for tool resources
         categorizeFileForToolResources({
           file,
           tool_resources,
           requestFileSet,
           processedResourceFiles,
         });
+
+        attachments.push(file);
+        attachmentFileIds.add(file.file_id);
       }
     }
 
