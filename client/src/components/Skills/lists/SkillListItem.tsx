@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useCallback, useEffect } from 'react';
+import { memo, useState, useMemo, useCallback } from 'react';
 import { ScrollText, ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { FixedSizeTree } from 'react-vtree';
@@ -244,16 +244,10 @@ function InlineFileTree({
 function SkillListItem({ skill, isActive }: SkillListItemProps) {
   const navigate = useNavigate();
   const hasFiles = skill.fileCount > 0;
-  const [expanded, setExpanded] = useState(isActive && hasFiles);
+  const [collapsed, setCollapsed] = useState(false);
+  const expanded = hasFiles && (isActive || !collapsed);
 
-  // Auto-expand when navigating directly to this skill
-  useEffect(() => {
-    if (isActive && hasFiles) {
-      setExpanded(true);
-    }
-  }, [isActive, hasFiles]);
-
-  // Prefetch files for active skill or already-expanded skills (eliminates lag)
+  // Prefetch files for active skill or expanded skills (eliminates lag)
   const filesQuery = useListSkillFilesQuery(skill._id, {
     enabled: hasFiles && (isActive || expanded),
   });
@@ -262,7 +256,7 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
   const handleSkillClick = useCallback(() => {
     navigate(`/skills/${skill._id}`);
     if (hasFiles) {
-      setExpanded((prev) => !prev);
+      setCollapsed((prev) => !prev);
     }
   }, [navigate, skill._id, hasFiles]);
 
