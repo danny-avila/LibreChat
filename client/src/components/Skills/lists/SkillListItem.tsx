@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useCallback } from 'react';
+import { memo, useState, useMemo, useCallback, useEffect } from 'react';
 import { ScrollText, ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { FixedSizeTree } from 'react-vtree';
@@ -148,7 +148,7 @@ function FileTreeNode({
           treeData?.onFileClick(data.path);
         }
       }}
-      className="flex w-full items-center gap-1.5 rounded-lg text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+      className="flex w-full select-none items-center gap-1.5 rounded-lg text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
       aria-expanded={isFolder ? isOpen : undefined}
     >
       {isFolder && (
@@ -244,10 +244,18 @@ function InlineFileTree({
 function SkillListItem({ skill, isActive }: SkillListItemProps) {
   const navigate = useNavigate();
   const hasFiles = skill.fileCount > 0;
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(isActive && hasFiles);
 
+  // Auto-expand when navigating directly to this skill
+  useEffect(() => {
+    if (isActive && hasFiles) {
+      setExpanded(true);
+    }
+  }, [isActive, hasFiles]);
+
+  // Prefetch files for active skill or already-expanded skills (eliminates lag)
   const filesQuery = useListSkillFilesQuery(skill._id, {
-    enabled: expanded && hasFiles,
+    enabled: hasFiles && (isActive || expanded),
   });
   const files = useMemo(() => filesQuery.data?.files ?? [], [filesQuery.data]);
 
@@ -279,7 +287,7 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
           }
         }}
         className={cn(
-          'flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
+          'flex w-full cursor-pointer select-none items-center gap-3 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
           isActive
             ? 'bg-surface-active text-text-primary'
             : 'text-text-primary hover:bg-surface-hover',

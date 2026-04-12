@@ -37,16 +37,32 @@ function parseFrontmatter(raw: string): {
   const body = after.slice(closingIdx + 4).trim();
 
   const fields: Array<{ key: string; value: string }> = [];
-  for (const line of block.split('\n')) {
+  const lines = block.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const colon = line.indexOf(':');
     if (colon === -1) {
       continue;
     }
     const key = line.slice(0, colon).trim();
-    const value = line.slice(colon + 1).trim();
+    let value = line.slice(colon + 1).trim();
     // Skip name/description — already shown in the header
     if (key.toLowerCase() === 'name' || key.toLowerCase() === 'description') {
       continue;
+    }
+    // Collect multi-line YAML list items (lines starting with ` -` or `- `)
+    if (!value) {
+      const items: string[] = [];
+      while (i + 1 < lines.length) {
+        const next = lines[i + 1];
+        const trimmed = next.trim();
+        if (!trimmed.startsWith('-')) {
+          break;
+        }
+        items.push(trimmed.slice(1).trim());
+        i++;
+      }
+      value = items.join(',');
     }
     if (key && value) {
       fields.push({ key, value });
