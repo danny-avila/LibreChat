@@ -157,8 +157,8 @@ export default defineConfig(({ command }) => ({
             if (normalizedId.includes('@codesandbox/sandpack')) {
               return 'sandpack';
             }
-            if (normalizedId.includes('react-arborist')) {
-              return 'react-arborist';
+            if (normalizedId.includes('react-vtree')) {
+              return 'react-vtree';
             }
             if (normalizedId.includes('react-virtualized')) {
               return 'virtualization';
