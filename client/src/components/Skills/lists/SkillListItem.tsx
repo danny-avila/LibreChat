@@ -1,7 +1,9 @@
 import { memo, useState, useMemo, useCallback } from 'react';
-import { ScrollText, ChevronDown, FileText, Folder } from 'lucide-react';
+import { ScrollText, ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { TSkill } from 'librechat-data-provider';
+import { FixedSizeTree } from 'react-vtree';
+import type { FixedSizeNodeData, TreeWalkerValue, TreeWalker } from 'react-vtree';
+import type { TSkill, TSkillFile } from 'librechat-data-provider';
 import { useListSkillFilesQuery } from '~/data-provider';
 import { cn } from '~/utils';
 
@@ -10,17 +12,240 @@ interface SkillListItemProps {
   isActive: boolean;
 }
 
-/**
- * Skill list item with inline expandable file tree for multi-file skills.
- * Matches Claude.ai's pattern: icon badge + name + chevron toggle.
- * Clicking the chevron expands SKILL.md + additional files inline.
- */
+/* -------------------------------------------------------------------------- */
+/* Tree data model                                                            */
+/* -------------------------------------------------------------------------- */
+
+interface TreeEntry {
+  name: string;
+  type: 'file' | 'folder';
+  path: string;
+  children?: TreeEntry[];
+}
+
+interface FileNodeData extends FixedSizeNodeData {
+  name: string;
+  nodeType: 'file' | 'folder';
+  path: string;
+  depth: number;
+  isLeaf: boolean;
+}
+
+interface NodeMeta {
+  entry: TreeEntry;
+  depth: number;
+}
+
+interface TreeItemCallbacks {
+  onFileClick: (path: string) => void;
+  onToggle: (id: string, isOpen: boolean) => void;
+}
+
+const ITEM_SIZE = 28;
+const MAX_HEIGHT = 350;
+
+/** Build a nested tree from flat TSkillFile paths. Always includes SKILL.md. */
+function buildFileTree(files: TSkillFile[]): TreeEntry[] {
+  const root: TreeEntry[] = [];
+  const folderMap = new Map<string, TreeEntry>();
+
+  root.push({ name: 'SKILL.md', type: 'file', path: 'SKILL.md' });
+
+  const sorted = [...files].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+  for (const file of sorted) {
+    const segments = file.relativePath.split('/').filter(Boolean);
+    if (segments.length === 0) {
+      continue;
+    }
+    if (segments.length === 1) {
+      root.push({ name: segments[0], type: 'file', path: file.relativePath });
+    } else {
+      let parentList = root;
+      let parentPath = '';
+      for (let i = 0; i < segments.length - 1; i++) {
+        const folderName = segments[i];
+        const folderPath = parentPath ? `${parentPath}/${folderName}` : folderName;
+        let folder = folderMap.get(folderPath);
+        if (!folder) {
+          folder = { name: folderName, type: 'folder', path: folderPath, children: [] };
+          folderMap.set(folderPath, folder);
+          parentList.push(folder);
+        }
+        parentList = folder.children!;
+        parentPath = folderPath;
+      }
+      parentList.push({
+        name: segments[segments.length - 1],
+        type: 'file',
+        path: file.relativePath,
+      });
+    }
+  }
+
+  return root;
+}
+
+/** Count visible nodes for dynamic height calculation. */
+function countVisible(entries: TreeEntry[], openIds: Set<string>): number {
+  let n = 0;
+  for (const entry of entries) {
+    n++;
+    if (entry.type === 'folder' && openIds.has(entry.path) && entry.children) {
+      n += countVisible(entry.children, openIds);
+    }
+  }
+  return n;
+}
+
+function getNodeData(entry: TreeEntry, depth: number): TreeWalkerValue<FileNodeData, NodeMeta> {
+  return {
+    data: {
+      id: entry.path,
+      isOpenByDefault: false,
+      name: entry.name,
+      nodeType: entry.type,
+      path: entry.path,
+      depth,
+      isLeaf: entry.type === 'file',
+    },
+    entry,
+    depth,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Node renderer                                                              */
+/* -------------------------------------------------------------------------- */
+
+function FileTreeNode({
+  data,
+  isOpen,
+  setOpen,
+  style,
+  treeData,
+}: {
+  style: React.CSSProperties;
+  data: FileNodeData;
+  isOpen: boolean;
+  setOpen: (state: boolean) => Promise<void>;
+  treeData?: TreeItemCallbacks;
+}) {
+  const isFolder = data.nodeType === 'folder';
+  const indent = data.depth * 16 + (isFolder ? 8 : 24);
+
+  return (
+    <button
+      type="button"
+      style={{ ...style, paddingLeft: `${indent}px` }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isFolder) {
+          const next = !isOpen;
+          setOpen(next);
+          treeData?.onToggle(data.id, next);
+        } else {
+          treeData?.onFileClick(data.path);
+        }
+      }}
+      className="flex w-full items-center gap-1.5 rounded-lg text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+      aria-expanded={isFolder ? isOpen : undefined}
+    >
+      {isFolder && (
+        <>
+          <ChevronRight
+            className={cn(
+              'size-3 shrink-0 transition-transform duration-150',
+              isOpen && 'rotate-90',
+            )}
+            aria-hidden="true"
+          />
+          <Folder className="size-3.5 shrink-0" aria-hidden="true" />
+        </>
+      )}
+      <span className="min-w-0 truncate">{data.name}</span>
+    </button>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Inline virtualized file tree                                               */
+/* -------------------------------------------------------------------------- */
+
+function InlineFileTree({
+  files,
+  onFileClick,
+}: {
+  files: TSkillFile[];
+  onFileClick: (path: string) => void;
+}) {
+  const treeEntries = useMemo(() => buildFileTree(files), [files]);
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+
+  const visibleCount = useMemo(() => countVisible(treeEntries, openIds), [treeEntries, openIds]);
+
+  const height = Math.min(visibleCount * ITEM_SIZE, MAX_HEIGHT);
+
+  const handleToggle = useCallback((id: string, isOpen: boolean) => {
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (isOpen) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const callbacks = useMemo<TreeItemCallbacks>(
+    () => ({ onFileClick, onToggle: handleToggle }),
+    [onFileClick, handleToggle],
+  );
+
+  type WalkerReturn = ReturnType<TreeWalker<FileNodeData, NodeMeta>>;
+
+  const treeWalker = useMemo<TreeWalker<FileNodeData, NodeMeta>>(() => {
+    const walker: TreeWalker<FileNodeData, NodeMeta> = function* (): WalkerReturn {
+      for (const entry of treeEntries) {
+        yield getNodeData(entry, 0);
+      }
+      while (true) {
+        const parent: TreeWalkerValue<FileNodeData, NodeMeta> = yield;
+        for (const child of parent.entry.children ?? []) {
+          yield getNodeData(child, parent.depth + 1);
+        }
+      }
+    };
+    return walker;
+  }, [treeEntries]);
+
+  if (treeEntries.length === 0) {
+    return null;
+  }
+
+  return (
+    <FixedSizeTree<FileNodeData>
+      treeWalker={treeWalker}
+      itemSize={ITEM_SIZE}
+      height={height}
+      width="100%"
+      itemData={callbacks}
+    >
+      {FileTreeNode}
+    </FixedSizeTree>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Main component                                                             */
+/* -------------------------------------------------------------------------- */
+
 function SkillListItem({ skill, isActive }: SkillListItemProps) {
   const navigate = useNavigate();
   const hasFiles = skill.fileCount > 0;
   const [expanded, setExpanded] = useState(false);
 
-  // Only fetch files when expanded
   const filesQuery = useListSkillFilesQuery(skill._id, {
     enabled: expanded && hasFiles,
   });
@@ -36,36 +261,11 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
   }, []);
 
   const handleFileClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
+    (_path: string) => {
       navigate(`/skills/${skill._id}`);
     },
     [navigate, skill._id],
   );
-
-  // Group files into folders + root files for display
-  const fileTree = useMemo(() => {
-    const items: Array<{ name: string; isFolder: boolean; path: string }> = [];
-    const seenFolders = new Set<string>();
-
-    // SKILL.md is always first
-    items.push({ name: 'SKILL.md', isFolder: false, path: 'SKILL.md' });
-
-    const sorted = [...files].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-    for (const file of sorted) {
-      const segments = file.relativePath.split('/');
-      if (segments.length > 1) {
-        const folder = segments[0];
-        if (!seenFolders.has(folder)) {
-          seenFolders.add(folder);
-          items.push({ name: folder, isFolder: true, path: folder });
-        }
-      } else {
-        items.push({ name: file.relativePath, isFolder: false, path: file.relativePath });
-      }
-    }
-    return items;
-  }, [files]);
 
   return (
     <div className="flex flex-col gap-px">
@@ -88,70 +288,45 @@ function SkillListItem({ skill, isActive }: SkillListItemProps) {
         )}
         aria-current={isActive ? 'true' : undefined}
       >
-        {/* Icon badge */}
         <span className="flex size-6 shrink-0 items-center justify-center">
           <span className="flex size-6 items-center justify-center rounded-md border border-border-light bg-surface-primary shadow-sm">
             <ScrollText className="size-3.5 text-text-secondary" aria-hidden="true" />
           </span>
         </span>
 
-        {/* Name */}
         <span className="min-w-0 flex-1">
           <span className={cn('truncate', isActive && 'font-semibold')}>{skill.name}</span>
         </span>
 
-        {/* Chevron toggle for multi-file skills */}
         {hasFiles && (
           <button
             type="button"
             onClick={handleToggle}
-            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:text-text-primary"
+            className="-mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-text-secondary transition-transform hover:text-text-primary"
             aria-expanded={expanded}
             aria-label="Toggle file list"
           >
             <ChevronDown
               className={cn(
                 'size-3.5 transition-transform duration-200',
-                expanded ? 'rotate-0' : '-rotate-90',
+                !expanded && '-rotate-90',
               )}
             />
           </button>
         )}
       </div>
 
-      {/* Inline file tree — expands below the skill name */}
-      {expanded && hasFiles && (
-        <div
-          className={cn(
-            'ml-10 overflow-hidden transition-all duration-200 ease-in-out',
-            expanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0',
-          )}
-        >
-          <div className="flex flex-col gap-0.5">
-            {fileTree.map((item) => (
-              <button
-                key={item.path}
-                type="button"
-                onClick={handleFileClick}
-                className="w-full rounded-lg py-1 text-left text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
-                style={{ paddingLeft: item.isFolder ? '8px' : '12px' }}
-              >
-                <span className="flex items-center gap-1.5">
-                  {item.isFolder ? (
-                    <Folder className="size-3.5 shrink-0" aria-hidden="true" />
-                  ) : (
-                    <FileText className="size-3.5 shrink-0 opacity-0" aria-hidden="true" />
-                  )}
-                  <span className="truncate">{item.name}</span>
-                  {item.isFolder && (
-                    <ChevronDown className="ml-auto size-3.5 shrink-0 -rotate-90 text-text-secondary" />
-                  )}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Inline file tree */}
+      <div
+        className={cn(
+          'ml-10 overflow-hidden transition-all duration-200 ease-in-out',
+          expanded && hasFiles ? 'opacity-100' : 'max-h-0 opacity-0',
+        )}
+        style={expanded && hasFiles ? { maxHeight: `${MAX_HEIGHT}px` } : undefined}
+        inert={!expanded ? '' : undefined}
+      >
+        <InlineFileTree files={files} onFileClick={handleFileClick} />
+      </div>
     </div>
   );
 }
