@@ -91,7 +91,10 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
   const permissions = useSkillPermissions(skill);
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
 
-  const filesQuery = useListSkillFilesQuery(skill._id, { enabled: skill.fileCount > 0 });
+  // Always fetch files — fileCount in the cached skill object may be stale
+  // (e.g. import creates skill with fileCount=0, then adds files).
+  // An empty response is cheap; a missed file tree is not.
+  const filesQuery = useListSkillFilesQuery(skill._id);
   const files = useMemo(() => filesQuery.data?.files ?? [], [filesQuery.data]);
   const hasFiles = files.length > 0;
 
