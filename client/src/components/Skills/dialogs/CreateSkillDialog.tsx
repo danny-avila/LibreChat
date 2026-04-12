@@ -1,7 +1,6 @@
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import {
-  Input,
   Button,
   OGDialog,
   OGDialogContent,
@@ -102,15 +101,15 @@ export default function CreateSkillDialog({
 
           {/* Skill name */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="create-skill-name" className="text-sm text-text-secondary">
+            <label htmlFor="create-skill-name" className="text-sm font-medium text-text-secondary">
               {localize('com_ui_name')}
             </label>
-            <Input
+            <input
               id="create-skill-name"
               placeholder={localize('com_ui_skill_name_placeholder')}
               aria-invalid={errors.name ? 'true' : 'false'}
-              className="border-border-medium"
               autoComplete="off"
+              className="flex h-10 w-full rounded-xl border border-border-medium bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary disabled:cursor-not-allowed disabled:opacity-50"
               {...register('name', {
                 required: localize('com_ui_skill_name_required'),
                 pattern: {
@@ -130,7 +129,10 @@ export default function CreateSkillDialog({
 
           {/* Description */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="create-skill-description" className="text-sm text-text-secondary">
+            <label
+              htmlFor="create-skill-description"
+              className="text-sm font-medium text-text-secondary"
+            >
               {localize('com_ui_description')}
             </label>
             <TextareaAutosize
@@ -139,7 +141,7 @@ export default function CreateSkillDialog({
               maxRows={4}
               placeholder={localize('com_ui_skill_description_placeholder')}
               aria-label={localize('com_ui_description')}
-              className="w-full resize-none rounded-lg border border-border-medium bg-transparent p-3 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+              className="w-full resize-none rounded-xl border border-border-medium bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
               {...register('description', {
                 required: localize('com_ui_skill_description_required'),
                 maxLength: {
@@ -154,7 +156,7 @@ export default function CreateSkillDialog({
 
           {/* Instructions (body) */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="create-skill-body" className="text-sm text-text-secondary">
+            <label htmlFor="create-skill-body" className="text-sm font-medium text-text-secondary">
               {localize('com_ui_skill_instructions')}
             </label>
             <TextareaAutosize
@@ -163,7 +165,7 @@ export default function CreateSkillDialog({
               maxRows={12}
               placeholder={localize('com_ui_skill_instructions_placeholder')}
               aria-label={localize('com_ui_skill_instructions')}
-              className="w-full resize-none rounded-lg border border-border-medium bg-transparent p-3 font-mono text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+              className="w-full resize-none rounded-xl border border-border-medium bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
               {...register('body')}
             />
           </div>
