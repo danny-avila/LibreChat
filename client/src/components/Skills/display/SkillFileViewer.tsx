@@ -149,9 +149,9 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
 
             {/* Markdown with frontmatter — structured display like SkillDetail */}
             {!data.isBinary && data.content != null && isMarkdown && parsed && (
-              <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border-medium bg-transparent p-5">
-                {/* Toggle row */}
-                <div className="flex items-center justify-end pb-2">
+              <div className="relative flex flex-1 flex-col overflow-hidden rounded-xl border border-border-medium bg-transparent p-5">
+                {/* Toggle — top-right corner, overlaid */}
+                <div className="absolute right-3 top-3 z-10">
                   <div
                     role="group"
                     className="inline-flex h-8 rounded-lg bg-surface-tertiary p-0.5 text-sm font-medium"

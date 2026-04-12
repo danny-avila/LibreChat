@@ -167,10 +167,10 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
       </div>
 
       {/* Body card with source/rendered toggle */}
-      <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border-medium bg-transparent p-5">
+      <div className="relative flex flex-1 flex-col overflow-hidden rounded-xl border border-border-medium bg-transparent p-5">
         <div className="flex min-h-0 flex-1 flex-col">
-          {/* Toggle row */}
-          <div className="flex items-center justify-end pb-2">
+          {/* Toggle — top-right corner, overlaid */}
+          <div className="absolute right-3 top-3 z-10">
             <div
               role="group"
               className="inline-flex h-8 rounded-lg bg-surface-tertiary p-0.5 text-sm font-medium"
