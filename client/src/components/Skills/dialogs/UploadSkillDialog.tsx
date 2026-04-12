@@ -1,7 +1,8 @@
 import { useRef, useCallback, useState } from 'react';
 import { Upload } from 'lucide-react';
+import JSZip from 'jszip';
 import { useNavigate } from 'react-router-dom';
-import { OGDialog, OGDialogContent, useToastContext } from '@librechat/client';
+import { OGDialog, OGDialogContent, Spinner, useToastContext } from '@librechat/client';
 import { useCreateSkillMutation } from '~/data-provider';
 import { parseSkillMd } from '../utils/parseSkillMd';
 import { useLocalize } from '~/hooks';
@@ -11,11 +12,15 @@ interface UploadSkillDialogProps {
   setIsOpen: (open: boolean) => void;
 }
 
+/** Hard limits to guard against zip bombs and abuse. */
+const MAX_ZIP_SIZE = 50 * 1024 * 1024; // 50 MB compressed
+const MAX_ENTRIES = 500;
+
 /**
- * Upload skill dialog matching Claude.ai's "Upload skill" modal.
- * Accepts .md, .zip, or .skill files. Phase 1 only processes .md
- * files (extracts frontmatter → creates skill). Zip/multi-file
- * support is phase 2.
+ * Upload skill dialog. Accepts:
+ * - `.md` — reads as text, parses YAML frontmatter, creates skill
+ * - `.zip` / `.skill` — extracts with JSZip, finds SKILL.md, creates
+ *   skill from its content. Validates zip safety limits.
  */
 export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDialogProps) {
   const localize = useLocalize();
@@ -23,14 +28,17 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
   const { showToast } = useToastContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const createSkill = useCreateSkillMutation({
     onSuccess: (skill) => {
       showToast({ status: 'success', message: localize('com_ui_skill_created') });
       setIsOpen(false);
+      setIsProcessing(false);
       navigate(`/skills/${skill._id}`);
     },
     onError: (error: unknown) => {
+      setIsProcessing(false);
       const message =
         (error as { response?: { data?: { message?: string } } })?.response?.data?.message ??
         localize('com_ui_skill_create_error');
@@ -38,37 +46,146 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
     },
   });
 
-  const handleFile = useCallback(
-    (file: File) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target?.result;
-        if (typeof text !== 'string') {
-          return;
-        }
-        const parsed = parseSkillMd(text);
-        if (!parsed.name) {
-          showToast({
-            status: 'error',
-            message: localize('com_ui_create_skill_upload_error'),
-          });
-          return;
-        }
-        createSkill.mutate({
-          name: parsed.name,
-          description: parsed.description || parsed.name,
-          body: text,
-        });
-      };
-      reader.onerror = () => {
-        showToast({
-          status: 'error',
-          message: localize('com_ui_create_skill_upload_error'),
-        });
-      };
-      reader.readAsText(file);
+  const createFromMarkdown = useCallback(
+    (text: string, filename: string) => {
+      const parsed = parseSkillMd(text);
+      const name =
+        parsed.name ||
+        filename
+          .replace(/\.md$/i, '')
+          .replace(/[^a-z0-9-]/gi, '-')
+          .toLowerCase();
+      if (!name) {
+        showToast({ status: 'error', message: localize('com_ui_skill_name_required') });
+        setIsProcessing(false);
+        return;
+      }
+      createSkill.mutate({
+        name,
+        description: parsed.description || name,
+        body: text,
+      });
     },
     [createSkill, showToast, localize],
+  );
+
+  const processZip = useCallback(
+    async (arrayBuffer: ArrayBuffer, filename: string) => {
+      try {
+        if (arrayBuffer.byteLength > MAX_ZIP_SIZE) {
+          showToast({
+            status: 'error',
+            message: `File too large (max ${MAX_ZIP_SIZE / 1024 / 1024}MB)`,
+          });
+          setIsProcessing(false);
+          return;
+        }
+
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        const entries = Object.keys(zip.files);
+
+        if (entries.length > MAX_ENTRIES) {
+          showToast({ status: 'error', message: `Too many files in archive (max ${MAX_ENTRIES})` });
+          setIsProcessing(false);
+          return;
+        }
+
+        // Find SKILL.md — could be at root or inside a single top-level folder
+        let skillMdPath: string | null = null;
+        for (const path of entries) {
+          const normalized = path.replace(/\\/g, '/');
+          // Reject path traversal
+          if (normalized.includes('..') || normalized.startsWith('/')) {
+            continue;
+          }
+          const segments = normalized.split('/').filter(Boolean);
+          const basename = segments[segments.length - 1];
+          if (basename?.toUpperCase() === 'SKILL.MD' && segments.length <= 2) {
+            skillMdPath = path;
+            break;
+          }
+        }
+
+        if (!skillMdPath) {
+          showToast({
+            status: 'error',
+            message: localize('com_ui_skill_upload_req_zip'),
+          });
+          setIsProcessing(false);
+          return;
+        }
+
+        const skillMdContent = await zip.file(skillMdPath)?.async('string');
+        if (!skillMdContent) {
+          showToast({ status: 'error', message: localize('com_ui_create_skill_upload_error') });
+          setIsProcessing(false);
+          return;
+        }
+
+        const inferredName = filename
+          .replace(/\.(zip|skill)$/i, '')
+          .replace(/[^a-z0-9-]/gi, '-')
+          .toLowerCase();
+        createFromMarkdown(skillMdContent, inferredName);
+      } catch {
+        showToast({ status: 'error', message: localize('com_ui_create_skill_upload_error') });
+        setIsProcessing(false);
+      }
+    },
+    [createFromMarkdown, showToast, localize],
+  );
+
+  const handleFile = useCallback(
+    (file: File) => {
+      if (isProcessing || createSkill.isLoading) {
+        return;
+      }
+      setIsProcessing(true);
+
+      const ext = file.name.split('.').pop()?.toLowerCase();
+
+      if (ext === 'md') {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const text = e.target?.result;
+          if (typeof text !== 'string') {
+            showToast({ status: 'error', message: localize('com_ui_create_skill_upload_error') });
+            setIsProcessing(false);
+            return;
+          }
+          createFromMarkdown(text, file.name);
+        };
+        reader.onerror = () => {
+          showToast({ status: 'error', message: localize('com_ui_create_skill_upload_error') });
+          setIsProcessing(false);
+        };
+        reader.readAsText(file);
+        return;
+      }
+
+      if (ext === 'zip' || ext === 'skill') {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const buffer = e.target?.result;
+          if (!(buffer instanceof ArrayBuffer)) {
+            showToast({ status: 'error', message: localize('com_ui_create_skill_upload_error') });
+            setIsProcessing(false);
+            return;
+          }
+          processZip(buffer, file.name);
+        };
+        reader.onerror = () => {
+          showToast({ status: 'error', message: localize('com_ui_create_skill_upload_error') });
+          setIsProcessing(false);
+        };
+        reader.readAsArrayBuffer(file);
+        return;
+      }
+
+      showToast({ status: 'error', message: localize('com_ui_create_skill_upload_error') });
+      setIsProcessing(false);
+    },
+    [isProcessing, createSkill.isLoading, createFromMarkdown, processZip, showToast, localize],
   );
 
   const handleFileInput = useCallback(
@@ -113,14 +230,18 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
               }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
+              disabled={isProcessing}
               className={`flex h-[120px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-text-secondary transition-colors ${
                 isDragging
                   ? 'border-border-heavy bg-surface-hover'
                   : 'border-border-medium hover:bg-surface-hover'
-              }`}
-              disabled={createSkill.isLoading}
+              } ${isProcessing ? 'cursor-wait opacity-50' : ''}`}
             >
-              <Upload className="size-8 text-text-secondary" aria-hidden="true" />
+              {isProcessing ? (
+                <Spinner className="size-8" />
+              ) : (
+                <Upload className="size-8 text-text-secondary" aria-hidden="true" />
+              )}
               {localize('com_ui_skill_upload_drag')}
             </button>
 
@@ -141,7 +262,6 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
             type="file"
             accept=".zip,.skill,.md"
             className="hidden"
-            multiple
             onChange={handleFileInput}
           />
         </div>
