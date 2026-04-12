@@ -35,11 +35,11 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
 
   return (
     <article
-      className="flex max-h-[calc(100vh-3rem)] min-w-0 flex-col gap-3 overflow-y-auto p-1 sm:gap-4 sm:p-6"
+      className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto px-6 pb-6"
       aria-label={skill.name}
     >
       {/* Header row — icon + name + actions */}
-      <div className="flex flex-col gap-3 py-2 sm:flex-row sm:items-center sm:gap-4">
+      <div className="flex flex-col gap-3 pb-3 pt-4 sm:flex-row sm:items-center sm:gap-4">
         {/* Icon + text */}
         <div className="min-w-0 flex-1 overflow-hidden">
           <div className="flex min-w-0 items-center gap-3">
