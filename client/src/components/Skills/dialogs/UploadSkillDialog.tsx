@@ -1,7 +1,8 @@
 import { useRef, useCallback, useState } from 'react';
 import { Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { dataService } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { dataService, QueryKeys } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, Spinner, useToastContext } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
@@ -18,6 +19,7 @@ interface UploadSkillDialogProps {
 export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDialogProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -36,6 +38,8 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
 
         const skill = await dataService.importSkill(formData);
 
+        // Invalidate the skills list so the sidebar picks up the new skill
+        queryClient.invalidateQueries([QueryKeys.skills]);
         showToast({ status: 'success', message: localize('com_ui_skill_created') });
         setIsOpen(false);
         setIsUploading(false);
@@ -48,7 +52,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
         showToast({ status: 'error', message });
       }
     },
-    [isUploading, showToast, localize, setIsOpen, navigate],
+    [isUploading, showToast, localize, setIsOpen, navigate, queryClient],
   );
 
   const handleFileInput = useCallback(

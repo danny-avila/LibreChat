@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Eye, Code, User, Calendar, EarthIcon, ScrollText } from 'lucide-react';
+import { Eye, Code, User, Calendar, EarthIcon, ScrollText, FileText, Folder } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
-import type { TSkill } from 'librechat-data-provider';
+import type { TSkill, TSkillFile } from 'librechat-data-provider';
 import { useLocalize, useAuthContext, useSkillPermissions } from '~/hooks';
+import { useListSkillFilesQuery } from '~/data-provider';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
 import DeleteSkill from '../dialogs/DeleteSkill';
 import { ShareSkill } from '../buttons';
@@ -16,15 +17,83 @@ interface SkillDetailProps {
 }
 
 /**
- * Reader-first skill detail view. Header pattern matches the prompts
- * preview dialog: icon + name row, metadata below with icons, then
- * the content card.
+ * Strip YAML frontmatter (`---\n...\n---`) from a SKILL.md body and return
+ * the frontmatter fields as a key-value map + the remaining body.
  */
+function parseFrontmatter(raw: string): {
+  fields: Array<{ key: string; value: string }>;
+  body: string;
+} {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('---')) {
+    return { fields: [], body: raw };
+  }
+  const after = trimmed.slice(3);
+  const closingIdx = after.indexOf('\n---');
+  if (closingIdx === -1) {
+    return { fields: [], body: raw };
+  }
+
+  const block = after.slice(0, closingIdx);
+  const body = after.slice(closingIdx + 4).trim();
+
+  const fields: Array<{ key: string; value: string }> = [];
+  for (const line of block.split('\n')) {
+    const colon = line.indexOf(':');
+    if (colon === -1) {
+      continue;
+    }
+    const key = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim();
+    // Skip name/description — already shown in the header
+    if (key.toLowerCase() === 'name' || key.toLowerCase() === 'description') {
+      continue;
+    }
+    if (key && value) {
+      fields.push({ key, value });
+    }
+  }
+
+  return { fields, body };
+}
+
+/** Group flat TSkillFile list into a simple folder→files structure for display. */
+function groupFiles(files: TSkillFile[]): Array<{ name: string; isFolder: boolean; path: string }> {
+  const items: Array<{ name: string; isFolder: boolean; path: string }> = [];
+  const folders = new Set<string>();
+
+  // Always show SKILL.md first
+  items.push({ name: 'SKILL.md', isFolder: false, path: 'SKILL.md' });
+
+  const sorted = [...files].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+  for (const file of sorted) {
+    const segments = file.relativePath.split('/');
+    // Add top-level folder entries
+    if (segments.length > 1) {
+      const folder = segments[0];
+      if (!folders.has(folder)) {
+        folders.add(folder);
+        items.push({ name: folder, isFolder: true, path: folder });
+      }
+    } else {
+      // Root-level file (not SKILL.md — that's already added)
+      items.push({ name: file.relativePath, isFolder: false, path: file.relativePath });
+    }
+  }
+
+  return items;
+}
+
 export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const permissions = useSkillPermissions(skill);
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
+
+  const filesQuery = useListSkillFilesQuery(skill._id, { enabled: skill.fileCount > 0 });
+  const files = useMemo(() => filesQuery.data?.files ?? [], [filesQuery.data]);
+  const hasFiles = files.length > 0;
 
   const isPublic = skill.isPublic === true;
   const isShared = skill.author !== user?.id && Boolean(skill.authorName);
@@ -33,6 +102,14 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
     ? format(new Date(skill.updatedAt), 'MMM d, yyyy')
     : undefined;
 
+  // Parse frontmatter out of body for structured display
+  const { fields: frontmatterFields, body: cleanBody } = useMemo(
+    () => parseFrontmatter(skill.body ?? ''),
+    [skill.body],
+  );
+
+  const fileList = useMemo(() => (hasFiles ? groupFiles(files) : []), [hasFiles, files]);
+
   return (
     <article
       className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto px-6 pb-6"
@@ -40,10 +117,8 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
     >
       {/* Header row — icon + name + actions */}
       <div className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:gap-4">
-        {/* Icon + text */}
         <div className="min-w-0 flex-1 overflow-hidden">
           <div className="flex min-w-0 items-center gap-3">
-            {/* Skill icon — matches prompts category icon sizing */}
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-secondary">
               <ScrollText className="size-6 text-text-secondary" aria-hidden="true" />
             </div>
@@ -65,7 +140,6 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
                   />
                 )}
               </div>
-              {/* Metadata: author + date — inline with icons like prompts */}
               <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
                 <span className="flex items-center gap-1">
                   <User className="size-3" aria-hidden="true" />
@@ -102,11 +176,7 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
 
       {/* Description */}
       <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-0.5">
-          <h3 className="text-xs leading-4 text-text-secondary">
-            {localize('com_ui_description')}
-          </h3>
-        </div>
+        <h3 className="text-xs leading-4 text-text-secondary">{localize('com_ui_description')}</h3>
         <p className="whitespace-pre-wrap text-sm text-text-secondary">{skill.description}</p>
       </div>
 
@@ -155,10 +225,22 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
             </div>
           </div>
 
+          {/* Frontmatter fields as structured metadata (like Claude.ai's Version/Triggers) */}
+          {viewMode === 'rendered' && frontmatterFields.length > 0 && (
+            <div className="mb-4 grid grid-cols-[max-content_1fr] items-baseline gap-x-8 gap-y-2">
+              {frontmatterFields.map(({ key, value }) => (
+                <React.Fragment key={key}>
+                  <span className="text-xs text-text-secondary">{key}</span>
+                  <span className="text-sm text-text-primary">{value}</span>
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+
           {/* Content */}
           <div className="min-h-0 flex-1 overflow-auto">
             {viewMode === 'rendered' ? (
-              <SkillMarkdownRenderer content={skill.body ?? ''} />
+              <SkillMarkdownRenderer content={cleanBody} />
             ) : (
               <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-text-primary">
                 {skill.body ?? ''}
@@ -167,6 +249,33 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
           </div>
         </div>
       </div>
+
+      {/* File tree — shown when skill has additional files beyond SKILL.md */}
+      {hasFiles && (
+        <div className="mt-2 flex flex-col gap-1">
+          <h3 className="text-xs text-text-secondary">{localize('com_ui_skill_files')}</h3>
+          <div className="flex flex-col gap-0.5 rounded-xl border border-border-medium p-3">
+            {fileList.map((item) => (
+              <div
+                key={item.path}
+                className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-text-secondary"
+              >
+                {item.isFolder ? (
+                  <Folder className="size-3.5 shrink-0" aria-hidden="true" />
+                ) : (
+                  <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+                )}
+                <span className={cn('truncate', item.name === 'SKILL.md' && 'font-medium')}>
+                  {item.name}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </article>
   );
 }
+
+// Need React for JSX Fragment
+import React from 'react';
