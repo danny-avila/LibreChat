@@ -46,7 +46,7 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
       )}
     >
       {/* Header — title+icons or inline search input */}
-      <div className="flex min-h-[3.5rem] items-center justify-between px-4 py-3">
+      <div className="flex items-center justify-between px-4 pb-3 pt-2">
         {searchOpen ? (
           <>
             <div className="relative flex-1">
