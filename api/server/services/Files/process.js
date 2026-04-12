@@ -17,6 +17,9 @@ const {
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  resolveDefaultLLMDeliveryPath,
+  documentParserMimeTypes,
+  isPermissiveMimeConfig,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -448,6 +451,20 @@ const processFileURL = async ({
   }
 };
 
+const resolveDefaultUploadLLMDeliveryPath = ({ file, endpointConfig, fileConfig }) => {
+  const isLegacyFileUploadUX =
+    endpointConfig?.legacyFileUploadUX === true || fileConfig?.legacyFileUploadUX === true;
+  if (isLegacyFileUploadUX) {
+    return 'provider';
+  }
+
+  return resolveDefaultLLMDeliveryPath(
+    file.mimetype,
+    endpointConfig?.defaultLLMDeliveryPath,
+    fileConfig?.defaultLLMDeliveryPath,
+  );
+};
+
 /**
  * Applies the current strategy for image uploads.
  * Saves file metadata to the database with an expiry TTL.
@@ -466,6 +483,9 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const source = getFileStrategy(appConfig, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
+  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
+  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
+  const llmDeliveryPath = resolveDefaultUploadLLMDeliveryPath({ file, endpointConfig, fileConfig });
 
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
@@ -491,6 +511,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
       width,
       height,
       tenantId: req.user.tenantId,
+      llmDeliveryPath,
     },
     true,
   );
@@ -664,20 +685,19 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
-/**
- * Resolves the file interaction mode from the merged file config.
- * Checks endpoint-level config first, then global config.
- * Returns 'deferred' as the default when nothing is configured.
- *
- * @param {object} req - The Express request object
- * @param {object} appConfig - The application config
- * @returns {string} - The resolved interaction mode: 'text' | 'provider' | 'deferred' | 'legacy'
- */
-const resolveInteractionMode = (req, appConfig) => {
-  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  const endpoint = req.body?.endpoint;
-  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
-  return endpointConfig?.defaultFileInteraction ?? fileConfig?.defaultFileInteraction ?? 'deferred';
+const resolveUploadLLMDeliveryPath = ({ tool_resource, file, endpointConfig, fileConfig }) => {
+  if (tool_resource === EToolResources.context || tool_resource === EToolResources.ocr) {
+    return 'text';
+  }
+
+  if (
+    tool_resource === EToolResources.file_search ||
+    tool_resource === EToolResources.execute_code
+  ) {
+    return 'none';
+  }
+
+  return resolveDefaultUploadLLMDeliveryPath({ file, endpointConfig, fileConfig });
 };
 
 /**
@@ -693,22 +713,35 @@ const resolveInteractionMode = (req, appConfig) => {
  * @returns {Promise<void>}
  */
 const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
+  // TODO: check and potentially fix — deferred/provider files may be orphaned if effectiveToolResource is undefined
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
 
   let messageAttachment = !!metadata.message_file;
 
-  let effectiveToolResource = tool_resource;
+  let effectiveToolResource =
+    tool_resource === EToolResources.ocr ? EToolResources.context : tool_resource;
+
+  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
+  const endpoint = req.body?.endpoint;
+  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
+
   if (agent_id && !tool_resource && !messageAttachment) {
-    const interactionMode = resolveInteractionMode(req, appConfig);
-    if (interactionMode === 'legacy') {
+    if (endpointConfig?.legacyFileUploadUX === true || fileConfig?.legacyFileUploadUX === true) {
       throw new Error('No tool resource provided for agent file upload');
     }
-    // In unified mode: 'text' routes to context processing, 'deferred'/'provider' fall through to standard storage
-    if (interactionMode === 'text') {
-      effectiveToolResource = EToolResources.context;
-    }
+  }
+
+  const llmDeliveryPath = resolveUploadLLMDeliveryPath({
+    tool_resource,
+    file,
+    endpointConfig,
+    fileConfig,
+  });
+
+  if (!tool_resource && llmDeliveryPath === 'text') {
+    effectiveToolResource = EToolResources.context;
   }
 
   if (effectiveToolResource === EToolResources.file_search && file.mimetype.startsWith('image')) {
@@ -787,19 +820,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     /**
      * @param {object} params
      * @param {string} params.text
-     * @param {number} params.bytes
-     * @param {string} params.filepath
-     * @param {string} params.type
      * @param {boolean} params.isTranscript
      * @return {Promise<void>}
      */
-    const createTextFile = async ({
-      text,
-      bytes,
-      filepath,
-      type = 'text/plain',
-      isTranscript = false,
-    }) => {
+    const createTextFile = async ({ text, isTranscript = false }) => {
       if (!isTranscript) {
         assertExtractedTextInspectable({
           filters: appConfig?.filters,
@@ -837,11 +861,25 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           return;
         }
       }
+      const isImageFile = file.mimetype.startsWith('image');
+      const source = getFileStrategy(appConfig, { isImage: isImageFile });
+      const { handleFileUpload } = getStrategyFunctions(source);
+      const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
+      const storageResult = await sanitizedUploadFn({
+        req,
+        file,
+        file_id,
+        basePath,
+        entity_id,
+      });
+      const { bytes, filename, filepath, embedded, height, width } = storageResult;
+
       const retentionExpiry = await getAgentFileRetentionExpiry({
         req,
         messageAttachment,
         tool_resource,
       });
+
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -849,13 +887,17 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           file_id,
           temp_file_id,
           user: req.user.id,
-          type,
-          filepath: filepath ?? file.path,
-          source: FileSources.text,
-          filename: file.originalname,
+          type: file.mimetype,
+          filepath,
+          source,
+          filename: filename ?? sanitizeFilename(file.originalname),
           model: messageAttachment ? undefined : req.body.model,
           context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
           tenantId: req.user.tenantId,
+          embedded,
+          height,
+          width,
+          llmDeliveryPath: 'text',
         }),
         ...retentionExpiry,
       };
@@ -924,8 +966,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         extract: resolveDocumentText,
       });
       if (ocrResult) {
-        const { text, bytes, filepath: ocrFileURL } = ocrResult;
-        return await createTextFile({ text, bytes, filepath: ocrFileURL });
+        const { text } = ocrResult;
+        return await createTextFile({ text });
       }
       throw new Error(
         `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
@@ -939,8 +981,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
     if (shouldUseSTT) {
       const sttService = await STTService.getInstance();
-      const { text, bytes } = await processAudioFile({ req, file, sttService });
-      return await createTextFile({ text, bytes, type: file.mimetype, isTranscript: true });
+      const { text } = await processAudioFile({ req, file, sttService });
+      return await createTextFile({ text, isTranscript: true });
     }
 
     const shouldUseText = fileConfig.checkType(
@@ -978,21 +1020,17 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
             `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
           );
         }
-        const { text, bytes, filepath: docFileURL } = documentText;
-        return await createTextFile({ text, bytes, filepath: docFileURL });
+        const { text } = documentText;
+        return await createTextFile({ text });
       }
-      return await createTextFile({
-        text: configuredText.text,
-        bytes: configuredText.bytes,
-        type: file.mimetype,
-      });
+      return await createTextFile({ text: configuredText.text });
     }
 
-    const { text, bytes } = await extractInspectableFileText({
+    const { text } = await extractInspectableFileText({
       filters: appConfig?.filters,
       extract: () => parseText({ req, file, file_id }),
     });
-    return await createTextFile({ text, bytes, type: file.mimetype });
+    return await createTextFile({ text });
   }
 
   // Dual storage pattern for RAG files: Storage + Vector DB
@@ -1109,6 +1147,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       height,
       width,
       tenantId: req.user.tenantId,
+      llmDeliveryPath,
     }),
     ...retentionExpiry,
   };

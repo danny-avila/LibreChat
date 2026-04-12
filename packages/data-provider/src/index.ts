@@ -5,6 +5,7 @@ export * from './balance';
 export * from './config';
 export * from './filters';
 export * from './file-config';
+export * from './resolve-llm-delivery-path';
 /* messages  */
 export * from './messages';
 /* run steps */

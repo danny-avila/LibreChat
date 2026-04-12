@@ -1,3 +1,4 @@
+import type { TDefaultLLMDeliveryPathConfig } from '../file-config';
 import type { CodeEnvRef, CodeEnvRefMap } from '../codeEnvRef';
 import { EToolResources } from './assistants';
 
@@ -48,7 +49,8 @@ export type EndpointFileConfig = {
   fileSizeLimit?: number;
   totalSizeLimit?: number;
   supportedMimeTypes?: RegexLike[];
-  defaultFileInteraction?: 'text' | 'provider' | 'deferred' | 'legacy';
+  defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
+  legacyFileUploadUX?: boolean;
 };
 
 export type FileConfig = {
@@ -79,7 +81,8 @@ export type FileConfig = {
     supportedMimeTypes?: RegexLike[];
   };
   checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
-  defaultFileInteraction?: 'text' | 'provider' | 'deferred' | 'legacy';
+  defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
+  legacyFileUploadUX?: boolean;
 };
 
 export type FileConfigInput = {
@@ -107,7 +110,8 @@ export type FileConfigInput = {
     supportedMimeTypes?: string[];
   };
   checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
-  defaultFileInteraction?: 'text' | 'provider' | 'deferred' | 'legacy';
+  defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
+  legacyFileUploadUX?: boolean;
 };
 
 export type TFile = {
@@ -171,6 +175,7 @@ export type TFile = {
     /** Dispatch-order stamp for the current source artifact generation. */
     sourceDispatchedAt?: number;
   };
+  llmDeliveryPath?: 'provider' | 'text' | 'none';
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };
