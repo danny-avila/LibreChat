@@ -74,6 +74,7 @@ export interface IMongoFile extends Omit<Document, 'model'> {
     /** Dispatch-order stamp for the current source artifact generation. */
     sourceDispatchedAt?: number;
   };
+  llmDeliveryPath?: string;
   expiresAt?: Date;
   expiredAt?: Date | null;
   createdAt?: Date;
