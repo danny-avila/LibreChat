@@ -238,9 +238,12 @@ class STTService {
     }
 
     const acceptedFormats = ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm'];
-    const fileFormat = audioFile.mimetype.split('/')[1];
-    if (!acceptedFormats.includes(fileFormat)) {
-      throw new Error(`The audio file format ${fileFormat} is not accepted`);
+    const mimePrefix = audioFile.mimetype.split('/')[0];
+    const rawFormat = audioFile.mimetype.split('/')[1];
+    const isAudioMime = mimePrefix === 'audio' || mimePrefix === 'video';
+    const normalizedFormat = isAudioMime ? getFileExtensionFromMime(audioFile.mimetype) : null;
+    if (!acceptedFormats.includes(normalizedFormat) && !acceptedFormats.includes(rawFormat)) {
+      throw new Error(`The audio file format ${rawFormat} is not accepted`);
     }
 
     const formData = new FormData();
@@ -377,4 +380,4 @@ async function speechToText(req, res) {
   await sttService.processSpeechToText(req, res);
 }
 
-module.exports = { STTService, speechToText };
+module.exports = { STTService, speechToText, getFileExtensionFromMime };
