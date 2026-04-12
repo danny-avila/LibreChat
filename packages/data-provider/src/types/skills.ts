@@ -103,6 +103,12 @@ export type TSkill = {
   body: string;
   frontmatter?: SkillFrontmatter;
   category?: string;
+  /**
+   * UI-only phase 1. The backend doesn't persist `invocationMode` yet —
+   * forms default to `auto` and discard the value on save. Phase 2 will
+   * move this to a first-class column.
+   */
+  invocationMode?: import('../types').InvocationMode;
   author: string;
   authorName: string;
   version: number;

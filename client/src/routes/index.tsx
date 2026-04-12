@@ -146,6 +146,14 @@ export const router = createBrowserRouter(
               lazy: loadSkillsView,
             },
             {
+              path: 'skills/:skillId/edit',
+              lazy: loadSkillsView,
+            },
+            {
+              path: 'skills/:skillId/file/:nodeId',
+              lazy: loadSkillsView,
+            },
+            {
               path: 'agents',
               element: (
                 <MarketplaceProvider>

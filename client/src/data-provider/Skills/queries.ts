@@ -94,6 +94,13 @@ export const useGetSkillQuery = (
 };
 
 /**
+ * Alias kept for the original UI PR's call surface — components that still
+ * import `useGetSkillByIdQuery` (e.g. `SkillsView`, `SkillForm`) resolve to
+ * the same hook as `useGetSkillQuery`.
+ */
+export const useGetSkillByIdQuery = useGetSkillQuery;
+
+/**
  * List file metadata for a single skill. In phase 1 this returns an empty array for
  * skills that have only an inline `SKILL.md`; multi-file skills arrive in phase 2.
  */

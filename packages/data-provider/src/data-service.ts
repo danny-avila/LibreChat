@@ -34,6 +34,19 @@ export function updateFavorites(favorites: q.TUserFavorite[]): Promise<q.TUserFa
   return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, { favorites });
 }
 
+/**
+ * Skill favorites (star-a-skill). The backend route is phase 2 — see the
+ * original UI PR for the client surface. Until then, these resolve with
+ * an empty list so the UI hooks compile and the Star button is a no-op.
+ */
+export function getSkillFavorites(): Promise<string[]> {
+  return Promise.resolve([] as string[]);
+}
+
+export function updateSkillFavorites(skillFavorites: string[]): Promise<string[]> {
+  return Promise.resolve(skillFavorites);
+}
+
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
   return request.get(endpoints.shareMessages(shareId));
 }
@@ -899,6 +912,87 @@ export function deleteSkillFile(
 ): Promise<sk.TDeleteSkillFileResponse> {
   return request.delete(endpoints.skillFile(skillId, relativePath));
 }
+
+/* -------------------------------------------------------------------------- */
+/* Skill Tree (nodes) — phase 2 backend                                       */
+/* -------------------------------------------------------------------------- */
+/* These were introduced by the original UI PR and are shipped as stubs in    */
+/* phase 1 so the tree UI compiles. Each resolves with empty/no-op data until */
+/* the backend persists a folder hierarchy. The call surface matches what the */
+/* tree hooks expect so wiring real endpoints later is a one-line swap.       */
+
+export const getSkillTree = (_skillId: string): Promise<t.TSkillTreeResponse> => {
+  return Promise.resolve({ nodes: [] });
+};
+
+export const createSkillNode = (
+  skillId: string,
+  data: FormData | t.TCreateSkillNodeRequest,
+): Promise<t.TSkillNode> => {
+  const name = data instanceof FormData ? (data.get('name') as string) || 'untitled' : data.name;
+  const type = data instanceof FormData ? 'file' : data.type;
+  const now = new Date().toISOString();
+  return Promise.resolve({
+    _id: `pending-${now}`,
+    skillId,
+    parentId: null,
+    type,
+    name,
+    order: 0,
+    author: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+export const updateSkillNode = (variables: {
+  skillId: string;
+  nodeId: string;
+  data: t.TUpdateSkillNodeRequest;
+}): Promise<t.TSkillNode> => {
+  const now = new Date().toISOString();
+  return Promise.resolve({
+    _id: variables.nodeId,
+    skillId: variables.skillId,
+    parentId: variables.data.parentId ?? null,
+    type: 'file',
+    name: variables.data.name ?? '',
+    order: variables.data.order ?? 0,
+    author: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+export const deleteSkillNode = (_variables: { skillId: string; nodeId: string }): Promise<void> => {
+  return Promise.resolve();
+};
+
+export const getSkillNodeContent = (_variables: {
+  skillId: string;
+  nodeId: string;
+}): Promise<{ content: string; mimeType: string }> => {
+  return Promise.resolve({ content: '', mimeType: 'text/plain' });
+};
+
+export const updateSkillNodeContent = (variables: {
+  skillId: string;
+  nodeId: string;
+  content: string;
+}): Promise<t.TSkillNode> => {
+  const now = new Date().toISOString();
+  return Promise.resolve({
+    _id: variables.nodeId,
+    skillId: variables.skillId,
+    parentId: null,
+    type: 'file',
+    name: '',
+    order: 0,
+    author: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
 
 /* Roles */
 export function listRoles(): Promise<q.ListRolesResponse> {
