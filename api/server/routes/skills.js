@@ -53,6 +53,7 @@ const skillImportFilter = (_req, file, cb) => {
   if (ALLOWED_EXTENSIONS.has(ext)) {
     cb(null, true);
   } else {
+    // N.B. The error handler at the bottom of this file matches this "Only " prefix.
     cb(new Error('Only .md, .zip, and .skill files are allowed'), false);
   }
 };
