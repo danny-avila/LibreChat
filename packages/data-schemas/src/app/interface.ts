@@ -53,6 +53,7 @@ export async function loadDefaultInterface({
     peoplePicker: interfaceConfig?.peoplePicker,
     marketplace: interfaceConfig?.marketplace,
     remoteAgents: interfaceConfig?.remoteAgents,
+    skills: interfaceConfig?.skills,
   });
 
   return loadedInterface;
