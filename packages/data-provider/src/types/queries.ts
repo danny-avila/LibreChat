@@ -195,6 +195,26 @@ export interface MCPAuthValuesResponse {
   authValueFlags: Record<string, boolean>;
 }
 
+/* Magic Links */
+export interface TMagicLink {
+  id: string;
+  email: string;
+  createdBy: string;
+  active: boolean;
+  useCount: number;
+  lastUsedAt?: string;
+  createdAt: string;
+  userId?: string;
+}
+
+export interface TCreateMagicLink {
+  email: string;
+}
+
+export interface TCreateMagicLinkResponse extends TMagicLink {
+  url: string;
+}
+
 /* SharePoint Graph API Token */
 export type GraphTokenParams = {
   scopes: string;

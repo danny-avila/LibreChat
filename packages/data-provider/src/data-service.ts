@@ -1089,3 +1089,13 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* Magic Links */
+export const getMagicLinks = (): Promise<q.TMagicLink[]> =>
+  request.get(endpoints.magicLinks());
+
+export const createMagicLink = (data: q.TCreateMagicLink): Promise<q.TCreateMagicLinkResponse> =>
+  request.post(endpoints.magicLinks(), data);
+
+export const revokeMagicLink = (id: string): Promise<void> =>
+  request.delete(endpoints.magicLink(id));

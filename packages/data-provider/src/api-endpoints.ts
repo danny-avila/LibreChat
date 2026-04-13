@@ -440,3 +440,7 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+// Magic Links
+export const magicLinks = () => `${BASE_URL}/api/admin/magic-links`;
+export const magicLink = (id: string) => `${BASE_URL}/api/admin/magic-links/${encodeURIComponent(id)}`;
