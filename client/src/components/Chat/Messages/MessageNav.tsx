@@ -21,9 +21,10 @@ function getMessageEntries(): MessageEntry[] {
     }
 
     const isUser = node.querySelector('.user-turn') != null;
+    const turnEl = isUser ? node.querySelector('.user-turn') : node.querySelector('.agent-turn');
     const contentEl = isUser
-      ? node.querySelector('.user-turn')
-      : (node.querySelector('.markdown') ?? node.querySelector('.agent-turn'));
+      ? (turnEl?.querySelector('.flex.flex-col.gap-1') ?? turnEl)
+      : (node.querySelector('.markdown') ?? turnEl);
 
     const rawText = contentEl?.textContent ?? '';
     const preview = rawText.trim().slice(0, 80) + (rawText.trim().length > 80 ? '...' : '');
@@ -79,11 +80,19 @@ export default function MessageNav({
   const [entries, setEntries] = useState<MessageEntry[]>([]);
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const lastKnownIndexRef = useRef(0);
+
   const activeIndex = useMemo(() => {
     for (let i = 0; i < entries.length; i++) {
       if (activeIds.has(entries[i].id)) {
+        lastKnownIndexRef.current = i;
         return i;
       }
+    }
+    // No intersection detected — use last known position instead of -1
+    // This prevents buttons from disabling during fast scroll
+    if (entries.length > 0) {
+      return Math.min(lastKnownIndexRef.current, entries.length - 1);
     }
     return -1;
   }, [entries, activeIds]);
@@ -159,7 +168,7 @@ export default function MessageNav({
         }
         setActiveIds(new Set(visibleSet));
       },
-      { root, threshold: 0.1 },
+      { root, threshold: 0.01 },
     );
 
     observerRef.current = observer;
