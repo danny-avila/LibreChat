@@ -100,7 +100,7 @@ export default function WebSearch({
       attachments?.some((att) => att.type === Tools.web_search && att[Tools.web_search]) ?? false,
     [attachments],
   );
-  const effectiveProgress = hasResults ? 1 : progress;
+  const effectiveProgress = hasResults && !isSubmitting ? 1 : progress;
   const cancelled = (!isSubmitting && effectiveProgress < 1) || error === true;
 
   const complete = !isLast && effectiveProgress === 1;
