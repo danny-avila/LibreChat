@@ -1,4 +1,12 @@
-import { ResourceType } from 'librechat-data-provider';
+import {
+  ResourceType,
+  SKILL_NAME_MAX_LENGTH,
+  SKILL_DESCRIPTION_MAX_LENGTH,
+  SKILL_DESCRIPTION_SHORT_THRESHOLD as SKILL_DESCRIPTION_SHORT_THRESHOLD_SHARED,
+  SKILL_DISPLAY_TITLE_MAX_LENGTH,
+  SKILL_BODY_MAX_LENGTH,
+  SKILL_NAME_PATTERN as SKILL_NAME_PATTERN_SHARED,
+} from 'librechat-data-provider';
 import type { Model, Types, FilterQuery } from 'mongoose';
 import type {
   ISkill,
@@ -48,13 +56,13 @@ export function partitionIssues(issues: ValidationIssue[]): {
   return { errors, warnings };
 }
 
-const SKILL_NAME_MAX = 64;
-const SKILL_DESCRIPTION_MAX = 1024;
-const SKILL_DESCRIPTION_SHORT_THRESHOLD = 20;
-const SKILL_DISPLAY_TITLE_MAX = 128;
-const SKILL_BODY_MAX = 100_000;
+const SKILL_NAME_MAX = SKILL_NAME_MAX_LENGTH;
+const SKILL_DESCRIPTION_MAX = SKILL_DESCRIPTION_MAX_LENGTH;
+const SKILL_DESCRIPTION_SHORT_THRESHOLD = SKILL_DESCRIPTION_SHORT_THRESHOLD_SHARED;
+const SKILL_DISPLAY_TITLE_MAX = SKILL_DISPLAY_TITLE_MAX_LENGTH;
+const SKILL_BODY_MAX = SKILL_BODY_MAX_LENGTH;
 const SKILL_FILE_PATH_MAX = 500;
-const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const SKILL_NAME_PATTERN = SKILL_NAME_PATTERN_SHARED;
 const RELATIVE_PATH_CHARS = /^[a-zA-Z0-9._\-/]+$/;
 
 /**
@@ -793,7 +801,10 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     skillId: Types.ObjectId | string,
   ): Promise<Array<ISkillFile & { _id: Types.ObjectId }>> {
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    const rows = await SkillFile.find({ skillId }).sort({ relativePath: 1 }).lean();
+    const rows = await SkillFile.find({ skillId })
+      .select('-content')
+      .sort({ relativePath: 1 })
+      .lean();
     return rows as unknown as Array<ISkillFile & { _id: Types.ObjectId }>;
   }
 
@@ -831,6 +842,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
           author: row.author,
           tenantId: row.tenantId,
         },
+        $unset: { content: '', isBinary: '' },
       },
       { new: false, upsert: true },
     ).lean();
@@ -865,6 +877,24 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
   }
 
   // The public surface is scoped to methods that handlers and the user
+  async function getSkillFileByPath(
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+  ): Promise<(ISkillFile & { _id: Types.ObjectId }) | null> {
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    const row = await SkillFile.findOne({ skillId, relativePath }).lean();
+    return row as unknown as (ISkillFile & { _id: Types.ObjectId }) | null;
+  }
+
+  async function updateSkillFileContent(
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+    update: { content?: string; isBinary?: boolean },
+  ): Promise<void> {
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    await SkillFile.updateOne({ skillId, relativePath }, { $set: update });
+  }
+
   // deletion controller actually call. The per-skill file cascade on
   // `deleteSkill` is inlined; there's no need for a separate export.
   return {
@@ -877,6 +907,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     listSkillFiles,
     upsertSkillFile,
     deleteSkillFile,
+    getSkillFileByPath,
+    updateSkillFileContent,
   };
 }
 

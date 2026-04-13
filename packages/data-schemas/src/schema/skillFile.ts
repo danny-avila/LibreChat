@@ -90,6 +90,12 @@ const skillFileSchema: Schema<ISkillFileDocument> = new Schema(
       type: String,
       index: true,
     },
+    content: {
+      type: String,
+    },
+    isBinary: {
+      type: Boolean,
+    },
   },
   {
     timestamps: true,

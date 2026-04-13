@@ -5,6 +5,7 @@ import {
   Brain,
   Bookmark,
   NotebookPen,
+  ScrollText,
   ArrowRightToLine,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { useHasAccess, useMCPServerManager } from '~/hooks';
 import { PromptsAccordion } from '~/components/Prompts';
+import { SkillsAccordion } from '~/components/Skills';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -47,6 +49,10 @@ export default function useSideNavLinks({
 }) {
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.USE,
+  });
+  const hasAccessToSkills = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
   });
   const hasAccessToBookmarks = useHasAccess({
@@ -113,6 +119,16 @@ export default function useSideNavLinks({
         icon: OpenAIMinimalIcon,
         id: EModelEndpoint.assistants,
         Component: PanelSwitch,
+      });
+    }
+
+    if (hasAccessToSkills) {
+      links.push({
+        title: 'com_ui_skills',
+        label: '',
+        icon: ScrollText,
+        id: 'skills',
+        Component: SkillsAccordion,
       });
     }
 
@@ -200,6 +216,7 @@ export default function useSideNavLinks({
     hasAccessToAgents,
     hasAccessToCreateAgents,
     hasAccessToPrompts,
+    hasAccessToSkills,
     hasAccessToMemories,
     hasAccessToReadMemories,
     interfaceConfig.parameters,

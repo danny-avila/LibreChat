@@ -293,6 +293,7 @@ export const defaultAgentFormValues = {
     name: '',
     email: '',
   },
+  skills: [],
 };
 
 export const ImageVisionTool: FunctionTool = {

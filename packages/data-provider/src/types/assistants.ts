@@ -272,6 +272,8 @@ export type Agent = {
   support_contact?: SupportContact;
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
+  /** Skill ObjectIds the agent can invoke — phase 2 wiring in AgentConfig. */
+  skills?: string[];
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -297,6 +299,7 @@ export type AgentCreateParams = {
   | 'category'
   | 'support_contact'
   | 'tool_options'
+  | 'skills'
 >;
 
 export type AgentUpdateParams = {
@@ -321,6 +324,7 @@ export type AgentUpdateParams = {
   | 'category'
   | 'support_contact'
   | 'tool_options'
+  | 'skills'
 >;
 
 export type AgentListParams = {

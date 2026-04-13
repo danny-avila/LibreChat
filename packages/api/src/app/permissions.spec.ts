@@ -106,6 +106,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -148,6 +154,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -264,6 +276,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -306,6 +324,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -408,6 +432,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -450,6 +480,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -565,6 +601,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -607,6 +649,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -709,6 +757,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -751,6 +805,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -858,6 +918,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -888,6 +954,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -1012,6 +1084,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -1046,6 +1124,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,

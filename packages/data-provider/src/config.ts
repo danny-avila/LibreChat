@@ -83,6 +83,7 @@ export const fileStrategiesSchema = z
     avatar: fileStorageSchema.optional(),
     image: fileStorageSchema.optional(),
     document: fileStorageSchema.optional(),
+    skills: fileStorageSchema.optional(),
   })
   .optional();
 
@@ -744,6 +745,17 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
+    skills: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -786,6 +798,12 @@ export const interfaceSchema = z
     remoteAgents: {
       use: false,
       create: false,
+      share: false,
+      public: false,
+    },
+    skills: {
+      use: true,
+      create: true,
       share: false,
       public: false,
     },

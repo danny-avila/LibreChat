@@ -1,6 +1,7 @@
 export * from './Auth';
 export * from './Agents';
 export * from './Endpoints';
+export * from './Skills';
 export * from './Files';
 /* Memories */
 export * from './Memories';
@@ -12,7 +13,6 @@ export * from './Favorites';
 export * from './mutations';
 export * from './prompts';
 export * from './queries';
-export * from './Skills';
 export * from './roles';
 export * from './tags';
 export * from './MCP';

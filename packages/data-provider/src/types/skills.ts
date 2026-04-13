@@ -1,6 +1,28 @@
 import type { FileSources } from './files';
 
 /**
+ * Shared skill validation constants — the single source of truth for name,
+ * description, title, body, and file-path length limits. Mirrored by
+ * `packages/data-schemas/src/methods/skill.ts`; whenever those constants
+ * change, the DB-side validators MUST be updated to match.
+ *
+ * Exported from `librechat-data-provider` so both frontend form validators
+ * and backend Mongoose pre-save hooks use the same literals.
+ */
+export const SKILL_NAME_MAX_LENGTH = 64;
+export const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
+export const SKILL_DESCRIPTION_SHORT_THRESHOLD = 20;
+export const SKILL_DISPLAY_TITLE_MAX_LENGTH = 128;
+export const SKILL_BODY_MAX_LENGTH = 100_000;
+
+/**
+ * Kebab-case identifier pattern: must start with a lowercase letter or digit,
+ * and contain only lowercase letters, digits, and hyphens. Mirrors the
+ * backend `SKILL_NAME_PATTERN` in `packages/data-schemas/src/methods/skill.ts`.
+ */
+export const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+/**
  * Source of a skill — where its canonical definition came from.
  * `inline` means the skill was authored directly in LibreChat.
  * `github` / `notion` are reserved for future sync integrations.
@@ -81,6 +103,12 @@ export type TSkill = {
   body: string;
   frontmatter?: SkillFrontmatter;
   category?: string;
+  /**
+   * UI-only phase 1. The backend doesn't persist `invocationMode` yet —
+   * forms default to `auto` and discard the value on save. Phase 2 will
+   * move this to a first-class column.
+   */
+  invocationMode?: import('../types').InvocationMode;
   author: string;
   authorName: string;
   version: number;
@@ -124,6 +152,10 @@ export type TSkillFile = {
   isExecutable: boolean;
   author: string;
   tenantId?: string;
+  /** Lazily cached text content (≤ 512 KB). Excluded from list responses. */
+  content?: string;
+  /** Set on first read. `true` prevents repeated storage reads for non-text files. */
+  isBinary?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -204,6 +236,16 @@ export type TDeleteSkillFileResponse = {
   skillId: string;
   relativePath: string;
   deleted: true;
+};
+
+/** Response from GET `/api/skills/:id/files/:relativePath` (JSON mode). */
+export type TSkillFileContentResponse = {
+  content?: string;
+  mimeType: string;
+  isBinary: boolean;
+  relativePath: string;
+  filename: string;
+  bytes: number;
 };
 
 /** Variables passed into the skill file upload mutation. */
