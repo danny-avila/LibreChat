@@ -81,6 +81,8 @@ export default function CustomUserVarsDefinitionSection() {
                         value: VARIABLE_KEY_PATTERN,
                         message: localize('com_ui_mcp_variable_key_invalid'),
                       },
+                      validate: (value) =>
+                        value !== 'MCP_API_KEY' || localize('com_ui_mcp_reserved_key'),
                     })}
                     className={cn(
                       'font-mono text-xs',

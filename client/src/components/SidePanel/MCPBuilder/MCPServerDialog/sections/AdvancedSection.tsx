@@ -75,7 +75,7 @@ export default function AdvancedSection() {
         {serverInstructionsMode === 'custom' && (
           <Textarea
             placeholder={localize('com_ui_mcp_server_instructions_custom_placeholder')}
-            aria-label={localize('com_ui_mcp_server_instructions_custom')}
+            aria-label={localize('com_ui_mcp_server_instructions_custom_label')}
             {...register('serverInstructionsCustom')}
             className="mt-1 text-sm"
           />

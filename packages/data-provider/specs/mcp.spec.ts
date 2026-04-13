@@ -146,6 +146,56 @@ describe('MCPServerUserInputSchema', () => {
   });
 });
 
+describe('MCPServerUserInputSchema – secretHeaderKeys validation', () => {
+  it('should surface a readable error when secretHeaderKeys references a missing header key', () => {
+    const result = MCPServerUserInputSchema.safeParse({
+      type: 'sse',
+      url: 'https://mcp-server.com/sse',
+      headers: { 'X-Other': 'value' },
+      secretHeaderKeys: ['X-Missing'],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages).toContain('secretHeaderKeys must be a subset of header keys');
+    }
+  });
+
+  it('should reject secretHeaderKeys when headers is empty', () => {
+    const result = MCPServerUserInputSchema.safeParse({
+      type: 'streamable-http',
+      url: 'https://mcp-server.com/mcp',
+      headers: {},
+      secretHeaderKeys: ['X-Missing'],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages).toContain('secretHeaderKeys must be a subset of header keys');
+    }
+  });
+
+  it('should accept secretHeaderKeys that match existing header keys', () => {
+    const result = MCPServerUserInputSchema.safeParse({
+      type: 'sse',
+      url: 'https://mcp-server.com/sse',
+      headers: { 'X-Secret': 'my-token', 'X-Public': 'value' },
+      secretHeaderKeys: ['X-Secret'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should accept empty secretHeaderKeys', () => {
+    const result = MCPServerUserInputSchema.safeParse({
+      type: 'sse',
+      url: 'https://mcp-server.com/sse',
+      headers: { 'X-Public': 'value' },
+      secretHeaderKeys: [],
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
 describe('MCPServerUserInputSchema – chatMenu and serverInstructions', () => {
   const validBase = { type: 'sse', url: 'https://mcp-server.com/sse' } as const;
 

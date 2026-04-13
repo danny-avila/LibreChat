@@ -293,24 +293,27 @@ const validateSecretHeaderKeys = (data: unknown) => {
   return true;
 };
 
-export const MCPServerUserInputSchema = z.union([
-  omitServerManagedFields(WebSocketOptionsSchema).extend({
-    url: userUrlSchema(isWsProtocol, 'WebSocket URL must use ws:// or wss://'),
-  }),
-  omitServerManagedFields(SSEOptionsSchema)
-    .extend({
+export const MCPServerUserInputSchema = z
+  .discriminatedUnion('type', [
+    omitServerManagedFields(WebSocketOptionsSchema).extend({
+      type: z.literal('websocket'),
+      url: userUrlSchema(isWsProtocol, 'WebSocket URL must use ws:// or wss://'),
+    }),
+    omitServerManagedFields(SSEOptionsSchema).extend({
+      type: z.literal('sse'),
       url: userUrlSchema(isHttpProtocol, 'SSE URL must use http:// or https://'),
-    })
-    .refine(validateSecretHeaderKeys, {
-      message: 'secretHeaderKeys must be a subset of header keys',
     }),
-  omitServerManagedFields(StreamableHTTPOptionsSchema)
-    .extend({
+    omitServerManagedFields(StreamableHTTPOptionsSchema).extend({
+      type: z.literal('streamable-http'),
       url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
-    })
-    .refine(validateSecretHeaderKeys, {
-      message: 'secretHeaderKeys must be a subset of header keys',
     }),
-]);
+    omitServerManagedFields(StreamableHTTPOptionsSchema).extend({
+      type: z.literal('http'),
+      url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
+    }),
+  ])
+  .refine(validateSecretHeaderKeys, {
+    message: 'secretHeaderKeys must be a subset of header keys',
+  });
 
 export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;

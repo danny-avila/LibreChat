@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Lock, LockOpen, ChevronDown } from 'lucide-react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import {
@@ -58,8 +58,7 @@ function HeaderRow({
 
   // In edit mode, only allow blank values for headers that were initially secret.
   // New secret headers (including ones that were previously non-secret) must have a value.
-  const isInitiallySecretHeader =
-    initialSecretHeaderKeys.has(headerKey.trim()) && initialHeaderKeys.has(headerKey.trim());
+  const isInitiallySecretHeader = initialSecretHeaderKeys.has(headerKey.trim());
   const isNewSecretHeader = isSecret && isEditMode && !isInitiallySecretHeader;
 
   const insertVariable = (varKey: string) => {
@@ -286,7 +285,10 @@ export default function HeadersSection({ isEditMode }: HeadersSectionProps) {
       name: 'customUserVars',
     }) ?? [];
 
-  const validVars = (availableVars ?? []).filter((v) => v.key.trim() && v.title.trim());
+  const validVars = useMemo(
+    () => (availableVars ?? []).filter((v) => v.key.trim() && v.title.trim()),
+    [availableVars],
+  );
 
   return (
     <div className="space-y-2">

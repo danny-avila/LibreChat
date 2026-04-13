@@ -304,6 +304,22 @@ describe('redactServerSecrets', () => {
     expect(redacted.url).toBe('https://mcp.example.com/sse?param=value');
   });
 
+  it('should expose legacy DB headers unchanged (dbId set, secretHeaderKeys absent)', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      dbId: 'legacy-id-123',
+    };
+    (config as ParsedServerConfig & { headers: Record<string, string> }).headers = {
+      'X-Old-Header': 'value',
+    };
+    const redacted = redactServerSecrets(config);
+    expect(
+      (redacted as Record<string, unknown> & { headers: Record<string, string> }).headers,
+    ).toEqual({ 'X-Old-Header': 'value' });
+    expect(redacted.secretHeaderKeys).toBeUndefined();
+  });
+
   it('should only include explicitly allowlisted fields', () => {
     const config: ParsedServerConfig = {
       type: 'sse',
