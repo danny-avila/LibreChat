@@ -35,12 +35,24 @@ function getMessageEntries(): MessageEntry[] {
   return entries;
 }
 
-function scrollToMessage(id: string, block: ScrollLogicalPosition = 'nearest') {
+const SCROLL_TOP_OFFSET = 56;
+
+function scrollToMessage(id: string, toStart = false) {
   const el = document.getElementById(id);
   if (!el) {
     return;
   }
-  el.scrollIntoView({ behavior: 'smooth', block });
+  if (!toStart) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  const container = el.closest('.scrollbar-gutter-stable');
+  if (!container) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  const elTop = el.offsetTop - SCROLL_TOP_OFFSET;
+  container.scrollTo({ top: Math.max(0, elTop), behavior: 'smooth' });
 }
 
 function MessageIndicator({ entry, isActive }: { entry: MessageEntry; isActive: boolean }) {
@@ -187,14 +199,14 @@ export default function MessageNav({
     if (activeIndex <= 0) {
       return;
     }
-    scrollToMessage(entries[activeIndex - 1].id, 'start');
+    scrollToMessage(entries[activeIndex - 1].id, true);
   }, [activeIndex, entries]);
 
   const jumpToNext = useCallback(() => {
     if (activeIndex < 0 || activeIndex >= entries.length - 1) {
       return;
     }
-    scrollToMessage(entries[activeIndex + 1].id, 'start');
+    scrollToMessage(entries[activeIndex + 1].id, true);
   }, [activeIndex, entries]);
 
   if (entries.length < 3) {
