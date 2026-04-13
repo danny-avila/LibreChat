@@ -1,7 +1,7 @@
-import React, { memo, useMemo, useState } from 'react';
-import { ArrowLeft, Eye, Code, FileText, FileQuestion } from 'lucide-react';
+import React, { memo, useMemo, useState, useCallback, useRef } from 'react';
+import { ArrowLeft, Eye, Code, Copy, Check, FileText, FileQuestion } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Spinner } from '@librechat/client';
+import { Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
 import { useGetSkillFileContentQuery } from '~/data-provider';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
 import { useLocalize } from '~/hooks';
@@ -12,7 +12,6 @@ interface SkillFileViewerProps {
   relativePath: string;
 }
 
-/** Strip YAML frontmatter and return structured fields + remaining body. */
 function parseFrontmatter(raw: string): {
   fields: Array<{ key: string; value: string }>;
   body: string;
@@ -43,7 +42,6 @@ function parseFrontmatter(raw: string): {
     if (!key) {
       continue;
     }
-    // Collect multi-line YAML list items
     if (!value) {
       const items: string[] = [];
       while (i + 1 < lines.length) {
@@ -68,19 +66,22 @@ function parseFrontmatter(raw: string): {
 function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
   const navigate = useNavigate();
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const { data, isLoading, isError } = useGetSkillFileContentQuery(skillId, relativePath);
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
+  const [isCopied, setIsCopied] = useState(false);
+  const copyTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const isMarkdown = relativePath.endsWith('.md');
   const isImage = data?.mimeType?.startsWith('image/') ?? false;
   const isSkillMd = relativePath === 'SKILL.md';
+  const isText = data != null && !data.isBinary && data.content != null;
 
   const rawUrl = useMemo(
     () => `/api/skills/${skillId}/files/${encodeURIComponent(relativePath)}?raw=true`,
     [skillId, relativePath],
   );
 
-  // For markdown files, parse frontmatter for structured display
   const parsed = useMemo(() => {
     if (!isMarkdown || !data?.content) {
       return null;
@@ -88,10 +89,27 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
     return parseFrontmatter(data.content);
   }, [isMarkdown, data?.content]);
 
+  const handleCopy = useCallback(async () => {
+    if (isCopied || !data?.content) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(data.content);
+      setIsCopied(true);
+      showToast({ message: localize('com_ui_copied_to_clipboard'), status: 'success' });
+      if (copyTimeout.current) {
+        clearTimeout(copyTimeout.current);
+      }
+      copyTimeout.current = setTimeout(() => setIsCopied(false), 2000);
+    } catch {
+      showToast({ message: localize('com_ui_copy_failed'), status: 'error' });
+    }
+  }, [data?.content, isCopied, showToast, localize]);
+
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border-medium px-4 py-3">
+      {/* Header — back + filename + toggle + copy */}
+      <div className="flex items-center gap-2 border-b border-border-medium px-4 py-2">
         <button
           type="button"
           onClick={() => navigate(`/skills/${skillId}`)}
@@ -101,13 +119,68 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
           <ArrowLeft className="size-4" />
         </button>
         <FileText className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-        <span className="min-w-0 truncate text-sm font-medium text-text-primary">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary">
           {data?.filename ?? relativePath}
         </span>
+
+        {/* Actions — right side */}
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Copy (text files only) */}
+          {isText && (
+            <TooltipAnchor
+              description={isCopied ? localize('com_ui_copied') : localize('com_ui_copy')}
+              render={
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                  aria-label={localize('com_ui_copy_to_clipboard')}
+                >
+                  {isCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                </button>
+              }
+            />
+          )}
+
+          {/* View toggle (markdown only) */}
+          {isMarkdown && isText && (
+            <div
+              role="group"
+              className="inline-flex h-7 rounded-lg bg-surface-tertiary p-0.5 text-sm font-medium"
+            >
+              <button
+                type="button"
+                onClick={() => setViewMode('rendered')}
+                className={cn(
+                  'flex items-center justify-center rounded-md px-1.5 transition-colors',
+                  viewMode === 'rendered'
+                    ? 'bg-surface-primary text-text-primary shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary',
+                )}
+                aria-pressed={viewMode === 'rendered'}
+              >
+                <Eye className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('source')}
+                className={cn(
+                  'flex items-center justify-center rounded-md px-1.5 transition-colors',
+                  viewMode === 'source'
+                    ? 'bg-surface-primary text-text-primary shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary',
+                )}
+                aria-pressed={viewMode === 'source'}
+              >
+                <Code className="size-4" />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      {/* Content — fills remaining space */}
+      <div className="flex-1 overflow-y-auto px-4 py-3">
         {isLoading && (
           <div className="flex items-center justify-center py-12">
             <Spinner className="size-6 text-text-secondary" />
@@ -123,7 +196,6 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
 
         {data && !isLoading && !isError && (
           <>
-            {/* Binary image */}
             {data.isBinary && isImage && (
               <img
                 src={rawUrl}
@@ -132,7 +204,6 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
               />
             )}
 
-            {/* Binary non-image */}
             {data.isBinary && !isImage && (
               <div className="flex flex-col items-center justify-center gap-2 py-12 text-text-secondary">
                 <FileQuestion className="size-8" />
@@ -147,47 +218,11 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
               </div>
             )}
 
-            {/* Markdown with frontmatter — structured display like SkillDetail */}
-            {!data.isBinary && data.content != null && isMarkdown && parsed && (
-              <div className="relative flex flex-1 flex-col overflow-hidden rounded-xl border border-border-medium bg-transparent p-5">
-                {/* Toggle — top-right corner, overlaid */}
-                <div className="absolute right-3 top-3 z-10">
-                  <div
-                    role="group"
-                    className="inline-flex h-8 rounded-lg bg-surface-tertiary p-0.5 text-sm font-medium"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('rendered')}
-                      className={cn(
-                        'flex items-center justify-center rounded-md px-1.5 transition-colors',
-                        viewMode === 'rendered'
-                          ? 'bg-surface-primary text-text-primary shadow-sm'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                      aria-pressed={viewMode === 'rendered'}
-                    >
-                      <Eye className="size-5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('source')}
-                      className={cn(
-                        'flex items-center justify-center rounded-md px-1.5 transition-colors',
-                        viewMode === 'source'
-                          ? 'bg-surface-primary text-text-primary shadow-sm'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                      aria-pressed={viewMode === 'source'}
-                    >
-                      <Code className="size-5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Frontmatter grid (rendered mode only, skip name/description for SKILL.md) */}
+            {/* Markdown — frontmatter grid + rendered/source body */}
+            {isText && isMarkdown && parsed && (
+              <>
                 {viewMode === 'rendered' && parsed.fields.length > 0 && (
-                  <div className="mb-4 grid grid-cols-[max-content_1fr] items-baseline gap-x-8 gap-y-2">
+                  <div className="mb-3 grid grid-cols-[max-content_1fr] items-baseline gap-x-8 gap-y-2">
                     {parsed.fields
                       .filter(
                         ({ key }) =>
@@ -202,23 +237,19 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
                       ))}
                   </div>
                 )}
-
-                {/* Body */}
-                <div className="min-h-0 flex-1 overflow-auto">
-                  {viewMode === 'rendered' ? (
-                    <SkillMarkdownRenderer content={parsed.body} />
-                  ) : (
-                    <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-text-primary">
-                      {data.content}
-                    </pre>
-                  )}
-                </div>
-              </div>
+                {viewMode === 'rendered' ? (
+                  <SkillMarkdownRenderer content={parsed.body} />
+                ) : (
+                  <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-text-primary">
+                    {data.content}
+                  </pre>
+                )}
+              </>
             )}
 
             {/* Non-markdown text */}
-            {!data.isBinary && data.content != null && !isMarkdown && (
-              <pre className="overflow-x-auto rounded-lg border border-border-light bg-surface-secondary p-4 font-mono text-sm leading-relaxed text-text-primary">
+            {isText && !isMarkdown && (
+              <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-text-primary">
                 {data.content}
               </pre>
             )}
