@@ -300,9 +300,21 @@ async function handleZip(
     return res.status(400).json({ error: 'Archive must contain a SKILL.md file' });
   }
 
-  const skillMdContent = await zip.file(skillMdPath)?.async('string');
+  const skillMdEntry = zip.file(skillMdPath);
+  const declaredSize =
+    (skillMdEntry as unknown as { _data?: { uncompressedSize?: number } })?._data
+      ?.uncompressedSize ?? 0;
+  if (declaredSize > MAX_SINGLE_FILE_BYTES) {
+    return res
+      .status(400)
+      .json({ error: `SKILL.md too large (${Math.round(declaredSize / 1024 / 1024)}MB)` });
+  }
+  const skillMdContent = await skillMdEntry?.async('string');
   if (!skillMdContent) {
     return res.status(400).json({ error: 'Could not read SKILL.md from archive' });
+  }
+  if (Buffer.byteLength(skillMdContent, 'utf-8') > MAX_SINGLE_FILE_BYTES) {
+    return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
   }
 
   const { name, description } = parseFrontmatter(skillMdContent);

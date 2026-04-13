@@ -261,12 +261,13 @@ function SkillListItem({
   onToggleExpand,
 }: SkillListItemProps) {
   const navigate = useNavigate();
-  const hasFiles = skill.fileCount > 0;
+  const hasFiles = files.length > 0 || skill.fileCount > 0;
   const expanded = hasFiles && isExpanded;
 
-  // Prefetch files for active/expanded skills (eliminates first-expand lag)
+  // Fetch files for active skill (always, since cached fileCount may be stale)
+  // or expanded skills. The response is small (metadata only, no content).
   const filesQuery = useListSkillFilesQuery(skill._id, {
-    enabled: hasFiles && (isActive || expanded),
+    enabled: isActive || expanded,
   });
   const files = useMemo(() => filesQuery.data?.files ?? [], [filesQuery.data]);
 
