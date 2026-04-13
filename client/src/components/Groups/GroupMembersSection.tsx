@@ -49,7 +49,7 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
   const fetchMembers = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3081/api/groups/${groupId}/members`);
+      const response = await fetch(`http://localhost:3080/api/groups/${groupId}/members`);
       const data = await response.json();
       if (data.success) {
         setMembers(data.data || []);
@@ -63,7 +63,7 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
 
   const fetchPendingEmails = async () => {
     try {
-      const response = await fetch(`http://localhost:3081/api/groups/${groupId}`);
+      const response = await fetch(`http://localhost:3080/api/groups/${groupId}`);
       const data = await response.json();
       if (data.success) {
         setPendingEmails(data.data?.pendingEmails ?? []);
@@ -75,7 +75,7 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
 
   const fetchAvailableUsers = async () => {
     try {
-      const response = await fetch('http://localhost:3081/api/groups/users/available');
+      const response = await fetch('http://localhost:3080/api/groups/users/available');
       const data = await response.json();
       if (data.success) {
         setAvailableUsers(data.data || []);
@@ -87,7 +87,7 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
 
   const handleAddMember = async (userId: string) => {
     try {
-      const response = await fetch(`http://localhost:3081/api/groups/${groupId}/members`, {
+      const response = await fetch(`http://localhost:3080/api/groups/${groupId}/members`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -114,7 +114,7 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
     setEmailError('');
     setEmailAdding(true);
     try {
-      const response = await fetch(`http://localhost:3081/api/groups/${groupId}/members`, {
+      const response = await fetch(`http://localhost:3080/api/groups/${groupId}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -139,7 +139,7 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
 
   const handleRemovePendingEmail = async (email: string) => {
     try {
-      await fetch(`http://localhost:3081/api/groups/${groupId}/pending/${encodeURIComponent(email)}`, {
+      await fetch(`http://localhost:3080/api/groups/${groupId}/pending/${encodeURIComponent(email)}`, {
         method: 'DELETE',
       });
       setPendingEmails((prev) => prev.filter((e) => e !== email));
@@ -154,7 +154,7 @@ export default function GroupMembersSection({ groupId, isActive = true }: GroupM
     }
 
     try {
-      const response = await fetch(`http://localhost:3081/api/groups/${groupId}/members/${userId}`, {
+      const response = await fetch(`http://localhost:3080/api/groups/${groupId}/members/${userId}`, {
         method: 'DELETE',
       });
       

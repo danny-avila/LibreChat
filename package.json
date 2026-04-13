@@ -187,7 +187,15 @@
     ]
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.6.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
+    "@opentelemetry/sdk-trace-base": "^2.6.1",
+    "@react-spring/web": "^10.0.3",
+    "dompurify": "^3.3.3",
+    "framer-motion": "^12.38.0",
     "mongodb": "^6.18.0",
-    "mongoose": "^8.17.1"
+    "mongoose": "^8.17.1",
+    "winston-daily-rotate-file": "^5.0.0"
   }
 }
