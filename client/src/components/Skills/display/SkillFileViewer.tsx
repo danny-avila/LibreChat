@@ -5,6 +5,7 @@ import { Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
 import { useGetSkillFileContentQuery } from '~/data-provider';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
+import { parseFrontmatter } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -13,56 +14,7 @@ interface SkillFileViewerProps {
   relativePath: string;
 }
 
-function parseFrontmatter(raw: string): {
-  fields: Array<{ key: string; value: string }>;
-  body: string;
-} {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith('---')) {
-    return { fields: [], body: raw };
-  }
-  const after = trimmed.slice(3);
-  const closingIdx = after.indexOf('\n---');
-  if (closingIdx === -1) {
-    return { fields: [], body: raw };
-  }
-
-  const block = after.slice(0, closingIdx);
-  const body = after.slice(closingIdx + 4).trim();
-
-  const fields: Array<{ key: string; value: string }> = [];
-  const lines = block.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const colon = line.indexOf(':');
-    if (colon === -1) {
-      continue;
-    }
-    const key = line.slice(0, colon).trim();
-    let value = line.slice(colon + 1).trim();
-    if (!key) {
-      continue;
-    }
-    if (!value) {
-      const items: string[] = [];
-      while (i + 1 < lines.length) {
-        const next = lines[i + 1];
-        const t = next.trim();
-        if (!t.startsWith('-')) {
-          break;
-        }
-        items.push(t.slice(1).trim());
-        i++;
-      }
-      value = items.join(',');
-    }
-    if (value) {
-      fields.push({ key, value });
-    }
-  }
-
-  return { fields, body };
-}
+const SKILL_MD_SKIP_KEYS = new Set(['name', 'description']);
 
 function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
   const navigate = useNavigate();
@@ -87,8 +39,8 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
     if (!isMarkdown || !data?.content) {
       return null;
     }
-    return parseFrontmatter(data.content);
-  }, [isMarkdown, data?.content]);
+    return parseFrontmatter(data.content, isSkillMd ? SKILL_MD_SKIP_KEYS : undefined);
+  }, [isMarkdown, isSkillMd, data?.content]);
 
   const handleCopy = useCallback(async () => {
     if (isCopied || !data?.content) {
@@ -224,18 +176,12 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
               <>
                 {viewMode === 'rendered' && parsed.fields.length > 0 && (
                   <div className="mb-3 grid grid-cols-[max-content_1fr] items-baseline gap-x-8 gap-y-2">
-                    {parsed.fields
-                      .filter(
-                        ({ key }) =>
-                          !isSkillMd ||
-                          (key.toLowerCase() !== 'name' && key.toLowerCase() !== 'description'),
-                      )
-                      .map(({ key, value }) => (
-                        <React.Fragment key={key}>
-                          <span className="text-xs capitalize text-text-secondary">{key}</span>
-                          <span className="text-sm text-text-primary">{value}</span>
-                        </React.Fragment>
-                      ))}
+                    {parsed.fields.map(({ key, value }) => (
+                      <React.Fragment key={key}>
+                        <span className="text-xs capitalize text-text-secondary">{key}</span>
+                        <span className="text-sm text-text-primary">{value}</span>
+                      </React.Fragment>
+                    ))}
                   </div>
                 )}
                 {viewMode === 'rendered' ? (

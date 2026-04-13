@@ -108,7 +108,7 @@ export interface ImportSkillDeps {
       isImage?: boolean;
     },
   ) => Promise<{ filepath: string; source: string }>;
-  deleteFile?: (req: Request, file: { filepath: string }) => Promise<void>;
+  deleteFile?: (req: Request, file: { filepath: string; [key: string]: unknown }) => Promise<void>;
   grantPermission: (params: {
     principalType: string;
     principalId: string;
