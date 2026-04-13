@@ -1,4 +1,4 @@
-import { Document, Types } from 'mongoose';
+import type { Document, Types } from 'mongoose';
 
 export interface IMagicLink extends Document {
   token: string;
@@ -22,6 +22,7 @@ export interface MagicLinkCreateData {
 export interface MagicLinkView {
   id: string;
   email: string;
+  createdBy: string;
   active: boolean;
   useCount: number;
   lastUsedAt?: Date;
