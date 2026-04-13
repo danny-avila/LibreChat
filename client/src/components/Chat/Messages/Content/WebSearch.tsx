@@ -92,10 +92,19 @@ export default function WebSearch({
   const localize = useLocalize();
   const { searchResults } = useSearchContext();
   const error = typeof output === 'string' && output.toLowerCase().includes('error processing');
-  const cancelled = (!isSubmitting && progress < 1) || error === true;
 
-  const complete = !isLast && progress === 1;
-  const finalizing = isSubmitting && isLast && progress === 1;
+  // Server tool calls (srvtoolu_) never receive ON_RUN_STEP_COMPLETED, so progress
+  // stays at the default 0.1. Treat the search as complete if attachments have results.
+  const hasResults = useMemo(
+    () =>
+      attachments?.some((att) => att.type === Tools.web_search && att[Tools.web_search]) ?? false,
+    [attachments],
+  );
+  const effectiveProgress = hasResults ? 1 : progress;
+  const cancelled = (!isSubmitting && effectiveProgress < 1) || error === true;
+
+  const complete = !isLast && effectiveProgress === 1;
+  const finalizing = isSubmitting && isLast && effectiveProgress === 1;
 
   const ownTurn = useMemo((): string => {
     if (!attachments) {
