@@ -375,33 +375,13 @@ async function handleZip(
     }
 
     try {
-      // Best-effort pre-decompression size check via undocumented JSZip internal.
-      // Falls back to 0 when _data is absent — the post-decompression cumulative
-      // check below is the real safety net.
-      const declaredSize =
-        (zipEntry as unknown as { _data?: { uncompressedSize?: number } })._data
-          ?.uncompressedSize ?? 0;
-      if (declaredSize > MAX_SINGLE_FILE_BYTES) {
-        fileResults.push({
-          path: relativePath,
-          status: 'error',
-          error: `Declared size too large (${Math.round(declaredSize / 1024 / 1024)}MB, max ${MAX_SINGLE_FILE_BYTES / 1024 / 1024}MB)`,
-        });
-        continue;
-      }
-      if (totalDecompressed + declaredSize > MAX_DECOMPRESSED_BYTES) {
-        fileResults.push({
-          path: relativePath,
-          status: 'error',
-          error: 'Cumulative decompressed size exceeds limit',
-        });
-        continue;
-      }
+      // Stream-decompress with hard byte cap. JSZip's nodeStream decompresses
+      // incrementally so we can abort mid-entry without buffering the full file.
+      const perFileLimit = MAX_SINGLE_FILE_BYTES;
+      const cumulativeLimit = MAX_DECOMPRESSED_BYTES - totalDecompressed;
+      const effectiveLimit = Math.min(perFileLimit, cumulativeLimit);
 
-      const fileBuffer = await zipEntry.async('nodebuffer');
-      totalDecompressed += fileBuffer.length;
-
-      if (totalDecompressed > MAX_DECOMPRESSED_BYTES) {
+      if (effectiveLimit <= 0) {
         fileResults.push({
           path: relativePath,
           status: 'error',
@@ -410,14 +390,43 @@ async function handleZip(
         break;
       }
 
-      if (fileBuffer.length > MAX_SINGLE_FILE_BYTES) {
-        fileResults.push({
-          path: relativePath,
-          status: 'error',
-          error: `File too large (max ${MAX_SINGLE_FILE_BYTES / 1024 / 1024}MB)`,
+      // Stream-decompress with enforced byte limit
+      const chunks: Buffer[] = [];
+      let entryBytes = 0;
+      let exceededLimit = false;
+      const entryStream = zipEntry.nodeStream('nodebuffer');
+
+      await new Promise<void>((resolve, reject) => {
+        entryStream.on('data', (chunk: Buffer) => {
+          entryBytes += chunk.length;
+          if (entryBytes > effectiveLimit) {
+            exceededLimit = true;
+            if ('destroy' in entryStream && typeof entryStream.destroy === 'function') {
+              entryStream.destroy();
+            }
+            resolve();
+            return;
+          }
+          chunks.push(chunk);
         });
+        entryStream.on('end', resolve);
+        entryStream.on('error', reject);
+      });
+
+      if (exceededLimit) {
+        const reason =
+          entryBytes > perFileLimit
+            ? `File too large (max ${perFileLimit / 1024 / 1024}MB)`
+            : 'Cumulative decompressed size exceeds limit';
+        fileResults.push({ path: relativePath, status: 'error', error: reason });
+        if (entryBytes > cumulativeLimit) {
+          break;
+        }
         continue;
       }
+
+      const fileBuffer = Buffer.concat(chunks);
+      totalDecompressed += fileBuffer.length;
 
       const fileId = crypto.randomUUID();
       const filename = path.basename(relativePath);
