@@ -35,12 +35,12 @@ function getMessageEntries(): MessageEntry[] {
   return entries;
 }
 
-function scrollToMessage(id: string) {
+function scrollToMessage(id: string, block: ScrollLogicalPosition = 'nearest') {
   const el = document.getElementById(id);
   if (!el) {
     return;
   }
-  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  el.scrollIntoView({ behavior: 'smooth', block });
 }
 
 function MessageIndicator({ entry, isActive }: { entry: MessageEntry; isActive: boolean }) {
@@ -187,14 +187,14 @@ export default function MessageNav({
     if (activeIndex <= 0) {
       return;
     }
-    scrollToMessage(entries[activeIndex - 1].id);
+    scrollToMessage(entries[activeIndex - 1].id, 'start');
   }, [activeIndex, entries]);
 
   const jumpToNext = useCallback(() => {
     if (activeIndex < 0 || activeIndex >= entries.length - 1) {
       return;
     }
-    scrollToMessage(entries[activeIndex + 1].id);
+    scrollToMessage(entries[activeIndex + 1].id, 'start');
   }, [activeIndex, entries]);
 
   if (entries.length < 3) {
