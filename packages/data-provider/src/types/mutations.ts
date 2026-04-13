@@ -309,6 +309,8 @@ export type TUpdateSkillContext =
     }
   | undefined;
 
+export type ImportSkillOptions = MutationOptions<TSkill, FormData>;
+
 export type CreateSkillOptions = MutationOptions<TSkill, TCreateSkill>;
 
 export type UpdateSkillOptions = MutationOptions<

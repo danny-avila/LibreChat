@@ -4,7 +4,7 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { OGDialog, OGDialogContent } from '@librechat/client';
 import { PermissionTypes, Permissions, SystemCategories } from 'librechat-data-provider';
-import type { TSkill } from 'librechat-data-provider';
+import type { TSkillSummary } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import {
   useLocalize,
@@ -60,7 +60,7 @@ function SidebarItem({ value, label, icon, active, onSelect }: SidebarItemProps)
 }
 
 interface SkillCardProps {
-  skill: TSkill;
+  skill: TSkillSummary;
   selected: boolean;
   isFavorite: boolean;
   isShared: boolean;
@@ -186,13 +186,7 @@ function SkillSelectDialog({ isOpen, setIsOpen }: SkillSelectDialogProps) {
   const { categories } = useCategories({ className: 'size-4', hasAccess: true });
   const typedCategories = categories as SkillCategory[] | undefined;
 
-  // Backend list response: `{ skills: TSkillSummary[]; ... }` (field renamed
-  // from `.data` in the CRUD PR). Coerce to `TSkill[]` for the dialog shape
-  // — the extra fields aren't used here.
-  const allSkills = useMemo(
-    () => (skillsData?.skills ?? []) as unknown as TSkill[],
-    [skillsData?.skills],
-  );
+  const allSkills = useMemo(() => skillsData?.skills ?? [], [skillsData?.skills]);
 
   const watchedSkills = useWatch({ control, name: 'skills' });
   const selectedSet = useMemo(
@@ -229,7 +223,7 @@ function SkillSelectDialog({ isOpen, setIsOpen }: SkillSelectDialogProps) {
 
   const visibleSkills = useMemo(() => {
     const term = searchValue.toLowerCase();
-    const result: TSkill[] = [];
+    const result: TSkillSummary[] = [];
     for (const skill of allSkills) {
       if (activeFilter === SKILL_MY) {
         if (skill.author !== user?.id) continue;

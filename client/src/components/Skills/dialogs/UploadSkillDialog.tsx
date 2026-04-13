@@ -1,9 +1,8 @@
 import { useRef, useCallback, useState } from 'react';
 import { Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
-import { dataService, QueryKeys } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, Spinner, useToastContext } from '@librechat/client';
+import { useImportSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -12,49 +11,38 @@ interface UploadSkillDialogProps {
   setIsOpen: (open: boolean) => void;
 }
 
-/**
- * Upload skill dialog. Sends the file to `POST /api/skills/import` —
- * the backend handles everything: zip extraction, SKILL.md parsing,
- * file storage, and skill creation in one atomic request.
- */
 export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDialogProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+
+  const importMutation = useImportSkillMutation({
+    onSuccess: (skill) => {
+      showToast({ status: 'success', message: localize('com_ui_skill_created') });
+      setIsOpen(false);
+      navigate(`/skills/${skill._id}`);
+    },
+    onError: (error: unknown) => {
+      const errData = (error as { response?: { data?: { error?: string; message?: string } } })
+        ?.response?.data;
+      const message =
+        errData?.message ?? errData?.error ?? localize('com_ui_create_skill_upload_error');
+      showToast({ status: 'error', message });
+    },
+  });
 
   const handleFile = useCallback(
-    async (file: File) => {
-      if (isUploading) {
+    (file: File) => {
+      if (importMutation.isLoading) {
         return;
       }
-      setIsUploading(true);
-
-      try {
-        const formData = new FormData();
-        formData.append('file', file, file.name);
-
-        const skill = await dataService.importSkill(formData);
-
-        // Invalidate the skills list so the sidebar picks up the new skill
-        queryClient.invalidateQueries([QueryKeys.skills]);
-        showToast({ status: 'success', message: localize('com_ui_skill_created') });
-        setIsOpen(false);
-        setIsUploading(false);
-        navigate(`/skills/${skill._id}`);
-      } catch (error: unknown) {
-        setIsUploading(false);
-        const errData = (error as { response?: { data?: { error?: string; message?: string } } })
-          ?.response?.data;
-        const message =
-          errData?.message ?? errData?.error ?? localize('com_ui_create_skill_upload_error');
-        showToast({ status: 'error', message });
-      }
+      const formData = new FormData();
+      formData.append('file', file, file.name);
+      importMutation.mutate(formData);
     },
-    [isUploading, showToast, localize, setIsOpen, navigate, queryClient],
+    [importMutation],
   );
 
   const handleFileInput = useCallback(
@@ -89,7 +77,6 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
           </h2>
 
           <div className="flex flex-col gap-3">
-            {/* Drop zone */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -99,16 +86,16 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
               }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              disabled={isUploading}
+              disabled={importMutation.isLoading}
               className={cn(
                 'flex h-[120px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-text-secondary transition-colors',
                 isDragging
                   ? 'border-border-heavy bg-surface-hover'
                   : 'border-border-medium hover:bg-surface-hover',
-                isUploading && 'cursor-wait opacity-50',
+                importMutation.isLoading && 'cursor-wait opacity-50',
               )}
             >
-              {isUploading ? (
+              {importMutation.isLoading ? (
                 <Spinner className="size-8" />
               ) : (
                 <Upload className="size-8 text-text-secondary" aria-hidden="true" />
@@ -116,7 +103,6 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
               {localize('com_ui_skill_upload_drag')}
             </button>
 
-            {/* Requirements */}
             <div className="flex flex-col gap-3 text-xs text-text-secondary">
               <div>
                 <p className="font-medium">{localize('com_ui_skill_upload_requirements')}</p>
