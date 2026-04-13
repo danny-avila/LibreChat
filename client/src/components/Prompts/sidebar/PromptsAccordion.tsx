@@ -8,7 +8,7 @@ import FilterPrompts from './FilterPrompts';
 export default function PromptsAccordion() {
   const { user } = useAuthContext();
   return (
-    <PromptSidePanel className="space-y-2">
+    <PromptSidePanel className="space-y-2 pt-2">
       <FilterPrompts />
       {user?.role === SystemRoles.ADMIN && <AdminSettings />}
       <AutoSendPrompt />

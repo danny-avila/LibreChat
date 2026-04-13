@@ -677,3 +677,55 @@ export type TBalanceResponse = {
   lastRefill?: Date;
   refillAmount?: number;
 };
+
+/* -------------------------------------------------------------------------- */
+/* Skill UI extensions (not yet persisted — phase 2 backend will fill these)  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Trigger mode controlling whether an agent auto-invokes a skill, requires
+ * manual selection, or supports both. UI-only for phase 1 — the backend
+ * `TSkill` shape doesn't have `invocationMode` yet. Forms default to `auto`
+ * and the value is discarded on save until the backend lands support.
+ */
+export enum InvocationMode {
+  auto = 'auto',
+  manual = 'manual',
+  both = 'both',
+}
+
+/**
+ * Node in the filesystem-style skill tree view. Phase 1 derives these from
+ * the flat `TSkillFile[]` list; phase 2 will have the backend serve them
+ * directly from a persisted folder hierarchy. Kept in the shared types so
+ * tree UI helpers can be imported from both client and server.
+ */
+export type TSkillNode = {
+  _id: string;
+  skillId: string;
+  parentId: string | null;
+  type: 'file' | 'folder';
+  name: string;
+  fileId?: string;
+  order: number;
+  author: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TSkillTreeResponse = {
+  nodes: TSkillNode[];
+};
+
+export type TCreateSkillNodeRequest = {
+  type: 'file' | 'folder';
+  name: string;
+  parentId?: string | null;
+  order?: number;
+};
+
+export type TUpdateSkillNodeRequest = {
+  name?: string;
+  parentId?: string | null;
+  order?: number;
+};
