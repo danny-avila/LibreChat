@@ -81,6 +81,11 @@ export interface SkillsHandlersDeps {
     resourceType: string;
     requiredPermissions: number;
   }) => Promise<Types.ObjectId[]>;
+  hasPublicPermission: (params: {
+    resourceType: string;
+    resourceId: string | Types.ObjectId;
+    requiredPermissions: number;
+  }) => Promise<boolean>;
   grantPermission: (params: {
     principalType: string;
     principalId: string | Types.ObjectId;
@@ -135,7 +140,11 @@ function serializeSourceMetadata(
 }
 
 /** Converts a skill document to the wire format returned by the API. */
-function serializeSkill(skill: ISkill & { _id: Types.ObjectId }, publicSet: Set<string>): TSkill {
+function serializeSkill(
+  skill: ISkill & { _id: Types.ObjectId },
+  isPublic: boolean | Set<string>,
+): TSkill {
+  const pub = typeof isPublic === 'boolean' ? isPublic : isPublic.has(skill._id.toString());
   return {
     _id: skill._id.toString(),
     name: skill.name,
@@ -150,7 +159,7 @@ function serializeSkill(skill: ISkill & { _id: Types.ObjectId }, publicSet: Set<
     source: skill.source,
     sourceMetadata: serializeSourceMetadata(skill.sourceMetadata),
     fileCount: skill.fileCount,
-    isPublic: publicSet.has(skill._id.toString()),
+    isPublic: pub,
     tenantId: skill.tenantId,
     createdAt: (skill.createdAt ?? new Date()).toISOString(),
     updatedAt: (skill.updatedAt ?? new Date()).toISOString(),
@@ -159,8 +168,9 @@ function serializeSkill(skill: ISkill & { _id: Types.ObjectId }, publicSet: Set<
 
 function serializeSkillSummary(
   skill: ISkillSummary & { _id: Types.ObjectId },
-  publicSet: Set<string>,
+  isPublic: boolean | Set<string>,
 ): TSkillSummary {
+  const pub = typeof isPublic === 'boolean' ? isPublic : isPublic.has(skill._id.toString());
   return {
     _id: skill._id.toString(),
     name: skill.name,
@@ -173,7 +183,7 @@ function serializeSkillSummary(
     source: skill.source,
     sourceMetadata: serializeSourceMetadata(skill.sourceMetadata),
     fileCount: skill.fileCount,
-    isPublic: publicSet.has(skill._id.toString()),
+    isPublic: pub,
     tenantId: skill.tenantId,
     createdAt: (skill.createdAt ?? new Date()).toISOString(),
     updatedAt: (skill.updatedAt ?? new Date()).toISOString(),
@@ -265,6 +275,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     getStrategyFunctions,
     findAccessibleResources,
     findPubliclyAccessibleResources,
+    hasPublicPermission,
     grantPermission,
     isValidObjectIdString,
   } = deps;
@@ -279,6 +290,19 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     } catch (error) {
       logger.error('[skills] Failed to fetch public skill IDs', error);
       return new Set();
+    }
+  }
+
+  /** O(1) public check for a single skill (avoids fetching all public IDs). */
+  async function isSkillPublic(skillId: string | Types.ObjectId): Promise<boolean> {
+    try {
+      return await hasPublicPermission({
+        resourceType: ResourceType.SKILL,
+        resourceId: skillId,
+        requiredPermissions: PermissionBits.VIEW,
+      });
+    } catch {
+      return false;
     }
   }
 
@@ -430,8 +454,8 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       if (!skill) {
         return res.status(404).json({ error: 'Skill not found' });
       }
-      const publicSet = await getPublicSkillIdSet();
-      return res.status(200).json(serializeSkill(skill, publicSet));
+      const pub = await isSkillPublic(skill._id);
+      return res.status(200).json(serializeSkill(skill, pub));
     } catch (error) {
       logger.error('[GET /skills/:id] Error fetching skill', error);
       return res.status(500).json({ error: 'Error fetching skill' });
@@ -488,17 +512,17 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       if (result.status === 'not_found') {
         return res.status(404).json({ error: 'Skill not found' });
       }
-      const publicSet = await getPublicSkillIdSet();
+      const pub = await isSkillPublic(id);
       if (result.status === 'conflict') {
         const conflict: TSkillConflictResponse = {
           error: 'skill_version_conflict',
-          current: serializeSkill(result.current, publicSet),
+          current: serializeSkill(result.current, pub),
         };
         return res.status(409).json(conflict);
       }
       return res
         .status(200)
-        .json(attachWarnings(serializeSkill(result.skill, publicSet), result.warnings));
+        .json(attachWarnings(serializeSkill(result.skill, pub), result.warnings));
     } catch (error) {
       logger.error('[PATCH /skills/:id] Error updating skill', error);
       return res.status(500).json({ error: 'Error updating skill' });
@@ -600,20 +624,38 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         return res.status(200).json({ ...base, isBinary: false, content: file.content });
       }
 
-      // First read: fetch from storage, detect binary, cache
+      // First read: sample the first 8 KB for binary detection before buffering the rest
       const stream = await strategy.getDownloadStream(req, file.filepath);
-      const chunks: Buffer[] = [];
-      for await (const chunk of stream) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      const buffer = Buffer.concat(chunks);
+      const head: Buffer[] = [];
+      let headBytes = 0;
 
-      if (isBinaryBuffer(buffer)) {
+      for await (const raw of stream) {
+        const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+        head.push(chunk);
+        headBytes += chunk.length;
+        if (headBytes >= 8192) {
+          break;
+        }
+      }
+
+      const sample = Buffer.concat(head);
+      if (isBinaryBuffer(sample)) {
+        // Detected binary — skip reading the rest of the stream
         await updateSkillFileContent(id, decodedPath, { isBinary: true });
+        if ('destroy' in stream && typeof stream.destroy === 'function') {
+          stream.destroy();
+        }
         return res.status(200).json({ ...base, isBinary: true });
       }
 
+      // Text file — read the remainder only if we need to cache or return content
+      const rest: Buffer[] = [sample];
+      for await (const raw of stream) {
+        rest.push(Buffer.isBuffer(raw) ? raw : Buffer.from(raw));
+      }
+      const buffer = rest.length === 1 ? sample : Buffer.concat(rest);
       const text = buffer.toString('utf-8');
+
       if (buffer.length <= MAX_TEXT_CACHE_BYTES) {
         await updateSkillFileContent(id, decodedPath, { content: text, isBinary: false });
       }

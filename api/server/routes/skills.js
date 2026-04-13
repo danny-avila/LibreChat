@@ -31,6 +31,7 @@ const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware'
 const {
   findAccessibleResources,
   findPubliclyAccessibleResources,
+  hasPublicPermission,
   grantPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -110,6 +111,7 @@ const handlers = createSkillsHandlers({
   getStrategyFunctions,
   findAccessibleResources,
   findPubliclyAccessibleResources,
+  hasPublicPermission,
   grantPermission,
   isValidObjectIdString,
 });
