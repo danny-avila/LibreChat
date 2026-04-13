@@ -770,6 +770,61 @@ describe('ToolService - Action Capability Gating', () => {
       expect(callArgs.requestBuilder.path).toBe('/echo');
     });
 
+    it('loadAgentTools distinguishes operationIds that differ only by `---` vs `_`', async () => {
+      // `openapiToFunction` uses the user-supplied operationId verbatim
+      // and only sanitizes the synthetic `<method>_<path>` fallback, and
+      // `sanitizeOperationId` preserves `-`. So two operations whose
+      // operationIds differ only by `---` vs `_` (e.g. `get_foo---bar`
+      // and `get_foo_bar`) are legitimately distinct on the same spec —
+      // or, here, on two actions sharing a hostname.
+      //
+      // Normalization must only touch the encoded-domain suffix after
+      // `actionDelimiter`; if it also collapsed the operationId, both
+      // tools would write to the same map slot and resolve to the
+      // surviving entry's request builder.
+      const hyphenSpec = {
+        action_id: 'action_hyphen',
+        metadata: {
+          domain: SHARED_DOMAIN,
+          raw_spec: buildSpec('get_foo---bar', '/foo-bar'),
+        },
+      };
+      const underscoreSpec = {
+        action_id: 'action_underscore',
+        metadata: {
+          domain: SHARED_DOMAIN,
+          raw_spec: buildSpec('get_foo_bar', '/foo_bar'),
+        },
+      };
+      mockLoadActionSets.mockResolvedValue([hyphenSpec, underscoreSpec]);
+
+      const hyphenTool = `get_foo---bar${actionDelimiter}${ENCODED_DOMAIN}`;
+      const underscoreTool = `get_foo_bar${actionDelimiter}${ENCODED_DOMAIN}`;
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.actions];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_hyphen', tools: [hyphenTool, underscoreTool] },
+        definitionsOnly: false,
+      });
+
+      expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
+      const callsByName = new Map(mockCreateActionTool.mock.calls.map((c) => [c[0].name, c[0]]));
+      expect(callsByName.has(hyphenTool)).toBe(true);
+      expect(callsByName.has(underscoreTool)).toBe(true);
+      expect(callsByName.get(hyphenTool).requestBuilder.path).toBe('/foo-bar');
+      expect(callsByName.get(underscoreTool).requestBuilder.path).toBe('/foo_bar');
+      // Critical: the two must resolve to distinct builders. If the
+      // operationId half of the key is normalized, both collapse to
+      // the same map slot and one silently overwrites the other.
+      expect(callsByName.get(hyphenTool).requestBuilder).not.toBe(
+        callsByName.get(underscoreTool).requestBuilder,
+      );
+    });
+
     it('loadAgentTools resolves raw `---`-separated tool names from agent.tools', async () => {
       // Hostnames at or below ENCODED_DOMAIN_LENGTH round-trip through
       // `domainParser(..., true)` as a `---`-separated string, and agents

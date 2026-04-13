@@ -72,14 +72,30 @@ const { getLogStores } = require('~/cache');
 const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
 /**
- * Collapse every `actionDomainSeparator` sequence in a fully-qualified
- * action tool name to an underscore. Agents can store tool names in the
- * raw `domainParser(..., true)` output, which for short hostnames is a
- * `---`-separated string (e.g. `medium---com`). The lookup maps below
- * are always keyed with the `_`-collapsed form, so every read must
- * normalize first or short-hostname tools silently fail to resolve.
+ * Collapse every `actionDomainSeparator` sequence in the encoded-domain
+ * suffix of a fully-qualified action tool name to an underscore. Agents
+ * can store tool names in the raw `domainParser(..., true)` output,
+ * which for short hostnames is a `---`-separated string (e.g.
+ * `medium---com`). The lookup maps below are always keyed with the
+ * `_`-collapsed domain, so every read must normalize that suffix or
+ * short-hostname tools silently fail to resolve.
+ *
+ * The operationId portion (everything before the last `actionDelimiter`)
+ * is deliberately left untouched: `openapiToFunction` preserves hyphens
+ * in generated operationIds, so two specs can legitimately produce
+ * operationIds that differ only in hyphens-vs-underscores (e.g.
+ * `get_foo---bar` vs `get_foo_bar`). Collapsing the operationId would
+ * merge those into a single map slot and silently drop one tool.
  */
-const normalizeActionToolName = (toolName) => toolName.replace(domainSeparatorRegex, '_');
+const normalizeActionToolName = (toolName) => {
+  const delimiterIndex = toolName.lastIndexOf(actionDelimiter);
+  if (delimiterIndex === -1) {
+    return toolName;
+  }
+  const prefixEnd = delimiterIndex + actionDelimiter.length;
+  const encodedDomain = toolName.slice(prefixEnd);
+  return toolName.slice(0, prefixEnd) + encodedDomain.replace(domainSeparatorRegex, '_');
+};
 
 /**
  * Populate a `toolToAction` map with one slot per fully-qualified tool
@@ -119,14 +135,15 @@ const registerActionTools = ({
 
   for (const sig of functionSignatures) {
     const entry = makeEntry(sig);
-    // Normalize the operationId portion of the key as well — the lookup
-    // path collapses every `actionDomainSeparator` sequence in the full
-    // tool name, so a `---` that survived into `sig.name` would shift the
-    // underscore boundary and miss an otherwise-matching key.
-    const normalizedName = normalizeActionToolName(sig.name);
-    setKey(`${normalizedName}${actionDelimiter}${normalizedDomain}`, entry);
+    // Use `sig.name` verbatim: `openapiToFunction` keeps hyphens in
+    // generated operationIds, so `get_foo---bar` and `get_foo_bar` are
+    // distinct operations on the same spec. `normalizeActionToolName`
+    // only touches the encoded-domain suffix at lookup time, so map
+    // keys and lookups stay consistent without merging distinct
+    // operationIds into the same slot.
+    setKey(`${sig.name}${actionDelimiter}${normalizedDomain}`, entry);
     if (legacyNormalized !== normalizedDomain) {
-      setKey(`${normalizedName}${actionDelimiter}${legacyNormalized}`, entry);
+      setKey(`${sig.name}${actionDelimiter}${legacyNormalized}`, entry);
     }
   }
 };
