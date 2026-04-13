@@ -4,3 +4,4 @@ export * from './exchange';
 export * from './agent';
 export * from './password';
 export * from './invite';
+export * from './magiclink';
