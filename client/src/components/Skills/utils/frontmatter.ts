@@ -43,10 +43,9 @@ export function parseFrontmatter(raw: string, skipKeys?: Set<string>): ParsedFro
     if (!key) {
       continue;
     }
-    if (skipKeys?.has(key.toLowerCase())) {
-      continue;
-    }
     let value = line.slice(colon + 1).trim();
+    // Consume multi-line YAML list items regardless of whether the key is
+    // skipped — otherwise the list lines leak into subsequent key parsing.
     if (!value) {
       const items: string[] = [];
       while (i + 1 < lines.length) {
@@ -59,6 +58,9 @@ export function parseFrontmatter(raw: string, skipKeys?: Set<string>): ParsedFro
         i++;
       }
       value = items.join(',');
+    }
+    if (skipKeys?.has(key.toLowerCase())) {
+      continue;
     }
     if (value) {
       fields.push({ key, value });

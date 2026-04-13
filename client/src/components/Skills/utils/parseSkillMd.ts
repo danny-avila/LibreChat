@@ -1,4 +1,5 @@
 import { InvocationMode } from 'librechat-data-provider';
+import { parseFrontmatter } from './frontmatter';
 
 export interface ParsedSkillMd {
   name: string;
@@ -6,48 +7,24 @@ export interface ParsedSkillMd {
   invocationMode: InvocationMode | '';
 }
 
-const FRONTMATTER_DELIMITER = '---';
 const VALID_INVOCATION_MODES = new Set<string>(Object.values(InvocationMode));
 
 /**
  * Parses a SKILL.md file's YAML frontmatter into structured fields.
- * Unrecognised frontmatter keys are silently ignored.
+ * Delegates to the shared `parseFrontmatter` utility and maps the
+ * generic fields to the typed `ParsedSkillMd` shape.
  */
 export function parseSkillMd(raw: string): ParsedSkillMd {
-  const trimmed = raw.trim();
-  const result: ParsedSkillMd = {
-    name: '',
-    description: '',
-    invocationMode: '',
-  };
+  const { fields } = parseFrontmatter(raw);
+  const result: ParsedSkillMd = { name: '', description: '', invocationMode: '' };
 
-  if (!trimmed.startsWith(FRONTMATTER_DELIMITER)) {
-    return result;
-  }
-
-  const afterFirstDelimiter = trimmed.slice(FRONTMATTER_DELIMITER.length);
-  const closingIndex = afterFirstDelimiter.indexOf(`\n${FRONTMATTER_DELIMITER}`);
-
-  if (closingIndex === -1) {
-    return result;
-  }
-
-  const frontmatterBlock = afterFirstDelimiter.slice(0, closingIndex);
-
-  const lines = frontmatterBlock.split('\n');
-  for (const line of lines) {
-    const colonIndex = line.indexOf(':');
-    if (colonIndex === -1) {
-      continue;
-    }
-    const key = line.slice(0, colonIndex).trim().toLowerCase();
-    const value = line.slice(colonIndex + 1).trim();
-
-    if (key === 'name') {
+  for (const { key, value } of fields) {
+    const lower = key.toLowerCase();
+    if (lower === 'name') {
       result.name = value;
-    } else if (key === 'description') {
+    } else if (lower === 'description') {
       result.description = value;
-    } else if (key === 'invocationmode') {
+    } else if (lower === 'invocationmode') {
       result.invocationMode = VALID_INVOCATION_MODES.has(value) ? (value as InvocationMode) : '';
     }
   }
