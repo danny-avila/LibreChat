@@ -535,15 +535,6 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     }
   }
 
-  function uploadFileStubHandler(_req: ServerRequest, res: Response) {
-    return res.status(501).json({
-      error: 'skill_file_upload_not_implemented',
-      phase: 2,
-      message:
-        'Skill file upload is not yet wired up. This endpoint is a stub reserved for phase 2.',
-    });
-  }
-
   const MAX_TEXT_CACHE_BYTES = 512 * 1024;
 
   async function downloadFileHandler(req: ServerRequest, res: Response) {
@@ -665,7 +656,6 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     patch: patchHandler,
     delete: deleteHandler,
     listFiles: listFilesHandler,
-    uploadFileStub: uploadFileStubHandler,
     downloadFile: downloadFileHandler,
     deleteFile: deleteFileHandler,
   };

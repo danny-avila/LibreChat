@@ -224,7 +224,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
                 <DeleteSkill
                   skillId={skill._id}
                   skillName={skill.name}
-                  onDelete={() => navigate('/skills/new', { replace: true })}
+                  onDelete={() => navigate('/skills', { replace: true })}
                 />
               )}
             </div>

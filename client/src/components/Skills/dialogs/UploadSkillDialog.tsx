@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, Spinner, useToastContext } from '@librechat/client';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 interface UploadSkillDialogProps {
   isOpen: boolean;
@@ -98,11 +99,13 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
               disabled={isUploading}
-              className={`flex h-[120px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-text-secondary transition-colors ${
+              className={cn(
+                'flex h-[120px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-text-secondary transition-colors',
                 isDragging
                   ? 'border-border-heavy bg-surface-hover'
-                  : 'border-border-medium hover:bg-surface-hover'
-              } ${isUploading ? 'cursor-wait opacity-50' : ''}`}
+                  : 'border-border-medium hover:bg-surface-hover',
+                isUploading && 'cursor-wait opacity-50',
+              )}
             >
               {isUploading ? (
                 <Spinner className="size-8" />

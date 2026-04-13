@@ -84,6 +84,7 @@ function isDuplicateKeyError(error: unknown): boolean {
 
 export interface ImportSkillDeps {
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
+  deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
   upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
   saveBuffer: (
     req: Request,
@@ -166,8 +167,12 @@ function getAuthorInfo(req: ServerRequest) {
   return { authorId, authorName, tenantId };
 }
 
-/** Grant SKILL_OWNER permission to the uploader after creating a skill. */
-async function grantOwnership(deps: ImportSkillDeps, userId: string, skillId: Types.ObjectId) {
+/** Grant SKILL_OWNER permission to the uploader. Rolls back skill on failure. */
+async function grantOwnership(
+  deps: ImportSkillDeps,
+  userId: string,
+  skillId: Types.ObjectId,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await deps.grantPermission({
       principalType: PrincipalType.USER,
@@ -176,10 +181,15 @@ async function grantOwnership(deps: ImportSkillDeps, userId: string, skillId: Ty
       resourceId: skillId,
       accessRoleId: AccessRoleIds.SKILL_OWNER,
     });
+    return { ok: true };
   } catch (error) {
-    // Log but don't fail the import — the skill was created successfully.
-    // The user can fix permissions manually.
-    logger.error('[importSkill] Failed to grant SKILL_OWNER:', error);
+    logger.error(`[importSkill] Failed to grant SKILL_OWNER for ${skillId}, rolling back:`, error);
+    try {
+      await deps.deleteSkill(skillId.toString());
+    } catch (rollbackError) {
+      logger.error(`[importSkill] Compensating delete failed for ${skillId}:`, rollbackError);
+    }
+    return { ok: false, error: 'Failed to initialize skill permissions' };
   }
 }
 
@@ -208,7 +218,10 @@ async function handleMarkdown(
   });
 
   const skill = result.skill as ISkill & { _id: Types.ObjectId };
-  await grantOwnership(deps, req.user.id, skill._id);
+  const grant = await grantOwnership(deps, req.user.id, skill._id);
+  if (!grant.ok) {
+    return res.status(500).json({ error: grant.error });
+  }
 
   return res.status(201).json(skill);
 }
@@ -287,8 +300,11 @@ async function handleZip(
 
   const skill = result.skill as ISkill & { _id: Types.ObjectId };
 
-  // Grant ownership
-  await grantOwnership(deps, userId, skill._id);
+  // Grant ownership — rolls back skill on failure
+  const grant = await grantOwnership(deps, userId, skill._id);
+  if (!grant.ok) {
+    return res.status(500).json({ error: grant.error });
+  }
 
   // Process additional files (everything except SKILL.md)
   const fileResults: Array<{ path: string; status: 'ok' | 'error'; error?: string }> = [];
@@ -315,7 +331,9 @@ async function handleZip(
     }
 
     try {
-      // Guard against zip bombs: check declared size before decompressing
+      // Best-effort pre-decompression size check via undocumented JSZip internal.
+      // Falls back to 0 when _data is absent — the post-decompression cumulative
+      // check below is the real safety net.
       const declaredSize =
         (zipEntry as unknown as { _data?: { uncompressedSize?: number } })._data
           ?.uncompressedSize ?? 0;
@@ -398,11 +416,18 @@ async function handleZip(
     }
   }
 
-  const successCount = fileResults.filter((r) => r.status === 'ok').length;
-  const errorCount = fileResults.filter((r) => r.status === 'error').length;
+  const errors: typeof fileResults = [];
+  let successCount = 0;
+  for (const r of fileResults) {
+    if (r.status === 'ok') {
+      successCount++;
+    } else {
+      errors.push(r);
+    }
+  }
 
   logger.info(
-    `[importSkill] Imported skill "${inferredName}" with ${successCount} files (${errorCount} errors)`,
+    `[importSkill] Imported skill "${inferredName}" with ${successCount} files (${errors.length} errors)`,
   );
 
   return res.status(201).json({
@@ -410,8 +435,8 @@ async function handleZip(
     _importSummary: {
       filesProcessed: fileResults.length,
       filesSucceeded: successCount,
-      filesFailed: errorCount,
-      errors: fileResults.filter((r) => r.status === 'error'),
+      filesFailed: errors.length,
+      errors,
     },
   });
 }

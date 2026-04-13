@@ -128,6 +128,7 @@ function resolveSkillStorage(req, { isImage = false } = {}) {
 // ---------------------------------------------------------------------------
 const importHandler = createImportHandler({
   createSkill,
+  deleteSkill,
   upsertSkillFile,
   saveBuffer: (req, { userId, buffer, fileName, basePath, isImage }) => {
     const storage = resolveSkillStorage(req, { isImage });
@@ -146,18 +147,19 @@ async function uploadFileHandler(req, res) {
   try {
     const { file } = req;
     if (!file) {
-      return res.status(400).json({ message: 'No file provided' });
+      return res.status(400).json({ error: 'No file provided' });
     }
 
     const skillId = req.params.id;
     const relativePath = req.body.relativePath;
     if (!relativePath) {
-      return res.status(400).json({ message: 'relativePath is required in form body' });
+      return res.status(400).json({ error: 'relativePath is required in form body' });
     }
     if (relativePath.toUpperCase() === 'SKILL.MD') {
-      return res
-        .status(400)
-        .json({ message: 'SKILL.md is reserved — update the skill body instead' });
+      return res.status(400).json({ error: 'SKILL.md is reserved; update the skill body instead' });
+    }
+    if (!/^[a-zA-Z0-9._\-/]+$/.test(relativePath) || /(?:^|\/)\.\.|^\//.test(relativePath)) {
+      return res.status(400).json({ error: 'Invalid file path' });
     }
 
     const fileId = crypto.randomUUID();
@@ -189,10 +191,10 @@ async function uploadFileHandler(req, res) {
     return res.status(200).json(result);
   } catch (error) {
     if (error.code === 'SKILL_FILE_VALIDATION_FAILED') {
-      return res.status(400).json({ message: error.message });
+      return res.status(400).json({ error: error.message });
     }
     logger.error('[uploadFile] Error:', error);
-    return res.status(500).json({ message: 'Failed to upload file' });
+    return res.status(500).json({ error: 'Failed to upload file' });
   }
 }
 
