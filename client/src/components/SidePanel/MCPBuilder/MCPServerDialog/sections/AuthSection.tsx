@@ -188,22 +188,8 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
               <SecretInput
                 id="oauth_client_secret"
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
-                aria-invalid={errors.auth?.oauth_client_secret ? 'true' : 'false'}
-                aria-describedby={
-                  errors.auth?.oauth_client_secret ? 'oauth-client-secret-error' : undefined
-                }
                 {...register('auth.oauth_client_secret')}
-                className={cn(errors.auth?.oauth_client_secret && 'border-border-destructive')}
               />
-              {errors.auth?.oauth_client_secret && (
-                <p
-                  id="oauth-client-secret-error"
-                  role="alert"
-                  className="text-xs text-text-destructive"
-                >
-                  {localize('com_ui_field_required')}
-                </p>
-              )}
             </div>
           </div>
 

@@ -502,7 +502,25 @@ export class MCPOAuthHandler {
       let clientInfo: OAuthClientInformation | undefined;
       let reusedStoredClient = false;
 
-      if (findToken) {
+      if (config?.client_id) {
+        logger.debug(`[MCPOAuth] Using predefined client_id for ${serverName}`);
+        let tokenEndpointAuthMethod: string;
+        if (!config.client_secret) {
+          tokenEndpointAuthMethod = 'none';
+        } else {
+          tokenEndpointAuthMethod =
+            getForcedTokenEndpointAuthMethod(config.token_exchange_method) ?? 'client_secret_basic';
+        }
+
+        clientInfo = {
+          client_id: config.client_id,
+          client_secret: config.client_secret,
+          redirect_uris: [redirectUri],
+          scope: config.scope,
+          token_endpoint_auth_method: tokenEndpointAuthMethod,
+        };
+        logger.debug(`[MCPOAuth] Using predefined client with ID: ${clientInfo.client_id}`);
+      } else if (findToken) {
         try {
           const existing = await MCPTokenStorage.getClientInfoAndMetadata({
             userId,
@@ -543,6 +561,7 @@ export class MCPOAuthHandler {
       }
 
       if (!clientInfo) {
+        logger.debug(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
         clientInfo = await this.registerOAuthClient(
           authServerUrl.toString(),
           metadata,
