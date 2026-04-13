@@ -535,10 +535,27 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       if (!isValidObjectIdString(id)) {
         return res.status(400).json({ error: 'Invalid skill id' });
       }
+
+      // Collect file records before deletion so we can clean up storage blobs
+      const files = await listSkillFiles(id);
+
       const result = await deleteSkill(id);
       if (!result.deleted) {
         return res.status(404).json({ error: 'Skill not found' });
       }
+
+      // Fire-and-forget blob cleanup for each file
+      for (const file of files) {
+        const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
+          deleteFile?: (r: ServerRequest, f: { filepath: string }) => Promise<void>;
+        };
+        if (deleteBlob) {
+          deleteBlob(req, { filepath: file.filepath }).catch((e) =>
+            logger.error(`[deleteSkill] Blob cleanup failed for ${file.relativePath}:`, e),
+          );
+        }
+      }
+
       const response: TDeleteSkillResponse = { id, deleted: true };
       return res.status(200).json(response);
     } catch (error) {
