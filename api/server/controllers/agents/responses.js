@@ -345,6 +345,13 @@ const createResponse = async (req, res) => {
       model_parameters: agent.model_parameters ?? {},
     };
 
+    const accessibleSkillIds = await findAccessibleResources({
+      userId: req.user.id,
+      role: req.user.role,
+      resourceType: ResourceType.SKILL,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+
     const primaryConfig = await initializeAgent(
       {
         req,
@@ -357,6 +364,7 @@ const createResponse = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
+        accessibleSkillIds,
       },
       {
         getConvoFiles: db.getConvoFiles,
@@ -368,6 +376,7 @@ const createResponse = async (req, res) => {
         getUserCodeFiles: db.getUserCodeFiles,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        listSkillsByAccess: db.listSkillsByAccess,
       },
     );
 
@@ -437,7 +446,7 @@ const createResponse = async (req, res) => {
       // Create tool execute options for event-driven tool execution
       const toolExecuteOptions = {
         loadTools: async (toolNames) => {
-          return loadToolsForExecution({
+          const result = await loadToolsForExecution({
             req,
             res,
             agent,
@@ -448,8 +457,16 @@ const createResponse = async (req, res) => {
             tool_resources: primaryConfig.tool_resources,
             actionsEnabled: primaryConfig.actionsEnabled,
           });
+          return {
+            ...result,
+            configurable: {
+              ...result.configurable,
+              accessibleSkillIds: primaryConfig.accessibleSkillIds,
+            },
+          };
         },
         toolEndCallback,
+        getSkillByName: db.getSkillByName,
       };
 
       // Combine handlers

@@ -1,4 +1,9 @@
-import { Providers } from '@librechat/agents';
+import {
+  Providers,
+  formatSkillCatalog,
+  SkillToolDefinition,
+  createSkillTool,
+} from '@librechat/agents';
 import {
   Constants,
   ErrorTypes,
@@ -66,6 +71,10 @@ export type InitializedAgent = Agent & {
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
+  /** Accessible skill IDs for ACL checking at execute time */
+  accessibleSkillIds?: import('mongoose').Types.ObjectId[];
+  /** Number of skills in the catalog (used to determine if SkillTool should be registered) */
+  skillCount?: number;
 };
 
 /**
@@ -112,6 +121,8 @@ export interface InitializeAgentParams {
   allowedProviders: Set<string>;
   /** Whether this is the initial agent */
   isInitialAgent?: boolean;
+  /** Accessible skill IDs for this user (pre-computed by the caller via ACL query) */
+  accessibleSkillIds?: import('mongoose').Types.ObjectId[];
 }
 
 /**
@@ -143,6 +154,11 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     parentMessageId?: string;
     files?: Array<{ file_id: string }>;
   }> | null>;
+  /** List skill summaries for catalog injection (paginated, omits body/frontmatter) */
+  listSkillsByAccess?: (params: {
+    accessibleIds: import('mongoose').Types.ObjectId[];
+    limit: number;
+  }) => Promise<{ skills: Array<{ name: string; description: string }> }>;
 }
 
 /**
@@ -299,7 +315,7 @@ export async function initializeAgent(
     toolRegistry,
     toolContextMap,
     userMCPAuthMap,
-    toolDefinitions,
+    toolDefinitions: loadedToolDefinitions,
     hasDeferredTools,
     actionsEnabled,
     tools: structuredTools,
@@ -321,6 +337,8 @@ export async function initializeAgent(
     hasDeferredTools: false,
     actionsEnabled: undefined,
   };
+
+  let toolDefinitions = loadedToolDefinitions;
 
   const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
     provider,
@@ -414,6 +432,45 @@ export async function initializeAgent(
     agent.additional_instructions = artifactsPromptResult ?? undefined;
   }
 
+  let skillCount = 0;
+  const { accessibleSkillIds } = params;
+  if (accessibleSkillIds && accessibleSkillIds.length > 0 && db?.listSkillsByAccess) {
+    const { skills } = await db.listSkillsByAccess({
+      accessibleIds: accessibleSkillIds,
+      limit: 100,
+    });
+
+    if (skills.length > 0) {
+      skillCount = skills.length;
+      const catalog = formatSkillCatalog(
+        skills.map((s) => ({ name: s.name, description: s.description })),
+        { contextWindowTokens: Number(agentMaxContextTokens) || 200_000 },
+      );
+
+      if (catalog) {
+        agent.additional_instructions = agent.additional_instructions
+          ? `${agent.additional_instructions}\n\n${catalog}`
+          : catalog;
+      }
+    }
+  }
+
+  if (skillCount > 0) {
+    const skillToolDef: LCTool = {
+      name: SkillToolDefinition.name,
+      description: SkillToolDefinition.description,
+      parameters: SkillToolDefinition.parameters as unknown as LCTool['parameters'],
+    };
+
+    toolDefinitions = [...(toolDefinitions ?? []), skillToolDef];
+    if (toolRegistry) {
+      toolRegistry.set(SkillToolDefinition.name, skillToolDef);
+    }
+
+    const skillToolInstance = createSkillTool();
+    tools = [...tools, skillToolInstance as unknown as GenericTool];
+  }
+
   const agentMaxContextNum = Number(agentMaxContextTokens) || 18000;
   const maxOutputTokensNum = Number(maxOutputTokens) || 0;
   const baseContextTokens = Math.max(0, agentMaxContextNum - maxOutputTokensNum);
@@ -445,6 +502,8 @@ export async function initializeAgent(
     hasDeferredTools,
     actionsEnabled,
     baseContextTokens,
+    skillCount,
+    accessibleSkillIds: params.accessibleSkillIds,
     attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,

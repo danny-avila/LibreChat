@@ -4,10 +4,12 @@ import type {
   LCTool,
   EventHandler,
   LCToolRegistry,
+  InjectedMessage,
   ToolCallRequest,
   ToolExecuteResult,
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
+import type { Types } from 'mongoose';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { runOutsideTracing } from '~/utils';
 
@@ -43,6 +45,70 @@ export interface ToolExecuteOptions {
   }>;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
+  /** Loads a skill by name with ACL constraint (returns full body for injection) */
+  getSkillByName?: (
+    name: string,
+    accessibleIds: Types.ObjectId[],
+  ) => Promise<{ body: string; name: string } | null>;
+}
+
+async function handleSkillToolCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+  getSkillByName?: ToolExecuteOptions['getSkillByName'],
+): Promise<ToolExecuteResult> {
+  const args = tc.args as { skillName?: string; args?: string };
+  if (!args.skillName) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'skillName is required',
+    };
+  }
+
+  if (!getSkillByName) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'Skill execution is not configured',
+    };
+  }
+
+  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+  const skill = await getSkillByName(args.skillName, accessibleIds);
+
+  if (!skill) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${args.skillName}" not found or not accessible`,
+    };
+  }
+
+  let body = skill.body;
+  if (args.args) {
+    body = body.replace(/\$ARGUMENTS/g, args.args);
+  }
+
+  const injectedMessages: InjectedMessage[] = [
+    {
+      role: 'user',
+      content: body,
+      isMeta: true,
+      source: 'skill',
+      skillName: skill.name,
+    },
+  ];
+
+  return {
+    toolCallId: tc.id,
+    content: `Skill "${args.skillName}" loaded. Follow the instructions below.`,
+    status: 'success',
+    injectedMessages,
+  };
 }
 
 /**
@@ -51,7 +117,7 @@ export interface ToolExecuteOptions {
  * executes them in parallel, and resolves with the results.
  */
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
-  const { loadTools, toolEndCallback } = options;
+  const { loadTools, toolEndCallback, getSkillByName } = options;
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
@@ -70,6 +136,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
+                if (tc.name === Constants.SKILL_TOOL) {
+                  return handleSkillToolCall(tc, mergedConfigurable, getSkillByName);
+                }
+
                 const tool = toolMap.get(tc.name);
 
                 if (!tool) {

@@ -613,6 +613,15 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
   }
 
+  async function getSkillByName(
+    name: string,
+    accessibleIds: Types.ObjectId[],
+  ): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } }).lean();
+    return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
+  }
+
   async function listSkillsByAccess(
     params: ListSkillsByAccessParams,
   ): Promise<ListSkillsByAccessResult> {
@@ -900,6 +909,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
   return {
     createSkill,
     getSkillById,
+    getSkillByName,
     listSkillsByAccess,
     updateSkill,
     deleteSkill,

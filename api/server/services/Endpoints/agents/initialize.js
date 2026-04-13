@@ -24,7 +24,7 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
-const { checkPermission } = require('~/server/services/PermissionService');
+const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const { logViolation } = require('~/cache');
@@ -139,9 +139,17 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
-      return result;
+
+      return {
+        ...result,
+        configurable: {
+          ...result.configurable,
+          accessibleSkillIds: ctx.accessibleSkillIds,
+        },
+      };
     },
     toolEndCallback,
+    getSkillByName: db.getSkillByName,
   };
 
   const summarizationOptions =
@@ -192,6 +200,14 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   /** @type {string | undefined} */
   const parentMessageId = req.body.parentMessageId;
 
+  /** Query accessible skill IDs for catalog injection */
+  const accessibleSkillIds = await findAccessibleResources({
+    userId: req.user.id,
+    role: req.user.role,
+    resourceType: ResourceType.SKILL,
+    requiredPermissions: PermissionBits.VIEW,
+  });
+
   const primaryConfig = await initializeAgent(
     {
       req,
@@ -204,6 +220,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       endpointOption,
       allowedProviders,
       isInitialAgent: true,
+      accessibleSkillIds,
     },
     {
       getFiles: db.getFiles,
@@ -216,6 +233,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
+      listSkillsByAccess: db.listSkillsByAccess,
     },
   );
 
@@ -228,6 +246,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     userMCPAuthMap: primaryConfig.userMCPAuthMap,
     tool_resources: primaryConfig.tool_resources,
     actionsEnabled: primaryConfig.actionsEnabled,
+    accessibleSkillIds: primaryConfig.accessibleSkillIds,
   });
 
   const agent_ids = primaryConfig.agent_ids;
@@ -285,6 +304,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         parentMessageId,
         endpointOption,
         allowedProviders,
+        accessibleSkillIds,
       },
       {
         getFiles: db.getFiles,
@@ -297,6 +317,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
+        listSkillsByAccess: db.listSkillsByAccess,
       },
     );
 
@@ -313,6 +334,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       userMCPAuthMap: config.userMCPAuthMap,
       tool_resources: config.tool_resources,
       actionsEnabled: config.actionsEnabled,
+      accessibleSkillIds: config.accessibleSkillIds,
     });
 
     agentConfigs.set(agentId, config);
