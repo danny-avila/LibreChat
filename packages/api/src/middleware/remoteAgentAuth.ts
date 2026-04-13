@@ -54,7 +54,9 @@ async function resolveJwksUri(oidcConfig: OidcConfig): Promise<string> {
 
 function buildJwksClient(uri: string): jwksRsa.JwksClient {
   const options: jwksRsa.Options = {
-    cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
+    cache: process.env.OPENID_JWKS_URL_CACHE_ENABLED
+      ? isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED)
+      : true,
     cacheMaxAge: math(process.env.OPENID_JWKS_URL_CACHE_TIME, 60000),
     jwksUri: uri,
   };
@@ -208,14 +210,15 @@ export function createRemoteAgentAuth({
     try {
       const config = await getAppConfig();
       const authConfig = config?.endpoints?.agents?.remoteApi?.auth;
+      const apiKeyEnabled = authConfig?.apiKey?.enabled !== false;
 
       if (authConfig?.oidc?.enabled !== true) {
-        return apiKeyMiddleware(req, res, next);
+        if (apiKeyEnabled) return apiKeyMiddleware(req, res, next);
+        res.status(401).json({ error: 'Authentication required' });
+        return;
       }
 
       const token = extractBearer(req.headers.authorization);
-      const apiKeyEnabled = authConfig.apiKey?.enabled !== false;
-
       if (token == null) {
         if (apiKeyEnabled) return apiKeyMiddleware(req, res, next);
         res.status(401).json({ error: 'Bearer token required' });

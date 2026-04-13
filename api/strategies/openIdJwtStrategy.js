@@ -27,7 +27,9 @@ const { updateUser, findUser } = require('~/models');
  */
 const openIdJwtLogin = (openIdConfig) => {
   let jwksRsaOptions = {
-    cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
+    cache: process.env.OPENID_JWKS_URL_CACHE_ENABLED
+      ? isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED)
+      : true,
     cacheMaxAge: math(process.env.OPENID_JWKS_URL_CACHE_TIME, 60000),
     jwksUri: openIdConfig.serverMetadata().jwks_uri,
   };

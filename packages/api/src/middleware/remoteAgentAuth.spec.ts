@@ -122,6 +122,18 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
+    it('returns 401 when oidc.enabled is false and apiKey is disabled', async () => {
+      const deps = makeDeps(makeConfig({ enabled: false }, { enabled: false }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(makeReq() as Request, res, mockNext);
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Authentication required' });
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled(); // ← this is the key assertion
+    });
+
     it('falls back to apiKeyMiddleware when oidc.enabled is false', async () => {
       const deps = makeDeps(makeConfig({ enabled: false }));
       await createRemoteAgentAuth(deps)(makeReq() as Request, makeRes().res, mockNext);
@@ -132,6 +144,20 @@ describe('createRemoteAgentAuth', () => {
       const deps = makeDeps({ endpoints: { agents: {} } } as unknown as AppConfig);
       await createRemoteAgentAuth(deps)(makeReq() as Request, makeRes().res, mockNext);
       expect(deps.apiKeyMiddleware).toHaveBeenCalled();
+    });
+
+    it('returns 401 when remoteApi auth is absent and apiKey is disabled', async () => {
+      const config = {
+        endpoints: { agents: { remoteApi: { auth: { apiKey: { enabled: false } } } } },
+      } as unknown as AppConfig;
+      const deps = makeDeps(config);
+      const { res, status } = makeRes();
+
+      await createRemoteAgentAuth(deps)(makeReq() as Request, res, mockNext);
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
   });
 
