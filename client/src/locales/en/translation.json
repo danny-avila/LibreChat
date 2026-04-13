@@ -501,6 +501,7 @@
   "com_nav_info_show_thinking": "When enabled, the chat will display the thinking dropdowns open by default, allowing you to view the AI's reasoning in real-time. When disabled, the thinking dropdowns will remain closed by default for a cleaner and more streamlined interface",
   "com_nav_info_user_name_display": "When enabled, the username of the sender will be shown above each message you send. When disabled, you will only see \"You\" above your messages.",
   "com_nav_keep_screen_awake": "Keep screen awake during response generation",
+  "com_nav_new_chat_switch_to_history": "Switch to Chat History on new chat",
   "com_nav_lang_arabic": "العربية",
   "com_nav_lang_armenian": "Հայերեն",
   "com_nav_lang_auto": "Auto detect",
