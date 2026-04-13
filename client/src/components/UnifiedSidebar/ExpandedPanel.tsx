@@ -6,7 +6,7 @@ import { QueryKeys } from 'librechat-data-provider';
 import { Skeleton, Sidebar, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-import { useActivePanel, resolveActivePanel } from '~/Providers';
+import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { clearMessagesCache, cn } from '~/utils';
 import store from '~/store';
@@ -29,7 +29,7 @@ const NewChatButton = memo(function NewChatButton() {
         queryClient.invalidateQueries([QueryKeys.messages]);
         newConversation();
         if (switchToHistory) {
-          setActive('conversations');
+          setActive(DEFAULT_PANEL);
         }
       }
     },
