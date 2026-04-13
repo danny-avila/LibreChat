@@ -309,6 +309,8 @@ export type TUpdateSkillContext =
     }
   | undefined;
 
+export type ImportSkillOptions = MutationOptions<TSkill, FormData>;
+
 export type CreateSkillOptions = MutationOptions<TSkill, TCreateSkill>;
 
 export type UpdateSkillOptions = MutationOptions<
@@ -361,6 +363,13 @@ export type UpdateMCPServersPermOptions = MutationOptions<
   types.TError | null | undefined
 >;
 
+export type UpdateSkillPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateSkillPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
 export type UpdateRemoteAgentsPermVars = UpdatePermVars<p.TRemoteAgentsPermissions>;
 
 export type UpdateRemoteAgentsPermOptions = MutationOptions<
@@ -377,6 +386,34 @@ export type UpdateMarketplacePermOptions = MutationOptions<
   UpdateMarketplacePermVars,
   unknown,
   types.TError | null | undefined
+>;
+
+/* Skill tree / node mutations (phase 2 — stubbed in data-service) */
+
+export type CreateSkillNodeBody = {
+  skillId: string;
+  data: FormData | types.TCreateSkillNodeRequest;
+};
+export type CreateSkillNodeOptions = MutationOptions<types.TSkillNode, CreateSkillNodeBody>;
+
+export type UpdateSkillNodeVariables = {
+  skillId: string;
+  nodeId: string;
+  data: types.TUpdateSkillNodeRequest;
+};
+export type UpdateSkillNodeOptions = MutationOptions<types.TSkillNode, UpdateSkillNodeVariables>;
+
+export type DeleteSkillNodeBody = { skillId: string; nodeId: string };
+export type DeleteSkillNodeOptions = MutationOptions<void, DeleteSkillNodeBody>;
+
+export type UpdateSkillNodeContentVariables = {
+  skillId: string;
+  nodeId: string;
+  content: string;
+};
+export type UpdateSkillNodeContentOptions = MutationOptions<
+  types.TSkillNode,
+  UpdateSkillNodeContentVariables
 >;
 
 export type UpdateConversationTagOptions = MutationOptions<
