@@ -603,7 +603,15 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       // (an uploaded .html served inline from this origin would execute scripts
       // with access to the user's session). Images stay inline for <img> rendering.
       if (req.query.raw === 'true') {
-        const isImageMime = file.mimeType.startsWith('image/');
+        const SAFE_INLINE_MIMES = new Set([
+          'image/png',
+          'image/jpeg',
+          'image/gif',
+          'image/webp',
+          'image/avif',
+          'image/bmp',
+        ]);
+        const isImageMime = SAFE_INLINE_MIMES.has(file.mimeType);
         const safeName = file.filename.replace(/["\\\n\r]/g, '_');
         res.setHeader('Content-Type', file.mimeType);
         res.setHeader('X-Content-Type-Options', 'nosniff');
