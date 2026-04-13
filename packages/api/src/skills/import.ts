@@ -108,7 +108,10 @@ export interface ImportSkillDeps {
       isImage?: boolean;
     },
   ) => Promise<{ filepath: string; source: string }>;
-  deleteFile?: (req: Request, file: { filepath: string; [key: string]: unknown }) => Promise<void>;
+  deleteFile?: (
+    req: Request,
+    file: { filepath: string; source: string; [key: string]: unknown },
+  ) => Promise<void>;
   grantPermission: (params: {
     principalType: string;
     principalId: string;
@@ -437,7 +440,7 @@ async function handleZip(
       } catch (dbError) {
         if (deps.deleteFile) {
           await deps
-            .deleteFile(req, { filepath })
+            .deleteFile(req, { filepath, source })
             .catch((e) =>
               logger.error(`[importSkill] Orphan cleanup failed for ${relativePath}:`, e),
             );

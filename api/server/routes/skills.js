@@ -143,8 +143,7 @@ const importHandler = createImportHandler({
     }));
   },
   deleteFile: (req, file) => {
-    const source = getFileStrategy(req.config, { context: FileContext.skill_file });
-    const { deleteFile } = getStrategyFunctions(source);
+    const { deleteFile } = getStrategyFunctions(file.source);
     if (deleteFile) {
       return deleteFile(req, file);
     }
@@ -180,6 +179,9 @@ async function uploadFileHandler(req, res) {
     ) {
       return res.status(400).json({ error: 'Invalid file path' });
     }
+
+    // Look up existing file before saving — needed to clean up old blob on replace
+    const existingFile = await getSkillFileByPath(skillId, relativePath);
 
     const fileId = crypto.randomUUID();
     const filename = file.originalname;
@@ -219,6 +221,16 @@ async function uploadFileHandler(req, res) {
         logger.error('[uploadFile] Failed to clean up orphaned blob:', cleanupErr);
       }
       throw dbError;
+    }
+
+    // Clean up old blob if this was a replace (different filepath means new storage object)
+    if (existingFile && existingFile.filepath !== filepath) {
+      const { deleteFile: delOld } = getStrategyFunctions(existingFile.source);
+      if (delOld) {
+        delOld(req, { filepath: existingFile.filepath }).catch((e) =>
+          logger.error('[uploadFile] Old blob cleanup failed:', e),
+        );
+      }
     }
 
     return res.status(200).json(result);
