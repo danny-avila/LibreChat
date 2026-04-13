@@ -61,7 +61,7 @@ endpoints:
   bedrock:
     availableRegions:
       - "us-east-1"
-    titleModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    titleModel: "us.anthropic.claude-sonnet-4-6"
     guardrailConfig:
       # My upstream PR to make guardrail config injectable from env vars has not been merged, so I must hardcode
       guardrailIdentifier: "cwwc15fplrpc"
@@ -87,6 +87,12 @@ endpoints:
 # We explicitly spec our models (since we only have a few models and this makes the selector simpler)
 modelSpecs:
   list:
+    - name: claude-sonnet-4-6
+      label: "Claude Sonnet 4.6"
+      default: true
+      preset:
+        endpoint: "bedrock"
+        model: "us.anthropic.claude-sonnet-4-6"
     - name: "Claude Sonnet 4.5"
       label: "Claude Sonnet 4.5"
       default: true
@@ -108,4 +114,4 @@ memory:
   tokenLimit: 2000
   agent:
     provider: "bedrock"
-    model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    model: "us.anthropic.claude-sonnet-4-6"
