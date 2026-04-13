@@ -142,6 +142,15 @@ const importHandler = createImportHandler({
       source: storage.source,
     }));
   },
+  deleteFile: (req, filepath) => {
+    // Resolve source from filepath pattern — uploads use the skill_file strategy
+    const source = getFileStrategy(req.config, { context: FileContext.skill_file });
+    const { deleteFile } = getStrategyFunctions(source);
+    if (deleteFile) {
+      return deleteFile(req, filepath);
+    }
+    return Promise.resolve();
+  },
   grantPermission,
 });
 

@@ -601,7 +601,8 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       // Raw mode: stream the file with its Content-Type (for images / downloads)
       if (req.query.raw === 'true') {
         res.setHeader('Content-Type', file.mimeType);
-        res.setHeader('Content-Disposition', `inline; filename="${file.filename}"`);
+        const safeName = file.filename.replace(/["\\\n\r]/g, '_');
+        res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
         const stream = await strategy.getDownloadStream(req, file.filepath);
         stream.on('error', (err: Error) => {
           logger.error('[downloadFile] Stream error:', err);
