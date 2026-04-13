@@ -598,11 +598,19 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         return res.status(501).json({ error: 'Download not supported for this storage backend' });
       }
 
-      // Raw mode: stream the file with its Content-Type (for images / downloads)
+      // Raw mode: stream the file with its Content-Type (for images / downloads).
+      // Non-image files use Content-Disposition: attachment to prevent stored XSS
+      // (an uploaded .html served inline from this origin would execute scripts
+      // with access to the user's session). Images stay inline for <img> rendering.
       if (req.query.raw === 'true') {
-        res.setHeader('Content-Type', file.mimeType);
+        const isImageMime = file.mimeType.startsWith('image/');
         const safeName = file.filename.replace(/["\\\n\r]/g, '_');
-        res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+        res.setHeader('Content-Type', file.mimeType);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader(
+          'Content-Disposition',
+          `${isImageMime ? 'inline' : 'attachment'}; filename="${safeName}"`,
+        );
         const stream = await strategy.getDownloadStream(req, file.filepath);
         stream.on('error', (err: Error) => {
           logger.error('[downloadFile] Stream error:', err);
