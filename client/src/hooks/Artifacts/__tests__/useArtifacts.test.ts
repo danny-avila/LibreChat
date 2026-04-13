@@ -395,6 +395,31 @@ describe('useArtifacts', () => {
       expect(mockSetCurrentArtifactId).not.toHaveBeenCalled();
     });
 
+    it('should advance to new artifact during streaming', () => {
+      const artifact1 = createArtifact({ id: 'artifact-1', lastUpdateTime: 1000, content: 'c1' });
+
+      (useRecoilValue as jest.Mock).mockReturnValue({ 'artifact-1': artifact1 });
+      (useRecoilState as jest.Mock).mockReturnValue(['artifact-1', mockSetCurrentArtifactId]);
+      (useArtifactsContext as jest.Mock).mockReturnValue({
+        ...defaultContext,
+        isSubmitting: true,
+        latestMessageId: 'msg-1',
+      });
+
+      const { rerender } = renderHook(() => useArtifacts());
+      mockSetCurrentArtifactId.mockClear();
+
+      const artifact2 = createArtifact({ id: 'artifact-2', lastUpdateTime: 2000, content: 'c2' });
+      (useRecoilValue as jest.Mock).mockReturnValue({
+        'artifact-1': artifact1,
+        'artifact-2': artifact2,
+      });
+
+      rerender();
+
+      expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-2');
+    });
+
     it('should keep selection null after an explicit reset', () => {
       const artifact1 = createArtifact({ id: 'artifact-1', lastUpdateTime: 1000 });
 

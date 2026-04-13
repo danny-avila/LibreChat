@@ -51,6 +51,8 @@ export default function useArtifacts() {
     };
   }, [conversationId, resetArtifacts, resetCurrentArtifactId]);
 
+  /** Read currentArtifactId in effects without subscribing as a dependency.
+   * Adding it to effect deps fires auto-select on every reset, breaking toggle-close. */
   const currentArtifactIdRef = useRef(currentArtifactId);
   currentArtifactIdRef.current = currentArtifactId;
 
@@ -86,14 +88,7 @@ export default function useArtifacts() {
       return;
     }
 
-    const userHasManualSelection =
-      currentArtifactId != null &&
-      currentArtifactId !== latestArtifactId &&
-      orderedArtifactIds.includes(currentArtifactId);
-
-    if (!userHasManualSelection) {
-      setCurrentArtifactId(latestArtifactId);
-    }
+    setCurrentArtifactId(latestArtifactId);
     lastContentRef.current = latestArtifact?.content ?? null;
 
     // Only switch to code tab if we haven't detected an enclosed artifact yet
