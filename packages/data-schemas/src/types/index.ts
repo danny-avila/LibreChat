@@ -37,3 +37,5 @@ export * from './admin';
 export * from './web';
 /* MCP Servers */
 export * from './mcp';
+/* Magic Links */
+export * from './magiclink';
