@@ -51,16 +51,15 @@ export default function useArtifacts() {
     };
   }, [conversationId, resetArtifacts, resetCurrentArtifactId]);
 
+  const currentArtifactIdRef = useRef(currentArtifactId);
+  currentArtifactIdRef.current = currentArtifactId;
+
   useEffect(() => {
-    if (orderedArtifactIds.length === 0) {
-      return;
-    }
-    if (currentArtifactId != null && orderedArtifactIds.includes(currentArtifactId)) {
-      return;
-    }
-    const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
-    setCurrentArtifactId(latestArtifactId);
-  }, [currentArtifactId, setCurrentArtifactId, orderedArtifactIds]);
+    if (orderedArtifactIds.length === 0) return;
+    const currentId = currentArtifactIdRef.current;
+    if (currentId != null && orderedArtifactIds.includes(currentId)) return;
+    setCurrentArtifactId(orderedArtifactIds[orderedArtifactIds.length - 1]);
+  }, [orderedArtifactIds, setCurrentArtifactId]);
 
   /**
    * Manage artifact selection and code tab switching for non-enclosed artifacts
@@ -87,7 +86,14 @@ export default function useArtifacts() {
       return;
     }
 
-    setCurrentArtifactId(latestArtifactId);
+    const userHasManualSelection =
+      currentArtifactId != null &&
+      currentArtifactId !== latestArtifactId &&
+      orderedArtifactIds.includes(currentArtifactId);
+
+    if (!userHasManualSelection) {
+      setCurrentArtifactId(latestArtifactId);
+    }
     lastContentRef.current = latestArtifact?.content ?? null;
 
     // Only switch to code tab if we haven't detected an enclosed artifact yet
