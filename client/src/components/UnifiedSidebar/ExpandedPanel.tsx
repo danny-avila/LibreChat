@@ -13,11 +13,14 @@ import store from '~/store';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
 
-const NewChatButton = memo(function NewChatButton() {
+const NewChatButton = memo(function NewChatButton({
+  setActive,
+}: {
+  setActive: (id: string) => void;
+}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
-  const { setActive } = useActivePanel();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const switchToHistory = useRecoilValue(store.newChatSwitchToHistory);
 
@@ -153,7 +156,7 @@ function ExpandedPanel({
           </Button>
         }
       />
-      <NewChatButton />
+      <NewChatButton setActive={setActive} />
       <div className="mx-2 border-b border-border-light" />
       <div className="flex flex-col gap-1 overflow-y-auto">
         {links.map((link) => (
