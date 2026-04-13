@@ -8,6 +8,7 @@ import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { MessagesViewProvider } from '~/Providers';
 import { fontSizeAtom } from '~/store/fontSize';
 import MultiMessage from './MultiMessage';
+import MessageNav from './MessageNav';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -91,6 +92,8 @@ function MessagesViewContent({
           >
             <ScrollToBottom ref={scrollToBottomRef} scrollHandler={handleSmoothToRef} />
           </CSSTransition>
+
+          <MessageNav scrollableRef={scrollableRef} />
         </div>
       </div>
     </>
