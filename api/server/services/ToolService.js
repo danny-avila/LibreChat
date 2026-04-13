@@ -91,6 +91,13 @@ const normalizeActionToolName = (toolName) => toolName.replace(domainSeparatorRe
  * Indexing on the full tool name instead of the encoded domain alone is
  * what makes multi-action agents work when two actions share a hostname:
  * the operationId disambiguates them, so neither overwrites the other.
+ *
+ * Two actions that additionally share the same operationId still
+ * collide (nothing in the key distinguishes them). That case is
+ * pathological — `sanitizeOperationId` plus OpenAPI's own uniqueness
+ * requirement make it very unlikely — but when it does happen we log
+ * a warning so the silent-overwrite mode from the original bug cannot
+ * reappear under a different disguise.
  */
 const registerActionTools = ({
   toolToAction,
@@ -99,11 +106,27 @@ const registerActionTools = ({
   legacyNormalized,
   makeEntry,
 }) => {
+  const setKey = (key, entry) => {
+    if (toolToAction.has(key)) {
+      logger.warn(
+        `[Actions] operationId collision: "${key}" already registered; ` +
+          `action "${entry.action?.action_id}" overwrites the previous entry. ` +
+          `Two actions share both the operationId and the encoded hostname.`,
+      );
+    }
+    toolToAction.set(key, entry);
+  };
+
   for (const sig of functionSignatures) {
     const entry = makeEntry(sig);
-    toolToAction.set(`${sig.name}${actionDelimiter}${normalizedDomain}`, entry);
+    // Normalize the operationId portion of the key as well — the lookup
+    // path collapses every `actionDomainSeparator` sequence in the full
+    // tool name, so a `---` that survived into `sig.name` would shift the
+    // underscore boundary and miss an otherwise-matching key.
+    const normalizedName = normalizeActionToolName(sig.name);
+    setKey(`${normalizedName}${actionDelimiter}${normalizedDomain}`, entry);
     if (legacyNormalized !== normalizedDomain) {
-      toolToAction.set(`${sig.name}${actionDelimiter}${legacyNormalized}`, entry);
+      setKey(`${normalizedName}${actionDelimiter}${legacyNormalized}`, entry);
     }
   }
 };
@@ -308,12 +331,7 @@ async function processRequiredActions(client, requiredActions) {
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
 
-        // Index every fully-qualified tool name to its owning action set.
-        // See loadAgentTools / loadActionToolsForExecution for the rationale:
-        // keying on the full tool name (operationId + delimiter + encoded
-        // domain) instead of the encoded domain alone is what allows two
-        // actions sharing a hostname to coexist on the same assistant
-        // without one silently shadowing the other.
+        // See registerActionTools for the key-shape rationale.
         const toolToAction = new Map();
 
         for (const action of actionSets) {
@@ -1034,10 +1052,7 @@ async function loadAgentTools({
     };
   }
 
-  // See loadActionToolsForExecution below for the rationale: indexing
-  // by full tool name (operationId + delimiter + encoded domain) instead
-  // of by domain alone is what makes multi-action agents work when two
-  // actions share a hostname.
+  // See registerActionTools for the key-shape rationale.
   const toolToAction = new Map();
 
   for (const action of actionSets) {
@@ -1349,21 +1364,7 @@ async function loadActionToolsForExecution({
     return loadedActionTools;
   }
 
-  /**
-   * Map every fully-qualified tool name to its owning action and the
-   * specific request builder / zod schema / signature it should resolve to.
-   *
-   * Indexing on the full tool name (`<operationId>_action_<encoded-domain>`)
-   * instead of the encoded domain alone is what makes multi-action agents
-   * work: two actions that share a hostname now occupy distinct slots
-   * because the operationId disambiguates them. The previous shape stored
-   * one entry per encoded domain, so the second action of a pair would
-   * overwrite the first and its tools would silently disappear.
-   *
-   * Both the new and the legacy domain encodings are registered for each
-   * function so agents whose stored tool names predate the current
-   * encoding still resolve correctly.
-   */
+  // See registerActionTools for the key-shape rationale.
   const toolToAction = new Map();
   const allowedDomains = appConfig?.actions?.allowedDomains;
 

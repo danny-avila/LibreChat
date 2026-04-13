@@ -610,7 +610,11 @@ describe('ToolService - Action Capability Gating', () => {
         // assertions can verify each tool was wired to the correct action's
         // builder, not its sibling's.
         _builder: requestBuilder,
-        _call: jest.fn(),
+        // Resolve instead of returning undefined — processRequiredActions
+        // chains `.then(handleToolOutput)` directly onto this call, which
+        // would throw synchronously on an undefined return and mask the
+        // test as a simulated runtime crash.
+        _call: jest.fn().mockResolvedValue('{"status":"ok"}'),
         schema: {},
         description: '',
       }));
@@ -734,9 +738,7 @@ describe('ToolService - Action Capability Gating', () => {
       // zodSchema, name, and description for assistants API"), so key
       // resolution assertions off the request builder path instead.
       expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
-      const builderPaths = mockCreateActionTool.mock.calls.map(
-        (c) => c[0].requestBuilder?.path,
-      );
+      const builderPaths = mockCreateActionTool.mock.calls.map((c) => c[0].requestBuilder?.path);
       expect(builderPaths).toEqual(expect.arrayContaining(['/echo', '/items']));
       // Each call must carry a distinct builder — guards against the bug
       // where the surviving action's builders got routed to every tool.
@@ -790,9 +792,7 @@ describe('ToolService - Action Capability Gating', () => {
       });
 
       expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
-      const callsByName = new Map(
-        mockCreateActionTool.mock.calls.map((c) => [c[0].name, c[0]]),
-      );
+      const callsByName = new Map(mockCreateActionTool.mock.calls.map((c) => [c[0].name, c[0]]));
       expect(callsByName.has(rawNameA)).toBe(true);
       expect(callsByName.has(rawNameB)).toBe(true);
       expect(callsByName.get(rawNameA).requestBuilder.path).toBe('/echo');
