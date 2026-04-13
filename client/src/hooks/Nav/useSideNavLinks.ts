@@ -122,16 +122,6 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToPrompts) {
-      links.push({
-        title: 'com_ui_prompts',
-        label: '',
-        icon: NotebookPen,
-        id: 'prompts',
-        Component: PromptsAccordion,
-      });
-    }
-
     if (hasAccessToSkills) {
       links.push({
         title: 'com_ui_skills',
@@ -139,6 +129,16 @@ export default function useSideNavLinks({
         icon: ScrollText,
         id: 'skills',
         Component: SkillsAccordion,
+      });
+    }
+
+    if (hasAccessToPrompts) {
+      links.push({
+        title: 'com_ui_prompts',
+        label: '',
+        icon: NotebookPen,
+        id: 'prompts',
+        Component: PromptsAccordion,
       });
     }
 
