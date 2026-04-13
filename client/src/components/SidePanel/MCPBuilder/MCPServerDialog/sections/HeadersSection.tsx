@@ -22,7 +22,6 @@ interface HeaderRowProps {
   onRemove: () => void;
   availableVars: CustomUserVarEntry[];
   isEditMode: boolean;
-  initialHeaderKeys: Set<string>;
   initialSecretHeaderKeys: Set<string>;
 }
 
@@ -31,7 +30,6 @@ function HeaderRow({
   onRemove,
   availableVars,
   isEditMode,
-  initialHeaderKeys,
   initialSecretHeaderKeys,
 }: HeaderRowProps) {
   const localize = useLocalize();
@@ -236,47 +234,52 @@ interface HeadersSectionProps {
 
 export default function HeadersSection({ isEditMode }: HeadersSectionProps) {
   const localize = useLocalize();
-  const { control } = useFormContext<MCPServerFormData>();
+  const { control, getValues } = useFormContext<MCPServerFormData>();
 
   const { fields, append, remove } = useFieldArray({ control, name: 'headers' });
 
-  // Track initial header keys to distinguish existing headers from newly added ones
-  const initialHeaderKeysRef = useRef<Set<string>>(new Set());
-  // Track which headers were initially secret (not just which existed)
-  const initialSecretHeaderKeysRef = useRef<Set<string>>(new Set());
-  // Track the field IDs to detect when the form has been completely reset
-  const previousFieldIdsRef = useRef<string>('');
+  // Synchronous initial computation — correct on first render (no useEffect delay)
+  const [initialSecretKeys, setInitialSecretKeys] = useState<Set<string>>(() => {
+    const secretKeys = new Set<string>();
+    for (const h of getValues('headers') ?? []) {
+      const k = (h.key ?? '').trim();
+      if (k && h.isSecret) {
+        secretKeys.add(k);
+      }
+    }
+    return secretKeys;
+  });
 
-  // Capture initial header keys and secret status when the field array is first populated
-  // or when it's been completely reset (dialog reused for a different server)
+  // Handle dialog reuse: when the form is reset for a different server,
+  // all field IDs change. Detect this and recompute initial secret keys.
+  const previousFieldIdsRef = useRef(fields.map((f) => f.id).join(','));
   useEffect(() => {
     const currentFieldIds = fields.map((f) => f.id).join(',');
-    const hasBeenReset =
-      previousFieldIdsRef.current !== '' && currentFieldIds !== previousFieldIdsRef.current;
-    const shouldInitialize = initialHeaderKeysRef.current.size === 0 || hasBeenReset;
+    if (currentFieldIds === previousFieldIdsRef.current) {
+      return;
+    }
 
-    if (shouldInitialize && fields.length > 0) {
-      const keys = new Set<string>();
-      const secretKeys = new Set<string>();
-      fields.forEach((f) => {
-        const key = ((f as { key?: string }).key ?? '').trim();
-        const isSecret = !!(f as { isSecret?: boolean }).isSecret;
-        if (key) {
-          keys.add(key);
-          if (isSecret) {
+    if (fields.length > 0) {
+      const currentIds = new Set(fields.map((f) => f.id));
+      const prevIds = previousFieldIdsRef.current.split(',').filter(Boolean);
+      const isFullReset = prevIds.length > 0 && prevIds.every((id) => !currentIds.has(id));
+
+      if (isFullReset) {
+        const secretKeys = new Set<string>();
+        fields.forEach((f) => {
+          const key = ((f as { key?: string }).key ?? '').trim();
+          const isSecret = !!(f as { isSecret?: boolean }).isSecret;
+          if (key && isSecret) {
             secretKeys.add(key);
           }
-        }
-      });
-      initialHeaderKeysRef.current = keys;
-      initialSecretHeaderKeysRef.current = secretKeys;
-      previousFieldIdsRef.current = currentFieldIds;
-    } else if (fields.length === 0 && previousFieldIdsRef.current !== '') {
-      // When fields are cleared, reset everything so the next population is treated as fresh
-      initialHeaderKeysRef.current = new Set();
-      initialSecretHeaderKeysRef.current = new Set();
-      previousFieldIdsRef.current = '';
+        });
+        setInitialSecretKeys(secretKeys);
+      }
+    } else if (previousFieldIdsRef.current !== '') {
+      setInitialSecretKeys(new Set());
     }
+
+    previousFieldIdsRef.current = currentFieldIds;
   }, [fields]);
 
   const availableVars =
@@ -286,7 +289,7 @@ export default function HeadersSection({ isEditMode }: HeadersSectionProps) {
     }) ?? [];
 
   const validVars = useMemo(
-    () => (availableVars ?? []).filter((v) => v.key.trim() && v.title.trim()),
+    () => availableVars.filter((v) => v.key.trim() && v.title.trim()),
     [availableVars],
   );
 
@@ -319,8 +322,7 @@ export default function HeadersSection({ isEditMode }: HeadersSectionProps) {
               onRemove={() => remove(index)}
               availableVars={validVars}
               isEditMode={isEditMode}
-              initialHeaderKeys={initialHeaderKeysRef.current}
-              initialSecretHeaderKeys={initialSecretHeaderKeysRef.current}
+              initialSecretHeaderKeys={initialSecretKeys}
             />
           ))}
         </div>
