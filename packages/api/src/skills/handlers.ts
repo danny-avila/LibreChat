@@ -677,14 +677,13 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
           }
         }
 
-        // Cap JSON response size — files beyond this must use ?raw=true
+        // Cap JSON response size — files beyond this must use ?raw=true.
+        // No cache write here: { isBinary: false } without content provides
+        // no fast-path on subsequent reads, so we skip the DB round-trip.
         if (totalBytes > MAX_JSON_CONTENT_BYTES) {
           if ('destroy' in stream && typeof stream.destroy === 'function') {
             stream.destroy();
           }
-          updateSkillFileContent(id, decodedPath, { isBinary: false }).catch((e) =>
-            logger.error('[downloadFile] Cache write failed:', e),
-          );
           return res.status(200).json({ ...base, isBinary: false });
         }
       }

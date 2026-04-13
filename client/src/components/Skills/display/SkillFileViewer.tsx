@@ -115,7 +115,7 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
           type="button"
           onClick={() => navigate(`/skills/${skillId}`)}
           className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
-          aria-label="Back to skill"
+          aria-label={localize('com_ui_back')}
         >
           <ArrowLeft className="size-4" />
         </button>
