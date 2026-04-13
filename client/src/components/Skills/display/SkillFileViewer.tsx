@@ -108,8 +108,8 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header — back + filename + toggle + copy */}
-      <div className="flex items-center gap-2 border-b border-border-medium px-4 py-2">
+      {/* Header — fixed h-10 prevents layout shift when toggle appears/disappears */}
+      <div className="flex h-10 items-center gap-2 border-b border-border-medium px-4">
         <button
           type="button"
           onClick={() => navigate(`/skills/${skillId}`)}
@@ -180,7 +180,7 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
       </div>
 
       {/* Content — fills remaining space */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="flex-1 overflow-y-auto px-5 py-4">
         {isLoading && (
           <div className="flex items-center justify-center py-12">
             <Spinner className="size-6 text-text-secondary" />
