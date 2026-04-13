@@ -31,7 +31,8 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
   const isText = data != null && !data.isBinary && data.content != null;
 
   const rawUrl = useMemo(
-    () => `${apiBaseUrl}/api/skills/${skillId}/files/${encodeURIComponent(relativePath)}?raw=true`,
+    () =>
+      `${apiBaseUrl()}/api/skills/${skillId}/files/${encodeURIComponent(relativePath)}?raw=true`,
     [skillId, relativePath],
   );
 

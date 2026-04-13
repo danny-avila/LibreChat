@@ -719,10 +719,28 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       } catch {
         return res.status(400).json({ error: 'Invalid file path encoding' });
       }
+
+      // Look up the file record so we can clean up the storage blob
+      const file = await getSkillFileByPath(id, decodedPath);
+      if (!file) {
+        return res.status(404).json({ error: 'Skill file not found' });
+      }
+
       const result = await deleteSkillFile(id, decodedPath);
       if (!result.deleted) {
         return res.status(404).json({ error: 'Skill file not found' });
       }
+
+      // Clean up the stored blob — fire-and-forget so the response isn't delayed
+      const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
+        deleteFile?: (req: ServerRequest, file: { filepath: string }) => Promise<void>;
+      };
+      if (deleteBlob) {
+        deleteBlob(req, { filepath: file.filepath }).catch((e) =>
+          logger.error('[deleteFile] Storage cleanup failed:', e),
+        );
+      }
+
       const response: TDeleteSkillFileResponse = {
         skillId: id,
         relativePath: decodedPath,
