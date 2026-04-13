@@ -624,38 +624,40 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         return res.status(200).json({ ...base, isBinary: false, content: file.content });
       }
 
-      // First read: sample the first 8 KB for binary detection before buffering the rest
+      // Single-loop stream read: check binary after 8 KB, then either
+      // destroy (binary) or continue reading (text) in the same iteration.
+      // N.B. breaking out of `for await...of` destroys the stream via
+      // iterator.return(), so we must NOT use break + a second loop.
       const stream = await strategy.getDownloadStream(req, file.filepath);
-      const head: Buffer[] = [];
-      let headBytes = 0;
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      let binaryChecked = false;
 
       for await (const raw of stream) {
         const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
-        head.push(chunk);
-        headBytes += chunk.length;
-        if (headBytes >= 8192) {
-          break;
+        chunks.push(chunk);
+        totalBytes += chunk.length;
+
+        if (!binaryChecked && totalBytes >= 8192) {
+          binaryChecked = true;
+          if (isBinaryBuffer(Buffer.concat(chunks))) {
+            await updateSkillFileContent(id, decodedPath, { isBinary: true });
+            if ('destroy' in stream && typeof stream.destroy === 'function') {
+              stream.destroy();
+            }
+            return res.status(200).json({ ...base, isBinary: true });
+          }
         }
       }
 
-      const sample = Buffer.concat(head);
-      if (isBinaryBuffer(sample)) {
-        // Detected binary — skip reading the rest of the stream
+      // File was shorter than 8 KB — check what we have
+      if (!binaryChecked && isBinaryBuffer(Buffer.concat(chunks))) {
         await updateSkillFileContent(id, decodedPath, { isBinary: true });
-        if ('destroy' in stream && typeof stream.destroy === 'function') {
-          stream.destroy();
-        }
         return res.status(200).json({ ...base, isBinary: true });
       }
 
-      // Text file — read the remainder only if we need to cache or return content
-      const rest: Buffer[] = [sample];
-      for await (const raw of stream) {
-        rest.push(Buffer.isBuffer(raw) ? raw : Buffer.from(raw));
-      }
-      const buffer = rest.length === 1 ? sample : Buffer.concat(rest);
+      const buffer = Buffer.concat(chunks);
       const text = buffer.toString('utf-8');
-
       if (buffer.length <= MAX_TEXT_CACHE_BYTES) {
         await updateSkillFileContent(id, decodedPath, { content: text, isBinary: false });
       }

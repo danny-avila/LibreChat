@@ -102,6 +102,7 @@ export interface ImportSkillDeps {
     resourceType: string;
     resourceId: Types.ObjectId;
     accessRoleId: string;
+    grantedBy: string;
   }) => Promise<unknown>;
 }
 
@@ -127,7 +128,7 @@ export function createImportHandler(deps: ImportSkillDeps) {
   return async function importSkillHandler(req: ServerRequest, res: Response) {
     const { file } = req;
     if (!file) {
-      return res.status(400).json({ message: 'No file provided' });
+      return res.status(400).json({ error: 'No file provided' });
     }
 
     const ext = path.extname(file.originalname).toLowerCase();
@@ -139,7 +140,7 @@ export function createImportHandler(deps: ImportSkillDeps) {
       if (ext === '.zip' || ext === '.skill') {
         return await handleZip(req, res, deps, file);
       }
-      return res.status(400).json({ message: `Unsupported file type: ${ext}` });
+      return res.status(400).json({ error: `Unsupported file type: ${ext}` });
     } catch (error) {
       // Surface validation errors as 400 instead of generic 500
       if (isValidationError(error)) {
@@ -153,7 +154,7 @@ export function createImportHandler(deps: ImportSkillDeps) {
         return res.status(409).json({ error: 'A skill with this name already exists' });
       }
       logger.error('[importSkill] Unhandled error:', error);
-      return res.status(500).json({ message: 'Failed to import skill' });
+      return res.status(500).json({ error: 'Failed to import skill' });
     }
   };
 }
@@ -180,6 +181,7 @@ async function grantOwnership(
       resourceType: ResourceType.SKILL,
       resourceId: skillId,
       accessRoleId: AccessRoleIds.SKILL_OWNER,
+      grantedBy: userId,
     });
     return { ok: true };
   } catch (error) {
@@ -203,7 +205,7 @@ async function handleMarkdown(
 
   const { name, description } = parseFrontmatter(content);
   if (!name) {
-    return res.status(400).json({ message: 'SKILL.md must have a name in YAML frontmatter' });
+    return res.status(400).json({ error: 'SKILL.md must have a name in YAML frontmatter' });
   }
 
   const { authorId, authorName, tenantId } = getAuthorInfo(req);
@@ -237,16 +239,14 @@ async function handleZip(
   const zipBuffer = file.buffer;
 
   if (zipBuffer.length > MAX_ZIP_BYTES) {
-    return res
-      .status(400)
-      .json({ message: `File too large (max ${MAX_ZIP_BYTES / 1024 / 1024}MB)` });
+    return res.status(400).json({ error: `File too large (max ${MAX_ZIP_BYTES / 1024 / 1024}MB)` });
   }
 
   const zip = await JSZip.loadAsync(zipBuffer);
   const entries = Object.keys(zip.files);
 
   if (entries.length > MAX_ENTRIES) {
-    return res.status(400).json({ message: `Too many files in archive (max ${MAX_ENTRIES})` });
+    return res.status(400).json({ error: `Too many files in archive (max ${MAX_ENTRIES})` });
   }
 
   // Find SKILL.md — at root or one level deep
@@ -266,12 +266,12 @@ async function handleZip(
   }
 
   if (!skillMdPath) {
-    return res.status(400).json({ message: 'Archive must contain a SKILL.md file' });
+    return res.status(400).json({ error: 'Archive must contain a SKILL.md file' });
   }
 
   const skillMdContent = await zip.file(skillMdPath)?.async('string');
   if (!skillMdContent) {
-    return res.status(400).json({ message: 'Could not read SKILL.md from archive' });
+    return res.status(400).json({ error: 'Could not read SKILL.md from archive' });
   }
 
   const { name, description } = parseFrontmatter(skillMdContent);
@@ -283,7 +283,7 @@ async function handleZip(
       .toLowerCase();
 
   if (!inferredName) {
-    return res.status(400).json({ message: 'Could not determine skill name' });
+    return res.status(400).json({ error: 'Could not determine skill name' });
   }
 
   const { authorId, authorName, tenantId } = getAuthorInfo(req);
