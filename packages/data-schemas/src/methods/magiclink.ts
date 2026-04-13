@@ -7,7 +7,7 @@ export function createMagicLinkMethods(mongoose: typeof import('mongoose')) {
     try {
       const MagicLink = mongoose.models.MagicLink as Model<IMagicLink>;
       const doc = await MagicLink.create(data);
-      return (await MagicLink.findById(doc._id).lean()) as unknown as IMagicLink;
+      return doc.toObject() as unknown as IMagicLink;
     } catch (error) {
       logger.error('[MagicLink.createMagicLink] Error:', error);
       throw error;

@@ -92,7 +92,12 @@ router.get('/magic-link', async (req, res) => {
     let user;
     if (link.userId) {
       user = await db.findUser({ _id: link.userId });
-    } else {
+      if (!user) {
+        await db.updateMagicLink(link._id.toString(), { userId: null });
+        link.userId = null;
+      }
+    }
+    if (!link.userId) {
       user = await db.findUser({ email: link.email });
       if (!user) {
         user = await db.createUser(

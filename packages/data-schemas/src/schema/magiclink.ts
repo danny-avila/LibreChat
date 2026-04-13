@@ -16,7 +16,10 @@ const magicLinkSchema: Schema<IMagicLink> = new Schema(
 );
 
 magicLinkSchema.index({ token: 1 }, { unique: true });
-magicLinkSchema.index({ email: 1, tenantId: 1 }, { unique: true });
+magicLinkSchema.index(
+  { email: 1, tenantId: 1 },
+  { unique: true, partialFilterExpression: { active: true } },
+);
 magicLinkSchema.index({ createdBy: 1 });
 
 export default magicLinkSchema;
