@@ -1956,6 +1956,8 @@ export enum LocalStorageKeys {
   LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
   /** Last checked toggle for Artifacts per conversation ID */
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
+  /** Last checked toggle for Skills per conversation ID */
+  LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

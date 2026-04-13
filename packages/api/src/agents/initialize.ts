@@ -1,9 +1,4 @@
-import {
-  Providers,
-  formatSkillCatalog,
-  SkillToolDefinition,
-  createSkillTool,
-} from '@librechat/agents';
+import { Providers } from '@librechat/agents';
 import {
   Constants,
   ErrorTypes,
@@ -35,6 +30,7 @@ import {
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
+import { injectSkillCatalog } from './skills';
 import { primeResources } from './resources';
 import type { TFilterFilesByAgentAccess } from './resources';
 
@@ -434,41 +430,19 @@ export async function initializeAgent(
 
   let skillCount = 0;
   const { accessibleSkillIds } = params;
-  if (accessibleSkillIds && accessibleSkillIds.length > 0 && db?.listSkillsByAccess) {
-    const { skills } = await db.listSkillsByAccess({
-      accessibleIds: accessibleSkillIds,
-      limit: 100,
+  if (accessibleSkillIds && accessibleSkillIds.length > 0) {
+    const skillResult = await injectSkillCatalog({
+      agent,
+      tools,
+      toolDefinitions,
+      toolRegistry,
+      accessibleSkillIds,
+      contextWindowTokens: Number(agentMaxContextTokens) || 200_000,
+      listSkillsByAccess: db?.listSkillsByAccess,
     });
-
-    if (skills.length > 0) {
-      skillCount = skills.length;
-      const catalog = formatSkillCatalog(
-        skills.map((s) => ({ name: s.name, description: s.description })),
-        { contextWindowTokens: Number(agentMaxContextTokens) || 200_000 },
-      );
-
-      if (catalog) {
-        agent.additional_instructions = agent.additional_instructions
-          ? `${agent.additional_instructions}\n\n${catalog}`
-          : catalog;
-      }
-    }
-  }
-
-  if (skillCount > 0) {
-    const skillToolDef: LCTool = {
-      name: SkillToolDefinition.name,
-      description: SkillToolDefinition.description,
-      parameters: SkillToolDefinition.parameters as unknown as LCTool['parameters'],
-    };
-
-    toolDefinitions = [...(toolDefinitions ?? []), skillToolDef];
-    if (toolRegistry) {
-      toolRegistry.set(SkillToolDefinition.name, skillToolDef);
-    }
-
-    const skillToolInstance = createSkillTool();
-    tools = [...tools, skillToolInstance as unknown as GenericTool];
+    tools = skillResult.tools;
+    toolDefinitions = skillResult.toolDefinitions;
+    skillCount = skillResult.skillCount;
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || 18000;

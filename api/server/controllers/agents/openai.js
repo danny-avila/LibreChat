@@ -207,12 +207,16 @@ const OpenAIChatCompletionController = async (req, res) => {
       model_parameters: agent.model_parameters ?? {},
     };
 
-    const accessibleSkillIds = await findAccessibleResources({
-      userId: req.user.id,
-      role: req.user.role,
-      resourceType: ResourceType.SKILL,
-      requiredPermissions: PermissionBits.VIEW,
-    });
+    const ephemeralAgent = req.body?.ephemeralAgent;
+    const accessibleSkillIds =
+      ephemeralAgent?.skills === true
+        ? await findAccessibleResources({
+            userId: req.user.id,
+            role: req.user.role,
+            resourceType: ResourceType.SKILL,
+            requiredPermissions: PermissionBits.VIEW,
+          })
+        : [];
 
     const primaryConfig = await initializeAgent(
       {
