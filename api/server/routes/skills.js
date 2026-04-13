@@ -142,12 +142,11 @@ const importHandler = createImportHandler({
       source: storage.source,
     }));
   },
-  deleteFile: (req, filepath) => {
-    // Resolve source from filepath pattern — uploads use the skill_file strategy
+  deleteFile: (req, file) => {
     const source = getFileStrategy(req.config, { context: FileContext.skill_file });
     const { deleteFile } = getStrategyFunctions(source);
     if (deleteFile) {
-      return deleteFile(req, filepath);
+      return deleteFile(req, file);
     }
     return Promise.resolve();
   },
@@ -214,7 +213,7 @@ async function uploadFileHandler(req, res) {
       try {
         const { deleteFile } = getStrategyFunctions(storage.source);
         if (deleteFile) {
-          await deleteFile(req, filepath);
+          await deleteFile(req, { filepath });
         }
       } catch (cleanupErr) {
         logger.error('[uploadFile] Failed to clean up orphaned blob:', cleanupErr);

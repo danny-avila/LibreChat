@@ -2,6 +2,7 @@ import React, { memo, useMemo, useState, useCallback, useRef } from 'react';
 import { ArrowLeft, Eye, Code, Copy, Check, FileText, FileQuestion } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
+import { apiBaseUrl } from 'librechat-data-provider';
 import { useGetSkillFileContentQuery } from '~/data-provider';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
 import { useLocalize } from '~/hooks';
@@ -78,7 +79,7 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
   const isText = data != null && !data.isBinary && data.content != null;
 
   const rawUrl = useMemo(
-    () => `/api/skills/${skillId}/files/${encodeURIComponent(relativePath)}?raw=true`,
+    () => `${apiBaseUrl}/api/skills/${skillId}/files/${encodeURIComponent(relativePath)}?raw=true`,
     [skillId, relativePath],
   );
 
