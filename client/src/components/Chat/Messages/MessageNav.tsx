@@ -36,14 +36,11 @@ function getMessageEntries(): MessageEntry[] {
 }
 
 const SCROLL_TOP_OFFSET = 56;
+const AT_TOP_THRESHOLD = 8;
 
-function scrollToMessage(id: string, toStart = false) {
+function scrollToMessageStart(id: string) {
   const el = document.getElementById(id);
   if (!el) {
-    return;
-  }
-  if (!toStart) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
   const container = el.closest('.scrollbar-gutter-stable');
@@ -55,13 +52,26 @@ function scrollToMessage(id: string, toStart = false) {
   container.scrollTo({ top: Math.max(0, elTop), behavior: 'smooth' });
 }
 
+function isMessageAtTop(id: string): boolean {
+  const el = document.getElementById(id);
+  if (!el) {
+    return true;
+  }
+  const container = el.closest('.scrollbar-gutter-stable');
+  if (!container) {
+    return true;
+  }
+  const expectedTop = el.offsetTop - SCROLL_TOP_OFFSET;
+  return Math.abs(container.scrollTop - Math.max(0, expectedTop)) < AT_TOP_THRESHOLD;
+}
+
 function MessageIndicator({ entry, isActive }: { entry: MessageEntry; isActive: boolean }) {
   return (
     <HoverCard openDelay={150}>
       <HoverCardTrigger asChild>
         <button
           type="button"
-          onClick={() => scrollToMessage(entry.id)}
+          onClick={() => scrollToMessageStart(entry.id)}
           className={cn('flex h-[5px] items-center justify-center', entry.isUser ? 'w-4' : 'w-6')}
           aria-label={`Go to ${entry.isUser ? 'user' : 'assistant'} message: ${entry.preview.slice(0, 30)}`}
         >
@@ -70,7 +80,7 @@ function MessageIndicator({ entry, isActive }: { entry: MessageEntry; isActive: 
               'block w-full rounded-full transition-all duration-200',
               isActive
                 ? 'h-[5px] bg-gray-800 dark:bg-gray-100'
-                : 'h-[3px] bg-gray-400 opacity-50 hover:opacity-80 dark:bg-gray-500',
+                : 'h-[3px] bg-gray-400 dark:bg-gray-500',
             )}
           />
         </button>
@@ -101,8 +111,6 @@ export default function MessageNav({
         return i;
       }
     }
-    // No intersection detected — use last known position instead of -1
-    // This prevents buttons from disabling during fast scroll
     if (entries.length > 0) {
       return Math.min(lastKnownIndexRef.current, entries.length - 1);
     }
@@ -127,7 +135,6 @@ export default function MessageNav({
     }, 200);
   }, []);
 
-  // Observe DOM changes to detect new messages
   useEffect(() => {
     refreshEntries();
 
@@ -150,7 +157,6 @@ export default function MessageNav({
     };
   }, [scrollableRef, refreshEntries]);
 
-  // Track which messages are visible via IntersectionObserver
   useEffect(() => {
     const root = scrollableRef.current;
     if (!root || entries.length === 0) {
@@ -160,7 +166,6 @@ export default function MessageNav({
     observerRef.current?.disconnect();
 
     const visibleSet = visibleSetRef.current;
-    // Remove IDs that no longer exist in entries
     const entryIds = new Set(entries.map((e) => e.id));
     for (const id of visibleSet) {
       if (!entryIds.has(id)) {
@@ -196,33 +201,47 @@ export default function MessageNav({
   }, [entries, scrollableRef]);
 
   const jumpToPrevious = useCallback(() => {
-    if (activeIndex <= 0) {
+    if (activeIndex < 0) {
       return;
     }
-    scrollToMessage(entries[activeIndex - 1].id, true);
+    const currentId = entries[activeIndex].id;
+    if (!isMessageAtTop(currentId) && activeIndex > 0) {
+      // Scrolled past the top of current message — scroll to its start first
+      scrollToMessageStart(currentId);
+      return;
+    }
+    if (activeIndex <= 0) {
+      // Already at the first message — scroll to its top
+      scrollToMessageStart(entries[0].id);
+      return;
+    }
+    scrollToMessageStart(entries[activeIndex - 1].id);
   }, [activeIndex, entries]);
 
   const jumpToNext = useCallback(() => {
     if (activeIndex < 0 || activeIndex >= entries.length - 1) {
       return;
     }
-    scrollToMessage(entries[activeIndex + 1].id, true);
+    scrollToMessageStart(entries[activeIndex + 1].id);
   }, [activeIndex, entries]);
 
   if (entries.length < 3) {
     return null;
   }
 
+  const canGoUp = activeIndex > 0 || (activeIndex === 0 && !isMessageAtTop(entries[0].id));
+  const canGoDown = activeIndex >= 0 && activeIndex < entries.length - 1;
+
   return (
     <nav
       aria-label="Message navigation"
-      className="absolute right-2 top-1/2 z-40 hidden -translate-y-1/2 flex-col items-center gap-1.5 rounded-full bg-black/5 px-1 py-2 backdrop-blur-sm dark:bg-white/5 md:flex"
+      className="group/nav absolute right-2 top-1/2 z-40 hidden -translate-y-1/2 flex-col items-center gap-1.5 rounded-full px-1 py-2 opacity-30 transition-opacity duration-300 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/5 md:flex"
     >
       <button
         type="button"
         onClick={jumpToPrevious}
-        disabled={activeIndex <= 0}
-        className="rounded-md p-0.5 text-text-secondary transition-colors hover:text-text-primary disabled:opacity-30"
+        disabled={!canGoUp}
+        className="rounded-md p-0.5 text-text-tertiary transition-colors group-hover/nav:text-text-secondary group-hover/nav:hover:text-text-primary group-hover/nav:disabled:opacity-30"
         aria-label="Navigate to previous message"
       >
         <ChevronUp className="h-4 w-4" />
@@ -237,8 +256,8 @@ export default function MessageNav({
       <button
         type="button"
         onClick={jumpToNext}
-        disabled={activeIndex < 0 || activeIndex >= entries.length - 1}
-        className="rounded-md p-0.5 text-text-secondary transition-colors hover:text-text-primary disabled:opacity-30"
+        disabled={!canGoDown}
+        className="rounded-md p-0.5 text-text-tertiary transition-colors group-hover/nav:text-text-secondary group-hover/nav:hover:text-text-primary group-hover/nav:disabled:opacity-30"
         aria-label="Navigate to next message"
       >
         <ChevronDown className="h-4 w-4" />
