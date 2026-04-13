@@ -254,7 +254,12 @@ async function handleZip(
     return res.status(400).json({ error: `File too large (max ${MAX_ZIP_BYTES / 1024 / 1024}MB)` });
   }
 
-  const zip = await JSZip.loadAsync(zipBuffer);
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(zipBuffer);
+  } catch {
+    return res.status(400).json({ error: 'Invalid or corrupt archive' });
+  }
   const entries = Object.keys(zip.files);
 
   if (entries.length > MAX_ENTRIES) {
@@ -292,6 +297,7 @@ async function handleZip(
     file.originalname
       .replace(/\.(zip|skill)$/i, '')
       .replace(/[^a-z0-9-]/gi, '-')
+      .replace(/^-+/, '')
       .toLowerCase();
 
   if (!inferredName) {

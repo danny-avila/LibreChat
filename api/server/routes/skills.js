@@ -186,18 +186,32 @@ async function uploadFileHandler(req, res) {
       basePath: 'uploads',
     });
 
-    const result = await upsertSkillFile({
-      skillId,
-      relativePath,
-      file_id: fileId,
-      filename,
-      filepath,
-      source: storage.source,
-      mimeType: file.mimetype || 'application/octet-stream',
-      bytes: file.size,
-      isExecutable: false,
-      author: req.user._id,
-    });
+    let result;
+    try {
+      result = await upsertSkillFile({
+        skillId,
+        relativePath,
+        file_id: fileId,
+        filename,
+        filepath,
+        source: storage.source,
+        mimeType: file.mimetype || 'application/octet-stream',
+        bytes: file.size,
+        isExecutable: false,
+        author: req.user._id,
+      });
+    } catch (dbError) {
+      // Clean up the stored blob so it doesn't leak on DB failure
+      try {
+        const { deleteFile } = getStrategyFunctions(storage.source);
+        if (deleteFile) {
+          await deleteFile(req, filepath);
+        }
+      } catch (cleanupErr) {
+        logger.error('[uploadFile] Failed to clean up orphaned blob:', cleanupErr);
+      }
+      throw dbError;
+    }
 
     return res.status(200).json(result);
   } catch (error) {
@@ -278,7 +292,7 @@ router.delete(
 
 router.use((err, _req, res, next) => {
   if (err && (err.name === 'MulterError' || err.message?.startsWith('Only '))) {
-    return res.status(400).json({ message: err.message });
+    return res.status(400).json({ error: err.message });
   }
   return next(err);
 });

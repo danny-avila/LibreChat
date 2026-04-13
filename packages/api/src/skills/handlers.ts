@@ -603,6 +603,14 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         res.setHeader('Content-Type', file.mimeType);
         res.setHeader('Content-Disposition', `inline; filename="${file.filename}"`);
         const stream = await strategy.getDownloadStream(req, file.filepath);
+        stream.on('error', (err: Error) => {
+          logger.error('[downloadFile] Stream error:', err);
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Error streaming file' });
+          } else {
+            res.destroy();
+          }
+        });
         stream.pipe(res);
         return;
       }
@@ -641,7 +649,9 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         if (!binaryChecked && totalBytes >= 8192) {
           binaryChecked = true;
           if (isBinaryBuffer(Buffer.concat(chunks))) {
-            await updateSkillFileContent(id, decodedPath, { isBinary: true });
+            updateSkillFileContent(id, decodedPath, { isBinary: true }).catch((e) =>
+              logger.error('[downloadFile] Cache write failed:', e),
+            );
             if ('destroy' in stream && typeof stream.destroy === 'function') {
               stream.destroy();
             }
@@ -652,14 +662,18 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
 
       // File was shorter than 8 KB — check what we have
       if (!binaryChecked && isBinaryBuffer(Buffer.concat(chunks))) {
-        await updateSkillFileContent(id, decodedPath, { isBinary: true });
+        updateSkillFileContent(id, decodedPath, { isBinary: true }).catch((e) =>
+          logger.error('[downloadFile] Cache write failed:', e),
+        );
         return res.status(200).json({ ...base, isBinary: true });
       }
 
       const buffer = Buffer.concat(chunks);
       const text = buffer.toString('utf-8');
       if (buffer.length <= MAX_TEXT_CACHE_BYTES) {
-        await updateSkillFileContent(id, decodedPath, { content: text, isBinary: false });
+        updateSkillFileContent(id, decodedPath, { content: text, isBinary: false }).catch((e) =>
+          logger.error('[downloadFile] Cache write failed:', e),
+        );
       }
       return res.status(200).json({ ...base, isBinary: false, content: text });
     } catch (error) {
