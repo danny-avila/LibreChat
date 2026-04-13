@@ -8,7 +8,7 @@ on:
 
 env:
   RESOURCE_GROUP: rgHeblo
-  CONTAINER_APP_NAME: trivichat
+  WEBAPP_NAME: trivichat
 
 jobs:
   build:
@@ -62,15 +62,9 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Deploys the monolith (librechat) to the trivichat Container App.
-      # To deploy librechat-api separately, provision a second Container App
-      # and add another azure/container-apps-deploy-action step pointing to it.
-      - name: Deploy to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v1
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
         with:
-          containerAppName: ${{ env.CONTAINER_APP_NAME }}
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          imageToDeploy: ${{ secrets.DOCKERHUB_USERNAME }}/librechat:${{ github.sha }}
-          registryUrl: docker.io
-          registryUsername: ${{ secrets.DOCKERHUB_USERNAME }}
-          registryPassword: ${{ secrets.DOCKERHUB_TOKEN }}
+          app-name: ${{ env.WEBAPP_NAME }}
+          resource-group-name: ${{ env.RESOURCE_GROUP }}
+          images: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/librechat:${{ github.sha }}
