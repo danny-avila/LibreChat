@@ -10,13 +10,14 @@ import {
   GroupForm,
   EmptyGroupPreview,
 } from '~/components/Groups';
-import { 
+import {
   Statistics,
-  UserLeaderboard, 
-  GroupLeaderboard, 
-  GroupStatsDetail, 
-  EmptyStatsPreview 
+  UserLeaderboard,
+  GroupLeaderboard,
+  GroupStatsDetail,
+  EmptyStatsPreview
 } from '~/components/Statistics';
+import { MagicLinksView } from '~/components/MagicLinks';
 import DashboardRoute from './Layouts/Dashboard';
 
 const dashboardRoutes = {
@@ -123,6 +124,10 @@ const dashboardRoutes = {
           element: <GroupStatsDetail />,
         },
       ],
+    },
+    {
+      path: 'magic-links',
+      element: <MagicLinksView />,
     },
     {
       path: '*',
