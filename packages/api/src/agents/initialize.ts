@@ -433,14 +433,12 @@ export async function initializeAgent(
   if (accessibleSkillIds && accessibleSkillIds.length > 0) {
     const skillResult = await injectSkillCatalog({
       agent,
-      tools,
       toolDefinitions,
       toolRegistry,
       accessibleSkillIds,
       contextWindowTokens: Number(agentMaxContextTokens) || 200_000,
       listSkillsByAccess: db?.listSkillsByAccess,
     });
-    tools = skillResult.tools;
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;
   }

@@ -1,12 +1,11 @@
-import { formatSkillCatalog, SkillToolDefinition, createSkillTool } from '@librechat/agents';
-import type { GenericTool, LCToolRegistry, LCTool } from '@librechat/agents';
+import { formatSkillCatalog, SkillToolDefinition } from '@librechat/agents';
+import type { LCToolRegistry, LCTool } from '@librechat/agents';
 import type { Types } from 'mongoose';
 import type { Agent } from 'librechat-data-provider';
 import type { InitializeAgentDbMethods } from './initialize';
 
 export interface InjectSkillCatalogParams {
   agent: Agent;
-  tools: GenericTool[];
   toolDefinitions: LCTool[] | undefined;
   toolRegistry: LCToolRegistry | undefined;
   accessibleSkillIds: Types.ObjectId[];
@@ -15,17 +14,19 @@ export interface InjectSkillCatalogParams {
 }
 
 export interface InjectSkillCatalogResult {
-  tools: GenericTool[];
   toolDefinitions: LCTool[] | undefined;
   skillCount: number;
 }
 
 /**
  * Queries accessible skills, formats a budget-aware catalog, appends it to the
- * agent's additional_instructions, and registers the SkillTool definition + instance.
- * Returns updated tools/toolDefinitions and the skill count.
+ * agent's additional_instructions, and registers the SkillTool definition.
+ * Returns updated toolDefinitions and the skill count.
  *
- * This is a pure helper extracted from initializeAgent to keep that module focused.
+ * No tool instance is created — SkillTool is event-driven only. The tool
+ * definition in toolDefinitions is sufficient for the LLM to see and call it;
+ * the host handler intercepts the call via ON_TOOL_EXECUTE.
+ *
  * The caller is responsible for gating on the skills capability before calling.
  */
 export async function injectSkillCatalog(
@@ -33,7 +34,6 @@ export async function injectSkillCatalog(
 ): Promise<InjectSkillCatalogResult> {
   const {
     agent,
-    tools: inputTools,
     toolDefinitions: inputDefs,
     toolRegistry,
     accessibleSkillIds,
@@ -42,7 +42,7 @@ export async function injectSkillCatalog(
   } = params;
 
   if (!listSkillsByAccess || accessibleSkillIds.length === 0) {
-    return { tools: inputTools, toolDefinitions: inputDefs, skillCount: 0 };
+    return { toolDefinitions: inputDefs, skillCount: 0 };
   }
 
   const { skills } = await listSkillsByAccess({
@@ -51,7 +51,7 @@ export async function injectSkillCatalog(
   });
 
   if (skills.length === 0) {
-    return { tools: inputTools, toolDefinitions: inputDefs, skillCount: 0 };
+    return { toolDefinitions: inputDefs, skillCount: 0 };
   }
 
   const catalog = formatSkillCatalog(
@@ -76,8 +76,5 @@ export async function injectSkillCatalog(
     toolRegistry.set(SkillToolDefinition.name, skillToolDef);
   }
 
-  const skillToolInstance = createSkillTool();
-  const tools = [...inputTools, skillToolInstance as unknown as GenericTool];
-
-  return { tools, toolDefinitions, skillCount: skills.length };
+  return { toolDefinitions, skillCount: skills.length };
 }
