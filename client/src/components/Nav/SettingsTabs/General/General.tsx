@@ -29,6 +29,13 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'keepScreenAwake',
   },
+  {
+    stateAtom: store.newChatSwitchToHistory,
+    localizationKey: 'com_nav_new_chat_switch_to_history' as const,
+    switchId: 'newChatSwitchToHistory',
+    hoverCardText: undefined,
+    key: 'newChatSwitchToHistory',
+  },
 ];
 
 export const ThemeSelector = ({
