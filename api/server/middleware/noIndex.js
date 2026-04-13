@@ -1,8 +1,8 @@
-const noIndex = (req, res, next) => {
-  const shouldNoIndex = process.env.NO_INDEX ? process.env.NO_INDEX === 'true' : true;
+const { shouldApplyNoIndex } = require('../utils/publicAuthIndexing');
 
-  if (shouldNoIndex) {
-    res.setHeader('X-Robots-Tag', 'noindex');
+const noIndex = (req, res, next) => {
+  if (shouldApplyNoIndex(req)) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   }
 
   next();
