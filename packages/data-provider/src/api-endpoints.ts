@@ -361,6 +361,7 @@ export const getAllPromptGroups = () => `${prompts()}/all`;
 
 /* Skills */
 export const skills = () => `${BASE_URL}/api/skills`;
+export const importSkill = () => `${skills()}/import`;
 
 export const getSkill = (id: string) => `${skills()}/${encodeURIComponent(id)}`;
 
@@ -386,6 +387,19 @@ export const skillFiles = (id: string) => `${getSkill(id)}/files`;
 export const skillFile = (id: string, relativePath: string) =>
   `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
 
+/**
+ * Skill filesystem tree (phase 2). URL shape mirrors the original UI PR so
+ * the tree hooks keep their call surface. `path` is pre-encoded by the
+ * caller (e.g. `${nodeId}/content`).
+ */
+export const skillTree = ({ skillId, path = '' }: { skillId: string; path?: string }) => {
+  let url = `${BASE_URL}/api/skills/${encodeURIComponent(skillId)}/tree`;
+  if (path) {
+    url += `/${path}`;
+  }
+  return url;
+};
+
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
 export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
@@ -401,6 +415,7 @@ export const updateRemoteAgentsPermissions = (roleName: string) =>
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;
+export const updateSkillPermissions = (roleName: string) => `${getRole(roleName)}/skills`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>

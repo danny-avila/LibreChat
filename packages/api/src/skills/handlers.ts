@@ -29,8 +29,10 @@ import type {
   TDeleteSkillResponse,
   TDeleteSkillFileResponse,
   TSkillConflictResponse,
+  TSkillFileContentResponse,
 } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types/http';
+import { isBinaryBuffer } from './binary';
 
 /** Thin error shape the skill methods throw on validation failure. */
 type SkillValidationError = Error & { code?: string; issues?: ValidationIssue[] };
@@ -79,6 +81,11 @@ export interface SkillsHandlersDeps {
     resourceType: string;
     requiredPermissions: number;
   }) => Promise<Types.ObjectId[]>;
+  hasPublicPermission: (params: {
+    resourceType: string;
+    resourceId: string | Types.ObjectId;
+    requiredPermissions: number;
+  }) => Promise<boolean>;
   grantPermission: (params: {
     principalType: string;
     principalId: string | Types.ObjectId;
@@ -87,6 +94,23 @@ export interface SkillsHandlersDeps {
     accessRoleId: string;
     grantedBy: string | Types.ObjectId;
   }) => Promise<unknown>;
+
+  /** Single-file lookup + cache update for the download handler. */
+  getSkillFileByPath: (
+    skillId: string | Types.ObjectId,
+    relativePath: string,
+  ) => Promise<(ISkillFile & { _id: Types.ObjectId; content?: string; isBinary?: boolean }) | null>;
+  updateSkillFileContent: (
+    skillId: string | Types.ObjectId,
+    relativePath: string,
+    update: { content?: string; isBinary?: boolean },
+  ) => Promise<void>;
+
+  /** Storage strategy resolver — returns stream/URL helpers keyed by source. */
+  getStrategyFunctions: (source: string) => {
+    getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
+    [key: string]: unknown;
+  };
 
   /** ObjectId validation helper from data-schemas. */
   isValidObjectIdString: (value: unknown) => boolean;
@@ -116,7 +140,11 @@ function serializeSourceMetadata(
 }
 
 /** Converts a skill document to the wire format returned by the API. */
-function serializeSkill(skill: ISkill & { _id: Types.ObjectId }, publicSet: Set<string>): TSkill {
+function serializeSkill(
+  skill: ISkill & { _id: Types.ObjectId },
+  isPublic: boolean | Set<string>,
+): TSkill {
+  const pub = typeof isPublic === 'boolean' ? isPublic : isPublic.has(skill._id.toString());
   return {
     _id: skill._id.toString(),
     name: skill.name,
@@ -131,7 +159,7 @@ function serializeSkill(skill: ISkill & { _id: Types.ObjectId }, publicSet: Set<
     source: skill.source,
     sourceMetadata: serializeSourceMetadata(skill.sourceMetadata),
     fileCount: skill.fileCount,
-    isPublic: publicSet.has(skill._id.toString()),
+    isPublic: pub,
     tenantId: skill.tenantId,
     createdAt: (skill.createdAt ?? new Date()).toISOString(),
     updatedAt: (skill.updatedAt ?? new Date()).toISOString(),
@@ -140,8 +168,9 @@ function serializeSkill(skill: ISkill & { _id: Types.ObjectId }, publicSet: Set<
 
 function serializeSkillSummary(
   skill: ISkillSummary & { _id: Types.ObjectId },
-  publicSet: Set<string>,
+  isPublic: boolean | Set<string>,
 ): TSkillSummary {
+  const pub = typeof isPublic === 'boolean' ? isPublic : isPublic.has(skill._id.toString());
   return {
     _id: skill._id.toString(),
     name: skill.name,
@@ -154,7 +183,7 @@ function serializeSkillSummary(
     source: skill.source,
     sourceMetadata: serializeSourceMetadata(skill.sourceMetadata),
     fileCount: skill.fileCount,
-    isPublic: publicSet.has(skill._id.toString()),
+    isPublic: pub,
     tenantId: skill.tenantId,
     createdAt: (skill.createdAt ?? new Date()).toISOString(),
     updatedAt: (skill.updatedAt ?? new Date()).toISOString(),
@@ -241,8 +270,12 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     deleteSkill,
     listSkillFiles,
     deleteSkillFile,
+    getSkillFileByPath,
+    updateSkillFileContent,
+    getStrategyFunctions,
     findAccessibleResources,
     findPubliclyAccessibleResources,
+    hasPublicPermission,
     grantPermission,
     isValidObjectIdString,
   } = deps;
@@ -257,6 +290,19 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     } catch (error) {
       logger.error('[skills] Failed to fetch public skill IDs', error);
       return new Set();
+    }
+  }
+
+  /** O(1) public check for a single skill (avoids fetching all public IDs). */
+  async function isSkillPublic(skillId: string | Types.ObjectId): Promise<boolean> {
+    try {
+      return await hasPublicPermission({
+        resourceType: ResourceType.SKILL,
+        resourceId: skillId,
+        requiredPermissions: PermissionBits.VIEW,
+      });
+    } catch {
+      return false;
     }
   }
 
@@ -408,8 +454,8 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       if (!skill) {
         return res.status(404).json({ error: 'Skill not found' });
       }
-      const publicSet = await getPublicSkillIdSet();
-      return res.status(200).json(serializeSkill(skill, publicSet));
+      const pub = await isSkillPublic(skill._id);
+      return res.status(200).json(serializeSkill(skill, pub));
     } catch (error) {
       logger.error('[GET /skills/:id] Error fetching skill', error);
       return res.status(500).json({ error: 'Error fetching skill' });
@@ -466,17 +512,17 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       if (result.status === 'not_found') {
         return res.status(404).json({ error: 'Skill not found' });
       }
-      const publicSet = await getPublicSkillIdSet();
+      const pub = await isSkillPublic(id);
       if (result.status === 'conflict') {
         const conflict: TSkillConflictResponse = {
           error: 'skill_version_conflict',
-          current: serializeSkill(result.current, publicSet),
+          current: serializeSkill(result.current, pub),
         };
         return res.status(409).json(conflict);
       }
       return res
         .status(200)
-        .json(attachWarnings(serializeSkill(result.skill, publicSet), result.warnings));
+        .json(attachWarnings(serializeSkill(result.skill, pub), result.warnings));
     } catch (error) {
       logger.error('[PATCH /skills/:id] Error updating skill', error);
       return res.status(500).json({ error: 'Error updating skill' });
@@ -489,10 +535,27 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       if (!isValidObjectIdString(id)) {
         return res.status(400).json({ error: 'Invalid skill id' });
       }
+
+      // Collect file records before deletion so we can clean up storage blobs
+      const files = await listSkillFiles(id);
+
       const result = await deleteSkill(id);
       if (!result.deleted) {
         return res.status(404).json({ error: 'Skill not found' });
       }
+
+      // Fire-and-forget blob cleanup for each file
+      for (const file of files) {
+        const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
+          deleteFile?: (r: ServerRequest, f: { filepath: string }) => Promise<void>;
+        };
+        if (deleteBlob) {
+          deleteBlob(req, { filepath: file.filepath }).catch((e) =>
+            logger.error(`[deleteSkill] Blob cleanup failed for ${file.relativePath}:`, e),
+          );
+        }
+      }
+
       const response: TDeleteSkillResponse = { id, deleted: true };
       return res.status(200).json(response);
     } catch (error) {
@@ -513,22 +576,155 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     }
   }
 
-  function uploadFileStubHandler(_req: ServerRequest, res: Response) {
-    return res.status(501).json({
-      error: 'skill_file_upload_not_implemented',
-      phase: 2,
-      message:
-        'Skill file upload is not yet wired up. This endpoint is a stub reserved for phase 2.',
-    });
-  }
+  const SAFE_INLINE_MIMES = new Set([
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/avif',
+    'image/bmp',
+  ]);
+  const MAX_TEXT_CACHE_BYTES = 512 * 1024;
+  const MAX_JSON_CONTENT_BYTES = 1024 * 1024;
 
-  function downloadFileStubHandler(_req: ServerRequest, res: Response) {
-    return res.status(501).json({
-      error: 'skill_file_download_not_implemented',
-      phase: 2,
-      message:
-        'Skill file download is not yet wired up. This endpoint is a stub reserved for phase 2.',
-    });
+  async function downloadFileHandler(req: ServerRequest, res: Response) {
+    try {
+      const { id, relativePath } = req.params as { id: string; relativePath: string };
+      let decodedPath: string;
+      try {
+        decodedPath = decodeURIComponent(relativePath);
+      } catch {
+        return res.status(400).json({ error: 'Invalid file path encoding' });
+      }
+
+      // SKILL.md is the skill body itself, not a SkillFile document
+      if (decodedPath === 'SKILL.md') {
+        const skill = await getSkillById(id);
+        if (!skill) {
+          return res.status(404).json({ error: 'Skill not found' });
+        }
+        const response: TSkillFileContentResponse = {
+          content: skill.body,
+          mimeType: 'text/markdown',
+          isBinary: false,
+          relativePath: 'SKILL.md',
+          filename: 'SKILL.md',
+          bytes: Buffer.byteLength(skill.body, 'utf-8'),
+        };
+        return res.status(200).json(response);
+      }
+
+      const file = await getSkillFileByPath(id, decodedPath);
+      if (!file) {
+        return res.status(404).json({ error: 'Skill file not found' });
+      }
+
+      const strategy = getStrategyFunctions(file.source);
+      if (!strategy.getDownloadStream) {
+        return res.status(501).json({ error: 'Download not supported for this storage backend' });
+      }
+
+      // Raw mode: stream the file with its Content-Type (for images / downloads).
+      // Non-image files use Content-Disposition: attachment to prevent stored XSS
+      // (an uploaded .html served inline from this origin would execute scripts
+      // with access to the user's session). Images stay inline for <img> rendering.
+      if (req.query.raw === 'true') {
+        const isImageMime = SAFE_INLINE_MIMES.has(file.mimeType);
+        const safeName = file.filename.replace(/["\\\n\r]/g, '_');
+        res.setHeader('Content-Type', file.mimeType);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader(
+          'Content-Disposition',
+          `${isImageMime ? 'inline' : 'attachment'}; filename="${safeName}"`,
+        );
+        const stream = await strategy.getDownloadStream(req, file.filepath);
+        stream.on('error', (err: Error) => {
+          logger.error('[downloadFile] Stream error:', err);
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Error streaming file' });
+          } else {
+            res.destroy();
+          }
+        });
+        stream.pipe(res);
+        return;
+      }
+
+      const base: Omit<TSkillFileContentResponse, 'content' | 'isBinary'> = {
+        mimeType: file.mimeType,
+        relativePath: file.relativePath,
+        filename: file.filename,
+        bytes: file.bytes,
+      };
+
+      // Already flagged binary — skip storage entirely
+      if (file.isBinary === true) {
+        return res.status(200).json({ ...base, isBinary: true });
+      }
+
+      // Text content already cached in DB
+      if (file.content != null) {
+        return res.status(200).json({ ...base, isBinary: false, content: file.content });
+      }
+
+      // Single-loop stream read: check binary after 8 KB, then either
+      // destroy (binary) or continue reading (text) in the same iteration.
+      // N.B. breaking out of `for await...of` destroys the stream via
+      // iterator.return(), so we must NOT use break + a second loop.
+      const stream = await strategy.getDownloadStream(req, file.filepath);
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      let binaryChecked = false;
+
+      for await (const raw of stream) {
+        const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+        chunks.push(chunk);
+        totalBytes += chunk.length;
+
+        if (!binaryChecked && totalBytes >= 8192) {
+          binaryChecked = true;
+          if (isBinaryBuffer(Buffer.concat(chunks))) {
+            updateSkillFileContent(id, decodedPath, { isBinary: true }).catch((e) =>
+              logger.error('[downloadFile] Cache write failed:', e),
+            );
+            if ('destroy' in stream && typeof stream.destroy === 'function') {
+              stream.destroy();
+            }
+            return res.status(200).json({ ...base, isBinary: true });
+          }
+        }
+
+        // Cap JSON response size — files beyond this must use ?raw=true.
+        // No cache write here: { isBinary: false } without content provides
+        // no fast-path on subsequent reads, so we skip the DB round-trip.
+        if (totalBytes > MAX_JSON_CONTENT_BYTES) {
+          if ('destroy' in stream && typeof stream.destroy === 'function') {
+            stream.destroy();
+          }
+          return res.status(200).json({ ...base, isBinary: false });
+        }
+      }
+
+      // File was shorter than 8 KB — check what we have
+      if (!binaryChecked && isBinaryBuffer(Buffer.concat(chunks))) {
+        updateSkillFileContent(id, decodedPath, { isBinary: true }).catch((e) =>
+          logger.error('[downloadFile] Cache write failed:', e),
+        );
+        return res.status(200).json({ ...base, isBinary: true });
+      }
+
+      const buffer = Buffer.concat(chunks);
+      const text = buffer.toString('utf-8');
+      if (buffer.length <= MAX_TEXT_CACHE_BYTES) {
+        updateSkillFileContent(id, decodedPath, { content: text, isBinary: false }).catch((e) =>
+          logger.error('[downloadFile] Cache write failed:', e),
+        );
+      }
+      return res.status(200).json({ ...base, isBinary: false, content: text });
+    } catch (error) {
+      logger.error('[GET /skills/:id/files/:relativePath] Error', error);
+      return res.status(500).json({ error: 'Error downloading skill file' });
+    }
   }
 
   async function deleteFileHandler(req: ServerRequest, res: Response) {
@@ -540,10 +736,28 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       } catch {
         return res.status(400).json({ error: 'Invalid file path encoding' });
       }
+
+      // Look up the file record so we can clean up the storage blob
+      const file = await getSkillFileByPath(id, decodedPath);
+      if (!file) {
+        return res.status(404).json({ error: 'Skill file not found' });
+      }
+
       const result = await deleteSkillFile(id, decodedPath);
       if (!result.deleted) {
         return res.status(404).json({ error: 'Skill file not found' });
       }
+
+      // Clean up the stored blob — fire-and-forget so the response isn't delayed
+      const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
+        deleteFile?: (req: ServerRequest, file: { filepath: string }) => Promise<void>;
+      };
+      if (deleteBlob) {
+        deleteBlob(req, { filepath: file.filepath }).catch((e) =>
+          logger.error('[deleteFile] Storage cleanup failed:', e),
+        );
+      }
+
       const response: TDeleteSkillFileResponse = {
         skillId: id,
         relativePath: decodedPath,
@@ -563,8 +777,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     patch: patchHandler,
     delete: deleteHandler,
     listFiles: listFilesHandler,
-    uploadFileStub: uploadFileStubHandler,
-    downloadFileStub: downloadFileStubHandler,
+    downloadFile: downloadFileHandler,
     deleteFile: deleteFileHandler,
   };
 }
