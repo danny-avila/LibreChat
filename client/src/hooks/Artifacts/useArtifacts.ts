@@ -51,12 +51,19 @@ export default function useArtifacts() {
     };
   }, [conversationId, resetArtifacts, resetCurrentArtifactId]);
 
+  /**
+   * Read currentArtifactId in effects without subscribing as a dependency.
+   * Adding it to effect deps fires auto-select on every reset, breaking toggle-close.
+   */
+  const currentArtifactIdRef = useRef(currentArtifactId);
+  currentArtifactIdRef.current = currentArtifactId;
+
   useEffect(() => {
-    if (orderedArtifactIds.length > 0) {
-      const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
-      setCurrentArtifactId(latestArtifactId);
-    }
-  }, [setCurrentArtifactId, orderedArtifactIds]);
+    if (orderedArtifactIds.length === 0) return;
+    const currentId = currentArtifactIdRef.current;
+    if (currentId != null && orderedArtifactIds.includes(currentId)) return;
+    setCurrentArtifactId(orderedArtifactIds[orderedArtifactIds.length - 1]);
+  }, [orderedArtifactIds, setCurrentArtifactId]);
 
   /**
    * Manage artifact selection and code tab switching for non-enclosed artifacts
