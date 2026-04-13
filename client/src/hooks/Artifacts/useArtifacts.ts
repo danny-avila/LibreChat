@@ -51,8 +51,10 @@ export default function useArtifacts() {
     };
   }, [conversationId, resetArtifacts, resetCurrentArtifactId]);
 
-  /** Read currentArtifactId in effects without subscribing as a dependency.
-   * Adding it to effect deps fires auto-select on every reset, breaking toggle-close. */
+  /**
+   * Read currentArtifactId in effects without subscribing as a dependency.
+   * Adding it to effect deps fires auto-select on every reset, breaking toggle-close.
+   */
   const currentArtifactIdRef = useRef(currentArtifactId);
   currentArtifactIdRef.current = currentArtifactId;
 
