@@ -183,4 +183,10 @@ router.put('/:roleName/marketplace', manageRoles, createPermissionUpdateHandler(
  */
 router.put('/:roleName/remote-agents', manageRoles, createPermissionUpdateHandler('remote-agents'));
 
+/**
+ * PUT /api/roles/:roleName/skills
+ * Update skill permissions for a specific role
+ */
+router.put('/:roleName/skills', manageRoles, createPermissionUpdateHandler('skills'));
+
 module.exports = router;
