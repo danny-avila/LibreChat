@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { lazy, Suspense, useState, useMemo } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
@@ -8,6 +8,8 @@ import { useLocalize, useExpandCollapse } from '~/hooks';
 import UIResourceCarousel from './UIResourceCarousel';
 import { handleUIAction, cn } from '~/utils';
 import { OutputRenderer } from './ToolOutput';
+
+const ClickHouseToolCall = lazy(() => import('./ClickHouseToolCall'));
 
 function isSimpleObject(obj: unknown): obj is Record<string, string | number | boolean | null> {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
@@ -96,10 +98,12 @@ export default function ToolCallInfo({
   input,
   output,
   attachments,
+  domain,
 }: {
   input: string;
   output?: string | null;
   attachments?: TAttachment[];
+  domain?: string | null;
 }) {
   const localize = useLocalize();
   const { ask } = useOptionalMessagesOperations();
@@ -127,6 +131,14 @@ export default function ToolCallInfo({
       .flatMap((attachment) => {
         return attachment[Tools.ui_resources] as UIResource[];
       }) ?? [];
+
+  if (domain && /clickhouse/i.test(domain)) {
+    return (
+      <Suspense fallback={<div className="p-3 text-xs text-text-secondary">Loading...</div>}>
+        <ClickHouseToolCall input={input} output={output} />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="w-full px-3 py-3.5">
