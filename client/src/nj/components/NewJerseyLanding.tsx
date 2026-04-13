@@ -18,7 +18,7 @@ export function NewJerseyLanding() {
   return (
     <div className="px-2.5 pt-2 transition-[max-width] duration-300 md:max-w-3xl xl:max-w-4xl">
       <h2 className="mb-3 text-center text-3xl font-medium">
-        Welcome to the <span className="text-jersey-blue">NJ AI Assistant</span>
+        Welcome to the <strong className="text-jersey-blue">NJ AI Assistant</strong>
       </h2>
 
       <div className="mb-6">
