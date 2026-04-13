@@ -4,6 +4,7 @@ const categories = require('./categories');
 const adminAuth = require('./admin/auth');
 const adminConfig = require('./admin/config');
 const adminGroups = require('./admin/groups');
+const adminMagicLinks = require('./admin/magic-links');
 const adminRoles = require('./admin/roles');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
@@ -38,6 +39,7 @@ module.exports = {
   adminAuth,
   adminConfig,
   adminGroups,
+  adminMagicLinks,
   adminRoles,
   keys,
   apiKeys,
