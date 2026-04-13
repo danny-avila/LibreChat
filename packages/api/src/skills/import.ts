@@ -20,6 +20,18 @@ const MAX_ENTRIES = 500;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const SKILL_MD = 'SKILL.md';
 
+/** Strip surrounding YAML quotes (single or double) from a scalar value. */
+function unquoteYaml(value: string): string {
+  if (
+    value.length >= 2 &&
+    ((value[0] === '"' && value[value.length - 1] === '"') ||
+      (value[0] === "'" && value[value.length - 1] === "'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
 /** YAML frontmatter parser — extracts name + description from SKILL.md. */
 function parseFrontmatter(raw: string): { name: string; description: string } {
   const trimmed = raw.trim();
@@ -40,7 +52,7 @@ function parseFrontmatter(raw: string): { name: string; description: string } {
       continue;
     }
     const key = line.slice(0, colon).trim().toLowerCase();
-    const value = line.slice(colon + 1).trim();
+    const value = unquoteYaml(line.slice(colon + 1).trim());
     if (key === 'name') {
       name = value;
     } else if (key === 'description') {

@@ -122,6 +122,9 @@ const handlers = createSkillsHandlers({
 function resolveSkillStorage(req, { isImage = false } = {}) {
   const source = getFileStrategy(req.config, { context: FileContext.skill_file, isImage });
   const strategy = getStrategyFunctions(source);
+  if (!strategy.saveBuffer) {
+    throw new Error(`Storage backend "${source}" does not support file writes`);
+  }
   return { saveBuffer: strategy.saveBuffer, source };
 }
 
@@ -160,7 +163,13 @@ async function uploadFileHandler(req, res) {
     if (relativePath.toUpperCase() === 'SKILL.MD') {
       return res.status(400).json({ error: 'SKILL.md is reserved; update the skill body instead' });
     }
-    if (!/^[a-zA-Z0-9._\-/]+$/.test(relativePath) || /(?:^|\/)\.\.|^\//.test(relativePath)) {
+    // Reject traversal, absolute paths, empty/dot segments — matches model-layer validator
+    // so storage writes don't happen before DB rejects the path.
+    if (
+      !/^[a-zA-Z0-9._\-/]+$/.test(relativePath) ||
+      /^\//.test(relativePath) ||
+      relativePath.split('/').some((s) => s === '' || s === '.' || s === '..')
+    ) {
       return res.status(400).json({ error: 'Invalid file path' });
     }
 
