@@ -217,15 +217,24 @@ async function handleMarkdown(
   const content = file.buffer.toString('utf-8');
 
   const { name, description } = parseFrontmatter(content);
-  if (!name) {
-    return res.status(400).json({ error: 'SKILL.md must have a name in YAML frontmatter' });
+  const inferredName =
+    name ||
+    file.originalname
+      .replace(/\.md$/i, '')
+      .replace(/[^a-z0-9-]/gi, '-')
+      .replace(/^-+/, '')
+      .toLowerCase();
+  if (!inferredName) {
+    return res
+      .status(400)
+      .json({ error: 'Could not determine skill name from file or frontmatter' });
   }
 
   const { authorId, authorName, tenantId } = getAuthorInfo(req);
 
   const result = await deps.createSkill({
-    name,
-    description: description || name,
+    name: inferredName,
+    description: description || inferredName,
     body: content,
     author: authorId,
     authorName,

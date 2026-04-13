@@ -560,6 +560,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
   }
 
   const MAX_TEXT_CACHE_BYTES = 512 * 1024;
+  const MAX_JSON_CONTENT_BYTES = 1024 * 1024;
 
   async function downloadFileHandler(req: ServerRequest, res: Response) {
     try {
@@ -674,6 +675,17 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
             }
             return res.status(200).json({ ...base, isBinary: true });
           }
+        }
+
+        // Cap JSON response size — files beyond this must use ?raw=true
+        if (totalBytes > MAX_JSON_CONTENT_BYTES) {
+          if ('destroy' in stream && typeof stream.destroy === 'function') {
+            stream.destroy();
+          }
+          updateSkillFileContent(id, decodedPath, { isBinary: false }).catch((e) =>
+            logger.error('[downloadFile] Cache write failed:', e),
+          );
+          return res.status(200).json({ ...base, isBinary: false });
         }
       }
 

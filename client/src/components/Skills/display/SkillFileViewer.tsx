@@ -253,6 +253,21 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
                 {data.content}
               </pre>
             )}
+
+            {/* Text file too large for JSON response — offer download */}
+            {!data.isBinary && data.content == null && (
+              <div className="flex flex-col items-center justify-center gap-2 py-12 text-text-secondary">
+                <FileText className="size-8" />
+                <p className="text-sm">{localize('com_ui_skill_file_download')}</p>
+                <a
+                  href={rawUrl}
+                  download
+                  className="text-sm text-text-primary underline hover:no-underline"
+                >
+                  {localize('com_ui_skill_file_download')}
+                </a>
+              </div>
+            )}
           </>
         )}
       </div>
