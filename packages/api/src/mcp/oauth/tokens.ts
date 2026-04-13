@@ -389,23 +389,41 @@ export class MCPTokenStorage {
           // Check if it's an unauthorized_client error (refresh not supported)
           const errorMessage =
             refreshError instanceof Error ? refreshError.message : String(refreshError);
-          if (errorMessage.includes('unauthorized_client')) {
+          const lowerMessage = errorMessage.toLowerCase();
+          if (lowerMessage.includes('unauthorized_client')) {
             logger.info(
               `${logPrefix} Server does not support refresh tokens for this client. New authentication required.`,
             );
-          }
-          if (errorMessage.includes('invalid_client') && deleteTokens) {
-            logger.info(
-              `${logPrefix} Client registration rejected during token refresh, clearing stale registration`,
+          } else if (
+            lowerMessage.includes('invalid_client') ||
+            lowerMessage.includes('client_id mismatch') ||
+            lowerMessage.includes('client not found') ||
+            lowerMessage.includes('unknown client')
+          ) {
+            if (deleteTokens) {
+              logger.info(
+                `${logPrefix} Client registration rejected during token refresh, attempting to clear stale registration and refresh token`,
+              );
+              const staleIdentifier = `mcp:${serverName}`;
+              await Promise.allSettled([
+                MCPTokenStorage.deleteClientRegistration({ userId, serverName, deleteTokens }),
+                deleteTokens({
+                  userId,
+                  type: 'mcp_oauth_refresh',
+                  identifier: `${staleIdentifier}:refresh`,
+                }),
+              ]).then((results) => {
+                for (const r of results) {
+                  if (r.status === 'rejected') {
+                    logger.warn(`${logPrefix} Failed to clear stale token data`, r.reason);
+                  }
+                }
+              });
+              throw new ReauthenticationRequiredError(serverName, 'invalid_client');
+            }
+            logger.warn(
+              `${logPrefix} Client registration rejected during token refresh but deleteTokens not available — stale registration cannot be cleared`,
             );
-            await MCPTokenStorage.deleteClientRegistration({
-              userId,
-              serverName,
-              deleteTokens,
-            }).catch((err) => {
-              logger.warn(`${logPrefix} Failed to clear stale client registration`, err);
-            });
-            throw new ReauthenticationRequiredError(serverName, 'invalid_client');
           }
           return null;
         }

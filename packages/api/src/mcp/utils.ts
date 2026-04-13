@@ -125,6 +125,21 @@ export function buildOAuthToolCallName(serverName: string): string {
 }
 
 /**
+ * Checks whether a message string indicates the OAuth client registration was rejected.
+ * Covers RFC 6749 §5.2 standard codes and known vendor-specific patterns.
+ */
+export function isClientRejectionMessage(message: string): boolean {
+  const msg = message.toLowerCase();
+  return (
+    msg.includes('invalid_client') ||
+    msg.includes('unauthorized_client') ||
+    msg.includes('client_id mismatch') ||
+    msg.includes('client not found') ||
+    msg.includes('unknown client')
+  );
+}
+
+/**
  * Sanitizes a URL by removing query parameters to prevent credential leakage in logs.
  * @param url - The URL to sanitize (string or URL object)
  * @returns The sanitized URL string without query parameters
