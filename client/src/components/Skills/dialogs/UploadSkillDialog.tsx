@@ -47,8 +47,10 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
         navigate(`/skills/${skill._id}`);
       } catch (error: unknown) {
         setIsUploading(false);
-        const errData = (error as { response?: { data?: { error?: string } } })?.response?.data;
-        const message = errData?.error ?? localize('com_ui_create_skill_upload_error');
+        const errData = (error as { response?: { data?: { error?: string; message?: string } } })
+          ?.response?.data;
+        const message =
+          errData?.message ?? errData?.error ?? localize('com_ui_create_skill_upload_error');
         showToast({ status: 'error', message });
       }
     },
