@@ -88,8 +88,22 @@ export default function MessageNav({
     return -1;
   }, [entries, activeIds]);
 
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visibleSetRef = useRef(new Set<string>());
+
   const refreshEntries = useCallback(() => {
-    setEntries(getMessageEntries());
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+    refreshTimerRef.current = setTimeout(() => {
+      const next = getMessageEntries();
+      setEntries((prev) => {
+        if (prev.length === next.length && prev.every((e, i) => e.id === next[i].id)) {
+          return prev;
+        }
+        return next;
+      });
+    }, 200);
   }, []);
 
   // Observe DOM changes to detect new messages
@@ -107,7 +121,12 @@ export default function MessageNav({
 
     mutationObserver.observe(container, { childList: true, subtree: true });
 
-    return () => mutationObserver.disconnect();
+    return () => {
+      mutationObserver.disconnect();
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+    };
   }, [scrollableRef, refreshEntries]);
 
   // Track which messages are visible via IntersectionObserver
@@ -119,7 +138,15 @@ export default function MessageNav({
 
     observerRef.current?.disconnect();
 
-    const visibleSet = new Set<string>();
+    const visibleSet = visibleSetRef.current;
+    // Remove IDs that no longer exist in entries
+    const entryIds = new Set(entries.map((e) => e.id));
+    for (const id of visibleSet) {
+      if (!entryIds.has(id)) {
+        visibleSet.delete(id);
+      }
+    }
+
     const observer = new IntersectionObserver(
       (intersections) => {
         for (const entry of intersections) {
@@ -174,7 +201,7 @@ export default function MessageNav({
         type="button"
         onClick={jumpToPrevious}
         disabled={activeIndex <= 0}
-        className="rounded-md p-0.5 text-text-tertiary transition-colors hover:text-text-primary disabled:opacity-30"
+        className="rounded-md p-0.5 text-text-secondary transition-colors hover:text-text-primary disabled:opacity-30"
         aria-label="Navigate to previous message"
       >
         <ChevronUp className="h-4 w-4" />
@@ -190,7 +217,7 @@ export default function MessageNav({
         type="button"
         onClick={jumpToNext}
         disabled={activeIndex < 0 || activeIndex >= entries.length - 1}
-        className="rounded-md p-0.5 text-text-tertiary transition-colors hover:text-text-primary disabled:opacity-30"
+        className="rounded-md p-0.5 text-text-secondary transition-colors hover:text-text-primary disabled:opacity-30"
         aria-label="Navigate to next message"
       >
         <ChevronDown className="h-4 w-4" />
