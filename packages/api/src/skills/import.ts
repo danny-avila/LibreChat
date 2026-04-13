@@ -96,6 +96,7 @@ function isDuplicateKeyError(error: unknown): boolean {
 
 export interface ImportSkillDeps {
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
+  getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
   upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
   saveBuffer: (
@@ -473,8 +474,11 @@ async function handleZip(
     `[importSkill] Imported skill "${inferredName}" with ${successCount} files (${errors.length} errors)`,
   );
 
+  // Re-read the skill to get the current version/fileCount (bumped by each upsertSkillFile)
+  const refreshed = (await deps.getSkillById(skill._id)) ?? skill;
+
   return res.status(201).json({
-    ...skill,
+    ...refreshed,
     _importSummary: {
       filesProcessed: fileResults.length,
       filesSucceeded: successCount,

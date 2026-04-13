@@ -133,6 +133,7 @@ function resolveSkillStorage(req, { isImage = false } = {}) {
 // ---------------------------------------------------------------------------
 const importHandler = createImportHandler({
   createSkill,
+  getSkillById,
   deleteSkill,
   upsertSkillFile,
   saveBuffer: (req, { userId, buffer, fileName, basePath, isImage }) => {
