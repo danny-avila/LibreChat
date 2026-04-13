@@ -49,15 +49,18 @@ function MessageIndicator({ entry, isActive }: { entry: MessageEntry; isActive: 
         <button
           type="button"
           onClick={() => scrollToMessage(entry.id)}
-          className={cn(
-            'rounded-full transition-all duration-200',
-            entry.isUser ? 'w-4' : 'w-6',
-            isActive
-              ? 'h-[5px] bg-gray-800 dark:bg-gray-100'
-              : 'h-[3px] bg-gray-400 opacity-50 hover:opacity-80 dark:bg-gray-500',
-          )}
+          className={cn('flex h-[5px] items-center justify-center', entry.isUser ? 'w-4' : 'w-6')}
           aria-label={`Go to ${entry.isUser ? 'user' : 'assistant'} message: ${entry.preview.slice(0, 30)}`}
-        />
+        >
+          <span
+            className={cn(
+              'block w-full rounded-full transition-all duration-200',
+              isActive
+                ? 'h-[5px] bg-gray-800 dark:bg-gray-100'
+                : 'h-[3px] bg-gray-400 opacity-50 hover:opacity-80 dark:bg-gray-500',
+            )}
+          />
+        </button>
       </HoverCardTrigger>
       <HoverCardPortal>
         <HoverCardContent side="left" sideOffset={12} className="z-[999] max-w-[280px] px-3 py-2">
