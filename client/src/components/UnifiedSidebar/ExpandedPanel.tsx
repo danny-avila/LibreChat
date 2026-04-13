@@ -17,7 +17,9 @@ const NewChatButton = memo(function NewChatButton() {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
+  const { setActive } = useActivePanel();
   const conversation = useRecoilValue(store.conversationByIndex(0));
+  const switchToHistory = useRecoilValue(store.newChatSwitchToHistory);
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -26,9 +28,12 @@ const NewChatButton = memo(function NewChatButton() {
         clearMessagesCache(queryClient, conversation?.conversationId);
         queryClient.invalidateQueries([QueryKeys.messages]);
         newConversation();
+        if (switchToHistory) {
+          setActive('conversations');
+        }
       }
     },
-    [queryClient, conversation?.conversationId, newConversation],
+    [queryClient, conversation?.conversationId, newConversation, switchToHistory, setActive],
   );
 
   return (
@@ -56,12 +61,14 @@ const NavIconButton = memo(function NavIconButton({
   expanded,
   setActive,
   onExpand,
+  onCollapse,
 }: {
   link: NavLink;
   isActive: boolean;
   expanded: boolean;
   setActive: (id: string) => void;
   onExpand?: () => void;
+  onCollapse?: () => void;
 }) {
   const localize = useLocalize();
 
@@ -71,6 +78,10 @@ const NavIconButton = memo(function NavIconButton({
         link.onClick(e);
         return;
       }
+      if (isActive && expanded) {
+        onCollapse?.();
+        return;
+      }
       if (!isActive) {
         setActive(link.id);
       }
@@ -78,7 +89,7 @@ const NavIconButton = memo(function NavIconButton({
         onExpand?.();
       }
     },
-    [link, isActive, setActive, expanded, onExpand],
+    [link, isActive, setActive, expanded, onExpand, onCollapse],
   );
 
   return (
@@ -153,6 +164,7 @@ function ExpandedPanel({
             expanded={expanded ?? true}
             setActive={setActive}
             onExpand={onExpand}
+            onCollapse={onCollapse}
           />
         ))}
       </div>
