@@ -415,7 +415,7 @@ describe('Skill routes', () => {
       const created = await createSkillAsOwner();
       const res = await request(app).post(`/api/skills/${created.body._id}/files`);
       expect(res.status).toBe(400);
-      expect(res.body.message).toMatch(/no file/i);
+      expect(res.body.error).toMatch(/no file/i);
     });
   });
 
