@@ -116,7 +116,7 @@
     "keyv-file": "^5.1.2",
     "librechat-data-provider": "*",
     "mammoth": "^1.11.0",
-    "mathjs": "^15.1.0",
+    "mathjs": "^15.2.0",
     "memorystore": "^1.6.7",
     "mongoose": "^8.12.1",
     "node-fetch": "2.7.0",
