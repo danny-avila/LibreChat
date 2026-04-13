@@ -546,7 +546,12 @@ describe('MCPTokenStorage', () => {
           deleteTokens: store.deleteTokens,
           refreshTokens,
         }),
-      ).rejects.toThrow(ReauthenticationRequiredError);
+      ).rejects.toThrow(
+        expect.objectContaining({
+          name: 'ReauthenticationRequiredError',
+          message: expect.stringContaining('stored client registration is no longer valid'),
+        }),
+      );
 
       const clientReg = await store.findToken({
         userId: 'u1',

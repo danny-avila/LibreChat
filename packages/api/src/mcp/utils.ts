@@ -124,19 +124,26 @@ export function buildOAuthToolCallName(serverName: string): string {
   return `${oauthPrefix}${normalizeServerName(serverName)}`;
 }
 
+const INVALID_CLIENT_PATTERNS = [
+  'invalid_client',
+  'client_id mismatch',
+  'client not found',
+  'unknown client',
+] as const;
+
+/** Checks whether a message indicates the stored client registration is invalid/stale. */
+export function isInvalidClientMessage(message: string): boolean {
+  const msg = message.toLowerCase();
+  return INVALID_CLIENT_PATTERNS.some((p) => msg.includes(p));
+}
+
 /**
- * Checks whether a message string indicates the OAuth client registration was rejected.
- * Covers RFC 6749 §5.2 standard codes and known vendor-specific patterns.
+ * Checks whether a message indicates the OAuth client registration was rejected.
+ * Superset of `isInvalidClientMessage`: also matches `unauthorized_client`
+ * (grant-type refusal), which has different recovery semantics.
  */
 export function isClientRejectionMessage(message: string): boolean {
-  const msg = message.toLowerCase();
-  return (
-    msg.includes('invalid_client') ||
-    msg.includes('unauthorized_client') ||
-    msg.includes('client_id mismatch') ||
-    msg.includes('client not found') ||
-    msg.includes('unknown client')
-  );
+  return isInvalidClientMessage(message) || message.toLowerCase().includes('unauthorized_client');
 }
 
 /**
