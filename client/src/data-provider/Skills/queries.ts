@@ -10,6 +10,7 @@ import type {
   TSkillListRequest,
   TSkillListResponse,
   TListSkillFilesResponse,
+  TSkillFileContentResponse,
 } from 'librechat-data-provider';
 
 /**
@@ -94,6 +95,13 @@ export const useGetSkillQuery = (
 };
 
 /**
+ * Alias kept for the original UI PR's call surface — components that still
+ * import `useGetSkillByIdQuery` (e.g. `SkillsView`, `SkillForm`) resolve to
+ * the same hook as `useGetSkillQuery`.
+ */
+export const useGetSkillByIdQuery = useGetSkillQuery;
+
+/**
  * List file metadata for a single skill. In phase 1 this returns an empty array for
  * skills that have only an inline `SKILL.md`; multi-file skills arrive in phase 2.
  */
@@ -110,6 +118,32 @@ export const useListSkillFilesQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: false,
+      ...config,
+      enabled: enabled && (config?.enabled ?? true),
+    },
+  );
+};
+
+/**
+ * Fetch a single skill file's content. Returns cached text from the DB when
+ * available; otherwise the backend reads from storage, caches, and returns it.
+ * Uses `staleTime: Infinity` because file content is cached server-side.
+ */
+export const useGetSkillFileContentQuery = (
+  skillId: string | null | undefined,
+  relativePath: string | null | undefined,
+  config?: UseQueryOptions<TSkillFileContentResponse>,
+): QueryObserverResult<TSkillFileContentResponse> => {
+  const enabled = !!skillId && !!relativePath;
+  return useQuery<TSkillFileContentResponse>(
+    [QueryKeys.skillFileContent, skillId, relativePath],
+    () => dataService.getSkillFileContent(skillId as string, relativePath as string),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      staleTime: Infinity,
       ...config,
       enabled: enabled && (config?.enabled ?? true),
     },

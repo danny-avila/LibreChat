@@ -18,6 +18,7 @@ import type {
   UpdateSkillOptions,
   DeleteSkillOptions,
   UploadSkillFileOptions,
+  ImportSkillOptions,
   DeleteSkillFileOptions,
 } from 'librechat-data-provider';
 
@@ -117,6 +118,26 @@ export const useCreateSkillMutation = (
   const { onSuccess, ...rest } = options ?? {};
   return useMutation({
     mutationFn: (payload: TCreateSkill) => dataService.createSkill(payload),
+    ...rest,
+    onSuccess: (skill, variables, context) => {
+      queryClient.setQueryData<TSkill>([QueryKeys.skill, skill._id], skill);
+      addSkillToCachedLists(queryClient, skill);
+      if (onSuccess) onSuccess(skill, variables, context);
+    },
+  });
+};
+
+/**
+ * Import a skill from a .md, .zip, or .skill file. On success, writes the
+ * new skill into both the detail and list caches.
+ */
+export const useImportSkillMutation = (
+  options?: ImportSkillOptions,
+): UseMutationResult<TSkill, unknown, FormData> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options ?? {};
+  return useMutation({
+    mutationFn: (formData: FormData) => dataService.importSkill(formData),
     ...rest,
     onSuccess: (skill, variables, context) => {
       queryClient.setQueryData<TSkill>([QueryKeys.skill, skill._id], skill);

@@ -90,6 +90,10 @@ export interface ISkillFile {
   isExecutable: boolean;
   author: Types.ObjectId;
   tenantId?: string;
+  /** Lazily cached text content (≤ 512 KB). Populated on first read; cleared on re-upload. */
+  content?: string;
+  /** Set on first read. `true` prevents repeated storage reads for non-text files. */
+  isBinary?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
