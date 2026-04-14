@@ -1,17 +1,10 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Panel, Text, Separator, Container } from '@clickhouse/click-ui';
+import type { CostEntry } from './types';
+import { CH_BG_MUTED } from './types';
+import { formatCHC } from './helpers';
 import { cn } from '~/utils';
-
-export interface CostEntry {
-  date: string;
-  entityName: string;
-  entityType: string;
-  entityId: string;
-  totalCHC: number;
-  metrics: Record<string, number>;
-  [key: string]: unknown;
-}
 
 interface CostViewProps {
   costs: CostEntry[];
@@ -19,21 +12,13 @@ interface CostViewProps {
   codeTheme: 'light' | 'dark';
 }
 
-const CH_BG_MUTED = { light: '#f6f7fa', dark: '#282828' } as const;
-
 type ViewMode = 'date' | 'entity';
 
-function formatCHC(value: number): string {
-  if (value === 0) {
-    return '0 CHC';
-  }
-  if (value < 0.001) {
-    return '<0.001 CHC';
-  }
-  return `${value.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} CHC`;
-}
-
 function getDateRange(costs: CostEntry[]): { days: number; start: Date; end: Date } {
+  if (costs.length === 0) {
+    const empty = new Date(0);
+    return { days: 0, start: empty, end: empty };
+  }
   const dates = costs.map((c) => new Date(c.date)).sort((a, b) => a.getTime() - b.getTime());
   const start = dates[0];
   const end = dates[dates.length - 1];
@@ -43,12 +28,6 @@ function getDateRange(costs: CostEntry[]): { days: number; start: Date; end: Dat
 
 type TimeLevel = 'day' | 'week';
 
-function getTimeLevels(days: number): TimeLevel[] {
-  if (days <= 7) {
-    return ['day'];
-  }
-  return ['week', 'day'];
-}
 
 function getWeekLabel(date: Date): string {
   const startOfWeek = new Date(date);

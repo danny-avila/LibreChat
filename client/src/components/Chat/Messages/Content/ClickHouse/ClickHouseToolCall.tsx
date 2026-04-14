@@ -15,237 +15,19 @@ import {
 } from '@clickhouse/click-ui';
 import type { CellProps } from '@clickhouse/click-ui';
 import { useTheme, isDark } from '@librechat/client';
-import { ClickHouseCostView } from './ClickHouseCostView';
-import type { CostEntry } from './ClickHouseCostView';
+import type { ClickHouseToolCallProps, ParsedOutput, QueryMetrics, CostEntry } from './types';
+import { CH_BG, CH_BG_MUTED, SQL_VALUE_KEYS, MAX_ROWS_PER_PAGE } from './types';
+import {
+  parseInput,
+  parseOutput,
+  formatJson,
+  formatElapsed,
+  formatBytes,
+  formatValue,
+  getRowLabel,
+} from './helpers';
+import { ClickHouseCostView } from './CostView';
 import { cn } from '~/utils';
-
-interface ClickHouseToolCallProps {
-  input: string;
-  output?: string | null;
-  functionName?: string;
-}
-
-interface ParsedInput {
-  query?: string;
-  params: Record<string, string>;
-}
-
-interface QueryMetrics {
-  elapsed?: number;
-  rowsRead?: number;
-  bytesRead?: number;
-  totalRows?: number;
-}
-
-interface CostData {
-  grandTotalCHC: number;
-  costs: Record<string, unknown>[];
-}
-
-interface ParsedOutput {
-  error: boolean;
-  errorMessage?: string;
-  rows?: Record<string, unknown>[];
-  keyValue?: Record<string, unknown>;
-  costData?: CostData;
-  metrics?: QueryMetrics;
-  raw: string;
-}
-
-const CH_BG = { light: '#ffffff', dark: '#1f1f1c' } as const;
-const CH_BG_MUTED = { light: '#f6f7fa', dark: '#282828' } as const;
-
-function parseInput(raw: string): ParsedInput {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const query = (parsed.query ?? parsed.sql) as string | undefined;
-    const params: Record<string, string> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (key !== 'query' && key !== 'sql') {
-        params[key] = String(value);
-      }
-    }
-    return { query, params };
-  } catch {
-    return { params: {} };
-  }
-}
-
-function extractMetrics(obj: Record<string, unknown>): QueryMetrics | undefined {
-  const stats = obj.statistics as Record<string, unknown> | undefined;
-  const rows = obj.rows as number | undefined;
-  if (!stats && rows === undefined) {
-    return undefined;
-  }
-  return {
-    elapsed: stats?.elapsed as number | undefined,
-    rowsRead: stats?.rows_read as number | undefined,
-    bytesRead: stats?.bytes_read as number | undefined,
-    totalRows: rows as number | undefined,
-  };
-}
-
-function parseErrorMessage(message: string): string {
-  const jsonMatch = message.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    return message;
-  }
-  try {
-    const inner = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-    const error = inner.error ?? inner.message ?? inner.detail;
-    if (typeof error === 'string') {
-      const statusCode = inner.status ?? message.match(/HTTP (\d+)/)?.[1];
-      return statusCode ? `${statusCode}: ${error}` : error;
-    }
-  } catch {
-    // fall through
-  }
-  return message;
-}
-
-function parseOutput(raw: string): ParsedOutput {
-  const formatted = formatJson(raw);
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if ('error' in parsed || 'Error' in parsed) {
-      return { error: true, errorMessage: String(parsed.error ?? parsed.Error), raw: formatted };
-    }
-    const result = (parsed.result ?? parsed) as Record<string, unknown>;
-    if (result.status === 'error') {
-      return {
-        error: true,
-        errorMessage: parseErrorMessage(String(result.message ?? '')),
-        raw: formatted,
-      };
-    }
-    const metrics = extractMetrics(result);
-    if (typeof result.grandTotalCHC === 'number' && Array.isArray(result.costs)) {
-      return {
-        error: false,
-        costData: {
-          grandTotalCHC: result.grandTotalCHC,
-          costs: result.costs as Record<string, unknown>[],
-        },
-        metrics,
-        raw: formatted,
-      };
-    }
-    const data = unwrapData(result);
-    if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object' && data[0] !== null) {
-      return { error: false, rows: data as Record<string, unknown>[], metrics, raw: formatted };
-    }
-    if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
-      const cleaned = { ...result };
-      delete cleaned.status;
-      delete cleaned.statistics;
-      delete cleaned.rows;
-      const keys = Object.keys(cleaned);
-      const isFlat =
-        keys.length > 0 &&
-        keys.every((k) => {
-          const v = cleaned[k];
-          return v === null || typeof v !== 'object' || Array.isArray(v);
-        });
-      if (isFlat) {
-        return {
-          error: false,
-          rows: [cleaned] as Record<string, unknown>[],
-          metrics,
-          raw: formatted,
-        };
-      }
-      const kv = flattenObject(result);
-      delete kv.status;
-      return { error: false, keyValue: kv, metrics, raw: formatted };
-    }
-    return { error: false, metrics, raw: formatted };
-  } catch {
-    return { error: /error|exception|failed/i.test(raw), raw: formatted };
-  }
-}
-
-function unwrapData(obj: Record<string, unknown>): unknown {
-  if (Array.isArray(obj.data) && obj.data.length > 0 && typeof obj.data[0] === 'object') {
-    return obj.data;
-  }
-  const entries = Object.entries(obj);
-  const arrays = entries.filter(
-    ([, v]) => Array.isArray(v) && v.length > 0 && typeof v[0] === 'object' && v[0] !== null,
-  );
-  const scalars = entries.filter(
-    ([k, v]) => k !== 'status' && !Array.isArray(v) && (typeof v !== 'object' || v === null),
-  );
-  if (arrays.length === 1 && scalars.length <= 2) {
-    return arrays[0][1];
-  }
-  return obj;
-}
-
-function flattenObject(obj: Record<string, unknown>, prefix = ''): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (key === 'statistics' || key === 'rows') {
-      continue;
-    }
-    const fullKey = prefix ? `${prefix}.${key}` : key;
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      Object.assign(result, flattenObject(value as Record<string, unknown>, fullKey));
-    } else {
-      result[fullKey] = value;
-    }
-  }
-  return result;
-}
-
-function formatJson(text: string): string {
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2);
-  } catch {
-    return text;
-  }
-}
-
-function formatElapsed(seconds: number): string {
-  if (seconds < 0.001) {
-    return `${(seconds * 1_000_000).toFixed(0)}µs`;
-  }
-  if (seconds < 1) {
-    return `${(seconds * 1000).toFixed(1)}ms`;
-  }
-  return `${seconds.toFixed(3)}s`;
-}
-
-function formatBytes(bytes: number): string {
-  const KB = 1000;
-  const MB = KB * KB;
-  const GB = MB * KB;
-  if (bytes >= GB) {
-    return `${(bytes / GB).toFixed(2)} GB`;
-  }
-  if (bytes >= MB) {
-    return `${(bytes / MB).toFixed(2)} MB`;
-  }
-  return `${(bytes / KB).toFixed(2)} KB`;
-}
-
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '—';
-  }
-  if (typeof value === 'boolean') {
-    return value ? 'Yes' : 'No';
-  }
-  if (typeof value === 'number') {
-    return value.toLocaleString();
-  }
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
-    return new Date(value).toLocaleString();
-  }
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
-  }
-  return String(value);
-}
 
 function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
   return (
@@ -261,7 +43,7 @@ function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
           {metrics.bytesRead !== undefined && ` (${formatBytes(metrics.bytesRead)})`}
         </Text>
       )}
-      {metrics.totalRows !== undefined && !metrics.rowsRead && (
+      {metrics.totalRows !== undefined && metrics.rowsRead === undefined && (
         <Text color="muted" size="xs">
           {metrics.totalRows.toLocaleString()} {metrics.totalRows === 1 ? 'row' : 'rows'}
         </Text>
@@ -269,8 +51,6 @@ function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
     </Container>
   );
 }
-
-const MAX_ROWS_PER_PAGE = 50;
 
 function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
   const priorityColumns = ['name', 'title', 'label'];
@@ -358,8 +138,6 @@ function EndpointPill({ endpoint }: { endpoint: Record<string, unknown> }) {
     </div>
   );
 }
-
-const SQL_VALUE_KEYS = new Set(['create_table_query', 'engine_full']);
 
 function ValueRenderer({ value, fieldKey }: { value: unknown; fieldKey?: string }) {
   if (fieldKey && SQL_VALUE_KEYS.has(fieldKey) && typeof value === 'string' && value.length > 0) {
@@ -450,15 +228,6 @@ function ValueRenderer({ value, fieldKey }: { value: unknown; fieldKey?: string 
     );
   }
   return <Text size="md">{formatValue(value)}</Text>;
-}
-
-function getRowLabel(row: Record<string, unknown>): string {
-  for (const key of ['name', 'title', 'label', 'id']) {
-    if (typeof row[key] === 'string') {
-      return row[key] as string;
-    }
-  }
-  return 'Item';
 }
 
 function RowContent({ row }: { row: Record<string, unknown> }) {

@@ -9,7 +9,9 @@ import UIResourceCarousel from './UIResourceCarousel';
 import { handleUIAction, cn } from '~/utils';
 import { OutputRenderer } from './ToolOutput';
 
-const ClickHouseToolCall = lazy(() => import('./ClickHouseToolCall'));
+const ClickHouseToolCall = lazy(() =>
+  import('./ClickHouse/ClickHouseToolCall').then((m) => ({ default: m.default })),
+);
 
 function isSimpleObject(obj: unknown): obj is Record<string, string | number | boolean | null> {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
