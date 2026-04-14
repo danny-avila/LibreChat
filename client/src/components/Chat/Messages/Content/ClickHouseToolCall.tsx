@@ -276,7 +276,7 @@ function ResultContent({
   }
 
   return (
-    <CodeBlock language="json" theme={codeTheme}>
+    <CodeBlock language="json" theme={codeTheme} wrapLines>
       {parsed.raw}
     </CodeBlock>
   );
@@ -342,7 +342,7 @@ export default function ClickHouseToolCall({ input, output }: ClickHouseToolCall
               <div>
                 <Text size="xs" color="muted" weight="medium" className="mb-1">Input</Text>
                 <div className="max-h-[300px] overflow-auto rounded-lg">
-                  <CodeBlock language="json" theme={codeTheme}>
+                  <CodeBlock language="json" theme={codeTheme} wrapLines>
                     {formatJson(input)}
                   </CodeBlock>
                 </div>
@@ -353,7 +353,7 @@ export default function ClickHouseToolCall({ input, output }: ClickHouseToolCall
                   <div>
                     <Text size="xs" color="muted" weight="medium" className="mb-1">Output</Text>
                     <div className="max-h-[300px] overflow-auto rounded-lg">
-                      <CodeBlock language="json" theme={codeTheme}>
+                      <CodeBlock language="json" theme={codeTheme} wrapLines>
                         {formatJson(output)}
                       </CodeBlock>
                     </div>
