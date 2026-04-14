@@ -5,9 +5,12 @@ import {
   BashExecutionToolDefinition,
 } from '@librechat/agents';
 import type { LCToolRegistry, LCTool } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { Agent } from 'librechat-data-provider';
 import type { InitializeAgentDbMethods } from './initialize';
+
+const SKILL_CATALOG_LIMIT = 100;
 
 export interface InjectSkillCatalogParams {
   agent: Agent;
@@ -54,8 +57,14 @@ export async function injectSkillCatalog(
 
   const { skills } = await listSkillsByAccess({
     accessibleIds: accessibleSkillIds,
-    limit: 100,
+    limit: SKILL_CATALOG_LIMIT,
   });
+
+  if (skills.length === SKILL_CATALOG_LIMIT) {
+    logger.warn(
+      `[injectSkillCatalog] Skill catalog reached limit of ${SKILL_CATALOG_LIMIT}. Some skills may be excluded.`,
+    );
+  }
 
   if (skills.length === 0) {
     return { toolDefinitions: inputDefs, skillCount: 0 };

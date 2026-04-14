@@ -356,6 +356,10 @@ const createResponse = async (req, res) => {
           })
         : [];
 
+    const codeEnvAvailable = !!(
+      process.env.LIBRECHAT_CODE_API_KEY || req.config?.endpoints?.all?.codeApiKey
+    );
+
     const primaryConfig = await initializeAgent(
       {
         req,
@@ -369,6 +373,7 @@ const createResponse = async (req, res) => {
         allowedProviders,
         isInitialAgent: true,
         accessibleSkillIds,
+        codeEnvAvailable,
       },
       {
         getConvoFiles: db.getConvoFiles,

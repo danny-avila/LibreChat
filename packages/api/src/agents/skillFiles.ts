@@ -152,10 +152,10 @@ export async function primeSkillFiles(
     // Persist codeEnvIdentifiers on skill files (fire-and-forget)
     if (updateSkillFileCodeEnvIds) {
       const updates = result.files
-        .filter((f) => f.filename !== 'SKILL.md')
+        .filter((f) => !f.filename.endsWith('/SKILL.md'))
         .map((f) => ({
           skillId: skill._id,
-          relativePath: f.filename,
+          relativePath: f.filename.slice(f.filename.indexOf('/') + 1),
           codeEnvIdentifier: `${result.session_id}/${f.fileId}`,
         }));
       if (updates.length > 0) {
@@ -238,54 +238,57 @@ export async function primeInvokedSkills(
   }
 
   const skills = new Map<string, string>();
-  let sessions: ToolSessionMap | undefined;
+  const allPrimedFiles: Array<{ id: string; name: string; session_id: string }> = [];
+  let lastSessionId = '';
 
-  for (const skillName of invokedSkills) {
-    try {
-      const skill = await deps.getSkillByName(skillName, deps.accessibleSkillIds);
-      if (!skill) {
-        continue;
-      }
+  const processSkill = async (skillName: string): Promise<void> => {
+    const skill = await deps.getSkillByName(skillName, deps.accessibleSkillIds);
+    if (!skill) {
+      return;
+    }
 
-      skills.set(skill.name, skill.body);
+    skills.set(skill.name, skill.body);
 
-      // Re-prime files for multi-file skills
-      if (skill.fileCount > 0) {
-        const skillFiles = await deps.listSkillFiles(skill._id);
-        const result = await primeSkillFiles({
-          skill,
-          skillFiles,
-          req: deps.req,
-          apiKey,
-          getStrategyFunctions: deps.getStrategyFunctions,
-          batchUploadCodeEnvFiles: deps.batchUploadCodeEnvFiles,
-          getSessionInfo: deps.getSessionInfo,
-          checkIfActive: deps.checkIfActive,
-          updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
-        });
+    if (skill.fileCount > 0 && apiKey) {
+      const skillFiles = await deps.listSkillFiles(skill._id);
+      const result = await primeSkillFiles({
+        skill,
+        skillFiles,
+        req: deps.req,
+        apiKey,
+        getStrategyFunctions: deps.getStrategyFunctions,
+        batchUploadCodeEnvFiles: deps.batchUploadCodeEnvFiles,
+        getSessionInfo: deps.getSessionInfo,
+        checkIfActive: deps.checkIfActive,
+        updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
+      });
 
-        if (result) {
-          if (!sessions) {
-            sessions = new Map();
-          }
-          const sessionCtx: CodeSessionContext = {
-            session_id: result.session_id,
-            files: result.files.map((f) => ({
-              id: f.id,
-              name: f.name,
-              session_id: f.session_id,
-            })),
-            lastUpdated: Date.now(),
-          };
-          sessions.set(Constants.EXECUTE_CODE, sessionCtx);
+      if (result) {
+        lastSessionId = result.session_id;
+        for (const f of result.files) {
+          allPrimedFiles.push({ id: f.id, name: f.name, session_id: f.session_id });
         }
       }
-    } catch (err) {
-      logger.warn(
-        `[primeInvokedSkills] Failed for skill "${skillName}":`,
-        err instanceof Error ? err.message : err,
-      );
     }
+  };
+
+  const results = await Promise.allSettled(
+    Array.from(invokedSkills).map((skillName) => processSkill(skillName)),
+  );
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      logger.warn('[primeInvokedSkills] Skill processing failed:', result.reason);
+    }
+  }
+
+  let sessions: ToolSessionMap | undefined;
+  if (allPrimedFiles.length > 0 && lastSessionId) {
+    sessions = new Map();
+    sessions.set(Constants.EXECUTE_CODE, {
+      session_id: lastSessionId,
+      files: allPrimedFiles,
+      lastUpdated: Date.now(),
+    } satisfies CodeSessionContext);
   }
 
   return {
