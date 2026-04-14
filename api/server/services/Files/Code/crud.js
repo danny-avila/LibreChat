@@ -107,4 +107,66 @@ async function uploadCodeEnvFile({ req, stream, filename, apiKey, entity_id = ''
   }
 }
 
-module.exports = { getCodeOutputDownloadStream, uploadCodeEnvFile };
+/**
+ * Uploads multiple files to the code execution environment in a single request.
+ * Uses the /upload/batch endpoint which shares one session_id across all files.
+ *
+ * @param {object} params
+ * @param {import('express').Request & { user: { id: string } }} params.req - The request object.
+ * @param {Array<{ stream: NodeJS.ReadableStream; filename: string }>} params.files - Files to upload.
+ * @param {string} params.apiKey - The API key for authentication.
+ * @param {string} [params.entity_id] - Optional entity ID.
+ * @returns {Promise<{ session_id: string; files: Array<{ fileId: string; filename: string }> }>}
+ * @throws {Error} If the batch upload fails entirely.
+ */
+async function batchUploadCodeEnvFiles({ req, files, apiKey, entity_id = '' }) {
+  try {
+    const form = new FormData();
+    if (entity_id.length > 0) {
+      form.append('entity_id', entity_id);
+    }
+    for (const file of files) {
+      form.append('file', file.stream, file.filename);
+    }
+
+    const baseURL = getCodeBaseURL();
+    /** @type {import('axios').AxiosRequestConfig} */
+    const options = {
+      headers: {
+        ...form.getHeaders(),
+        'Content-Type': 'multipart/form-data',
+        'User-Agent': 'LibreChat/1.0',
+        'User-Id': req.user.id,
+        'X-API-Key': apiKey,
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 120000,
+      maxContentLength: MAX_FILE_SIZE,
+      maxBodyLength: MAX_FILE_SIZE,
+    };
+
+    const response = await axios.post(`${baseURL}/upload/batch`, form, options);
+
+    /** @type {{ message: string; session_id: string; files: Array<{ status: string; fileId?: string; filename: string; error?: string }>; succeeded: number; failed: number }} */
+    const result = response.data;
+    if (result.message === 'error') {
+      throw new Error('All files in batch upload failed');
+    }
+
+    const successFiles = result.files
+      .filter((f) => f.status === 'success' && f.fileId)
+      .map((f) => ({ fileId: f.fileId, filename: f.filename }));
+
+    return { session_id: result.session_id, files: successFiles };
+  } catch (error) {
+    throw new Error(
+      logAxiosError({
+        message: `Error in batch upload to code environment: ${error.message}`,
+        error,
+      }),
+    );
+  }
+}
+
+module.exports = { getCodeOutputDownloadStream, uploadCodeEnvFile, batchUploadCodeEnvFiles };

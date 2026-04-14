@@ -65,14 +65,13 @@ export interface ToolExecuteOptions {
     getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
     [key: string]: unknown;
   };
-  /** Uploads a file to the code execution environment */
-  uploadCodeEnvFile?: (params: {
+  /** Batch uploads files to the code execution environment */
+  batchUploadCodeEnvFiles?: (params: {
     req: ServerRequest;
-    stream: NodeJS.ReadableStream;
-    filename: string;
+    files: Array<{ stream: NodeJS.ReadableStream; filename: string }>;
     apiKey: string;
     entity_id?: string;
-  }) => Promise<string>;
+  }) => Promise<{ session_id: string; files: Array<{ fileId: string; filename: string }> }>;
   /** Updates conversation document (for tracking invoked skills) */
   updateConversation?: (
     filter: Record<string, unknown>,
@@ -90,7 +89,7 @@ async function handleSkillToolCall(
     getSkillByName,
     listSkillFiles,
     getStrategyFunctions,
-    uploadCodeEnvFile,
+    batchUploadCodeEnvFiles,
     updateConversation,
   } = options;
   const args = tc.args as { skillName?: string; args?: string };
@@ -139,7 +138,13 @@ async function handleSkillToolCall(
     | undefined;
 
   // Prime skill files to code env when the skill has bundled files
-  if (skill.fileCount > 0 && req && listSkillFiles && getStrategyFunctions && uploadCodeEnvFile) {
+  if (
+    skill.fileCount > 0 &&
+    req &&
+    listSkillFiles &&
+    getStrategyFunctions &&
+    batchUploadCodeEnvFiles
+  ) {
     const codeApiKey = (mergedConfigurable?.codeApiKey as string) ?? '';
     if (codeApiKey) {
       try {
@@ -150,7 +155,7 @@ async function handleSkillToolCall(
           req,
           apiKey: codeApiKey,
           getStrategyFunctions,
-          uploadCodeEnvFile,
+          batchUploadCodeEnvFiles,
         });
         if (primeResult) {
           artifact = primeResult;

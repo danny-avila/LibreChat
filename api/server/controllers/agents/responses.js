@@ -474,7 +474,8 @@ const createResponse = async (req, res) => {
         getSkillByName: db.getSkillByName,
         listSkillFiles: db.listSkillFiles,
         getStrategyFunctions: require('~/server/services/Files/strategies').getStrategyFunctions,
-        uploadCodeEnvFile: require('~/server/services/Files/Code/crud').uploadCodeEnvFile,
+        batchUploadCodeEnvFiles: require('~/server/services/Files/Code/crud')
+          .batchUploadCodeEnvFiles,
         updateConversation: db.updateConversation,
       };
 
