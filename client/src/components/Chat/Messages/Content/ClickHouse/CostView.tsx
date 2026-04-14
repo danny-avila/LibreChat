@@ -4,6 +4,7 @@ import { Panel, Text, Separator, Container } from '@clickhouse/click-ui';
 import type { CostEntry } from './types';
 import { CH_BG_MUTED } from './types';
 import { formatCHC } from './helpers';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface CostViewProps {
@@ -246,10 +247,13 @@ function TimeGroupView({ group, codeTheme }: { group: TimeGroup; codeTheme: 'lig
 }
 
 function DateView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'light' | 'dark' }) {
+  const localize = useLocalize();
   const { days } = getDateRange(costs);
   const [groupByWeek, setGroupByWeek] = useState(days > 7);
-  const levels: TimeLevel[] = groupByWeek ? ['week', 'day'] : ['day'];
-  const hierarchy = useMemo(() => buildTimeHierarchy(costs, levels), [costs, levels]);
+  const hierarchy = useMemo(() => {
+    const levels: TimeLevel[] = groupByWeek ? ['week', 'day'] : ['day'];
+    return buildTimeHierarchy(costs, levels);
+  }, [costs, groupByWeek]);
 
   return (
     <div>
@@ -264,7 +268,7 @@ function DateView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'light'
                 !groupByWeek ? 'bg-surface-primary text-text-primary' : 'text-text-secondary',
               )}
             >
-              Daily
+              {localize('com_ch_cost_daily')}
             </button>
             <button
               type="button"
@@ -274,7 +278,7 @@ function DateView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'light'
                 groupByWeek ? 'bg-surface-primary text-text-primary' : 'text-text-secondary',
               )}
             >
-              Weekly
+              {localize('com_ch_cost_weekly')}
             </button>
           </div>
         </div>
@@ -311,6 +315,7 @@ function groupEntriesByWeek(
 }
 
 function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'light' | 'dark' }) {
+  const localize = useLocalize();
   const groups = useMemo(() => buildEntityGroups(costs), [costs]);
   const { days } = getDateRange(costs);
   const [groupByWeek, setGroupByWeek] = useState(days > 7);
@@ -328,7 +333,7 @@ function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'ligh
                 !groupByWeek ? 'bg-surface-primary text-text-primary' : 'text-text-secondary',
               )}
             >
-              Daily
+              {localize('com_ch_cost_daily')}
             </button>
             <button
               type="button"
@@ -338,7 +343,7 @@ function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'ligh
                 groupByWeek ? 'bg-surface-primary text-text-primary' : 'text-text-secondary',
               )}
             >
-              Weekly
+              {localize('com_ch_cost_weekly')}
             </button>
           </div>
         </div>
@@ -410,6 +415,7 @@ function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'ligh
 }
 
 export function ClickHouseCostView({ costs, grandTotalCHC, codeTheme }: CostViewProps) {
+  const localize = useLocalize();
   const [viewMode, setViewMode] = useState<ViewMode>('entity');
 
   return (
@@ -422,7 +428,7 @@ export function ClickHouseCostView({ costs, grandTotalCHC, codeTheme }: CostView
         alignItems="center"
       >
         <Text size="md" weight="medium">
-          Total: {formatCHC(grandTotalCHC)}
+          {localize('com_ch_cost_total', { value: formatCHC(grandTotalCHC) })}
         </Text>
         <div className="flex gap-1 rounded-md bg-surface-tertiary p-0.5">
           <button
@@ -435,7 +441,7 @@ export function ClickHouseCostView({ costs, grandTotalCHC, codeTheme }: CostView
                 : 'text-text-secondary',
             )}
           >
-            By Entity
+            {localize('com_ch_cost_by_entity')}
           </button>
           <button
             type="button"
@@ -445,7 +451,7 @@ export function ClickHouseCostView({ costs, grandTotalCHC, codeTheme }: CostView
               viewMode === 'date' ? 'bg-surface-primary text-text-primary' : 'text-text-secondary',
             )}
           >
-            By Date
+            {localize('com_ch_cost_by_date')}
           </button>
         </div>
       </Container>

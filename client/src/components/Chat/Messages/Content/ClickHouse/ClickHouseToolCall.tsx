@@ -27,25 +27,31 @@ import {
   getRowLabel,
 } from './helpers';
 import { ClickHouseCostView } from './CostView';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
+  const localize = useLocalize();
   return (
     <Container orientation="horizontal" padding="none" gap="md" justifyContent="end">
       {metrics.elapsed !== undefined && (
         <Text color="muted" size="xs">
-          Elapsed: {formatElapsed(metrics.elapsed)}
+          {localize('com_ch_label_elapsed', { value: formatElapsed(metrics.elapsed) })}
         </Text>
       )}
       {metrics.rowsRead !== undefined && (
         <Text color="muted" size="xs">
-          Read: {metrics.rowsRead.toLocaleString()} rows
-          {metrics.bytesRead !== undefined && ` (${formatBytes(metrics.bytesRead)})`}
+          {metrics.bytesRead !== undefined
+            ? localize('com_ch_label_read_bytes', {
+                rows: metrics.rowsRead.toLocaleString(),
+                bytes: formatBytes(metrics.bytesRead),
+              })
+            : localize('com_ch_label_read', { rows: metrics.rowsRead.toLocaleString() })}
         </Text>
       )}
       {metrics.totalRows !== undefined && metrics.rowsRead === undefined && (
         <Text color="muted" size="xs">
-          {metrics.totalRows.toLocaleString()} {metrics.totalRows === 1 ? 'row' : 'rows'}
+          {localize('com_ch_label_rows', { count: metrics.totalRows })}
         </Text>
       )}
     </Container>
@@ -53,6 +59,7 @@ function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
 }
 
 function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
+  const localize = useLocalize();
   const priorityColumns = ['name', 'title', 'label'];
   const rawColumns = Object.keys(rows[0]).filter((col) => {
     const sample = rows[0][col];
@@ -87,7 +94,10 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
           <CheckboxMultiSelect
             value={selectedColumns}
             onSelect={(vals) => setSelectedColumns(vals.length > 0 ? vals : [allColumns[0]])}
-            selectLabel={`Filter Columns (${columns.length}/${allColumns.length})`}
+            selectLabel={localize('com_ch_filter_columns', {
+              visible: columns.length,
+              total: allColumns.length,
+            })}
           >
             {allColumns.map((col) => (
               <CheckboxMultiSelect.Item key={col} value={col} label={col} />
@@ -103,7 +113,6 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
             rowCount={pageRows.length}
             columnCount={columns.length}
             showHeader
-            autoFocus={false}
           />
           {totalPages > 1 && (
             <>
@@ -305,6 +314,7 @@ function CollapsibleRows({
   rows: Record<string, unknown>[];
   codeTheme: 'light' | 'dark';
 }) {
+  const localize = useLocalize();
   const [openIds, setOpenIds] = useState<Set<number>>(() => new Set());
   const allOpen = openIds.size === rows.length;
 
@@ -333,7 +343,7 @@ function CollapsibleRows({
           className="text-xs"
           style={{ color: 'var(--text-secondary)' }}
         >
-          {allOpen ? 'Collapse all' : 'Expand all'}
+          {allOpen ? localize('com_ch_collapse_all') : localize('com_ch_expand_all')}
         </button>
       </div>
       <div className="-mx-0.5 flex max-h-[400px] w-[calc(100%+4px)] flex-col gap-3 overflow-auto px-0.5 py-0.5">
@@ -430,6 +440,7 @@ export default function ClickHouseToolCall({
   output,
   functionName,
 }: ClickHouseToolCallProps) {
+  const localize = useLocalize();
   const { theme } = useTheme();
   const codeTheme = isDark(theme) ? 'dark' : 'light';
   const { query, params } = useMemo(() => parseInput(input), [input]);
@@ -447,10 +458,10 @@ export default function ClickHouseToolCall({
         <Tabs value={activeTab} onValueChange={setUserTab}>
           <Tabs.TriggersList className="[&]:justify-between">
             <div className="flex">
-              {query && <Tabs.Trigger value="query">Query</Tabs.Trigger>}
-              {parsed && <Tabs.Trigger value="result">Result</Tabs.Trigger>}
+              {query && <Tabs.Trigger value="query">{localize('com_ch_tab_query')}</Tabs.Trigger>}
+              {parsed && <Tabs.Trigger value="result">{localize('com_ui_result')}</Tabs.Trigger>}
             </div>
-            <Tabs.Trigger value="details">Details</Tabs.Trigger>
+            <Tabs.Trigger value="details">{localize('com_ui_details')}</Tabs.Trigger>
           </Tabs.TriggersList>
 
           {query && (
@@ -501,7 +512,7 @@ export default function ClickHouseToolCall({
             <div className="flex flex-col gap-3 pt-3">
               <div>
                 <Text size="xs" color="muted" weight="medium" className="mb-1">
-                  Input
+                  {localize('com_ui_input')}
                 </Text>
                 <div className="max-h-[300px] overflow-auto rounded-lg">
                   <CodeBlock language="json" theme={codeTheme} wrapLines>
@@ -514,7 +525,7 @@ export default function ClickHouseToolCall({
                   <Separator size="xs" />
                   <div>
                     <Text size="xs" color="muted" weight="medium" className="mb-1">
-                      Output
+                      {localize('com_endpoint_output')}
                     </Text>
                     <div className="max-h-[300px] overflow-auto rounded-lg">
                       <CodeBlock language="json" theme={codeTheme} wrapLines>
