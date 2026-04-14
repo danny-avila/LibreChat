@@ -13,6 +13,8 @@ import {
 } from '@clickhouse/click-ui';
 import type { TableColumnConfigProps, TableRowType } from '@clickhouse/click-ui';
 import { useTheme, isDark } from '@librechat/client';
+import { ClickHouseCostView } from './ClickHouseCostView';
+import type { CostEntry } from './ClickHouseCostView';
 import { cn } from '~/utils';
 
 interface ClickHouseToolCallProps {
@@ -33,11 +35,17 @@ interface QueryMetrics {
   totalRows?: number;
 }
 
+interface CostData {
+  grandTotalCHC: number;
+  costs: Record<string, unknown>[];
+}
+
 interface ParsedOutput {
   error: boolean;
   errorMessage?: string;
   rows?: Record<string, unknown>[];
   keyValue?: Record<string, unknown>;
+  costData?: CostData;
   metrics?: QueryMetrics;
   raw: string;
 }
@@ -87,6 +95,14 @@ function parseOutput(raw: string): ParsedOutput {
       return { error: true, errorMessage: String(result.message ?? ''), raw: formatted };
     }
     const metrics = extractMetrics(result);
+    if (typeof result.grandTotalCHC === 'number' && Array.isArray(result.costs)) {
+      return {
+        error: false,
+        costData: { grandTotalCHC: result.grandTotalCHC, costs: result.costs as Record<string, unknown>[] },
+        metrics,
+        raw: formatted,
+      };
+    }
     const data = unwrapData(result);
     if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object' && data[0] !== null) {
       return { error: false, rows: data as Record<string, unknown>[], metrics, raw: formatted };
@@ -321,7 +337,7 @@ function CollapsibleRow({ row, open, onToggle, codeTheme }: { row: Record<string
   const entries = Object.entries(row).filter(([, v]) => v !== null && v !== undefined && v !== '');
 
   return (
-    <Panel padding="none" radii="sm" hasBorder orientation="vertical" fillWidth>
+    <Panel padding="none" gap="none" radii="sm" hasBorder orientation="vertical" fillWidth>
       <button
         type="button"
         onClick={onToggle}
@@ -414,6 +430,16 @@ function ResultContent({
       <Panel padding="sm" color="default" radii="sm" hasBorder>
         <Text size="xs" color="danger">{parsed.errorMessage}</Text>
       </Panel>
+    );
+  }
+
+  if (parsed.costData) {
+    return (
+      <ClickHouseCostView
+        costs={parsed.costData.costs as CostEntry[]}
+        grandTotalCHC={parsed.costData.grandTotalCHC}
+        codeTheme={codeTheme}
+      />
     );
   }
 
