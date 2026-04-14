@@ -1,7 +1,7 @@
 import { ThemeSelector } from '@librechat/client';
 import { TStartupConfig } from 'librechat-data-provider';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
-import { TranslationKeys, useLocalize } from '~/hooks';
+import { TranslationKeys, useLocalize, useBranding } from '~/hooks';
 import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
 import { Banner } from '../Banners';
@@ -25,6 +25,7 @@ function AuthLayout({
   error: TranslationKeys | null;
 }) {
   const localize = useLocalize();
+  const branding = useBranding();
 
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
   const DisplayError = () => {
@@ -60,12 +61,11 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
-          <img
-            src="assets/logo.svg"
-            className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
-          />
+        <div className="mt-6 flex flex-col items-center justify-center">
+          <img src={branding.logoPath} className="h-12 w-12 rounded-lg" alt={branding.logoAlt} />
+          <span className="mt-1 text-sm font-semibold text-black dark:text-white">
+            {branding.appName}
+          </span>
         </div>
       </BlinkAnimation>
       <DisplayError />

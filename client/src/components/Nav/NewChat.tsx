@@ -4,7 +4,7 @@ import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
 import { CLOSE_SIDEBAR_ID, OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-import { useLocalize, useNewConvo } from '~/hooks';
+import { useLocalize, useNewConvo, useBranding } from '~/hooks';
 import { clearMessagesCache } from '~/utils';
 import store from '~/store';
 
@@ -26,6 +26,7 @@ export default function NewChat({
   const { newConversation: newConvo } = useNewConvo(index);
   const navigate = useNavigate();
   const localize = useLocalize();
+  const branding = useBranding();
   const { conversation } = store.useCreateConversationAtom(index);
 
   const handleToggleNav = useCallback(() => {
@@ -55,6 +56,17 @@ export default function NewChat({
 
   return (
     <>
+      <div className="flex items-center gap-2 px-2 pb-1 pt-2">
+        <img src={branding.logoPath} alt={branding.logoAlt} className="h-8 w-8 rounded-lg" />
+        <div className="flex flex-col">
+          <span className="text-sm font-bold text-text-primary">{branding.appName}</span>
+          {branding.appSubtitle && (
+            <span className="text-[9px] font-medium uppercase tracking-wider text-text-secondary">
+              {branding.appSubtitle}
+            </span>
+          )}
+        </div>
+      </div>
       <div className="flex items-center justify-between px-0.5 py-[2px] md:py-2">
         <TooltipAnchor
           description={localize('com_nav_close_sidebar')}
