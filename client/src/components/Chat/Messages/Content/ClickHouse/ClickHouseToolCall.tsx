@@ -51,7 +51,9 @@ function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
       )}
       {metrics.totalRows !== undefined && metrics.rowsRead === undefined && (
         <Text color="muted" size="xs">
-          {localize('com_ch_label_rows', { count: metrics.totalRows })}
+          {localize(metrics.totalRows === 1 ? 'com_ch_label_row' : 'com_ch_label_rows', {
+            count: metrics.totalRows,
+          })}
         </Text>
       )}
     </Container>
