@@ -9,8 +9,8 @@ type MessageEntry = {
   preview: string;
 };
 
-function getMessageEntries(): MessageEntry[] {
-  const nodes = document.querySelectorAll<HTMLElement>('.message-render');
+function getMessageEntries(root: ParentNode = document): MessageEntry[] {
+  const nodes = root.querySelectorAll<HTMLElement>('.message-render');
   const entries: MessageEntry[] = [];
 
   for (let i = 0; i < nodes.length; i++) {
@@ -121,15 +121,19 @@ export default function MessageNav({
       clearTimeout(refreshTimerRef.current);
     }
     refreshTimerRef.current = setTimeout(() => {
-      const next = getMessageEntries();
+      const root = scrollableRef.current ?? document;
+      const next = getMessageEntries(root);
       setEntries((prev) => {
-        if (prev.length === next.length && prev.every((e, i) => e.id === next[i].id)) {
+        if (
+          prev.length === next.length &&
+          prev.every((e, i) => e.id === next[i].id && e.preview === next[i].preview)
+        ) {
           return prev;
         }
         return next;
       });
     }, 200);
-  }, []);
+  }, [scrollableRef]);
 
   useEffect(() => {
     refreshEntries();

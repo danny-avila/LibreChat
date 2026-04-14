@@ -714,6 +714,7 @@ pre {
   background-color: #ffffff;
   z-index: 10;
   overflow: hidden;
+  transition: transform 100ms ease;
 }
 
 .dark .premium-scroll-button {
@@ -728,7 +729,6 @@ pre {
 
 .premium-scroll-button:active {
   transform: scale(0.95);
-  transition: transform 100ms ease;
 }
 
 .blink {
