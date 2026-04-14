@@ -100,24 +100,17 @@ export default function MessageNav({
   const observerRef = useRef<IntersectionObserver | null>(null);
   const lastKnownIndexRef = useRef(0);
 
-  const { firstActiveIndex, lastActiveIndex } = useMemo(() => {
-    let first = -1;
-    let last = -1;
+  const firstActiveIndex = useMemo(() => {
     for (let i = 0; i < entries.length; i++) {
       if (activeIds.has(entries[i].id)) {
-        if (first === -1) {
-          first = i;
-        }
-        last = i;
+        lastKnownIndexRef.current = i;
+        return i;
       }
     }
-    if (first !== -1) {
-      lastKnownIndexRef.current = first;
-    } else if (entries.length > 0) {
-      first = Math.min(lastKnownIndexRef.current, entries.length - 1);
-      last = first;
+    if (entries.length > 0) {
+      return Math.min(lastKnownIndexRef.current, entries.length - 1);
     }
-    return { firstActiveIndex: first, lastActiveIndex: last };
+    return -1;
   }, [entries, activeIds]);
 
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,11 +213,11 @@ export default function MessageNav({
   }, [firstActiveIndex, entries]);
 
   const jumpToNext = useCallback(() => {
-    if (lastActiveIndex < 0 || lastActiveIndex >= entries.length - 1) {
+    if (firstActiveIndex < 0 || firstActiveIndex >= entries.length - 1) {
       return;
     }
-    scrollToMessageStart(entries[lastActiveIndex + 1].id);
-  }, [lastActiveIndex, entries]);
+    scrollToMessageStart(entries[firstActiveIndex + 1].id);
+  }, [firstActiveIndex, entries]);
 
   if (entries.length < 3) {
     return null;
@@ -232,7 +225,7 @@ export default function MessageNav({
 
   const canGoUp =
     firstActiveIndex > 0 || (firstActiveIndex === 0 && !isMessageAtTop(entries[0].id));
-  const canGoDown = lastActiveIndex >= 0 && lastActiveIndex < entries.length - 1;
+  const canGoDown = firstActiveIndex >= 0 && firstActiveIndex < entries.length - 1;
 
   return (
     <nav
