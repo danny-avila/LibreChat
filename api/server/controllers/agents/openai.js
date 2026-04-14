@@ -309,7 +309,6 @@ const OpenAIChatCompletionController = async (req, res) => {
       listSkillFiles: db.listSkillFiles,
       getStrategyFunctions: require('~/server/services/Files/strategies').getStrategyFunctions,
       batchUploadCodeEnvFiles: require('~/server/services/Files/Code/crud').batchUploadCodeEnvFiles,
-      updateConversation: db.updateConversation,
     };
 
     const summarizationConfig = appConfig?.summarization;

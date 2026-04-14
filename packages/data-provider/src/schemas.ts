@@ -757,7 +757,6 @@ export const tConversationSchema = z.object({
   examples: z.array(tExampleSchema).optional(),
   /* DB */
   tags: z.array(z.string()).optional(),
-  invokedSkillIds: z.array(z.string()).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /* Files */

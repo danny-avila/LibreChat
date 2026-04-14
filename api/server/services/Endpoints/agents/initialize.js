@@ -169,7 +169,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     listSkillFiles: db.listSkillFiles,
     getStrategyFunctions: require('~/server/services/Files/strategies').getStrategyFunctions,
     batchUploadCodeEnvFiles: require('~/server/services/Files/Code/crud').batchUploadCodeEnvFiles,
-    updateConversation: db.updateConversation,
   };
 
   const summarizationOptions =

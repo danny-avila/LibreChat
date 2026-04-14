@@ -72,11 +72,6 @@ export interface ToolExecuteOptions {
     apiKey: string;
     entity_id?: string;
   }) => Promise<{ session_id: string; files: Array<{ fileId: string; filename: string }> }>;
-  /** Updates conversation document (for tracking invoked skills) */
-  updateConversation?: (
-    filter: Record<string, unknown>,
-    update: Record<string, unknown>,
-  ) => Promise<unknown>;
 }
 
 async function handleSkillToolCall(
@@ -85,13 +80,7 @@ async function handleSkillToolCall(
   options: ToolExecuteOptions,
   req?: ServerRequest,
 ): Promise<ToolExecuteResult> {
-  const {
-    getSkillByName,
-    listSkillFiles,
-    getStrategyFunctions,
-    batchUploadCodeEnvFiles,
-    updateConversation,
-  } = options;
+  const { getSkillByName, listSkillFiles, getStrategyFunctions, batchUploadCodeEnvFiles } = options;
   const args = tc.args as { skillName?: string; args?: string };
   if (!args.skillName) {
     return {
@@ -167,20 +156,6 @@ async function handleSkillToolCall(
         );
       }
     }
-  }
-
-  // Track invoked skill in conversation state (fire-and-forget)
-  const conversationId = mergedConfigurable?.thread_id as string | undefined;
-  if (conversationId && updateConversation) {
-    updateConversation(
-      { conversationId },
-      { $addToSet: { invokedSkillIds: skill._id.toString() } },
-    ).catch((err: unknown) => {
-      logger.warn(
-        '[handleSkillToolCall] Failed to update invokedSkillIds:',
-        err instanceof Error ? err.message : err,
-      );
-    });
   }
 
   return {
