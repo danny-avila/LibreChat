@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
   initializeAgent,
+  primeInvokedSkills,
   validateAgentModel,
   createEdgeCollector,
   filterOrphanedEdges,
@@ -25,6 +26,9 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
+const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -483,16 +487,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
-  /**
-   * Callback for the client to prime skill files for previously invoked skills.
-   * Called with message history right before createRun.
-   * Returns initialSessions map + re-injected skill bodies.
-   */
-  const { primeInvokedSkills: primeInvokedSkillsFn } = require('@librechat/api');
-  const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-  const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
-  const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
-
   const handlePrimeInvokedSkills = async (messages) => {
     if (!messages?.length || !skillsCapabilityEnabled || !accessibleSkillIds?.length) {
       return undefined;
@@ -509,7 +503,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       codeApiKey = '';
     }
 
-    return primeInvokedSkillsFn({
+    return primeInvokedSkills({
       req,
       messages,
       accessibleSkillIds,
