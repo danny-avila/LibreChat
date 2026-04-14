@@ -5,14 +5,15 @@ import {
   CodeBlock,
   CheckboxMultiSelect,
   ClickUIProvider,
+  Grid,
+  Pagination,
   Panel,
   Text,
   Separator,
   Tabs,
-  Table,
   Container,
 } from '@clickhouse/click-ui';
-import type { TableColumnConfigProps, TableRowType } from '@clickhouse/click-ui';
+import type { CellProps } from '@clickhouse/click-ui';
 import { useTheme, isDark } from '@librechat/client';
 import { ClickHouseCostView } from './ClickHouseCostView';
 import type { CostEntry } from './ClickHouseCostView';
@@ -255,6 +256,8 @@ function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
   );
 }
 
+const MAX_ROWS_PER_PAGE = 50;
+
 function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
   const priorityColumns = ['name', 'title', 'label'];
   const rawColumns = Object.keys(rows[0]).filter((col) => {
@@ -266,18 +269,19 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
     ...rawColumns.filter((c) => !priorityColumns.includes(c)),
   ];
   const [selectedColumns, setSelectedColumns] = useState<string[]>(() => allColumns);
+  const [currentPage, setCurrentPage] = useState(1);
   const columns = allColumns.filter((c) => selectedColumns.includes(c));
 
-  const headers: TableColumnConfigProps[] = columns.map((col) => ({
-    label: col,
-    overflowMode: 'wrap' as const,
-    width: 'auto',
-    resizable: true,
-  }));
-  const tableRows: TableRowType[] = rows.map((row, i) => ({
-    id: i,
-    items: columns.map((col) => ({ label: formatValue(row[col]), overflowMode: 'wrap' as const })),
-  }));
+  const totalPages = Math.ceil(rows.length / MAX_ROWS_PER_PAGE);
+  const pageRows = rows.slice((currentPage - 1) * MAX_ROWS_PER_PAGE, currentPage * MAX_ROWS_PER_PAGE);
+  const gridHeight = Math.min(pageRows.length, MAX_ROWS_PER_PAGE) * 33 + 43;
+
+  const Cell: CellProps = ({ rowIndex, columnIndex, type, ...props }) => {
+    if (type === 'header-cell') {
+      return <span {...props}>{columns[columnIndex]}</span>;
+    }
+    return <span {...props}>{formatValue(pageRows[rowIndex - 1]?.[columns[columnIndex]])}</span>;
+  };
 
   return (
     <div>
@@ -294,32 +298,30 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
           </CheckboxMultiSelect>
         </div>
       )}
-      <div
-        className=""
-        ref={(el) => {
-          if (!el) {
-            return;
-          }
-          const tableEl = el.querySelector('table');
-          if (tableEl) {
-            (tableEl as HTMLElement).style.width = 'max-content';
-            (tableEl as HTMLElement).style.minWidth = '100%';
-          }
-          const scrollContainer = tableEl?.parentElement;
-          if (scrollContainer) {
-            scrollContainer.style.maxHeight = '360px';
-            scrollContainer.style.overflowY = 'auto';
-          }
-          const thead = el.querySelector('thead');
-          if (thead) {
-            (thead as HTMLElement).style.position = 'sticky';
-            (thead as HTMLElement).style.top = '0';
-            (thead as HTMLElement).style.zIndex = '10';
-          }
-        }}
-      >
-        <Table headers={headers} rows={tableRows} size="sm" resizableColumns />
-      </div>
+      <Panel height={`${gridHeight}px`} fillWidth padding="none" hasBorder radii="sm">
+        <Container orientation="vertical" padding="none" gap="none" fillWidth fillHeight>
+          <Grid
+            cell={Cell}
+            rowStart={1}
+            rowCount={pageRows.length}
+            columnCount={columns.length}
+            showHeader
+            autoFocus={false}
+          />
+          {totalPages > 1 && (
+            <>
+              <Separator size="xs" />
+              <Pagination
+                totalPages={totalPages}
+                currentPage={currentPage}
+                pageSize={MAX_ROWS_PER_PAGE}
+                rowCount={rows.length}
+                onChange={setCurrentPage}
+              />
+            </>
+          )}
+        </Container>
+      </Panel>
     </div>
   );
 }
