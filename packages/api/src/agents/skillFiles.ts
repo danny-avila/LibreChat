@@ -115,7 +115,7 @@ export async function primeSkillFiles(
 
   // SKILL.md from the skill body
   const bodyBuffer = Buffer.from(skill.body, 'utf-8');
-  filesToUpload.push({ stream: Readable.from(bodyBuffer), filename: 'SKILL.md' });
+  filesToUpload.push({ stream: Readable.from(bodyBuffer), filename: `${skill.name}/SKILL.md` });
 
   // Bundled files from storage
   for (const file of skillFiles) {
@@ -128,7 +128,7 @@ export async function primeSkillFiles(
         continue;
       }
       const stream = await strategy.getDownloadStream(req, file.filepath);
-      filesToUpload.push({ stream, filename: file.relativePath });
+      filesToUpload.push({ stream, filename: `${skill.name}/${file.relativePath}` });
     } catch (error) {
       logger.error(
         `[primeSkillFiles] Failed to get stream for "${file.relativePath}":`,

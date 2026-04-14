@@ -84,6 +84,229 @@ export interface ToolExecuteOptions {
       codeEnvIdentifier: string;
     }>,
   ) => Promise<void>;
+  /** Loads a skill file by path (for read_file tool) */
+  getSkillFileByPath?: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+  ) => Promise<{
+    content?: string;
+    isBinary?: boolean;
+    mimeType: string;
+    bytes: number;
+    filepath: string;
+    source: string;
+    relativePath: string;
+  } | null>;
+  /** Updates cached content on a skill file (lazy caching after first read) */
+  updateSkillFileContent?: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+    update: { content?: string; isBinary?: boolean },
+  ) => Promise<void>;
+}
+
+const MAX_READABLE_BYTES = 262_144;
+const MAX_CACHE_BYTES = 512 * 1024;
+
+function addLineNumbers(content: string): string {
+  const lines = content.split('\n');
+  const w = String(lines.length).length;
+  return lines.map((l, i) => `${String(i + 1).padStart(w, ' ')} | ${l}`).join('\n');
+}
+
+async function handleReadFileCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
+): Promise<ToolExecuteResult> {
+  const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
+    options;
+  const args = tc.args as { file_path?: string };
+  if (!args.file_path) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'file_path is required',
+    };
+  }
+
+  const slashIdx = args.file_path.indexOf('/');
+  if (slashIdx < 1) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Invalid file path "${args.file_path}". Use format: {skillName}/{path}`,
+    };
+  }
+
+  const skillName = args.file_path.slice(0, slashIdx);
+  const relativePath = args.file_path.slice(slashIdx + 1);
+  if (!relativePath) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'Missing file path after skill name',
+    };
+  }
+
+  if (!getSkillByName) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'File reading is not configured',
+    };
+  }
+
+  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+  const skill = await getSkillByName(skillName, accessibleIds);
+  if (!skill) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${skillName}" not found or not accessible`,
+    };
+  }
+
+  // SKILL.md special case: read from skill.body directly
+  if (relativePath === 'SKILL.md') {
+    if (!skill.body) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `SKILL.md is empty for skill "${skillName}"`,
+      };
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File: ${args.file_path}\n\n${addLineNumbers(skill.body)}`,
+    };
+  }
+
+  if (!getSkillFileByPath) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'File reading is not configured',
+    };
+  }
+
+  const file = await getSkillFileByPath(skill._id, relativePath);
+  if (!file) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `File not found: "${relativePath}" in skill "${skillName}"`,
+    };
+  }
+
+  // Binary file
+  if (file.isBinary === true) {
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: /mnt/data/${args.file_path}`,
+    };
+  }
+
+  // Cached content
+  if (file.content != null && file.content !== '') {
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File: ${args.file_path} (${file.bytes} bytes)\n\n${addLineNumbers(file.content)}`,
+    };
+  }
+
+  // Stream from storage
+  if (!getStrategyFunctions || !req) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'Storage access not available',
+    };
+  }
+
+  try {
+    const strategy = getStrategyFunctions(file.source);
+    if (!strategy.getDownloadStream) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: 'Download not supported for this storage backend',
+      };
+    }
+
+    const stream = await strategy.getDownloadStream(req, file.filepath);
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream as AsyncIterable<Buffer>) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    // Binary detection on first 8KB
+    const checkLen = Math.min(buffer.length, 8192);
+    let isBinary = false;
+    for (let i = 0; i < checkLen; i++) {
+      if (buffer[i] === 0) {
+        isBinary = true;
+        break;
+      }
+    }
+
+    if (isBinary) {
+      if (updateSkillFileContent) {
+        updateSkillFileContent(skill._id, relativePath, { isBinary: true }).catch(() => {});
+      }
+      return {
+        toolCallId: tc.id,
+        status: 'success',
+        content: `Binary file (${file.mimeType}, ${buffer.length} bytes). Use bash to process: /mnt/data/${args.file_path}`,
+      };
+    }
+
+    const text = buffer.toString('utf-8');
+
+    // Cache small files
+    if (updateSkillFileContent && buffer.length <= MAX_CACHE_BYTES) {
+      updateSkillFileContent(skill._id, relativePath, { content: text, isBinary: false }).catch(
+        () => {},
+      );
+    }
+
+    // Size check
+    if (buffer.length > MAX_READABLE_BYTES) {
+      return {
+        toolCallId: tc.id,
+        status: 'success',
+        content: `File too large (${buffer.length} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat /mnt/data/${args.file_path}`,
+      };
+    }
+
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File: ${args.file_path} (${buffer.length} bytes)\n\n${addLineNumbers(text)}`,
+    };
+  } catch (error) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
 }
 
 async function handleSkillToolCall(
@@ -218,6 +441,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 if (tc.name === Constants.SKILL_TOOL) {
                   const req = mergedConfigurable?.req as ServerRequest | undefined;
                   return handleSkillToolCall(tc, mergedConfigurable, options, req);
+                }
+
+                if (tc.name === Constants.READ_FILE) {
+                  const req = mergedConfigurable?.req as ServerRequest | undefined;
+                  return handleReadFileCall(tc, mergedConfigurable, options, req);
                 }
 
                 const tool = toolMap.get(tc.name);

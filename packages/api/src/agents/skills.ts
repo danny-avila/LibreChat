@@ -1,6 +1,7 @@
 import {
   formatSkillCatalog,
   SkillToolDefinition,
+  ReadFileToolDefinition,
   BashExecutionToolDefinition,
 } from '@librechat/agents';
 import type { LCToolRegistry, LCTool } from '@librechat/agents';
@@ -15,6 +16,8 @@ export interface InjectSkillCatalogParams {
   accessibleSkillIds: Types.ObjectId[];
   contextWindowTokens: number;
   listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'];
+  /** When true, bash tool is registered alongside skill tools */
+  codeEnvAvailable?: boolean;
 }
 
 export interface InjectSkillCatalogResult {
@@ -75,16 +78,28 @@ export async function injectSkillCatalog(
     parameters: SkillToolDefinition.parameters as unknown as LCTool['parameters'],
   };
 
-  const bashToolDef: LCTool = {
-    name: BashExecutionToolDefinition.name,
-    description: BashExecutionToolDefinition.description,
-    parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
+  const readFileDef: LCTool = {
+    name: ReadFileToolDefinition.name,
+    description: ReadFileToolDefinition.description,
+    parameters: ReadFileToolDefinition.parameters as unknown as LCTool['parameters'],
   };
 
-  const toolDefinitions = [...(inputDefs ?? []), skillToolDef, bashToolDef];
+  const defs: LCTool[] = [skillToolDef, readFileDef];
+
+  if (params.codeEnvAvailable) {
+    const bashToolDef: LCTool = {
+      name: BashExecutionToolDefinition.name,
+      description: BashExecutionToolDefinition.description,
+      parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
+    };
+    defs.push(bashToolDef);
+  }
+
+  const toolDefinitions = [...(inputDefs ?? []), ...defs];
   if (toolRegistry) {
-    toolRegistry.set(SkillToolDefinition.name, skillToolDef);
-    toolRegistry.set(BashExecutionToolDefinition.name, bashToolDef);
+    for (const def of defs) {
+      toolRegistry.set(def.name, def);
+    }
   }
 
   return { toolDefinitions, skillCount: skills.length };

@@ -1295,6 +1295,7 @@ async function loadToolsForExecution({
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
     AgentConstants.BASH_TOOL,
     AgentConstants.SKILL_TOOL,
+    AgentConstants.READ_FILE,
   ]);
 
   let ptcOrchestratedToolNames = [];

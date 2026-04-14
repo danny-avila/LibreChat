@@ -312,6 +312,8 @@ const OpenAIChatCompletionController = async (req, res) => {
       getSessionInfo: require('~/server/services/Files/Code/process').getSessionInfo,
       checkIfActive: require('~/server/services/Files/Code/process').checkIfActive,
       updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
+      getSkillFileByPath: db.getSkillFileByPath,
+      updateSkillFileContent: db.updateSkillFileContent,
     };
 
     const summarizationConfig = appConfig?.summarization;
