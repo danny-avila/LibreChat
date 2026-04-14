@@ -200,7 +200,7 @@ export interface PrimeInvokedSkillsResult {
   initialSessions?: ToolSessionMap;
   /** Pre-resolved skill bodies keyed by skill name. Passed to formatAgentMessages
    *  so it can reconstruct HumanMessages at the right position in the message sequence. */
-  skillBodies?: Map<string, string>;
+  skills?: Map<string, string>;
 }
 
 /**
@@ -209,7 +209,7 @@ export interface PrimeInvokedSkillsResult {
  *
  * Returns:
  * - initialSessions: seeds Graph.sessions so ToolNode injects session_id into bash/code tools
- * - skillBodies: Map of skillName → body for formatAgentMessages to reconstruct HumanMessages
+ * - skills: Map of skillName → body for formatAgentMessages to reconstruct HumanMessages
  */
 export async function primeInvokedSkills(
   deps: PrimeInvokedSkillsDeps,
@@ -219,7 +219,7 @@ export async function primeInvokedSkills(
     return {};
   }
 
-  const skillBodies = new Map<string, string>();
+  const skills = new Map<string, string>();
   let sessions: ToolSessionMap | undefined;
 
   for (const skillName of invokedSkills) {
@@ -229,7 +229,7 @@ export async function primeInvokedSkills(
         continue;
       }
 
-      skillBodies.set(skill.name, skill.body);
+      skills.set(skill.name, skill.body);
 
       // Re-prime files for multi-file skills
       if (skill.fileCount > 0) {
@@ -272,6 +272,6 @@ export async function primeInvokedSkills(
 
   return {
     initialSessions: sessions,
-    skillBodies: skillBodies.size > 0 ? skillBodies : undefined,
+    skills: skills.size > 0 ? skills : undefined,
   };
 }
