@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.message-render {
+  scroll-margin-top: 1rem;
+}
+
 /* Custom Variables */
 :root {
   --white: #fff;

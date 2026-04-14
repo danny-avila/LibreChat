@@ -35,21 +35,15 @@ function getMessageEntries(): MessageEntry[] {
   return entries;
 }
 
-const SCROLL_TOP_OFFSET = 56;
-const AT_TOP_THRESHOLD = 8;
+const SCROLL_MARGIN = 16;
+const AT_TOP_THRESHOLD = 20;
 
 function scrollToMessageStart(id: string) {
   const el = document.getElementById(id);
   if (!el) {
     return;
   }
-  const container = el.closest('.scrollbar-gutter-stable');
-  if (!container) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
-  }
-  const elTop = el.offsetTop - SCROLL_TOP_OFFSET;
-  container.scrollTo({ top: Math.max(0, elTop), behavior: 'smooth' });
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function isMessageAtTop(id: string): boolean {
@@ -61,8 +55,10 @@ function isMessageAtTop(id: string): boolean {
   if (!container) {
     return true;
   }
-  const expectedTop = el.offsetTop - SCROLL_TOP_OFFSET;
-  return Math.abs(container.scrollTop - Math.max(0, expectedTop)) < AT_TOP_THRESHOLD;
+  const distanceFromTop = el.getBoundingClientRect().top - container.getBoundingClientRect().top;
+  return (
+    distanceFromTop >= -AT_TOP_THRESHOLD && distanceFromTop <= SCROLL_MARGIN + AT_TOP_THRESHOLD
+  );
 }
 
 function MessageIndicator({ entry, isActive }: { entry: MessageEntry; isActive: boolean }) {
@@ -104,17 +100,24 @@ export default function MessageNav({
   const observerRef = useRef<IntersectionObserver | null>(null);
   const lastKnownIndexRef = useRef(0);
 
-  const activeIndex = useMemo(() => {
+  const { firstActiveIndex, lastActiveIndex } = useMemo(() => {
+    let first = -1;
+    let last = -1;
     for (let i = 0; i < entries.length; i++) {
       if (activeIds.has(entries[i].id)) {
-        lastKnownIndexRef.current = i;
-        return i;
+        if (first === -1) {
+          first = i;
+        }
+        last = i;
       }
     }
-    if (entries.length > 0) {
-      return Math.min(lastKnownIndexRef.current, entries.length - 1);
+    if (first !== -1) {
+      lastKnownIndexRef.current = first;
+    } else if (entries.length > 0) {
+      first = Math.min(lastKnownIndexRef.current, entries.length - 1);
+      last = first;
     }
-    return -1;
+    return { firstActiveIndex: first, lastActiveIndex: last };
   }, [entries, activeIds]);
 
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -201,36 +204,35 @@ export default function MessageNav({
   }, [entries, scrollableRef]);
 
   const jumpToPrevious = useCallback(() => {
-    if (activeIndex < 0) {
+    if (firstActiveIndex < 0) {
       return;
     }
-    const currentId = entries[activeIndex].id;
-    if (!isMessageAtTop(currentId) && activeIndex > 0) {
-      // Scrolled past the top of current message — scroll to its start first
+    const currentId = entries[firstActiveIndex].id;
+    if (!isMessageAtTop(currentId) && firstActiveIndex > 0) {
       scrollToMessageStart(currentId);
       return;
     }
-    if (activeIndex <= 0) {
-      // Already at the first message — scroll to its top
+    if (firstActiveIndex <= 0) {
       scrollToMessageStart(entries[0].id);
       return;
     }
-    scrollToMessageStart(entries[activeIndex - 1].id);
-  }, [activeIndex, entries]);
+    scrollToMessageStart(entries[firstActiveIndex - 1].id);
+  }, [firstActiveIndex, entries]);
 
   const jumpToNext = useCallback(() => {
-    if (activeIndex < 0 || activeIndex >= entries.length - 1) {
+    if (lastActiveIndex < 0 || lastActiveIndex >= entries.length - 1) {
       return;
     }
-    scrollToMessageStart(entries[activeIndex + 1].id);
-  }, [activeIndex, entries]);
+    scrollToMessageStart(entries[lastActiveIndex + 1].id);
+  }, [lastActiveIndex, entries]);
 
   if (entries.length < 3) {
     return null;
   }
 
-  const canGoUp = activeIndex > 0 || (activeIndex === 0 && !isMessageAtTop(entries[0].id));
-  const canGoDown = activeIndex >= 0 && activeIndex < entries.length - 1;
+  const canGoUp =
+    firstActiveIndex > 0 || (firstActiveIndex === 0 && !isMessageAtTop(entries[0].id));
+  const canGoDown = lastActiveIndex >= 0 && lastActiveIndex < entries.length - 1;
 
   return (
     <nav
