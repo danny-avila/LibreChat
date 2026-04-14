@@ -305,7 +305,18 @@ function EndpointPill({ endpoint }: { endpoint: Record<string, unknown> }) {
   );
 }
 
-function ValueRenderer({ value }: { value: unknown }) {
+const SQL_VALUE_KEYS = new Set(['create_table_query', 'engine_full']);
+
+function ValueRenderer({ value, fieldKey }: { value: unknown; fieldKey?: string }) {
+  if (fieldKey && SQL_VALUE_KEYS.has(fieldKey) && typeof value === 'string' && value.length > 0) {
+    return (
+      <div className="max-h-[200px] overflow-auto rounded">
+        <CodeBlock language="sql" theme={undefined} wrapLines>
+          {value}
+        </CodeBlock>
+      </div>
+    );
+  }
   if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
     const first = value[0] as Record<string, unknown>;
     if ('protocol' in first && 'host' in first) {
@@ -381,7 +392,7 @@ function RowContent({ row }: { row: Record<string, unknown> }) {
               {key}
             </Text>
             <div className="min-w-0 break-words">
-              <ValueRenderer value={value} />
+              <ValueRenderer value={value} fieldKey={key} />
             </div>
           </div>
           {i < entries.length - 1 && <Separator size="xs" />}
