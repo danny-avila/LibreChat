@@ -133,7 +133,7 @@ async function handleSkillToolCall(
     { role: 'user', content: body, isMeta: true, source: 'skill', skillName: skill.name },
   ];
 
-  let contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
+  const contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
   let artifact:
     | { session_id: string; files: Array<{ id: string; session_id: string; name: string }> }
     | undefined;
@@ -154,8 +154,6 @@ async function handleSkillToolCall(
         });
         if (primeResult) {
           artifact = primeResult;
-          const fileNames = primeResult.files.map((f) => f.name).join(', ');
-          contentText += `\nSkill files available in the execution environment: ${fileNames}`;
         }
       } catch (error) {
         logger.error(

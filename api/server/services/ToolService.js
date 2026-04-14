@@ -7,6 +7,7 @@ const {
   GraphEvents,
   createToolSearch,
   Constants: AgentConstants,
+  createBashExecutionTool,
   createProgrammaticToolCallingTool,
 } = require('@librechat/agents');
 const {
@@ -1269,9 +1270,31 @@ async function loadToolsForExecution({
     }
   }
 
+  const isBashTool = toolNames.includes(AgentConstants.BASH_TOOL);
+  if (isBashTool) {
+    try {
+      const authValues = await loadAuthValues({
+        userId: req.user.id,
+        authFields: [EnvVar.CODE_API_KEY],
+      });
+      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+
+      if (codeApiKey) {
+        const bashTool = createBashExecutionTool({ apiKey: codeApiKey });
+        allLoadedTools.push(bashTool);
+      } else {
+        logger.warn('[loadToolsForExecution] bash_tool requested but CODE_API_KEY not available');
+      }
+    } catch (error) {
+      logger.error('[loadToolsForExecution] Error creating bash tool:', error);
+    }
+  }
+
   const specialToolNames = new Set([
     AgentConstants.TOOL_SEARCH,
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
+    AgentConstants.BASH_TOOL,
+    AgentConstants.SKILL_TOOL,
   ]);
 
   let ptcOrchestratedToolNames = [];
