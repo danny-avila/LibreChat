@@ -247,6 +247,13 @@ export default defineConfig(({ command }) => ({
               return 'heic-converter';
             }
 
+            if (
+              normalizedId.includes('@clickhouse/click-ui') ||
+              normalizedId.includes('styled-components')
+            ) {
+              return 'click-ui';
+            }
+
             // Existing chunks
             if (normalizedId.includes('@radix-ui')) {
               return 'radix-ui';
