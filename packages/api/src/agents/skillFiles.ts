@@ -264,27 +264,61 @@ export async function primeInvokedSkills(
 
   // Phase 2: Single batch upload for ALL skills' files (shared session)
   let sessions: ToolSessionMap | undefined;
-  if (apiKey && resolvedSkills.some((s) => s.fileCount > 0)) {
+  const skillsWithFiles = resolvedSkills.filter((s) => s.fileCount > 0);
+
+  if (apiKey && skillsWithFiles.length > 0) {
+    // Parallel file list lookups (R2 fix)
+    const fileListResults = await Promise.all(
+      skillsWithFiles.map(async (skill) => ({
+        skill,
+        files: await deps.listSkillFiles(skill._id),
+      })),
+    );
+
+    // Session freshness check: if any existing identifier is still active, skip upload
+    if (deps.getSessionInfo && deps.checkIfActive) {
+      const firstWithId = fileListResults.flatMap((r) => r.files).find((f) => f.codeEnvIdentifier);
+      if (firstWithId?.codeEnvIdentifier) {
+        try {
+          const lastModified = await deps.getSessionInfo(firstWithId.codeEnvIdentifier, apiKey);
+          if (lastModified && deps.checkIfActive(lastModified)) {
+            const cachedFiles = fileListResults.flatMap((r) =>
+              r.files
+                .filter((f) => f.codeEnvIdentifier)
+                .map((f) => {
+                  const [sid, fid] = (f.codeEnvIdentifier as string).split('/');
+                  return { id: fid, name: `${r.skill.name}/${f.relativePath}`, session_id: sid };
+                }),
+            );
+            if (cachedFiles.length > 0) {
+              logger.debug(
+                `[primeInvokedSkills] Session still active, reusing ${cachedFiles.length} cached files`,
+              );
+              sessions = new Map();
+              sessions.set(Constants.EXECUTE_CODE, {
+                session_id: cachedFiles[0].session_id,
+                files: cachedFiles,
+                lastUpdated: Date.now(),
+              } satisfies CodeSessionContext);
+              return { initialSessions: sessions, skills: skills.size > 0 ? skills : undefined };
+            }
+          }
+        } catch {
+          // Session check failed — fall through to re-upload
+        }
+      }
+    }
+
+    // Collect all file streams for batch upload
     const allFileStreams: Array<{ stream: NodeJS.ReadableStream; filename: string }> = [];
-    const allSkillFileRecords: Array<{
-      skill: (typeof resolvedSkills)[0];
-      files: SkillFileRecord[];
-    }> = [];
-
-    for (const skill of resolvedSkills) {
-      if (skill.fileCount === 0) continue;
-      const skillFiles = await deps.listSkillFiles(skill._id);
-      allSkillFileRecords.push({ skill, files: skillFiles });
-
-      // SKILL.md from body
+    for (const { skill, files } of fileListResults) {
       const bodyBuffer = Buffer.from(skill.body, 'utf-8');
       allFileStreams.push({
         stream: Readable.from(bodyBuffer),
         filename: `${skill.name}/SKILL.md`,
       });
 
-      // Bundled files
-      for (const file of skillFiles) {
+      for (const file of files) {
         try {
           const strategy = deps.getStrategyFunctions(file.source);
           if (!strategy.getDownloadStream) continue;
@@ -326,7 +360,12 @@ export async function primeInvokedSkills(
               const slashIdx = f.filename.indexOf('/');
               const skillName = f.filename.slice(0, slashIdx);
               const relPath = f.filename.slice(slashIdx + 1);
-              const record = allSkillFileRecords.find((r) => r.skill.name === skillName);
+              const record = fileListResults.find((r) => r.skill.name === skillName);
+              if (!record) {
+                logger.warn(
+                  `[primeInvokedSkills] No skill record found for filename "${f.filename}"`,
+                );
+              }
               return {
                 skillId: record?.skill._id ?? '',
                 relativePath: relPath,
