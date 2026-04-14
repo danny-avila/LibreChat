@@ -101,6 +101,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   /** @type {Array<UsageMetadata>} */
   const collectedUsage = [];
+  /** @type {string[]} Collected thoughtSignatures for Gemini 3+ multi-turn tool calling */
+  const collectedSignatures = [];
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
   const { contentParts, aggregateContent } = createContentAggregator();
@@ -154,6 +156,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     aggregateContent,
     toolEndCallback,
     collectedUsage,
+    collectedSignatures,
+    contentParts,
     streamId,
   });
 

@@ -22,12 +22,16 @@ const { saveBase64Image } = require('~/server/services/Files/process');
 class ModelEndHandler {
   /**
    * @param {Array<UsageMetadata>} collectedUsage
+   * @param {string[]} [collectedSignatures] - Shared array for Gemini 3+ thoughtSignatures
+   * @param {Array} [contentParts] - Shared contentParts to attach signatures immediately
    */
-  constructor(collectedUsage) {
+  constructor(collectedUsage, collectedSignatures, contentParts) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
+    this.collectedSignatures = collectedSignatures;
+    this.contentParts = contentParts;
   }
 
   finalize(errorMessage) {
@@ -68,6 +72,9 @@ class ModelEndHandler {
         });
       }
 
+      // Collect thoughtSignatures for Gemini 3+ and attach to tool_call contentParts
+      this._collectAndAttachSignatures(data);
+
       const usage = data?.output?.usage_metadata;
       if (!usage) {
         return this.finalize(errorMessage);
@@ -83,6 +90,48 @@ class ModelEndHandler {
     } catch (error) {
       logger.error('Error handling model end event:', error);
       return this.finalize(errorMessage);
+    }
+  }
+
+  /**
+   * Extract thoughtSignatures from model output and attach to tool_call contentParts.
+   * Required for Gemini 3+ with thinking enabled — signatures must persist through DB
+   * so that multi-turn tool calling works correctly.
+   * @param {ModelEndData | undefined} data
+   */
+  _collectAndAttachSignatures(data) {
+    if (!Array.isArray(this.collectedSignatures) || !data?.output?.additional_kwargs) {
+      return;
+    }
+    const ak = data.output.additional_kwargs;
+    const sigMap = ak.__gemini_function_call_thought_signatures__;
+    const sigArray = ak.signatures;
+
+    if (sigMap && typeof sigMap === 'object') {
+      for (const sig of Object.values(sigMap)) {
+        if (typeof sig === 'string' && sig !== '') {
+          this.collectedSignatures.push(sig);
+        }
+      }
+    } else if (Array.isArray(sigArray)) {
+      for (const sig of sigArray) {
+        if (typeof sig === 'string' && sig !== '' && !this.collectedSignatures.includes(sig)) {
+          this.collectedSignatures.push(sig);
+        }
+      }
+    }
+
+    // Attach to existing tool_call contentParts for DB persistence
+    if (this.collectedSignatures.length > 0 && Array.isArray(this.contentParts)) {
+      for (let i = 0; i < this.contentParts.length; i++) {
+        const part = this.contentParts[i];
+        if (part?.type === 'tool_call' && part?.tool_call && !part.tool_call.thoughtSignature) {
+          const sig = this.collectedSignatures.shift();
+          if (sig) {
+            part.tool_call.thoughtSignature = sig;
+          }
+        }
+      }
     }
   }
 }
@@ -139,6 +188,8 @@ function getDefaultHandlers({
   aggregateContent,
   toolEndCallback,
   collectedUsage,
+  collectedSignatures,
+  contentParts,
   streamId = null,
   toolExecuteOptions = null,
   summarizationOptions = null,
@@ -149,7 +200,7 @@ function getDefaultHandlers({
     );
   }
   const handlers = {
-    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
+    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage, collectedSignatures, contentParts),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
       /**

@@ -770,6 +770,35 @@ class AgentClient extends BaseClient {
         tokenCounter,
       });
 
+      // Restore thoughtSignatures for Gemini 3+ multi-turn tool calling.
+      // Moves DB-persisted tool_call.thoughtSignature → additional_kwargs.signatures
+      // and adds placeholders for index alignment in fixThoughtSignatures.
+      for (const msg of initialMessages) {
+        if (msg._getType?.() !== 'ai') {
+          continue;
+        }
+        if (!msg.additional_kwargs) {
+          msg.additional_kwargs = {};
+        }
+        if (Array.isArray(msg.tool_calls)) {
+          const sigs = [];
+          for (const tc of msg.tool_calls) {
+            if (tc.thoughtSignature) {
+              sigs.push(tc.thoughtSignature);
+              delete tc.thoughtSignature;
+            }
+          }
+          if (sigs.length > 0) {
+            msg.additional_kwargs.signatures = sigs;
+            continue;
+          }
+        }
+        // Placeholder to maintain index alignment in fixThoughtSignatures
+        if (!msg.additional_kwargs.signatures?.length) {
+          msg.additional_kwargs.signatures = [''];
+        }
+      }
+
       /**
        * @param {BaseMessage[]} messages
        */
