@@ -30,6 +30,9 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
+const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
 const db = require('~/models');
 
 /**
@@ -312,10 +315,10 @@ const OpenAIChatCompletionController = async (req, res) => {
       toolEndCallback,
       getSkillByName: db.getSkillByName,
       listSkillFiles: db.listSkillFiles,
-      getStrategyFunctions: require('~/server/services/Files/strategies').getStrategyFunctions,
-      batchUploadCodeEnvFiles: require('~/server/services/Files/Code/crud').batchUploadCodeEnvFiles,
-      getSessionInfo: require('~/server/services/Files/Code/process').getSessionInfo,
-      checkIfActive: require('~/server/services/Files/Code/process').checkIfActive,
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+      getSessionInfo,
+      checkIfActive,
       updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
       getSkillFileByPath: db.getSkillFileByPath,
       updateSkillFileContent: db.updateSkillFileContent,

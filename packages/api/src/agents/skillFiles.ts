@@ -238,57 +238,113 @@ export async function primeInvokedSkills(
   }
 
   const skills = new Map<string, string>();
-  const allPrimedFiles: Array<{ id: string; name: string; session_id: string }> = [];
-  let lastSessionId = '';
 
-  const processSkill = async (skillName: string): Promise<void> => {
-    const skill = await deps.getSkillByName(skillName, deps.accessibleSkillIds);
-    if (!skill) {
-      return;
-    }
-
-    skills.set(skill.name, skill.body);
-
-    if (skill.fileCount > 0 && apiKey) {
-      const skillFiles = await deps.listSkillFiles(skill._id);
-      const result = await primeSkillFiles({
-        skill,
-        skillFiles,
-        req: deps.req,
-        apiKey,
-        getStrategyFunctions: deps.getStrategyFunctions,
-        batchUploadCodeEnvFiles: deps.batchUploadCodeEnvFiles,
-        getSessionInfo: deps.getSessionInfo,
-        checkIfActive: deps.checkIfActive,
-        updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
-      });
-
-      if (result) {
-        lastSessionId = result.session_id;
-        for (const f of result.files) {
-          allPrimedFiles.push({ id: f.id, name: f.name, session_id: f.session_id });
-        }
-      }
-    }
-  };
-
-  const results = await Promise.allSettled(
-    Array.from(invokedSkills).map((skillName) => processSkill(skillName)),
+  // Phase 1: Resolve all skills in parallel (DB lookups)
+  const resolveResults = await Promise.allSettled(
+    Array.from(invokedSkills).map(async (skillName) => {
+      const skill = await deps.getSkillByName(skillName, deps.accessibleSkillIds);
+      return skill ?? undefined;
+    }),
   );
-  for (const result of results) {
-    if (result.status === 'rejected') {
-      logger.warn('[primeInvokedSkills] Skill processing failed:', result.reason);
+
+  const resolvedSkills: Array<{
+    body: string;
+    name: string;
+    _id: Types.ObjectId;
+    fileCount: number;
+  }> = [];
+  for (const r of resolveResults) {
+    if (r.status === 'fulfilled' && r.value) {
+      skills.set(r.value.name, r.value.body);
+      resolvedSkills.push(r.value);
+    } else if (r.status === 'rejected') {
+      logger.warn('[primeInvokedSkills] Skill resolution failed:', r.reason);
     }
   }
 
+  // Phase 2: Single batch upload for ALL skills' files (shared session)
   let sessions: ToolSessionMap | undefined;
-  if (allPrimedFiles.length > 0 && lastSessionId) {
-    sessions = new Map();
-    sessions.set(Constants.EXECUTE_CODE, {
-      session_id: lastSessionId,
-      files: allPrimedFiles,
-      lastUpdated: Date.now(),
-    } satisfies CodeSessionContext);
+  if (apiKey && resolvedSkills.some((s) => s.fileCount > 0)) {
+    const allFileStreams: Array<{ stream: NodeJS.ReadableStream; filename: string }> = [];
+    const allSkillFileRecords: Array<{
+      skill: (typeof resolvedSkills)[0];
+      files: SkillFileRecord[];
+    }> = [];
+
+    for (const skill of resolvedSkills) {
+      if (skill.fileCount === 0) continue;
+      const skillFiles = await deps.listSkillFiles(skill._id);
+      allSkillFileRecords.push({ skill, files: skillFiles });
+
+      // SKILL.md from body
+      const bodyBuffer = Buffer.from(skill.body, 'utf-8');
+      allFileStreams.push({
+        stream: Readable.from(bodyBuffer),
+        filename: `${skill.name}/SKILL.md`,
+      });
+
+      // Bundled files
+      for (const file of skillFiles) {
+        try {
+          const strategy = deps.getStrategyFunctions(file.source);
+          if (!strategy.getDownloadStream) continue;
+          const stream = await strategy.getDownloadStream(deps.req, file.filepath);
+          allFileStreams.push({ stream, filename: `${skill.name}/${file.relativePath}` });
+        } catch (err) {
+          logger.warn(
+            `[primeInvokedSkills] Failed to get stream for "${file.relativePath}":`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+    }
+
+    if (allFileStreams.length > 0) {
+      try {
+        const result = await deps.batchUploadCodeEnvFiles({
+          req: deps.req,
+          files: allFileStreams,
+          apiKey,
+        });
+
+        sessions = new Map();
+        sessions.set(Constants.EXECUTE_CODE, {
+          session_id: result.session_id,
+          files: result.files.map((f) => ({
+            id: f.fileId,
+            name: f.filename,
+            session_id: result.session_id,
+          })),
+          lastUpdated: Date.now(),
+        } satisfies CodeSessionContext);
+
+        // Persist codeEnvIdentifiers (fire-and-forget)
+        if (deps.updateSkillFileCodeEnvIds) {
+          const updates = result.files
+            .filter((f) => !f.filename.endsWith('/SKILL.md'))
+            .map((f) => {
+              const slashIdx = f.filename.indexOf('/');
+              const skillName = f.filename.slice(0, slashIdx);
+              const relPath = f.filename.slice(slashIdx + 1);
+              const record = allSkillFileRecords.find((r) => r.skill.name === skillName);
+              return {
+                skillId: record?.skill._id ?? '',
+                relativePath: relPath,
+                codeEnvIdentifier: `${result.session_id}/${f.fileId}`,
+              };
+            })
+            .filter((u) => u.skillId !== '');
+          if (updates.length > 0) {
+            deps.updateSkillFileCodeEnvIds(updates).catch(() => {});
+          }
+        }
+      } catch (err) {
+        logger.warn(
+          '[primeInvokedSkills] Batch upload failed:',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
   }
 
   return {

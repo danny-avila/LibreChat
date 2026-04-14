@@ -39,6 +39,9 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
+const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
 const db = require('~/models');
 
 /** @type {import('@librechat/api').AppConfig | null} */
@@ -478,11 +481,10 @@ const createResponse = async (req, res) => {
         toolEndCallback,
         getSkillByName: db.getSkillByName,
         listSkillFiles: db.listSkillFiles,
-        getStrategyFunctions: require('~/server/services/Files/strategies').getStrategyFunctions,
-        batchUploadCodeEnvFiles: require('~/server/services/Files/Code/crud')
-          .batchUploadCodeEnvFiles,
-        getSessionInfo: require('~/server/services/Files/Code/process').getSessionInfo,
-        checkIfActive: require('~/server/services/Files/Code/process').checkIfActive,
+        getStrategyFunctions,
+        batchUploadCodeEnvFiles,
+        getSessionInfo,
+        checkIfActive,
         updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
         getSkillFileByPath: db.getSkillFileByPath,
         updateSkillFileContent: db.updateSkillFileContent,
@@ -638,7 +640,7 @@ const createResponse = async (req, res) => {
 
       const toolExecuteOptions = {
         loadTools: async (toolNames) => {
-          return loadToolsForExecution({
+          const result = await loadToolsForExecution({
             req,
             res,
             agent,
@@ -649,8 +651,25 @@ const createResponse = async (req, res) => {
             tool_resources: primaryConfig.tool_resources,
             actionsEnabled: primaryConfig.actionsEnabled,
           });
+          return {
+            ...result,
+            configurable: {
+              ...result.configurable,
+              req,
+              accessibleSkillIds: primaryConfig.accessibleSkillIds,
+            },
+          };
         },
         toolEndCallback,
+        getSkillByName: db.getSkillByName,
+        listSkillFiles: db.listSkillFiles,
+        getStrategyFunctions,
+        batchUploadCodeEnvFiles,
+        getSessionInfo,
+        checkIfActive,
+        updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
+        getSkillFileByPath: db.getSkillFileByPath,
+        updateSkillFileContent: db.updateSkillFileContent,
       };
 
       const handlers = {
