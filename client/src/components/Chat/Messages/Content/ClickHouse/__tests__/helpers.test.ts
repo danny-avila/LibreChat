@@ -46,7 +46,9 @@ describe('parseOutput', () => {
   });
 
   it('extracts rows from data array', () => {
-    const result = parseOutput('{"result":{"data":[{"id":1,"name":"test"}],"rows":1,"statistics":{"elapsed":0.001,"rows_read":1,"bytes_read":10}}}');
+    const result = parseOutput(
+      '{"result":{"data":[{"id":1,"name":"test"}],"rows":1,"statistics":{"elapsed":0.001,"rows_read":1,"bytes_read":10}}}',
+    );
     expect(result.error).toBe(false);
     expect(result.rows).toEqual([{ id: 1, name: 'test' }]);
     expect(result.metrics?.elapsed).toBe(0.001);
@@ -55,7 +57,9 @@ describe('parseOutput', () => {
   });
 
   it('detects cost data', () => {
-    const result = parseOutput('{"result":{"grandTotalCHC":10.5,"costs":[{"date":"2026-01-01","totalCHC":10.5}]}}');
+    const result = parseOutput(
+      '{"result":{"grandTotalCHC":10.5,"costs":[{"date":"2026-01-01","totalCHC":10.5}]}}',
+    );
     expect(result.costData).toBeDefined();
     expect(result.costData?.grandTotalCHC).toBe(10.5);
     expect(result.costData?.costs).toHaveLength(1);
@@ -115,7 +119,9 @@ describe('flattenObject', () => {
   });
 
   it('skips statistics and rows keys', () => {
-    expect(flattenObject({ statistics: { elapsed: 1 }, rows: 5, name: 'test' })).toEqual({ name: 'test' });
+    expect(flattenObject({ statistics: { elapsed: 1 }, rows: 5, name: 'test' })).toEqual({
+      name: 'test',
+    });
   });
 
   it('preserves arrays as-is', () => {
@@ -126,7 +132,10 @@ describe('flattenObject', () => {
 
 describe('extractMetrics', () => {
   it('extracts from statistics object', () => {
-    const result = extractMetrics({ statistics: { elapsed: 0.5, rows_read: 100, bytes_read: 1000 }, rows: 50 });
+    const result = extractMetrics({
+      statistics: { elapsed: 0.5, rows_read: 100, bytes_read: 1000 },
+      rows: 50,
+    });
     expect(result).toEqual({ elapsed: 0.5, rowsRead: 100, bytesRead: 1000, totalRows: 50 });
   });
 

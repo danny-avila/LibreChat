@@ -65,10 +65,7 @@ export function unwrapData(obj: Record<string, unknown>): unknown {
   return obj;
 }
 
-export function flattenObject(
-  obj: Record<string, unknown>,
-  prefix = '',
-): Record<string, unknown> {
+export function flattenObject(obj: Record<string, unknown>, prefix = ''): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     if (key === 'statistics' || key === 'rows') {

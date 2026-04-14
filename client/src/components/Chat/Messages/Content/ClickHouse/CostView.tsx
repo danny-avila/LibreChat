@@ -28,7 +28,6 @@ function getDateRange(costs: CostEntry[]): { days: number; start: Date; end: Dat
 
 type TimeLevel = 'day' | 'week';
 
-
 function getWeekLabel(date: Date): string {
   const startOfWeek = new Date(date);
   startOfWeek.setDate(date.getDate() - date.getDay());
@@ -55,7 +54,12 @@ function getGroupLabel(key: string, level: TimeLevel): string {
       return getWeekLabel(new Date(key));
     case 'day': {
       const d = new Date(key);
-      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+      return d.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
     }
   }
 }
@@ -67,7 +71,6 @@ interface TimeGroup {
   children: TimeGroup[] | CostEntry[];
   isLeaf: boolean;
 }
-
 
 function buildTimeHierarchy(costs: CostEntry[], levels: TimeLevel[]): TimeGroup[] {
   if (levels.length === 0) {
@@ -93,7 +96,13 @@ function buildTimeHierarchy(costs: CostEntry[], levels: TimeLevel[]): TimeGroup[
     if (remainingLevels.length === 0) {
       return { key, label, total, children: entries, isLeaf: true } as TimeGroup;
     }
-    return { key, label, total, children: buildTimeHierarchy(entries, remainingLevels), isLeaf: false } as TimeGroup;
+    return {
+      key,
+      label,
+      total,
+      children: buildTimeHierarchy(entries, remainingLevels),
+      isLeaf: false,
+    } as TimeGroup;
   });
 
   return built;
@@ -136,7 +145,9 @@ function MetricsList({ metrics }: { metrics: Record<string, number> }) {
     <div className="flex flex-wrap gap-x-4 gap-y-1">
       {nonZero.map(([key, value]) => (
         <div key={key} className="flex items-baseline gap-1.5">
-          <Text size="md" color="muted">{key.replace(/CHC$/, '')}</Text>
+          <Text size="md" color="muted">
+            {key.replace(/CHC$/, '')}
+          </Text>
           <Text size="md">{formatCHC(value)}</Text>
         </div>
       ))}
@@ -148,11 +159,15 @@ function CostEntryRow({ entry }: { entry: CostEntry }) {
   return (
     <div className="flex flex-col gap-1 px-3 py-1.5">
       <div className="flex items-center justify-between">
-        <Text size="md" weight="medium">{entry.entityName}</Text>
+        <Text size="md" weight="medium">
+          {entry.entityName}
+        </Text>
         <Text size="md">{formatCHC(entry.totalCHC)}</Text>
       </div>
       <div className="flex items-center gap-2">
-        <Text size="md" color="muted">{entry.entityType}</Text>
+        <Text size="md" color="muted">
+          {entry.entityType}
+        </Text>
         {entry.totalCHC > 0 && <MetricsList metrics={entry.metrics} />}
       </div>
     </div>
@@ -181,9 +196,13 @@ function CollapsibleSection({
         className="flex w-full cursor-pointer items-center justify-between rounded px-3 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]"
         style={{ background: CH_BG_MUTED[codeTheme] }}
       >
-        <Text size="md" weight="medium">{label}</Text>
+        <Text size="md" weight="medium">
+          {label}
+        </Text>
         <div className="flex items-center gap-2">
-          <Text size="md" color="muted">{formatCHC(total)}</Text>
+          <Text size="md" color="muted">
+            {formatCHC(total)}
+          </Text>
           <ChevronDown
             className={cn(
               'size-3.5 shrink-0 transition-transform duration-200 ease-out',
@@ -194,9 +213,7 @@ function CollapsibleSection({
           />
         </div>
       </button>
-      {open && (
-        <div className="w-full">{children}</div>
-      )}
+      {open && <div className="w-full">{children}</div>}
     </Panel>
   );
 }
@@ -271,8 +288,9 @@ function DateView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'light'
   );
 }
 
-
-function groupEntriesByWeek(entries: CostEntry[]): { label: string; total: number; entries: CostEntry[] }[] {
+function groupEntriesByWeek(
+  entries: CostEntry[],
+): { label: string; total: number; entries: CostEntry[] }[] {
   const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
   const weeks = new Map<string, { label: string; total: number; entries: CostEntry[] }>();
   for (const entry of sorted) {
@@ -282,7 +300,11 @@ function groupEntriesByWeek(entries: CostEntry[]): { label: string; total: numbe
       existing.total += entry.totalCHC;
       existing.entries.push(entry);
     } else {
-      weeks.set(key, { label: getGroupLabel(key, 'week'), total: entry.totalCHC, entries: [entry] });
+      weeks.set(key, {
+        label: getGroupLabel(key, 'week'),
+        total: entry.totalCHC,
+        entries: [entry],
+      });
     }
   }
   return [...weeks.values()];
@@ -323,47 +345,63 @@ function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'ligh
       )}
       <div className="flex max-h-[400px] flex-col gap-2 overflow-auto">
         {groups.map((group) => (
-          <CollapsibleSection key={group.name} label={group.name} total={group.total} codeTheme={codeTheme}>
+          <CollapsibleSection
+            key={group.name}
+            label={group.name}
+            total={group.total}
+            codeTheme={codeTheme}
+          >
             <div className="px-3 py-1.5">
               <span className="rounded-full bg-surface-tertiary px-2.5 py-0.5 text-xs text-text-secondary">
                 {group.type}
               </span>
             </div>
-            {groupByWeek ? (
-              groupEntriesByWeek(group.entries).map((week, wi, weekArr) => (
-                <div key={week.label}>
-                  <div className="flex items-center justify-between px-3 py-1.5">
-                    <Text size="md" weight="medium">{week.label}</Text>
-                    <Text size="md">{formatCHC(week.total)}</Text>
-                  </div>
-                  {week.entries.map((entry, i) => (
-                    <div key={`${entry.date}-${i}`}>
-                      <div className="flex flex-col gap-1 px-3 py-1 pl-6">
-                        <div className="flex items-center justify-between">
-                          <Text size="md" color="muted">{new Date(entry.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</Text>
-                          <Text size="md">{formatCHC(entry.totalCHC)}</Text>
+            {groupByWeek
+              ? groupEntriesByWeek(group.entries).map((week, wi, weekArr) => (
+                  <div key={week.label}>
+                    <div className="flex items-center justify-between px-3 py-1.5">
+                      <Text size="md" weight="medium">
+                        {week.label}
+                      </Text>
+                      <Text size="md">{formatCHC(week.total)}</Text>
+                    </div>
+                    {week.entries.map((entry, i) => (
+                      <div key={`${entry.date}-${i}`}>
+                        <div className="flex flex-col gap-1 px-3 py-1 pl-6">
+                          <div className="flex items-center justify-between">
+                            <Text size="md" color="muted">
+                              {new Date(entry.date).toLocaleDateString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </Text>
+                            <Text size="md">{formatCHC(entry.totalCHC)}</Text>
+                          </div>
+                          {entry.totalCHC > 0 && <MetricsList metrics={entry.metrics} />}
                         </div>
-                        {entry.totalCHC > 0 && <MetricsList metrics={entry.metrics} />}
                       </div>
-                    </div>
-                  ))}
-                  {wi < weekArr.length - 1 && <Separator size="md" />}
-                </div>
-              ))
-            ) : (
-              group.entries.map((entry, i) => (
-                <div key={`${entry.date}-${i}`}>
-                  <div className="flex flex-col gap-1 px-3 py-1.5">
-                    <div className="flex items-center justify-between">
-                      <Text size="md" color="muted">{new Date(entry.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
-                      <Text size="md">{formatCHC(entry.totalCHC)}</Text>
-                    </div>
-                    {entry.totalCHC > 0 && <MetricsList metrics={entry.metrics} />}
+                    ))}
+                    {wi < weekArr.length - 1 && <Separator size="md" />}
                   </div>
-                  {i < group.entries.length - 1 && <Separator size="md" />}
-                </div>
-              ))
-            )}
+                ))
+              : group.entries.map((entry, i) => (
+                  <div key={`${entry.date}-${i}`}>
+                    <div className="flex flex-col gap-1 px-3 py-1.5">
+                      <div className="flex items-center justify-between">
+                        <Text size="md" color="muted">
+                          {new Date(entry.date).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </Text>
+                        <Text size="md">{formatCHC(entry.totalCHC)}</Text>
+                      </div>
+                      {entry.totalCHC > 0 && <MetricsList metrics={entry.metrics} />}
+                    </div>
+                    {i < group.entries.length - 1 && <Separator size="md" />}
+                  </div>
+                ))}
           </CollapsibleSection>
         ))}
       </div>
@@ -376,15 +414,25 @@ export function ClickHouseCostView({ costs, grandTotalCHC, codeTheme }: CostView
 
   return (
     <div className="flex w-full flex-col gap-2">
-      <Container orientation="horizontal" padding="none" gap="none" justifyContent="space-between" alignItems="center">
-        <Text size="md" weight="medium">Total: {formatCHC(grandTotalCHC)}</Text>
+      <Container
+        orientation="horizontal"
+        padding="none"
+        gap="none"
+        justifyContent="space-between"
+        alignItems="center"
+      >
+        <Text size="md" weight="medium">
+          Total: {formatCHC(grandTotalCHC)}
+        </Text>
         <div className="flex gap-1 rounded-md bg-surface-tertiary p-0.5">
           <button
             type="button"
             onClick={() => setViewMode('entity')}
             className={cn(
               'rounded px-2 py-1 text-xs transition-colors',
-              viewMode === 'entity' ? 'bg-surface-primary text-text-primary' : 'text-text-secondary',
+              viewMode === 'entity'
+                ? 'bg-surface-primary text-text-primary'
+                : 'text-text-secondary',
             )}
           >
             By Entity
