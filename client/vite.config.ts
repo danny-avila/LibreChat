@@ -83,7 +83,7 @@ export default defineConfig(({ command }) => ({
           'manifest.webmanifest',
         ],
         globIgnores: ['images/**/*', '**/*.map', 'index.html'],
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/, /^\/api/],
       },
       includeAssets: [],
@@ -247,13 +247,6 @@ export default defineConfig(({ command }) => ({
               return 'heic-converter';
             }
 
-            if (
-              normalizedId.includes('@clickhouse/click-ui') ||
-              normalizedId.includes('styled-components')
-            ) {
-              return 'click-ui';
-            }
-
             // Existing chunks
             if (normalizedId.includes('@radix-ui')) {
               return 'radix-ui';
@@ -263,7 +256,8 @@ export default defineConfig(({ command }) => ({
             }
             if (
               normalizedId.includes('node_modules/highlight.js') ||
-              normalizedId.includes('node_modules/lowlight')
+              normalizedId.includes('node_modules/lowlight') ||
+              normalizedId.includes('react-syntax-highlighter')
             ) {
               return 'markdown_highlight';
             }
