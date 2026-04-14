@@ -442,7 +442,7 @@ function CollapsibleRows({ rows, codeTheme }: { rows: Record<string, unknown>[];
           >
             {allOpen ? 'Collapse all' : 'Expand all'}
           </button>
-        </div>}
+        </div>
       <div className="-mx-0.5 flex w-[calc(100%+4px)] max-h-[400px] flex-col gap-3 overflow-auto px-0.5 py-0.5">
         {rows.map((row, i) => (
           <CollapsibleRow key={i} row={row} open={openIds.has(i)} onToggle={() => toggleOne(i)} codeTheme={codeTheme} />
