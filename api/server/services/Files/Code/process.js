@@ -460,6 +460,7 @@ const primeFiles = async (options, apiKey) => {
 
 module.exports = {
   primeFiles,
+  checkIfActive,
   getSessionInfo,
   processCodeOutput,
 };

@@ -72,6 +72,18 @@ export interface ToolExecuteOptions {
     apiKey: string;
     entity_id?: string;
   }) => Promise<{ session_id: string; files: Array<{ fileId: string; filename: string }> }>;
+  /** Checks if a code env file is still active. Returns lastModified or null. */
+  getSessionInfo?: (fileIdentifier: string, apiKey: string) => Promise<string | null>;
+  /** 23-hour freshness check */
+  checkIfActive?: (dateString: string) => boolean;
+  /** Persists codeEnvIdentifiers on skill files after upload */
+  updateSkillFileCodeEnvIds?: (
+    updates: Array<{
+      skillId: Types.ObjectId | string;
+      relativePath: string;
+      codeEnvIdentifier: string;
+    }>,
+  ) => Promise<void>;
 }
 
 async function handleSkillToolCall(
@@ -80,7 +92,15 @@ async function handleSkillToolCall(
   options: ToolExecuteOptions,
   req?: ServerRequest,
 ): Promise<ToolExecuteResult> {
-  const { getSkillByName, listSkillFiles, getStrategyFunctions, batchUploadCodeEnvFiles } = options;
+  const {
+    getSkillByName,
+    listSkillFiles,
+    getStrategyFunctions,
+    batchUploadCodeEnvFiles,
+    getSessionInfo,
+    checkIfActive,
+    updateSkillFileCodeEnvIds,
+  } = options;
   const args = tc.args as { skillName?: string; args?: string };
   if (!args.skillName) {
     return {
@@ -145,6 +165,9 @@ async function handleSkillToolCall(
           apiKey: codeApiKey,
           getStrategyFunctions,
           batchUploadCodeEnvFiles,
+          getSessionInfo,
+          checkIfActive,
+          updateSkillFileCodeEnvIds,
         });
         if (primeResult) {
           artifact = primeResult;

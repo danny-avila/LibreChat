@@ -16,6 +16,7 @@ import type {
   ISkillSummary,
 } from '~/types/skill';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -904,8 +905,24 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     await SkillFile.updateOne({ skillId, relativePath }, { $set: update });
   }
 
-  // deletion controller actually call. The per-skill file cascade on
-  // `deleteSkill` is inlined; there's no need for a separate export.
+  async function updateSkillFileCodeEnvIds(
+    updates: Array<{
+      skillId: Types.ObjectId | string;
+      relativePath: string;
+      codeEnvIdentifier: string;
+    }>,
+  ): Promise<void> {
+    if (updates.length === 0) return;
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    const ops = updates.map((u) => ({
+      updateOne: {
+        filter: { skillId: u.skillId, relativePath: u.relativePath },
+        update: { $set: { codeEnvIdentifier: u.codeEnvIdentifier } },
+      },
+    }));
+    await tenantSafeBulkWrite(SkillFile, ops);
+  }
+
   return {
     createSkill,
     getSkillById,
@@ -919,6 +936,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     deleteSkillFile,
     getSkillFileByPath,
     updateSkillFileContent,
+    updateSkillFileCodeEnvIds,
   };
 }
 

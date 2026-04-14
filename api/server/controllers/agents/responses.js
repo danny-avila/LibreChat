@@ -476,6 +476,9 @@ const createResponse = async (req, res) => {
         getStrategyFunctions: require('~/server/services/Files/strategies').getStrategyFunctions,
         batchUploadCodeEnvFiles: require('~/server/services/Files/Code/crud')
           .batchUploadCodeEnvFiles,
+        getSessionInfo: require('~/server/services/Files/Code/process').getSessionInfo,
+        checkIfActive: require('~/server/services/Files/Code/process').checkIfActive,
+        updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
       };
 
       // Combine handlers

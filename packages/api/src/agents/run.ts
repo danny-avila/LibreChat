@@ -109,6 +109,44 @@ export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<
 }
 
 /**
+ * Extracts skill names that were invoked in previous turns from message history.
+ * Scans for AIMessages with tool_calls where name === 'skill' and extracts the
+ * skillName argument. Used to re-prime skill files on follow-up runs.
+ *
+ * @param messages - The conversation message history
+ * @returns Set of skill names that were previously invoked
+ */
+export function extractInvokedSkillsFromHistory(messages: BaseMessage[]): Set<string> {
+  const invokedSkills = new Set<string>();
+
+  for (const message of messages) {
+    const msgType = message._getType?.() ?? message.constructor?.name ?? '';
+    if (msgType !== 'ai') {
+      continue;
+    }
+
+    const toolCalls = (
+      message as { tool_calls?: Array<{ name: string; args: Record<string, unknown> }> }
+    ).tool_calls;
+    if (!toolCalls) {
+      continue;
+    }
+
+    for (const call of toolCalls) {
+      if (call.name !== Constants.SKILL_TOOL) {
+        continue;
+      }
+      const skillName = call.args?.skillName;
+      if (typeof skillName === 'string' && skillName.length > 0) {
+        invokedSkills.add(skillName);
+      }
+    }
+  }
+
+  return invokedSkills;
+}
+
+/**
  * Overrides defer_loading to false for tools that were already discovered via tool_search.
  * This prevents the LLM from having to re-discover tools on every turn.
  *
