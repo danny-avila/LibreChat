@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import {
   Badge,
   CodeBlock,
+  CheckboxMultiSelect,
   ClickUIProvider,
   Panel,
   Text,
@@ -264,23 +265,8 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
     ...rawColumns.filter((c) => priorityColumns.includes(c)),
     ...rawColumns.filter((c) => !priorityColumns.includes(c)),
   ];
-  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => new Set());
-  const [showColumnPicker, setShowColumnPicker] = useState(false);
-  const columns = allColumns.filter((c) => !hiddenColumns.has(c));
-
-  const toggleColumn = (col: string) => {
-    setHiddenColumns((prev) => {
-      const next = new Set(prev);
-      if (next.has(col)) {
-        next.delete(col);
-      } else {
-        if (columns.length > 1) {
-          next.add(col);
-        }
-      }
-      return next;
-    });
-  };
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(() => allColumns);
+  const columns = allColumns.filter((c) => selectedColumns.includes(c));
 
   const headers: TableColumnConfigProps[] = columns.map((col) => ({
     label: col,
@@ -296,36 +282,20 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
   return (
     <div>
       {allColumns.length > 3 && (
-        <div className="relative mb-2 flex justify-end">
-          <button
-            type="button"
-            onClick={() => setShowColumnPicker((prev) => !prev)}
-            className="rounded-md border border-border-light bg-surface-tertiary px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover"
+        <div className="mb-2 flex justify-end" style={{ maxWidth: '220px', marginLeft: 'auto' }}>
+          <CheckboxMultiSelect
+            value={selectedColumns}
+            onSelect={(vals) => setSelectedColumns(vals.length > 0 ? vals : [allColumns[0]])}
+            selectLabel={`Filter Columns (${columns.length}/${allColumns.length})`}
           >
-            Filter Columns ({columns.length}/{allColumns.length})
-          </button>
-          {showColumnPicker && (
-            <div
-              className="absolute right-0 top-6 z-20 max-h-48 overflow-auto rounded-lg border border-border-light bg-surface-primary p-2 shadow-lg"
-              style={{ minWidth: '160px' }}
-            >
-              {allColumns.map((col) => (
-                <label key={col} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-surface-hover">
-                  <input
-                    type="checkbox"
-                    checked={!hiddenColumns.has(col)}
-                    onChange={() => toggleColumn(col)}
-                    className="accent-current"
-                  />
-                  {col}
-                </label>
-              ))}
-            </div>
-          )}
+            {allColumns.map((col) => (
+              <CheckboxMultiSelect.Item key={col} value={col} label={col} />
+            ))}
+          </CheckboxMultiSelect>
         </div>
       )}
       <div
-        className="opacity-0 transition-opacity duration-100"
+        className=""
         ref={(el) => {
           if (!el) {
             return;
@@ -346,10 +316,6 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
             (thead as HTMLElement).style.top = '0';
             (thead as HTMLElement).style.zIndex = '10';
           }
-          requestAnimationFrame(() => {
-            el.classList.remove('opacity-0');
-            el.classList.add('opacity-100');
-          });
         }}
       >
         <Table headers={headers} rows={tableRows} size="sm" resizableColumns />
