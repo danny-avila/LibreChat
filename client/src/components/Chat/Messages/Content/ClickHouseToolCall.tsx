@@ -317,6 +317,21 @@ function ValueRenderer({ value }: { value: unknown }) {
         </div>
       );
     }
+    if ('column_type' in first && 'name' in first) {
+      return (
+        <div className="flex flex-col gap-0.5">
+          {value.map((item, i) => {
+            const col = item as Record<string, unknown>;
+            return (
+              <div key={i} className="flex items-baseline gap-2">
+                <Text size="md" weight="medium">{String(col.name)}</Text>
+                <Text size="md" color="muted">{String(col.column_type)}</Text>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-1">
         {value.map((item, i) => {
@@ -483,7 +498,7 @@ function ResultContent({
     if (functionName === 'get_service_details') {
       return <StaticRows rows={parsed.rows} />;
     }
-    if (functionName === 'get_services_list') {
+    if (functionName === 'get_services_list' || functionName === 'list_tables') {
       return <CollapsibleRows rows={parsed.rows} codeTheme={codeTheme} />;
     }
     return <FlatTable rows={parsed.rows} />;
