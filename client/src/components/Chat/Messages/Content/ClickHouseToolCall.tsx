@@ -149,6 +149,9 @@ function parseOutput(raw: string): ParsedOutput {
 }
 
 function unwrapData(obj: Record<string, unknown>): unknown {
+  if (Array.isArray(obj.data) && obj.data.length > 0 && typeof obj.data[0] === 'object') {
+    return obj.data;
+  }
   const entries = Object.entries(obj);
   const arrays = entries.filter(
     ([, v]) => Array.isArray(v) && v.length > 0 && typeof v[0] === 'object' && v[0] !== null,
@@ -257,38 +260,100 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
     const sample = rows[0][col];
     return sample === null || typeof sample !== 'object';
   });
-  const columns = [
+  const allColumns = [
     ...rawColumns.filter((c) => priorityColumns.includes(c)),
     ...rawColumns.filter((c) => !priorityColumns.includes(c)),
   ];
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => new Set());
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const columns = allColumns.filter((c) => !hiddenColumns.has(c));
+
+  const toggleColumn = (col: string) => {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(col)) {
+        next.delete(col);
+      } else {
+        if (columns.length > 1) {
+          next.add(col);
+        }
+      }
+      return next;
+    });
+  };
+
   const headers: TableColumnConfigProps[] = columns.map((col) => ({
     label: col,
-    overflowMode: 'truncated' as const,
+    overflowMode: 'wrap' as const,
+    width: 'auto',
+    resizable: true,
   }));
   const tableRows: TableRowType[] = rows.map((row, i) => ({
     id: i,
-    items: columns.map((col) => ({ label: formatValue(row[col]) })),
+    items: columns.map((col) => ({ label: formatValue(row[col]), overflowMode: 'wrap' as const })),
   }));
 
   return (
-    <div ref={(el) => {
-      if (!el) {
-        return;
-      }
-      const tableEl = el.querySelector('table');
-      const scrollContainer = tableEl?.parentElement;
-      if (scrollContainer) {
-        scrollContainer.style.maxHeight = '360px';
-        scrollContainer.style.overflowY = 'auto';
-      }
-      const thead = el.querySelector('thead');
-      if (thead) {
-        (thead as HTMLElement).style.position = 'sticky';
-        (thead as HTMLElement).style.top = '0';
-        (thead as HTMLElement).style.zIndex = '10';
-      }
-    }}>
-      <Table headers={headers} rows={tableRows} size="sm" />
+    <div>
+      {allColumns.length > 3 && (
+        <div className="relative mb-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setShowColumnPicker((prev) => !prev)}
+            className="rounded-md border border-border-light bg-surface-tertiary px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover"
+          >
+            Filter Columns ({columns.length}/{allColumns.length})
+          </button>
+          {showColumnPicker && (
+            <div
+              className="absolute right-0 top-6 z-20 max-h-48 overflow-auto rounded-lg border border-border-light bg-surface-primary p-2 shadow-lg"
+              style={{ minWidth: '160px' }}
+            >
+              {allColumns.map((col) => (
+                <label key={col} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-surface-hover">
+                  <input
+                    type="checkbox"
+                    checked={!hiddenColumns.has(col)}
+                    onChange={() => toggleColumn(col)}
+                    className="accent-current"
+                  />
+                  {col}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <div
+        className="opacity-0 transition-opacity duration-100"
+        ref={(el) => {
+          if (!el) {
+            return;
+          }
+          const tableEl = el.querySelector('table');
+          if (tableEl) {
+            (tableEl as HTMLElement).style.width = 'max-content';
+            (tableEl as HTMLElement).style.minWidth = '100%';
+          }
+          const scrollContainer = tableEl?.parentElement;
+          if (scrollContainer) {
+            scrollContainer.style.maxHeight = '360px';
+            scrollContainer.style.overflowY = 'auto';
+          }
+          const thead = el.querySelector('thead');
+          if (thead) {
+            (thead as HTMLElement).style.position = 'sticky';
+            (thead as HTMLElement).style.top = '0';
+            (thead as HTMLElement).style.zIndex = '10';
+          }
+          requestAnimationFrame(() => {
+            el.classList.remove('opacity-0');
+            el.classList.add('opacity-100');
+          });
+        }}
+      >
+        <Table headers={headers} rows={tableRows} size="sm" resizableColumns />
+      </div>
     </div>
   );
 }
