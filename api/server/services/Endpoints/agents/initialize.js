@@ -487,8 +487,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
-  const handlePrimeInvokedSkills = async (messages) => {
-    if (!messages?.length || !skillsCapabilityEnabled || !accessibleSkillIds?.length) {
+  const handlePrimeInvokedSkills = async (payload) => {
+    if (!payload?.length || !skillsCapabilityEnabled || !accessibleSkillIds?.length) {
       return undefined;
     }
 
@@ -505,7 +505,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
     return primeInvokedSkills({
       req,
-      messages,
+      payload,
       accessibleSkillIds,
       apiKey: codeApiKey,
       getSkillByName: db.getSkillByName,

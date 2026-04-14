@@ -6,7 +6,6 @@ import type {
   ContextPruningConfig,
   OpenAIClientOptions,
   StandardGraphConfig,
-  InjectedMessage,
   LCToolRegistry,
   AgentInputs,
   GenericTool,
@@ -110,34 +109,52 @@ export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<
 }
 
 /**
- * Extracts skill names that were invoked in previous turns from message history.
- * Scans for AIMessages with tool_calls where name === 'skill' and extracts the
- * skillName argument. Used to re-prime skill files on follow-up runs.
+ * Extracts skill names that were invoked in previous turns from raw message payload.
+ * Scans assistant messages for tool_call content parts where name === 'skill'.
+ * Works with TPayload (raw message objects) so it can run before formatAgentMessages.
  *
- * @param messages - The conversation message history
+ * @param payload - The raw conversation message payload
  * @returns Set of skill names that were previously invoked
  */
-export function extractInvokedSkillsFromHistory(messages: BaseMessage[]): Set<string> {
+export function extractInvokedSkillsFromPayload(
+  payload: Array<Partial<{ role: string; content: unknown }>>,
+): Set<string> {
   const invokedSkills = new Set<string>();
 
-  for (const message of messages) {
-    const msgType = message._getType?.() ?? message.constructor?.name ?? '';
-    if (msgType !== 'ai') {
+  for (const message of payload) {
+    if (message.role !== 'assistant') {
       continue;
     }
 
-    const toolCalls = (
-      message as { tool_calls?: Array<{ name: string; args: Record<string, unknown> }> }
-    ).tool_calls;
-    if (!toolCalls) {
+    const content = message.content;
+    if (!Array.isArray(content)) {
       continue;
     }
 
-    for (const call of toolCalls) {
-      if (call.name !== Constants.SKILL_TOOL) {
+    for (const part of content) {
+      if (
+        part == null ||
+        typeof part !== 'object' ||
+        (part as { type?: string }).type !== 'tool_call'
+      ) {
         continue;
       }
-      const skillName = call.args?.skillName;
+      const toolCall = (part as { tool_call?: { name?: string; args?: unknown } }).tool_call;
+      if (toolCall?.name !== Constants.SKILL_TOOL) {
+        continue;
+      }
+      const rawArgs = toolCall.args;
+      const args =
+        typeof rawArgs === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(rawArgs) as Record<string, unknown>;
+              } catch {
+                return {};
+              }
+            })()
+          : (rawArgs as Record<string, unknown> | undefined);
+      const skillName = args?.skillName;
       if (typeof skillName === 'string' && skillName.length > 0) {
         invokedSkills.add(skillName);
       }
@@ -300,7 +317,6 @@ export async function createRun({
   summarizationConfig,
   initialSummary,
   calibrationRatio,
-  invokedSkillMessages,
   streaming = true,
   streamUsage = true,
 }: {
@@ -318,8 +334,6 @@ export async function createRun({
   initialSummary?: { text: string; tokenCount: number };
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
-  /** Re-injected skill bodies from previously invoked skills (for context continuity) */
-  invokedSkillMessages?: InjectedMessage[];
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -366,16 +380,10 @@ export async function createRun({
       .join('\n')
       .trim();
 
-    const skillBodies =
-      invokedSkillMessages
-        ?.filter((m) => typeof m.content === 'string')
-        .map((m) => m.content as string) ?? [];
-
     const systemContent = [
       systemMessage,
       agent.instructions ?? '',
       agent.additional_instructions ?? '',
-      ...skillBodies,
     ]
       .join('\n')
       .trim();

@@ -1,11 +1,10 @@
 import { Readable } from 'stream';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
-import type { InjectedMessage, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
-import type { BaseMessage } from '@langchain/core/messages';
+import type { ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types';
-import { extractInvokedSkillsFromHistory } from './run';
+import { extractInvokedSkillsFromPayload } from './run';
 
 export interface SkillFileRecord {
   relativePath: string;
@@ -181,7 +180,8 @@ export async function primeSkillFiles(
 
 export interface PrimeInvokedSkillsDeps {
   req: ServerRequest;
-  messages: BaseMessage[];
+  /** Raw message payload (before formatAgentMessages). Used to extract invoked skill names. */
+  payload: Array<Partial<{ role: string; content: unknown }>>;
   accessibleSkillIds: Types.ObjectId[];
   apiKey: string;
   getSkillByName: (
@@ -198,26 +198,28 @@ export interface PrimeInvokedSkillsDeps {
 
 export interface PrimeInvokedSkillsResult {
   initialSessions?: ToolSessionMap;
-  injectedMessages?: InjectedMessage[];
+  /** Pre-resolved skill bodies keyed by skill name. Passed to formatAgentMessages
+   *  so it can reconstruct HumanMessages at the right position in the message sequence. */
+  skillBodies?: Map<string, string>;
 }
 
 /**
- * Extracts previously invoked skills from message history, re-primes their
- * files to the code env, and reconstructs injectedMessages with skill bodies.
+ * Extracts previously invoked skills from message history, resolves their
+ * bodies from DB, and re-primes their files to the code env.
  *
- * Returns both:
+ * Returns:
  * - initialSessions: seeds Graph.sessions so ToolNode injects session_id into bash/code tools
- * - injectedMessages: re-injects skill bodies so the model still has the instructions in context
+ * - skillBodies: Map of skillName → body for formatAgentMessages to reconstruct HumanMessages
  */
 export async function primeInvokedSkills(
   deps: PrimeInvokedSkillsDeps,
 ): Promise<PrimeInvokedSkillsResult> {
-  const invokedSkills = extractInvokedSkillsFromHistory(deps.messages);
+  const invokedSkills = extractInvokedSkillsFromPayload(deps.payload);
   if (invokedSkills.size === 0) {
     return {};
   }
 
-  const injectedMessages: InjectedMessage[] = [];
+  const skillBodies = new Map<string, string>();
   let sessions: ToolSessionMap | undefined;
 
   for (const skillName of invokedSkills) {
@@ -227,14 +229,7 @@ export async function primeInvokedSkills(
         continue;
       }
 
-      // Re-inject skill body so the model has the instructions in context
-      injectedMessages.push({
-        role: 'user',
-        content: skill.body,
-        isMeta: true,
-        source: 'skill',
-        skillName: skill.name,
-      });
+      skillBodies.set(skill.name, skill.body);
 
       // Re-prime files for multi-file skills
       if (skill.fileCount > 0) {
@@ -277,6 +272,6 @@ export async function primeInvokedSkills(
 
   return {
     initialSessions: sessions,
-    injectedMessages: injectedMessages.length > 0 ? injectedMessages : undefined,
+    skillBodies: skillBodies.size > 0 ? skillBodies : undefined,
   };
 }
