@@ -31,6 +31,13 @@ describe('Server Configuration', () => {
 
   let mongoServer;
   let app;
+  const originalEnv = {
+    MONGO_URI: process.env.MONGO_URI,
+    PORT: process.env.PORT,
+    ENABLE_PUBLIC_AUTH_INDEXING: process.env.ENABLE_PUBLIC_AUTH_INDEXING,
+    DOMAIN_CLIENT: process.env.DOMAIN_CLIENT,
+    NO_INDEX: process.env.NO_INDEX,
+  };
 
   /** Mocked fs.readFileSync for index.html */
   const originalReadFileSync = fs.readFileSync;
@@ -65,9 +72,16 @@ describe('Server Configuration', () => {
       '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>',
     );
 
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryServer.create({
+      instance: {
+        launchTimeout: 30000,
+      },
+    });
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0'; // Use a random available port
+    process.env.ENABLE_PUBLIC_AUTH_INDEXING = 'true';
+    process.env.DOMAIN_CLIENT = 'https://example.com';
+    delete process.env.NO_INDEX;
     app = require('~/server');
 
     // Wait for the app to be healthy
@@ -75,8 +89,19 @@ describe('Server Configuration', () => {
   });
 
   afterAll(async () => {
-    await mongoServer.stop();
+    if (mongoServer) {
+      await mongoServer.stop();
+    }
     await mongoose.disconnect();
+    process.env.MONGO_URI = originalEnv.MONGO_URI;
+    process.env.PORT = originalEnv.PORT;
+    process.env.ENABLE_PUBLIC_AUTH_INDEXING = originalEnv.ENABLE_PUBLIC_AUTH_INDEXING;
+    process.env.DOMAIN_CLIENT = originalEnv.DOMAIN_CLIENT;
+    if (originalEnv.NO_INDEX == null) {
+      delete process.env.NO_INDEX;
+    } else {
+      process.env.NO_INDEX = originalEnv.NO_INDEX;
+    }
   });
 
   it('should return OK for /health', async () => {
@@ -91,6 +116,61 @@ describe('Server Configuration', () => {
     expect(response.headers['cache-control']).toBe('no-cache, no-store, must-revalidate');
     expect(response.headers['pragma']).toBe('no-cache');
     expect(response.headers['expires']).toBe('0');
+  });
+
+  it('should allow indexing and inject crawlable HTML for /login', async () => {
+    const response = await request(app).get('/login');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-robots-tag']).toBeUndefined();
+    expect(response.text).toContain('<title>Login | CodeCan AI</title>');
+    expect(response.text).toContain(
+      '<meta name="description" content="Sign in to CodeCan AI to access your account, conversations, and building code guidance." />',
+    );
+    expect(response.text).toContain('<meta name="robots" content="index,follow" />');
+    expect(response.text).toContain('<link rel="canonical" href="https://example.com/login" />');
+    expect(response.text).toContain('data-public-auth-fallback="true"');
+    expect(response.text).toContain('Sign in to CodeCan AI');
+    expect(response.text).toContain('Create an account');
+    expect(response.text).toContain('Forgot your password?');
+  });
+
+  it('should allow indexing and inject crawlable HTML for /register', async () => {
+    const response = await request(app).get('/register');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-robots-tag']).toBeUndefined();
+    expect(response.text).toContain('<title>Create Account | CodeCan AI</title>');
+    expect(response.text).toContain('<link rel="canonical" href="https://example.com/register" />');
+    expect(response.text).toContain('Create your CodeCan AI account');
+  });
+
+  it('should allow indexing and inject crawlable HTML for /forgot-password', async () => {
+    const response = await request(app).get('/forgot-password');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-robots-tag']).toBeUndefined();
+    expect(response.text).toContain('<title>Forgot Password | CodeCan AI</title>');
+    expect(response.text).toContain(
+      '<link rel="canonical" href="https://example.com/forgot-password" />',
+    );
+    expect(response.text).toContain('Reset your password');
+  });
+
+  it('should keep tokenized reset-password non-indexable and without canonical metadata', async () => {
+    const response = await request(app).get('/reset-password?token=test-token&userId=test-user');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-robots-tag']).toBe('noindex, nofollow');
+    expect(response.text).not.toContain('rel="canonical"');
+    expect(response.text).not.toContain('data-public-auth-fallback="true"');
+  });
+
+  it('should keep internal routes non-indexable', async () => {
+    const response = await request(app).get('/search');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-robots-tag']).toBe('noindex, nofollow');
   });
 
   it('should return 500 for unknown errors via ErrorController', async () => {

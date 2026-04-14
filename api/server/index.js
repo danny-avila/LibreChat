@@ -26,6 +26,7 @@ const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
+const { injectPublicAuthRouteHtml } = require('./utils/publicAuthIndexing');
 const noIndex = require('./middleware/noIndex');
 const { seedDatabase } = require('~/models');
 const routes = require('./routes');
@@ -181,6 +182,7 @@ const startServer = async () => {
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
     const saneLang = lang.replace(/"/g, '&quot;');
     let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+    updatedIndexHtml = injectPublicAuthRouteHtml(updatedIndexHtml, req);
 
     res.type('html');
     res.send(updatedIndexHtml);
