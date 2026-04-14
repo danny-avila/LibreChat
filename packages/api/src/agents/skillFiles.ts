@@ -275,45 +275,60 @@ export async function primeInvokedSkills(
       })),
     );
 
-    // Session freshness check: skip upload when all files share one active session.
-    // Mixed sessions (from per-skill priming across turns) fall through to re-upload,
-    // which unifies them under one session.
+    // Session freshness check: the code env natively handles mixed sessions
+    // (each file carries its own session_id, fetched independently). We check
+    // ALL distinct sessions for freshness. If all are active, return cached
+    // references with zero re-uploads. If any expired, re-upload everything.
     if (deps.getSessionInfo && deps.checkIfActive) {
       const allFilesWithIds = fileListResults
         .flatMap((r) => r.files)
         .filter((f) => f.codeEnvIdentifier);
-      const sessionIds = new Set(allFilesWithIds.map((f) => f.codeEnvIdentifier!.split('/')[0]));
 
-      if (allFilesWithIds.length > 0 && sessionIds.size === 1) {
-        try {
-          const lastModified = await deps.getSessionInfo(
-            allFilesWithIds[0].codeEnvIdentifier!,
-            apiKey,
+      if (allFilesWithIds.length > 0) {
+        const sessionIds = new Set(allFilesWithIds.map((f) => f.codeEnvIdentifier!.split('/')[0]));
+        let allActive = true;
+
+        for (const sid of sessionIds) {
+          const representative = allFilesWithIds.find((f) =>
+            f.codeEnvIdentifier!.startsWith(`${sid}/`),
           );
-          if (lastModified && deps.checkIfActive(lastModified)) {
-            const cachedFiles = fileListResults.flatMap((r) =>
-              r.files
-                .filter((f) => f.codeEnvIdentifier)
-                .map((f) => {
-                  const [sid, fid] = (f.codeEnvIdentifier as string).split('/');
-                  return { id: fid, name: `${r.skill.name}/${f.relativePath}`, session_id: sid };
-                }),
+          if (!representative) continue;
+          try {
+            const lastModified = await deps.getSessionInfo(
+              representative.codeEnvIdentifier!,
+              apiKey,
             );
-            if (cachedFiles.length > 0) {
-              logger.debug(
-                `[primeInvokedSkills] Session still active, reusing ${cachedFiles.length} cached files`,
-              );
-              sessions = new Map();
-              sessions.set(Constants.EXECUTE_CODE, {
-                session_id: cachedFiles[0].session_id,
-                files: cachedFiles,
-                lastUpdated: Date.now(),
-              } satisfies CodeSessionContext);
-              return { initialSessions: sessions, skills: skills.size > 0 ? skills : undefined };
+            if (!lastModified || !deps.checkIfActive(lastModified)) {
+              allActive = false;
+              break;
             }
+          } catch {
+            allActive = false;
+            break;
           }
-        } catch {
-          // Session check failed — fall through to re-upload
+        }
+
+        if (allActive) {
+          const cachedFiles = fileListResults.flatMap((r) =>
+            r.files
+              .filter((f) => f.codeEnvIdentifier)
+              .map((f) => {
+                const [sid, fid] = (f.codeEnvIdentifier as string).split('/');
+                return { id: fid, name: `${r.skill.name}/${f.relativePath}`, session_id: sid };
+              }),
+          );
+          if (cachedFiles.length > 0) {
+            logger.debug(
+              `[primeInvokedSkills] All ${sessionIds.size} session(s) active, reusing ${cachedFiles.length} cached files`,
+            );
+            sessions = new Map();
+            sessions.set(Constants.EXECUTE_CODE, {
+              session_id: cachedFiles[0].session_id,
+              files: cachedFiles,
+              lastUpdated: Date.now(),
+            } satisfies CodeSessionContext);
+            return { initialSessions: sessions, skills: skills.size > 0 ? skills : undefined };
+          }
         }
       }
     }
