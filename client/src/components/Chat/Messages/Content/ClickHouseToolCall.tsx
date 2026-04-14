@@ -260,8 +260,8 @@ function EndpointPill({ endpoint }: { endpoint: Record<string, unknown> }) {
   const port = endpoint.port;
   return (
     <div className="flex items-center gap-2 rounded-md bg-surface-tertiary px-2 py-1">
-      <Text size="xs" color="muted" weight="medium">{protocol}</Text>
-      <Text size="xs">{host}:{String(port)}</Text>
+      <Text size="md" color="muted" weight="medium">{protocol}</Text>
+      <Text size="md">{host}:{String(port)}</Text>
     </div>
   );
 }
@@ -278,9 +278,28 @@ function ValueRenderer({ value }: { value: unknown }) {
         </div>
       );
     }
+    return (
+      <div className="flex flex-col gap-1">
+        {value.map((item, i) => {
+          const obj = item as Record<string, unknown>;
+          const entries = Object.entries(obj).filter(([, v]) => v !== null && v !== undefined && v !== '');
+          return (
+            <div key={i} className="flex items-center gap-2 rounded-md bg-surface-tertiary px-2 py-1">
+              {entries.map(([k, v], j) => (
+                <span key={k}>
+                  <Text size="md" color={j === 0 ? 'muted' : 'default'} weight={j === 0 ? 'medium' : 'normal'}>
+                    {String(v)}
+                  </Text>
+                </span>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    );
   }
   if (Array.isArray(value) && value.length === 0) {
-    return <Text size="md" color="muted">—</Text>;
+    return <Text size="md" color="muted">[]</Text>;
   }
   if (typeof value === 'object' && value !== null) {
     return <Text size="md" weight="mono">{JSON.stringify(value, null, 2)}</Text>;
@@ -306,7 +325,7 @@ function CollapsibleRow({ row, open, onToggle, codeTheme }: { row: Record<string
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full cursor-pointer items-center justify-between px-3 py-2.5"
+        className="flex w-full cursor-pointer items-center justify-between rounded px-3 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]"
         style={{ background: CH_BG_MUTED[codeTheme] }}
       >
         <Text size="md" weight="medium">{label}</Text>
@@ -362,7 +381,7 @@ function CollapsibleRows({ rows, codeTheme }: { rows: Record<string, unknown>[];
 
   return (
     <div className="w-full">
-      <div className="mb-2 flex justify-end">
+      <div className="mb-2 flex justify-end pr-2">
         <button
           type="button"
           onClick={toggleAll}
@@ -372,7 +391,7 @@ function CollapsibleRows({ rows, codeTheme }: { rows: Record<string, unknown>[];
           {allOpen ? 'Collapse all' : 'Expand all'}
         </button>
       </div>
-      <div className="flex w-full max-h-[400px] flex-col gap-3 overflow-auto rounded-lg">
+      <div className="-mx-0.5 flex w-[calc(100%+4px)] max-h-[400px] flex-col gap-3 overflow-auto px-0.5 py-0.5">
         {rows.map((row, i) => (
           <CollapsibleRow key={i} row={row} open={openIds.has(i)} onToggle={() => toggleOne(i)} codeTheme={codeTheme} />
         ))}
