@@ -112,13 +112,20 @@ function parseOutput(raw: string): ParsedOutput {
     }
     const result = (parsed.result ?? parsed) as Record<string, unknown>;
     if (result.status === 'error') {
-      return { error: true, errorMessage: parseErrorMessage(String(result.message ?? '')), raw: formatted };
+      return {
+        error: true,
+        errorMessage: parseErrorMessage(String(result.message ?? '')),
+        raw: formatted,
+      };
     }
     const metrics = extractMetrics(result);
     if (typeof result.grandTotalCHC === 'number' && Array.isArray(result.costs)) {
       return {
         error: false,
-        costData: { grandTotalCHC: result.grandTotalCHC, costs: result.costs as Record<string, unknown>[] },
+        costData: {
+          grandTotalCHC: result.grandTotalCHC,
+          costs: result.costs as Record<string, unknown>[],
+        },
         metrics,
         raw: formatted,
       };
@@ -133,12 +140,19 @@ function parseOutput(raw: string): ParsedOutput {
       delete cleaned.statistics;
       delete cleaned.rows;
       const keys = Object.keys(cleaned);
-      const isFlat = keys.length > 0 && keys.every((k) => {
-        const v = cleaned[k];
-        return v === null || typeof v !== 'object' || Array.isArray(v);
-      });
+      const isFlat =
+        keys.length > 0 &&
+        keys.every((k) => {
+          const v = cleaned[k];
+          return v === null || typeof v !== 'object' || Array.isArray(v);
+        });
       if (isFlat) {
-        return { error: false, rows: [cleaned] as Record<string, unknown>[], metrics, raw: formatted };
+        return {
+          error: false,
+          rows: [cleaned] as Record<string, unknown>[],
+          metrics,
+          raw: formatted,
+        };
       }
       const kv = flattenObject(result);
       delete kv.status;
@@ -273,7 +287,10 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
   const columns = allColumns.filter((c) => selectedColumns.includes(c));
 
   const totalPages = Math.ceil(rows.length / MAX_ROWS_PER_PAGE);
-  const pageRows = rows.slice((currentPage - 1) * MAX_ROWS_PER_PAGE, currentPage * MAX_ROWS_PER_PAGE);
+  const pageRows = rows.slice(
+    (currentPage - 1) * MAX_ROWS_PER_PAGE,
+    currentPage * MAX_ROWS_PER_PAGE,
+  );
   const gridHeight = Math.min(pageRows.length, MAX_ROWS_PER_PAGE) * 33 + 43;
 
   const Cell: CellProps = ({ rowIndex, columnIndex, type, ...props }) => {
@@ -332,8 +349,12 @@ function EndpointPill({ endpoint }: { endpoint: Record<string, unknown> }) {
   const port = endpoint.port;
   return (
     <div className="flex items-center gap-2 rounded-md bg-surface-tertiary px-2 py-1">
-      <Text size="md" color="muted" weight="medium">{protocol}</Text>
-      <Text size="md">{host}:{String(port)}</Text>
+      <Text size="md" color="muted" weight="medium">
+        {protocol}
+      </Text>
+      <Text size="md">
+        {host}:{String(port)}
+      </Text>
     </div>
   );
 }
@@ -350,7 +371,12 @@ function ValueRenderer({ value, fieldKey }: { value: unknown; fieldKey?: string 
       </div>
     );
   }
-  if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    typeof value[0] === 'object' &&
+    value[0] !== null
+  ) {
     const first = value[0] as Record<string, unknown>;
     if ('protocol' in first && 'host' in first) {
       return (
@@ -368,8 +394,12 @@ function ValueRenderer({ value, fieldKey }: { value: unknown; fieldKey?: string 
             const col = item as Record<string, unknown>;
             return (
               <div key={i} className="flex items-baseline gap-2">
-                <Text size="md" weight="medium">{String(col.name)}</Text>
-                <Text size="md" color="muted">{String(col.column_type)}</Text>
+                <Text size="md" weight="medium">
+                  {String(col.name)}
+                </Text>
+                <Text size="md" color="muted">
+                  {String(col.column_type)}
+                </Text>
               </div>
             );
           })}
@@ -380,12 +410,21 @@ function ValueRenderer({ value, fieldKey }: { value: unknown; fieldKey?: string 
       <div className="flex flex-col gap-1">
         {value.map((item, i) => {
           const obj = item as Record<string, unknown>;
-          const entries = Object.entries(obj).filter(([, v]) => v !== null && v !== undefined && v !== '');
+          const entries = Object.entries(obj).filter(
+            ([, v]) => v !== null && v !== undefined && v !== '',
+          );
           return (
-            <div key={i} className="flex items-center gap-2 rounded-md bg-surface-tertiary px-2 py-1">
+            <div
+              key={i}
+              className="flex items-center gap-2 rounded-md bg-surface-tertiary px-2 py-1"
+            >
               {entries.map(([k, v], j) => (
                 <span key={k}>
-                  <Text size="md" color={j === 0 ? 'muted' : 'default'} weight={j === 0 ? 'medium' : 'normal'}>
+                  <Text
+                    size="md"
+                    color={j === 0 ? 'muted' : 'default'}
+                    weight={j === 0 ? 'medium' : 'normal'}
+                  >
                     {String(v)}
                   </Text>
                 </span>
@@ -397,10 +436,18 @@ function ValueRenderer({ value, fieldKey }: { value: unknown; fieldKey?: string 
     );
   }
   if (Array.isArray(value) && value.length === 0) {
-    return <Text size="md" color="muted">[]</Text>;
+    return (
+      <Text size="md" color="muted">
+        []
+      </Text>
+    );
   }
   if (typeof value === 'object' && value !== null) {
-    return <Text size="md" weight="mono">{JSON.stringify(value, null, 2)}</Text>;
+    return (
+      <Text size="md" weight="mono">
+        {JSON.stringify(value, null, 2)}
+      </Text>
+    );
   }
   return <Text size="md">{formatValue(value)}</Text>;
 }
@@ -435,7 +482,17 @@ function RowContent({ row }: { row: Record<string, unknown> }) {
   );
 }
 
-function CollapsibleRow({ row, open, onToggle, codeTheme }: { row: Record<string, unknown>; open: boolean; onToggle: () => void; codeTheme: 'light' | 'dark' }) {
+function CollapsibleRow({
+  row,
+  open,
+  onToggle,
+  codeTheme,
+}: {
+  row: Record<string, unknown>;
+  open: boolean;
+  onToggle: () => void;
+  codeTheme: 'light' | 'dark';
+}) {
   const label = getRowLabel(row);
   return (
     <Panel padding="none" gap="none" radii="sm" hasBorder orientation="vertical" fillWidth>
@@ -445,7 +502,9 @@ function CollapsibleRow({ row, open, onToggle, codeTheme }: { row: Record<string
         className="flex w-full cursor-pointer items-center justify-between rounded px-3 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]"
         style={{ background: CH_BG_MUTED[codeTheme] }}
       >
-        <Text size="md" weight="medium">{label}</Text>
+        <Text size="md" weight="medium">
+          {label}
+        </Text>
         <ChevronDown
           className={cn(
             'size-3.5 shrink-0 transition-transform duration-200 ease-out',
@@ -470,7 +529,13 @@ function StaticRows({ rows }: { rows: Record<string, unknown>[] }) {
   );
 }
 
-function CollapsibleRows({ rows, codeTheme }: { rows: Record<string, unknown>[]; codeTheme: 'light' | 'dark' }) {
+function CollapsibleRows({
+  rows,
+  codeTheme,
+}: {
+  rows: Record<string, unknown>[];
+  codeTheme: 'light' | 'dark';
+}) {
   const [openIds, setOpenIds] = useState<Set<number>>(() => new Set());
   const allOpen = openIds.size === rows.length;
 
@@ -493,18 +558,24 @@ function CollapsibleRows({ rows, codeTheme }: { rows: Record<string, unknown>[];
   return (
     <div className="w-full">
       <div className="mb-2 flex justify-end pr-2">
-          <button
-            type="button"
-            onClick={toggleAll}
-            className="text-xs"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            {allOpen ? 'Collapse all' : 'Expand all'}
-          </button>
-        </div>
-      <div className="-mx-0.5 flex w-[calc(100%+4px)] max-h-[400px] flex-col gap-3 overflow-auto px-0.5 py-0.5">
+        <button
+          type="button"
+          onClick={toggleAll}
+          className="text-xs"
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          {allOpen ? 'Collapse all' : 'Expand all'}
+        </button>
+      </div>
+      <div className="-mx-0.5 flex max-h-[400px] w-[calc(100%+4px)] flex-col gap-3 overflow-auto px-0.5 py-0.5">
         {rows.map((row, i) => (
-          <CollapsibleRow key={i} row={row} open={openIds.has(i)} onToggle={() => toggleOne(i)} codeTheme={codeTheme} />
+          <CollapsibleRow
+            key={i}
+            row={row}
+            open={openIds.has(i)}
+            onToggle={() => toggleOne(i)}
+            codeTheme={codeTheme}
+          />
         ))}
       </div>
     </div>
@@ -523,7 +594,9 @@ function ResultContent({
   if (parsed.error && parsed.errorMessage) {
     return (
       <Panel padding="sm" color="default" radii="sm" hasBorder>
-        <Text size="md" color="danger">{parsed.errorMessage}</Text>
+        <Text size="md" color="danger">
+          {parsed.errorMessage}
+        </Text>
       </Panel>
     );
   }
@@ -583,7 +656,11 @@ function ResultContent({
   );
 }
 
-export default function ClickHouseToolCall({ input, output, functionName }: ClickHouseToolCallProps) {
+export default function ClickHouseToolCall({
+  input,
+  output,
+  functionName,
+}: ClickHouseToolCallProps) {
   const { theme } = useTheme();
   const codeTheme = isDark(theme) ? 'dark' : 'light';
   const { query, params } = useMemo(() => parseInput(input), [input]);
@@ -614,7 +691,9 @@ export default function ClickHouseToolCall({ input, output, functionName }: Clic
                   <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1.5">
                     {Object.entries(params).map(([key, value]) => (
                       <div key={key} className="flex items-baseline gap-1.5 text-xs">
-                        <Text size="xs" color="muted" weight="medium">{key}</Text>
+                        <Text size="xs" color="muted" weight="medium">
+                          {key}
+                        </Text>
                         <span
                           className="rounded px-1.5 py-0.5 font-mono text-xs"
                           style={{
@@ -628,7 +707,13 @@ export default function ClickHouseToolCall({ input, output, functionName }: Clic
                     ))}
                   </div>
                 )}
-                <CodeBlock language="sql" theme={codeTheme} showLineNumbers wrapLines showWrapButton>
+                <CodeBlock
+                  language="sql"
+                  theme={codeTheme}
+                  showLineNumbers
+                  wrapLines
+                  showWrapButton
+                >
                   {query}
                 </CodeBlock>
               </div>
@@ -646,7 +731,9 @@ export default function ClickHouseToolCall({ input, output, functionName }: Clic
           <Tabs.Content value="details" tabIndex={-1}>
             <div className="flex flex-col gap-3 pt-3">
               <div>
-                <Text size="xs" color="muted" weight="medium" className="mb-1">Input</Text>
+                <Text size="xs" color="muted" weight="medium" className="mb-1">
+                  Input
+                </Text>
                 <div className="max-h-[300px] overflow-auto rounded-lg">
                   <CodeBlock language="json" theme={codeTheme} wrapLines>
                     {formatJson(input)}
@@ -657,7 +744,9 @@ export default function ClickHouseToolCall({ input, output, functionName }: Clic
                 <>
                   <Separator size="xs" />
                   <div>
-                    <Text size="xs" color="muted" weight="medium" className="mb-1">Output</Text>
+                    <Text size="xs" color="muted" weight="medium" className="mb-1">
+                      Output
+                    </Text>
                     <div className="max-h-[300px] overflow-auto rounded-lg">
                       <CodeBlock language="json" theme={codeTheme} wrapLines>
                         {formatJson(output)}
@@ -671,7 +760,13 @@ export default function ClickHouseToolCall({ input, output, functionName }: Clic
         </Tabs>
 
         {parsed && (
-          <Container orientation="horizontal" padding="none" gap="md" justifyContent="end" alignItems="center">
+          <Container
+            orientation="horizontal"
+            padding="none"
+            gap="md"
+            justifyContent="end"
+            alignItems="center"
+          >
             <Badge
               text={parsed.error ? 'Error' : 'Succeeded'}
               state={parsed.error ? 'danger' : 'success'}
