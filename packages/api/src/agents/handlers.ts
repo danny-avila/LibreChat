@@ -106,7 +106,11 @@ export interface ToolExecuteOptions {
 }
 
 const MAX_READABLE_BYTES = 262_144;
+const MAX_BINARY_BYTES = 10 * 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
+
+const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const PDF_MIME = 'application/pdf';
 
 function addLineNumbers(content: string): string {
   const lines = content.split('\n');
@@ -209,17 +213,24 @@ async function handleReadFileCall(
     };
   }
 
-  // Binary file
+  // Known binary — serve images/PDFs as artifacts, others as metadata
   if (file.isBinary === true) {
-    return {
-      toolCallId: tc.id,
-      status: 'success',
-      content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: /mnt/data/${args.file_path}`,
-    };
+    if (
+      (IMAGE_MIMES.has(file.mimeType) || file.mimeType === PDF_MIME) &&
+      file.bytes <= MAX_BINARY_BYTES
+    ) {
+      // Stream and return as artifact (handled below in stream path)
+    } else {
+      return {
+        toolCallId: tc.id,
+        status: 'success',
+        content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: /mnt/data/${args.file_path}`,
+      };
+    }
   }
 
-  // Cached content
-  if (file.content != null && file.content !== '') {
+  // Cached text content
+  if (file.isBinary !== true && file.content != null && file.content !== '') {
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -257,18 +268,51 @@ async function handleReadFileCall(
 
     // Binary detection on first 8KB
     const checkLen = Math.min(buffer.length, 8192);
-    let isBinary = false;
-    for (let i = 0; i < checkLen; i++) {
-      if (buffer[i] === 0) {
-        isBinary = true;
-        break;
+    let isBinary = file.isBinary === true;
+    if (!isBinary) {
+      for (let i = 0; i < checkLen; i++) {
+        if (buffer[i] === 0) {
+          isBinary = true;
+          break;
+        }
       }
     }
 
     if (isBinary) {
-      if (updateSkillFileContent) {
+      // Cache the binary flag (first read only)
+      if (file.isBinary == null && updateSkillFileContent) {
         updateSkillFileContent(skill._id, relativePath, { isBinary: true }).catch(() => {});
       }
+
+      // Return images/PDFs as artifacts
+      if (IMAGE_MIMES.has(file.mimeType) && buffer.length <= MAX_BINARY_BYTES) {
+        const base64 = buffer.toString('base64');
+        return {
+          toolCallId: tc.id,
+          status: 'success',
+          content: `Image: ${args.file_path} (${buffer.length} bytes, ${file.mimeType})`,
+          artifact: {
+            content: [
+              { type: 'image_url', image_url: { url: `data:${file.mimeType};base64,${base64}` } },
+            ],
+          },
+        };
+      }
+
+      if (file.mimeType === PDF_MIME && buffer.length <= MAX_BINARY_BYTES) {
+        const base64 = buffer.toString('base64');
+        return {
+          toolCallId: tc.id,
+          status: 'success',
+          content: `PDF: ${args.file_path} (${buffer.length} bytes)`,
+          artifact: {
+            content: [
+              { type: 'image_url', image_url: { url: `data:${PDF_MIME};base64,${base64}` } },
+            ],
+          },
+        };
+      }
+
       return {
         toolCallId: tc.id,
         status: 'success',
@@ -278,14 +322,13 @@ async function handleReadFileCall(
 
     const text = buffer.toString('utf-8');
 
-    // Cache small files
-    if (updateSkillFileContent && buffer.length <= MAX_CACHE_BYTES) {
+    // Cache text on first read (skill files are immutable)
+    if (file.content == null && updateSkillFileContent && buffer.length <= MAX_CACHE_BYTES) {
       updateSkillFileContent(skill._id, relativePath, { content: text, isBinary: false }).catch(
         () => {},
       );
     }
 
-    // Size check
     if (buffer.length > MAX_READABLE_BYTES) {
       return {
         toolCallId: tc.id,

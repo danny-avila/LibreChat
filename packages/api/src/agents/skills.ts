@@ -82,6 +82,7 @@ export async function injectSkillCatalog(
     name: ReadFileToolDefinition.name,
     description: ReadFileToolDefinition.description,
     parameters: ReadFileToolDefinition.parameters as unknown as LCTool['parameters'],
+    responseFormat: ReadFileToolDefinition.responseFormat,
   };
 
   const defs: LCTool[] = [skillToolDef, readFileDef];
