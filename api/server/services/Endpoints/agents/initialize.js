@@ -487,36 +487,22 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
-  const handlePrimeInvokedSkills = async (payload) => {
-    if (!payload?.length || !skillsCapabilityEnabled || !accessibleSkillIds?.length) {
-      return undefined;
-    }
-
-    let codeApiKey;
-    try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: ['LIBRECHAT_CODE_API_KEY'],
-      });
-      codeApiKey = authValues.LIBRECHAT_CODE_API_KEY ?? '';
-    } catch {
-      codeApiKey = '';
-    }
-
-    return primeInvokedSkills({
-      req,
-      payload,
-      accessibleSkillIds,
-      apiKey: codeApiKey,
-      getSkillByName: db.getSkillByName,
-      listSkillFiles: db.listSkillFiles,
-      getStrategyFunctions,
-      batchUploadCodeEnvFiles,
-      getSessionInfo,
-      checkIfActive,
-      updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
-    });
-  };
+  const handlePrimeInvokedSkills = skillsCapabilityEnabled
+    ? (payload) =>
+        primeInvokedSkills({
+          req,
+          payload,
+          accessibleSkillIds,
+          loadAuthValues,
+          getSkillByName: db.getSkillByName,
+          listSkillFiles: db.listSkillFiles,
+          getStrategyFunctions,
+          batchUploadCodeEnvFiles,
+          getSessionInfo,
+          checkIfActive,
+          updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
+        })
+    : undefined;
 
   const client = new AgentClient({
     req,

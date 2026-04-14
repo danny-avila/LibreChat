@@ -183,7 +183,10 @@ export interface PrimeInvokedSkillsDeps {
   /** Raw message payload (before formatAgentMessages). Used to extract invoked skill names. */
   payload: Array<Partial<{ role: string; content: unknown }>>;
   accessibleSkillIds: Types.ObjectId[];
-  apiKey: string;
+  loadAuthValues: (params: {
+    userId: string;
+    authFields: string[];
+  }) => Promise<Record<string, string>>;
   getSkillByName: (
     name: string,
     accessibleIds: Types.ObjectId[],
@@ -214,9 +217,24 @@ export interface PrimeInvokedSkillsResult {
 export async function primeInvokedSkills(
   deps: PrimeInvokedSkillsDeps,
 ): Promise<PrimeInvokedSkillsResult> {
+  if (!deps.payload?.length || !deps.accessibleSkillIds?.length) {
+    return {};
+  }
+
   const invokedSkills = extractInvokedSkillsFromPayload(deps.payload);
   if (invokedSkills.size === 0) {
     return {};
+  }
+
+  let apiKey = '';
+  try {
+    const authValues = await deps.loadAuthValues({
+      userId: deps.req.user?.id ?? '',
+      authFields: ['LIBRECHAT_CODE_API_KEY'],
+    });
+    apiKey = authValues.LIBRECHAT_CODE_API_KEY ?? '';
+  } catch {
+    // Code API key not configured — file priming will be skipped
   }
 
   const skills = new Map<string, string>();
@@ -238,7 +256,7 @@ export async function primeInvokedSkills(
           skill,
           skillFiles,
           req: deps.req,
-          apiKey: deps.apiKey,
+          apiKey,
           getStrategyFunctions: deps.getStrategyFunctions,
           batchUploadCodeEnvFiles: deps.batchUploadCodeEnvFiles,
           getSessionInfo: deps.getSessionInfo,
