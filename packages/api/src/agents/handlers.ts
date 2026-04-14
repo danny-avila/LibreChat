@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { GraphEvents, Constants } from '@librechat/agents';
+import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type {
   LCTool,
   EventHandler,
@@ -241,11 +241,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     turn: tc.turn,
                   };
 
-                  if (
-                    tc.codeSessionContext &&
-                    (tc.name === Constants.EXECUTE_CODE ||
-                      tc.name === Constants.PROGRAMMATIC_TOOL_CALLING)
-                  ) {
+                  if (tc.codeSessionContext && CODE_EXECUTION_TOOLS.has(tc.name)) {
                     toolCallConfig.session_id = tc.codeSessionContext.session_id;
                     if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
                       toolCallConfig._injected_files = tc.codeSessionContext.files;
