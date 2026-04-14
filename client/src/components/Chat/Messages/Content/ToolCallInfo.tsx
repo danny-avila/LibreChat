@@ -99,11 +99,13 @@ export default function ToolCallInfo({
   output,
   attachments,
   domain,
+  functionName,
 }: {
   input: string;
   output?: string | null;
   attachments?: TAttachment[];
   domain?: string | null;
+  functionName?: string;
 }) {
   const localize = useLocalize();
   const { ask } = useOptionalMessagesOperations();
@@ -135,7 +137,7 @@ export default function ToolCallInfo({
   if (domain && /clickhouse/i.test(domain)) {
     return (
       <Suspense fallback={<div className="p-3 text-xs text-text-secondary">Loading...</div>}>
-        <ClickHouseToolCall input={input} output={output} />
+        <ClickHouseToolCall input={input} output={output} functionName={functionName} />
       </Suspense>
     );
   }

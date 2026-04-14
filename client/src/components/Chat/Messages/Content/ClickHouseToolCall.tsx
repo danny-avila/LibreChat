@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import {
   Badge,
   CodeBlock,
@@ -10,12 +11,14 @@ import {
   Table,
   Container,
 } from '@clickhouse/click-ui';
-import { useTheme, isDark } from '@librechat/client';
 import type { TableColumnConfigProps, TableRowType } from '@clickhouse/click-ui';
+import { useTheme, isDark } from '@librechat/client';
+import { cn } from '~/utils';
 
 interface ClickHouseToolCallProps {
   input: string;
   output?: string | null;
+  functionName?: string;
 }
 
 interface ParsedInput {
@@ -38,6 +41,9 @@ interface ParsedOutput {
   metrics?: QueryMetrics;
   raw: string;
 }
+
+const CH_BG = { light: '#ffffff', dark: '#1f1f1c' } as const;
+const CH_BG_MUTED = { light: '#f6f7fa', dark: '#282828' } as const;
 
 function parseInput(raw: string): ParsedInput {
   try {
@@ -86,6 +92,18 @@ function parseOutput(raw: string): ParsedOutput {
       return { error: false, rows: data as Record<string, unknown>[], metrics, raw: formatted };
     }
     if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
+      const cleaned = { ...result };
+      delete cleaned.status;
+      delete cleaned.statistics;
+      delete cleaned.rows;
+      const keys = Object.keys(cleaned);
+      const isFlat = keys.length > 0 && keys.every((k) => {
+        const v = cleaned[k];
+        return v === null || typeof v !== 'object' || Array.isArray(v);
+      });
+      if (isFlat) {
+        return { error: false, rows: [cleaned] as Record<string, unknown>[], metrics, raw: formatted };
+      }
       const kv = flattenObject(result);
       delete kv.status;
       return { error: false, keyValue: kv, metrics, raw: formatted };
@@ -97,9 +115,9 @@ function parseOutput(raw: string): ParsedOutput {
 }
 
 function unwrapData(obj: Record<string, unknown>): unknown {
-  for (const key of ['data', 'rows', 'backups', 'databases', 'tables', 'clickpipes', 'services']) {
-    if (Array.isArray(obj[key])) {
-      return obj[key];
+  for (const value of Object.values(obj)) {
+    if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+      return value;
     }
   }
   return obj;
@@ -194,11 +212,16 @@ function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
   );
 }
 
-function buildTableData(rows: Record<string, unknown>[]): {
-  headers: TableColumnConfigProps[];
-  tableRows: TableRowType[];
-} {
-  const columns = Object.keys(rows[0]);
+function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
+  const priorityColumns = ['name', 'title', 'label'];
+  const rawColumns = Object.keys(rows[0]).filter((col) => {
+    const sample = rows[0][col];
+    return sample === null || typeof sample !== 'object';
+  });
+  const columns = [
+    ...rawColumns.filter((c) => priorityColumns.includes(c)),
+    ...rawColumns.filter((c) => !priorityColumns.includes(c)),
+  ];
   const headers: TableColumnConfigProps[] = columns.map((col) => ({
     label: col,
     overflowMode: 'truncated' as const,
@@ -207,15 +230,165 @@ function buildTableData(rows: Record<string, unknown>[]): {
     id: i,
     items: columns.map((col) => ({ label: formatValue(row[col]) })),
   }));
-  return { headers, tableRows };
+
+  return (
+    <div ref={(el) => {
+      if (!el) {
+        return;
+      }
+      const tableEl = el.querySelector('table');
+      const scrollContainer = tableEl?.parentElement;
+      if (scrollContainer) {
+        scrollContainer.style.maxHeight = '360px';
+        scrollContainer.style.overflowY = 'auto';
+      }
+      const thead = el.querySelector('thead');
+      if (thead) {
+        (thead as HTMLElement).style.position = 'sticky';
+        (thead as HTMLElement).style.top = '0';
+        (thead as HTMLElement).style.zIndex = '10';
+      }
+    }}>
+      <Table headers={headers} rows={tableRows} size="sm" />
+    </div>
+  );
+}
+
+function EndpointPill({ endpoint }: { endpoint: Record<string, unknown> }) {
+  const protocol = String(endpoint.protocol ?? '');
+  const host = String(endpoint.host ?? '');
+  const port = endpoint.port;
+  return (
+    <div className="flex items-center gap-2 rounded-md bg-surface-tertiary px-2 py-1">
+      <Text size="xs" color="muted" weight="medium">{protocol}</Text>
+      <Text size="xs">{host}:{String(port)}</Text>
+    </div>
+  );
+}
+
+function ValueRenderer({ value }: { value: unknown }) {
+  if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+    const first = value[0] as Record<string, unknown>;
+    if ('protocol' in first && 'host' in first) {
+      return (
+        <div className="flex flex-col gap-1">
+          {value.map((ep, i) => (
+            <EndpointPill key={i} endpoint={ep as Record<string, unknown>} />
+          ))}
+        </div>
+      );
+    }
+  }
+  if (Array.isArray(value) && value.length === 0) {
+    return <Text size="md" color="muted">—</Text>;
+  }
+  if (typeof value === 'object' && value !== null) {
+    return <Text size="md" weight="mono">{JSON.stringify(value, null, 2)}</Text>;
+  }
+  return <Text size="md">{formatValue(value)}</Text>;
+}
+
+function getRowLabel(row: Record<string, unknown>): string {
+  for (const key of ['name', 'title', 'label', 'id']) {
+    if (typeof row[key] === 'string') {
+      return row[key] as string;
+    }
+  }
+  return 'Item';
+}
+
+function CollapsibleRow({ row, open, onToggle, codeTheme }: { row: Record<string, unknown>; open: boolean; onToggle: () => void; codeTheme: 'light' | 'dark' }) {
+  const label = getRowLabel(row);
+  const entries = Object.entries(row).filter(([, v]) => v !== null && v !== undefined && v !== '');
+
+  return (
+    <Panel padding="none" radii="sm" hasBorder orientation="vertical" fillWidth>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full cursor-pointer items-center justify-between px-3 py-2.5"
+        style={{ background: CH_BG_MUTED[codeTheme] }}
+      >
+        <Text size="md" weight="medium">{label}</Text>
+        <ChevronDown
+          className={cn(
+            'size-3.5 shrink-0 transition-transform duration-200 ease-out',
+            open && 'rotate-180',
+          )}
+          style={{ color: 'var(--text-secondary)' }}
+          aria-hidden="true"
+        />
+      </button>
+      {open && (
+        <div className="w-full py-1">
+          {entries.map(([key, value], i) => (
+            <div key={key}>
+              <div className="flex gap-3 px-3 py-1">
+                <Text size="md" color="muted" weight="medium" className="w-36 shrink-0 break-words">
+                  {key}
+                </Text>
+                <div className="min-w-0 break-words">
+                  <ValueRenderer value={value} />
+                </div>
+              </div>
+              {i < entries.length - 1 && <Separator size="xs" />}
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function CollapsibleRows({ rows, codeTheme }: { rows: Record<string, unknown>[]; codeTheme: 'light' | 'dark' }) {
+  const [openIds, setOpenIds] = useState<Set<number>>(() => new Set());
+  const allOpen = openIds.size === rows.length;
+
+  const toggleAll = () => {
+    setOpenIds(allOpen ? new Set() : new Set(rows.map((_, i) => i)));
+  };
+
+  const toggleOne = (index: number) => {
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="w-full">
+      <div className="mb-2 flex justify-end">
+        <button
+          type="button"
+          onClick={toggleAll}
+          className="text-xs"
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          {allOpen ? 'Collapse all' : 'Expand all'}
+        </button>
+      </div>
+      <div className="flex w-full max-h-[400px] flex-col gap-3 overflow-auto rounded-lg">
+        {rows.map((row, i) => (
+          <CollapsibleRow key={i} row={row} open={openIds.has(i)} onToggle={() => toggleOne(i)} codeTheme={codeTheme} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ResultContent({
   parsed,
   codeTheme,
+  functionName,
 }: {
   parsed: ParsedOutput;
   codeTheme: 'light' | 'dark';
+  functionName?: string;
 }) {
   if (parsed.error && parsed.errorMessage) {
     return (
@@ -226,31 +399,10 @@ function ResultContent({
   }
 
   if (parsed.rows && parsed.rows.length > 0) {
-    const { headers, tableRows } = buildTableData(parsed.rows);
-    return (
-      <div ref={(el) => {
-        if (!el) {
-          return;
-        }
-        const tableEl = el.querySelector('table');
-        const scrollContainer = tableEl?.parentElement;
-        if (scrollContainer) {
-          scrollContainer.style.maxHeight = '360px';
-          scrollContainer.style.overflowY = 'auto';
-        }
-        const thead = el.querySelector('thead');
-        if (thead) {
-          (thead as HTMLElement).style.position = 'sticky';
-          (thead as HTMLElement).style.top = '0';
-          (thead as HTMLElement).style.zIndex = '10';
-          thead.querySelectorAll('th').forEach((th) => {
-            (th as HTMLElement).style.background = 'var(--cui-color-background-muted)';
-          });
-        }
-      }}>
-        <Table headers={headers} rows={tableRows} size="sm" />
-      </div>
-    );
+    if (functionName === 'get_services_list') {
+      return <CollapsibleRows rows={parsed.rows} codeTheme={codeTheme} />;
+    }
+    return <FlatTable rows={parsed.rows} />;
   }
 
   if (parsed.keyValue) {
@@ -282,7 +434,7 @@ function ResultContent({
   );
 }
 
-export default function ClickHouseToolCall({ input, output }: ClickHouseToolCallProps) {
+export default function ClickHouseToolCall({ input, output, functionName }: ClickHouseToolCallProps) {
   const { theme } = useTheme();
   const codeTheme = isDark(theme) ? 'dark' : 'light';
   const { query, params } = useMemo(() => parseInput(input), [input]);
@@ -291,7 +443,10 @@ export default function ClickHouseToolCall({ input, output }: ClickHouseToolCall
 
   return (
     <ClickUIProvider theme={codeTheme}>
-      <div className="flex w-full flex-col gap-3 px-3 py-3">
+      <div
+        className="flex w-full flex-col gap-2 rounded-lg px-3 py-3"
+        style={{ background: CH_BG[codeTheme], margin: '-1px' }}
+      >
         <Tabs defaultValue={defaultTab}>
           <Tabs.TriggersList className="[&]:justify-between">
             <div className="flex">
@@ -312,8 +467,8 @@ export default function ClickHouseToolCall({ input, output }: ClickHouseToolCall
                         <span
                           className="rounded px-1.5 py-0.5 font-mono text-xs"
                           style={{
-                            background: 'var(--cui-color-background-muted)',
-                            color: 'var(--cui-color-text-default)',
+                            background: CH_BG_MUTED[codeTheme],
+                            color: 'var(--text-primary)',
                           }}
                         >
                           {value}
@@ -332,7 +487,7 @@ export default function ClickHouseToolCall({ input, output }: ClickHouseToolCall
           {parsed && (
             <Tabs.Content value="result" tabIndex={-1}>
               <div className="pt-3">
-                <ResultContent parsed={parsed} codeTheme={codeTheme} />
+                <ResultContent parsed={parsed} codeTheme={codeTheme} functionName={functionName} />
               </div>
             </Tabs.Content>
           )}
@@ -367,7 +522,7 @@ export default function ClickHouseToolCall({ input, output }: ClickHouseToolCall
         {parsed && (
           <Container orientation="horizontal" padding="none" gap="md" justifyContent="end" alignItems="center">
             <Badge
-              text={parsed.error ? 'Error' : 'Completed'}
+              text={parsed.error ? 'Error' : 'Succeeded'}
               state={parsed.error ? 'danger' : 'success'}
               icon={parsed.error ? 'warning' : 'check'}
               iconDir="start"
