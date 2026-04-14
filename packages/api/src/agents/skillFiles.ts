@@ -275,12 +275,21 @@ export async function primeInvokedSkills(
       })),
     );
 
-    // Session freshness check: if any existing identifier is still active, skip upload
+    // Session freshness check: skip upload when all files share one active session.
+    // Mixed sessions (from per-skill priming across turns) fall through to re-upload,
+    // which unifies them under one session.
     if (deps.getSessionInfo && deps.checkIfActive) {
-      const firstWithId = fileListResults.flatMap((r) => r.files).find((f) => f.codeEnvIdentifier);
-      if (firstWithId?.codeEnvIdentifier) {
+      const allFilesWithIds = fileListResults
+        .flatMap((r) => r.files)
+        .filter((f) => f.codeEnvIdentifier);
+      const sessionIds = new Set(allFilesWithIds.map((f) => f.codeEnvIdentifier!.split('/')[0]));
+
+      if (allFilesWithIds.length > 0 && sessionIds.size === 1) {
         try {
-          const lastModified = await deps.getSessionInfo(firstWithId.codeEnvIdentifier, apiKey);
+          const lastModified = await deps.getSessionInfo(
+            allFilesWithIds[0].codeEnvIdentifier!,
+            apiKey,
+          );
           if (lastModified && deps.checkIfActive(lastModified)) {
             const cachedFiles = fileListResults.flatMap((r) =>
               r.files
