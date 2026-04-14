@@ -486,19 +486,15 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   /**
    * Callback for the client to prime skill files for previously invoked skills.
    * Called with message history right before createRun.
-   * Returns initialSessions map to seed the Graph's ToolSessionMap.
+   * Returns initialSessions map + re-injected skill bodies.
    */
-  const { extractInvokedSkillsFromHistory } = require('@librechat/api');
-  const { primeSkillFiles } = require('@librechat/api');
-  const { Constants: AgentConstants } = require('@librechat/agents');
+  const { primeInvokedSkills: primeInvokedSkillsFn } = require('@librechat/api');
+  const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+  const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
+  const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
 
-  const primeInvokedSkills = async (messages) => {
-    if (!messages?.length || !skillsCapabilityEnabled) {
-      return undefined;
-    }
-
-    const invokedSkills = extractInvokedSkillsFromHistory(messages);
-    if (invokedSkills.size === 0) {
+  const handlePrimeInvokedSkills = async (messages) => {
+    if (!messages?.length || !skillsCapabilityEnabled || !accessibleSkillIds?.length) {
       return undefined;
     }
 
@@ -508,57 +504,24 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         userId: req.user.id,
         authFields: ['LIBRECHAT_CODE_API_KEY'],
       });
-      codeApiKey = authValues.LIBRECHAT_CODE_API_KEY;
+      codeApiKey = authValues.LIBRECHAT_CODE_API_KEY ?? '';
     } catch {
-      return undefined;
+      codeApiKey = '';
     }
 
-    if (!codeApiKey) {
-      return undefined;
-    }
-
-    const sessions = new Map();
-    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-    const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
-    const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
-
-    for (const skillName of invokedSkills) {
-      try {
-        const skill = await db.getSkillByName(skillName, accessibleSkillIds);
-        if (!skill || skill.fileCount === 0) {
-          continue;
-        }
-
-        const skillFiles = await db.listSkillFiles(skill._id);
-        const result = await primeSkillFiles({
-          skill,
-          skillFiles,
-          req,
-          apiKey: codeApiKey,
-          getStrategyFunctions,
-          batchUploadCodeEnvFiles,
-          getSessionInfo,
-          checkIfActive,
-          updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
-        });
-
-        if (result) {
-          sessions.set(AgentConstants.EXECUTE_CODE, {
-            session_id: result.session_id,
-            files: result.files.map((f) => ({
-              id: f.id,
-              name: f.name,
-              session_id: f.session_id,
-            })),
-            lastUpdated: Date.now(),
-          });
-        }
-      } catch (err) {
-        logger.warn(`[primeInvokedSkills] Failed for skill "${skillName}":`, err.message);
-      }
-    }
-
-    return sessions.size > 0 ? sessions : undefined;
+    return primeInvokedSkillsFn({
+      req,
+      messages,
+      accessibleSkillIds,
+      apiKey: codeApiKey,
+      getSkillByName: db.getSkillByName,
+      listSkillFiles: db.listSkillFiles,
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+      getSessionInfo,
+      checkIfActive,
+      updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
+    });
   };
 
   const client = new AgentClient({
@@ -571,7 +534,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     collectedUsage,
     aggregateContent,
     artifactPromises,
-    primeInvokedSkills,
+    primeInvokedSkills: handlePrimeInvokedSkills,
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,

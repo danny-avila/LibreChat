@@ -1,7 +1,11 @@
 import { Readable } from 'stream';
+import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
+import type { InjectedMessage, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
+import type { BaseMessage } from '@langchain/core/messages';
 import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types';
+import { extractInvokedSkillsFromHistory } from './run';
 
 export interface SkillFileRecord {
   relativePath: string;
@@ -173,4 +177,106 @@ export async function primeSkillFiles(
     );
     return null;
   }
+}
+
+export interface PrimeInvokedSkillsDeps {
+  req: ServerRequest;
+  messages: BaseMessage[];
+  accessibleSkillIds: Types.ObjectId[];
+  apiKey: string;
+  getSkillByName: (
+    name: string,
+    accessibleIds: Types.ObjectId[],
+  ) => Promise<{ body: string; name: string; _id: Types.ObjectId; fileCount: number } | null>;
+  listSkillFiles: (skillId: Types.ObjectId | string) => Promise<SkillFileRecord[]>;
+  getStrategyFunctions: PrimeSkillFilesParams['getStrategyFunctions'];
+  batchUploadCodeEnvFiles: PrimeSkillFilesParams['batchUploadCodeEnvFiles'];
+  getSessionInfo?: PrimeSkillFilesParams['getSessionInfo'];
+  checkIfActive?: PrimeSkillFilesParams['checkIfActive'];
+  updateSkillFileCodeEnvIds?: PrimeSkillFilesParams['updateSkillFileCodeEnvIds'];
+}
+
+export interface PrimeInvokedSkillsResult {
+  initialSessions?: ToolSessionMap;
+  injectedMessages?: InjectedMessage[];
+}
+
+/**
+ * Extracts previously invoked skills from message history, re-primes their
+ * files to the code env, and reconstructs injectedMessages with skill bodies.
+ *
+ * Returns both:
+ * - initialSessions: seeds Graph.sessions so ToolNode injects session_id into bash/code tools
+ * - injectedMessages: re-injects skill bodies so the model still has the instructions in context
+ */
+export async function primeInvokedSkills(
+  deps: PrimeInvokedSkillsDeps,
+): Promise<PrimeInvokedSkillsResult> {
+  const invokedSkills = extractInvokedSkillsFromHistory(deps.messages);
+  if (invokedSkills.size === 0) {
+    return {};
+  }
+
+  const injectedMessages: InjectedMessage[] = [];
+  let sessions: ToolSessionMap | undefined;
+
+  for (const skillName of invokedSkills) {
+    try {
+      const skill = await deps.getSkillByName(skillName, deps.accessibleSkillIds);
+      if (!skill) {
+        continue;
+      }
+
+      // Re-inject skill body so the model has the instructions in context
+      injectedMessages.push({
+        role: 'user',
+        content: skill.body,
+        isMeta: true,
+        source: 'skill',
+        skillName: skill.name,
+      });
+
+      // Re-prime files for multi-file skills
+      if (skill.fileCount > 0) {
+        const skillFiles = await deps.listSkillFiles(skill._id);
+        const result = await primeSkillFiles({
+          skill,
+          skillFiles,
+          req: deps.req,
+          apiKey: deps.apiKey,
+          getStrategyFunctions: deps.getStrategyFunctions,
+          batchUploadCodeEnvFiles: deps.batchUploadCodeEnvFiles,
+          getSessionInfo: deps.getSessionInfo,
+          checkIfActive: deps.checkIfActive,
+          updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
+        });
+
+        if (result) {
+          if (!sessions) {
+            sessions = new Map();
+          }
+          const sessionCtx: CodeSessionContext = {
+            session_id: result.session_id,
+            files: result.files.map((f) => ({
+              id: f.id,
+              name: f.name,
+              session_id: f.session_id,
+            })),
+            lastUpdated: Date.now(),
+          };
+          sessions.set(Constants.EXECUTE_CODE, sessionCtx);
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        `[primeInvokedSkills] Failed for skill "${skillName}":`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  return {
+    initialSessions: sessions,
+    injectedMessages: injectedMessages.length > 0 ? injectedMessages : undefined,
+  };
 }

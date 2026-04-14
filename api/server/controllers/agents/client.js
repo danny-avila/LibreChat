@@ -824,8 +824,8 @@ class AgentClient extends BaseClient {
           );
         }
 
-        /** Re-prime skill files for previously invoked skills */
-        const initialSessions = this.options.primeInvokedSkills
+        /** Re-prime skill files and re-inject skill bodies for previously invoked skills */
+        const skillPrimeResult = this.options.primeInvokedSkills
           ? await this.options.primeInvokedSkills(messages)
           : undefined;
 
@@ -834,7 +834,8 @@ class AgentClient extends BaseClient {
           messages,
           indexTokenCountMap,
           initialSummary,
-          initialSessions,
+          initialSessions: skillPrimeResult?.initialSessions,
+          invokedSkillMessages: skillPrimeResult?.injectedMessages,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,

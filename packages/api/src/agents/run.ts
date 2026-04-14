@@ -6,6 +6,7 @@ import type {
   ContextPruningConfig,
   OpenAIClientOptions,
   StandardGraphConfig,
+  InjectedMessage,
   LCToolRegistry,
   AgentInputs,
   GenericTool,
@@ -299,6 +300,7 @@ export async function createRun({
   summarizationConfig,
   initialSummary,
   calibrationRatio,
+  invokedSkillMessages,
   streaming = true,
   streamUsage = true,
 }: {
@@ -316,6 +318,8 @@ export async function createRun({
   initialSummary?: { text: string; tokenCount: number };
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
+  /** Re-injected skill bodies from previously invoked skills (for context continuity) */
+  invokedSkillMessages?: InjectedMessage[];
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -362,10 +366,16 @@ export async function createRun({
       .join('\n')
       .trim();
 
+    const skillBodies =
+      invokedSkillMessages
+        ?.filter((m) => typeof m.content === 'string')
+        .map((m) => m.content as string) ?? [];
+
     const systemContent = [
       systemMessage,
       agent.instructions ?? '',
       agent.additional_instructions ?? '',
+      ...skillBodies,
     ]
       .join('\n')
       .trim();
