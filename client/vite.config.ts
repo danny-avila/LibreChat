@@ -256,8 +256,7 @@ export default defineConfig(({ command }) => ({
             }
             if (
               normalizedId.includes('node_modules/highlight.js') ||
-              normalizedId.includes('node_modules/lowlight') ||
-              normalizedId.includes('react-syntax-highlighter')
+              normalizedId.includes('node_modules/lowlight')
             ) {
               return 'markdown_highlight';
             }
