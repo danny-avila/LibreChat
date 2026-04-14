@@ -11,6 +11,9 @@ import type {
 } from '@librechat/agents';
 import type { Types } from 'mongoose';
 import type { StructuredToolInterface } from '@langchain/core/tools';
+import type { ServerRequest } from '~/types';
+import { primeSkillFiles } from './skillFiles';
+import type { SkillFileRecord } from './skillFiles';
 import { runOutsideTracing } from '~/utils';
 
 export interface ToolEndCallbackData {
@@ -49,14 +52,47 @@ export interface ToolExecuteOptions {
   getSkillByName?: (
     name: string,
     accessibleIds: Types.ObjectId[],
-  ) => Promise<{ body: string; name: string } | null>;
+  ) => Promise<{
+    body: string;
+    name: string;
+    _id: Types.ObjectId;
+    fileCount: number;
+  } | null>;
+  /** Lists files bundled with a skill (for code env priming) */
+  listSkillFiles?: (skillId: Types.ObjectId | string) => Promise<SkillFileRecord[]>;
+  /** Storage strategy resolver for skill file streaming */
+  getStrategyFunctions?: (source: string) => {
+    getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
+    [key: string]: unknown;
+  };
+  /** Uploads a file to the code execution environment */
+  uploadCodeEnvFile?: (params: {
+    req: ServerRequest;
+    stream: NodeJS.ReadableStream;
+    filename: string;
+    apiKey: string;
+    entity_id?: string;
+  }) => Promise<string>;
+  /** Updates conversation document (for tracking invoked skills) */
+  updateConversation?: (
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>,
+  ) => Promise<unknown>;
 }
 
 async function handleSkillToolCall(
   tc: ToolCallRequest,
   mergedConfigurable: Record<string, unknown>,
-  getSkillByName?: ToolExecuteOptions['getSkillByName'],
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
 ): Promise<ToolExecuteResult> {
+  const {
+    getSkillByName,
+    listSkillFiles,
+    getStrategyFunctions,
+    uploadCodeEnvFile,
+    updateConversation,
+  } = options;
   const args = tc.args as { skillName?: string; args?: string };
   if (!args.skillName) {
     return {
@@ -94,19 +130,61 @@ async function handleSkillToolCall(
   }
 
   const injectedMessages: InjectedMessage[] = [
-    {
-      role: 'user',
-      content: body,
-      isMeta: true,
-      source: 'skill',
-      skillName: skill.name,
-    },
+    { role: 'user', content: body, isMeta: true, source: 'skill', skillName: skill.name },
   ];
+
+  let contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
+  let artifact:
+    | { session_id: string; files: Array<{ id: string; session_id: string; name: string }> }
+    | undefined;
+
+  // Prime skill files to code env when the skill has bundled files
+  if (skill.fileCount > 0 && req && listSkillFiles && getStrategyFunctions && uploadCodeEnvFile) {
+    const codeApiKey = (mergedConfigurable?.codeApiKey as string) ?? '';
+    if (codeApiKey) {
+      try {
+        const skillFiles = await listSkillFiles(skill._id);
+        const primeResult = await primeSkillFiles({
+          skill,
+          skillFiles,
+          req,
+          apiKey: codeApiKey,
+          getStrategyFunctions,
+          uploadCodeEnvFile,
+        });
+        if (primeResult) {
+          artifact = primeResult;
+          const fileNames = primeResult.files.map((f) => f.name).join(', ');
+          contentText += `\nSkill files available in the execution environment: ${fileNames}`;
+        }
+      } catch (error) {
+        logger.error(
+          `[handleSkillToolCall] Failed to prime files for skill "${args.skillName}":`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+  }
+
+  // Track invoked skill in conversation state (fire-and-forget)
+  const conversationId = mergedConfigurable?.thread_id as string | undefined;
+  if (conversationId && updateConversation) {
+    updateConversation(
+      { conversationId },
+      { $addToSet: { invokedSkillIds: skill._id.toString() } },
+    ).catch((err: unknown) => {
+      logger.warn(
+        '[handleSkillToolCall] Failed to update invokedSkillIds:',
+        err instanceof Error ? err.message : err,
+      );
+    });
+  }
 
   return {
     toolCallId: tc.id,
-    content: `Skill "${args.skillName}" loaded. Follow the instructions below.`,
+    content: contentText,
     status: 'success',
+    artifact,
     injectedMessages,
   };
 }
@@ -117,7 +195,7 @@ async function handleSkillToolCall(
  * executes them in parallel, and resolves with the results.
  */
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
-  const { loadTools, toolEndCallback, getSkillByName } = options;
+  const { loadTools, toolEndCallback } = options;
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
@@ -137,7 +215,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
                 if (tc.name === Constants.SKILL_TOOL) {
-                  return handleSkillToolCall(tc, mergedConfigurable, getSkillByName);
+                  const req = mergedConfigurable?.req as ServerRequest | undefined;
+                  return handleSkillToolCall(tc, mergedConfigurable, options, req);
                 }
 
                 const tool = toolMap.get(tc.name);

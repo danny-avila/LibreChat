@@ -30,6 +30,10 @@ const convoSchema: Schema<IConversation> = new Schema(
       default: [],
       meiliIndex: true,
     },
+    invokedSkillIds: {
+      type: [String],
+      default: [],
+    },
     files: {
       type: [String],
     },

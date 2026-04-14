@@ -1,4 +1,8 @@
-import { formatSkillCatalog, SkillToolDefinition } from '@librechat/agents';
+import {
+  formatSkillCatalog,
+  SkillToolDefinition,
+  BashExecutionToolDefinition,
+} from '@librechat/agents';
 import type { LCToolRegistry, LCTool } from '@librechat/agents';
 import type { Types } from 'mongoose';
 import type { Agent } from 'librechat-data-provider';
@@ -71,9 +75,16 @@ export async function injectSkillCatalog(
     parameters: SkillToolDefinition.parameters as unknown as LCTool['parameters'],
   };
 
-  const toolDefinitions = [...(inputDefs ?? []), skillToolDef];
+  const bashToolDef: LCTool = {
+    name: BashExecutionToolDefinition.name,
+    description: BashExecutionToolDefinition.description,
+    parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
+  };
+
+  const toolDefinitions = [...(inputDefs ?? []), skillToolDef, bashToolDef];
   if (toolRegistry) {
     toolRegistry.set(SkillToolDefinition.name, skillToolDef);
+    toolRegistry.set(BashExecutionToolDefinition.name, bashToolDef);
   }
 
   return { toolDefinitions, skillCount: skills.length };

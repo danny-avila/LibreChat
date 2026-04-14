@@ -53,6 +53,7 @@ export interface IConversation extends Document {
   fileTokenLimit?: number;
   // Additional fields
   files?: string[];
+  invokedSkillIds?: string[];
   expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;

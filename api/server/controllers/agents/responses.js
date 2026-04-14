@@ -465,12 +465,17 @@ const createResponse = async (req, res) => {
             ...result,
             configurable: {
               ...result.configurable,
+              req,
               accessibleSkillIds: primaryConfig.accessibleSkillIds,
             },
           };
         },
         toolEndCallback,
         getSkillByName: db.getSkillByName,
+        listSkillFiles: db.listSkillFiles,
+        getStrategyFunctions: require('~/server/services/Files/strategies').getStrategyFunctions,
+        uploadCodeEnvFile: require('~/server/services/Files/Code/crud').uploadCodeEnvFile,
+        updateConversation: db.updateConversation,
       };
 
       // Combine handlers

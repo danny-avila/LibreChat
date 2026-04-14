@@ -15,6 +15,7 @@ export * from './usage';
 export * from './resources';
 export * from './responses';
 export * from './skills';
+export * from './skillFiles';
 export * from './run';
 export * from './tools';
 export * from './validation';
