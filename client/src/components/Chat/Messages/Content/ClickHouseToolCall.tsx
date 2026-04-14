@@ -83,6 +83,24 @@ function extractMetrics(obj: Record<string, unknown>): QueryMetrics | undefined 
   };
 }
 
+function parseErrorMessage(message: string): string {
+  const jsonMatch = message.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    return message;
+  }
+  try {
+    const inner = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+    const error = inner.error ?? inner.message ?? inner.detail;
+    if (typeof error === 'string') {
+      const statusCode = inner.status ?? message.match(/HTTP (\d+)/)?.[1];
+      return statusCode ? `${statusCode}: ${error}` : error;
+    }
+  } catch {
+    // fall through
+  }
+  return message;
+}
+
 function parseOutput(raw: string): ParsedOutput {
   const formatted = formatJson(raw);
   try {
@@ -92,7 +110,7 @@ function parseOutput(raw: string): ParsedOutput {
     }
     const result = (parsed.result ?? parsed) as Record<string, unknown>;
     if (result.status === 'error') {
-      return { error: true, errorMessage: String(result.message ?? ''), raw: formatted };
+      return { error: true, errorMessage: parseErrorMessage(String(result.message ?? '')), raw: formatted };
     }
     const metrics = extractMetrics(result);
     if (typeof result.grandTotalCHC === 'number' && Array.isArray(result.costs)) {
@@ -131,10 +149,15 @@ function parseOutput(raw: string): ParsedOutput {
 }
 
 function unwrapData(obj: Record<string, unknown>): unknown {
-  for (const value of Object.values(obj)) {
-    if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
-      return value;
-    }
+  const entries = Object.entries(obj);
+  const arrays = entries.filter(
+    ([, v]) => Array.isArray(v) && v.length > 0 && typeof v[0] === 'object' && v[0] !== null,
+  );
+  const scalars = entries.filter(
+    ([k, v]) => k !== 'status' && !Array.isArray(v) && (typeof v !== 'object' || v === null),
+  );
+  if (arrays.length === 1 && scalars.length <= 2) {
+    return arrays[0][1];
   }
   return obj;
 }
@@ -332,10 +355,29 @@ function getRowLabel(row: Record<string, unknown>): string {
   return 'Item';
 }
 
+function RowContent({ row }: { row: Record<string, unknown> }) {
+  const entries = Object.entries(row).filter(([, v]) => v !== null && v !== undefined && v !== '');
+  return (
+    <div className="w-full py-1">
+      {entries.map(([key, value], i) => (
+        <div key={key}>
+          <div className="flex gap-3 px-3 py-1">
+            <Text size="md" color="muted" weight="medium" className="w-36 shrink-0 break-words">
+              {key}
+            </Text>
+            <div className="min-w-0 break-words">
+              <ValueRenderer value={value} />
+            </div>
+          </div>
+          {i < entries.length - 1 && <Separator size="xs" />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CollapsibleRow({ row, open, onToggle, codeTheme }: { row: Record<string, unknown>; open: boolean; onToggle: () => void; codeTheme: 'light' | 'dark' }) {
   const label = getRowLabel(row);
-  const entries = Object.entries(row).filter(([, v]) => v !== null && v !== undefined && v !== '');
-
   return (
     <Panel padding="none" gap="none" radii="sm" hasBorder orientation="vertical" fillWidth>
       <button
@@ -354,24 +396,18 @@ function CollapsibleRow({ row, open, onToggle, codeTheme }: { row: Record<string
           aria-hidden="true"
         />
       </button>
-      {open && (
-        <div className="w-full py-1">
-          {entries.map(([key, value], i) => (
-            <div key={key}>
-              <div className="flex gap-3 px-3 py-1">
-                <Text size="md" color="muted" weight="medium" className="w-36 shrink-0 break-words">
-                  {key}
-                </Text>
-                <div className="min-w-0 break-words">
-                  <ValueRenderer value={value} />
-                </div>
-              </div>
-              {i < entries.length - 1 && <Separator size="xs" />}
-            </div>
-          ))}
-        </div>
-      )}
+      {open && <RowContent row={row} />}
     </Panel>
+  );
+}
+
+function StaticRows({ rows }: { rows: Record<string, unknown>[] }) {
+  return (
+    <div className="w-full">
+      {rows.map((row, i) => (
+        <RowContent key={i} row={row} />
+      ))}
+    </div>
   );
 }
 
@@ -398,15 +434,15 @@ function CollapsibleRows({ rows, codeTheme }: { rows: Record<string, unknown>[];
   return (
     <div className="w-full">
       <div className="mb-2 flex justify-end pr-2">
-        <button
-          type="button"
-          onClick={toggleAll}
-          className="text-xs"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          {allOpen ? 'Collapse all' : 'Expand all'}
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="text-xs"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            {allOpen ? 'Collapse all' : 'Expand all'}
+          </button>
+        </div>}
       <div className="-mx-0.5 flex w-[calc(100%+4px)] max-h-[400px] flex-col gap-3 overflow-auto px-0.5 py-0.5">
         {rows.map((row, i) => (
           <CollapsibleRow key={i} row={row} open={openIds.has(i)} onToggle={() => toggleOne(i)} codeTheme={codeTheme} />
@@ -428,7 +464,7 @@ function ResultContent({
   if (parsed.error && parsed.errorMessage) {
     return (
       <Panel padding="sm" color="default" radii="sm" hasBorder>
-        <Text size="xs" color="danger">{parsed.errorMessage}</Text>
+        <Text size="md" color="danger">{parsed.errorMessage}</Text>
       </Panel>
     );
   }
@@ -444,10 +480,19 @@ function ResultContent({
   }
 
   if (parsed.rows && parsed.rows.length > 0) {
+    if (functionName === 'get_service_details') {
+      return <StaticRows rows={parsed.rows} />;
+    }
     if (functionName === 'get_services_list') {
       return <CollapsibleRows rows={parsed.rows} codeTheme={codeTheme} />;
     }
     return <FlatTable rows={parsed.rows} />;
+  }
+
+  if (parsed.keyValue && functionName === 'get_service_details') {
+    const cleaned = { ...parsed.keyValue };
+    delete cleaned.status;
+    return <StaticRows rows={[cleaned]} />;
   }
 
   if (parsed.keyValue) {
@@ -484,7 +529,9 @@ export default function ClickHouseToolCall({ input, output, functionName }: Clic
   const codeTheme = isDark(theme) ? 'dark' : 'light';
   const { query, params } = useMemo(() => parseInput(input), [input]);
   const parsed = useMemo(() => (output ? parseOutput(output) : null), [output]);
-  const defaultTab = query ? 'query' : parsed ? 'result' : 'details';
+  const autoTab = parsed ? 'result' : 'details';
+  const [userTab, setUserTab] = useState<string | null>(null);
+  const activeTab = userTab ?? autoTab;
 
   return (
     <ClickUIProvider theme={codeTheme}>
@@ -492,7 +539,7 @@ export default function ClickHouseToolCall({ input, output, functionName }: Clic
         className="flex w-full flex-col gap-2 rounded-lg px-3 py-3"
         style={{ background: CH_BG[codeTheme], margin: '-1px' }}
       >
-        <Tabs defaultValue={defaultTab}>
+        <Tabs value={activeTab} onValueChange={setUserTab}>
           <Tabs.TriggersList className="[&]:justify-between">
             <div className="flex">
               {query && <Tabs.Trigger value="query">Query</Tabs.Trigger>}
