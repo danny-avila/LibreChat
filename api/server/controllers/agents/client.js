@@ -824,11 +824,17 @@ class AgentClient extends BaseClient {
           );
         }
 
+        /** Re-prime skill files for previously invoked skills */
+        const initialSessions = this.options.primeInvokedSkills
+          ? await this.options.primeInvokedSkills(messages)
+          : undefined;
+
         run = await createRun({
           agents,
           messages,
           indexTokenCountMap,
           initialSummary,
+          initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,

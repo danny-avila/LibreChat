@@ -295,6 +295,7 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  initialSessions,
   summarizationConfig,
   initialSummary,
   calibrationRatio,
@@ -315,9 +316,10 @@ export async function createRun({
   initialSummary?: { text: string; tokenCount: number };
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
-} & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
-  Run<IState>
-> {
+} & Pick<
+  RunConfig,
+  'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
+>): Promise<Run<IState>> {
   /**
    * Only extract discovered tools if:
    * 1. We have message history to parse
@@ -464,6 +466,7 @@ export async function createRun({
     tokenCounter,
     customHandlers,
     indexTokenCountMap,
+    initialSessions,
     calibrationRatio,
   });
 }
