@@ -247,6 +247,12 @@ export default defineConfig(({ command }) => ({
               return 'heic-converter';
             }
 
+            // click-ui and ALL its nested deps (styled-components, etc.) must stay
+            // out of vendor to avoid disrupting React's CJS interop in that chunk.
+            if (normalizedId.includes('@clickhouse/click-ui')) {
+              return 'click-ui';
+            }
+
             // Existing chunks
             if (normalizedId.includes('@radix-ui')) {
               return 'radix-ui';

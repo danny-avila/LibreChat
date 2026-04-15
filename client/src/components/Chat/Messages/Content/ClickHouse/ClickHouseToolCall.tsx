@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import {
   Badge,
-  CodeBlock,
   CheckboxMultiSelect,
   ClickUIProvider,
   Grid,
@@ -29,6 +28,41 @@ import {
 import { ClickHouseCostView } from './CostView';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+
+/**
+ * Lightweight code display replacing Click UI's CodeBlock.
+ *
+ * CodeBlock pulls in react-syntax-highlighter which bundles CJS copies of
+ * lowlight@1.x / highlight.js@10.x. These conflict with the hoisted ESM v2.x
+ * copies used by rehype-highlight, causing cross-chunk CJS interop errors in
+ * production builds (Rollup cannot handle `module.exports` across chunk
+ * boundaries). Once Click UI's CSS modules migration is complete and
+ * react-syntax-highlighter is removed or updated, we can switch back to
+ * CodeBlock for syntax highlighting.
+ */
+function CodeDisplay({ children, language }: { children: string; language?: string }) {
+  const localize = useLocalize();
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText(children);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="group relative overflow-auto rounded-lg bg-surface-tertiary">
+      <button
+        type="button"
+        onClick={copy}
+        className="bg-surface-primary/80 absolute right-2 top-2 rounded px-2 py-1 text-xs text-text-secondary opacity-0 transition-opacity group-hover:opacity-100"
+      >
+        {copied ? localize('com_ui_copied') : localize('com_ui_copy')}
+      </button>
+      <pre className="whitespace-pre-wrap break-words p-3 text-xs leading-relaxed">
+        <code data-language={language}>{children}</code>
+      </pre>
+    </div>
+  );
+}
 
 function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
   const localize = useLocalize();
@@ -154,9 +188,7 @@ function ValueRenderer({ value, fieldKey }: { value: unknown; fieldKey?: string 
   if (fieldKey && SQL_VALUE_KEYS.has(fieldKey) && typeof value === 'string' && value.length > 0) {
     return (
       <div className="max-h-[200px] overflow-auto rounded">
-        <CodeBlock language="sql" theme={undefined} wrapLines>
-          {value}
-        </CodeBlock>
+        <CodeDisplay language="sql">{value}</CodeDisplay>
       </div>
     );
   }
@@ -430,11 +462,7 @@ function ResultContent({
     );
   }
 
-  return (
-    <CodeBlock language="json" theme={codeTheme} wrapLines>
-      {parsed.raw}
-    </CodeBlock>
-  );
+  return <CodeDisplay language="json">{parsed.raw}</CodeDisplay>;
 }
 
 export default function ClickHouseToolCall({
@@ -489,15 +517,7 @@ export default function ClickHouseToolCall({
                     ))}
                   </div>
                 )}
-                <CodeBlock
-                  language="sql"
-                  theme={codeTheme}
-                  showLineNumbers
-                  wrapLines
-                  showWrapButton
-                >
-                  {query}
-                </CodeBlock>
+                <CodeDisplay language="sql">{query}</CodeDisplay>
               </div>
             </Tabs.Content>
           )}
@@ -517,9 +537,7 @@ export default function ClickHouseToolCall({
                   {localize('com_ui_input')}
                 </Text>
                 <div className="max-h-[300px] overflow-auto rounded-lg">
-                  <CodeBlock language="json" theme={codeTheme} wrapLines>
-                    {formatJson(input)}
-                  </CodeBlock>
+                  <CodeDisplay language="json">{formatJson(input)}</CodeDisplay>
                 </div>
               </div>
               {output && (
@@ -530,9 +548,7 @@ export default function ClickHouseToolCall({
                       {localize('com_endpoint_output')}
                     </Text>
                     <div className="max-h-[300px] overflow-auto rounded-lg">
-                      <CodeBlock language="json" theme={codeTheme} wrapLines>
-                        {formatJson(output)}
-                      </CodeBlock>
+                      <CodeDisplay language="json">{formatJson(output)}</CodeDisplay>
                     </div>
                   </div>
                 </>
