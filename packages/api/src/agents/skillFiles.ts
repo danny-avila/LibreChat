@@ -294,11 +294,11 @@ export async function primeInvokedSkills(
             );
             if (!representative) return true;
             try {
-              const lastModified = await deps.getSessionInfo(
+              const lastModified = await deps.getSessionInfo?.(
                 representative.codeEnvIdentifier!,
                 apiKey,
               );
-              return !!(lastModified && deps.checkIfActive(lastModified));
+              return !!(lastModified && deps.checkIfActive?.(lastModified));
             } catch {
               return false;
             }
