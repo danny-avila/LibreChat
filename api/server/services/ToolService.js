@@ -1285,11 +1285,18 @@ async function loadToolsForExecution({
       } else {
         logger.debug('[loadToolsForExecution] bash_tool requested but CODE_API_KEY not available');
         allLoadedTools.push(
-          toolFn(async () => 'Code execution is not available. Use the read_file tool instead.', {
-            name: AgentConstants.BASH_TOOL,
-            description: 'Bash execution (unavailable - no code API key configured)',
-            schema: { type: 'object', properties: { command: { type: 'string' } } },
-          }),
+          toolFn(
+            async () => [
+              'Code execution is not available. Use the read_file tool instead.',
+              undefined,
+            ],
+            {
+              name: AgentConstants.BASH_TOOL,
+              description: 'Bash execution (unavailable - no code API key configured)',
+              schema: { type: 'object', properties: { command: { type: 'string' } } },
+              responseFormat: AgentConstants.CONTENT_AND_ARTIFACT,
+            },
+          ),
         );
       }
     } catch (error) {
