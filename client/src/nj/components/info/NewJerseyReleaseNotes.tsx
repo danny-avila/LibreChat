@@ -30,7 +30,7 @@ export default function NewJerseyReleaseNotes() {
 
   return (
     <div>
-      <ReactMarkdown className="markdown prose prose-nj">{releaseNotes}</ReactMarkdown>
+      <ReactMarkdown className="markdown-nj">{releaseNotes}</ReactMarkdown>
       <HorizontalRule spacing="mb-6" />
       <RelatedLinks links={releaseNotesLinks} />
     </div>

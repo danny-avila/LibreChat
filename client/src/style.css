@@ -71,36 +71,6 @@
   --info: #00bde3;
 }
 
-/*NJ-specific markdown overrides*/
-.prose.prose-nj {
-  --tw-prose-body: var(--text-primary);
-  --tw-prose-bullets: var(--text-primary);
-}
-
-/*NJ-specific markdown customizations*/
-.prose.prose-nj h2,
-.prose.prose-nj ul {
-  margin-bottom: 1.5rem;
-}
-
-.prose.prose-nj ul {
-  margin-left: 0.75rem;
-}
-
-.prose.prose-nj h3 {
-  margin-top: 1.5rem;
-}
-
-.prose.prose-nj h3,
-.prose.prose-nj h4 {
-  margin-bottom: 0.75rem;
-}
-
-.prose.prose-nj h3:not(:first-of-type) {
-  margin-top: 2.5rem;
-}
-/*End of NJ-specific markdown customizations*/
-
 html {
   --brand-purple: #ab68ff;
   --presentation: #fcfcfb; /* Custom for NJ */
@@ -3129,26 +3099,57 @@ body {
 }
 
 /* NJ React Markdown styling (for our release notes page) */
-.prose-nj h1 {
+.markdown-nj h1 {
   font-size: 1.875rem;
   line-height: 2.25rem;
+  margin-bottom: 1rem;
 }
 
-.prose-nj h2 {
+.markdown-nj h2 {
   font-size: 1.5rem;
   line-height: 2rem;
+  margin-bottom: 1rem;
 }
 
-.prose-nj h3 {
+.markdown-nj h3 {
   font-size: 1rem;
   line-height: 1.5rem;
+  margin-bottom: 1rem;
 }
 
-.prose-nj p {
+.markdown-nj p {
   line-height: 1.5rem;
+  margin-bottom: 1.5rem;
 }
 
-.prose-nj hr {
+.markdown-nj hr {
   margin-top: 1.5rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.markdown-nj a {
+  color: inherit;
+  text-decoration-line: underline;
+}
+
+.markdown-nj a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.markdown-nj ul {
+  list-style-position: outside;
+  list-style-type: disc;
+  padding-left: 2rem;
+}
+
+.markdown-nj ul:not(.markdown-nj ul ul) {
+  margin-bottom: 2rem;
+}
+
+.markdown-nj ul ul {
+  margin-top: .5rem;
+}
+
+.markdown-nj li {
+  margin-bottom: .5rem;
 }
