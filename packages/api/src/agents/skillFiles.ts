@@ -334,6 +334,8 @@ export async function primeInvokedSkills(
               `[primeInvokedSkills] All ${sessionIds.size} session(s) active, reusing ${cachedFiles.length} cached files`,
             );
             sessions = new Map();
+            // session_id is a representative value. ToolNode uses per-file
+            // session_id from the files array (file.session_id ?? codeSession.session_id).
             sessions.set(Constants.EXECUTE_CODE, {
               session_id: cachedFiles[0].session_id,
               files: cachedFiles,

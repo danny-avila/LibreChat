@@ -498,19 +498,19 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               toolCalls.map(async (tc: ToolCallRequest) => {
                 if (tc.name === Constants.SKILL_TOOL || tc.name === Constants.READ_FILE) {
                   const req = mergedConfigurable?.req as ServerRequest | undefined;
-                  const skillResult =
+                  const handlerResult =
                     tc.name === Constants.SKILL_TOOL
                       ? await handleSkillToolCall(tc, mergedConfigurable, options, req)
                       : await handleReadFileCall(tc, mergedConfigurable, options, req);
 
-                  if (toolEndCallback && skillResult.artifact) {
+                  if (toolEndCallback && handlerResult.artifact) {
                     await toolEndCallback(
                       {
                         output: {
                           name: tc.name,
                           tool_call_id: tc.id,
-                          content: skillResult.content,
-                          artifact: skillResult.artifact,
+                          content: handlerResult.content,
+                          artifact: handlerResult.artifact,
                         },
                       },
                       {
@@ -523,7 +523,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     );
                   }
 
-                  return skillResult;
+                  return handlerResult;
                 }
 
                 const tool = toolMap.get(tc.name);
