@@ -49,6 +49,10 @@ function getDateRange(costs: CostEntry[]): { days: number; start: Date; end: Dat
     .map((c) => parseLocalDate(c.date))
     .filter((d): d is Date => d !== null)
     .sort((a, b) => a.getTime() - b.getTime());
+  if (dates.length === 0) {
+    const empty = new Date(0);
+    return { days: 0, start: empty, end: empty };
+  }
   const start = dates[0];
   const end = dates[dates.length - 1];
   const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
