@@ -3,6 +3,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
+import { DEFAULT_MAX_CONTEXT_TOKENS } from '../initialize';
 
 // Mock logger
 jest.mock('winston', () => ({
@@ -308,11 +309,8 @@ describe('initializeAgent — maxContextTokens', () => {
       db,
     );
 
-    // 0 is not used as-is; the formula kicks in.
-    // optionalChainWithEmptyCheck(0, 200000, 18000) returns 0 (not null/undefined),
-    // then Number(0) || 18000 = 18000 (the fallback default).
     expect(result.maxContextTokens).not.toBe(0);
-    const expected = Math.round((18000 - maxOutputTokens) * 0.95);
+    const expected = Math.round((DEFAULT_MAX_CONTEXT_TOKENS - maxOutputTokens) * 0.95);
     expect(result.maxContextTokens).toBe(expected);
   });
 
