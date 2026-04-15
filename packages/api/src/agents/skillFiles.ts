@@ -77,32 +77,46 @@ export async function primeSkillFiles(
     updateSkillFileCodeEnvIds,
   } = params;
 
-  // Check if existing session is still active (all files share one session)
+  // Check if ALL existing sessions are still active before reusing cached refs.
+  // Files normally share one session, but a partial bulkWrite failure during
+  // updateSkillFileCodeEnvIds can leave mixed session IDs. Checking every
+  // distinct session prevents serving stale identifiers that 404 in code env.
   if (getSessionInfo && checkIfActive && skillFiles.length > 0) {
-    const firstWithId = skillFiles.find((f) => f.codeEnvIdentifier);
-    if (firstWithId?.codeEnvIdentifier) {
-      try {
-        const lastModified = await getSessionInfo(firstWithId.codeEnvIdentifier, apiKey);
-        if (lastModified && checkIfActive(lastModified)) {
-          // Session still active — return cached references
-          const files: PrimeSkillFilesResult['files'] = [];
-          const sessionId = firstWithId.codeEnvIdentifier.split('?')[0].split('/')[0];
+    // All files must have identifiers for the cache to be complete.
+    // Any missing identifier means partial persistence — fall through to re-upload.
+    const allHaveIds = skillFiles.every((sf) => sf.codeEnvIdentifier);
+    if (allHaveIds) {
+      const sessionIds = new Set(
+        skillFiles.map((sf) => (sf.codeEnvIdentifier as string).split('?')[0].split('/')[0]),
+      );
 
-          // All files must have identifiers for the cache to be complete.
-          // Any missing identifier means partial persistence — fall through to re-upload.
-          const allHaveIds = skillFiles.every((sf) => sf.codeEnvIdentifier);
-          if (allHaveIds) {
-            for (const sf of skillFiles) {
-              const [sid, fid] = (sf.codeEnvIdentifier as string).split('?')[0].split('/');
-              files.push({ id: fid, session_id: sid, name: `${skill.name}/${sf.relativePath}` });
+      try {
+        const checkResults = await Promise.all(
+          Array.from(sessionIds).map(async (sid) => {
+            const representative = skillFiles.find((sf) =>
+              sf.codeEnvIdentifier!.startsWith(`${sid}/`),
+            );
+            if (!representative) {
+              return false;
             }
+            const lastModified = await getSessionInfo(representative.codeEnvIdentifier!, apiKey);
+            return !!(lastModified && checkIfActive(lastModified));
+          }),
+        );
+        const allActive = checkResults.every(Boolean);
+
+        if (allActive) {
+          const files: PrimeSkillFilesResult['files'] = [];
+          for (const sf of skillFiles) {
+            const [sid, fid] = (sf.codeEnvIdentifier as string).split('?')[0].split('/');
+            files.push({ id: fid, session_id: sid, name: `${skill.name}/${sf.relativePath}` });
           }
 
-          if (allHaveIds && files.length > 0) {
+          if (files.length > 0) {
             logger.debug(
-              `[primeSkillFiles] Session still active for skill "${skill.name}", reusing ${files.length} files`,
+              `[primeSkillFiles] All ${sessionIds.size} session(s) active for skill "${skill.name}", reusing ${files.length} files`,
             );
-            return { session_id: sessionId, files };
+            return { session_id: files[0].session_id, files };
           }
         }
       } catch {

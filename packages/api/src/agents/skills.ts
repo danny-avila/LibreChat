@@ -68,6 +68,19 @@ export async function injectSkillCatalog(
     return { toolDefinitions: inputDefs, skillCount: 0 };
   }
 
+  // Warn on duplicate names — model may invoke the wrong skill
+  const nameCount = new Map<string, number>();
+  for (const s of skills) {
+    nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
+  }
+  for (const [dupName, count] of nameCount) {
+    if (count > 1) {
+      logger.warn(
+        `[injectSkillCatalog] ${count} accessible skills share name "${dupName}" — model may invoke the wrong one`,
+      );
+    }
+  }
+
   const catalog = formatSkillCatalog(
     skills.map((s) => ({ name: s.name, description: s.description })),
     { contextWindowTokens: contextWindowTokens || 200_000 },

@@ -619,7 +619,10 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     accessibleIds: Types.ObjectId[],
   ): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
-    const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } }).lean();
+    // sort by updatedAt desc for deterministic result when multiple skills share a name
+    const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } })
+      .sort({ updatedAt: -1 })
+      .lean();
     return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
   }
 
