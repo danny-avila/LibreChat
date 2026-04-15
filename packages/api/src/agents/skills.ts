@@ -19,8 +19,6 @@ export interface InjectSkillCatalogParams {
   accessibleSkillIds: Types.ObjectId[];
   contextWindowTokens: number;
   listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'];
-  /** When true, bash tool is registered alongside skill tools */
-  codeEnvAvailable?: boolean;
 }
 
 export interface InjectSkillCatalogResult {
@@ -94,16 +92,13 @@ export async function injectSkillCatalog(
     responseFormat: ReadFileToolDefinition.responseFormat,
   };
 
-  const defs: LCTool[] = [skillToolDef, readFileDef];
+  const bashToolDef: LCTool = {
+    name: BashExecutionToolDefinition.name,
+    description: BashExecutionToolDefinition.description,
+    parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
+  };
 
-  if (params.codeEnvAvailable) {
-    const bashToolDef: LCTool = {
-      name: BashExecutionToolDefinition.name,
-      description: BashExecutionToolDefinition.description,
-      parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
-    };
-    defs.push(bashToolDef);
-  }
+  const defs: LCTool[] = [skillToolDef, readFileDef, bashToolDef];
 
   const toolDefinitions = [...(inputDefs ?? []), ...defs];
   if (toolRegistry) {

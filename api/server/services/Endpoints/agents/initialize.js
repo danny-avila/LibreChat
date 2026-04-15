@@ -212,11 +212,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       })
     : [];
 
-  /** Check if code execution environment is available (gates bash tool for skills) */
-  const codeEnvAvailable = !!(
-    process.env.LIBRECHAT_CODE_API_KEY || req.config?.endpoints?.all?.codeApiKey
-  );
-
   const primaryConfig = await initializeAgent(
     {
       req,
@@ -230,7 +225,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       allowedProviders,
       isInitialAgent: true,
       accessibleSkillIds,
-      codeEnvAvailable,
     },
     {
       getFiles: db.getFiles,
@@ -315,7 +309,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         endpointOption,
         allowedProviders,
         accessibleSkillIds,
-        codeEnvAvailable,
       },
       {
         getFiles: db.getFiles,
