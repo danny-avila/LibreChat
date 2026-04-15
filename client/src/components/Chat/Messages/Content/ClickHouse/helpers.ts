@@ -201,12 +201,3 @@ export function getRowLabel(row: Record<string, unknown>): string {
   return 'Item';
 }
 
-export function formatCHC(value: number): string {
-  if (value === 0) {
-    return '0 CHC';
-  }
-  if (value < 0.001) {
-    return '<0.001 CHC';
-  }
-  return `${value.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} CHC`;
-}

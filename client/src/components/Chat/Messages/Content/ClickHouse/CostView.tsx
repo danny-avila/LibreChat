@@ -3,9 +3,18 @@ import { ChevronDown } from 'lucide-react';
 import { Panel, Text, Separator, Container } from '@clickhouse/click-ui';
 import type { CostEntry } from './types';
 import { CH_BG_MUTED } from './types';
-import { formatCHC } from './helpers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+
+export function formatCHC(value: number): string {
+  if (value === 0) {
+    return '0 CHC';
+  }
+  if (value < 0.001) {
+    return '<0.001 CHC';
+  }
+  return `${value.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} CHC`;
+}
 
 interface CostViewProps {
   costs: CostEntry[];
@@ -15,12 +24,18 @@ interface CostViewProps {
 
 type ViewMode = 'date' | 'entity';
 
+/** Parse YYYY-MM-DD as a local date (avoids UTC-midnight shift from `new Date(str)`). */
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 function getDateRange(costs: CostEntry[]): { days: number; start: Date; end: Date } {
   if (costs.length === 0) {
     const empty = new Date(0);
     return { days: 0, start: empty, end: empty };
   }
-  const dates = costs.map((c) => new Date(c.date)).sort((a, b) => a.getTime() - b.getTime());
+  const dates = costs.map((c) => parseLocalDate(c.date)).sort((a, b) => a.getTime() - b.getTime());
   const start = dates[0];
   const end = dates[dates.length - 1];
   const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -52,9 +67,9 @@ function getGroupKey(date: Date, level: TimeLevel): string {
 function getGroupLabel(key: string, level: TimeLevel): string {
   switch (level) {
     case 'week':
-      return getWeekLabel(new Date(key));
+      return getWeekLabel(parseLocalDate(key));
     case 'day': {
-      const d = new Date(key);
+      const d = parseLocalDate(key);
       return d.toLocaleDateString(undefined, {
         weekday: 'short',
         month: 'short',
@@ -82,7 +97,7 @@ function buildTimeHierarchy(costs: CostEntry[], levels: TimeLevel[]): TimeGroup[
   const groups = new Map<string, CostEntry[]>();
 
   for (const cost of costs) {
-    const key = getGroupKey(new Date(cost.date), currentLevel);
+    const key = getGroupKey(parseLocalDate(cost.date), currentLevel);
     const existing = groups.get(key) ?? [];
     existing.push(cost);
     groups.set(key, existing);
@@ -298,7 +313,7 @@ function groupEntriesByWeek(
   const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
   const weeks = new Map<string, { label: string; total: number; entries: CostEntry[] }>();
   for (const entry of sorted) {
-    const key = getGroupKey(new Date(entry.date), 'week');
+    const key = getGroupKey(parseLocalDate(entry.date), 'week');
     const existing = weeks.get(key);
     if (existing) {
       existing.total += entry.totalCHC;
@@ -375,7 +390,7 @@ function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'ligh
                         <div className="flex flex-col gap-1 px-3 py-1 pl-6">
                           <div className="flex items-center justify-between">
                             <Text size="md" color="muted">
-                              {new Date(entry.date).toLocaleDateString(undefined, {
+                              {parseLocalDate(entry.date).toLocaleDateString(undefined, {
                                 month: 'short',
                                 day: 'numeric',
                               })}
@@ -394,7 +409,7 @@ function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'ligh
                     <div className="flex flex-col gap-1 px-3 py-1.5">
                       <div className="flex items-center justify-between">
                         <Text size="md" color="muted">
-                          {new Date(entry.date).toLocaleDateString(undefined, {
+                          {parseLocalDate(entry.date).toLocaleDateString(undefined, {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',

@@ -179,10 +179,16 @@ function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
 function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
   const localize = useLocalize();
   const priorityColumns = ['name', 'title', 'label'];
-  const rawColumns = Object.keys(rows[0]).filter((col) => {
-    const sample = rows[0][col];
-    return sample === null || typeof sample !== 'object';
-  });
+  const seen = new Set<string>();
+  const rawColumns: string[] = [];
+  for (const row of rows) {
+    for (const col of Object.keys(row)) {
+      if (!seen.has(col) && (row[col] === null || typeof row[col] !== 'object')) {
+        seen.add(col);
+        rawColumns.push(col);
+      }
+    }
+  }
   const allColumns = [
     ...rawColumns.filter((c) => priorityColumns.includes(c)),
     ...rawColumns.filter((c) => !priorityColumns.includes(c)),
@@ -196,7 +202,7 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
     (currentPage - 1) * MAX_ROWS_PER_PAGE,
     currentPage * MAX_ROWS_PER_PAGE,
   );
-  const gridHeight = Math.min(pageRows.length, MAX_ROWS_PER_PAGE) * 33 + 43;
+  const gridHeight = Math.min(pageRows.length, MAX_ROWS_PER_PAGE) * 33 + 34;
 
   const Cell: CellProps = ({ rowIndex, columnIndex, type, ...props }) => {
     if (type === 'header-cell') {

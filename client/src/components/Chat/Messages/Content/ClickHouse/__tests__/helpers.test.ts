@@ -10,8 +10,8 @@ import {
   formatBytes,
   formatValue,
   getRowLabel,
-  formatCHC,
 } from '../helpers';
+import { formatCHC } from '../CostView';
 
 describe('parseInput', () => {
   it('extracts query and params', () => {
