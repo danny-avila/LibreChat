@@ -202,7 +202,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills;
   const skillsCapabilityEnabled =
-    enabledCapabilities.has(AgentCapabilities.skills) && ephemeralSkillsToggle !== false;
+    enabledCapabilities.has(AgentCapabilities.skills) && ephemeralSkillsToggle === true;
   const accessibleSkillIds = skillsCapabilityEnabled
     ? await findAccessibleResources({
         userId: req.user.id,

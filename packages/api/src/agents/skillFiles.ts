@@ -88,16 +88,17 @@ export async function primeSkillFiles(
           const files: PrimeSkillFilesResult['files'] = [];
           const sessionId = firstWithId.codeEnvIdentifier.split('/')[0];
 
-          // SKILL.md doesn't have a codeEnvIdentifier; find it by name convention
-          // (it was uploaded with the batch and shares the session)
-          for (const sf of skillFiles) {
-            if (sf.codeEnvIdentifier) {
-              const [sid, fid] = sf.codeEnvIdentifier.split('/');
+          // All files must have identifiers for the cache to be complete.
+          // Any missing identifier means partial persistence — fall through to re-upload.
+          const allHaveIds = skillFiles.every((sf) => sf.codeEnvIdentifier);
+          if (allHaveIds) {
+            for (const sf of skillFiles) {
+              const [sid, fid] = (sf.codeEnvIdentifier as string).split('/');
               files.push({ id: fid, session_id: sid, name: `${skill.name}/${sf.relativePath}` });
             }
           }
 
-          if (files.length > 0) {
+          if (allHaveIds && files.length > 0) {
             logger.debug(
               `[primeSkillFiles] Session still active for skill "${skill.name}", reusing ${files.length} files`,
             );
@@ -282,11 +283,11 @@ export async function primeInvokedSkills(
     // ALL distinct sessions for freshness. If all are active, return cached
     // references with zero re-uploads. If any expired, re-upload everything.
     if (deps.getSessionInfo && deps.checkIfActive) {
-      const allFilesWithIds = fileListResults
-        .flatMap((r) => r.files)
-        .filter((f) => f.codeEnvIdentifier);
+      const allFiles = fileListResults.flatMap((r) => r.files);
+      const allFilesWithIds = allFiles.filter((f) => f.codeEnvIdentifier);
 
-      if (allFilesWithIds.length > 0) {
+      // Only use cache when ALL files have identifiers (no partial persistence)
+      if (allFilesWithIds.length > 0 && allFilesWithIds.length === allFiles.length) {
         const sessionIds = new Set(allFilesWithIds.map((f) => f.codeEnvIdentifier!.split('/')[0]));
 
         const checkResults = await Promise.all(
