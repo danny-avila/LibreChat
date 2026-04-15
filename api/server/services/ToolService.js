@@ -1283,7 +1283,14 @@ async function loadToolsForExecution({
         const bashTool = createBashExecutionTool({ apiKey: codeApiKey });
         allLoadedTools.push(bashTool);
       } else {
-        logger.warn('[loadToolsForExecution] bash_tool requested but CODE_API_KEY not available');
+        logger.debug('[loadToolsForExecution] bash_tool requested but CODE_API_KEY not available');
+        allLoadedTools.push(
+          toolFn(async () => 'Code execution is not available. Use the read_file tool instead.', {
+            name: AgentConstants.BASH_TOOL,
+            description: 'Bash execution (unavailable - no code API key configured)',
+            schema: { type: 'object', properties: { command: { type: 'string' } } },
+          }),
+        );
       }
     } catch (error) {
       logger.error('[loadToolsForExecution] Error creating bash tool:', error);

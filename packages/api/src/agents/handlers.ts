@@ -213,13 +213,10 @@ async function handleReadFileCall(
     };
   }
 
-  // Known binary — serve images/PDFs as artifacts, others as metadata
+  // Known binary — serve images as artifacts, others as metadata
   if (file.isBinary === true) {
-    if (
-      (IMAGE_MIMES.has(file.mimeType) || file.mimeType === PDF_MIME) &&
-      file.bytes <= MAX_BINARY_BYTES
-    ) {
-      // Stream and return as artifact (handled below in stream path)
+    if (IMAGE_MIMES.has(file.mimeType) && file.bytes <= MAX_BINARY_BYTES) {
+      // Stream and return as image artifact (handled below in stream path)
     } else {
       return {
         toolCallId: tc.id,
@@ -239,15 +236,15 @@ async function handleReadFileCall(
   }
 
   // Early size check from DB metadata before streaming
-  const isImageOrPdf = IMAGE_MIMES.has(file.mimeType) || file.mimeType === PDF_MIME;
-  if (!isImageOrPdf && file.bytes > MAX_READABLE_BYTES) {
+  const isImage = IMAGE_MIMES.has(file.mimeType);
+  if (!isImage && file.bytes > MAX_READABLE_BYTES) {
     return {
       toolCallId: tc.id,
       status: 'success',
       content: `File too large (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat /mnt/data/${args.file_path}`,
     };
   }
-  if (isImageOrPdf && file.bytes > MAX_BINARY_BYTES) {
+  if (isImage && file.bytes > MAX_BINARY_BYTES) {
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -323,19 +320,9 @@ async function handleReadFileCall(
         };
       }
 
-      if (file.mimeType === PDF_MIME && buffer.length <= MAX_BINARY_BYTES) {
-        const base64 = buffer.toString('base64');
-        return {
-          toolCallId: tc.id,
-          status: 'success',
-          content: `PDF: ${args.file_path} (${buffer.length} bytes)`,
-          artifact: {
-            content: [
-              { type: 'image_url', image_url: { url: `data:${PDF_MIME};base64,${base64}` } },
-            ],
-          },
-        };
-      }
+      // TODO: PDF artifact support requires a document content block path
+      // (image_url runs image processing which fails for PDFs). Falls through
+      // to the generic binary handler below.
 
       return {
         toolCallId: tc.id,
