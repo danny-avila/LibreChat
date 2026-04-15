@@ -26,7 +26,7 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { getSkillToolDeps } = require('./skillDeps');
+const { getSkillToolDeps, enrichWithSkillConfigurable } = require('./skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -143,28 +143,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
-
-      /** Load code API key for skill file priming (shared with execute_code) */
-      let codeApiKey;
-      try {
-        const authValues = await loadAuthValues({
-          userId: req.user.id,
-          authFields: ['LIBRECHAT_CODE_API_KEY'],
-        });
-        codeApiKey = authValues.LIBRECHAT_CODE_API_KEY;
-      } catch {
-        // Code API key not configured — skill file priming will be skipped
-      }
-
-      return {
-        ...result,
-        configurable: {
-          ...result.configurable,
-          req,
-          codeApiKey,
-          accessibleSkillIds: ctx.accessibleSkillIds,
-        },
-      };
+      return enrichWithSkillConfigurable(result, req, ctx.accessibleSkillIds);
     },
     toolEndCallback,
     ...getSkillToolDeps(),

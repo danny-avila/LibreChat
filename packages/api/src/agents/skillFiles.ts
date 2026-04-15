@@ -342,17 +342,19 @@ export async function primeInvokedSkills(
         filename: `${skill.name}/SKILL.md`,
       });
 
-      for (const file of files) {
-        try {
+      const streamResults = await Promise.allSettled(
+        files.map(async (file) => {
           const strategy = deps.getStrategyFunctions(file.source);
-          if (!strategy.getDownloadStream) continue;
+          if (!strategy.getDownloadStream) return null;
           const stream = await strategy.getDownloadStream(deps.req, file.filepath);
-          allFileStreams.push({ stream, filename: `${skill.name}/${file.relativePath}` });
-        } catch (err) {
-          logger.warn(
-            `[primeInvokedSkills] Failed to get stream for "${file.relativePath}":`,
-            err instanceof Error ? err.message : err,
-          );
+          return { stream, filename: `${skill.name}/${file.relativePath}` };
+        }),
+      );
+      for (const r of streamResults) {
+        if (r.status === 'fulfilled' && r.value) {
+          allFileStreams.push(r.value);
+        } else if (r.status === 'rejected') {
+          logger.warn('[primeInvokedSkills] Failed to get stream:', r.reason);
         }
       }
     }
@@ -398,7 +400,12 @@ export async function primeInvokedSkills(
             })
             .filter((u) => u.skillId !== '');
           if (updates.length > 0) {
-            deps.updateSkillFileCodeEnvIds(updates).catch(() => {});
+            deps.updateSkillFileCodeEnvIds(updates).catch((err: unknown) => {
+              logger.warn(
+                '[primeInvokedSkills] Failed to persist codeEnvIdentifiers:',
+                err instanceof Error ? err.message : err,
+              );
+            });
           }
         }
       } catch (err) {

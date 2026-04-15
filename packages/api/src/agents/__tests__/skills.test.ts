@@ -2,7 +2,8 @@
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
   Constants: {
-    ...(jest.requireActual('@librechat/agents') as { Constants: Record<string, string> }).Constants,
+    ...(jest.requireActual('@librechat/agents') as { Constants: Record<string, unknown> })
+      .Constants,
     SKILL_TOOL: 'skill',
   },
 }));

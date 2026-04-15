@@ -1,7 +1,12 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
-const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  ResourceType,
+  PermissionBits,
+  AgentCapabilities,
+} = require('librechat-data-provider');
 const {
   writeSSE,
   createRun,
@@ -29,9 +34,11 @@ const {
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getSkillToolDeps } = require('~/server/services/Endpoints/agents/skillDeps');
+const {
+  getSkillToolDeps,
+  enrichWithSkillConfigurable,
+} = require('~/server/services/Endpoints/agents/skillDeps');
 const db = require('~/models');
 
 /**
@@ -209,16 +216,18 @@ const OpenAIChatCompletionController = async (req, res) => {
       model_parameters: agent.model_parameters ?? {},
     };
 
+    const enabledCapabilities = new Set(agentsEConfig?.capabilities);
     const ephemeralAgent = req.body?.ephemeralAgent;
-    const accessibleSkillIds =
-      ephemeralAgent?.skills === true
-        ? await findAccessibleResources({
-            userId: req.user.id,
-            role: req.user.role,
-            resourceType: ResourceType.SKILL,
-            requiredPermissions: PermissionBits.VIEW,
-          })
-        : [];
+    const skillsEnabled =
+      enabledCapabilities.has(AgentCapabilities.skills) && ephemeralAgent?.skills === true;
+    const accessibleSkillIds = skillsEnabled
+      ? await findAccessibleResources({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.SKILL,
+          requiredPermissions: PermissionBits.VIEW,
+        })
+      : [];
 
     const codeEnvAvailable = !!(
       process.env.LIBRECHAT_CODE_API_KEY || req.config?.endpoints?.all?.codeApiKey
@@ -302,26 +311,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           tool_resources: primaryConfig.tool_resources,
           actionsEnabled: primaryConfig.actionsEnabled,
         });
-        let codeApiKey;
-        try {
-          const authValues = await loadAuthValues({
-            userId: req.user.id,
-            authFields: ['LIBRECHAT_CODE_API_KEY'],
-          });
-          codeApiKey = authValues.LIBRECHAT_CODE_API_KEY;
-        } catch {
-          // Code API key not configured
-        }
-
-        return {
-          ...result,
-          configurable: {
-            ...result.configurable,
-            req,
-            codeApiKey,
-            accessibleSkillIds: primaryConfig.accessibleSkillIds,
-          },
-        };
+        return enrichWithSkillConfigurable(result, req, primaryConfig.accessibleSkillIds);
       },
       toolEndCallback,
       ...getSkillToolDeps(),
