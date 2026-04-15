@@ -145,7 +145,13 @@ export async function primeSkillFiles(
   }
 
   try {
-    const result = await batchUploadCodeEnvFiles({ req, files: filesToUpload, apiKey });
+    const entityId = skill._id.toString();
+    const result = await batchUploadCodeEnvFiles({
+      req,
+      files: filesToUpload,
+      apiKey,
+      entity_id: entityId,
+    });
     const files = result.files.map((f) => ({
       id: f.fileId,
       session_id: result.session_id,
@@ -159,7 +165,7 @@ export async function primeSkillFiles(
         .map((f) => ({
           skillId: skill._id,
           relativePath: f.filename.slice(f.filename.indexOf('/') + 1),
-          codeEnvIdentifier: `${result.session_id}/${f.fileId}`,
+          codeEnvIdentifier: `${result.session_id}/${f.fileId}?entity_id=${entityId}`,
         }));
       if (updates.length > 0) {
         updateSkillFileCodeEnvIds(updates).catch((err: unknown) => {
@@ -393,10 +399,13 @@ export async function primeInvokedSkills(
                   `[primeInvokedSkills] No skill record found for filename "${f.filename}"`,
                 );
               }
+              const entityId = record?.skill._id?.toString() ?? '';
               return {
                 skillId: record?.skill._id ?? '',
                 relativePath: relPath,
-                codeEnvIdentifier: `${result.session_id}/${f.fileId}`,
+                codeEnvIdentifier: entityId
+                  ? `${result.session_id}/${f.fileId}?entity_id=${entityId}`
+                  : `${result.session_id}/${f.fileId}`,
               };
             })
             .filter((u) => u.skillId !== '');
