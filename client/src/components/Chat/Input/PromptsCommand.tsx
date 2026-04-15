@@ -223,7 +223,22 @@ function PromptsCommand({
               }
             }}
             onChange={(e) => setSearchValue(e.target.value)}
-            onFocus={() => setOpen(true)}
+            onFocus={() => {
+              setOpen(true);
+              const textarea = textAreaRef.current;
+              if (!textarea) {
+                return;
+              }
+              const text = textarea.value;
+              if (text.length > 0 && text[0] === commandChar) {
+                if (text.length > 1) {
+                  setSearchValue(text.slice(1));
+                }
+                textarea.value = '';
+                textarea.setSelectionRange(0, 0);
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+            }}
             onBlur={() => {
               timeoutRef.current = setTimeout(() => {
                 setOpen(false);
@@ -231,38 +246,28 @@ function PromptsCommand({
               }, 150);
             }}
           />
-          <div className="max-h-40 overflow-y-auto">
-            {(() => {
-              if (isLoading && open) {
-                return (
-                  <div className="flex h-32 items-center justify-center text-text-primary">
-                    <Spinner />
-                  </div>
-                );
-              }
-
-              if (!isLoading && open) {
-                return (
-                  <div className="max-h-40">
-                    <AutoSizer disableHeight>
-                      {({ width }) => (
-                        <List
-                          width={width}
-                          overscanRowCount={5}
-                          rowHeight={ROW_HEIGHT}
-                          rowCount={matches.length}
-                          rowRenderer={rowRenderer}
-                          scrollToIndex={activeIndex}
-                          height={Math.min(matches.length * ROW_HEIGHT, 160)}
-                        />
-                      )}
-                    </AutoSizer>
-                  </div>
-                );
-              }
-              return null;
-            })()}
-          </div>
+          {open && isLoading && matches.length === 0 && (
+            <div className="flex h-32 items-center justify-center text-text-primary">
+              <Spinner />
+            </div>
+          )}
+          {open && matches.length > 0 && (
+            <div className="max-h-40">
+              <AutoSizer disableHeight>
+                {({ width }) => (
+                  <List
+                    width={width}
+                    overscanRowCount={5}
+                    rowHeight={ROW_HEIGHT}
+                    rowCount={matches.length}
+                    rowRenderer={rowRenderer}
+                    scrollToIndex={activeIndex}
+                    height={Math.min(matches.length * ROW_HEIGHT, 160)}
+                  />
+                )}
+              </AutoSizer>
+            </div>
+          )}
         </div>
       </div>
     </PopoverContainer>

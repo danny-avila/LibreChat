@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { useCombobox } from '@librechat/client';
 import { AutoSizer, List } from 'react-virtualized';
+import { Spinner, useCombobox } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { MentionOption, ConvoGenerator } from '~/common';
 import type { SetterOrUpdater } from 'recoil';
@@ -34,6 +34,7 @@ export default function Mention({
   const {
     options,
     presets,
+    isLoading,
     modelSpecs,
     agentsList,
     modelsConfig,
@@ -197,7 +198,22 @@ export default function Mention({
             }
           }}
           onChange={(e) => setSearchValue(e.target.value)}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            setOpen(true);
+            const textarea = textAreaRef.current;
+            if (!textarea) {
+              return;
+            }
+            const text = textarea.value;
+            if (text.length > 0 && text[0] === commandChar) {
+              if (text.length > 1) {
+                setSearchValue(text.slice(1));
+              }
+              textarea.value = '';
+              textarea.setSelectionRange(0, 0);
+              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }}
           onBlur={() => {
             timeoutRef.current = setTimeout(() => {
               setOpen(false);
@@ -205,7 +221,12 @@ export default function Mention({
             }, 150);
           }}
         />
-        {open && (
+        {open && isLoading && matches.length === 0 && (
+          <div className="flex h-32 items-center justify-center text-text-primary">
+            <Spinner />
+          </div>
+        )}
+        {open && matches.length > 0 && (
           <div className="max-h-40">
             <AutoSizer disableHeight>
               {({ width }) => (

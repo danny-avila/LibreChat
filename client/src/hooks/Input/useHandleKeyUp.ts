@@ -13,8 +13,13 @@ const invalidKeys = {
 };
 
 /**
- * Utility function to determine if a command should trigger.
+ * Determines if a command popover should trigger.
+ * Uses `startPos === 1` for normal typing speed (cursor right after the command char)
+ * and a short text-length fallback for fast typists whose keyup fires after the cursor
+ * has already moved past position 1. The length cap prevents false triggers from
+ * pasted content that happens to start with a command character.
  */
+const MAX_COMMAND_TRIGGER_LENGTH = 5;
 const shouldTriggerCommand = (
   textAreaRef: React.RefObject<HTMLTextAreaElement>,
   commandChar: string,
@@ -29,7 +34,7 @@ const shouldTriggerCommand = (
     return false;
   }
 
-  return startPos === 1;
+  return startPos === 1 || text.length <= MAX_COMMAND_TRIGGER_LENGTH;
 };
 
 /**
