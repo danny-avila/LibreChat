@@ -286,27 +286,25 @@ export async function primeInvokedSkills(
 
       if (allFilesWithIds.length > 0) {
         const sessionIds = new Set(allFilesWithIds.map((f) => f.codeEnvIdentifier!.split('/')[0]));
-        let allActive = true;
 
-        for (const sid of sessionIds) {
-          const representative = allFilesWithIds.find((f) =>
-            f.codeEnvIdentifier!.startsWith(`${sid}/`),
-          );
-          if (!representative) continue;
-          try {
-            const lastModified = await deps.getSessionInfo(
-              representative.codeEnvIdentifier!,
-              apiKey,
+        const checkResults = await Promise.all(
+          Array.from(sessionIds).map(async (sid) => {
+            const representative = allFilesWithIds.find((f) =>
+              f.codeEnvIdentifier!.startsWith(`${sid}/`),
             );
-            if (!lastModified || !deps.checkIfActive(lastModified)) {
-              allActive = false;
-              break;
+            if (!representative) return true;
+            try {
+              const lastModified = await deps.getSessionInfo(
+                representative.codeEnvIdentifier!,
+                apiKey,
+              );
+              return !!(lastModified && deps.checkIfActive(lastModified));
+            } catch {
+              return false;
             }
-          } catch {
-            allActive = false;
-            break;
-          }
-        }
+          }),
+        );
+        const allActive = checkResults.every(Boolean);
 
         if (allActive) {
           const cachedFiles = fileListResults.flatMap((r) =>
