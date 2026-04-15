@@ -340,90 +340,43 @@ export async function primeInvokedSkills(
       }
     }
 
-    // Collect all file streams for batch upload
-    const allFileStreams: Array<{ stream: NodeJS.ReadableStream; filename: string }> = [];
+    // Per-skill upload: each skill gets its own session with entity_id=skillId.
+    // primeSkillFiles handles freshness caching per-skill, so only expired
+    // skills re-upload. The code env handles mixed session_ids natively.
+    const allPrimedFiles: Array<{ id: string; name: string; session_id: string }> = [];
     for (const { skill, files } of fileListResults) {
-      const bodyBuffer = Buffer.from(skill.body, 'utf-8');
-      allFileStreams.push({
-        stream: Readable.from(bodyBuffer),
-        filename: `${skill.name}/SKILL.md`,
-      });
-
-      const streamResults = await Promise.allSettled(
-        files.map(async (file) => {
-          const strategy = deps.getStrategyFunctions(file.source);
-          if (!strategy.getDownloadStream) return null;
-          const stream = await strategy.getDownloadStream(deps.req, file.filepath);
-          return { stream, filename: `${skill.name}/${file.relativePath}` };
-        }),
-      );
-      for (const r of streamResults) {
-        if (r.status === 'fulfilled' && r.value) {
-          allFileStreams.push(r.value);
-        } else if (r.status === 'rejected') {
-          logger.warn('[primeInvokedSkills] Failed to get stream:', r.reason);
-        }
-      }
-    }
-
-    if (allFileStreams.length > 0) {
       try {
-        const result = await deps.batchUploadCodeEnvFiles({
+        const result = await primeSkillFiles({
+          skill,
+          skillFiles: files,
           req: deps.req,
-          files: allFileStreams,
           apiKey,
+          getStrategyFunctions: deps.getStrategyFunctions,
+          batchUploadCodeEnvFiles: deps.batchUploadCodeEnvFiles,
+          getSessionInfo: deps.getSessionInfo,
+          checkIfActive: deps.checkIfActive,
+          updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
         });
-
-        sessions = new Map();
-        sessions.set(Constants.EXECUTE_CODE, {
-          session_id: result.session_id,
-          files: result.files.map((f) => ({
-            id: f.fileId,
-            name: f.filename,
-            session_id: result.session_id,
-          })),
-          lastUpdated: Date.now(),
-        } satisfies CodeSessionContext);
-
-        // Persist codeEnvIdentifiers (fire-and-forget)
-        if (deps.updateSkillFileCodeEnvIds) {
-          const updates = result.files
-            .filter((f) => !f.filename.endsWith('/SKILL.md'))
-            .map((f) => {
-              const slashIdx = f.filename.indexOf('/');
-              const skillName = f.filename.slice(0, slashIdx);
-              const relPath = f.filename.slice(slashIdx + 1);
-              const record = fileListResults.find((r) => r.skill.name === skillName);
-              if (!record) {
-                logger.warn(
-                  `[primeInvokedSkills] No skill record found for filename "${f.filename}"`,
-                );
-              }
-              const entityId = record?.skill._id?.toString() ?? '';
-              return {
-                skillId: record?.skill._id ?? '',
-                relativePath: relPath,
-                codeEnvIdentifier: entityId
-                  ? `${result.session_id}/${f.fileId}?entity_id=${entityId}`
-                  : `${result.session_id}/${f.fileId}`,
-              };
-            })
-            .filter((u) => u.skillId !== '');
-          if (updates.length > 0) {
-            deps.updateSkillFileCodeEnvIds(updates).catch((err: unknown) => {
-              logger.warn(
-                '[primeInvokedSkills] Failed to persist codeEnvIdentifiers:',
-                err instanceof Error ? err.message : err,
-              );
-            });
+        if (result) {
+          for (const f of result.files) {
+            allPrimedFiles.push({ id: f.id, name: f.name, session_id: f.session_id });
           }
         }
       } catch (err) {
         logger.warn(
-          '[primeInvokedSkills] Batch upload failed:',
+          `[primeInvokedSkills] Failed to prime files for skill "${skill.name}":`,
           err instanceof Error ? err.message : err,
         );
       }
+    }
+
+    if (allPrimedFiles.length > 0) {
+      sessions = new Map();
+      sessions.set(Constants.EXECUTE_CODE, {
+        session_id: allPrimedFiles[0].session_id,
+        files: allPrimedFiles,
+        lastUpdated: Date.now(),
+      } satisfies CodeSessionContext);
     }
   }
 
