@@ -58,8 +58,26 @@ function hastToReact(nodes: HastNode[]): React.ReactNode[] {
 /** Click UI CodeBlock color theme — scoped to `.ch-code` to avoid leaking. */
 function chCodeStyles(dark: boolean): string {
   const c = dark
-    ? { comment: '#999', kw: '#88aece', attr: '#c59bc1', name: '#f08d49', str: '#b5bd68', bullet: '#ccc', del: '#de7176', add: '#76c490' }
-    : { comment: '#656e77', kw: '#015692', attr: '#803378', name: '#b75501', str: '#54790d', bullet: '#535a60', del: '#c02d2e', add: '#2f6f44' };
+    ? {
+        comment: '#999',
+        kw: '#88aece',
+        attr: '#c59bc1',
+        name: '#f08d49',
+        str: '#b5bd68',
+        bullet: '#ccc',
+        del: '#de7176',
+        add: '#76c490',
+      }
+    : {
+        comment: '#656e77',
+        kw: '#015692',
+        attr: '#803378',
+        name: '#b75501',
+        str: '#54790d',
+        bullet: '#535a60',
+        del: '#c02d2e',
+        add: '#2f6f44',
+      };
   return `
 .ch-code .hljs-comment{color:${c.comment}}
 .ch-code .hljs-keyword,.ch-code .hljs-selector-tag,.ch-code .hljs-meta-keyword,.ch-code .hljs-doctag,.ch-code .hljs-section,.ch-code .hljs-selector-class,.ch-code .hljs-meta,.ch-code .hljs-selector-pseudo,.ch-code .hljs-attr{color:${c.kw}}
