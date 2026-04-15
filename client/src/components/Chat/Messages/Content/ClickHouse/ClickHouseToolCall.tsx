@@ -156,10 +156,21 @@ function CodeDisplay({ children, language }: { children: string; language?: stri
     }
   };
 
+  const bg = dark ? '#282828' : '#f6f7fa';
+  const fg = dark ? '#ffffff' : '#282828';
+
   return (
-    <div className="ch-code overflow-auto rounded-lg bg-surface-tertiary">
+    <div className="ch-code overflow-auto" style={{ background: bg, borderRadius: '0.25rem' }}>
       <div className="flex items-start">
-        <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words p-3 text-xs leading-relaxed">
+        <pre
+          className="min-w-0 flex-1 whitespace-pre-wrap break-words"
+          style={{
+            font: '500 0.875rem/1.7 "Inconsolata", Consolas, "SFMono Regular", monospace',
+            color: fg,
+            padding: '1rem',
+            margin: 0,
+          }}
+        >
           <code>{highlighted ?? children}</code>
         </pre>
         <button
