@@ -26,9 +26,7 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
-const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
+const { getSkillToolDeps } = require('./skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -169,15 +167,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       };
     },
     toolEndCallback,
-    getSkillByName: db.getSkillByName,
-    listSkillFiles: db.listSkillFiles,
-    getStrategyFunctions,
-    batchUploadCodeEnvFiles,
-    getSessionInfo,
-    checkIfActive,
-    updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
-    getSkillFileByPath: db.getSkillFileByPath,
-    updateSkillFileContent: db.updateSkillFileContent,
+    ...getSkillToolDeps(),
   };
 
   const summarizationOptions =
@@ -505,13 +495,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           payload,
           accessibleSkillIds,
           loadAuthValues,
-          getSkillByName: db.getSkillByName,
-          listSkillFiles: db.listSkillFiles,
-          getStrategyFunctions,
-          batchUploadCodeEnvFiles,
-          getSessionInfo,
-          checkIfActive,
-          updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
+          ...getSkillToolDeps(),
         })
     : undefined;
 

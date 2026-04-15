@@ -40,9 +40,7 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
-const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
+const { getSkillToolDeps } = require('~/server/services/Endpoints/agents/skillDeps');
 const db = require('~/models');
 
 /** @type {import('@librechat/api').AppConfig | null} */
@@ -492,15 +490,7 @@ const createResponse = async (req, res) => {
           };
         },
         toolEndCallback,
-        getSkillByName: db.getSkillByName,
-        listSkillFiles: db.listSkillFiles,
-        getStrategyFunctions,
-        batchUploadCodeEnvFiles,
-        getSessionInfo,
-        checkIfActive,
-        updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
-        getSkillFileByPath: db.getSkillFileByPath,
-        updateSkillFileContent: db.updateSkillFileContent,
+        ...getSkillToolDeps(),
       };
 
       // Combine handlers
@@ -686,15 +676,7 @@ const createResponse = async (req, res) => {
           };
         },
         toolEndCallback,
-        getSkillByName: db.getSkillByName,
-        listSkillFiles: db.listSkillFiles,
-        getStrategyFunctions,
-        batchUploadCodeEnvFiles,
-        getSessionInfo,
-        checkIfActive,
-        updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
-        getSkillFileByPath: db.getSkillFileByPath,
-        updateSkillFileContent: db.updateSkillFileContent,
+        ...getSkillToolDeps(),
       };
 
       const handlers = {
