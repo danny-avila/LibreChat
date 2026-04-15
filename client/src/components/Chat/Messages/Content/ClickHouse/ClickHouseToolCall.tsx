@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { lowlight } from 'lowlight';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Copy, Check } from 'lucide-react';
 import {
   Badge,
   CheckboxMultiSelect,
@@ -98,7 +98,6 @@ function chCodeStyles(dark: boolean): string {
  * in production builds.
  */
 function CodeDisplay({ children, language }: { children: string; language?: string }) {
-  const localize = useLocalize();
   const { theme } = useTheme();
   const dark = isDark(theme);
   const [copied, setCopied] = useState(false);
@@ -124,18 +123,25 @@ function CodeDisplay({ children, language }: { children: string; language?: stri
   };
 
   return (
-    <div className="ch-code group relative overflow-auto rounded-lg bg-surface-tertiary">
+    <div className="ch-code overflow-auto rounded-lg bg-surface-tertiary">
       <style>{styles}</style>
-      <button
-        type="button"
-        onClick={copy}
-        className="bg-surface-primary/80 absolute right-2 top-2 rounded px-2 py-1 text-xs text-text-secondary opacity-0 transition-opacity group-hover:opacity-100"
-      >
-        {copied ? localize('com_ui_copied') : localize('com_ui_copy')}
-      </button>
-      <pre className="whitespace-pre-wrap break-words p-3 text-xs leading-relaxed">
-        <code>{highlighted ?? children}</code>
-      </pre>
+      <div className="flex items-start">
+        <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words p-3 text-xs leading-relaxed">
+          <code>{highlighted ?? children}</code>
+        </pre>
+        <button
+          type="button"
+          onClick={copy}
+          className="shrink-0 rounded p-1.5 pr-1 pt-2 text-text-secondary transition-colors hover:text-text-primary"
+          aria-label="Copy"
+        >
+          {copied ? (
+            <Check className="size-3.5 text-green-500" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -253,7 +259,7 @@ function EndpointPill({ endpoint }: { endpoint: Record<string, unknown> }) {
       <Text size="md" color="muted" weight="medium">
         {protocol}
       </Text>
-      <Text size="md">
+      <Text size="md" className="break-all">
         {host}:{String(port)}
       </Text>
     </div>
@@ -538,7 +544,9 @@ function ResultContent({
     );
   }
 
-  return <CodeDisplay language="json">{parsed.raw}</CodeDisplay>;
+  return (
+    <CodeDisplay language="json">{parsed.raw}</CodeDisplay>
+  );
 }
 
 export default function ClickHouseToolCall({
