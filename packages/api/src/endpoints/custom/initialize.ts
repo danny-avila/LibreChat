@@ -1,5 +1,4 @@
 import {
-  CacheKeys,
   ErrorTypes,
   envVarRegex,
   FetchTokenConfig,
@@ -13,7 +12,7 @@ import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
-import { standardCache } from '~/cache';
+import { tokenConfigCache } from '~/cache';
 
 const { PROXY } = process.env;
 
@@ -155,7 +154,14 @@ export async function initializeCustom({
     endpointConfig.models?.fetch &&
     !endpointTokenConfig
   ) {
-    await fetchModels({ apiKey, baseURL, name: endpoint, user: userId, tokenKey });
+    await fetchModels({
+      apiKey,
+      baseURL,
+      name: endpoint,
+      user: userId,
+      tokenKey,
+      tokenCache: cache,
+    });
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 

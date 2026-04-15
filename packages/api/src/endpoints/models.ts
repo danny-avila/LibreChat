@@ -46,6 +46,8 @@ export interface FetchModelsParams {
   userObject?: Partial<IUser>;
   /** Skip MODEL_QUERIES cache (e.g., for user-provided keys) */
   skipCache?: boolean;
+  /** Pre-existing TOKEN_CONFIG cache instance (avoids creating a separate in-memory store) */
+  tokenCache?: import('keyv').Keyv;
 }
 
 /**
@@ -114,6 +116,7 @@ export async function fetchModels({
   headers,
   userObject,
   skipCache = false,
+  tokenCache,
 }: FetchModelsParams): Promise<string[]> {
   let models: string[] = [];
   const baseURL = direct ? extractBaseURL(_baseURL ?? '') : _baseURL;
@@ -195,8 +198,7 @@ export async function fetchModels({
     const validationResult = inputSchema.safeParse(input);
     if (validationResult.success && createTokenConfig) {
       const endpointTokenConfig = processModelData(input);
-      const cache = standardCache(CacheKeys.TOKEN_CONFIG);
-      await cache.set(tokenKey ?? name, endpointTokenConfig);
+      await tokenConfigCache().set(tokenKey ?? name, endpointTokenConfig);
     }
     models = input.data.map((item: { id: string }) => item.id);
   } catch (error) {
