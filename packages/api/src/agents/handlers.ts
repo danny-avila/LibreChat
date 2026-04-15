@@ -106,7 +106,7 @@ export interface ToolExecuteOptions {
 }
 
 const MAX_READABLE_BYTES = 262_144;
-const MAX_BINARY_BYTES = 10 * 1024 * 1024;
+const MAX_BINARY_BYTES = 5 * 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -298,7 +298,14 @@ async function handleReadFileCall(
     if (isBinary) {
       // Cache the binary flag (first read only)
       if (file.isBinary == null && updateSkillFileContent) {
-        updateSkillFileContent(skill._id, relativePath, { isBinary: true }).catch(() => {});
+        updateSkillFileContent(skill._id, relativePath, { isBinary: true }).catch(
+          (err: unknown) => {
+            logger.warn(
+              '[handleReadFileCall] cache write failed:',
+              err instanceof Error ? err.message : err,
+            );
+          },
+        );
       }
 
       // Return images/PDFs as artifacts
@@ -342,7 +349,12 @@ async function handleReadFileCall(
     // Cache text on first read (skill files are immutable)
     if (file.content == null && updateSkillFileContent && buffer.length <= MAX_CACHE_BYTES) {
       updateSkillFileContent(skill._id, relativePath, { content: text, isBinary: false }).catch(
-        () => {},
+        (err: unknown) => {
+          logger.warn(
+            '[handleReadFileCall] cache write failed:',
+            err instanceof Error ? err.message : err,
+          );
+        },
       );
     }
 

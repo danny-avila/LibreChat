@@ -86,14 +86,14 @@ export async function primeSkillFiles(
         if (lastModified && checkIfActive(lastModified)) {
           // Session still active — return cached references
           const files: PrimeSkillFilesResult['files'] = [];
-          const sessionId = firstWithId.codeEnvIdentifier.split('/')[0];
+          const sessionId = firstWithId.codeEnvIdentifier.split('?')[0].split('/')[0];
 
           // All files must have identifiers for the cache to be complete.
           // Any missing identifier means partial persistence — fall through to re-upload.
           const allHaveIds = skillFiles.every((sf) => sf.codeEnvIdentifier);
           if (allHaveIds) {
             for (const sf of skillFiles) {
-              const [sid, fid] = (sf.codeEnvIdentifier as string).split('/');
+              const [sid, fid] = (sf.codeEnvIdentifier as string).split('?')[0].split('/');
               files.push({ id: fid, session_id: sid, name: `${skill.name}/${sf.relativePath}` });
             }
           }
@@ -294,7 +294,9 @@ export async function primeInvokedSkills(
 
       // Only use cache when ALL files have identifiers (no partial persistence)
       if (allFilesWithIds.length > 0 && allFilesWithIds.length === allFiles.length) {
-        const sessionIds = new Set(allFilesWithIds.map((f) => f.codeEnvIdentifier!.split('/')[0]));
+        const sessionIds = new Set(
+          allFilesWithIds.map((f) => f.codeEnvIdentifier!.split('?')[0].split('/')[0]),
+        );
 
         const checkResults = await Promise.all(
           Array.from(sessionIds).map(async (sid) => {
@@ -320,7 +322,7 @@ export async function primeInvokedSkills(
             r.files
               .filter((f) => f.codeEnvIdentifier)
               .map((f) => {
-                const [sid, fid] = (f.codeEnvIdentifier as string).split('/');
+                const [sid, fid] = (f.codeEnvIdentifier as string).split('?')[0].split('/');
                 return { id: fid, name: `${r.skill.name}/${f.relativePath}`, session_id: sid };
               }),
           );
@@ -344,8 +346,8 @@ export async function primeInvokedSkills(
     // primeSkillFiles handles freshness caching per-skill, so only expired
     // skills re-upload. The code env handles mixed session_ids natively.
     const allPrimedFiles: Array<{ id: string; name: string; session_id: string }> = [];
-    for (const { skill, files } of fileListResults) {
-      try {
+    const primeResults = await Promise.allSettled(
+      fileListResults.map(async ({ skill, files }) => {
         const result = await primeSkillFiles({
           skill,
           skillFiles: files,
@@ -357,16 +359,16 @@ export async function primeInvokedSkills(
           checkIfActive: deps.checkIfActive,
           updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
         });
-        if (result) {
-          for (const f of result.files) {
-            allPrimedFiles.push({ id: f.id, name: f.name, session_id: f.session_id });
-          }
+        return { skill, result };
+      }),
+    );
+    for (const r of primeResults) {
+      if (r.status === 'fulfilled' && r.value.result) {
+        for (const f of r.value.result.files) {
+          allPrimedFiles.push({ id: f.id, name: f.name, session_id: f.session_id });
         }
-      } catch (err) {
-        logger.warn(
-          `[primeInvokedSkills] Failed to prime files for skill "${skill.name}":`,
-          err instanceof Error ? err.message : err,
-        );
+      } else if (r.status === 'rejected') {
+        logger.warn('[primeInvokedSkills] Failed to prime skill files:', r.reason);
       }
     }
 

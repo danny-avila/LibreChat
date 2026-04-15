@@ -171,7 +171,7 @@ async function batchUploadCodeEnvFiles({ req, files, apiKey, entity_id = '' }) {
   } catch (error) {
     throw new Error(
       logAxiosError({
-        message: `Error in batch upload to code environment: ${error.message}`,
+        message: `Error in batch upload to code environment: ${error instanceof Error ? error.message : String(error)}`,
         error,
       }),
     );

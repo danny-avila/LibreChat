@@ -2,6 +2,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
 const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { enrichWithSkillConfigurable } = require('@librechat/api');
 const db = require('~/models');
 
 /**
@@ -24,33 +25,14 @@ function getSkillToolDeps() {
 }
 
 /**
- * Augments a loadTools result with skill-specific configurable properties.
- * Loads the code API key and merges it with accessibleSkillIds and the request object.
+ * Wraps the TS enrichWithSkillConfigurable with the CJS loadAuthValues dependency.
  * @param {object} result - The result from loadToolsForExecution
  * @param {object} req - The Express request object
  * @param {Array} accessibleSkillIds - Pre-computed accessible skill IDs
  * @returns {Promise<object>} Augmented result with skill configurable
  */
-async function enrichWithSkillConfigurable(result, req, accessibleSkillIds) {
-  let codeApiKey;
-  try {
-    const authValues = await loadAuthValues({
-      userId: req.user.id,
-      authFields: ['LIBRECHAT_CODE_API_KEY'],
-    });
-    codeApiKey = authValues.LIBRECHAT_CODE_API_KEY;
-  } catch {
-    // Code API key not configured
-  }
-  return {
-    ...result,
-    configurable: {
-      ...result.configurable,
-      req,
-      codeApiKey,
-      accessibleSkillIds,
-    },
-  };
+function enrichSkillConfigurable(result, req, accessibleSkillIds) {
+  return enrichWithSkillConfigurable(result, req, accessibleSkillIds, loadAuthValues);
 }
 
-module.exports = { getSkillToolDeps, enrichWithSkillConfigurable };
+module.exports = { getSkillToolDeps, enrichWithSkillConfigurable: enrichSkillConfigurable };
