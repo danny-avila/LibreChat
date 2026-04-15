@@ -139,6 +139,16 @@ export function parseOutput(raw: string): ParsedOutput {
     }
     return { error: false, metrics, raw: formatted };
   } catch {
+    if (/currently idle|waking|try again shortly/i.test(raw)) {
+      return { error: false, idleMessage: raw, raw };
+    }
+    if (/^failed to /i.test(raw)) {
+      const toolName = raw.match(/^failed to (\w[\w\s]*?):/i)?.[1] ?? '';
+      const msg = toolName
+        ? `Failed to ${toolName}, see details for more information`
+        : 'Failed, see details for more information';
+      return { error: true, errorMessage: msg, raw };
+    }
     return { error: false, raw: formatJson(raw) };
   }
 }

@@ -24,6 +24,7 @@ export interface CostData {
 export interface ParsedOutput {
   error: boolean;
   errorMessage?: string;
+  idleMessage?: string;
   rows?: Record<string, unknown>[];
   keyValue?: Record<string, unknown>;
   costData?: CostData;

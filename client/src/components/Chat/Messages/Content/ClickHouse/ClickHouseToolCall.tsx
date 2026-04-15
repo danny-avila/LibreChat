@@ -176,7 +176,7 @@ function CodeDisplay({ children, language }: { children: string; language?: stri
         <button
           type="button"
           onClick={copy}
-          className="shrink-0 rounded p-1.5 pr-1 pt-2 text-text-secondary transition-colors hover:text-text-primary"
+          className="shrink-0 rounded p-1.5 pr-1.5 pt-2 text-text-secondary transition-colors hover:text-text-primary"
           aria-label="Copy"
         >
           {copied ? <Check className="size-3.5 text-green-500" /> : <Copy className="size-3.5" />}
@@ -540,11 +540,15 @@ function ResultContent({
   parsed,
   codeTheme,
   functionName,
+  params,
 }: {
   parsed: ParsedOutput;
   codeTheme: 'light' | 'dark';
   functionName?: string;
+  params?: Record<string, string>;
 }) {
+  const localize = useLocalize();
+
   if (parsed.error && parsed.errorMessage) {
     return (
       <Panel padding="sm" color="default" radii="sm" hasBorder>
@@ -554,6 +558,50 @@ function ResultContent({
       </Panel>
     );
   }
+
+  if (parsed.idleMessage) {
+    const serviceIdMatch = parsed.idleMessage.match(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+    );
+    return (
+      <Panel padding="md" color="default" radii="sm" hasBorder>
+        <Container orientation="vertical" padding="none" gap="sm">
+          <Badge text="Idle" state="info" icon="clock" iconDir="start" size="sm" />
+          <Text size="md">{parsed.idleMessage}</Text>
+          {serviceIdMatch && (
+            <a
+              href={`https://console.clickhouse.cloud/services/${serviceIdMatch[0]}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-text-secondary underline hover:text-text-primary"
+            >
+              {localize('com_ch_check_service_status')}
+            </a>
+          )}
+        </Container>
+      </Panel>
+    );
+  }
+
+  const contextPills =
+    (functionName === 'list_tables' || functionName === 'list_databases') && params ? (
+      <div className="mb-2 flex flex-wrap gap-2">
+        {params.serviceId && (
+          <Badge
+            text={localize('com_ch_context_service_id', { value: params.serviceId })}
+            state="neutral"
+            size="sm"
+          />
+        )}
+        {params.database && (
+          <Badge
+            text={localize('com_ch_context_database', { value: params.database })}
+            state="neutral"
+            size="sm"
+          />
+        )}
+      </div>
+    ) : null;
 
   if (parsed.costData) {
     return (
@@ -566,11 +614,20 @@ function ResultContent({
   }
 
   if (parsed.rows && parsed.rows.length > 0) {
-    if (functionName === 'get_service_details') {
+    if (functionName === 'get_service_details' || functionName === 'get_organization_details') {
       return <StaticRows rows={parsed.rows} />;
     }
-    if (functionName === 'get_services_list' || functionName === 'list_tables') {
-      return <CollapsibleRows rows={parsed.rows} codeTheme={codeTheme} />;
+    if (
+      functionName === 'get_services_list' ||
+      functionName === 'get_organizations' ||
+      functionName === 'list_tables'
+    ) {
+      return (
+        <>
+          {contextPills}
+          <CollapsibleRows rows={parsed.rows} codeTheme={codeTheme} />
+        </>
+      );
     }
     return <FlatTable rows={parsed.rows} />;
   }
@@ -666,7 +723,12 @@ export default function ClickHouseToolCall({
           {parsed && (
             <Tabs.Content value="result" tabIndex={-1}>
               <div className="pt-3">
-                <ResultContent parsed={parsed} codeTheme={codeTheme} functionName={functionName} />
+                <ResultContent
+                  parsed={parsed}
+                  codeTheme={codeTheme}
+                  functionName={functionName}
+                  params={params}
+                />
               </div>
             </Tabs.Content>
           )}
