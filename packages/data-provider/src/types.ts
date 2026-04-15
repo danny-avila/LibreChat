@@ -56,7 +56,8 @@ export type TEndpointOption = Pick<
   | 'effort'
   // Assistant/Agent fields
   | 'assistant_id'
-  | 'agent_id'
+  | 'agent_id' 
+  | 'customVariables'
   // UI/Display fields
   | 'iconURL'
   | 'greeting'
@@ -71,6 +72,7 @@ export type TEndpointOption = Pick<
   | 'examples'
   // Context
   | 'context'
+  
 > & {
   // Fields specific to endpoint options that don't exist on TConversation
   modelDisplayLabel?: string;

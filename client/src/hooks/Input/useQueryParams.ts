@@ -22,6 +22,7 @@ import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from 
 import { startupConfigKey, useGetAgentByIdQuery } from '~/data-provider';
 import { useChatContext, useChatFormContext } from '~/Providers';
 import store from '~/store';
+import isEqual from 'lodash/isEqual';
 
 const injectAgentIntoAgentsMap = (queryClient: QueryClient, agent: any) => {
   const editCacheKey = [QueryKeys.agents, { requiredPermission: PermissionBits.EDIT }];
@@ -189,13 +190,17 @@ export default function useQueryParams({
     }
 
     for (const [key, value] of Object.entries(validSettingsRef.current)) {
-      if (['presetOverride', 'iconURL', 'spec', 'modelLabel'].includes(key)) {
+      if (['presetOverride', 'iconURL', 'spec', 'modelLabel', 'customVariables'].includes(key)) {
         continue;
       }
 
       if (convo[key] !== value) {
         return false;
       }
+    }
+
+    if (!isEqual(validSettingsRef.current.customVariables, convo.customVariables)) {
+      return false;
     }
 
     return true;
@@ -239,7 +244,21 @@ export default function useQueryParams({
       delete queryParams.prompt;
       delete queryParams.q;
       delete queryParams.submit;
+
+      // Strip custom_* params before schema validation so processValidSettings doesn't warn.
+      const customVariables: Record<string, string> = {};
+      for (const key of Object.keys(queryParams)) {
+        if (key.startsWith('custom_') && key.length > 7) {
+          customVariables[key.slice(7)] = queryParams[key];
+          delete queryParams[key];
+        }
+      }
+
       const validSettings = processValidSettings(queryParams);
+
+      if (Object.keys(customVariables).length > 0) {
+        validSettings.customVariables = customVariables;
+      }
 
       return { decodedPrompt, validSettings, shouldAutoSubmit };
     };

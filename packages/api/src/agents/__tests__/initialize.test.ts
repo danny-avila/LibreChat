@@ -424,3 +424,52 @@ describe('initializeAgent — maxContextTokens', () => {
     expect(result.maxContextTokens).toBe(1024);
   });
 });
+
+describe('initializeAgent — custom variable replacement', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('replaces custom variables in agent instructions', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'Hello {{name}}, welcome to {{department}}';
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: {
+          endpoint: EModelEndpoint.agents,
+          customVariables: { name: 'Alice', department: 'Engineering' },
+        },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(agent.instructions).toBe('Hello Alice, welcome to Engineering');
+  });
+
+  it('does not replace custom variable placeholders when customVariables is absent', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'Value is {{some_var}}';
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(agent.instructions).toBe('Value is {{some_var}}');
+  });
+});
