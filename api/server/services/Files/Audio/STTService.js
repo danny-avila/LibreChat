@@ -238,7 +238,7 @@ class STTService {
     }
 
     const acceptedFormats = ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm'];
-    const fileFormat = audioFile.mimetype.split('/')[1];
+    const fileFormat = getFileExtensionFromMime(audioFile.mimetype);
     if (!acceptedFormats.includes(fileFormat)) {
       throw new Error(`The audio file format ${fileFormat} is not accepted`);
     }
