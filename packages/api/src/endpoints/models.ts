@@ -19,7 +19,7 @@ import {
   logAxiosError,
   inputSchema,
 } from '~/utils';
-import { standardCache } from '~/cache';
+import { standardCache, tokenConfigCache } from '~/cache';
 
 export interface FetchModelsParams {
   /** User ID for API requests */
@@ -46,8 +46,6 @@ export interface FetchModelsParams {
   userObject?: Partial<IUser>;
   /** Skip MODEL_QUERIES cache (e.g., for user-provided keys) */
   skipCache?: boolean;
-  /** Pre-existing TOKEN_CONFIG cache instance (avoids creating a separate in-memory store) */
-  tokenCache?: import('keyv').Keyv;
 }
 
 /**
@@ -116,7 +114,6 @@ export async function fetchModels({
   headers,
   userObject,
   skipCache = false,
-  tokenCache,
 }: FetchModelsParams): Promise<string[]> {
   let models: string[] = [];
   const baseURL = direct ? extractBaseURL(_baseURL ?? '') : _baseURL;

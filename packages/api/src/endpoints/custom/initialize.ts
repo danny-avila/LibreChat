@@ -135,7 +135,7 @@ export async function initializeCustom({
 
   const userId = req.user?.id ?? '';
 
-  const cache = standardCache(CacheKeys.TOKEN_CONFIG);
+  const cache = tokenConfigCache();
   /** tokenConfig is an optional extended property on custom endpoints */
   const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
   const tokenKey =
@@ -154,14 +154,7 @@ export async function initializeCustom({
     endpointConfig.models?.fetch &&
     !endpointTokenConfig
   ) {
-    await fetchModels({
-      apiKey,
-      baseURL,
-      name: endpoint,
-      user: userId,
-      tokenKey,
-      tokenCache: cache,
-    });
+    await fetchModels({ apiKey, baseURL, name: endpoint, user: userId, tokenKey });
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 
