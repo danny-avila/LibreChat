@@ -414,6 +414,26 @@ jobs:
           ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" bash <<'REMOTE'
             set -e
             cd /opt/gitnexus
+
+            # ── Disk cleanup ──────────────────────────────────────
+            # Docker accumulates old image layers, dangling images, and
+            # build cache across deploys. On a 60GB droplet with a 700MB+
+            # gitnexus image, this fills the disk after ~40 deploys.
+            # Prune everything not used by currently-running containers
+            # BEFORE pulling the new image so the extract has room.
+            echo "Disk before cleanup:"
+            df -h / | tail -1
+            docker system prune -af --volumes 2>/dev/null || true
+            echo "Disk after cleanup:"
+            df -h / | tail -1
+
+            # Fail fast if disk is critically low even after prune
+            AVAIL_MB=$(df --output=avail -m / | tail -1 | tr -d ' ')
+            if [ "$AVAIL_MB" -lt 2048 ]; then
+              echo "::error::Disk critically low (${AVAIL_MB}MB free). Aborting deploy."
+              exit 1
+            fi
+
             docker compose pull gitnexus
             docker compose up -d --force-recreate gitnexus
 
