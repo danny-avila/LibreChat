@@ -103,4 +103,11 @@ describe('standardCache - in-memory memoization', () => {
     });
     expect(convenience).toBe(direct);
   });
+
+  it('tokenConfigCache creates the instance with THIRTY_MINUTES TTL', async () => {
+    const { tokenConfigCache } = await loadFactory();
+    const cache = tokenConfigCache();
+    type KeyvWithOpts = typeof cache & { opts: { ttl?: number } };
+    expect((cache as KeyvWithOpts).opts.ttl).toBe(Time.THIRTY_MINUTES);
+  });
 });

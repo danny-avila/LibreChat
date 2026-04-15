@@ -20,6 +20,7 @@ jest.mock('~/endpoints/models', () => ({
 
 jest.mock('~/cache', () => ({
   standardCache: jest.fn(() => ({ get: jest.fn().mockResolvedValue(null) })),
+  tokenConfigCache: jest.fn(() => ({ get: jest.fn().mockResolvedValue(null) })),
 }));
 
 jest.mock('~/utils', () => ({

@@ -68,7 +68,7 @@ export type InitializedAgent = Agent & {
   maxToolResultChars?: number;
 };
 
-const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
+export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
 
 /**
  * Parameters for initializing an agent
