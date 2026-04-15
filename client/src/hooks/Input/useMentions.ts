@@ -82,10 +82,11 @@ export default function useMentions({
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig?.interface],
   );
+  const agentQueryEnabled = hasAgentAccess && interfaceConfig.modelSelect === true;
   const { data: agentsList = null, isLoading: isLoadingAgents } = useListAgentsQuery(
     { requiredPermission: PermissionBits.VIEW },
     {
-      enabled: hasAgentAccess && interfaceConfig.modelSelect === true,
+      enabled: agentQueryEnabled,
       select: (res) => {
         const { data } = res;
         return data.map(({ id, name, avatar }) => ({
@@ -257,7 +258,7 @@ export default function useMentions({
     isLoadingModels ||
     isLoadingStartup ||
     isLoadingEndpoints ||
-    isLoadingAgents;
+    (agentQueryEnabled && isLoadingAgents);
 
   return {
     options,

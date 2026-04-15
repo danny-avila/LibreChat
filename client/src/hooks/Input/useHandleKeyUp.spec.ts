@@ -163,6 +163,26 @@ describe('useHandleKeyUp', () => {
     });
   });
 
+  describe('navigation within short command text — should NOT retrigger', () => {
+    it('does NOT trigger when cursor is mid-text after ArrowLeft', () => {
+      const ref = makeTextAreaRef('/abc', 2);
+      const { handleKeyUp, setShowPromptsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('ArrowLeft')));
+
+      expect(setShowPromptsPopover).not.toHaveBeenCalled();
+    });
+
+    it('does NOT trigger when cursor is mid-text after Delete', () => {
+      const ref = makeTextAreaRef('@bo', 2);
+      const { handleKeyUp, setShowMentionPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('Delete')));
+
+      expect(setShowMentionPopover).not.toHaveBeenCalled();
+    });
+  });
+
   describe('paste protection — long text starting with command char', () => {
     it('does NOT trigger for pasted "/api/v1/users"', () => {
       const ref = makeTextAreaRef('/api/v1/users', 13);

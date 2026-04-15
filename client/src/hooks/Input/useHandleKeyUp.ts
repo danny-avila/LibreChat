@@ -34,7 +34,7 @@ const shouldTriggerCommand = (
     return false;
   }
 
-  return startPos === 1 || text.length <= MAX_COMMAND_TRIGGER_LENGTH;
+  return startPos === 1 || (startPos === text.length && text.length <= MAX_COMMAND_TRIGGER_LENGTH);
 };
 
 /**
