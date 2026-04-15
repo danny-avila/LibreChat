@@ -10,7 +10,7 @@ jest.mock('librechat-data-provider', () => ({
 }));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 
-const { getFileExtensionFromMime } = require('./STTService');
+const { getFileExtensionFromMime, MIME_TO_EXTENSION_MAP } = require('./STTService');
 
 describe('getFileExtensionFromMime', () => {
   it('should normalize audio/x-m4a to m4a', () => {
@@ -55,16 +55,21 @@ describe('STT audio format validation with MIME normalization', () => {
   const acceptedFormats = ['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm'];
 
   /**
-   * Simulates the format validation logic in azureOpenAIProvider after the fix.
-   * Only normalizes audio/video MIME types to prevent non-audio types from
-   * matching via the webm default fallback in getFileExtensionFromMime().
+   * Mirrors the format validation logic in azureOpenAIProvider.
+   * Only uses MIME_TO_EXTENSION_MAP for normalization so unknown audio
+   * subtypes are not silently accepted via the webm default fallback.
+   * Raw subtype matching is gated on audio/video prefix to prevent
+   * non-audio types like text/webm from passing.
    */
   function isFormatAccepted(mimetype) {
-    const mimePrefix = mimetype.split('/')[0];
-    const rawFormat = mimetype.split('/')[1];
+    const [mimePrefix, rawFormat = ''] = mimetype.split('/');
     const isAudioMime = mimePrefix === 'audio' || mimePrefix === 'video';
-    const normalizedFormat = isAudioMime ? getFileExtensionFromMime(mimetype) : null;
-    return acceptedFormats.includes(normalizedFormat) || acceptedFormats.includes(rawFormat);
+    const isKnownMime = mimetype in MIME_TO_EXTENSION_MAP;
+    const normalizedFormat = isKnownMime ? MIME_TO_EXTENSION_MAP[mimetype] : null;
+    return (
+      acceptedFormats.includes(normalizedFormat) ||
+      (isAudioMime && acceptedFormats.includes(rawFormat))
+    );
   }
 
   it('should accept audio/x-m4a (browser MIME for .m4a files)', () => {
@@ -90,7 +95,18 @@ describe('STT audio format validation with MIME normalization', () => {
     expect(isFormatAccepted('audio/mpga')).toBe(true);
   });
 
-  it('should reject unsupported formats', () => {
+  it('should reject unknown audio subtypes', () => {
+    expect(isFormatAccepted('audio/aac')).toBe(false);
+    expect(isFormatAccepted('audio/somethingelse')).toBe(false);
+    expect(isFormatAccepted('video/unknown')).toBe(false);
+  });
+
+  it('should accept application/ogg (valid Ogg container MIME type in the map)', () => {
+    expect(isFormatAccepted('application/ogg')).toBe(true);
+  });
+
+  it('should reject non-audio types even if subtype matches an accepted format', () => {
+    expect(isFormatAccepted('text/webm')).toBe(false);
     expect(isFormatAccepted('text/plain')).toBe(false);
     expect(isFormatAccepted('application/json')).toBe(false);
   });
