@@ -275,10 +275,24 @@ export class KitchenSinkStack extends cdk.Stack {
     execRole: iam.Role,
     envBucket: s3.IBucket,
   ): ecs.FargateService {
+    const ragTaskRole = new iam.Role(this, "RagApiTaskRole", {
+      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+      description: "Task role for RAG API to access Bedrock",
+    });
+
+    ragTaskRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["bedrock:InvokeModel"],
+      resources: [
+        `arn:aws:bedrock:${this.region}::foundation-model/amazon.titan-embed-text-v1`,
+        `arn:aws:bedrock:${this.region}::foundation-model/amazon.titan-embed-text-v2:0`,
+      ],
+    }));
+
     const taskDef = new ecs.FargateTaskDefinition(this, "RagApiTaskDef", {
       cpu: 512,
       memoryLimitMiB: 1024,
       executionRole: execRole,
+      taskRole: ragTaskRole,
     });
 
     taskDef.addContainer("rag_api", {
@@ -288,9 +302,9 @@ export class KitchenSinkStack extends cdk.Stack {
         DB_HOST: "vectordb.kitchensink",
         RAG_PORT: "8000",
         MEILI_HOST: "http://meilisearch.kitchensink:7700",
-        EMBEDDINGS_PROVIDER: "ollama",
+        EMBEDDINGS_PROVIDER: "bedrock",
         OLLAMA_BASE_URL: "http://ollama.kitchensink:11434",
-        EMBEDDINGS_MODEL: "nomic-embed-text",
+        EMBEDDINGS_MODEL: "amazon.titan-embed-text-v1",
       },
       environmentFiles: [ecs.EnvironmentFile.fromBucket(envBucket, ENV_FILE_KEY)],
       portMappings: [{ containerPort: 8000 }],
@@ -332,9 +346,9 @@ export class KitchenSinkStack extends cdk.Stack {
         MONGO_URI: "mongodb://mongodb.kitchensink:27017/LibreChat",
         MEILI_HOST: "http://meilisearch.kitchensink:7700",
         RAG_API_URL: "http://rag-api.kitchensink:8000",
-        EMBEDDINGS_PROVIDER: "ollama",
+        EMBEDDINGS_PROVIDER: "bedrock",
         OLLAMA_BASE_URL: "http://ollama.kitchensink:11434",
-        EMBEDDINGS_MODEL: "nomic-embed-text",
+        EMBEDDINGS_MODEL: "amazon.titan-embed-text-v1",
         AWS_BUCKET_NAME: fileBucket.bucketName,
         AWS_REGION: this.region,
       },
