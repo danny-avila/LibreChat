@@ -410,22 +410,31 @@ jobs:
             df -h / | tail -1
           REMOTE
 
-          # ── Step 2: delete-before-sync ─────────────────────────
-          # For each index we're about to upload, delete the existing
-          # folder on the droplet BEFORE rsyncing the new data. This
-          # avoids briefly holding both old + new copies (~260MB per
-          # index) on a tight disk. Main/dev are included — they're
-          # only ever deleted when a fresh artifact is about to replace
-          # them, never between deploys.
+          # ── Step 2: rsync-then-swap ─────────────────────────────
+          # Upload each index to a temp directory, then atomically swap
+          # it into place. If rsync fails, the old index survives intact
+          # and the partial temp dir is cleaned up — no production data
+          # is lost. The brief period where both old + new exist costs
+          # ~130MB of extra disk, but the prune step already freed
+          # space from evicted PR indexes so this fits on a 10GB disk.
           for dir in staging/*/; do
             [ -d "$dir" ] || continue
             name=$(basename "$dir")
-            echo "Syncing $name (delete-before-sync)"
+            echo "Syncing $name (rsync-then-swap)"
             ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
-              "rm -rf /opt/gitnexus/indexes/$name && mkdir -p /opt/gitnexus/indexes/$name"
-            rsync -az -e "ssh -i ~/.ssh/deploy_key" \
+              "mkdir -p /opt/gitnexus/indexes/${name}.new"
+            if rsync -az -e "ssh -i ~/.ssh/deploy_key" \
               "$dir" \
-              "$SSH_USER@$SSH_HOST:/opt/gitnexus/indexes/$name/"
+              "$SSH_USER@$SSH_HOST:/opt/gitnexus/indexes/${name}.new/"; then
+              # Swap: remove old, rename new into place
+              ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
+                "rm -rf /opt/gitnexus/indexes/$name && mv /opt/gitnexus/indexes/${name}.new /opt/gitnexus/indexes/$name"
+              echo "  $name swapped successfully"
+            else
+              echo "::warning::rsync failed for $name — keeping previous index"
+              ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
+                "rm -rf /opt/gitnexus/indexes/${name}.new"
+            fi
           done
 
       - name: Pull image, restart gitnexus, reload Caddy, wait for healthy
