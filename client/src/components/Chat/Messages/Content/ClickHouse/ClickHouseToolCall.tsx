@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { lowlight } from 'lowlight';
 import { ChevronDown } from 'lucide-react';
 import {
   Badge,
@@ -29,27 +30,84 @@ import { ClickHouseCostView } from './CostView';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
+interface HastText {
+  type: 'text';
+  value: string;
+}
+interface HastElement {
+  type: 'element';
+  tagName: string;
+  properties?: { className?: string[] };
+  children?: HastNode[];
+}
+type HastNode = HastText | HastElement;
+
+function hastToReact(nodes: HastNode[]): React.ReactNode[] {
+  return nodes.map((node, i) => {
+    if (node.type === 'text') {
+      return node.value;
+    }
+    return React.createElement(
+      node.tagName,
+      { key: i, className: node.properties?.className?.join(' ') },
+      node.children ? hastToReact(node.children) : undefined,
+    );
+  });
+}
+
+/** Click UI CodeBlock color theme — scoped to `.ch-code` to avoid leaking. */
+function chCodeStyles(dark: boolean): string {
+  const c = dark
+    ? { comment: '#999', kw: '#88aece', attr: '#c59bc1', name: '#f08d49', str: '#b5bd68', bullet: '#ccc', del: '#de7176', add: '#76c490' }
+    : { comment: '#656e77', kw: '#015692', attr: '#803378', name: '#b75501', str: '#54790d', bullet: '#535a60', del: '#c02d2e', add: '#2f6f44' };
+  return `
+.ch-code .hljs-comment{color:${c.comment}}
+.ch-code .hljs-keyword,.ch-code .hljs-selector-tag,.ch-code .hljs-meta-keyword,.ch-code .hljs-doctag,.ch-code .hljs-section,.ch-code .hljs-selector-class,.ch-code .hljs-meta,.ch-code .hljs-selector-pseudo,.ch-code .hljs-attr{color:${c.kw}}
+.ch-code .hljs-attribute{color:${c.attr}}
+.ch-code .hljs-name,.ch-code .hljs-type,.ch-code .hljs-number,.ch-code .hljs-selector-id,.ch-code .hljs-quote,.ch-code .hljs-template-tag,.ch-code .hljs-built_in,.ch-code .hljs-title,.ch-code .hljs-literal{color:${c.name}}
+.ch-code .hljs-string,.ch-code .hljs-regexp,.ch-code .hljs-symbol,.ch-code .hljs-variable,.ch-code .hljs-template-variable,.ch-code .hljs-link,.ch-code .hljs-selector-attr,.ch-code .hljs-meta-string{color:${c.str}}
+.ch-code .hljs-bullet,.ch-code .hljs-code{color:${c.bullet}}
+.ch-code .hljs-deletion{color:${c.del}}
+.ch-code .hljs-addition{color:${c.add}}
+.ch-code .hljs-emphasis{font-style:italic}
+.ch-code .hljs-strong{font-weight:bold}`;
+}
+
 /**
- * Lightweight code display replacing Click UI's CodeBlock.
- *
- * CodeBlock pulls in react-syntax-highlighter which bundles CJS copies of
- * lowlight@1.x / highlight.js@10.x. These conflict with the hoisted ESM v2.x
- * copies used by rehype-highlight, causing cross-chunk CJS interop errors in
- * production builds (Rollup cannot handle `module.exports` across chunk
- * boundaries). Once Click UI's CSS modules migration is complete and
- * react-syntax-highlighter is removed or updated, we can switch back to
- * CodeBlock for syntax highlighting.
+ * Syntax-highlighted code display using lowlight with Click UI's color theme.
+ * Replaces Click UI's CodeBlock to avoid react-syntax-highlighter's CJS
+ * lowlight@1.x which conflicts with rehype-highlight's ESM lowlight@2.x
+ * in production builds.
  */
 function CodeDisplay({ children, language }: { children: string; language?: string }) {
   const localize = useLocalize();
+  const { theme } = useTheme();
+  const dark = isDark(theme);
   const [copied, setCopied] = useState(false);
+
+  const highlighted = useMemo(() => {
+    if (!language || !lowlight.registered(language)) {
+      return null;
+    }
+    try {
+      const tree = lowlight.highlight(language, children);
+      return hastToReact(tree.children as HastNode[]);
+    } catch {
+      return null;
+    }
+  }, [children, language]);
+
+  const styles = useMemo(() => chCodeStyles(dark), [dark]);
+
   const copy = async () => {
     await navigator.clipboard.writeText(children);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
   return (
-    <div className="group relative overflow-auto rounded-lg bg-surface-tertiary">
+    <div className="ch-code group relative overflow-auto rounded-lg bg-surface-tertiary">
+      <style>{styles}</style>
       <button
         type="button"
         onClick={copy}
@@ -58,7 +116,7 @@ function CodeDisplay({ children, language }: { children: string; language?: stri
         {copied ? localize('com_ui_copied') : localize('com_ui_copy')}
       </button>
       <pre className="whitespace-pre-wrap break-words p-3 text-xs leading-relaxed">
-        <code data-language={language}>{children}</code>
+        <code>{highlighted ?? children}</code>
       </pre>
     </div>
   );
