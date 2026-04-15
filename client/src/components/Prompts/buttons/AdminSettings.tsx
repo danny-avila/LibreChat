@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { ShieldEllipsis } from 'lucide-react';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import { OGDialog, OGDialogTemplate, Button, useToastContext } from '@librechat/client';
+import { OGDialog, OGDialogTemplate, useToastContext } from '@librechat/client';
 import type { PermissionConfig } from '~/components/ui';
 import { useUpdatePromptPermissionsMutation } from '~/data-provider';
 import { AdminSettingsDialog } from '~/components/ui';
@@ -38,18 +37,6 @@ const AdminSettings = () => {
   ) => {
     setConfirmAdminUseChange({ newValue, callback: onChange });
   };
-
-  const trigger = (
-    <Button
-      size="sm"
-      variant="outline"
-      aria-label={localize('com_ui_admin')}
-      className="mr-2 h-10 w-fit sm:m-0"
-    >
-      <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
-      <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
-    </Button>
-  );
 
   const confirmDialog = (
     <OGDialog
@@ -88,7 +75,6 @@ const AdminSettings = () => {
       permissions={permissions}
       menuId="prompt-role-dropdown"
       mutation={mutation}
-      trigger={trigger}
       onPermissionConfirm={handlePermissionConfirm}
       confirmPermissions={[Permissions.USE]}
       extraContent={confirmDialog}

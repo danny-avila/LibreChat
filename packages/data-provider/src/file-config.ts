@@ -362,6 +362,7 @@ export const imageTypeMapping: { [key: string]: string } = {
 /** Normalizes non-standard MIME types that browsers may report to their canonical forms */
 export const mimeTypeAliases: Readonly<Record<string, string>> = {
   'text/x-python-script': 'text/x-python',
+  'text/x-markdown': 'text/markdown',
 };
 
 /**
@@ -496,6 +497,14 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
     }
     return acc;
   }, []);
+
+/** Detects whether the given MIME type patterns accept all file types (e.g., `.*` or `.+`). */
+export const isPermissiveMimeConfig = (types?: RegExp[]): boolean => {
+  if (!types || types.length === 0) {
+    return false;
+  }
+  return types.some((regex) => regex.test('x-librechat/x-probe'));
+};
 
 /**
  * Gets the appropriate endpoint file configuration with standardized lookup logic.
