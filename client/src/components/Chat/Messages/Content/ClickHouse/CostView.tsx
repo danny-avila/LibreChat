@@ -25,9 +25,9 @@ interface CostViewProps {
 type ViewMode = 'date' | 'entity';
 
 /** Parse YYYY-MM-DD as a local date (avoids UTC-midnight shift from `new Date(str)`). */
-function parseLocalDate(dateStr: string): Date {
+function parseLocalDate(dateStr: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return new Date(0);
+    return null;
   }
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -45,7 +45,10 @@ function getDateRange(costs: CostEntry[]): { days: number; start: Date; end: Dat
     const empty = new Date(0);
     return { days: 0, start: empty, end: empty };
   }
-  const dates = costs.map((c) => parseLocalDate(c.date)).sort((a, b) => a.getTime() - b.getTime());
+  const dates = costs
+    .map((c) => parseLocalDate(c.date))
+    .filter((d): d is Date => d !== null)
+    .sort((a, b) => a.getTime() - b.getTime());
   const start = dates[0];
   const end = dates[dates.length - 1];
   const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -75,18 +78,17 @@ function getGroupKey(date: Date, level: TimeLevel): string {
 }
 
 function getGroupLabel(key: string, level: TimeLevel): string {
+  const d = parseLocalDate(key) ?? new Date(0);
   switch (level) {
     case 'week':
-      return getWeekLabel(parseLocalDate(key));
-    case 'day': {
-      const d = parseLocalDate(key);
+      return getWeekLabel(d);
+    case 'day':
       return d.toLocaleDateString(undefined, {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
         year: 'numeric',
       });
-    }
   }
 }
 
@@ -107,7 +109,11 @@ function buildTimeHierarchy(costs: CostEntry[], levels: TimeLevel[]): TimeGroup[
   const groups = new Map<string, CostEntry[]>();
 
   for (const cost of costs) {
-    const key = getGroupKey(parseLocalDate(cost.date), currentLevel);
+    const date = parseLocalDate(cost.date);
+    if (!date) {
+      continue;
+    }
+    const key = getGroupKey(date, currentLevel);
     const existing = groups.get(key) ?? [];
     existing.push(cost);
     groups.set(key, existing);
@@ -273,7 +279,7 @@ function TimeGroupView({ group, codeTheme }: { group: TimeGroup; codeTheme: 'lig
 
 function DateView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'light' | 'dark' }) {
   const localize = useLocalize();
-  const { days } = getDateRange(costs);
+  const { days } = useMemo(() => getDateRange(costs), [costs]);
   const [groupByWeek, setGroupByWeek] = useState(days > 7);
   const hierarchy = useMemo(() => {
     const levels: TimeLevel[] = groupByWeek ? ['week', 'day'] : ['day'];
@@ -317,32 +323,10 @@ function DateView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'light'
   );
 }
 
-function groupEntriesByWeek(
-  entries: CostEntry[],
-): { label: string; total: number; entries: CostEntry[] }[] {
-  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
-  const weeks = new Map<string, { label: string; total: number; entries: CostEntry[] }>();
-  for (const entry of sorted) {
-    const key = getGroupKey(parseLocalDate(entry.date), 'week');
-    const existing = weeks.get(key);
-    if (existing) {
-      existing.total += entry.totalCHC;
-      existing.entries.push(entry);
-    } else {
-      weeks.set(key, {
-        label: getGroupLabel(key, 'week'),
-        total: entry.totalCHC,
-        entries: [entry],
-      });
-    }
-  }
-  return [...weeks.values()];
-}
-
 function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'light' | 'dark' }) {
   const localize = useLocalize();
   const groups = useMemo(() => buildEntityGroups(costs), [costs]);
-  const { days } = getDateRange(costs);
+  const { days } = useMemo(() => getDateRange(costs), [costs]);
   const [groupByWeek, setGroupByWeek] = useState(days > 7);
 
   return (
@@ -387,23 +371,23 @@ function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'ligh
               </span>
             </div>
             {groupByWeek
-              ? groupEntriesByWeek(group.entries).map((week, wi, weekArr) => (
-                  <div key={week.label}>
+              ? buildTimeHierarchy(group.entries, ['week']).map((week, wi, weekArr) => (
+                  <div key={week.key}>
                     <div className="flex items-center justify-between px-3 py-1.5">
                       <Text size="md" weight="medium">
                         {week.label}
                       </Text>
                       <Text size="md">{formatCHC(week.total)}</Text>
                     </div>
-                    {week.entries.map((entry, i) => (
+                    {(week.children as CostEntry[]).map((entry, i) => (
                       <div key={`${entry.date}-${i}`}>
                         <div className="flex flex-col gap-1 px-3 py-1 pl-6">
                           <div className="flex items-center justify-between">
                             <Text size="md" color="muted">
-                              {parseLocalDate(entry.date).toLocaleDateString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                              })}
+                              {(parseLocalDate(entry.date) ?? new Date(0)).toLocaleDateString(
+                                undefined,
+                                { month: 'short', day: 'numeric' },
+                              )}
                             </Text>
                             <Text size="md">{formatCHC(entry.totalCHC)}</Text>
                           </div>
@@ -419,11 +403,10 @@ function EntityView({ costs, codeTheme }: { costs: CostEntry[]; codeTheme: 'ligh
                     <div className="flex flex-col gap-1 px-3 py-1.5">
                       <div className="flex items-center justify-between">
                         <Text size="md" color="muted">
-                          {parseLocalDate(entry.date).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
+                          {(parseLocalDate(entry.date) ?? new Date(0)).toLocaleDateString(
+                            undefined,
+                            { month: 'short', day: 'numeric', year: 'numeric' },
+                          )}
                         </Text>
                         <Text size="md">{formatCHC(entry.totalCHC)}</Text>
                       </div>

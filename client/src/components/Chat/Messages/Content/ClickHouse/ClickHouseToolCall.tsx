@@ -36,6 +36,18 @@ const GRID_HEADER_HEIGHT = 34;
 let injectedTheme: 'light' | 'dark' | null = null;
 let styleEl: HTMLStyleElement | null = null;
 
+function getOrCreateStyleEl(): HTMLStyleElement {
+  if (!styleEl) {
+    styleEl =
+      document.querySelector<HTMLStyleElement>('[data-ch-code]') ?? document.createElement('style');
+    if (!styleEl.isConnected) {
+      styleEl.setAttribute('data-ch-code', '');
+      document.head.appendChild(styleEl);
+    }
+  }
+  return styleEl;
+}
+
 interface HastText {
   type: 'text';
   value: string;
@@ -116,14 +128,10 @@ function CodeDisplay({ children, language }: { children: string; language?: stri
     if (injectedTheme === targetTheme) {
       return;
     }
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.setAttribute('data-ch-code', '');
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = chCodeStyles(dark);
+    const el = getOrCreateStyleEl();
+    el.textContent = chCodeStyles(targetTheme === 'dark');
     injectedTheme = targetTheme;
-  }, [targetTheme, dark]);
+  }, [targetTheme]);
 
   const highlighted = useMemo(() => {
     if (!language || !lowlight.registered(language)) {
@@ -472,7 +480,7 @@ function CollapsibleRows({
 }) {
   const localize = useLocalize();
   const [openIds, setOpenIds] = useState<Set<number>>(() => new Set());
-  const allOpen = openIds.size === rows.length;
+  const allOpen = rows.length > 0 && openIds.size === rows.length;
 
   const toggleAll = () => {
     setOpenIds(allOpen ? new Set() : new Set(rows.map((_, i) => i)));
