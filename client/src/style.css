@@ -64,6 +64,9 @@
 
   /* NJ-specific colors */
   --jersey-blue: #0c5295;
+  --jersey-button: #0076d6;
+  --jersey-button-hover: #005ea2;
+  --jersey-button-focus: #0050D8;
   --info-lighter: #e7f6f8;
   --info: #00bde3;
 }
@@ -1410,7 +1413,7 @@ button {
 .btn {
   align-items: center;
   border-color: transparent;
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   border-width: 1px;
   cursor: pointer;
   display: inline-flex;
@@ -1443,25 +1446,20 @@ button {
 .btn-primary {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(16, 163, 127, var(--tw-bg-opacity));
-  color: rgba(255, 255, 255, var(--tw-text-opacity));
+  background-color: var(--jersey-button);
+  color: var(--white);
 }
 .btn-primary:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(26, 127, 100, var(--tw-bg-opacity));
+  background-color: var(--jersey-button-hover);
 }
 .btn-primary:focus {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
     var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
-    var(--tw-ring-color);
+    var(--jersey-button-focus);
   --tw-ring-offset-width: 2px;
-  box-shadow:
-    var(--tw-ring-offset-shadow),
-    var(--tw-ring-shadow),
-    0 0 transparent;
-  box-shadow:
-    var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
 }
 .btn-primary.focus-visible {
   --tw-ring-opacity: 1;
@@ -1479,15 +1477,21 @@ button {
   --tw-border-opacity: 1;
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: transparent;
-  background-color: rgba(16, 163, 156, var(--tw-bg-opacity));
-  color: rgba(255, 255, 255, var(--tw-text-opacity));
+  border: 2px solid var(--jersey-button);
+  color: var(--jersey-button);
 }
 .btn-secondary:hover {
   --tw-bg-opacity: 1;
-  border-color: rgba(0, 0, 0, 0.1);
-  color: rgba(64, 65, 79, var(--tw-text-opacity));
-  background-color: rgba(236, 236, 241, var(--tw-bg-opacity));
+  border-color: var(--jersey-button-hover);
+  color: var(--jersey-button-hover);
+}
+.btn-secondary:focus {
+  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
+  var(--tw-ring-offset-color);
+  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
+  var(--jersey-button-focus);
+  --tw-ring-offset-width: 2px;
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
 }
 .dark .btn-secondary:hover {
   --tw-bg-opacity: 1;
@@ -1496,25 +1500,17 @@ button {
   background-color: rgba(8, 82, 78, var(--tw-bg-opacity));
 }
 .btn-neutral {
-  --tw-bg-opacity: 1;
-  --tw-text-opacity: 1;
-  background-color: var(--surface-secondary);
-  border-color: rgba(0, 0, 0, 0.1);
-  border-width: 1px;
-  color: rgba(64, 65, 79, var(--tw-text-opacity));
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  transition: all 0.1s ease-in-out;
+  color: var(--jersey-blue);
+  padding: .25rem .5rem;
 }
 
 .btn-neutral:hover {
-  --tw-bg-opacity: 1;
-  background-color: rgba(236, 236, 241, var(--tw-bg-opacity));
+  text-decoration-line: underline;
 }
 
 .btn-neutral:focus {
   outline: none;
-  box-shadow: 0 0 0 2px var(--ring-primary);
+  box-shadow: 0 0 0 2px var(--jersey-button-focus);
 }
 
 .dark .btn-neutral {
