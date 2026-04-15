@@ -138,7 +138,11 @@ export default function ToolCallInfo({
 
   if (domain && /clickhouse/i.test(domain)) {
     return (
-      <Suspense fallback={<div className="p-3 text-xs text-text-secondary">Loading...</div>}>
+      <Suspense
+        fallback={
+          <div className="p-3 text-xs text-text-secondary">{localize('com_ui_loading')}</div>
+        }
+      >
         <ClickHouseToolCall input={input} output={output} functionName={functionName} />
       </Suspense>
     );

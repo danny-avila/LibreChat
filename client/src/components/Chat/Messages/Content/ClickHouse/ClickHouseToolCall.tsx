@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lowlight } from 'lowlight';
 import { ChevronDown, Copy, Check } from 'lucide-react';
 import {
@@ -15,7 +15,7 @@ import {
 } from '@clickhouse/click-ui';
 import type { CellProps } from '@clickhouse/click-ui';
 import { useTheme, isDark } from '@librechat/client';
-import type { ClickHouseToolCallProps, ParsedOutput, QueryMetrics, CostEntry } from './types';
+import type { ClickHouseToolCallProps, ParsedOutput, QueryMetrics } from './types';
 import { CH_BG, CH_BG_MUTED, SQL_VALUE_KEYS, MAX_ROWS_PER_PAGE } from './types';
 import {
   parseInput,
@@ -29,6 +29,12 @@ import {
 import { ClickHouseCostView } from './CostView';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+
+const GRID_ROW_HEIGHT = 33;
+const GRID_HEADER_HEIGHT = 34;
+
+let injectedTheme: 'light' | 'dark' | null = null;
+let styleEl: HTMLStyleElement | null = null;
 
 interface HastText {
   type: 'text';
@@ -101,6 +107,23 @@ function CodeDisplay({ children, language }: { children: string; language?: stri
   const { theme } = useTheme();
   const dark = isDark(theme);
   const [copied, setCopied] = useState(false);
+  const copyTimeout = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => () => clearTimeout(copyTimeout.current), []);
+
+  const targetTheme = dark ? 'dark' : 'light';
+  useEffect(() => {
+    if (injectedTheme === targetTheme) {
+      return;
+    }
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.setAttribute('data-ch-code', '');
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = chCodeStyles(dark);
+    injectedTheme = targetTheme;
+  }, [targetTheme, dark]);
 
   const highlighted = useMemo(() => {
     if (!language || !lowlight.registered(language)) {
@@ -114,17 +137,19 @@ function CodeDisplay({ children, language }: { children: string; language?: stri
     }
   }, [children, language]);
 
-  const styles = useMemo(() => chCodeStyles(dark), [dark]);
-
   const copy = async () => {
-    await navigator.clipboard.writeText(children);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(children);
+      setCopied(true);
+      clearTimeout(copyTimeout.current);
+      copyTimeout.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable */
+    }
   };
 
   return (
     <div className="ch-code overflow-auto rounded-lg bg-surface-tertiary">
-      <style>{styles}</style>
       <div className="flex items-start">
         <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words p-3 text-xs leading-relaxed">
           <code>{highlighted ?? children}</code>
@@ -174,23 +199,32 @@ function MetricsBar({ metrics }: { metrics: QueryMetrics }) {
 
 function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
   const localize = useLocalize();
-  const priorityColumns = ['name', 'title', 'label'];
-  const seen = new Set<string>();
-  const rawColumns: string[] = [];
-  for (const row of rows) {
-    for (const col of Object.keys(row)) {
-      if (!seen.has(col) && (row[col] === null || typeof row[col] !== 'object')) {
-        seen.add(col);
-        rawColumns.push(col);
+  const allColumns = useMemo(() => {
+    const priority = ['name', 'title', 'label'];
+    const seen = new Set<string>();
+    const cols: string[] = [];
+    for (const row of rows) {
+      for (const col of Object.keys(row)) {
+        if (!seen.has(col) && (row[col] === null || typeof row[col] !== 'object')) {
+          seen.add(col);
+          cols.push(col);
+        }
       }
     }
-  }
-  const allColumns = [
-    ...rawColumns.filter((c) => priorityColumns.includes(c)),
-    ...rawColumns.filter((c) => !priorityColumns.includes(c)),
-  ];
+    return [
+      ...cols.filter((c) => priority.includes(c)),
+      ...cols.filter((c) => !priority.includes(c)),
+    ];
+  }, [rows]);
+
   const [selectedColumns, setSelectedColumns] = useState<string[]>(() => allColumns);
   const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setSelectedColumns(allColumns);
+    setCurrentPage(1);
+  }, [allColumns]);
+
   const columns = allColumns.filter((c) => selectedColumns.includes(c));
 
   const totalPages = Math.ceil(rows.length / MAX_ROWS_PER_PAGE);
@@ -198,14 +232,18 @@ function FlatTable({ rows }: { rows: Record<string, unknown>[] }) {
     (currentPage - 1) * MAX_ROWS_PER_PAGE,
     currentPage * MAX_ROWS_PER_PAGE,
   );
-  const gridHeight = Math.min(pageRows.length, MAX_ROWS_PER_PAGE) * 33 + 34;
+  const gridHeight =
+    Math.min(pageRows.length, MAX_ROWS_PER_PAGE) * GRID_ROW_HEIGHT + GRID_HEADER_HEIGHT;
 
-  const Cell: CellProps = ({ rowIndex, columnIndex, type, ...props }) => {
-    if (type === 'header-cell') {
-      return <span {...props}>{columns[columnIndex]}</span>;
-    }
-    return <span {...props}>{formatValue(pageRows[rowIndex - 1]?.[columns[columnIndex]])}</span>;
-  };
+  const Cell: CellProps = useCallback(
+    ({ rowIndex, columnIndex, type, ...props }) => {
+      if (type === 'header-cell') {
+        return <span {...props}>{columns[columnIndex]}</span>;
+      }
+      return <span {...props}>{formatValue(pageRows[rowIndex - 1]?.[columns[columnIndex]])}</span>;
+    },
+    [columns, pageRows],
+  );
 
   return (
     <div>
@@ -501,7 +539,7 @@ function ResultContent({
   if (parsed.costData) {
     return (
       <ClickHouseCostView
-        costs={parsed.costData.costs as CostEntry[]}
+        costs={parsed.costData.costs}
         grandTotalCHC={parsed.costData.grandTotalCHC}
         codeTheme={codeTheme}
       />
@@ -650,7 +688,9 @@ export default function ClickHouseToolCall({
             alignItems="center"
           >
             <Badge
-              text={parsed.error ? 'Error' : 'Succeeded'}
+              text={
+                parsed.error ? localize('com_ch_status_error') : localize('com_ch_status_succeeded')
+              }
               state={parsed.error ? 'danger' : 'success'}
               icon={parsed.error ? 'warning' : 'check'}
               iconDir="start"

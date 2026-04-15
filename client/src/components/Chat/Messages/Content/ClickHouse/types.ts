@@ -18,7 +18,7 @@ export interface QueryMetrics {
 
 export interface CostData {
   grandTotalCHC: number;
-  costs: Record<string, unknown>[];
+  costs: CostEntry[];
 }
 
 export interface ParsedOutput {

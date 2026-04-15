@@ -10,7 +10,7 @@ export function formatCHC(value: number): string {
   if (value === 0) {
     return '0 CHC';
   }
-  if (value < 0.001) {
+  if (value > 0 && value < 0.001) {
     return '<0.001 CHC';
   }
   return `${value.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} CHC`;
@@ -26,8 +26,18 @@ type ViewMode = 'date' | 'entity';
 
 /** Parse YYYY-MM-DD as a local date (avoids UTC-midnight shift from `new Date(str)`). */
 function parseLocalDate(dateStr: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return new Date(0);
+  }
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d);
+}
+
+function localISODate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function getDateRange(costs: CostEntry[]): { days: number; start: Date; end: Date } {
@@ -57,10 +67,10 @@ function getGroupKey(date: Date, level: TimeLevel): string {
     case 'week': {
       const startOfWeek = new Date(date);
       startOfWeek.setDate(date.getDate() - date.getDay());
-      return startOfWeek.toISOString().slice(0, 10);
+      return localISODate(startOfWeek);
     }
     case 'day':
-      return date.toISOString().slice(0, 10);
+      return localISODate(date);
   }
 }
 

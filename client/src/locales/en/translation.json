@@ -232,6 +232,8 @@
   "com_ch_label_read_bytes": "Read: {{rows}} rows ({{bytes}})",
   "com_ch_label_row": "{{count}} row",
   "com_ch_label_rows": "{{count}} rows",
+  "com_ch_status_error": "Error",
+  "com_ch_status_succeeded": "Succeeded",
   "com_ch_tab_query": "Query",
   "com_download_expired": "(download expired)",
   "com_download_expires": "(click here to download - expires {{0}})",

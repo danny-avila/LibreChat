@@ -70,9 +70,14 @@ describe('parseOutput', () => {
     expect(result.rows).toEqual([{ id: 'abc', name: 'test' }]);
   });
 
-  it('falls back to regex error detection', () => {
+  it('falls back to non-error for unparseable output', () => {
     const result = parseOutput('not json but has error in it');
-    expect(result.error).toBe(true);
+    expect(result.error).toBe(false);
+  });
+
+  it('does not false-positive on {error: false}', () => {
+    const result = parseOutput('{"error":false,"data":[{"id":1}]}');
+    expect(result.error).toBe(false);
   });
 
   it('returns raw formatted JSON', () => {
@@ -239,5 +244,9 @@ describe('formatCHC', () => {
 
   it('formats normal values', () => {
     expect(formatCHC(10.5)).toMatch(/10.500 CHC/);
+  });
+
+  it('formats negative values', () => {
+    expect(formatCHC(-5)).toMatch(/-5.000 CHC/);
   });
 });

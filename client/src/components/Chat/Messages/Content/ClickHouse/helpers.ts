@@ -1,4 +1,4 @@
-import type { ParsedInput, ParsedOutput, QueryMetrics } from './types';
+import type { ParsedInput, ParsedOutput, QueryMetrics, CostEntry } from './types';
 
 export function parseInput(raw: string): ParsedInput {
   try {
@@ -82,11 +82,12 @@ export function flattenObject(obj: Record<string, unknown>, prefix = ''): Record
 }
 
 export function parseOutput(raw: string): ParsedOutput {
-  const formatted = formatJson(raw);
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if ('error' in parsed || 'Error' in parsed) {
-      return { error: true, errorMessage: String(parsed.error ?? parsed.Error), raw: formatted };
+    const formatted = JSON.stringify(parsed, null, 2);
+    const errVal = parsed.error ?? parsed.Error;
+    if (errVal && typeof errVal === 'string') {
+      return { error: true, errorMessage: errVal, raw: formatted };
     }
     const result = (parsed.result ?? parsed) as Record<string, unknown>;
     if (result.status === 'error') {
@@ -102,7 +103,7 @@ export function parseOutput(raw: string): ParsedOutput {
         error: false,
         costData: {
           grandTotalCHC: result.grandTotalCHC,
-          costs: result.costs as Record<string, unknown>[],
+          costs: result.costs as CostEntry[],
         },
         metrics,
         raw: formatted,
@@ -138,7 +139,7 @@ export function parseOutput(raw: string): ParsedOutput {
     }
     return { error: false, metrics, raw: formatted };
   } catch {
-    return { error: /error|exception|failed/i.test(raw), raw: formatted };
+    return { error: false, raw: formatJson(raw) };
   }
 }
 
