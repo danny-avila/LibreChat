@@ -132,6 +132,25 @@ interface:
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
+  # Custom color palette (RGB values: "R G B", each 0-255) overrides default theme colors
+  # See packages/client/src/theme/utils/applyTheme.ts for all available keys.
+  # theme:
+  #   palette:
+  #     light:
+  #       presentation: "240 253 244"
+  #       surface-primary: "240 253 244"
+  #       surface-primary-alt: "209 250 229"
+  #       surface-secondary: "220 252 231"
+  #       text-primary: "20 83 45"
+  #       text-secondary: "22 101 52"
+  #     dark:
+  #       presentation: "20 83 45"
+  #       surface-primary: "20 83 45"
+  #       surface-primary-alt: "6 78 59"
+  #       surface-secondary: "22 101 52"
+  #       text-primary: "220 252 231"
+  #       text-secondary: "187 247 208"
+
 # Example Cloudflare turnstile (optional)
 #turnstile:
 #  siteKey: "your-site-key-here"

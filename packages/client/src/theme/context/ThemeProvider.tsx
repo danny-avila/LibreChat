@@ -25,11 +25,17 @@ export const ThemeContext = createContext<ThemeContextType>({
   resetTheme: () => undefined,
 });
 
+export type ThemePalette = {
+  light?: Record<string, string>;
+  dark?: Record<string, string>;
+};
+
 export interface ThemeProviderProps {
   children: React.ReactNode;
   themeRGB?: IThemeRGB;
   themeName?: string;
   initialTheme?: string;
+  palette?: ThemePalette;
 }
 
 /**
@@ -115,6 +121,7 @@ export function ThemeProvider({
   themeRGB: propThemeRGB,
   themeName: propThemeName,
   initialTheme,
+  palette,
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<string>(getInitialTheme);
   const [themeRGB, setThemeRGBState] = useState<IThemeRGB | undefined>(getInitialThemeColors);
@@ -208,6 +215,31 @@ export function ThemeProvider({
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme, applyThemeMode]);
+
+  // Apply admin-configured color palette for the current mode
+  useEffect(() => {
+    if (!palette) {
+      return;
+    }
+    const apply = () => {
+      const colors = palette[isDark(theme) ? 'dark' : 'light'];
+      if (!colors) {
+        return;
+      }
+      const mapped: Record<string, string> = {};
+      for (const key of Object.keys(colors)) {
+        mapped[`rgb-${key}`] = colors[key];
+      }
+      setThemeRGB(mapped as IThemeRGB);
+    };
+    apply();
+    if (theme !== 'system') {
+      return;
+    }
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [palette, theme, setThemeRGB]);
 
   // Apply dynamic color theme
   useEffect(() => {

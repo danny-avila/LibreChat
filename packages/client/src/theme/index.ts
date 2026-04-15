@@ -3,6 +3,7 @@ export * from './types';
 
 // Export ThemeProvider, ThemeContext, useTheme hook, and isDark
 export { ThemeProvider, ThemeContext, useTheme, isDark } from './context/ThemeProvider';
+export type { ThemePalette } from './context/ThemeProvider';
 
 // Export utility functions
 export { default as applyTheme } from './utils/applyTheme';

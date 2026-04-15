@@ -8,6 +8,7 @@ import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { themeSchema } from './theme';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -744,6 +745,7 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
+    theme: themeSchema.optional(),
   })
   .default({
     modelSelect: true,

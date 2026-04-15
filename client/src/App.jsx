@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
 import { RouterProvider } from 'react-router-dom';
@@ -8,11 +8,27 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toast, ThemeProvider, ToastProvider } from '@librechat/client';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import { getThemeFromEnv } from './utils/getThemeFromEnv';
 import { initializeFontSize } from '~/store/fontSize';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
+
+const PaletteThemeProvider = ({ envTheme, children }) => {
+  const { data: startupConfig } = useGetStartupConfig();
+  const palette = useMemo(() => startupConfig?.interface?.theme?.palette, [startupConfig]);
+  return (
+    <ThemeProvider
+      palette={palette}
+      // Only pass initialTheme and themeRGB if environment theme exists
+      // This allows localStorage values to persist when no env theme is set
+      {...(envTheme && { initialTheme: 'system', themeRGB: envTheme })}
+    >
+      {children}
+    </ThemeProvider>
+  );
+};
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
@@ -48,16 +64,13 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <LiveAnnouncer>
-          <ThemeProvider
-            // Only pass initialTheme and themeRGB if environment theme exists
-            // This allows localStorage values to persist when no env theme is set
-            {...(envTheme && { initialTheme: 'system', themeRGB: envTheme })}
-          >
+          <PaletteThemeProvider envTheme={envTheme}>
             {/* The ThemeProvider will automatically:
                 1. Apply dark/light mode classes
                 2. Apply custom theme colors if envTheme is provided
-                3. Otherwise use stored theme preferences from localStorage
-                4. Fall back to default theme colors if nothing is stored */}
+                3. Apply admin-configured palette colors if palette is provided
+                4. Otherwise use stored theme preferences from localStorage
+                5. Fall back to default theme colors if nothing is stored */}
             <RadixToast.Provider>
               <ToastProvider>
                 <DndProvider backend={HTML5Backend}>
@@ -69,7 +82,7 @@ const App = () => {
                 </DndProvider>
               </ToastProvider>
             </RadixToast.Provider>
-          </ThemeProvider>
+          </PaletteThemeProvider>
         </LiveAnnouncer>
       </RecoilRoot>
     </QueryClientProvider>
