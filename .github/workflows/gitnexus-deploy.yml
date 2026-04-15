@@ -431,9 +431,21 @@ jobs:
                 "rm -rf /opt/gitnexus/indexes/$name && mv /opt/gitnexus/indexes/${name}.new /opt/gitnexus/indexes/$name"
               echo "  $name swapped successfully"
             else
-              echo "::warning::rsync failed for $name — keeping previous index"
+              # Clean up the partial temp dir
               ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
                 "rm -rf /opt/gitnexus/indexes/${name}.new"
+              # main/dev are critical — abort the deploy so the failure
+              # is visible and the container isn't restarted with stale
+              # or missing data. PR indexes are best-effort.
+              case "$name" in
+                LibreChat|LibreChat-dev)
+                  echo "::error::rsync failed for critical index $name — aborting deploy"
+                  exit 1
+                  ;;
+                *)
+                  echo "::warning::rsync failed for PR index $name — keeping previous index"
+                  ;;
+              esac
             fi
           done
 
