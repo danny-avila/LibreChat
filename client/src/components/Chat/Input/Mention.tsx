@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useEffect, useCallback } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
@@ -6,6 +6,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { RecoilState } from 'recoil';
 import type { MentionOption, ConvoGenerator } from '~/common';
 import { useGetConversation, useLocalize, TranslationKeys } from '~/hooks';
+import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
@@ -25,14 +26,13 @@ type MentionProps = {
 };
 
 function MentionContent({
-  index: _index,
   popoverAtom,
   newConversation,
   textAreaRef,
   commandChar = '@',
   placeholder = 'com_ui_mention',
   includeAssistants = true,
-}: MentionProps) {
+}: Omit<MentionProps, 'index'>) {
   const localize = useLocalize();
   const getConversation = useGetConversation(0);
   const assistantsMap = useAssistantsMapContext();
@@ -66,30 +66,13 @@ function MentionContent({
     options: inputOptions,
   });
 
-  const initInputRef = useCallback(
-    (node: HTMLInputElement | null) => {
-      inputRef.current = node;
-      if (!node) {
-        return;
-      }
-      node.focus();
-      setOpen(true);
-      const textarea = textAreaRef.current;
-      if (!textarea) {
-        return;
-      }
-      const text = textarea.value;
-      if (text.length > 0 && text[0] === commandChar) {
-        if (text.length > 1) {
-          setSearchValue(text.slice(1));
-        }
-        textarea.value = '';
-        textarea.setSelectionRange(0, 0);
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    },
-    [textAreaRef, commandChar, setSearchValue, setOpen],
-  );
+  const initInputRef = useInitPopoverInput({
+    inputRef,
+    textAreaRef,
+    commandChar,
+    setSearchValue,
+    setOpen,
+  });
 
   const handleSelect = (mention?: MentionOption) => {
     if (!mention) {
@@ -262,6 +245,7 @@ function MentionContent({
 }
 
 const MentionPopoverContainer = memo(function MentionPopoverContainer({
+  index: _index,
   popoverAtom,
   ...rest
 }: MentionProps) {

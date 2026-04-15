@@ -12,7 +12,7 @@ jest.mock('recoil', () => ({
     if (atom === 'latestMessageFamily-0') {
       return null;
     }
-    if (atom === 'conversationEndpointByIndex-0') {
+    if (atom === 'effectiveEndpointByIndex-0') {
       return mockEndpoint.current;
     }
     if (atom === 'atCommand') {
@@ -44,7 +44,7 @@ jest.mock('~/store', () => ({
   showPromptsPopoverFamily: (idx: number) => `showPromptsPopoverFamily-${idx}`,
   showMentionPopoverFamily: (idx: number) => `showMentionPopoverFamily-${idx}`,
   showPlusPopoverFamily: (idx: number) => `showPlusPopoverFamily-${idx}`,
-  conversationEndpointByIndex: (idx: number) => `conversationEndpointByIndex-${idx}`,
+  effectiveEndpointByIndex: (idx: number) => `effectiveEndpointByIndex-${idx}`,
   latestMessageFamily: (idx: number) => `latestMessageFamily-${idx}`,
   atCommand: 'atCommand',
   plusCommand: 'plusCommand',
@@ -177,7 +177,7 @@ describe('useHandleKeyUp', () => {
     });
   });
 
-  describe('navigation within short command text — should NOT retrigger', () => {
+  describe('navigation keys — should never trigger', () => {
     it('does NOT trigger when cursor is mid-text after ArrowLeft', () => {
       const ref = makeTextAreaRef('/abc', 2);
       const { handleKeyUp, setShowPromptsPopover } = renderUseHandleKeyUp(ref);
@@ -194,6 +194,42 @@ describe('useHandleKeyUp', () => {
       act(() => handleKeyUp(makeKeyEvent('Delete')));
 
       expect(setShowMentionPopover).not.toHaveBeenCalled();
+    });
+
+    it('does NOT trigger when ArrowRight lands at end of short command text', () => {
+      const ref = makeTextAreaRef('/ab', 3);
+      const { handleKeyUp, setShowPromptsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('ArrowRight')));
+
+      expect(setShowPromptsPopover).not.toHaveBeenCalled();
+    });
+
+    it('does NOT trigger when Home key is pressed on command text', () => {
+      const ref = makeTextAreaRef('/abc', 0);
+      const { handleKeyUp, setShowPromptsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('Home')));
+
+      expect(setShowPromptsPopover).not.toHaveBeenCalled();
+    });
+
+    it('does NOT trigger when End key lands at end of short command text', () => {
+      const ref = makeTextAreaRef('+ab', 3);
+      const { handleKeyUp, setShowPlusPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('End')));
+
+      expect(setShowPlusPopover).not.toHaveBeenCalled();
+    });
+
+    it('does NOT trigger when ArrowUp is pressed on non-empty command text', () => {
+      const ref = makeTextAreaRef('/ab', 3);
+      const { handleKeyUp, setShowPromptsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('ArrowUp')));
+
+      expect(setShowPromptsPopover).not.toHaveBeenCalled();
     });
   });
 
@@ -250,7 +286,18 @@ describe('useHandleKeyUp', () => {
   });
 
   describe('invalid keys', () => {
-    it.each(['Escape', 'Backspace', 'Enter'])('does NOT trigger on %s key', (key) => {
+    it.each([
+      'Escape',
+      'Backspace',
+      'Enter',
+      'ArrowUp',
+      'ArrowLeft',
+      'ArrowRight',
+      'ArrowDown',
+      'Home',
+      'End',
+      'Delete',
+    ])('does NOT trigger on %s key', (key) => {
       const ref = makeTextAreaRef('/', 1);
       const { handleKeyUp, setShowPromptsPopover } = renderUseHandleKeyUp(ref);
 
@@ -322,6 +369,48 @@ describe('useHandleKeyUp', () => {
       act(() => handleKeyUp(makeKeyEvent('@')));
 
       expect(setShowMentionPopover).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('endpoint gating', () => {
+    it('does NOT trigger + command on assistants endpoint', () => {
+      mockEndpoint.current = 'assistants';
+      const ref = makeTextAreaRef('+', 1);
+      const { handleKeyUp, setShowPlusPopover } = renderUseHandleKeyUp(ref);
+      setShowPlusPopover.mockClear();
+
+      act(() => handleKeyUp(makeKeyEvent('+')));
+
+      expect(setShowPlusPopover).not.toHaveBeenCalledWith(true);
+    });
+
+    it('does NOT trigger + command on azureAssistants endpoint', () => {
+      mockEndpoint.current = 'azureAssistants';
+      const ref = makeTextAreaRef('+', 1);
+      const { handleKeyUp, setShowPlusPopover } = renderUseHandleKeyUp(ref);
+      setShowPlusPopover.mockClear();
+
+      act(() => handleKeyUp(makeKeyEvent('+')));
+
+      expect(setShowPlusPopover).not.toHaveBeenCalledWith(true);
+    });
+
+    it('resets + popover when endpoint switches to assistants', () => {
+      mockEndpoint.current = 'assistants';
+      const ref = makeTextAreaRef('', 0);
+      const { setShowPlusPopover } = renderUseHandleKeyUp(ref);
+
+      expect(setShowPlusPopover).toHaveBeenCalledWith(false);
+    });
+
+    it('triggers + command on non-assistants endpoint', () => {
+      mockEndpoint.current = 'openAI';
+      const ref = makeTextAreaRef('+', 1);
+      const { handleKeyUp, setShowPlusPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('+')));
+
+      expect(setShowPlusPopover).toHaveBeenCalledWith(true);
     });
   });
 });

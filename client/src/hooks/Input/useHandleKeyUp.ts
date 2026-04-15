@@ -1,14 +1,21 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions, isAssistantsEndpoint } from 'librechat-data-provider';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import store from '~/store';
 
-/** Event Keys that shouldn't trigger a command */
+/** Event keys that shouldn't trigger a command */
 const invalidKeys = {
   Escape: true,
   Backspace: true,
   Enter: true,
+  ArrowUp: true,
+  ArrowLeft: true,
+  ArrowRight: true,
+  ArrowDown: true,
+  Home: true,
+  End: true,
+  Delete: true,
 };
 
 /**
@@ -55,7 +62,7 @@ const useHandleKeyUp = ({
     permission: Permissions.USE,
   });
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
-  const endpoint = useRecoilValue(store.conversationEndpointByIndex(index));
+  const endpoint = useRecoilValue(store.effectiveEndpointByIndex(index));
   const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));
   const setShowPlusPopover = useSetRecoilState(store.showPlusPopoverFamily(index));
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
@@ -63,6 +70,12 @@ const useHandleKeyUp = ({
   const atCommandEnabled = useRecoilValue(store.atCommand);
   const plusCommandEnabled = useRecoilValue(store.plusCommand);
   const slashCommandEnabled = useRecoilValue(store.slashCommand);
+
+  useEffect(() => {
+    if (isAssistantsEndpoint(endpoint)) {
+      setShowPlusPopover(false);
+    }
+  }, [endpoint, setShowPlusPopover]);
 
   const handleAtCommand = useCallback(() => {
     if (atCommandEnabled && shouldTriggerCommand(textAreaRef, '@')) {

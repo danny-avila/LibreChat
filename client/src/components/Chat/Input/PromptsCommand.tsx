@@ -4,6 +4,7 @@ import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
+import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import { removeCharIfLast, detectVariables } from '~/utils';
 import { useRecordPromptUsage } from '~/data-provider';
 import { VariableDialog } from '~/components/Prompts';
@@ -81,30 +82,13 @@ function PromptsCommand({
     options: prompts ?? [],
   });
 
-  const initInputRef = useCallback(
-    (node: HTMLInputElement | null) => {
-      inputRef.current = node;
-      if (!node) {
-        return;
-      }
-      node.focus();
-      setOpen(true);
-      const textarea = textAreaRef.current;
-      if (!textarea) {
-        return;
-      }
-      const text = textarea.value;
-      if (text.length > 0 && text[0] === commandChar) {
-        if (text.length > 1) {
-          setSearchValue(text.slice(1));
-        }
-        textarea.value = '';
-        textarea.setSelectionRange(0, 0);
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    },
-    [textAreaRef, setSearchValue, setOpen],
-  );
+  const initInputRef = useInitPopoverInput({
+    inputRef,
+    textAreaRef,
+    commandChar,
+    setSearchValue,
+    setOpen,
+  });
 
   const handleSelect = useCallback(
     (mention?: PromptOption, e?: React.KeyboardEvent<HTMLInputElement>) => {
