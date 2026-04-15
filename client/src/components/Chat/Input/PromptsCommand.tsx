@@ -81,6 +81,31 @@ function PromptsCommand({
     options: prompts ?? [],
   });
 
+  const initInputRef = useCallback(
+    (node: HTMLInputElement | null) => {
+      inputRef.current = node;
+      if (!node) {
+        return;
+      }
+      node.focus();
+      setOpen(true);
+      const textarea = textAreaRef.current;
+      if (!textarea) {
+        return;
+      }
+      const text = textarea.value;
+      if (text.length > 0 && text[0] === commandChar) {
+        if (text.length > 1) {
+          setSearchValue(text.slice(1));
+        }
+        textarea.value = '';
+        textarea.setSelectionRange(0, 0);
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    },
+    [textAreaRef, setSearchValue, setOpen],
+  );
+
   const handleSelect = useCallback(
     (mention?: PromptOption, e?: React.KeyboardEvent<HTMLInputElement>) => {
       if (!mention) {
@@ -193,10 +218,7 @@ function PromptsCommand({
       <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
           <input
-            // The user expects focus to transition to the input field when the popover is opened
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-            ref={inputRef}
+            ref={initInputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
             className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm focus:outline-none dark:text-gray-200"
             autoComplete="off"
@@ -223,22 +245,7 @@ function PromptsCommand({
               }
             }}
             onChange={(e) => setSearchValue(e.target.value)}
-            onFocus={() => {
-              setOpen(true);
-              const textarea = textAreaRef.current;
-              if (!textarea) {
-                return;
-              }
-              const text = textarea.value;
-              if (text.length > 0 && text[0] === commandChar) {
-                if (text.length > 1) {
-                  setSearchValue(text.slice(1));
-                }
-                textarea.value = '';
-                textarea.setSelectionRange(0, 0);
-                textarea.dispatchEvent(new Event('input', { bubbles: true }));
-              }
-            }}
+            onFocus={() => setOpen(true)}
             onBlur={() => {
               timeoutRef.current = setTimeout(() => {
                 setOpen(false);

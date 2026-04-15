@@ -1,6 +1,9 @@
+const mockSetShowMentionPopover = jest.fn();
+const mockSetShowPlusPopover = jest.fn();
 const mockSetShowPromptsPopover = jest.fn();
 const mockHasPromptsAccess = { current: true };
 const mockHasMultiConvoAccess = { current: true };
+const mockEndpoint = { current: 'openAI' as string | null };
 const mockCommandToggles = { at: true, plus: true, slash: true };
 
 jest.mock('recoil', () => ({
@@ -8,6 +11,9 @@ jest.mock('recoil', () => ({
   useRecoilValue: jest.fn((atom) => {
     if (atom === 'latestMessageFamily-0') {
       return null;
+    }
+    if (atom === 'conversationEndpointByIndex-0') {
+      return mockEndpoint.current;
     }
     if (atom === 'atCommand') {
       return mockCommandToggles.at;
@@ -20,13 +26,25 @@ jest.mock('recoil', () => ({
     }
     return undefined;
   }),
-  useSetRecoilState: jest.fn(() => mockSetShowPromptsPopover),
+  useSetRecoilState: jest.fn((atom: string) => {
+    if (atom === 'showMentionPopoverFamily-0') {
+      return mockSetShowMentionPopover;
+    }
+    if (atom === 'showPlusPopoverFamily-0') {
+      return mockSetShowPlusPopover;
+    }
+    if (atom === 'showPromptsPopoverFamily-0') {
+      return mockSetShowPromptsPopover;
+    }
+    return jest.fn();
+  }),
 }));
 
 jest.mock('~/store', () => ({
   showPromptsPopoverFamily: (idx: number) => `showPromptsPopoverFamily-${idx}`,
   showMentionPopoverFamily: (idx: number) => `showMentionPopoverFamily-${idx}`,
   showPlusPopoverFamily: (idx: number) => `showPlusPopoverFamily-${idx}`,
+  conversationEndpointByIndex: (idx: number) => `conversationEndpointByIndex-${idx}`,
   latestMessageFamily: (idx: number) => `latestMessageFamily-${idx}`,
   atCommand: 'atCommand',
   plusCommand: 'plusCommand',
@@ -66,22 +84,17 @@ const renderUseHandleKeyUp = (
   textAreaRef: React.RefObject<HTMLTextAreaElement>,
   overrides?: { index?: number },
 ) => {
-  const setShowMentionPopover = jest.fn();
-  const setShowPlusPopover = jest.fn();
-
   const { result } = renderHook(() =>
     useHandleKeyUp({
       index: overrides?.index ?? 0,
       textAreaRef,
-      setShowPlusPopover,
-      setShowMentionPopover,
     }),
   );
 
   return {
     handleKeyUp: result.current,
-    setShowMentionPopover,
-    setShowPlusPopover,
+    setShowMentionPopover: mockSetShowMentionPopover,
+    setShowPlusPopover: mockSetShowPlusPopover,
     setShowPromptsPopover: mockSetShowPromptsPopover,
   };
 };
@@ -90,6 +103,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockHasPromptsAccess.current = true;
   mockHasMultiConvoAccess.current = true;
+  mockEndpoint.current = 'openAI';
   mockCommandToggles.at = true;
   mockCommandToggles.plus = true;
   mockCommandToggles.slash = true;

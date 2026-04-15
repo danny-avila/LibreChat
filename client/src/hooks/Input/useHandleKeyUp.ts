@@ -1,7 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
+import { PermissionTypes, Permissions, isAssistantsEndpoint } from 'librechat-data-provider';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import store from '~/store';
 
@@ -43,13 +42,9 @@ const shouldTriggerCommand = (
 const useHandleKeyUp = ({
   index,
   textAreaRef,
-  setShowPlusPopover,
-  setShowMentionPopover,
 }: {
   index: number;
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
-  setShowPlusPopover: SetterOrUpdater<boolean>;
-  setShowMentionPopover: SetterOrUpdater<boolean>;
 }) => {
   const hasPromptsAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -60,9 +55,11 @@ const useHandleKeyUp = ({
     permission: Permissions.USE,
   });
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
+  const endpoint = useRecoilValue(store.conversationEndpointByIndex(index));
+  const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));
+  const setShowPlusPopover = useSetRecoilState(store.showPlusPopoverFamily(index));
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
 
-  // Get the current state of command toggles
   const atCommandEnabled = useRecoilValue(store.atCommand);
   const plusCommandEnabled = useRecoilValue(store.plusCommand);
   const slashCommandEnabled = useRecoilValue(store.slashCommand);
@@ -74,13 +71,13 @@ const useHandleKeyUp = ({
   }, [textAreaRef, setShowMentionPopover, atCommandEnabled]);
 
   const handlePlusCommand = useCallback(() => {
-    if (!hasMultiConvoAccess || !plusCommandEnabled) {
+    if (!hasMultiConvoAccess || !plusCommandEnabled || isAssistantsEndpoint(endpoint)) {
       return;
     }
     if (shouldTriggerCommand(textAreaRef, '+')) {
       setShowPlusPopover(true);
     }
-  }, [textAreaRef, setShowPlusPopover, plusCommandEnabled, hasMultiConvoAccess]);
+  }, [textAreaRef, setShowPlusPopover, plusCommandEnabled, hasMultiConvoAccess, endpoint]);
 
   const handlePromptsCommand = useCallback(() => {
     if (!hasPromptsAccess || !slashCommandEnabled) {
