@@ -4,16 +4,41 @@
 import { HorizontalRule } from '~/nj/components/info/HorizontalRule';
 import InfoTitle from '~/nj/components/info/InfoTitle';
 import InfoSectionHeader from '~/nj/components/info/InfoSectionHeader';
-import InfoLink from '~/nj/components/info/InfoLink';
-import { Link } from 'react-router-dom';
-import icons from '@uswds/uswds/img/sprite.svg';
 import React from 'react';
+import RelatedLinks, { RelatedLinkType } from '~/nj/components/info/RelatedLinks';
 
 /**
  * Content for "about the AI assistant" page
  */
 export default function NewJerseyAboutPage() {
   document.title = 'NJ AI Assistant - About';
+
+  const relatedLinks: RelatedLinkType[] = [
+    {
+      title: 'Guides and FAQS',
+      href: '/nj/guide',
+      icon: 'local_library',
+      isInternal: true,
+    },
+    {
+      title: 'New Jersey Innovation Authority',
+      href: 'https://innovation.nj.gov/',
+      icon: 'launch',
+      isInternal: false,
+    },
+    {
+      title: 'Guidelines on Generative AI use for Public Professionals',
+      href: 'https://innovation.nj.gov/skills/ai-how-tos/',
+      icon: 'launch',
+      isInternal: false,
+    },
+    {
+      title: 'Responsible AI Use Policy in New Jersey',
+      href: 'https://nj.gov/it/docs/ps/25-OIT-001-State-of-New-Jersey-Guidance-on-Responsible-Use-of-Generative-AI.pdf',
+      icon: 'launch',
+      isInternal: false,
+    },
+  ];
 
   return (
     <div>
@@ -240,45 +265,8 @@ export default function NewJerseyAboutPage() {
       </p>
 
       <HorizontalRule spacing="mb-6" />
-      <InfoSectionHeader text="Related links" />
-      <div className="mb-6 space-y-3">
-        <div>
-          <Link
-            to={{ pathname: '/nj/guide' }}
-            className="inline-flex gap-1 underline hover:decoration-2"
-          >
-            Guides and FAQs
-            <div className="inline-flex rounded bg-surface-secondary p-1">
-              <svg
-                className="usa-icon usa-icon--size-2"
-                aria-hidden="true"
-                focusable="false"
-                role="img"
-              >
-                <use href={`${icons}#local_library`} />
-              </svg>
-            </div>
-          </Link>
-        </div>
 
-        <InfoLink
-          text="New Jersey Innovation Authority"
-          link="https://innovation.nj.gov/"
-          icon="launch"
-        />
-
-        <InfoLink
-          text="Guidelines on Generative AI use for Public Professionals"
-          link="https://innovation.nj.gov/skills/ai-how-tos/ "
-          icon="launch"
-        />
-
-        <InfoLink
-          text="Responsible AI Use Policy in New Jersey"
-          link="https://nj.gov/it/docs/ps/25-OIT-001-State-of-New-Jersey-Guidance-on-Responsible-Use-of-Generative-AI.pdf"
-          icon="launch"
-        />
-      </div>
+      <RelatedLinks links={relatedLinks} />
     </div>
   );
 }
