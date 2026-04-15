@@ -368,14 +368,10 @@ export async function primeInvokedSkills(
 
     if (allFileStreams.length > 0) {
       try {
-        // Use first skill's ID as entity_id — scopes the shared session to a
-        // stable key so freshness checks with ?entity_id= pass session auth.
-        const batchEntityId = skillsWithFiles[0]._id.toString();
         const result = await deps.batchUploadCodeEnvFiles({
           req: deps.req,
           files: allFileStreams,
           apiKey,
-          entity_id: batchEntityId,
         });
 
         sessions = new Map();
@@ -403,10 +399,13 @@ export async function primeInvokedSkills(
                   `[primeInvokedSkills] No skill record found for filename "${f.filename}"`,
                 );
               }
+              const entityId = record?.skill._id?.toString() ?? '';
               return {
                 skillId: record?.skill._id ?? '',
                 relativePath: relPath,
-                codeEnvIdentifier: `${result.session_id}/${f.fileId}?entity_id=${batchEntityId}`,
+                codeEnvIdentifier: entityId
+                  ? `${result.session_id}/${f.fileId}?entity_id=${entityId}`
+                  : `${result.session_id}/${f.fileId}`,
               };
             })
             .filter((u) => u.skillId !== '');
