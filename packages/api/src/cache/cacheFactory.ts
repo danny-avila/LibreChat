@@ -98,7 +98,8 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
 };
 
 /** Convenience accessor for the TOKEN_CONFIG cache namespace. */
-export const tokenConfigCache = (): Keyv => standardCache(CacheKeys.TOKEN_CONFIG);
+export const tokenConfigCache = (): Keyv =>
+  standardCache(CacheKeys.TOKEN_CONFIG, Time.THIRTY_MINUTES);
 
 /**
  * Creates a cache instance for storing violation data.
