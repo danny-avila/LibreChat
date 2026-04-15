@@ -135,11 +135,7 @@ function CodeDisplay({ children, language }: { children: string; language?: stri
           className="shrink-0 rounded p-1.5 pr-1 pt-2 text-text-secondary transition-colors hover:text-text-primary"
           aria-label="Copy"
         >
-          {copied ? (
-            <Check className="size-3.5 text-green-500" />
-          ) : (
-            <Copy className="size-3.5" />
-          )}
+          {copied ? <Check className="size-3.5 text-green-500" /> : <Copy className="size-3.5" />}
         </button>
       </div>
     </div>
@@ -550,9 +546,7 @@ function ResultContent({
     );
   }
 
-  return (
-    <CodeDisplay language="json">{parsed.raw}</CodeDisplay>
-  );
+  return <CodeDisplay language="json">{parsed.raw}</CodeDisplay>;
 }
 
 export default function ClickHouseToolCall({

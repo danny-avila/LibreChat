@@ -200,4 +200,3 @@ export function getRowLabel(row: Record<string, unknown>): string {
   }
   return 'Item';
 }
-
