@@ -496,14 +496,34 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
-                if (tc.name === Constants.SKILL_TOOL) {
+                if (tc.name === Constants.SKILL_TOOL || tc.name === Constants.READ_FILE) {
                   const req = mergedConfigurable?.req as ServerRequest | undefined;
-                  return handleSkillToolCall(tc, mergedConfigurable, options, req);
-                }
+                  const skillResult =
+                    tc.name === Constants.SKILL_TOOL
+                      ? await handleSkillToolCall(tc, mergedConfigurable, options, req)
+                      : await handleReadFileCall(tc, mergedConfigurable, options, req);
 
-                if (tc.name === Constants.READ_FILE) {
-                  const req = mergedConfigurable?.req as ServerRequest | undefined;
-                  return handleReadFileCall(tc, mergedConfigurable, options, req);
+                  if (toolEndCallback && skillResult.artifact) {
+                    await toolEndCallback(
+                      {
+                        output: {
+                          name: tc.name,
+                          tool_call_id: tc.id,
+                          content: skillResult.content,
+                          artifact: skillResult.artifact,
+                        },
+                      },
+                      {
+                        run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
+                        thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                          | string
+                          | undefined,
+                        ...metadata,
+                      },
+                    );
+                  }
+
+                  return skillResult;
                 }
 
                 const tool = toolMap.get(tc.name);
