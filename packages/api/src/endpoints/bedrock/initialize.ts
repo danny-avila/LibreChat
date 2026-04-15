@@ -121,9 +121,9 @@ export async function initializeBedrock({
 
   if (bedrockConfig?.guardrailConfig) {
     llmConfig.guardrailConfig = {
+      ...bedrockConfig.guardrailConfig,
       guardrailIdentifier: extractEnvVariable(bedrockConfig.guardrailConfig.guardrailIdentifier),
       guardrailVersion: extractEnvVariable(bedrockConfig.guardrailConfig.guardrailVersion),
-      trace: bedrockConfig.guardrailConfig.trace,
     };
   }
 
