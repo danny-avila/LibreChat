@@ -31,8 +31,8 @@ function getSkillToolDeps() {
  * @param {Array} accessibleSkillIds - Pre-computed accessible skill IDs
  * @returns {Promise<object>} Augmented result with skill configurable
  */
-function enrichSkillConfigurable(result, req, accessibleSkillIds) {
+function enrichConfigurable(result, req, accessibleSkillIds) {
   return enrichWithSkillConfigurable(result, req, accessibleSkillIds, loadAuthValues);
 }
 
-module.exports = { getSkillToolDeps, enrichWithSkillConfigurable: enrichSkillConfigurable };
+module.exports = { getSkillToolDeps, enrichWithSkillConfigurable: enrichConfigurable };

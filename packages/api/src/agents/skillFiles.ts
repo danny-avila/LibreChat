@@ -242,8 +242,11 @@ export async function primeInvokedSkills(
       authFields: ['LIBRECHAT_CODE_API_KEY'],
     });
     apiKey = authValues.LIBRECHAT_CODE_API_KEY ?? '';
-  } catch {
-    // Code API key not configured — file priming will be skipped
+  } catch (err) {
+    logger.debug(
+      '[primeInvokedSkills] loadAuthValues failed:',
+      err instanceof Error ? err.message : err,
+    );
   }
 
   const skills = new Map<string, string>();
