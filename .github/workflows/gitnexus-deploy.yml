@@ -445,7 +445,12 @@ jobs:
             # BEFORE pulling the new image so the extract has room.
             echo "Disk before cleanup:"
             df -h / | tail -1
-            docker system prune -af --volumes 2>/dev/null || true
+            # Omit --volumes: Caddy's caddy-data and caddy-config volumes
+            # hold TLS certificates and ACME state. If Caddy happens to be
+            # stopped when this runs (the workflow handles that case later),
+            # --volumes would wipe them, forcing Let's Encrypt re-issuance
+            # and risking rate-limit lockout (5 certs/domain/week).
+            docker system prune -af 2>/dev/null || true
             echo "Disk after cleanup:"
             df -h / | tail -1
 
