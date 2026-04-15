@@ -238,6 +238,23 @@ async function handleReadFileCall(
     };
   }
 
+  // Early size check from DB metadata before streaming
+  const isImageOrPdf = IMAGE_MIMES.has(file.mimeType) || file.mimeType === PDF_MIME;
+  if (!isImageOrPdf && file.bytes > MAX_READABLE_BYTES) {
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File too large (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat /mnt/data/${args.file_path}`,
+    };
+  }
+  if (isImageOrPdf && file.bytes > MAX_BINARY_BYTES) {
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File too large (${file.bytes} bytes, limit: ${MAX_BINARY_BYTES}). Use bash to process: /mnt/data/${args.file_path}`,
+    };
+  }
+
   // Stream from storage
   if (!getStrategyFunctions || !req) {
     return {

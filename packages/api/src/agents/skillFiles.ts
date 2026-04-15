@@ -93,7 +93,7 @@ export async function primeSkillFiles(
           for (const sf of skillFiles) {
             if (sf.codeEnvIdentifier) {
               const [sid, fid] = sf.codeEnvIdentifier.split('/');
-              files.push({ id: fid, session_id: sid, name: sf.relativePath });
+              files.push({ id: fid, session_id: sid, name: `${skill.name}/${sf.relativePath}` });
             }
           }
 
@@ -117,23 +117,25 @@ export async function primeSkillFiles(
   const bodyBuffer = Buffer.from(skill.body, 'utf-8');
   filesToUpload.push({ stream: Readable.from(bodyBuffer), filename: `${skill.name}/SKILL.md` });
 
-  // Bundled files from storage
-  for (const file of skillFiles) {
-    try {
+  // Bundled files from storage (parallel stream acquisition)
+  const streamResults = await Promise.allSettled(
+    skillFiles.map(async (file) => {
       const strategy = getStrategyFunctions(file.source);
       if (!strategy.getDownloadStream) {
         logger.warn(
           `[primeSkillFiles] No download stream for "${file.relativePath}" (source: ${file.source})`,
         );
-        continue;
+        return null;
       }
       const stream = await strategy.getDownloadStream(req, file.filepath);
-      filesToUpload.push({ stream, filename: `${skill.name}/${file.relativePath}` });
-    } catch (error) {
-      logger.error(
-        `[primeSkillFiles] Failed to get stream for "${file.relativePath}":`,
-        error instanceof Error ? error.message : error,
-      );
+      return { stream, filename: `${skill.name}/${file.relativePath}` };
+    }),
+  );
+  for (const result of streamResults) {
+    if (result.status === 'fulfilled' && result.value) {
+      filesToUpload.push(result.value);
+    } else if (result.status === 'rejected') {
+      logger.error('[primeSkillFiles] Failed to get stream:', result.reason);
     }
   }
 

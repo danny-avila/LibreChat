@@ -1,4 +1,5 @@
 const FormData = require('form-data');
+const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
 const {
   logAxiosError,
@@ -152,6 +153,14 @@ async function batchUploadCodeEnvFiles({ req, files, apiKey, entity_id = '' }) {
     const result = response.data;
     if (result.message === 'error') {
       throw new Error('All files in batch upload failed');
+    }
+
+    if (result.failed > 0) {
+      const failedNames = result.files
+        .filter((f) => f.status === 'error')
+        .map((f) => `${f.filename}: ${f.error || 'unknown'}`)
+        .join(', ');
+      logger.warn(`[batchUploadCodeEnvFiles] ${result.failed} file(s) failed: ${failedNames}`);
     }
 
     const successFiles = result.files

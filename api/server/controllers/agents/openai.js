@@ -29,6 +29,7 @@ const {
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
@@ -303,11 +304,23 @@ const OpenAIChatCompletionController = async (req, res) => {
           tool_resources: primaryConfig.tool_resources,
           actionsEnabled: primaryConfig.actionsEnabled,
         });
+        let codeApiKey;
+        try {
+          const authValues = await loadAuthValues({
+            userId: req.user.id,
+            authFields: ['LIBRECHAT_CODE_API_KEY'],
+          });
+          codeApiKey = authValues.LIBRECHAT_CODE_API_KEY;
+        } catch {
+          // Code API key not configured
+        }
+
         return {
           ...result,
           configurable: {
             ...result.configurable,
             req,
+            codeApiKey,
             accessibleSkillIds: primaryConfig.accessibleSkillIds,
           },
         };

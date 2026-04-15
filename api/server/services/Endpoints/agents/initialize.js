@@ -229,9 +229,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const parentMessageId = req.body.parentMessageId;
 
   /** Query accessible skill IDs once per run (shared across all agents).
-   *  Only queries when the skills capability is enabled in the admin config. */
+   *  Requires both admin capability AND per-conversation toggle (if ephemeral). */
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
-  const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
+  const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills;
+  const skillsCapabilityEnabled =
+    enabledCapabilities.has(AgentCapabilities.skills) && ephemeralSkillsToggle !== false;
   const accessibleSkillIds = skillsCapabilityEnabled
     ? await findAccessibleResources({
         userId: req.user.id,

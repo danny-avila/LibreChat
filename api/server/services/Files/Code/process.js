@@ -291,21 +291,12 @@ function checkIfActive(dateString) {
 async function getSessionInfo(fileIdentifier, apiKey) {
   try {
     const baseURL = getCodeBaseURL();
-    const [path, queryString] = fileIdentifier.split('?');
-    const session_id = path.split('/')[0];
-
-    let queryParams = {};
-    if (queryString) {
-      queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
-    }
+    const [path] = fileIdentifier.split('?');
+    const [session_id, fileId] = path.split('/');
 
     const response = await axios({
       method: 'get',
-      url: `${baseURL}/files/${session_id}`,
-      params: {
-        detail: 'summary',
-        ...queryParams,
-      },
+      url: `${baseURL}/sessions/${session_id}/objects/${fileId}`,
       headers: {
         'User-Agent': 'LibreChat/1.0',
         'X-API-Key': apiKey,
@@ -315,7 +306,7 @@ async function getSessionInfo(fileIdentifier, apiKey) {
       timeout: 5000,
     });
 
-    return response.data.find((file) => file.name.startsWith(path))?.lastModified;
+    return response.data?.lastModified;
   } catch (error) {
     logAxiosError({
       message: `Error fetching session info: ${error.message}`,

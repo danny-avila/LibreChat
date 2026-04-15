@@ -254,7 +254,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
               'hover:bg-surface-secondary hover:shadow-sm',
               !isSkillsPinned && 'text-text-secondary hover:text-text-primary',
             )}
-            aria-label={isSkillsPinned ? 'Unpin' : 'Pin'}
+            aria-label={isSkillsPinned ? localize('com_ui_unpin') : localize('com_ui_pin')}
           >
             <div className="h-4 w-4">
               <PinIcon unpin={isSkillsPinned} />
