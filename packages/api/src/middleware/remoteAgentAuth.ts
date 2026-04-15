@@ -107,9 +107,11 @@ function verifyOidcBearer(token: string, oidcConfig: OidcConfig): Promise<JwtPay
             client
               .getKeys()
               .then((keys: unknown) => {
-                const jwkKeys = keys as Array<{ kid: string }>;
+                const jwkKeys = keys as Array<{ kid: string; use?: string }>;
                 if (jwkKeys.length === 0) return reject(new Error('No keys in JWKS'));
-                client.getSigningKey(jwkKeys[0].kid, (keyErr, key) => {
+                const signingKeys = jwkKeys.filter((k) => !k.use || k.use === 'sig');
+                const keyToUse = signingKeys[0] ?? jwkKeys[0];
+                client.getSigningKey(keyToUse.kid, (keyErr, key) => {
                   if (keyErr != null || key == null)
                     return reject(keyErr ?? new Error('No signing key'));
                   callback(key);
