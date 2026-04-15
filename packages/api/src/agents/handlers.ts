@@ -110,7 +110,6 @@ const MAX_BINARY_BYTES = 5 * 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
-const PDF_MIME = 'application/pdf';
 
 function addLineNumbers(content: string): string {
   const lines = content.split('\n');

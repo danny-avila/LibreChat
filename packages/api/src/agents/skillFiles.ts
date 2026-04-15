@@ -377,6 +377,9 @@ export async function primeInvokedSkills(
 
     if (allPrimedFiles.length > 0) {
       sessions = new Map();
+      // session_id is a representative value (first skill's session). ToolNode
+      // uses per-file session_id from the files array (file.session_id ??
+      // codeSession.session_id), so mixed sessions work correctly.
       sessions.set(Constants.EXECUTE_CODE, {
         session_id: allPrimedFiles[0].session_id,
         files: allPrimedFiles,

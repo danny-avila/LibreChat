@@ -5,23 +5,21 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { enrichWithSkillConfigurable } = require('@librechat/api');
 const db = require('~/models');
 
-/**
- * Returns the skill-related properties for ToolExecuteOptions.
- * Shared across all three controller entry points (initialize.js, openai.js, responses.js).
- * @returns {{ getSkillByName: Function, listSkillFiles: Function, getStrategyFunctions: Function, batchUploadCodeEnvFiles: Function, getSessionInfo: Function, checkIfActive: Function, updateSkillFileCodeEnvIds: Function, getSkillFileByPath: Function, updateSkillFileContent: Function }}
- */
+/** Skill-related properties for ToolExecuteOptions (stable references, allocated once). */
+const skillToolDeps = {
+  getSkillByName: db.getSkillByName,
+  listSkillFiles: db.listSkillFiles,
+  getStrategyFunctions,
+  batchUploadCodeEnvFiles,
+  getSessionInfo,
+  checkIfActive,
+  updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
+  getSkillFileByPath: db.getSkillFileByPath,
+  updateSkillFileContent: db.updateSkillFileContent,
+};
+
 function getSkillToolDeps() {
-  return {
-    getSkillByName: db.getSkillByName,
-    listSkillFiles: db.listSkillFiles,
-    getStrategyFunctions,
-    batchUploadCodeEnvFiles,
-    getSessionInfo,
-    checkIfActive,
-    updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
-    getSkillFileByPath: db.getSkillFileByPath,
-    updateSkillFileContent: db.updateSkillFileContent,
-  };
+  return skillToolDeps;
 }
 
 /**
