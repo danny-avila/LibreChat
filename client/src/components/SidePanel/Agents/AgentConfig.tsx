@@ -363,6 +363,7 @@ export default function AgentConfig() {
                           methods.setValue(
                             'skills',
                             current.filter((id) => id !== skillId),
+                            { shouldDirty: true },
                           );
                         }}
                         className="ml-2 flex-shrink-0 text-text-secondary transition-colors hover:text-text-primary"
