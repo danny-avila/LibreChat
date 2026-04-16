@@ -9,7 +9,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Types } from 'mongoose';
-import { scopeSkillIds } from '../skills';
+import { scopeSkillIds, resolveSkillActive } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
 
 describe('extractInvokedSkillsFromPayload', () => {
@@ -246,5 +246,143 @@ describe('scopeSkillIds', () => {
     expect(scopeSkillIds([], undefined)).toEqual([]);
     expect(scopeSkillIds([], [])).toEqual([]);
     expect(scopeSkillIds([], [new Types.ObjectId().toString()])).toEqual([]);
+  });
+});
+
+describe('resolveSkillActive', () => {
+  const makeSkill = (author: Types.ObjectId) => ({ _id: new Types.ObjectId(), author });
+
+  it('fails closed when userId is undefined and no override is set', () => {
+    const skill = makeSkill(new Types.ObjectId());
+    expect(
+      resolveSkillActive({
+        skill,
+        skillStates: {},
+        userId: undefined,
+        defaultActiveOnShare: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('fails closed when userId is undefined even if defaultActiveOnShare is true', () => {
+    const skill = makeSkill(new Types.ObjectId());
+    expect(
+      resolveSkillActive({
+        skill,
+        userId: undefined,
+        defaultActiveOnShare: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('respects explicit override = true regardless of ownership or config', () => {
+    const userId = new Types.ObjectId().toString();
+    const sharedSkill = makeSkill(new Types.ObjectId());
+    expect(
+      resolveSkillActive({
+        skill: sharedSkill,
+        skillStates: { [sharedSkill._id.toString()]: true },
+        userId,
+        defaultActiveOnShare: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('respects explicit override = false even for owned skills', () => {
+    const userObjectId = new Types.ObjectId();
+    const userId = userObjectId.toString();
+    const ownedSkill = makeSkill(userObjectId);
+    expect(
+      resolveSkillActive({
+        skill: ownedSkill,
+        skillStates: { [ownedSkill._id.toString()]: false },
+        userId,
+        defaultActiveOnShare: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('owned skills default to active when no override is present', () => {
+    const userObjectId = new Types.ObjectId();
+    const userId = userObjectId.toString();
+    const ownedSkill = makeSkill(userObjectId);
+    expect(
+      resolveSkillActive({
+        skill: ownedSkill,
+        skillStates: {},
+        userId,
+        defaultActiveOnShare: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('shared skills default to inactive when defaultActiveOnShare is false', () => {
+    const userId = new Types.ObjectId().toString();
+    const sharedSkill = makeSkill(new Types.ObjectId());
+    expect(
+      resolveSkillActive({
+        skill: sharedSkill,
+        skillStates: {},
+        userId,
+        defaultActiveOnShare: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('shared skills default to active when defaultActiveOnShare is true', () => {
+    const userId = new Types.ObjectId().toString();
+    const sharedSkill = makeSkill(new Types.ObjectId());
+    expect(
+      resolveSkillActive({
+        skill: sharedSkill,
+        skillStates: {},
+        userId,
+        defaultActiveOnShare: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('treats skillStates = undefined identically to an empty object', () => {
+    const userObjectId = new Types.ObjectId();
+    const userId = userObjectId.toString();
+    const ownedSkill = makeSkill(userObjectId);
+    const sharedSkill = makeSkill(new Types.ObjectId());
+
+    expect(resolveSkillActive({ skill: ownedSkill, userId, defaultActiveOnShare: false })).toBe(
+      resolveSkillActive({
+        skill: ownedSkill,
+        skillStates: {},
+        userId,
+        defaultActiveOnShare: false,
+      }),
+    );
+    expect(resolveSkillActive({ skill: sharedSkill, userId, defaultActiveOnShare: true })).toBe(
+      resolveSkillActive({
+        skill: sharedSkill,
+        skillStates: {},
+        userId,
+        defaultActiveOnShare: true,
+      }),
+    );
+  });
+
+  it('defaults defaultActiveOnShare to false when the param is omitted', () => {
+    const userId = new Types.ObjectId().toString();
+    const sharedSkill = makeSkill(new Types.ObjectId());
+    expect(resolveSkillActive({ skill: sharedSkill, skillStates: {}, userId })).toBe(false);
+  });
+
+  it('ignores defaultActiveOnShare for owned skills', () => {
+    const userObjectId = new Types.ObjectId();
+    const userId = userObjectId.toString();
+    const ownedSkill = makeSkill(userObjectId);
+    expect(
+      resolveSkillActive({
+        skill: ownedSkill,
+        skillStates: {},
+        userId,
+        defaultActiveOnShare: false,
+      }),
+    ).toBe(true);
   });
 });

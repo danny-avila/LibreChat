@@ -41,6 +41,39 @@ export function scopeSkillIds(
   return accessibleSkillIds.filter((oid) => agentSet.has(oid.toString()));
 }
 
+export interface ResolveSkillActiveParams {
+  /** Skill being evaluated. Only `_id` and `author` matter for resolution. */
+  skill: { _id: Types.ObjectId | string; author: Types.ObjectId | string };
+  /** Per-user overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
+  skillStates?: Record<string, boolean>;
+  /** Current user ID. When absent, the function fails closed for all non-overridden skills. */
+  userId?: string;
+  /** Admin-configured default for shared skills. `true` = shared skills auto-activate. */
+  defaultActiveOnShare?: boolean;
+}
+
+/**
+ * Resolves whether a skill should be injected into the agent catalog for the
+ * current user. Precedence (pinned by unit tests):
+ *
+ * 1. Explicit override in `skillStates` wins above all.
+ * 2. Absent `userId` → fail closed. The caller lost user context, so we do
+ *    not fall back to ownership-based defaults that could leak shared skills.
+ * 3. Owned skills (author === userId) default to **active**.
+ * 4. Shared skills default to `defaultActiveOnShare` (admin-configured, default `false`).
+ */
+export function resolveSkillActive(params: ResolveSkillActiveParams): boolean {
+  const { skill, skillStates, userId, defaultActiveOnShare = false } = params;
+  const override = skillStates?.[skill._id.toString()];
+  if (override !== undefined) {
+    return override;
+  }
+  if (!userId) {
+    return false;
+  }
+  return skill.author.toString() === userId ? true : defaultActiveOnShare;
+}
+
 export interface InjectSkillCatalogParams {
   agent: Agent;
   toolDefinitions: LCTool[] | undefined;
@@ -96,16 +129,8 @@ export async function injectSkillCatalog(
 
   type SkillSummary = Awaited<ReturnType<NonNullable<typeof listSkillsByAccess>>>['skills'][number];
 
-  const isActive = (s: SkillSummary): boolean => {
-    const override = skillStates?.[s._id.toString()];
-    if (override !== undefined) {
-      return override;
-    }
-    if (!userId) {
-      return false;
-    }
-    return s.author.toString() === userId ? true : defaultActiveOnShare;
-  };
+  const isActive = (s: SkillSummary): boolean =>
+    resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare });
 
   const activeSkills: SkillSummary[] = [];
   let cursor: string | null = null;
