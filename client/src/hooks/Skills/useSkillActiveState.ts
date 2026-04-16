@@ -38,7 +38,10 @@ function resolveDefault(author: string, userId: string, defaultActiveOnShare: bo
  *
  * The `skillStates` map stores explicit overrides (`{ [skillId]: boolean }`).
  * Skills absent from the map use the ownership-based default: owned -> active,
- * shared -> `defaultActiveOnShare` from the interface config.
+ * shared -> `defaultActiveOnShare` from the interface config. Toggles that
+ * land on the resolved default remove the key from the map rather than
+ * persisting a redundant entry, keeping `skillStates` strictly an exceptions
+ * list (otherwise rapid round-trip toggles would exhaust the 200-entry cap).
  *
  * React Query is the single source of truth. Toggling drives an optimistic
  * mutation that updates the cache, identical to the favorites pattern.
@@ -115,12 +118,17 @@ export default function useSkillActiveState() {
       const cached =
         queryClient.getQueryData<TSkillStatesResponse>([QueryKeys.skillStates]) ?? EMPTY_STATES;
       const baseline = writeQueue.pending ?? cached;
+      const defaultValue = resolveDefault(skill.author, userId, defaultActiveOnShare);
       const override = baseline[skill._id];
-      const currentActive =
-        override !== undefined
-          ? override
-          : resolveDefault(skill.author, userId, defaultActiveOnShare);
-      writeQueue.pending = { ...baseline, [skill._id]: !currentActive };
+      const currentActive = override !== undefined ? override : defaultValue;
+      const nextValue = !currentActive;
+      const next = { ...baseline };
+      if (nextValue === defaultValue) {
+        delete next[skill._id];
+      } else {
+        next[skill._id] = nextValue;
+      }
+      writeQueue.pending = next;
       if (!writeQueue.inFlight) {
         flush();
       }
