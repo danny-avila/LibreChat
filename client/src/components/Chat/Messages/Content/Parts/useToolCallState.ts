@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import { isError } from '~/components/Chat/Messages/Content/ToolOutput';
 import { useProgress, useExpandCollapse } from '~/hooks';
 import store from '~/store';
 
@@ -10,6 +11,7 @@ interface ToolCallState {
   expandRef: React.RefObject<HTMLDivElement>;
   progress: number;
   cancelled: boolean;
+  hasError: boolean;
   hasOutput: boolean;
   hasContent: boolean;
 }
@@ -22,6 +24,7 @@ export default function useToolCallState(
 ): ToolCallState {
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = output.length > 0;
+  const hasError = hasOutput && isError(output);
   const hasContent = hasInput || hasOutput;
 
   const [showCode, setShowCode] = useState(() => autoExpand && hasContent);
@@ -35,7 +38,7 @@ export default function useToolCallState(
 
   const progress = useProgress(initialProgress);
   const toggleCode = useCallback(() => setShowCode((prev) => !prev), []);
-  const cancelled = !isSubmitting && progress < 1;
+  const cancelled = !isSubmitting && progress < 1 && !hasError;
 
   return {
     showCode,
@@ -44,6 +47,7 @@ export default function useToolCallState(
     expandRef,
     progress,
     cancelled,
+    hasError,
     hasOutput,
     hasContent,
   };

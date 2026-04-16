@@ -25,7 +25,7 @@ export default function SkillCall({
   const localize = useLocalize();
   const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
 
-  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasOutput } =
+  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!skillName);
 
   return (
@@ -40,11 +40,12 @@ export default function SkillCall({
               ? localize('com_ui_cancelled')
               : localize('com_ui_skill_finished', { 0: skillName })
           }
+          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ScrollText
               className={cn(
                 'size-4 shrink-0 text-text-secondary',
-                progress < 1 && !cancelled && 'animate-pulse',
+                progress < 1 && !cancelled && !hasError && 'animate-pulse',
               )}
               aria-hidden="true"
             />

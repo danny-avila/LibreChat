@@ -79,7 +79,7 @@ export default function ReadFileCall({
   const fileName = filePath.split('/').pop() || filePath;
   const lang = useMemo(() => langFromPath(filePath), [filePath]);
 
-  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasOutput } =
+  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!filePath);
 
   const highlighted = useLazyHighlight(hasOutput ? output : undefined, lang);
@@ -94,11 +94,12 @@ export default function ReadFileCall({
           finishedText={
             cancelled ? localize('com_ui_cancelled') : localize('com_ui_read_file', { 0: fileName })
           }
+          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <FileText
               className={cn(
                 'size-4 shrink-0 text-text-secondary',
-                progress < 1 && !cancelled && 'animate-pulse',
+                progress < 1 && !cancelled && !hasError && 'animate-pulse',
               )}
               aria-hidden="true"
             />
