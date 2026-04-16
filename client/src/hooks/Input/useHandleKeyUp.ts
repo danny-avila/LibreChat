@@ -80,8 +80,9 @@ const useHandleKeyUp = ({
   useEffect(() => {
     if (isAssistantsEndpoint(endpoint)) {
       setShowPlusPopover(false);
+      setShowSkillsPopover(false);
     }
-  }, [endpoint, setShowPlusPopover]);
+  }, [endpoint, setShowPlusPopover, setShowSkillsPopover]);
 
   const handleAtCommand = useCallback(() => {
     if (atCommandEnabled && shouldTriggerCommand(textAreaRef, '@')) {

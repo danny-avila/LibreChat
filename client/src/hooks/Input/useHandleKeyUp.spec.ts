@@ -486,5 +486,13 @@ describe('useHandleKeyUp', () => {
 
       expect(setShowSkillsPopover).not.toHaveBeenCalledWith(true);
     });
+
+    it('resets $ skills popover when endpoint switches to assistants', () => {
+      mockEndpoint.current = 'assistants';
+      const ref = makeTextAreaRef('', 0);
+      const { setShowSkillsPopover } = renderUseHandleKeyUp(ref);
+
+      expect(setShowSkillsPopover).toHaveBeenCalledWith(false);
+    });
   });
 });

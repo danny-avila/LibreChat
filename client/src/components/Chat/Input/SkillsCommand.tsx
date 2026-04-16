@@ -7,7 +7,7 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
-import { useListSkillsQuery } from '~/data-provider';
+import { useSkillsInfiniteQuery } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
@@ -45,25 +45,36 @@ function SkillsCommandContent({
   const setShowSkillsPopover = useSetRecoilState(store.showSkillsPopoverFamily(index));
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
 
-  const { data, isLoading, isError } = useListSkillsQuery({ limit: 100 });
+  const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useSkillsInfiniteQuery({ limit: 50 });
+
+  /* Auto-fetch all pages so client-side search covers the full catalog,
+     not just the first page. The skills API is server-side capped. */
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const skillOptions: MentionOption[] = useMemo(() => {
-    if (!data?.skills) {
+    if (!data?.pages) {
       return [];
     }
-    return data.skills.reduce<MentionOption[]>((acc, skill) => {
-      if (isUserInvocable(skill)) {
-        acc.push({
-          label: skill.displayTitle ?? skill.name,
-          value: skill.name,
-          description: skill.description,
-          type: 'skill',
-          icon: skillIcon,
-        });
+    return data.pages.reduce<MentionOption[]>((acc, page) => {
+      for (const skill of page.skills) {
+        if (isUserInvocable(skill)) {
+          acc.push({
+            label: skill.displayTitle ?? skill.name,
+            value: skill.name,
+            description: skill.description,
+            type: 'skill',
+            icon: skillIcon,
+          });
+        }
       }
       return acc;
     }, []);
-  }, [data?.skills]);
+  }, [data?.pages]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -225,7 +236,7 @@ function SkillsCommandContent({
             }, 150);
           }}
         />
-        {open && isLoading && matches.length === 0 && (
+        {open && (isLoading || isFetchingNextPage) && matches.length === 0 && (
           <div className="flex h-32 items-center justify-center text-text-primary">
             <Spinner />
           </div>
@@ -235,7 +246,7 @@ function SkillsCommandContent({
             {localize('com_ui_skills_load_error')}
           </div>
         )}
-        {open && !isLoading && !isError && matches.length === 0 && (
+        {open && !isLoading && !isFetchingNextPage && !isError && matches.length === 0 && (
           <div className="p-4 text-center text-sm text-text-secondary">
             {localize(searchValue ? 'com_ui_no_skills_found' : 'com_ui_skills_empty')}
           </div>
