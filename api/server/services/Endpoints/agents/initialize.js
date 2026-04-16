@@ -225,6 +225,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       allowedProviders,
       isInitialAgent: true,
       accessibleSkillIds,
+      codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
     },
     {
       getFiles: db.getFiles,

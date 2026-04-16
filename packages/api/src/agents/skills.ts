@@ -19,6 +19,8 @@ export interface InjectSkillCatalogParams {
   accessibleSkillIds: Types.ObjectId[];
   contextWindowTokens: number;
   listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'];
+  /** When true, registers bash_tool alongside skill + read_file. */
+  codeEnvAvailable?: boolean;
 }
 
 export interface InjectSkillCatalogResult {
@@ -47,6 +49,7 @@ export async function injectSkillCatalog(
     accessibleSkillIds,
     contextWindowTokens,
     listSkillsByAccess,
+    codeEnvAvailable,
   } = params;
 
   if (!listSkillsByAccess || accessibleSkillIds.length === 0) {
@@ -111,7 +114,11 @@ export async function injectSkillCatalog(
     parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
   };
 
-  const defs: LCTool[] = [skillToolDef, readFileDef, bashToolDef];
+  // Always register skill + read_file; only register bash_tool when code env is available
+  const defs: LCTool[] = [skillToolDef, readFileDef];
+  if (codeEnvAvailable) {
+    defs.push(bashToolDef);
+  }
 
   const toolDefinitions = [...(inputDefs ?? []), ...defs];
   if (toolRegistry) {

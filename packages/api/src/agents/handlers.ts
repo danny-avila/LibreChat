@@ -240,7 +240,7 @@ async function handleReadFileCall(
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File too large (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat /mnt/data/${args.file_path}`,
+      content: `File "${args.file_path}" is too large to read directly (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Invoke the skill first, then use bash to read it at /mnt/data/${args.file_path}.`,
     };
   }
   if (isImage && file.bytes > MAX_BINARY_BYTES) {

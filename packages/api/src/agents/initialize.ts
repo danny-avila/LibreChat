@@ -119,6 +119,8 @@ export interface InitializeAgentParams {
   isInitialAgent?: boolean;
   /** Accessible skill IDs for this user (pre-computed by the caller via ACL query) */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
+  /** Whether the code execution environment is available (execute_code capability enabled) */
+  codeEnvAvailable?: boolean;
 }
 
 /**
@@ -438,6 +440,7 @@ export async function initializeAgent(
       accessibleSkillIds,
       contextWindowTokens: Number(agentMaxContextTokens) || 200_000,
       listSkillsByAccess: db?.listSkillsByAccess,
+      codeEnvAvailable: params.codeEnvAvailable,
     });
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;

@@ -242,6 +242,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         allowedProviders,
         isInitialAgent: true,
         accessibleSkillIds,
+        codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
       },
       {
         getConvoFiles: db.getConvoFiles,

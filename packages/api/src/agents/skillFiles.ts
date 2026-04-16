@@ -166,11 +166,16 @@ export async function primeSkillFiles(
       apiKey,
       entity_id: entityId,
     });
-    const files = result.files.map((f) => ({
-      id: f.fileId,
-      session_id: result.session_id,
-      name: f.filename,
-    }));
+    // Exclude SKILL.md from the returned files array — it is uploaded to disk
+    // for bash access but has no codeEnvIdentifier (cannot be cached). Omitting
+    // it here keeps the fresh-upload and cache-hit code paths consistent.
+    const files = result.files
+      .filter((f) => !f.filename.endsWith('/SKILL.md'))
+      .map((f) => ({
+        id: f.fileId,
+        session_id: result.session_id,
+        name: f.filename,
+      }));
 
     // Persist codeEnvIdentifiers on skill files (fire-and-forget)
     if (updateSkillFileCodeEnvIds) {
