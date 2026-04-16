@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { EnvVar, createContentAggregator } = require('@librechat/agents');
 const {
+  scopeSkillIds,
   initializeAgent,
   primeInvokedSkills,
   validateAgentModel,
@@ -111,11 +112,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
 
   /** Query accessible skill IDs once per run (shared across all agents).
-   *  Requires both admin capability AND per-conversation toggle (if ephemeral). */
+   *  Skills activate when the admin capability is enabled AND either:
+   *  - the per-conversation toggle is on (ephemeral), OR
+   *  - the agent has stored skills (scoped by scopeSkillIds later). */
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
-  const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills;
-  const skillsCapabilityEnabled =
-    enabledCapabilities.has(AgentCapabilities.skills) && ephemeralSkillsToggle === true;
+  const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
+  const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
 
   const accessibleSkillIds = skillsCapabilityEnabled
     ? await findAccessibleResources({
@@ -240,7 +242,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       endpointOption,
       allowedProviders,
       isInitialAgent: true,
-      accessibleSkillIds,
+      accessibleSkillIds: scopeSkillIds(
+        accessibleSkillIds,
+        ephemeralSkillsToggle ? undefined : primaryAgent.skills,
+      ),
       codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
     },
     {
@@ -325,7 +330,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         parentMessageId,
         endpointOption,
         allowedProviders,
-        accessibleSkillIds,
+        accessibleSkillIds: scopeSkillIds(
+          accessibleSkillIds,
+          ephemeralSkillsToggle ? undefined : agent.skills,
+        ),
       },
       {
         getFiles: db.getFiles,
@@ -477,6 +485,15 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
+  /** primeInvokedSkills reconstructs bodies of skills invoked in prior turns so
+   *  formatAgentMessages can rebuild HumanMessages and re-prime code-env files.
+   *  Unlike catalog injection and runtime invocation (both scoped per-agent),
+   *  history priming must use the user's full ACL-accessible set: historical
+   *  skill calls can reference skills no longer in any active agent's scope
+   *  (agent.skills edited, ephemeral toggle flipped), and scoping those out
+   *  would drop prior skill context and break file references in follow-up
+   *  turns. The ACL check remains the security gate; handleSkillToolCall is
+   *  where per-agent scoping prevents NEW invocations. */
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
     ? (payload) =>
         primeInvokedSkills({

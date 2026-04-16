@@ -41,6 +41,7 @@ jest.mock('@librechat/api', () => ({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
   createSafeUser: jest.fn().mockReturnValue({ id: 'user-123' }),
   initializeAgent: jest.fn().mockResolvedValue({
     model: 'claude-3',

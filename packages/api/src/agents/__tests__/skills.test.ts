@@ -8,6 +8,8 @@ jest.mock('@librechat/agents', () => ({
   },
 }));
 
+import { Types } from 'mongoose';
+import { scopeSkillIds } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
 
 describe('extractInvokedSkillsFromPayload', () => {
@@ -179,5 +181,70 @@ describe('extractInvokedSkillsFromPayload', () => {
     const result = extractInvokedSkillsFromPayload(payload);
     expect(result.size).toBe(1);
     expect(result.has('pdf')).toBe(true);
+  });
+});
+
+describe('scopeSkillIds', () => {
+  const makeId = () => new Types.ObjectId();
+
+  it('returns the full set when agentSkills is undefined (not configured)', () => {
+    const a = makeId();
+    const b = makeId();
+    const accessible = [a, b];
+    expect(scopeSkillIds(accessible, undefined)).toBe(accessible);
+  });
+
+  it('returns the full set when agentSkills is null (not configured)', () => {
+    const a = makeId();
+    const b = makeId();
+    const accessible = [a, b];
+    expect(scopeSkillIds(accessible, null)).toBe(accessible);
+  });
+
+  it('returns [] when agentSkills is an empty array (explicit none)', () => {
+    const accessible = [makeId(), makeId()];
+    expect(scopeSkillIds(accessible, [])).toEqual([]);
+  });
+
+  it('returns intersection when agentSkills overlaps accessibleSkillIds', () => {
+    const a = makeId();
+    const b = makeId();
+    const c = makeId();
+    const accessible = [a, b, c];
+    const scoped = scopeSkillIds(accessible, [a.toString(), c.toString()]);
+    expect(scoped).toHaveLength(2);
+    expect(scoped.map((o) => o.toString())).toEqual([a.toString(), c.toString()]);
+  });
+
+  it('returns [] when agentSkills is disjoint from accessibleSkillIds', () => {
+    const a = makeId();
+    const b = makeId();
+    const accessible = [a, b];
+    const unrelated = makeId().toString();
+    expect(scopeSkillIds(accessible, [unrelated])).toEqual([]);
+  });
+
+  it('returns the full accessible set when agentSkills exactly matches it', () => {
+    const a = makeId();
+    const b = makeId();
+    const accessible = [a, b];
+    const scoped = scopeSkillIds(accessible, [a.toString(), b.toString()]);
+    expect(scoped).toHaveLength(2);
+    expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), b.toString()].sort());
+  });
+
+  it('filters out agentSkills entries that the user does not have ACL access to', () => {
+    const a = makeId();
+    const accessible = [a];
+    const notAccessible = makeId().toString();
+    const scoped = scopeSkillIds(accessible, [a.toString(), notAccessible]);
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0].toString()).toBe(a.toString());
+  });
+
+  it('returns [] when accessibleSkillIds is empty regardless of agentSkills', () => {
+    expect(scopeSkillIds([], undefined)).toEqual([]);
+    expect(scopeSkillIds([], [])).toEqual([]);
+    expect(scopeSkillIds([], [new Types.ObjectId().toString()])).toEqual([]);
   });
 });
