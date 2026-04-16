@@ -115,12 +115,13 @@ const useHandleKeyUp = ({
     if (!shouldTriggerCommand(textAreaRef, '$')) {
       return;
     }
-    /* Avoid hijacking currency input: bare `$` is a valid browse trigger,
-       but `$100`, `$5.99`, etc. should pass through unchanged. Only open
-       the popover when the character after `$` looks like a skill
-       identifier (lowercase ASCII letter). */
+    /* Avoid hijacking currency input. Bare `$` could be the start of
+       `$100`, so defer opening until a follow-up keystroke confirms a
+       skill-like prefix (lowercase ASCII letter immediately after `$`).
+       This means `$100`, `$5.99`, `$EUR` never open the popover, while
+       `$a`, `$skill`, `$my-skill` do. */
     const text = textAreaRef.current?.value ?? '';
-    if (text.length > 1 && !/^[a-z]/.test(text.slice(1))) {
+    if (text.length < 2 || !/^[a-z]/.test(text[1])) {
       return;
     }
     setShowSkillsPopover(true);

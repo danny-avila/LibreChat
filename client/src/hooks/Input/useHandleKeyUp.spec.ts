@@ -154,11 +154,20 @@ describe('useHandleKeyUp', () => {
       expect(setShowPlusPopover).toHaveBeenCalledWith(true);
     });
 
-    it('triggers $ skill command for "$" at position 1', () => {
+    it('does NOT trigger $ skill command for bare "$" (defers to next keystroke)', () => {
       const ref = makeTextAreaRef('$', 1);
       const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
 
       act(() => handleKeyUp(makeKeyEvent('$')));
+
+      expect(setShowSkillsPopover).not.toHaveBeenCalled();
+    });
+
+    it('triggers $ skill command for "$a" once a letter follows', () => {
+      const ref = makeTextAreaRef('$a', 2);
+      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('a')));
 
       expect(setShowSkillsPopover).toHaveBeenCalledWith(true);
     });
