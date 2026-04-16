@@ -1,4 +1,6 @@
 import { useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys } from 'librechat-data-provider';
 import { useToastContext } from '@librechat/client';
 import type { TSkillStatesResponse } from 'librechat-data-provider';
 import {
@@ -44,12 +46,15 @@ function resolveDefault(author: string, userId: string, defaultActiveOnShare: bo
  * baseline (from isLoading or a failed GET) from wiping server-side overrides.
  * Writes are serialized via a module-scoped queue so rapid toggles from any
  * hook instance cannot race: only one request is ever in flight, and the
- * latest desired state is sent when the previous one settles.
+ * latest desired state is sent when the previous one settles. Each toggle
+ * reads the latest optimistic state directly from the React Query cache so
+ * rapid successive toggles cannot drop earlier changes via stale closure.
  */
 export default function useSkillActiveState() {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
+  const queryClient = useQueryClient();
   const configQuery = useGetStartupConfig();
   const getQuery = useGetSkillStatesQuery();
   const updateMutation = useUpdateSkillStatesMutation();
@@ -80,7 +85,10 @@ export default function useSkillActiveState() {
         await updateMutation.mutateAsync(next);
       } catch (error) {
         logger.error('Error updating skill states:', error);
-        showToast({ message: localize('com_ui_error'), status: 'error' });
+        const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+        const messageKey =
+          code === 'MAX_SKILL_STATES_EXCEEDED' ? 'com_ui_skill_states_limit' : 'com_ui_error';
+        showToast({ message: localize(messageKey), status: 'error' });
         writeQueue.pending = null;
         break;
       }
@@ -104,7 +112,9 @@ export default function useSkillActiveState() {
       if (!canToggle) {
         return;
       }
-      const baseline = writeQueue.pending ?? skillStates;
+      const cached =
+        queryClient.getQueryData<TSkillStatesResponse>([QueryKeys.skillStates]) ?? EMPTY_STATES;
+      const baseline = writeQueue.pending ?? cached;
       const override = baseline[skill._id];
       const currentActive =
         override !== undefined
@@ -115,7 +125,7 @@ export default function useSkillActiveState() {
         flush();
       }
     },
-    [skillStates, userId, defaultActiveOnShare, canToggle, flush],
+    [queryClient, userId, defaultActiveOnShare, canToggle, flush],
   );
 
   return {

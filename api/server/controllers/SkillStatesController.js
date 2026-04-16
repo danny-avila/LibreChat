@@ -1,3 +1,5 @@
+const mongoose = require('mongoose');
+const { isValidObjectIdString } = require('@librechat/data-schemas');
 const { updateUser, getUserById } = require('~/models');
 
 const MAX_SKILL_STATES = 200;
@@ -14,6 +16,32 @@ function toRecord(raw) {
   return raw && typeof raw === 'object' ? raw : {};
 }
 
+/**
+ * Drops entries whose skill no longer exists. Self-heals orphaned overrides
+ * from deleted skills without requiring cascade logic or a migration.
+ */
+async function pruneOrphans(skillStates) {
+  const ids = Object.keys(skillStates).filter((id) => isValidObjectIdString(id));
+  if (ids.length === 0) {
+    return skillStates;
+  }
+  const Skill = mongoose.models.Skill;
+  if (!Skill) {
+    return skillStates;
+  }
+  const existing = await Skill.find({ _id: { $in: ids } })
+    .select('_id')
+    .lean();
+  const existingSet = new Set(existing.map((doc) => doc._id.toString()));
+  const pruned = {};
+  for (const [id, value] of Object.entries(skillStates)) {
+    if (existingSet.has(id)) {
+      pruned[id] = value;
+    }
+  }
+  return pruned;
+}
+
 const getSkillStatesController = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -23,7 +51,9 @@ const getSkillStatesController = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    return res.status(200).json(toRecord(user.skillStates));
+    const states = toRecord(user.skillStates);
+    const pruned = await pruneOrphans(states);
+    return res.status(200).json(pruned);
   } catch (error) {
     console.error('Error fetching skill states:', error);
     return res.status(500).json({ message: 'Internal server error' });
@@ -65,7 +95,8 @@ const updateSkillStatesController = async (req, res) => {
       }
     }
 
-    const user = await updateUser(userId, { skillStates });
+    const pruned = await pruneOrphans(skillStates);
+    const user = await updateUser(userId, { skillStates: pruned });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
