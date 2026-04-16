@@ -144,6 +144,19 @@ jest.mock('~/cache', () => ({
   logViolation: jest.fn(),
 }));
 
+jest.mock('~/server/services/Files/strategies', () => ({
+  getStrategyFunctions: jest.fn().mockReturnValue({}),
+}));
+
+jest.mock('~/server/services/Files/Code/crud', () => ({
+  batchUploadCodeEnvFiles: jest.fn().mockResolvedValue({ session_id: '', files: [] }),
+}));
+
+jest.mock('~/server/services/Files/Code/process', () => ({
+  getSessionInfo: jest.fn().mockResolvedValue(null),
+  checkIfActive: jest.fn().mockReturnValue(false),
+}));
+
 const mockUpdateBalance = jest.fn().mockResolvedValue({});
 const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
 

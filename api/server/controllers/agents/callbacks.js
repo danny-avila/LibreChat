@@ -7,6 +7,7 @@ const {
   GraphEvents,
   GraphNodeKeys,
   ToolEndHandler,
+  CODE_EXECUTION_TOOLS,
 } = require('@librechat/agents');
 const {
   sendEvent,
@@ -443,9 +444,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
-    const isCodeTool =
-      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
-    if (!isCodeTool) {
+    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
       return;
     }
 
@@ -651,9 +650,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       return;
     }
 
-    const isCodeTool =
-      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
-    if (!isCodeTool) {
+    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
       return;
     }
 

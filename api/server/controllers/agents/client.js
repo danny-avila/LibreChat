@@ -742,12 +742,18 @@ class AgentClient extends BaseClient {
 
       const toolSet = buildToolSet(this.options.agent);
       const tokenCounter = createTokenCounter(this.getEncoding());
+
+      /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
+      const skillPrimeResult = this.options.primeInvokedSkills
+        ? await this.options.primeInvokedSkills(payload)
+        : undefined;
+
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
-      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet);
+      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills);
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
@@ -829,6 +835,7 @@ class AgentClient extends BaseClient {
           messages,
           indexTokenCountMap,
           initialSummary,
+          initialSessions: skillPrimeResult?.initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,

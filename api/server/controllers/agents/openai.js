@@ -6,6 +6,7 @@ const {
   ResourceType,
   PermissionBits,
   hasPermissions,
+  AgentCapabilities,
 } = require('librechat-data-provider');
 const {
   writeSSE,
@@ -40,6 +41,10 @@ const {
   findAccessibleResources,
   getEffectivePermissions,
 } = require('~/server/services/PermissionService');
+const {
+  getSkillToolDeps,
+  enrichWithSkillConfigurable,
+} = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
@@ -235,7 +240,21 @@ const OpenAIChatCompletionController = async (req, res) => {
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+      listSkillsByAccess: db.listSkillsByAccess,
     };
+
+    const enabledCapabilities = new Set(agentsEConfig?.capabilities);
+    const ephemeralAgent = req.body?.ephemeralAgent;
+    const skillsEnabled =
+      enabledCapabilities.has(AgentCapabilities.skills) && ephemeralAgent?.skills === true;
+    const accessibleSkillIds = skillsEnabled
+      ? await findAccessibleResources({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.SKILL,
+          requiredPermissions: PermissionBits.VIEW,
+        })
+      : [];
 
     const primaryConfig = await initializeAgent(
       {
@@ -249,6 +268,8 @@ const OpenAIChatCompletionController = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
+        accessibleSkillIds,
+        codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
       },
       dbMethods,
     );
@@ -375,7 +396,7 @@ const OpenAIChatCompletionController = async (req, res) => {
     const toolExecuteOptions = {
       loadTools: async (toolNames, agentId) => {
         const ctx = agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
-        return loadToolsForExecution({
+        const result = await loadToolsForExecution({
           req,
           res,
           toolNames,
@@ -386,8 +407,10 @@ const OpenAIChatCompletionController = async (req, res) => {
           tool_resources: ctx.tool_resources,
           actionsEnabled: ctx.actionsEnabled,
         });
+        return enrichWithSkillConfigurable(result, req, primaryConfig.accessibleSkillIds);
       },
       toolEndCallback,
+      ...getSkillToolDeps(),
     };
 
     const summarizationConfig = appConfig?.summarization;

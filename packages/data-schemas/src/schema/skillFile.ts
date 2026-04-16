@@ -96,6 +96,9 @@ const skillFileSchema: Schema<ISkillFileDocument> = new Schema(
     isBinary: {
       type: Boolean,
     },
+    codeEnvIdentifier: {
+      type: String,
+    },
   },
   {
     timestamps: true,

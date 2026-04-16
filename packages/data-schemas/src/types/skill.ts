@@ -94,6 +94,12 @@ export interface ISkillFile {
   content?: string;
   /** Set on first read. `true` prevents repeated storage reads for non-text files. */
   isBinary?: boolean;
+  /**
+   * Code environment file identifier (`session_id/fileId`).
+   * Set after uploading to code env, used to check freshness on subsequent runs.
+   * Cleared when the skill file is re-uploaded to storage.
+   */
+  codeEnvIdentifier?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
