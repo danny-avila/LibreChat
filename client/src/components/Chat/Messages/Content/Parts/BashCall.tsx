@@ -74,20 +74,20 @@ export default function BashCall({
         <div className="overflow-hidden" ref={expandRef}>
           <div className="my-2 overflow-hidden rounded-lg border border-border-light">
             {command && (
-              <div className="flex items-start justify-between bg-surface-tertiary px-3 py-2.5 dark:bg-gray-950">
-                <pre className="max-h-[300px] flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">
+              <div className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950">
+                <CopyButton
+                  iconOnly
+                  isCopied={isCopied}
+                  onClick={handleCopy}
+                  className="sticky right-0 top-1 float-right mr-1.5 mt-1"
+                  label={localize('com_ui_copy_code')}
+                />
+                <pre className="whitespace-pre-wrap break-words px-3 py-2.5 pr-10 font-mono text-xs">
                   <span className="select-none text-text-tertiary" aria-hidden="true">
                     {'$ '}
                   </span>
                   <code className="hljs language-bash">{highlighted ?? command}</code>
                 </pre>
-                <CopyButton
-                  iconOnly
-                  isCopied={isCopied}
-                  onClick={handleCopy}
-                  className="ml-2 shrink-0"
-                  label={localize('com_ui_copy_code')}
-                />
               </div>
             )}
             {hasOutput && (
