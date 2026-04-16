@@ -143,7 +143,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
-      return enrichWithSkillConfigurable(result, req, ctx.accessibleSkillIds);
+      return enrichWithSkillConfigurable(result, req, ctx.accessibleSkillIds, codeApiKey);
     },
     toolEndCallback,
     ...getSkillToolDeps(),
@@ -211,6 +211,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         requiredPermissions: PermissionBits.VIEW,
       })
     : [];
+
+  // Resolve code API key once for the entire run (shared by primeInvokedSkills
+  // and enrichWithSkillConfigurable) to avoid redundant auth lookups.
+  let codeApiKey;
+  if (skillsCapabilityEnabled && enabledCapabilities.has(AgentCapabilities.execute_code)) {
+    try {
+      const authValues = await loadAuthValues({
+        userId: req.user.id,
+        authFields: ['LIBRECHAT_CODE_API_KEY'],
+      });
+      codeApiKey = authValues.LIBRECHAT_CODE_API_KEY;
+    } catch {
+      // non-fatal — primeInvokedSkills and enrichWithSkillConfigurable will work without it
+    }
+  }
 
   const primaryConfig = await initializeAgent(
     {
@@ -467,6 +482,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           req,
           payload,
           accessibleSkillIds,
+          codeApiKey,
           loadAuthValues,
           ...getSkillToolDeps(),
         })

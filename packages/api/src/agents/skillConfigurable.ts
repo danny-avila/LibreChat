@@ -1,3 +1,4 @@
+import { EnvVar } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 
 /**
@@ -12,19 +13,23 @@ export async function enrichWithSkillConfigurable(
     userId: string;
     authFields: string[];
   }) => Promise<Record<string, string>>,
+  /** Pre-resolved code API key. When provided, loadAuthValues is skipped. */
+  preResolvedCodeApiKey?: string,
 ): Promise<{ loadedTools: unknown[]; configurable: Record<string, unknown> }> {
-  let codeApiKey: string | undefined;
-  try {
-    const authValues = await loadAuthValues({
-      userId: req.user?.id ?? '',
-      authFields: ['LIBRECHAT_CODE_API_KEY'],
-    });
-    codeApiKey = authValues.LIBRECHAT_CODE_API_KEY;
-  } catch (err) {
-    logger.debug(
-      '[enrichWithSkillConfigurable] loadAuthValues failed:',
-      err instanceof Error ? err.message : err,
-    );
+  let codeApiKey: string | undefined = preResolvedCodeApiKey;
+  if (!codeApiKey) {
+    try {
+      const authValues = await loadAuthValues({
+        userId: req.user?.id ?? '',
+        authFields: [EnvVar.CODE_API_KEY],
+      });
+      codeApiKey = authValues[EnvVar.CODE_API_KEY];
+    } catch (err) {
+      logger.debug(
+        '[enrichWithSkillConfigurable] loadAuthValues failed:',
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
   return {
     ...result,

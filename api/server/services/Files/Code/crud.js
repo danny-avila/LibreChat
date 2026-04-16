@@ -151,6 +151,14 @@ async function batchUploadCodeEnvFiles({ req, files, apiKey, entity_id = '' }) {
 
     /** @type {{ message: string; session_id: string; files: Array<{ status: string; fileId?: string; filename: string; error?: string }>; succeeded: number; failed: number }} */
     const result = response.data;
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      !result.session_id ||
+      !Array.isArray(result.files)
+    ) {
+      throw new Error(`Unexpected batch upload response: ${JSON.stringify(result).slice(0, 200)}`);
+    }
     if (result.message === 'error') {
       throw new Error('All files in batch upload failed');
     }

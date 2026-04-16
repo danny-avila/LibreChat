@@ -27,10 +27,17 @@ function getSkillToolDeps() {
  * @param {object} result - The result from loadToolsForExecution
  * @param {object} req - The Express request object
  * @param {Array} accessibleSkillIds - Pre-computed accessible skill IDs
+ * @param {string} [preResolvedCodeApiKey] - Pre-resolved code API key (skips redundant lookup)
  * @returns {Promise<object>} Augmented result with skill configurable
  */
-function enrichConfigurable(result, req, accessibleSkillIds) {
-  return enrichWithSkillConfigurable(result, req, accessibleSkillIds, loadAuthValues);
+function enrichConfigurable(result, req, accessibleSkillIds, preResolvedCodeApiKey) {
+  return enrichWithSkillConfigurable(
+    result,
+    req,
+    accessibleSkillIds,
+    loadAuthValues,
+    preResolvedCodeApiKey,
+  );
 }
 
 module.exports = { getSkillToolDeps, enrichWithSkillConfigurable: enrichConfigurable };

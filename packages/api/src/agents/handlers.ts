@@ -274,7 +274,26 @@ async function handleReadFileCall(
 
     const stream = await strategy.getDownloadStream(req, file.filepath);
     const chunks: Buffer[] = [];
+    // Use the larger binary limit as streaming cap; cheaper type-specific
+    // checks happen after binary detection on the assembled buffer.
+    const streamLimit = MAX_BINARY_BYTES;
+    let streamedBytes = 0;
     for await (const chunk of stream as AsyncIterable<Buffer>) {
+      streamedBytes += chunk.length;
+      if (streamedBytes > streamLimit) {
+        // Destroy the stream if possible to free resources
+        if (
+          'destroy' in stream &&
+          typeof (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy === 'function'
+        ) {
+          (stream as NodeJS.ReadableStream & { destroy: () => void }).destroy();
+        }
+        return {
+          toolCallId: tc.id,
+          status: 'success',
+          content: `File "${args.file_path}" exceeded streaming limit (${streamLimit} bytes). Invoke the skill first, then use bash to read it at /mnt/data/${args.file_path}.`,
+        };
+      }
       chunks.push(chunk);
     }
     const buffer = Buffer.concat(chunks);
