@@ -44,6 +44,9 @@ function SkillsCommandContent({
   const localize = useLocalize();
   const setShowSkillsPopover = useSetRecoilState(store.showSkillsPopoverFamily(index));
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
+  const setPendingManualSkills = useSetRecoilState(
+    store.pendingManualSkillsByConvoId(conversationId),
+  );
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useSkillsInfiniteQuery({ limit: 50 });
@@ -128,6 +131,16 @@ function SkillsCommandContent({
         return { ...(prev || {}), skills: true };
       });
 
+      /* Structured channel for manual skill invocations. The follow-up PR
+         will read this in the submit pipeline and prime the corresponding
+         SKILL.md as a meta user message before the LLM turn, mirroring
+         Claude Code's `/skill` deterministic injection. The textual
+         `$skill-name ` insertion below remains as user-visible confirmation
+         and is treated as cosmetic by that future pipeline. */
+      setPendingManualSkills((prev) =>
+        prev.includes(mention.value) ? prev : [...prev, mention.value],
+      );
+
       const textarea = textAreaRef.current;
       if (textarea) {
         const insertion = `$${mention.value} `;
@@ -143,7 +156,14 @@ function SkillsCommandContent({
         textarea.setSelectionRange(insertion.length, insertion.length);
       }
     },
-    [setSearchValue, setOpen, setShowSkillsPopover, textAreaRef, setEphemeralAgent],
+    [
+      setSearchValue,
+      setOpen,
+      setShowSkillsPopover,
+      textAreaRef,
+      setEphemeralAgent,
+      setPendingManualSkills,
+    ],
   );
 
   useEffect(() => {
