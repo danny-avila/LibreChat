@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { Eye, Code, User, Calendar, EarthIcon, ScrollText } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
 import type { TSkill } from 'librechat-data-provider';
-import { useLocalize, useAuthContext, useSkillPermissions } from '~/hooks';
+import { useLocalize, useAuthContext, useSkillPermissions, useSkillActiveState } from '~/hooks';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
 import { parseFrontmatter } from '../utils';
 import DeleteSkill from '../dialogs/DeleteSkill';
@@ -68,7 +68,9 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
   const localize = useLocalize();
   const { user } = useAuthContext();
   const permissions = useSkillPermissions(skill);
+  const { isActive, toggle } = useSkillActiveState();
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
+  const skillEnabled = isActive(skill);
 
   const isPublic = skill.isPublic === true;
   const isShared = skill.author !== user?.id && Boolean(skill.authorName);
@@ -130,6 +132,32 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
 
         {/* Actions */}
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={skillEnabled}
+            aria-label={localize('com_ui_skill_toggle_active')}
+            onClick={() => toggle(skill)}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-surface-hover"
+          >
+            <span
+              className={cn(
+                'relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors duration-200',
+                skillEnabled ? 'bg-green-500' : 'bg-border-medium',
+              )}
+            >
+              <span
+                className={cn(
+                  'pointer-events-none inline-block size-3 rounded-full bg-white shadow-sm transition-transform duration-200',
+                  skillEnabled ? 'translate-x-3.5' : 'translate-x-0.5',
+                  'mt-0.5',
+                )}
+              />
+            </span>
+            <span className={skillEnabled ? 'text-text-primary' : 'text-text-tertiary'}>
+              {localize(skillEnabled ? 'com_ui_skill_active' : 'com_ui_skill_inactive')}
+            </span>
+          </button>
           <ShareSkill skill={skill} />
           {permissions.canEdit && onEdit && (
             <button

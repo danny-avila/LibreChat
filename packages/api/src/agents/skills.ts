@@ -46,6 +46,12 @@ export interface InjectSkillCatalogParams {
   listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'];
   /** When true, registers bash_tool alongside skill + read_file. */
   codeEnvAvailable?: boolean;
+  /** Current user ID — used to determine skill ownership for active-state resolution. */
+  userId?: string;
+  /** Per-user skill overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
+  skillStates?: Record<string, boolean>;
+  /** Admin-configured default for shared skills. `true` = shared skills auto-activate. */
+  defaultActiveOnShare?: boolean;
 }
 
 export interface InjectSkillCatalogResult {
@@ -75,6 +81,9 @@ export async function injectSkillCatalog(
     contextWindowTokens,
     listSkillsByAccess,
     codeEnvAvailable,
+    userId,
+    skillStates,
+    defaultActiveOnShare = false,
   } = params;
 
   if (!listSkillsByAccess || accessibleSkillIds.length === 0) {
@@ -96,9 +105,26 @@ export async function injectSkillCatalog(
     return { toolDefinitions: inputDefs, skillCount: 0 };
   }
 
+  // Filter to only skills the user has activated (per-user active state).
+  // Owned skills default to active; shared skills default to `defaultActiveOnShare`.
+  const activeSkills = userId
+    ? skills.filter((s) => {
+        const override = skillStates?.[s._id.toString()];
+        if (override !== undefined) {
+          return override;
+        }
+        const isOwned = s.author.toString() === userId;
+        return isOwned ? true : defaultActiveOnShare;
+      })
+    : skills;
+
+  if (activeSkills.length === 0) {
+    return { toolDefinitions: inputDefs, skillCount: 0 };
+  }
+
   // Warn on duplicate names — model may invoke the wrong skill
   const nameCount = new Map<string, number>();
-  for (const s of skills) {
+  for (const s of activeSkills) {
     nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
   }
   for (const [dupName, count] of nameCount) {
@@ -110,7 +136,7 @@ export async function injectSkillCatalog(
   }
 
   const catalog = formatSkillCatalog(
-    skills.map((s) => ({ name: s.name, description: s.description })),
+    activeSkills.map((s) => ({ name: s.name, description: s.description })),
     { contextWindowTokens: contextWindowTokens || 200_000 },
   );
 
@@ -152,5 +178,5 @@ export async function injectSkillCatalog(
     }
   }
 
-  return { toolDefinitions, skillCount: skills.length };
+  return { toolDefinitions, skillCount: activeSkills.length };
 }

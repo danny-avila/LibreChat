@@ -1,6 +1,7 @@
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions } from '@tanstack/react-query';
+import type { TSkillStatesResponse } from 'librechat-data-provider';
 import type { FavoritesState } from '~/store/favorites';
 
 export const useGetFavoritesQuery = (
@@ -70,6 +71,41 @@ export const useUpdateSkillFavoritesMutation = () => {
       onError: (_err, _newFavorites, context) => {
         if (context?.previous !== undefined) {
           queryClient.setQueryData([QueryKeys.skillFavorites], context.previous);
+        }
+      },
+    },
+  );
+};
+
+export const useGetSkillStatesQuery = (
+  config?: Omit<UseQueryOptions<TSkillStatesResponse, Error>, 'queryKey' | 'queryFn'>,
+) => {
+  return useQuery<TSkillStatesResponse, Error>(
+    [QueryKeys.skillStates],
+    () => dataService.getSkillStates(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useUpdateSkillStatesMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (skillStates: TSkillStatesResponse) => dataService.updateSkillStates(skillStates),
+    {
+      onMutate: async (next) => {
+        await queryClient.cancelQueries([QueryKeys.skillStates]);
+        const previous = queryClient.getQueryData<TSkillStatesResponse>([QueryKeys.skillStates]);
+        queryClient.setQueryData([QueryKeys.skillStates], next);
+        return { previous };
+      },
+      onError: (_err, _next, context) => {
+        if (context?.previous !== undefined) {
+          queryClient.setQueryData([QueryKeys.skillStates], context.previous);
         }
       },
     },

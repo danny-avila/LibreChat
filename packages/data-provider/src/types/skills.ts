@@ -259,3 +259,16 @@ export type TDeleteSkillFileVariables = {
   skillId: string;
   relativePath: string;
 };
+
+/**
+ * Per-user skill active/inactive overrides.
+ * Key = skill ObjectId string, value = explicit active state.
+ * Skills absent from the map use the ownership-based default:
+ * owned → active, shared → `defaultActiveOnShare` from config.
+ */
+export type TSkillStatesResponse = Record<string, boolean>;
+
+/** Request body for POST `/api/user/settings/skills/active`. */
+export type TUpdateSkillStatesRequest = {
+  skillStates: Record<string, boolean>;
+};

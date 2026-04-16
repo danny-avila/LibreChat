@@ -128,6 +128,22 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       })
     : [];
 
+  // Resolve per-user skill active/inactive overrides and admin default.
+  let skillStates;
+  let defaultActiveOnShare = false;
+  if (accessibleSkillIds.length > 0) {
+    const [skillStatesUser, skillsConfig] = await Promise.all([
+      db.getUserById(req.user.id, 'skillStates'),
+      Promise.resolve(appConfig?.interfaceConfig?.skills),
+    ]);
+    const raw = skillStatesUser?.skillStates;
+    skillStates =
+      raw instanceof Map ? Object.fromEntries(raw) : raw && typeof raw === 'object' ? raw : {};
+    if (typeof skillsConfig === 'object' && skillsConfig !== null) {
+      defaultActiveOnShare = skillsConfig.defaultActiveOnShare === true;
+    }
+  }
+
   // Resolve code API key once for the entire run (shared by primeInvokedSkills
   // and enrichWithSkillConfigurable) to avoid redundant auth lookups.
   let codeApiKey;
@@ -247,6 +263,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         ephemeralSkillsToggle ? undefined : primaryAgent.skills,
       ),
       codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+      skillStates,
+      defaultActiveOnShare,
     },
     {
       getFiles: db.getFiles,
@@ -334,6 +352,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           accessibleSkillIds,
           ephemeralSkillsToggle ? undefined : agent.skills,
         ),
+        skillStates,
+        defaultActiveOnShare,
       },
       {
         getFiles: db.getFiles,

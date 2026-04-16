@@ -123,6 +123,10 @@ export interface InitializeAgentParams {
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
+  /** Per-user skill active/inactive overrides for filtering the skill catalog. */
+  skillStates?: Record<string, boolean>;
+  /** Admin-configured default for shared skills (`true` = shared skills auto-activate). */
+  defaultActiveOnShare?: boolean;
 }
 
 /**
@@ -158,7 +162,14 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   listSkillsByAccess?: (params: {
     accessibleIds: import('mongoose').Types.ObjectId[];
     limit: number;
-  }) => Promise<{ skills: Array<{ name: string; description: string }> }>;
+  }) => Promise<{
+    skills: Array<{
+      _id: import('mongoose').Types.ObjectId;
+      name: string;
+      description: string;
+      author: import('mongoose').Types.ObjectId;
+    }>;
+  }>;
 }
 
 /**
@@ -443,6 +454,9 @@ export async function initializeAgent(
       contextWindowTokens: Number(agentMaxContextTokens) || 200_000,
       listSkillsByAccess: db?.listSkillsByAccess,
       codeEnvAvailable: params.codeEnvAvailable,
+      userId: req.user?.id,
+      skillStates: params.skillStates,
+      defaultActiveOnShare: params.defaultActiveOnShare,
     });
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;

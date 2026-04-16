@@ -10,9 +10,11 @@ import { cn } from '~/utils';
 interface SkillListItemProps {
   skill: TSkill;
   isActive: boolean;
+  isSkillEnabled: boolean;
   isExpanded: boolean;
   activeFile: string | null;
   onToggleExpand: (skillId: string) => void;
+  onToggleEnabled: () => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -256,9 +258,11 @@ function InlineFileTree({
 function SkillListItem({
   skill,
   isActive,
+  isSkillEnabled,
   isExpanded,
   activeFile,
   onToggleExpand,
+  onToggleEnabled,
 }: SkillListItemProps) {
   const navigate = useNavigate();
 
@@ -315,14 +319,51 @@ function SkillListItem({
         aria-expanded={hasFiles ? expanded : undefined}
       >
         <span className="flex size-6 shrink-0 items-center justify-center">
-          <span className="flex size-6 items-center justify-center rounded-md border border-border-light bg-surface-primary shadow-sm">
+          <span
+            className={cn(
+              'flex size-6 items-center justify-center rounded-md border border-border-light bg-surface-primary shadow-sm',
+              !isSkillEnabled && 'opacity-50',
+            )}
+          >
             <ScrollText className="size-3.5 text-text-secondary" aria-hidden="true" />
           </span>
         </span>
 
         <span className="min-w-0 flex-1">
-          <span className={cn('truncate', isActive && 'font-semibold')}>{skill.name}</span>
+          <span
+            className={cn(
+              'truncate',
+              isActive && 'font-semibold',
+              !isSkillEnabled && 'text-text-tertiary',
+            )}
+          >
+            {skill.name}
+          </span>
         </span>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isSkillEnabled}
+          aria-label="Toggle skill active state"
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleEnabled();
+          }}
+          className={cn(
+            'relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full transition-colors duration-200',
+            isSkillEnabled ? 'bg-green-500' : 'bg-border-medium',
+          )}
+        >
+          <span
+            className={cn(
+              'pointer-events-none inline-block size-3 rounded-full bg-white shadow-sm transition-transform duration-200',
+              isSkillEnabled ? 'translate-x-3.5' : 'translate-x-0.5',
+              'mt-0.5',
+            )}
+          />
+        </button>
 
         {hasFiles && (
           <button
