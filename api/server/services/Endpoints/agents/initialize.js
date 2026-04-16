@@ -485,15 +485,30 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
+  /** Union scoped skill IDs across primary + all loaded handoff agents.
+   *  primeInvokedSkills processes the full conversation payload (including prior
+   *  handoff invocations), so it needs access to every skill any active agent
+   *  could legitimately invoke — not just the current primary agent's scope. */
+  const unionAccessibleSkillIds = () => {
+    const unionMap = new Map();
+    const addAll = (ids) => {
+      for (const oid of ids ?? []) {
+        unionMap.set(oid.toString(), oid);
+      }
+    };
+    addAll(primaryConfig.accessibleSkillIds);
+    for (const config of agentConfigs.values()) {
+      addAll(config.accessibleSkillIds);
+    }
+    return Array.from(unionMap.values());
+  };
+
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
     ? (payload) =>
         primeInvokedSkills({
           req,
           payload,
-          accessibleSkillIds: scopeSkillIds(
-            accessibleSkillIds,
-            ephemeralSkillsToggle ? undefined : primaryAgent.skills,
-          ),
+          accessibleSkillIds: unionAccessibleSkillIds(),
           codeApiKey,
           loadAuthValues,
           ...getSkillToolDeps(),
