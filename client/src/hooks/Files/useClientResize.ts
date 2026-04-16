@@ -1,5 +1,5 @@
-import { DEFAULT_MIN_FILE_SIZE_KB, mergeFileConfig } from 'librechat-data-provider';
 import { useCallback, useMemo } from 'react';
+import { DEFAULT_MIN_FILE_SIZE_KB, mergeFileConfig } from 'librechat-data-provider';
 import { useGetFileConfig } from '~/data-provider';
 import {
   resizeImage,
