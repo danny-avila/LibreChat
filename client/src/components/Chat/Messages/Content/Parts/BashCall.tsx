@@ -40,7 +40,7 @@ export default function BashCall({
 
   const handleCopy = useCallback(() => {
     setIsCopied(true);
-    copy(command.trim(), { format: 'text/plain' });
+    copy(command, { format: 'text/plain' });
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setIsCopied(false), 3000);
   }, [command]);
