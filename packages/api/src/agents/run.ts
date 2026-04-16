@@ -118,6 +118,62 @@ export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<
 }
 
 /**
+ * Extracts skill names that were invoked in previous turns from raw message payload.
+ * Scans assistant messages for tool_call content parts where name === 'skill'.
+ * Works with TPayload (raw message objects) so it can run before formatAgentMessages.
+ *
+ * @param payload - The raw conversation message payload
+ * @returns Set of skill names that were previously invoked
+ */
+export function extractInvokedSkillsFromPayload(
+  payload: Array<Partial<{ role: string; content: unknown }>>,
+): Set<string> {
+  const invokedSkills = new Set<string>();
+
+  for (const message of payload) {
+    if (message.role !== 'assistant') {
+      continue;
+    }
+
+    const content = message.content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+
+    for (const part of content) {
+      if (
+        part == null ||
+        typeof part !== 'object' ||
+        (part as { type?: string }).type !== 'tool_call'
+      ) {
+        continue;
+      }
+      const toolCall = (part as { tool_call?: { name?: string; args?: unknown } }).tool_call;
+      if (toolCall?.name !== Constants.SKILL_TOOL) {
+        continue;
+      }
+      const rawArgs = toolCall.args;
+      const args =
+        typeof rawArgs === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(rawArgs) as Record<string, unknown>;
+              } catch {
+                return {};
+              }
+            })()
+          : (rawArgs as Record<string, unknown> | undefined);
+      const skillName = args?.skillName;
+      if (typeof skillName === 'string' && skillName.length > 0) {
+        invokedSkills.add(skillName);
+      }
+    }
+  }
+
+  return invokedSkills;
+}
+
+/**
  * Overrides defer_loading to false for tools that were already discovered via tool_search.
  * This prevents the LLM from having to re-discover tools on every turn.
  *
@@ -463,6 +519,7 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  initialSessions,
   summarizationConfig,
   initialSummary,
   calibrationRatio,
@@ -489,9 +546,10 @@ export async function createRun({
    * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
    */
   appConfig?: AppConfig;
-} & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
-  Run<IState>
-> {
+} & Pick<
+  RunConfig,
+  'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
+>): Promise<Run<IState>> {
   /**
    * Only extract discovered tools if:
    * 1. We have message history to parse
@@ -641,6 +699,7 @@ export async function createRun({
     tokenCounter,
     customHandlers,
     indexTokenCountMap,
+    initialSessions,
     calibrationRatio,
   });
 }
