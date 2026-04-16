@@ -1239,13 +1239,28 @@ export const tBannerSchema = z.object({
   bannerId: z.string(),
   message: z.string(),
   displayFrom: z.string(),
-  displayTo: z.string(),
+  displayTo: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   isPublic: z.boolean(),
   persistable: z.boolean().default(false),
+  type: z.enum(['banner', 'popup']).default('banner'),
+
+  // New fields for multi-banner system
+  audienceMode: z.enum(['global', 'role', 'group', 'user']).optional(),
+  targetRoleIds: z.array(z.string()).optional(),
+  targetGroupIds: z.array(z.string()).optional(),
+  targetUserIds: z.array(z.string()).optional(),
+  priority: z.number().min(0).max(100).optional(),
+  isActive: z.boolean().optional(),
+  order: z.number().optional(),
+  viewCount: z.number().optional(),
+  dismissCount: z.number().optional(),
 });
 export type TBanner = z.infer<typeof tBannerSchema>;
+
+export type TBannerResponse = TBanner | null;
+export type TBannersResponse = TBanner[];
 
 export const compactAgentsBaseSchema = tConversationSchema.pick({
   spec: true,

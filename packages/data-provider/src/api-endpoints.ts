@@ -390,6 +390,11 @@ export const addTagToConversation = (conversationId: string) =>
 export const userTerms = () => `${BASE_URL}/api/user/terms`;
 export const acceptUserTerms = () => `${BASE_URL}/api/user/terms/accept`;
 export const banner = () => `${BASE_URL}/api/banner`;
+export const banners = () => `${BASE_URL}/api/banner/list`;
+export const adminBanners = () => `${BASE_URL}/api/admin/banners`;
+export const adminBannerById = (bannerId: string) => `${BASE_URL}/api/admin/banners/${bannerId}`;
+export const toggleBanner = (bannerId: string) =>
+  `${BASE_URL}/api/admin/banners/${bannerId}/toggle`;
 
 // Message Feedback
 export const feedback = (conversationId: string, messageId: string) =>

@@ -963,6 +963,63 @@ export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
 
+// Multi-Banner API
+export function getActiveBanners(): Promise<s.TBanner[]> {
+  return request.get(endpoints.banners());
+}
+
+export interface AdminBannersParams {
+  page?: number;
+  limit?: number;
+  audienceMode?: 'global' | 'role' | 'group' | 'user';
+  isActive?: boolean;
+}
+
+export interface AdminBannersResult {
+  banners: s.TBanner[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+export function getAdminBanners(params: AdminBannersParams = {}): Promise<AdminBannersResult> {
+  const queryParams = new URLSearchParams();
+  if (params.page) {
+    queryParams.append('page', params.page.toString());
+  }
+  if (params.limit) {
+    queryParams.append('limit', params.limit.toString());
+  }
+  if (params.audienceMode) {
+    queryParams.append('audienceMode', params.audienceMode);
+  }
+  if (params.isActive !== undefined) {
+    queryParams.append('isActive', params.isActive.toString());
+  }
+
+  const url = queryParams.toString()
+    ? `${endpoints.adminBanners()}?${queryParams}`
+    : endpoints.adminBanners();
+
+  return request.get(url);
+}
+
+export function createBanner(bannerData: Partial<s.TBanner>): Promise<s.TBanner> {
+  return request.post(endpoints.adminBanners(), bannerData);
+}
+
+export function updateBanner(bannerId: string, updates: Partial<s.TBanner>): Promise<s.TBanner> {
+  return request.put(endpoints.adminBannerById(bannerId), updates);
+}
+
+export function deleteBanner(bannerId: string): Promise<void> {
+  return request.delete(endpoints.adminBannerById(bannerId));
+}
+
+export function toggleBanner(bannerId: string): Promise<s.TBanner> {
+  return request.patch(endpoints.toggleBanner(bannerId));
+}
+
 export function updateFeedback(
   conversationId: string,
   messageId: string,

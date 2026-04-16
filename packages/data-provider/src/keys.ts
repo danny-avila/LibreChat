@@ -51,6 +51,8 @@ export enum QueryKeys {
   health = 'health',
   userTerms = 'userTerms',
   banner = 'banner',
+  banners = 'banners',
+  adminBanners = 'adminBanners',
   /* Memories */
   memories = 'memories',
   principalSearch = 'principalSearch',
