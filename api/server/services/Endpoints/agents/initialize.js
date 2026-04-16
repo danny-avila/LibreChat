@@ -485,30 +485,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
-  /** Union scoped skill IDs across primary + all loaded handoff agents.
-   *  primeInvokedSkills processes the full conversation payload (including prior
-   *  handoff invocations), so it needs access to every skill any active agent
-   *  could legitimately invoke — not just the current primary agent's scope. */
-  const unionAccessibleSkillIds = () => {
-    const unionMap = new Map();
-    const addAll = (ids) => {
-      for (const oid of ids ?? []) {
-        unionMap.set(oid.toString(), oid);
-      }
-    };
-    addAll(primaryConfig.accessibleSkillIds);
-    for (const config of agentConfigs.values()) {
-      addAll(config.accessibleSkillIds);
-    }
-    return Array.from(unionMap.values());
-  };
-
+  /** primeInvokedSkills reconstructs bodies of skills invoked in prior turns so
+   *  formatAgentMessages can rebuild HumanMessages and re-prime code-env files.
+   *  Unlike catalog injection and runtime invocation (both scoped per-agent),
+   *  history priming must use the user's full ACL-accessible set: historical
+   *  skill calls can reference skills no longer in any active agent's scope
+   *  (agent.skills edited, ephemeral toggle flipped), and scoping those out
+   *  would drop prior skill context and break file references in follow-up
+   *  turns. The ACL check remains the security gate; handleSkillToolCall is
+   *  where per-agent scoping prevents NEW invocations. */
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
     ? (payload) =>
         primeInvokedSkills({
           req,
           payload,
-          accessibleSkillIds: unionAccessibleSkillIds(),
+          accessibleSkillIds,
           codeApiKey,
           loadAuthValues,
           ...getSkillToolDeps(),
