@@ -13,6 +13,7 @@ const {
   createRun,
   createChunk,
   buildToolSet,
+  scopeSkillIds,
   sendFinalChunk,
   createSafeUser,
   validateRequest,
@@ -244,10 +245,9 @@ const OpenAIChatCompletionController = async (req, res) => {
     };
 
     const enabledCapabilities = new Set(agentsEConfig?.capabilities);
-    const ephemeralAgent = req.body?.ephemeralAgent;
-    const skillsEnabled =
-      enabledCapabilities.has(AgentCapabilities.skills) && ephemeralAgent?.skills === true;
-    const accessibleSkillIds = skillsEnabled
+    const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
+    const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
+    const accessibleSkillIds = skillsCapabilityEnabled
       ? await findAccessibleResources({
           userId: req.user.id,
           role: req.user.role,
@@ -268,7 +268,10 @@ const OpenAIChatCompletionController = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
-        accessibleSkillIds,
+        accessibleSkillIds: scopeSkillIds(
+          accessibleSkillIds,
+          ephemeralSkillsToggle ? undefined : agent.skills,
+        ),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
       },
       dbMethods,

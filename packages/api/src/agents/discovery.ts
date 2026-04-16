@@ -62,6 +62,13 @@ export interface DiscoverConnectedAgentsParams {
    * don't bypass the same sharing boundary enforced at the route.
    */
   resourceType?: string;
+  /**
+   * Optional per-sub-agent skill scoper. When provided, its return value
+   * is forwarded to `initializeAgent` as `accessibleSkillIds` so each
+   * handoff agent sees only the skills that match its own `skills`
+   * allowlist (or the full accessible set when scoping is disabled).
+   */
+  computeAccessibleSkillIds?: (agent: Agent) => InitializeAgentParams['accessibleSkillIds'];
 }
 
 export interface DiscoverConnectedAgentsDeps {
@@ -126,6 +133,7 @@ export async function discoverConnectedAgents(
     conversationId,
     parentMessageId,
     resourceType = ResourceType.AGENT,
+    computeAccessibleSkillIds,
   } = params;
 
   const {
@@ -223,6 +231,7 @@ export async function discoverConnectedAgents(
         parentMessageId,
         endpointOption: subAgentEndpointOption,
         allowedProviders,
+        accessibleSkillIds: computeAccessibleSkillIds?.(agent),
       },
       db,
     );
