@@ -1,7 +1,8 @@
 const { logger } = require('@librechat/data-schemas');
-const { createContentAggregator } = require('@librechat/agents');
+const { EnvVar, createContentAggregator } = require('@librechat/agents');
 const {
   initializeAgent,
+  primeInvokedSkills,
   validateAgentModel,
   createEdgeCollector,
   filterOrphanedEdges,
@@ -15,6 +16,7 @@ const {
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
+  AgentCapabilities,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
 const {
@@ -22,9 +24,11 @@ const {
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { getSkillToolDeps, enrichWithSkillConfigurable } = require('./skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
-const { checkPermission } = require('~/server/services/PermissionService');
+const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const { logViolation } = require('~/cache');
@@ -106,6 +110,37 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const { contentParts, aggregateContent } = createContentAggregator();
   const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
 
+  /** Query accessible skill IDs once per run (shared across all agents).
+   *  Requires both admin capability AND per-conversation toggle (if ephemeral). */
+  const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
+  const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills;
+  const skillsCapabilityEnabled =
+    enabledCapabilities.has(AgentCapabilities.skills) && ephemeralSkillsToggle === true;
+
+  const accessibleSkillIds = skillsCapabilityEnabled
+    ? await findAccessibleResources({
+        userId: req.user.id,
+        role: req.user.role,
+        resourceType: ResourceType.SKILL,
+        requiredPermissions: PermissionBits.VIEW,
+      })
+    : [];
+
+  // Resolve code API key once for the entire run (shared by primeInvokedSkills
+  // and enrichWithSkillConfigurable) to avoid redundant auth lookups.
+  let codeApiKey;
+  if (skillsCapabilityEnabled && enabledCapabilities.has(AgentCapabilities.execute_code)) {
+    try {
+      const authValues = await loadAuthValues({
+        userId: req.user.id,
+        authFields: [EnvVar.CODE_API_KEY],
+      });
+      codeApiKey = authValues[EnvVar.CODE_API_KEY];
+    } catch {
+      // non-fatal — primeInvokedSkills and enrichWithSkillConfigurable will work without it
+    }
+  }
+
   /**
    * Agent context store - populated after initialization, accessed by callback via closure.
    * Maps agentId -> { userMCPAuthMap, agent, tool_resources, toolRegistry, openAIApiKey }
@@ -139,9 +174,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
-      return result;
+      return enrichWithSkillConfigurable(result, req, ctx.accessibleSkillIds, codeApiKey);
     },
     toolEndCallback,
+    ...getSkillToolDeps(),
   };
 
   const summarizationOptions =
@@ -204,6 +240,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       endpointOption,
       allowedProviders,
       isInitialAgent: true,
+      accessibleSkillIds,
+      codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
     },
     {
       getFiles: db.getFiles,
@@ -216,6 +254,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
+      listSkillsByAccess: db.listSkillsByAccess,
     },
   );
 
@@ -228,6 +267,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     userMCPAuthMap: primaryConfig.userMCPAuthMap,
     tool_resources: primaryConfig.tool_resources,
     actionsEnabled: primaryConfig.actionsEnabled,
+    accessibleSkillIds: primaryConfig.accessibleSkillIds,
   });
 
   const agent_ids = primaryConfig.agent_ids;
@@ -285,6 +325,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         parentMessageId,
         endpointOption,
         allowedProviders,
+        accessibleSkillIds,
       },
       {
         getFiles: db.getFiles,
@@ -297,6 +338,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
+        listSkillsByAccess: db.listSkillsByAccess,
       },
     );
 
@@ -313,6 +355,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       userMCPAuthMap: config.userMCPAuthMap,
       tool_resources: config.tool_resources,
       actionsEnabled: config.actionsEnabled,
+      accessibleSkillIds: config.accessibleSkillIds,
     });
 
     agentConfigs.set(agentId, config);
@@ -434,6 +477,18 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
+  const handlePrimeInvokedSkills = skillsCapabilityEnabled
+    ? (payload) =>
+        primeInvokedSkills({
+          req,
+          payload,
+          accessibleSkillIds,
+          codeApiKey,
+          loadAuthValues,
+          ...getSkillToolDeps(),
+        })
+    : undefined;
+
   const client = new AgentClient({
     req,
     res,
@@ -444,6 +499,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     collectedUsage,
     aggregateContent,
     artifactPromises,
+    primeInvokedSkills: handlePrimeInvokedSkills,
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,

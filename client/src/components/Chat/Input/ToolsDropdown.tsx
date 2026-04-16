@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
 import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
+import { Globe, ScrollText, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
 import type { MenuItemProps } from '~/common';
 import {
   AuthType,
@@ -26,7 +26,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const context = useBadgeRowContext();
   const { data: startupConfig } = useGetStartupConfig();
 
-  const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
+  const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled, skillsEnabled } =
     useAgentCapabilities(context?.agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
   const canUseWebSearch = useHasAccess({
@@ -49,9 +49,15 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     permission: Permissions.USE,
   });
 
+  const canUseSkills = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
+    permission: Permissions.USE,
+  });
+
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const isDisabled = disabled ?? false;
   const {
+    skills,
     webSearch,
     artifacts,
     fileSearch,
@@ -77,6 +83,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   } = codeInterpreter ?? {};
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch ?? {};
   const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts ?? {};
+  const { isPinned: isSkillsPinned, setIsPinned: setIsSkillsPinned } = skills ?? {};
 
   const showWebSearchSettings = useMemo(() => {
     const authTypes = webSearchAuthData?.authTypes ?? [];
@@ -130,6 +137,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       artifacts?.debouncedChange({ value: ArtifactModes.CUSTOM });
     }
   }, [artifacts]);
+
+  const handleSkillsToggle = useCallback(() => {
+    const newValue = !skills?.toggleState;
+    skills?.debouncedChange({ value: newValue });
+  }, [skills]);
 
   const mcpPlaceholder = startupConfig?.interface?.mcpServers?.placeholder;
 
@@ -216,6 +228,38 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
               </div>
             </button>
           </div>
+        </div>
+      ),
+    });
+  }
+
+  if (canUseSkills && skillsEnabled) {
+    dropdownItems.push({
+      onClick: handleSkillsToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div {...props}>
+          <div className="flex items-center gap-2">
+            <ScrollText className="icon-md" aria-hidden="true" />
+            <span>{localize('com_ui_skills')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsSkillsPinned?.(!isSkillsPinned);
+            }}
+            className={cn(
+              'rounded p-1 transition-all duration-200',
+              'hover:bg-surface-secondary hover:shadow-sm',
+              !isSkillsPinned && 'text-text-secondary hover:text-text-primary',
+            )}
+            aria-label={isSkillsPinned ? localize('com_ui_unpin') : localize('com_ui_pin')}
+          >
+            <div className="h-4 w-4">
+              <PinIcon unpin={isSkillsPinned} />
+            </div>
+          </button>
         </div>
       ),
     });
