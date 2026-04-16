@@ -1,9 +1,9 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { ScrollText } from 'lucide-react';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { InvocationMode } from 'librechat-data-provider';
-import { ScrollText } from 'lucide-react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
@@ -128,6 +128,10 @@ function SkillsCommandContent({
   }, [open]);
 
   useEffect(() => {
+    setActiveIndex((prev) => Math.min(prev, Math.max(matches.length - 1, 0)));
+  }, [matches.length]);
+
+  useEffect(() => {
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -185,6 +189,7 @@ function SkillsCommandContent({
               setOpen(false);
               setShowSkillsPopover(false);
               textAreaRef.current?.focus();
+              return;
             }
             if (e.key === 'ArrowDown') {
               if (matches.length === 0) {
@@ -226,7 +231,7 @@ function SkillsCommandContent({
         )}
         {open && !isLoading && !isError && matches.length === 0 && (
           <div className="p-4 text-center text-sm text-text-secondary">
-            {localize('com_ui_skills_empty')}
+            {localize(searchValue ? 'com_ui_no_skills_found' : 'com_ui_skills_empty')}
           </div>
         )}
         {open && matches.length > 0 && (

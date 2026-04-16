@@ -192,6 +192,15 @@ describe('useHandleKeyUp', () => {
       expect(setShowPromptsPopover).toHaveBeenCalledWith(true);
     });
 
+    it('triggers $ skill command for "$sk" (fast typed)', () => {
+      const ref = makeTextAreaRef('$sk', 3);
+      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('k')));
+
+      expect(setShowSkillsPopover).toHaveBeenCalledWith(true);
+    });
+
     it('does NOT trigger for text exceeding MAX_COMMAND_TRIGGER_LENGTH', () => {
       const ref = makeTextAreaRef('/abcde', 6);
       const { handleKeyUp, setShowPromptsPopover } = renderUseHandleKeyUp(ref);
