@@ -5,6 +5,7 @@ import { HorizontalRule } from '~/nj/components/info/HorizontalRule';
 import RelatedLinks from '~/nj/components/info/RelatedLinks';
 import { RelatedLinkType } from '~/nj/components/info/RelatedLinks';
 import { logEvent } from '~/nj/analytics/logEvent';
+import LinkRenderer from '~/nj/components/info/LinkRenderer';
 
 export default function NewJerseyReleaseNotes() {
   document.title = 'NJ AI Assistant - Release Notes';
@@ -30,7 +31,9 @@ export default function NewJerseyReleaseNotes() {
 
   return (
     <div>
-      <ReactMarkdown className="markdown-nj">{releaseNotes}</ReactMarkdown>
+      <ReactMarkdown className="markdown-nj" components={{ a: LinkRenderer }}>
+        {releaseNotes}
+      </ReactMarkdown>
       <HorizontalRule spacing="mb-6" />
       <RelatedLinks links={releaseNotesLinks} />
     </div>
