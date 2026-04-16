@@ -106,6 +106,15 @@ function AgentSelect({
           return;
         }
 
+        if (
+          name === 'skills' &&
+          Array.isArray(value) &&
+          value.every((item) => typeof item === 'string')
+        ) {
+          formValues[name] = value;
+          return;
+        }
+
         if (name === 'edges' && Array.isArray(value)) {
           formValues[name] = value;
           return;

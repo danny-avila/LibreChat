@@ -293,7 +293,11 @@ export const defaultAgentFormValues = {
     name: '',
     email: '',
   },
-  skills: [],
+  /** `undefined` = not configured, full catalog applies. `[]` = explicitly none.
+   *  Keeping this `undefined` ensures a brand-new agent (where the user never
+   *  interacted with the skills UI) does not accidentally persist "explicit none"
+   *  on first save — removeNullishValues strips the field server-side. */
+  skills: undefined as string[] | undefined,
 };
 
 export const ImageVisionTool: FunctionTool = {
