@@ -85,6 +85,24 @@ export function supportsAdaptiveThinking(model: string): boolean {
   return false;
 }
 
+/**
+ * Checks if a model omits `thinking` content from responses by default.
+ *
+ * Starting with Claude Opus 4.7, the Messages API returns empty `thinking`
+ * blocks unless the request explicitly opts in via `thinking.display =
+ * "summarized"`. This helper narrows the opt-in to Opus 4.7+ (and any future
+ * major Opus version) so older adaptive-thinking models are left untouched.
+ *
+ * See https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
+ */
+export function omitsThinkingByDefault(model: string): boolean {
+  const opus = parseOpusVersion(model);
+  if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
+    return true;
+  }
+  return false;
+}
+
 /** Checks if a model qualifies for the context-1m beta header (Sonnet 4+, Opus 4.6+, Opus 5+) */
 export function supportsContext1m(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
@@ -258,10 +276,11 @@ export const bedrockInputParser = s.tConversationSchema
           delete additionalFields.thinking;
           delete additionalFields.thinkingBudget;
         } else {
-          additionalFields.thinking = {
-            type: 'adaptive',
-            display: DEFAULT_THINKING_DISPLAY,
-          };
+          const thinkingConfig: ThinkingConfig = { type: 'adaptive' };
+          if (omitsThinkingByDefault(typedData.model as string)) {
+            thinkingConfig.display = DEFAULT_THINKING_DISPLAY;
+          }
+          additionalFields.thinking = thinkingConfig;
           delete additionalFields.thinkingBudget;
         }
       } else {

@@ -1041,10 +1041,23 @@ describe('getLLMConfig', () => {
         });
       });
 
-      it('should request summarized thinking display for adaptive models (Opus 4.7+ opt-in)', () => {
-        const adaptiveModels = ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6'];
+      it('should request summarized thinking display for Opus 4.7 (opt back in)', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-opus-4-7', thinking: true },
+        });
 
-        adaptiveModels.forEach((model) => {
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('summarized');
+      });
+
+      it('should NOT set thinking.display for pre-Opus-4.7 adaptive models', () => {
+        const pre47Models = ['claude-opus-4-6', 'claude-sonnet-4-6'];
+
+        pre47Models.forEach((model) => {
           const result = getLLMConfig('test-key', {
             modelOptions: { model, thinking: true },
           });
@@ -1054,7 +1067,7 @@ describe('getLLMConfig', () => {
             display?: string;
           };
           expect(thinking.type).toBe('adaptive');
-          expect(thinking.display).toBe('summarized');
+          expect(thinking.display).toBeUndefined();
         });
       });
 
