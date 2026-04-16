@@ -255,6 +255,9 @@ const qwenModels = {
   'qwen3-32b': 40960,
   'qwen3-235b-a22b': 40960,
   'qwen3-8b': 128000,
+  // Qwen3.5 models (262K native context)
+  'qwen3.5': 262144,
+  'qwen3.5-397b': 262144,
   'qwen3-vl-235b-a22b': 131072,
   'qwen3-vl-8b-thinking': 256000,
   'qwen3-max': 256000,
