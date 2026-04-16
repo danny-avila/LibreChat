@@ -21,6 +21,7 @@ function SkillToggle({ enabled, onChange, label, ariaLabel, tabIndex }: SkillTog
         e.stopPropagation();
         onChange();
       }}
+      onKeyDown={(e) => e.stopPropagation()}
       className={cn(
         'flex items-center gap-1.5 transition-colors',
         label && 'rounded-md px-2 py-1 text-xs font-medium hover:bg-surface-hover',
