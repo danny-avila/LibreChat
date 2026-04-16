@@ -44,7 +44,7 @@ export interface IUser extends Document {
   };
   favorites?: TUserFavorite[];
   /** Per-skill active/inactive overrides. Key = skillId, value = active state. */
-  skillStates?: Map<string, boolean>;
+  skillStates?: Record<string, boolean>;
   createdAt?: Date;
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
