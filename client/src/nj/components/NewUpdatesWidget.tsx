@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { newUpdatesWidgetDismissed } from '~/nj/store/landing';
 import { logEvent } from '~/nj/analytics/logEvent';
 import icons from '@uswds/uswds/img/sprite.svg';
+import { getUpdateWidgetContent } from '~/nj/content/parser/njContentRetrieval';
 
 interface IconProps {
   name: string;
@@ -39,6 +40,8 @@ function CollapsedWidget({ onExpand }: CollapsedWidgetProps) {
     onExpand();
   };
 
+  const content = getUpdateWidgetContent();
+
   return (
     <motion.button
       key="collapsed"
@@ -50,7 +53,7 @@ function CollapsedWidget({ onExpand }: CollapsedWidgetProps) {
       className="hover:bg-text-primary/90 flex items-center gap-2 rounded-full bg-text-primary px-4 py-2 text-sm font-medium text-surface-primary shadow-lg"
     >
       <Icon name="notifications" style={{ color: '#FFBE2E' }} />
-      <span>AI Office Hours</span>
+      <span>{content.title}</span>
       <Icon name="expand_more" />
     </motion.button>
   );
@@ -71,6 +74,8 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
     onDismiss();
   };
 
+  const content = getUpdateWidgetContent();
+
   return (
     <motion.div
       key="expanded"
@@ -84,7 +89,7 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
       <div className="mb-5 flex items-start justify-between">
         <div className="flex items-center gap-2">
           <Icon name="notifications" style={{ color: '#FFBE2E' }} />
-          <h3 className="text-base font-semibold">AI Office Hours</h3>
+          <h3 className="text-base font-semibold">{content.title}</h3>
         </div>
         <button
           onClick={onClose}
@@ -98,15 +103,13 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
       </div>
 
       <div className="mb-5 pl-5">
-        <p className="mb-3 text-sm">
-          Get your questions answered by the NJ AI Assistant team at AI Office Hours every Thursday!
-        </p>
+        <p className="mb-3 text-sm">{content.description}</p>
         <Link
           to={{ pathname: '/nj/release-notes' }}
           onClick={handleLinkClick}
           className="inline-flex items-center gap-1 text-sm underline hover:decoration-2"
         >
-          Office hours info
+          {content.linkText}
         </Link>
       </div>
 
