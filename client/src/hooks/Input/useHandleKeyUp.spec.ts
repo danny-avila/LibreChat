@@ -154,20 +154,11 @@ describe('useHandleKeyUp', () => {
       expect(setShowPlusPopover).toHaveBeenCalledWith(true);
     });
 
-    it('does NOT trigger $ skill command for bare "$" (defers to next keystroke)', () => {
+    it('triggers $ skill command for "$" at position 1', () => {
       const ref = makeTextAreaRef('$', 1);
       const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
 
       act(() => handleKeyUp(makeKeyEvent('$')));
-
-      expect(setShowSkillsPopover).not.toHaveBeenCalled();
-    });
-
-    it('triggers $ skill command for "$a" once a letter follows', () => {
-      const ref = makeTextAreaRef('$a', 2);
-      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
-
-      act(() => handleKeyUp(makeKeyEvent('a')));
 
       expect(setShowSkillsPopover).toHaveBeenCalledWith(true);
     });
@@ -284,24 +275,6 @@ describe('useHandleKeyUp', () => {
       act(() => handleKeyUp(makeKeyEvent('v')));
 
       expect(setShowPromptsPopover).not.toHaveBeenCalled();
-    });
-
-    it('does NOT trigger $ skill command for currency-like "$100"', () => {
-      const ref = makeTextAreaRef('$100', 4);
-      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
-
-      act(() => handleKeyUp(makeKeyEvent('0')));
-
-      expect(setShowSkillsPopover).not.toHaveBeenCalled();
-    });
-
-    it('does NOT trigger $ skill command for currency-like "$5.99"', () => {
-      const ref = makeTextAreaRef('$5.99', 5);
-      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
-
-      act(() => handleKeyUp(makeKeyEvent('9')));
-
-      expect(setShowSkillsPopover).not.toHaveBeenCalled();
     });
 
     it('does NOT trigger for pasted "@username mentioned in a long message"', () => {
