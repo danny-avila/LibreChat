@@ -6,6 +6,7 @@ import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import useToolCallState from './useToolCallState';
+import useLazyHighlight from './useLazyHighlight';
 import { AttachmentGroup } from './Attachment';
 import parseJsonField from './parseJsonField';
 import { useLocalize } from '~/hooks';
@@ -30,6 +31,7 @@ export default function BashCall({
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!command);
 
+  const highlighted = useLazyHighlight(command || undefined, 'bash');
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
 
   const [isCopied, setIsCopied] = useState(false);
@@ -77,7 +79,7 @@ export default function BashCall({
                   <span className="select-none text-text-tertiary" aria-hidden="true">
                     {'$ '}
                   </span>
-                  <span className="text-text-primary">{command}</span>
+                  <code className="hljs language-bash">{highlighted ?? command}</code>
                 </pre>
                 <CopyButton
                   iconOnly
