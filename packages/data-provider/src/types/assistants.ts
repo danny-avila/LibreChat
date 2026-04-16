@@ -24,6 +24,9 @@ export enum Tools {
   function = 'function',
   memory = 'memory',
   ui_resources = 'ui_resources',
+  skill = 'skill',
+  read_file = 'read_file',
+  bash_tool = 'bash_tool',
 }
 
 export enum EToolResources {
