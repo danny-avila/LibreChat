@@ -14,7 +14,8 @@ export default function parseJsonField(
   } catch {
     // partial JSON during streaming; fall through to regex
   }
-  const re = new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`);
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`"${escaped}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`);
   const match = args?.match(re);
   if (!match) {
     return '';

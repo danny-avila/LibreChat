@@ -31,7 +31,7 @@ describe('langFromPath', () => {
   });
 
   describe('extensionless filename map', () => {
-    it('returns makefile for lowercase Makefile', () => {
+    it('returns makefile for "makefile"', () => {
       expect(langFromPath('makefile')).toBe('makefile');
     });
 

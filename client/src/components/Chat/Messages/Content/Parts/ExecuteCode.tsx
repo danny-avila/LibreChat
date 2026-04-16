@@ -1,15 +1,14 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useMemo } from 'react';
 import { SquareTerminal } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
-import { useProgress, useLocalize, useExpandCollapse } from '~/hooks';
 import useLazyHighlight from './useLazyHighlight';
+import useToolCallState from './useToolCallState';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
+import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
-import store from '~/store';
 
 interface ParsedArgs {
   lang?: string;
@@ -65,28 +64,13 @@ export default function ExecuteCode({
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
-  const hasOutput = output.length > 0;
-  const autoExpand = useRecoilValue(store.autoExpandTools);
-
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
-  const hasContent = !!code || hasOutput;
-  const [showCode, setShowCode] = useState(() => autoExpand && hasContent);
-  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showCode);
 
-  useEffect(() => {
-    if (autoExpand && hasContent) {
-      setShowCode(true);
-    }
-  }, [autoExpand, hasContent]);
-  const progress = useProgress(initialProgress);
+  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasOutput } =
+    useToolCallState(initialProgress, isSubmitting, output, !!code);
 
   const highlighted = useLazyHighlight(code, lang);
-
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
-
-  const toggleCode = useCallback(() => setShowCode((prev) => !prev), [setShowCode]);
-
-  const cancelled = !isSubmitting && progress < 1;
 
   return (
     <>
