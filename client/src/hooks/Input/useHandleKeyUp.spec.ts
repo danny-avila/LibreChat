@@ -466,5 +466,25 @@ describe('useHandleKeyUp', () => {
 
       expect(setShowPlusPopover).toHaveBeenCalledWith(true);
     });
+
+    it('does NOT trigger $ skill command on assistants endpoint', () => {
+      mockEndpoint.current = 'assistants';
+      const ref = makeTextAreaRef('$', 1);
+      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('$')));
+
+      expect(setShowSkillsPopover).not.toHaveBeenCalledWith(true);
+    });
+
+    it('does NOT trigger $ skill command on azureAssistants endpoint', () => {
+      mockEndpoint.current = 'azureAssistants';
+      const ref = makeTextAreaRef('$', 1);
+      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('$')));
+
+      expect(setShowSkillsPopover).not.toHaveBeenCalledWith(true);
+    });
   });
 });

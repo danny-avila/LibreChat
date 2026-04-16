@@ -202,6 +202,12 @@ function SkillsCommandContent({
               }
               setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
+              if (matches.length === 0) {
+                setOpen(false);
+                setShowSkillsPopover(false);
+                textAreaRef.current?.focus();
+                return;
+              }
               e.preventDefault();
               handleSelect(matches[activeIndex] as MentionOption | undefined);
             } else if (e.key === 'Backspace' && searchValue === '') {

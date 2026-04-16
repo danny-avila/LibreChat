@@ -108,13 +108,13 @@ const useHandleKeyUp = ({
   }, [textAreaRef, hasPromptsAccess, setShowPromptsPopover, slashCommandEnabled]);
 
   const handleSkillsCommand = useCallback(() => {
-    if (!hasSkillsAccess || !dollarCommandEnabled) {
+    if (!hasSkillsAccess || !dollarCommandEnabled || isAssistantsEndpoint(endpoint)) {
       return;
     }
     if (shouldTriggerCommand(textAreaRef, '$')) {
       setShowSkillsPopover(true);
     }
-  }, [textAreaRef, hasSkillsAccess, setShowSkillsPopover, dollarCommandEnabled]);
+  }, [textAreaRef, hasSkillsAccess, setShowSkillsPopover, dollarCommandEnabled, endpoint]);
 
   const commandHandlers = useMemo(
     () => ({
