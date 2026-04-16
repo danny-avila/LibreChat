@@ -22,14 +22,14 @@ function SkillToggle({ enabled, onChange, ariaLabel }: SkillToggleProps) {
     >
       <span
         className={cn(
-          'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
+          'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200',
           enabled ? 'bg-green-500' : 'bg-border-medium',
         )}
       >
         <span
           className={cn(
-            'pointer-events-none mt-0.5 inline-block size-5 rounded-full bg-white shadow-sm transition-transform duration-200',
-            enabled ? 'translate-x-[1.375rem]' : 'translate-x-0.5',
+            'pointer-events-none mt-0.5 inline-block size-4 rounded-full bg-white shadow-sm transition-transform duration-200',
+            enabled ? 'translate-x-[1.125rem]' : 'translate-x-0.5',
           )}
         />
       </span>
