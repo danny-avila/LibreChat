@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState, useRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { InvocationMode } from 'librechat-data-provider';
@@ -16,16 +16,17 @@ import store from '~/store';
 
 const commandChar = '$';
 const ROW_HEIGHT = 44;
+const skillIcon = <ScrollText className="icon-md text-cyan-500" />;
 
 /**
- * Skills with `invocationMode === 'auto'` are model-triggered only and should
- * NOT appear in the user-facing `$` command popover.
- * `manual` (user-only) and `both` (either) are shown.
- * Default (undefined/auto) is shown for backward compatibility during phase 1.
+ * Determines whether a skill should appear in the `$` command popover.
+ * `manual` and `both` are user-invocable. `auto` is model-only and hidden.
+ * Skills without an explicit mode (undefined) default to visible for
+ * backward compatibility until the backend persists `invocationMode`.
  */
-function isUserInvocable(skill: TSkillSummary): boolean {
+export function isUserInvocable(skill: TSkillSummary): boolean {
   const mode = skill.invocationMode;
-  if (mode == null || mode === InvocationMode.auto || mode === InvocationMode.both) {
+  if (mode == null || mode === InvocationMode.both) {
     return true;
   }
   return mode === InvocationMode.manual;
@@ -42,11 +43,9 @@ function SkillsCommandContent({
 }) {
   const localize = useLocalize();
   const setShowSkillsPopover = useSetRecoilState(store.showSkillsPopoverFamily(index));
-  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
-    ephemeralAgentByConvoId(conversationId),
-  );
+  const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
 
-  const { data, isLoading } = useListSkillsQuery({ limit: 100 });
+  const { data, isLoading, isError } = useListSkillsQuery({ limit: 100 });
 
   const skillOptions: MentionOption[] = useMemo(() => {
     if (!data?.skills) {
@@ -59,7 +58,7 @@ function SkillsCommandContent({
           value: skill.name,
           description: skill.description,
           type: 'skill',
-          icon: <ScrollText className="icon-md text-cyan-500" />,
+          icon: skillIcon,
         });
       }
       return acc;
@@ -97,12 +96,12 @@ function SkillsCommandContent({
         removeCharIfLast(textAreaRef.current, commandChar);
       }
 
-      if (!ephemeralAgent?.skills) {
-        setEphemeralAgent((prev) => ({
-          ...(prev || {}),
-          skills: true,
-        }));
-      }
+      setEphemeralAgent((prev) => {
+        if (prev?.skills) {
+          return prev;
+        }
+        return { ...(prev || {}), skills: true };
+      });
 
       const textarea = textAreaRef.current;
       if (textarea) {
@@ -119,7 +118,7 @@ function SkillsCommandContent({
         textarea.setSelectionRange(insertion.length, insertion.length);
       }
     },
-    [setSearchValue, setOpen, setShowSkillsPopover, textAreaRef, ephemeralAgent, setEphemeralAgent],
+    [setSearchValue, setOpen, setShowSkillsPopover, textAreaRef, setEphemeralAgent],
   );
 
   useEffect(() => {
@@ -188,13 +187,17 @@ function SkillsCommandContent({
               textAreaRef.current?.focus();
             }
             if (e.key === 'ArrowDown') {
+              if (matches.length === 0) {
+                return;
+              }
               setActiveIndex((prevIndex) => (prevIndex + 1) % matches.length);
             } else if (e.key === 'ArrowUp') {
+              if (matches.length === 0) {
+                return;
+              }
               setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-              }
+              e.preventDefault();
               handleSelect(matches[activeIndex] as MentionOption | undefined);
             } else if (e.key === 'Backspace' && searchValue === '') {
               setOpen(false);
@@ -214,6 +217,16 @@ function SkillsCommandContent({
         {open && isLoading && matches.length === 0 && (
           <div className="flex h-32 items-center justify-center text-text-primary">
             <Spinner />
+          </div>
+        )}
+        {open && isError && (
+          <div className="p-4 text-center text-sm text-text-secondary">
+            {localize('com_ui_skills_load_error')}
+          </div>
+        )}
+        {open && !isLoading && !isError && matches.length === 0 && (
+          <div className="p-4 text-center text-sm text-text-secondary">
+            {localize('com_ui_skills_empty')}
           </div>
         )}
         {open && matches.length > 0 && (
