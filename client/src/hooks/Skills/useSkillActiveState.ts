@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useToastContext } from '@librechat/client';
 import type { TSkillStatesResponse } from 'librechat-data-provider';
 import {
@@ -31,7 +31,9 @@ function resolveDefault(author: string, userId: string, defaultActiveOnShare: bo
  * React Query is the single source of truth. Toggling drives an optimistic
  * mutation that updates the cache, identical to the favorites pattern.
  * Toggling is blocked until the initial fetch resolves to prevent overwriting
- * server-side state with an empty snapshot.
+ * server-side state with an empty snapshot. Writes are serialized via a ref
+ * queue so rapid toggles cannot race: only one request is ever in flight, and
+ * the latest desired state is sent when the previous one settles.
  */
 export default function useSkillActiveState() {
   const localize = useLocalize();
@@ -56,17 +58,27 @@ export default function useSkillActiveState() {
     [getQuery.data],
   );
 
-  const save = useCallback(
-    async (next: TSkillStatesResponse) => {
+  const queueRef = useRef<{
+    pending: TSkillStatesResponse | null;
+    inFlight: boolean;
+  }>({ pending: null, inFlight: false });
+
+  const flush = useCallback(async () => {
+    while (queueRef.current.pending !== null) {
+      const next = queueRef.current.pending;
+      queueRef.current.pending = null;
+      queueRef.current.inFlight = true;
       try {
         await updateMutation.mutateAsync(next);
       } catch (error) {
         logger.error('Error updating skill states:', error);
         showToast({ message: localize('com_ui_error'), status: 'error' });
+        queueRef.current.pending = null;
+        break;
       }
-    },
-    [updateMutation, showToast, localize],
-  );
+    }
+    queueRef.current.inFlight = false;
+  }, [updateMutation, showToast, localize]);
 
   const isActive = useCallback(
     (skill: { _id: string; author: string }): boolean => {
@@ -84,10 +96,18 @@ export default function useSkillActiveState() {
       if (getQuery.isLoading) {
         return;
       }
-      const current = isActive(skill);
-      save({ ...skillStates, [skill._id]: !current });
+      const baseline = queueRef.current.pending ?? skillStates;
+      const override = baseline[skill._id];
+      const currentActive =
+        override !== undefined
+          ? override
+          : resolveDefault(skill.author, userId, defaultActiveOnShare);
+      queueRef.current.pending = { ...baseline, [skill._id]: !currentActive };
+      if (!queueRef.current.inFlight) {
+        flush();
+      }
     },
-    [skillStates, isActive, save, getQuery.isLoading],
+    [skillStates, userId, defaultActiveOnShare, getQuery.isLoading, flush],
   );
 
   return {

@@ -11,6 +11,10 @@ import type { Agent } from 'librechat-data-provider';
 import type { InitializeAgentDbMethods } from './initialize';
 
 const SKILL_CATALOG_LIMIT = 100;
+/** Max pages scanned per run when filtering out inactive skills. */
+const MAX_CATALOG_PAGES = 10;
+/** Page size used when paginating to fill the active-skill quota. */
+const CATALOG_PAGE_SIZE = 100;
 
 /**
  * Scopes user-accessible skill IDs to only those configured on the agent.
@@ -90,22 +94,9 @@ export async function injectSkillCatalog(
     return { toolDefinitions: inputDefs, skillCount: 0 };
   }
 
-  const { skills } = await listSkillsByAccess({
-    accessibleIds: accessibleSkillIds,
-    limit: SKILL_CATALOG_LIMIT,
-  });
+  type SkillSummary = Awaited<ReturnType<NonNullable<typeof listSkillsByAccess>>>['skills'][number];
 
-  if (skills.length === SKILL_CATALOG_LIMIT) {
-    logger.warn(
-      `[injectSkillCatalog] Skill catalog reached limit of ${SKILL_CATALOG_LIMIT}. Some skills may be excluded.`,
-    );
-  }
-
-  if (skills.length === 0) {
-    return { toolDefinitions: inputDefs, skillCount: 0 };
-  }
-
-  const activeSkills = skills.filter((s) => {
+  const isActive = (s: SkillSummary): boolean => {
     const override = skillStates?.[s._id.toString()];
     if (override !== undefined) {
       return override;
@@ -114,10 +105,45 @@ export async function injectSkillCatalog(
       return false;
     }
     return s.author.toString() === userId ? true : defaultActiveOnShare;
-  });
+  };
+
+  const activeSkills: SkillSummary[] = [];
+  let cursor: string | null = null;
+  let pages = 0;
+  let reachedEnd = false;
+
+  while (activeSkills.length < SKILL_CATALOG_LIMIT && pages < MAX_CATALOG_PAGES) {
+    const page = await listSkillsByAccess({
+      accessibleIds: accessibleSkillIds,
+      limit: CATALOG_PAGE_SIZE,
+      cursor,
+    });
+
+    for (const skill of page.skills) {
+      if (activeSkills.length >= SKILL_CATALOG_LIMIT) {
+        break;
+      }
+      if (isActive(skill)) {
+        activeSkills.push(skill);
+      }
+    }
+
+    if (!page.has_more || !page.after) {
+      reachedEnd = true;
+      break;
+    }
+    cursor = page.after;
+    pages += 1;
+  }
 
   if (activeSkills.length === 0) {
     return { toolDefinitions: inputDefs, skillCount: 0 };
+  }
+
+  if (!reachedEnd && activeSkills.length < SKILL_CATALOG_LIMIT) {
+    logger.warn(
+      `[injectSkillCatalog] Scanned ${MAX_CATALOG_PAGES} pages without filling the ${SKILL_CATALOG_LIMIT}-skill catalog. Some active skills may be excluded.`,
+    );
   }
 
   // Warn on duplicate names — model may invoke the wrong skill

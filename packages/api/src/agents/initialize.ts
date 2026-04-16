@@ -162,6 +162,7 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   listSkillsByAccess?: (params: {
     accessibleIds: import('mongoose').Types.ObjectId[];
     limit: number;
+    cursor?: string | null;
   }) => Promise<{
     skills: Array<{
       _id: import('mongoose').Types.ObjectId;
@@ -169,6 +170,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
       description: string;
       author: import('mongoose').Types.ObjectId;
     }>;
+    has_more?: boolean;
+    after?: string | null;
   }>;
 }
 
