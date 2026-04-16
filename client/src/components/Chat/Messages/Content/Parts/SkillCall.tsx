@@ -1,33 +1,13 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useMemo } from 'react';
 import { ScrollText } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
-import { useProgress, useLocalize, useExpandCollapse } from '~/hooks';
+import useToolCallState from './useToolCallState';
 import { AttachmentGroup } from './Attachment';
+import parseJsonField from './parseJsonField';
+import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
-import store from '~/store';
-
-interface SkillArgs {
-  skill_name?: string;
-}
-
-function parseArgs(args?: string | Record<string, unknown>): SkillArgs {
-  if (typeof args === 'object' && args !== null) {
-    return { skill_name: String(args.skill_name ?? '') };
-  }
-  try {
-    const parsed = JSON.parse(args || '{}');
-    if (typeof parsed === 'object') {
-      return { skill_name: String(parsed.skill_name ?? '') };
-    }
-  } catch {
-    // fallback
-  }
-  const match = args?.match(/"skill_name"\s*:\s*"([^"]+)"/);
-  return { skill_name: match ? match[1] : '' };
-}
 
 export default function SkillCall({
   isSubmitting,
@@ -43,36 +23,22 @@ export default function SkillCall({
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
-  const hasOutput = output.length > 0;
-  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
 
-  const { skill_name = '' } = useMemo(() => parseArgs(args), [args]);
-  const hasContent = !!skill_name || hasOutput;
-  const [showDetail, setShowDetail] = useState(() => autoExpand && hasContent);
-  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showDetail);
-
-  useEffect(() => {
-    if (autoExpand && hasContent) {
-      setShowDetail(true);
-    }
-  }, [autoExpand, hasContent]);
-  const progress = useProgress(initialProgress);
-
-  const toggleDetail = useCallback(() => setShowDetail((prev) => !prev), []);
-
-  const cancelled = !isSubmitting && progress < 1;
+  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasOutput } =
+    useToolCallState(initialProgress, isSubmitting, output, !!skillName);
 
   return (
     <>
       <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
-          onClick={toggleDetail}
-          inProgressText={localize('com_ui_skill_running', { 0: skill_name })}
+          onClick={toggleCode}
+          inProgressText={localize('com_ui_skill_running', { 0: skillName })}
           finishedText={
             cancelled
               ? localize('com_ui_cancelled')
-              : localize('com_ui_skill_finished', { 0: skill_name })
+              : localize('com_ui_skill_finished', { 0: skillName })
           }
           icon={
             <ScrollText
@@ -83,15 +49,15 @@ export default function SkillCall({
               aria-hidden="true"
             />
           }
-          hasInput={hasContent}
-          isExpanded={showDetail}
+          hasInput={!!skillName || hasOutput}
+          isExpanded={showCode}
           error={cancelled}
         />
       </div>
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
-          <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-            {hasOutput && (
+          {hasOutput && (
+            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <div className="bg-surface-primary-alt p-4 text-xs dark:bg-transparent">
                 <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
                   {localize('com_ui_output')}
@@ -100,8 +66,8 @@ export default function SkillCall({
                   <Stdout output={output} />
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
       {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}

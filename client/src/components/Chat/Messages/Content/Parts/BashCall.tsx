@@ -1,41 +1,16 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useMemo } from 'react';
 import { SquareTerminal } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
-import { useProgress, useLocalize, useExpandCollapse } from '~/hooks';
 import { ERROR_PATTERNS } from './ExecuteCode';
+import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
+import parseJsonField from './parseJsonField';
+import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
-import store from '~/store';
-
-interface BashArgs {
-  command?: string;
-}
-
-function parseArgs(args?: string | Record<string, unknown>): BashArgs {
-  if (typeof args === 'object' && args !== null) {
-    return { command: String(args.command ?? '') };
-  }
-  try {
-    const parsed = JSON.parse(args || '{}');
-    if (typeof parsed === 'object') {
-      return { command: String(parsed.command ?? '') };
-    }
-  } catch {
-    // fallback
-  }
-  const match = args?.match(/"command"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-  if (match) {
-    return {
-      command: match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
-    };
-  }
-  return { command: '' };
-}
 
 export default function BashCall({
   isSubmitting,
@@ -51,28 +26,13 @@ export default function BashCall({
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
-  const hasOutput = output.length > 0;
-  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const command = useMemo(() => parseJsonField(args, 'command'), [args]);
 
-  const { command = '' } = useMemo(() => parseArgs(args), [args]);
-  const hasContent = !!command || hasOutput;
-  const [showCode, setShowCode] = useState(() => autoExpand && hasContent);
-  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showCode);
+  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasOutput } =
+    useToolCallState(initialProgress, isSubmitting, output, !!command);
 
-  useEffect(() => {
-    if (autoExpand && hasContent) {
-      setShowCode(true);
-    }
-  }, [autoExpand, hasContent]);
-  const progress = useProgress(initialProgress);
-
-  const highlighted = useLazyHighlight(command, 'bash');
-
+  const highlighted = useLazyHighlight(command || undefined, 'bash');
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
-
-  const toggleCode = useCallback(() => setShowCode((prev) => !prev), []);
-
-  const cancelled = !isSubmitting && progress < 1;
 
   return (
     <>
@@ -93,7 +53,7 @@ export default function BashCall({
               aria-hidden="true"
             />
           }
-          hasInput={hasContent}
+          hasInput={!!command || hasOutput}
           isExpanded={showCode}
           error={cancelled}
         />

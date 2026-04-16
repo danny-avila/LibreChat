@@ -46,6 +46,9 @@ function loadLowlight(): Promise<LowlightModule> {
 }
 
 function highlightCode(mod: LowlightModule, code: string, lang: string): React.ReactNode[] {
+  if (lang === 'plaintext') {
+    return [code];
+  }
   try {
     const tree = mod.lowlight.registered(lang)
       ? mod.lowlight.highlight(lang, code)
