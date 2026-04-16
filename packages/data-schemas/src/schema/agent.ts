@@ -44,6 +44,10 @@ const agentSchema = new Schema<IAgent>(
       type: [String],
       default: undefined,
     },
+    skills: {
+      type: [String],
+      default: undefined,
+    },
     tool_kwargs: {
       type: [{ type: Schema.Types.Mixed }],
     },

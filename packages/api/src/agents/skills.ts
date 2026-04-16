@@ -12,6 +12,23 @@ import type { InitializeAgentDbMethods } from './initialize';
 
 const SKILL_CATALOG_LIMIT = 100;
 
+/**
+ * Scopes user-accessible skill IDs to only those configured on the agent.
+ * When `agentSkills` is empty/undefined, all accessible skills are returned (full catalog).
+ * When `agentSkills` is a non-empty array of skill _id hex strings, only the intersection
+ * of accessible IDs and agent-configured IDs is returned.
+ */
+export function scopeSkillIds(
+  accessibleSkillIds: Types.ObjectId[],
+  agentSkills: string[] | undefined,
+): Types.ObjectId[] {
+  if (!agentSkills || agentSkills.length === 0) {
+    return accessibleSkillIds;
+  }
+  const agentSet = new Set(agentSkills);
+  return accessibleSkillIds.filter((oid) => agentSet.has(oid.toString()));
+}
+
 export interface InjectSkillCatalogParams {
   agent: Agent;
   toolDefinitions: LCTool[] | undefined;
