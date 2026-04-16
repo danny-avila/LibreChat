@@ -66,7 +66,7 @@ export default function ExecuteCode({
   const localize = useLocalize();
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
 
-  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasOutput } =
+  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!code);
 
   const highlighted = useLazyHighlight(code, lang);
@@ -82,11 +82,12 @@ export default function ExecuteCode({
           finishedText={
             cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
           }
+          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <SquareTerminal
               className={cn(
                 'size-4 shrink-0 text-text-secondary',
-                progress < 1 && !cancelled && 'animate-pulse',
+                progress < 1 && !cancelled && !hasError && 'animate-pulse',
               )}
               aria-hidden="true"
             />
