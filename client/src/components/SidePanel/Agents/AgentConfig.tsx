@@ -74,17 +74,25 @@ export default function AgentConfig() {
   const skills = useWatch({ control, name: 'skills' });
   const agent_id = useWatch({ control, name: 'id' });
 
+  const {
+    codeEnabled,
+    toolsEnabled,
+    contextEnabled,
+    actionsEnabled,
+    skillsEnabled,
+    artifactsEnabled,
+    webSearchEnabled,
+    fileSearchEnabled,
+  } = useAgentCapabilities(agentsConfig?.capabilities);
+
   const hasSkillsAccess = useHasAccess({
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
   });
-  const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: false });
+  const showSkills = hasSkillsAccess && skillsEnabled;
+  const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
   const skillsMap = useMemo(() => {
     const map = new Map<string, string>();
-    // Backend list response: `{ skills: TSkillSummary[]; ... }` (renamed
-    // from `.data` in the CRUD PR). This integration is gated behind
-    // `false &&` below so this map is currently unreachable — kept here
-    // so the section compiles for when agent-skills wiring lands.
     for (const skill of skillsData?.skills ?? []) {
       map.set(skill._id, skill.name);
     }
@@ -102,16 +110,6 @@ export default function AgentConfig() {
     });
     return newFileMap;
   }, [fileMap, agentFiles]);
-
-  const {
-    codeEnabled,
-    toolsEnabled,
-    contextEnabled,
-    actionsEnabled,
-    artifactsEnabled,
-    webSearchEnabled,
-    fileSearchEnabled,
-  } = useAgentCapabilities(agentsConfig?.capabilities);
 
   const context_files = useMemo(() => {
     if (typeof agent === 'string') {
@@ -340,8 +338,7 @@ export default function AgentConfig() {
           />
         )}
 
-        {/* WIP: Skills — remove `false &&` to re-enable */}
-        {false && hasSkillsAccess && (
+        {showSkills && (
           <div className="mb-4">
             <label className="text-token-text-primary mb-2 block text-sm font-medium">
               {localize('com_ui_skills')}
@@ -366,6 +363,7 @@ export default function AgentConfig() {
                           methods.setValue(
                             'skills',
                             current.filter((id) => id !== skillId),
+                            { shouldDirty: true },
                           );
                         }}
                         className="ml-2 flex-shrink-0 text-text-secondary transition-colors hover:text-text-primary"
@@ -581,10 +579,7 @@ export default function AgentConfig() {
           endpoint={EModelEndpoint.agents}
         />
       )}
-      {/* WIP: Skills — remove `false &&` to re-enable */}
-      {false && hasSkillsAccess && (
-        <SkillSelectDialog isOpen={showSkillDialog} setIsOpen={setShowSkillDialog} />
-      )}
+      {showSkills && <SkillSelectDialog isOpen={showSkillDialog} setIsOpen={setShowSkillDialog} />}
     </>
   );
 }

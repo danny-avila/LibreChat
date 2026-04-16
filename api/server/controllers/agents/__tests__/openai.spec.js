@@ -40,6 +40,7 @@ jest.mock('@librechat/api', () => ({
   }),
   createChunk: jest.fn().mockReturnValue({}),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
   sendFinalChunk: jest.fn(),
   createSafeUser: jest.fn().mockReturnValue({ id: 'user-123' }),
   validateRequest: jest
