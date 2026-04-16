@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Scroll } from 'lucide-react';
+import { ScrollText } from 'lucide-react';
 import { CheckboxButton } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
@@ -27,7 +27,7 @@ function Skills() {
         setValue={debouncedChange}
         label={localize('com_ui_skills')}
         isCheckedClassName="border-cyan-600/40 bg-cyan-500/10 hover:bg-cyan-700/10"
-        icon={<Scroll className="icon-md" aria-hidden="true" />}
+        icon={<ScrollText className="icon-md" aria-hidden="true" />}
       />
     )
   );
