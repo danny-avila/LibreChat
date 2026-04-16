@@ -350,6 +350,7 @@ function SkillListItem({
           enabled={isSkillEnabled}
           onChange={handleToggleEnabled}
           ariaLabel={toggleAriaLabel}
+          tabIndex={-1}
         />
 
         {hasFiles && (

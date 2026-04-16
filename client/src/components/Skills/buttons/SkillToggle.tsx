@@ -6,15 +6,17 @@ interface SkillToggleProps {
   onChange: () => void;
   label?: string;
   ariaLabel: string;
+  tabIndex?: number;
 }
 
-function SkillToggle({ enabled, onChange, label, ariaLabel }: SkillToggleProps) {
+function SkillToggle({ enabled, onChange, label, ariaLabel, tabIndex }: SkillToggleProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={enabled}
       aria-label={ariaLabel}
+      tabIndex={tabIndex}
       onClick={(e) => {
         e.stopPropagation();
         onChange();
