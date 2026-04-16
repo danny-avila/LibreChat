@@ -144,6 +144,10 @@ describe('supportsContext1m', () => {
     expect(supportsContext1m('claude-opus-4-6')).toBe(true);
   });
 
+  test('should return true for claude-opus-4-7', () => {
+    expect(supportsContext1m('claude-opus-4-7')).toBe(true);
+  });
+
   test('should return true for claude-opus-5 (future)', () => {
     expect(supportsContext1m('claude-opus-5')).toBe(true);
   });
@@ -434,6 +438,18 @@ describe('bedrockInputParser', () => {
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
       expect(additionalFields.output_config).toEqual({ effort: 'medium' });
+      expect(additionalFields.effort).toBeUndefined();
+    });
+
+    test('should pass xhigh effort via output_config for adaptive models (Opus 4.7)', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-7',
+        effort: 'xhigh',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.output_config).toEqual({ effort: 'xhigh' });
       expect(additionalFields.effort).toBeUndefined();
     });
 
