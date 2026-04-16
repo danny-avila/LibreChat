@@ -177,6 +177,20 @@ export async function primeSkillFiles(
         name: f.filename,
       }));
 
+    // Treat partial upload failures as a priming failure — missing bundled
+    // files cause follow-up bash/read calls to fail at runtime with missing paths.
+    const expectedCount = filesToUpload.filter((f) => !f.filename.endsWith('/SKILL.md')).length;
+    if (files.length < expectedCount) {
+      const uploadedNames = new Set(result.files.map((f) => f.filename));
+      const missingNames = filesToUpload
+        .filter((f) => !f.filename.endsWith('/SKILL.md') && !uploadedNames.has(f.filename))
+        .map((f) => f.filename);
+      logger.error(
+        `[primeSkillFiles] Partial upload failure for skill "${skill.name}": ${missingNames.length} file(s) missing: ${missingNames.join(', ')}`,
+      );
+      return null;
+    }
+
     // Persist codeEnvIdentifiers on skill files (fire-and-forget)
     if (updateSkillFileCodeEnvIds) {
       const updates = result.files

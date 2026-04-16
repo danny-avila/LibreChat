@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { createContentAggregator } = require('@librechat/agents');
+const { EnvVar, createContentAggregator } = require('@librechat/agents');
 const {
   initializeAgent,
   primeInvokedSkills,
@@ -110,6 +110,37 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const { contentParts, aggregateContent } = createContentAggregator();
   const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
 
+  /** Query accessible skill IDs once per run (shared across all agents).
+   *  Requires both admin capability AND per-conversation toggle (if ephemeral). */
+  const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
+  const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills;
+  const skillsCapabilityEnabled =
+    enabledCapabilities.has(AgentCapabilities.skills) && ephemeralSkillsToggle === true;
+
+  const accessibleSkillIds = skillsCapabilityEnabled
+    ? await findAccessibleResources({
+        userId: req.user.id,
+        role: req.user.role,
+        resourceType: ResourceType.SKILL,
+        requiredPermissions: PermissionBits.VIEW,
+      })
+    : [];
+
+  // Resolve code API key once for the entire run (shared by primeInvokedSkills
+  // and enrichWithSkillConfigurable) to avoid redundant auth lookups.
+  let codeApiKey;
+  if (skillsCapabilityEnabled && enabledCapabilities.has(AgentCapabilities.execute_code)) {
+    try {
+      const authValues = await loadAuthValues({
+        userId: req.user.id,
+        authFields: [EnvVar.CODE_API_KEY],
+      });
+      codeApiKey = authValues[EnvVar.CODE_API_KEY];
+    } catch {
+      // non-fatal — primeInvokedSkills and enrichWithSkillConfigurable will work without it
+    }
+  }
+
   /**
    * Agent context store - populated after initialization, accessed by callback via closure.
    * Maps agentId -> { userMCPAuthMap, agent, tool_resources, toolRegistry, openAIApiKey }
@@ -196,36 +227,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const conversationId = req.body.conversationId;
   /** @type {string | undefined} */
   const parentMessageId = req.body.parentMessageId;
-
-  /** Query accessible skill IDs once per run (shared across all agents).
-   *  Requires both admin capability AND per-conversation toggle (if ephemeral). */
-  const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
-  const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills;
-  const skillsCapabilityEnabled =
-    enabledCapabilities.has(AgentCapabilities.skills) && ephemeralSkillsToggle === true;
-  const accessibleSkillIds = skillsCapabilityEnabled
-    ? await findAccessibleResources({
-        userId: req.user.id,
-        role: req.user.role,
-        resourceType: ResourceType.SKILL,
-        requiredPermissions: PermissionBits.VIEW,
-      })
-    : [];
-
-  // Resolve code API key once for the entire run (shared by primeInvokedSkills
-  // and enrichWithSkillConfigurable) to avoid redundant auth lookups.
-  let codeApiKey;
-  if (skillsCapabilityEnabled && enabledCapabilities.has(AgentCapabilities.execute_code)) {
-    try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: ['LIBRECHAT_CODE_API_KEY'],
-      });
-      codeApiKey = authValues.LIBRECHAT_CODE_API_KEY;
-    } catch {
-      // non-fatal — primeInvokedSkills and enrichWithSkillConfigurable will work without it
-    }
-  }
 
   const primaryConfig = await initializeAgent(
     {
