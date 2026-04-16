@@ -144,6 +144,10 @@ describe('supportsContext1m', () => {
     expect(supportsContext1m('claude-opus-4-6')).toBe(true);
   });
 
+  test('should return true for claude-opus-4-7', () => {
+    expect(supportsContext1m('claude-opus-4-7')).toBe(true);
+  });
+
   test('should return true for claude-opus-5 (future)', () => {
     expect(supportsContext1m('claude-opus-5')).toBe(true);
   });
