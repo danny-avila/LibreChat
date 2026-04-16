@@ -1,15 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import { SquareTerminal } from 'lucide-react';
+import copy from 'copy-to-clipboard';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import useToolCallState from './useToolCallState';
-import useLazyHighlight from './useLazyHighlight';
-import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
 import parseJsonField from './parseJsonField';
 import { useLocalize } from '~/hooks';
-import Stdout from './Stdout';
 import { cn } from '~/utils';
 
 export default function BashCall({
@@ -31,8 +30,18 @@ export default function BashCall({
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!command);
 
-  const highlighted = useLazyHighlight(command || undefined, 'bash');
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
+
+  const [isCopied, setIsCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const handleCopy = useCallback(() => {
+    setIsCopied(true);
+    copy(command.trim(), { format: 'text/plain' });
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setIsCopied(false), 3000);
+  }, [command]);
 
   return (
     <>
@@ -60,31 +69,34 @@ export default function BashCall({
       </div>
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
-          <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-            {command && <CodeWindowHeader language="bash" code={command} />}
+          <div className="my-2 overflow-hidden rounded-lg border border-border-light">
             {command && (
-              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
-                <code className="hljs language-bash !whitespace-pre">{highlighted}</code>
-              </pre>
+              <div className="flex items-start justify-between bg-surface-tertiary px-3 py-2.5 dark:bg-gray-950">
+                <pre className="max-h-[300px] flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">
+                  <span className="select-none text-text-tertiary" aria-hidden="true">
+                    {'$ '}
+                  </span>
+                  <span className="text-text-primary">{command}</span>
+                </pre>
+                <CopyButton
+                  iconOnly
+                  isCopied={isCopied}
+                  onClick={handleCopy}
+                  className="ml-2 shrink-0"
+                  label={localize('com_ui_copy_code')}
+                />
+              </div>
             )}
             {hasOutput && (
-              <div
-                className={cn(
-                  'bg-surface-primary-alt p-4 text-xs dark:bg-transparent',
-                  command && 'border-t border-border-light',
-                )}
-              >
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
-                  {localize('com_ui_output')}
-                </div>
-                <div
+              <div className={cn(command && 'border-t border-border-light')}>
+                <pre
                   className={cn(
-                    'max-h-[200px] overflow-auto',
+                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
                     outputHasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
                   )}
                 >
-                  <Stdout output={output} />
-                </div>
+                  {output}
+                </pre>
               </div>
             )}
           </div>
