@@ -1,5 +1,16 @@
 import { Constants, isActionTool } from 'librechat-data-provider';
-import { Terminal, Globe, ImageIcon, ArrowRightLeft, FileSearch, Zap, Wrench } from 'lucide-react';
+import {
+  Terminal,
+  Globe,
+  ImageIcon,
+  ArrowRightLeft,
+  FileSearch,
+  FileText,
+  ScrollText,
+  SquareTerminal,
+  Zap,
+  Wrench,
+} from 'lucide-react';
 import { cn } from '~/utils';
 
 export type ToolIconType =
@@ -9,6 +20,9 @@ export type ToolIconType =
   | 'image_gen'
   | 'agent_handoff'
   | 'file_search'
+  | 'skill'
+  | 'read_file'
+  | 'bash_tool'
   | 'action'
   | 'generic';
 
@@ -19,6 +33,9 @@ const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>
   image_gen: ImageIcon,
   agent_handoff: ArrowRightLeft,
   file_search: FileSearch,
+  skill: ScrollText,
+  read_file: FileText,
+  bash_tool: SquareTerminal,
   action: Zap,
   generic: Wrench,
 };
@@ -44,6 +61,15 @@ export function getToolIconType(name: string): ToolIconType {
   }
   if (name === 'code_interpreter') {
     return 'execute_code';
+  }
+  if (name === 'skill') {
+    return 'skill';
+  }
+  if (name === 'read_file') {
+    return 'read_file';
+  }
+  if (name === 'bash_tool') {
+    return 'bash_tool';
   }
   if (name.startsWith(Constants.LC_TRANSFER_TO_)) {
     return 'agent_handoff';

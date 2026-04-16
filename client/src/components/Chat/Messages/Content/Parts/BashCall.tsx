@@ -4,6 +4,7 @@ import { SquareTerminal } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import { useProgress, useLocalize, useExpandCollapse } from '~/hooks';
+import { ERROR_PATTERNS } from './ExecuteCode';
 import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
@@ -11,47 +12,32 @@ import Stdout from './Stdout';
 import { cn } from '~/utils';
 import store from '~/store';
 
-interface ParsedArgs {
-  lang?: string;
-  code?: string;
+interface BashArgs {
+  command?: string;
 }
 
-export function useParseArgs(args?: string | Record<string, unknown>): ParsedArgs | null {
-  return useMemo(() => {
-    if (typeof args === 'object' && args !== null) {
-      return { lang: String(args.lang ?? ''), code: String(args.code ?? '') };
+function parseArgs(args?: string | Record<string, unknown>): BashArgs {
+  if (typeof args === 'object' && args !== null) {
+    return { command: String(args.command ?? '') };
+  }
+  try {
+    const parsed = JSON.parse(args || '{}');
+    if (typeof parsed === 'object') {
+      return { command: String(parsed.command ?? '') };
     }
-    let parsedArgs: ParsedArgs | string | undefined | null = args;
-    try {
-      parsedArgs = JSON.parse(args || '');
-    } catch {
-      // console.error('Failed to parse args:', e);
-    }
-    if (typeof parsedArgs === 'object') {
-      return parsedArgs;
-    }
-    const langMatch = args?.match(/"lang"\s*:\s*"(\w+)"/);
-    const codeMatch = args?.match(/"code"\s*:\s*"(.+?)(?="\s*,\s*"(session_id|args)"|"\s*})/s);
-
-    let code = '';
-    if (codeMatch) {
-      code = codeMatch[1];
-      if (code.endsWith('"}')) {
-        code = code.slice(0, -2);
-      }
-      code = code.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-    }
-
+  } catch {
+    // fallback
+  }
+  const match = args?.match(/"command"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (match) {
     return {
-      lang: langMatch ? langMatch[1] : '',
-      code,
+      command: match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
     };
-  }, [args]);
+  }
+  return { command: '' };
 }
 
-export const ERROR_PATTERNS = /^(Traceback|Error:|Exception:|.*Error:)/m;
-
-export default function ExecuteCode({
+export default function BashCall({
   isSubmitting,
   initialProgress = 0.1,
   args,
@@ -68,8 +54,8 @@ export default function ExecuteCode({
   const hasOutput = output.length > 0;
   const autoExpand = useRecoilValue(store.autoExpandTools);
 
-  const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
-  const hasContent = !!code || hasOutput;
+  const { command = '' } = useMemo(() => parseArgs(args), [args]);
+  const hasContent = !!command || hasOutput;
   const [showCode, setShowCode] = useState(() => autoExpand && hasContent);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(showCode);
 
@@ -80,11 +66,11 @@ export default function ExecuteCode({
   }, [autoExpand, hasContent]);
   const progress = useProgress(initialProgress);
 
-  const highlighted = useLazyHighlight(code, lang);
+  const highlighted = useLazyHighlight(command, 'bash');
 
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
 
-  const toggleCode = useCallback(() => setShowCode((prev) => !prev), [setShowCode]);
+  const toggleCode = useCallback(() => setShowCode((prev) => !prev), []);
 
   const cancelled = !isSubmitting && progress < 1;
 
@@ -94,9 +80,9 @@ export default function ExecuteCode({
         <ProgressText
           progress={progress}
           onClick={toggleCode}
-          inProgressText={localize('com_ui_analyzing')}
+          inProgressText={localize('com_ui_running_command')}
           finishedText={
-            cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
+            cancelled ? localize('com_ui_cancelled') : localize('com_ui_command_finished')
           }
           icon={
             <SquareTerminal
@@ -107,7 +93,7 @@ export default function ExecuteCode({
               aria-hidden="true"
             />
           }
-          hasInput={!!code?.length}
+          hasInput={hasContent}
           isExpanded={showCode}
           error={cancelled}
         />
@@ -115,17 +101,17 @@ export default function ExecuteCode({
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
           <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-            {code && <CodeWindowHeader language={lang} code={code} />}
-            {code && (
+            {command && <CodeWindowHeader language="bash" code={command} />}
+            {command && (
               <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
-                <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
+                <code className="hljs language-bash !whitespace-pre">{highlighted}</code>
               </pre>
             )}
             {hasOutput && (
               <div
                 className={cn(
                   'bg-surface-primary-alt p-4 text-xs dark:bg-transparent',
-                  code && 'border-t border-border-light',
+                  command && 'border-t border-border-light',
                 )}
               >
                 <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
