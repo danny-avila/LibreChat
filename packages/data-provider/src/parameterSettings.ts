@@ -462,6 +462,7 @@ const anthropic: Record<string, SettingDefinition> = {
       [AnthropicEffort.low]: 'com_ui_low',
       [AnthropicEffort.medium]: 'com_ui_medium',
       [AnthropicEffort.high]: 'com_ui_high',
+      [AnthropicEffort.xhigh]: 'com_ui_xhigh',
       [AnthropicEffort.max]: 'com_ui_max',
     },
     optionType: 'model',
