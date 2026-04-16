@@ -1026,6 +1026,21 @@ describe('getLLMConfig', () => {
         });
       });
 
+      it('should set xhigh effort via output_config for Opus 4.7', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-7',
+            thinking: true,
+            effort: 'xhigh' as AnthropicEffort,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('adaptive');
+        expect(result.llmConfig.invocationKwargs?.output_config).toEqual({
+          effort: 'xhigh',
+        });
+      });
+
       it('should exclude topP/topK for Sonnet 4.6 with adaptive thinking', () => {
         const result = getLLMConfig('test-key', {
           modelOptions: {
