@@ -19,7 +19,7 @@ import {
   logAxiosError,
   inputSchema,
 } from '~/utils';
-import { standardCache } from '~/cache';
+import { standardCache, tokenConfigCache } from '~/cache';
 
 export interface FetchModelsParams {
   /** User ID for API requests */
@@ -195,8 +195,7 @@ export async function fetchModels({
     const validationResult = inputSchema.safeParse(input);
     if (validationResult.success && createTokenConfig) {
       const endpointTokenConfig = processModelData(input);
-      const cache = standardCache(CacheKeys.TOKEN_CONFIG);
-      await cache.set(tokenKey ?? name, endpointTokenConfig);
+      await tokenConfigCache().set(tokenKey ?? name, endpointTokenConfig);
     }
     models = input.data.map((item: { id: string }) => item.id);
   } catch (error) {

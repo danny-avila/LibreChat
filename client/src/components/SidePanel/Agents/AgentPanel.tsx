@@ -480,71 +480,70 @@ export default function AgentPanel() {
     <FormProvider {...methods}>
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 px-3 pb-3"
+        className="scrollbar-gutter-stable flex flex-1 flex-col px-3 pb-3"
         aria-label="Agent configuration form"
       >
-        <div className="flex w-full flex-wrap gap-2">
-          <div className="w-full">
-            <AgentSelect
-              createMutation={create}
-              agentQuery={agentQuery}
-              setCurrentAgentId={setCurrentAgentId}
-              // The following is required to force re-render the component when the form's agent ID changes
-              // Also maintains ComboBox Focus for Accessibility
-              selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
-            />
+        <div className="flex-1">
+          <div className="flex w-full flex-wrap gap-2">
+            <div className="w-full">
+              <AgentSelect
+                createMutation={create}
+                agentQuery={agentQuery}
+                setCurrentAgentId={setCurrentAgentId}
+                selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
+              />
+            </div>
+            {agent_id && (
+              <div className="flex w-full gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-center"
+                  onClick={() => {
+                    reset(getDefaultAgentFormValues());
+                    setCurrentAgentId(undefined);
+                  }}
+                  disabled={agentQuery.isInitialLoading}
+                  aria-label={localize('com_ui_create_new_agent')}
+                >
+                  <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+                  {localize('com_ui_create_new_agent')}
+                </Button>
+                <Button
+                  variant="submit"
+                  disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleSelectAgent();
+                  }}
+                  aria-label={localize('com_ui_select_agent')}
+                >
+                  {localize('com_ui_select')}
+                </Button>
+              </div>
+            )}
           </div>
-          {/* Create + Select Button */}
-          {agent_id && (
-            <div className="flex w-full gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full justify-center"
-                onClick={() => {
-                  reset(getDefaultAgentFormValues());
-                  setCurrentAgentId(undefined);
-                }}
-                disabled={agentQuery.isInitialLoading}
-                aria-label={localize('com_ui_create_new_agent')}
-              >
-                <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
-                {localize('com_ui_create_new_agent')}
-              </Button>
-              <Button
-                variant="submit"
-                disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
-                onClick={(e) => {
-                  e.preventDefault();
-                  handleSelectAgent();
-                }}
-                aria-label={localize('com_ui_select_agent')}
-              >
-                {localize('com_ui_select')}
-              </Button>
+          {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
+          {!canEditAgent && !agentQuery.isInitialLoading && (
+            <div className="flex h-[30vh] w-full items-center justify-center">
+              <div className="text-center">
+                <h2 className="text-token-text-primary m-2 text-xl font-semibold">
+                  {localize('com_agents_not_available')}
+                </h2>
+                <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
+              </div>
             </div>
           )}
+          {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
+            <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
+          )}
+          {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
+            <AgentConfig />
+          )}
+          {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
+            <AdvancedPanel />
+          )}
         </div>
-        {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
-        {!canEditAgent && !agentQuery.isInitialLoading && (
-          <div className="flex h-[30vh] w-full items-center justify-center">
-            <div className="text-center">
-              <h2 className="text-token-text-primary m-2 text-xl font-semibold">
-                {localize('com_agents_not_available')}
-              </h2>
-              <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
-            </div>
-          </div>
-        )}
-        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-          <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
-        )}
-        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
-          <AgentConfig />
-        )}
-        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
-          <AdvancedPanel />
-        )}
         {canEditAgent && !agentQuery.isInitialLoading && (
           <AgentFooter
             createMutation={create}
