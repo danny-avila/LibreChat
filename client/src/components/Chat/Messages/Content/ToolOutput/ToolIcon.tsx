@@ -7,11 +7,15 @@ import {
   FileSearch,
   FileText,
   ScrollText,
-  SquareTerminal,
   Zap,
   Wrench,
 } from 'lucide-react';
+import LangIcon from '~/components/Messages/Content/LangIcon';
 import { cn } from '~/utils';
+
+function BashIcon({ className }: { className?: string }) {
+  return <LangIcon lang="bash" className={className} />;
+}
 
 export type ToolIconType =
   | 'mcp'
@@ -35,7 +39,7 @@ const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>
   file_search: FileSearch,
   skill: ScrollText,
   read_file: FileText,
-  bash_tool: SquareTerminal,
+  bash_tool: BashIcon,
   action: Zap,
   generic: Wrench,
 };

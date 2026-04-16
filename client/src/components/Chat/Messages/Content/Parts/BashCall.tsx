@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
-import { SquareTerminal } from 'lucide-react';
 import copy from 'copy-to-clipboard';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import CopyButton from '~/components/Messages/Content/CopyButton';
+import LangIcon from '~/components/Messages/Content/LangIcon';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
@@ -57,12 +57,12 @@ export default function BashCall({
           }
           errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
-            <SquareTerminal
+            <LangIcon
+              lang="bash"
               className={cn(
                 'size-4 shrink-0 text-text-secondary',
                 progress < 1 && !cancelled && !hasError && 'animate-pulse',
               )}
-              aria-hidden="true"
             />
           }
           hasInput={!!command || hasOutput}
