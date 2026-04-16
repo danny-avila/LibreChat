@@ -12,6 +12,31 @@ import type { InitializeAgentDbMethods } from './initialize';
 
 const SKILL_CATALOG_LIMIT = 100;
 
+/**
+ * Scopes user-accessible skill IDs to only those configured on the agent.
+ *
+ * Semantics (pinned by unit tests):
+ * - `undefined` / `null` → not configured, returns the full accessible catalog.
+ * - `[]` (empty array) → explicitly none, returns `[]`. A user who narrows their
+ *   agent to a subset and then removes all entries is explicitly opting out of
+ *   the full catalog fallback.
+ * - non-empty array of skill `_id` hex strings → intersection of accessible IDs
+ *   and agent-configured IDs.
+ */
+export function scopeSkillIds(
+  accessibleSkillIds: Types.ObjectId[],
+  agentSkills: string[] | null | undefined,
+): Types.ObjectId[] {
+  if (agentSkills == null) {
+    return accessibleSkillIds;
+  }
+  if (agentSkills.length === 0) {
+    return [];
+  }
+  const agentSet = new Set(agentSkills);
+  return accessibleSkillIds.filter((oid) => agentSet.has(oid.toString()));
+}
+
 export interface InjectSkillCatalogParams {
   agent: Agent;
   toolDefinitions: LCTool[] | undefined;

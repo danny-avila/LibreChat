@@ -11,6 +11,7 @@ const {
 const {
   createRun,
   buildToolSet,
+  scopeSkillIds,
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
@@ -357,10 +358,9 @@ const createResponse = async (req, res) => {
     const enabledCapabilities = new Set(
       appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities,
     );
-    const ephemeralAgent = req.body?.ephemeralAgent;
-    const skillsEnabled =
-      enabledCapabilities.has(AgentCapabilities.skills) && ephemeralAgent?.skills === true;
-    const accessibleSkillIds = skillsEnabled
+    const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
+    const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
+    const accessibleSkillIds = skillsCapabilityEnabled
       ? await findAccessibleResources({
           userId: req.user.id,
           role: req.user.role,
@@ -381,7 +381,10 @@ const createResponse = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
-        accessibleSkillIds,
+        accessibleSkillIds: scopeSkillIds(
+          accessibleSkillIds,
+          ephemeralSkillsToggle ? undefined : agent.skills,
+        ),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
       },
       {
