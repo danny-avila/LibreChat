@@ -16,6 +16,7 @@ import type {
   ISkillSummary,
 } from '~/types/skill';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -613,6 +614,18 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
   }
 
+  async function getSkillByName(
+    name: string,
+    accessibleIds: Types.ObjectId[],
+  ): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    // sort by updatedAt desc for deterministic result when multiple skills share a name
+    const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } })
+      .sort({ updatedAt: -1 })
+      .lean();
+    return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
+  }
+
   async function listSkillsByAccess(
     params: ListSkillsByAccessParams,
   ): Promise<ListSkillsByAccessResult> {
@@ -842,7 +855,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
           author: row.author,
           tenantId: row.tenantId,
         },
-        $unset: { content: '', isBinary: '' },
+        $unset: { content: '', isBinary: '', codeEnvIdentifier: '' },
       },
       { new: false, upsert: true },
     ).lean();
@@ -895,11 +908,28 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     await SkillFile.updateOne({ skillId, relativePath }, { $set: update });
   }
 
-  // deletion controller actually call. The per-skill file cascade on
-  // `deleteSkill` is inlined; there's no need for a separate export.
+  async function updateSkillFileCodeEnvIds(
+    updates: Array<{
+      skillId: Types.ObjectId | string;
+      relativePath: string;
+      codeEnvIdentifier: string;
+    }>,
+  ): Promise<void> {
+    if (updates.length === 0) return;
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    const ops = updates.map((u) => ({
+      updateOne: {
+        filter: { skillId: u.skillId, relativePath: u.relativePath },
+        update: { $set: { codeEnvIdentifier: u.codeEnvIdentifier } },
+      },
+    }));
+    await tenantSafeBulkWrite(SkillFile, ops);
+  }
+
   return {
     createSkill,
     getSkillById,
+    getSkillByName,
     listSkillsByAccess,
     updateSkill,
     deleteSkill,
@@ -909,6 +939,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     deleteSkillFile,
     getSkillFileByPath,
     updateSkillFileContent,
+    updateSkillFileCodeEnvIds,
   };
 }
 
