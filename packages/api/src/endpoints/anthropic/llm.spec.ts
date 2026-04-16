@@ -1041,6 +1041,23 @@ describe('getLLMConfig', () => {
         });
       });
 
+      it('should request summarized thinking display for adaptive models (Opus 4.7+ opt-in)', () => {
+        const adaptiveModels = ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6'];
+
+        adaptiveModels.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model, thinking: true },
+          });
+
+          const thinking = result.llmConfig.thinking as unknown as {
+            type: string;
+            display?: string;
+          };
+          expect(thinking.type).toBe('adaptive');
+          expect(thinking.display).toBe('summarized');
+        });
+      });
+
       it('should exclude topP/topK for Sonnet 4.6 with adaptive thinking', () => {
         const result = getLLMConfig('test-key', {
           modelOptions: {

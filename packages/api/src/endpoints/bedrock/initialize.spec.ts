@@ -625,7 +625,7 @@ describe('initializeBedrock', () => {
       const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
       const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
 
-      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(result.llmConfig.maxTokens).toBeUndefined();
       expect(amrf.anthropic_beta).toEqual(
         expect.arrayContaining(['output-128k-2025-02-19', 'context-1m-2025-08-07']),
@@ -643,7 +643,7 @@ describe('initializeBedrock', () => {
       const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
       const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
 
-      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(amrf.output_config).toEqual({ effort: 'medium' });
     });
 
@@ -672,7 +672,7 @@ describe('initializeBedrock', () => {
       const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
 
       expect(result.llmConfig).toHaveProperty('model', 'us.anthropic.claude-opus-4-6-v1');
-      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(amrf.output_config).toEqual({ effort: 'low' });
     });
 
@@ -702,7 +702,7 @@ describe('initializeBedrock', () => {
       const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
       const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
 
-      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(amrf.output_config).toBeUndefined();
     });
 
@@ -781,7 +781,7 @@ describe('initializeBedrock', () => {
       const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
 
       expect(amrf.reasoning_config).toBeUndefined();
-      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
     });
   });
 });

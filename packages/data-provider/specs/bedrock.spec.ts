@@ -226,7 +226,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.thinkingBudget).toBeUndefined();
       expect(additionalFields.anthropic_beta).toEqual([
         'output-128k-2025-02-19',
@@ -279,7 +279,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.thinkingBudget).toBeUndefined();
       expect(additionalFields.anthropic_beta).toEqual([
         'output-128k-2025-02-19',
@@ -293,7 +293,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.thinkingBudget).toBeUndefined();
       expect(additionalFields.anthropic_beta).toEqual([
         'output-128k-2025-02-19',
@@ -307,7 +307,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.thinkingBudget).toBeUndefined();
       expect(additionalFields.anthropic_beta).toEqual([
         'output-128k-2025-02-19',
@@ -394,7 +394,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.thinkingBudget).toBeUndefined();
       expect(additionalFields.anthropic_beta).toEqual([
         'output-128k-2025-02-19',
@@ -408,7 +408,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.thinkingBudget).toBeUndefined();
       expect(additionalFields.anthropic_beta).toEqual([
         'output-128k-2025-02-19',
@@ -422,7 +422,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.anthropic_beta).toEqual([
         'output-128k-2025-02-19',
         'context-1m-2025-08-07',
@@ -436,7 +436,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.output_config).toEqual({ effort: 'medium' });
       expect(additionalFields.effort).toBeUndefined();
     });
@@ -448,9 +448,19 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.output_config).toEqual({ effort: 'xhigh' });
       expect(additionalFields.effort).toBeUndefined();
+    });
+
+    test('should set thinking.display to "summarized" so Opus 4.7 returns reasoning blocks', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-7',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toHaveProperty('display', 'summarized');
+      expect((additionalFields.thinking as { type: string }).type).toBe('adaptive');
     });
 
     test('should not include output_config when effort is unset (empty string)', () => {
@@ -460,7 +470,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.output_config).toBeUndefined();
     });
 
@@ -525,7 +535,7 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.output_config).toEqual({ effort: 'max' });
     });
   });
@@ -537,7 +547,7 @@ describe('bedrockInputParser', () => {
       }) as Record<string, unknown>;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       const amrf = output.additionalModelRequestFields as Record<string, unknown>;
-      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(output.maxTokens).toBeUndefined();
       expect(output.maxOutputTokens).toBeUndefined();
     });
@@ -578,7 +588,7 @@ describe('bedrockInputParser', () => {
       }) as Record<string, unknown>;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       const amrf = output.additionalModelRequestFields as Record<string, unknown>;
-      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(amrf.output_config).toEqual({ effort: 'low' });
     });
 
@@ -640,7 +650,7 @@ describe('bedrockInputParser', () => {
         promptCache: true,
         additionalModelRequestFields: {
           anthropic_beta: ['output-128k-2025-02-19', 'context-1m-2025-08-07'],
-          thinking: { type: 'adaptive' },
+          thinking: { type: 'adaptive', display: 'summarized' },
           output_config: { effort: 'high' },
         },
       };

@@ -4,9 +4,24 @@ import * as s from './schemas';
 const DEFAULT_ENABLED_MAX_TOKENS = 8192;
 const DEFAULT_THINKING_BUDGET = 2000;
 
+/**
+ * Opt-in value for `thinking.display` that restores the pre-Opus-4.7 default
+ * visibility. Starting with Opus 4.7, Anthropic omits reasoning content from
+ * responses unless the caller explicitly asks for `'summarized'` (or provides
+ * a whitelisted `display` value).
+ *
+ * See
+ * https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
+ */
+const DEFAULT_THINKING_DISPLAY = 'summarized';
+
 const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReasoningConfig));
 
-type ThinkingConfig = { type: 'enabled'; budget_tokens: number } | { type: 'adaptive' };
+type ThinkingDisplay = 'summarized' | 'omitted';
+
+type ThinkingConfig =
+  | { type: 'enabled'; budget_tokens: number }
+  | { type: 'adaptive'; display?: ThinkingDisplay };
 
 type AnthropicReasoning = {
   thinking?: ThinkingConfig | boolean;
@@ -243,7 +258,10 @@ export const bedrockInputParser = s.tConversationSchema
           delete additionalFields.thinking;
           delete additionalFields.thinkingBudget;
         } else {
-          additionalFields.thinking = { type: 'adaptive' };
+          additionalFields.thinking = {
+            type: 'adaptive',
+            display: DEFAULT_THINKING_DISPLAY,
+          };
           delete additionalFields.thinkingBudget;
         }
       } else {

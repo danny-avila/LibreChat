@@ -80,7 +80,16 @@ function configureReasoning(
   const modelName = updatedOptions.model ?? '';
 
   if (extendedOptions.thinking && modelName && supportsAdaptiveThinking(modelName)) {
-    updatedOptions.thinking = { type: 'adaptive' };
+    /**
+     * Opt back in to reasoning visibility. Starting with Claude Opus 4.7,
+     * Anthropic omits thinking content from responses by default, so we must
+     * pass `display: 'summarized'` to restore the pre-4.7 behavior users and
+     * the LibreChat "Thoughts" UI expect. For earlier adaptive models the
+     * field is either a no-op or matches their existing default.
+     *
+     * https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
+     */
+    updatedOptions.thinking = { type: 'adaptive', display: 'summarized' };
 
     const effort = extendedOptions.effort;
     if (effort && effort !== AnthropicEffort.unset) {
