@@ -19,5 +19,7 @@ export default function parseJsonField(
   if (!match) {
     return '';
   }
-  return match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  return match[1].replace(/\\(.)/g, (_, c: string) =>
+    c === 'n' ? '\n' : c === '"' ? '"' : c === '\\' ? '\\' : `\\${c}`,
+  );
 }

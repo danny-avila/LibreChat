@@ -89,5 +89,15 @@ describe('parseJsonField', () => {
       const partial = '{"skillName" :  "spaced","incomplete":';
       expect(parseJsonField(partial, 'skillName')).toBe('spaced');
     });
+
+    it('decodes \\\\n as literal backslash + n, not newline', () => {
+      const partial = '{"file_path":"C:\\\\note","incomplete":';
+      expect(parseJsonField(partial, 'file_path')).toBe('C:\\note');
+    });
+
+    it('preserves unknown escape sequences', () => {
+      const partial = '{"command":"tab\\there","incomplete":';
+      expect(parseJsonField(partial, 'command')).toBe('tab\\there');
+    });
   });
 });
