@@ -2341,7 +2341,9 @@ describe('Premium Token Pricing', () => {
   it('should have premium pricing defined for claude-opus-4-7', () => {
     const entry = premiumTokenValues['claude-opus-4-7'];
     expect(entry).toBeDefined();
-    expect(entry.threshold).toBeDefined();
+    expect(entry.threshold).toBe(200000);
+    expect(entry.prompt).toBe(10);
+    expect(entry.completion).toBe(37.5);
     expect(entry.prompt).toBeGreaterThan(tokenValues['claude-opus-4-7'].prompt);
     expect(entry.completion).toBeGreaterThan(tokenValues['claude-opus-4-7'].completion);
   });

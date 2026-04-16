@@ -1,4 +1,4 @@
-import { anthropicSettings } from './schemas';
+import { AnthropicEffort, anthropicSettings, eAnthropicEffortSchema } from './schemas';
 
 describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
@@ -351,5 +351,27 @@ describe('anthropicSettings', () => {
         expect(set(128000, 'claude-3-opus')).toBe(128000);
       });
     });
+  });
+});
+
+describe('AnthropicEffort', () => {
+  it('exposes xhigh between high and max in the enum', () => {
+    expect(AnthropicEffort.xhigh).toBe('xhigh');
+    const keys = Object.keys(AnthropicEffort);
+    expect(keys.indexOf('xhigh')).toBeGreaterThan(keys.indexOf('high'));
+    expect(keys.indexOf('xhigh')).toBeLessThan(keys.indexOf('max'));
+  });
+
+  it('includes xhigh in anthropicSettings.effort.options', () => {
+    expect(anthropicSettings.effort.options).toContain(AnthropicEffort.xhigh);
+  });
+
+  it('accepts xhigh through the zod schema', () => {
+    expect(eAnthropicEffortSchema.parse('xhigh')).toBe('xhigh');
+    expect(eAnthropicEffortSchema.parse(AnthropicEffort.xhigh)).toBe('xhigh');
+  });
+
+  it('rejects unknown effort values', () => {
+    expect(() => eAnthropicEffortSchema.parse('ultra')).toThrow();
   });
 });
