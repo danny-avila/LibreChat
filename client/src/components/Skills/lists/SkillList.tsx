@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { Skeleton } from '@librechat/client';
 import type { TSkill } from 'librechat-data-provider';
-import { useSkillActiveState, useLocalize } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import SkillListItem from './SkillListItem';
 import { cn } from '~/utils';
 
@@ -13,15 +13,13 @@ interface SkillListProps {
   activeSkillId?: string;
 }
 
-/** Collapsible skill list with per-item active/inactive toggle. */
+/** Collapsible skill list. Active/inactive toggling lives in the detail view. */
 export default function SkillList({ skills, isLoading, activeSkillId }: SkillListProps) {
   const localize = useLocalize();
   const [searchParams] = useSearchParams();
   const activeFile = searchParams.get('file');
   const [sectionOpen, setSectionOpen] = useState(true);
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>(activeSkillId ?? null);
-  const { isActive: isSkillEnabled, toggle: onToggleSkillActive } = useSkillActiveState();
-  const toggleAriaLabel = localize('com_ui_skill_toggle_active');
 
   if (isLoading) {
     return (
@@ -67,12 +65,9 @@ export default function SkillList({ skills, isLoading, activeSkillId }: SkillLis
                 key={skill._id}
                 skill={skill}
                 isActive={skill._id === activeSkillId}
-                isSkillEnabled={isSkillEnabled(skill)}
                 isExpanded={skill._id === expandedSkillId}
                 activeFile={skill._id === activeSkillId ? activeFile : null}
-                toggleAriaLabel={toggleAriaLabel}
                 onToggleExpand={(id) => setExpandedSkillId((prev) => (prev === id ? null : id))}
-                onToggleEnabled={onToggleSkillActive}
               />
             ))
           )}

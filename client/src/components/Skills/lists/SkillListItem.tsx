@@ -5,18 +5,14 @@ import { FixedSizeTree } from 'react-vtree';
 import type { FixedSizeNodeData, TreeWalkerValue, TreeWalker } from 'react-vtree';
 import type { TSkill, TSkillFile } from 'librechat-data-provider';
 import { useListSkillFilesQuery } from '~/data-provider';
-import { SkillToggle } from '../buttons';
 import { cn } from '~/utils';
 
 interface SkillListItemProps {
   skill: TSkill;
   isActive: boolean;
-  isSkillEnabled: boolean;
   isExpanded: boolean;
   activeFile: string | null;
-  toggleAriaLabel: string;
   onToggleExpand: (skillId: string) => void;
-  onToggleEnabled: (skill: TSkill) => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -260,16 +256,11 @@ function InlineFileTree({
 function SkillListItem({
   skill,
   isActive,
-  isSkillEnabled,
   isExpanded,
   activeFile,
-  toggleAriaLabel,
   onToggleExpand,
-  onToggleEnabled,
 }: SkillListItemProps) {
   const navigate = useNavigate();
-
-  const handleToggleEnabled = useCallback(() => onToggleEnabled(skill), [onToggleEnabled, skill]);
 
   // Fetch files for active skill (always, since cached fileCount may be stale)
   // or expanded skills. The response is small (metadata only, no content).
@@ -324,34 +315,14 @@ function SkillListItem({
         aria-expanded={hasFiles ? expanded : undefined}
       >
         <span className="flex size-6 shrink-0 items-center justify-center">
-          <span
-            className={cn(
-              'flex size-6 items-center justify-center rounded-md border border-border-light bg-surface-primary shadow-sm',
-              !isSkillEnabled && 'opacity-50',
-            )}
-          >
+          <span className="flex size-6 items-center justify-center rounded-md border border-border-light bg-surface-primary shadow-sm">
             <ScrollText className="size-3.5 text-text-secondary" aria-hidden="true" />
           </span>
         </span>
 
         <span className="min-w-0 flex-1">
-          <span
-            className={cn(
-              'truncate',
-              isActive && 'font-semibold',
-              !isSkillEnabled && 'text-text-tertiary',
-            )}
-          >
-            {skill.name}
-          </span>
+          <span className={cn('truncate', isActive && 'font-semibold')}>{skill.name}</span>
         </span>
-
-        <SkillToggle
-          enabled={isSkillEnabled}
-          onChange={handleToggleEnabled}
-          ariaLabel={toggleAriaLabel}
-          tabIndex={-1}
-        />
 
         {hasFiles && (
           <button

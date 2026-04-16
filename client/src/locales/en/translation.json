@@ -1460,8 +1460,6 @@
   "com_ui_size": "Size",
   "com_ui_size_sort": "Sort by Size",
   "com_ui_skill": "Skill",
-  "com_ui_skill_active": "Active",
-  "com_ui_skill_inactive": "Inactive",
   "com_ui_skill_states_limit": "You've reached the limit of 200 active/inactive skill overrides. Remove some overrides to toggle new skills.",
   "com_ui_skill_toggle_active": "Toggle skill active state",
   "com_ui_skill_content": "Skill Content",
