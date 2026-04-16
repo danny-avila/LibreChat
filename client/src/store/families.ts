@@ -300,6 +300,26 @@ const showPromptsPopoverFamily = atomFamily<boolean, string | number | null>({
   default: false,
 });
 
+const showSkillsPopoverFamily = atomFamily<boolean, string | number | null>({
+  key: 'showSkillsPopoverByIndex',
+  default: false,
+});
+
+/**
+ * Per-conversation queue of skill names the user invoked manually via the
+ * `$` popover for the next submission. Acts as the structured channel
+ * paired with the cosmetic `$skill-name ` text inserted into the textarea.
+ *
+ * Phase 1: only the writer (SkillsCommand) is wired; the submit pipeline
+ * does not yet read or clear this atom. The follow-up PR will read this
+ * at `ask()` time, attach to the payload, and reset to `[]`. Until then
+ * the backend continues to receive only the textual `$name` reference.
+ */
+const pendingManualSkillsByConvoId = atomFamily<string[], string>({
+  key: 'pendingManualSkillsByConvoId',
+  default: [],
+});
+
 const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
   key: 'globalAudioURLByIndex',
   default: null,
@@ -497,5 +517,7 @@ export default {
   useClearSubmissionState,
   useClearLatestMessages,
   showPromptsPopoverFamily,
+  showSkillsPopoverFamily,
+  pendingManualSkillsByConvoId,
   updateConversationSelector,
 };
