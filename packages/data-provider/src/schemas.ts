@@ -186,6 +186,22 @@ export enum AnthropicEffort {
   max = 'max',
 }
 
+/**
+ * Controls whether the model's reasoning content is returned in responses.
+ *
+ * - `'auto'` — LibreChat decides: opt in to `'summarized'` for models that
+ *   omit by default (Opus 4.7+), leave the field off for older models.
+ * - `'summarized'` — always request a post-hoc summary of the reasoning.
+ * - `'omitted'` — always suppress reasoning content. Slightly lower latency.
+ *
+ * See https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
+ */
+export enum ThinkingDisplay {
+  auto = 'auto',
+  summarized = 'summarized',
+  omitted = 'omitted',
+}
+
 export enum BedrockReasoningConfig {
   low = 'low',
   medium = 'medium',
@@ -229,6 +245,7 @@ export const imageDetailValue = {
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
 export const eAnthropicEffortSchema = z.nativeEnum(AnthropicEffort);
+export const eThinkingDisplaySchema = z.nativeEnum(ThinkingDisplay);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 export const eVerbositySchema = z.nativeEnum(Verbosity);
 export const eThinkingLevelSchema = z.nativeEnum(ThinkingLevel);
@@ -495,6 +512,10 @@ export const anthropicSettings = {
       AnthropicEffort.xhigh,
       AnthropicEffort.max,
     ],
+  },
+  thinkingDisplay: {
+    default: ThinkingDisplay.auto,
+    options: [ThinkingDisplay.auto, ThinkingDisplay.summarized, ThinkingDisplay.omitted],
   },
   web_search: {
     default: false as const,
@@ -774,6 +795,8 @@ export const tConversationSchema = z.object({
   useResponsesApi: z.boolean().optional(),
   /* Anthropic: Effort control */
   effort: eAnthropicEffortSchema.optional().nullable(),
+  /* Anthropic: Thinking visibility (Opus 4.7+ opt-in) */
+  thinkingDisplay: eThinkingDisplaySchema.optional().nullable(),
   /* OpenAI Responses API / Anthropic API / Google API */
   web_search: z.boolean().optional(),
   /* disable streaming */
@@ -898,6 +921,7 @@ export const tQueryParamsSchema = tConversationSchema
     thinkingBudget: true,
     thinkingLevel: true,
     effort: true,
+    thinkingDisplay: true,
     /** @endpoints bedrock */
     region: true,
     /** @endpoints bedrock */
@@ -1222,6 +1246,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   thinking: true,
   thinkingBudget: true,
   effort: true,
+  thinkingDisplay: true,
   artifacts: true,
   iconURL: true,
   greeting: true,

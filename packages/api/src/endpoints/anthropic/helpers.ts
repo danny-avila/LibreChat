@@ -2,10 +2,11 @@ import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
   EModelEndpoint,
+  ThinkingDisplay,
   AnthropicEffort,
   anthropicSettings,
   supportsContext1m,
-  omitsThinkingByDefault,
+  resolveThinkingDisplay,
   supportsAdaptiveThinking,
 } from 'librechat-data-provider';
 import { matchModelName } from '~/utils/tokens';
@@ -74,6 +75,7 @@ function configureReasoning(
     thinking?: boolean;
     thinkingBudget?: number | null;
     effort?: AnthropicEffort | string | null;
+    thinkingDisplay?: ThinkingDisplay | string | null;
   } = {},
 ): AnthropicClientOptions & { max_tokens?: number } {
   const updatedOptions = { ...anthropicInput };
@@ -83,15 +85,17 @@ function configureReasoning(
   if (extendedOptions.thinking && modelName && supportsAdaptiveThinking(modelName)) {
     /**
      * For Opus 4.7+, Anthropic omits thinking content from responses by
-     * default. Opt back in with `display: 'summarized'` so the LibreChat
-     * "Thoughts" UI keeps working. Older adaptive models (Opus 4.6, Sonnet
-     * 4.6) already return summaries, so we leave them untouched.
+     * default. Resolver returns `'summarized'` for those models (so the
+     * LibreChat "Thoughts" UI keeps working) and leaves the field off for
+     * older adaptive models, while honoring an explicit user choice.
      *
      * https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
      */
-    updatedOptions.thinking = omitsThinkingByDefault(modelName)
-      ? { type: 'adaptive', display: 'summarized' }
-      : { type: 'adaptive' };
+    const display = resolveThinkingDisplay(modelName, extendedOptions.thinkingDisplay);
+    const adaptive = display
+      ? { type: 'adaptive' as const, display }
+      : { type: 'adaptive' as const };
+    updatedOptions.thinking = adaptive as AnthropicClientOptions['thinking'];
 
     const effort = extendedOptions.effort;
     if (effort && effort !== AnthropicEffort.unset) {

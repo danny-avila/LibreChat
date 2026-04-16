@@ -89,6 +89,8 @@ function getLLMConfig(
     thinkingBudget:
       options.modelOptions?.thinkingBudget ?? anthropicSettings.thinkingBudget.default,
     effort: options.modelOptions?.effort ?? anthropicSettings.effort.default,
+    thinkingDisplay:
+      options.modelOptions?.thinkingDisplay ?? anthropicSettings.thinkingDisplay.default,
   };
 
   if (options.modelOptions) {
@@ -96,6 +98,7 @@ function getLLMConfig(
     delete options.modelOptions.promptCache;
     delete options.modelOptions.thinkingBudget;
     delete options.modelOptions.effort;
+    delete options.modelOptions.thinkingDisplay;
   } else {
     throw new Error('No modelOptions provided');
   }

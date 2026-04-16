@@ -1,6 +1,8 @@
+import { ThinkingDisplay } from '../src/schemas';
 import {
   supportsAdaptiveThinking,
   omitsThinkingByDefault,
+  resolveThinkingDisplay,
   bedrockOutputParser,
   bedrockInputParser,
   supportsContext1m,
@@ -250,6 +252,42 @@ describe('omitsThinkingByDefault', () => {
   test('returns false for unrelated models', () => {
     expect(omitsThinkingByDefault('gpt-4o')).toBe(false);
     expect(omitsThinkingByDefault('')).toBe(false);
+  });
+});
+
+describe('resolveThinkingDisplay', () => {
+  test('returns "summarized" for Opus 4.7 when explicit is auto/null/undefined', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-7', ThinkingDisplay.auto)).toBe('summarized');
+    expect(resolveThinkingDisplay('claude-opus-4-7', null)).toBe('summarized');
+    expect(resolveThinkingDisplay('claude-opus-4-7', undefined)).toBe('summarized');
+  });
+
+  test('returns undefined for Opus 4.6 when explicit is auto/null/undefined', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-6', ThinkingDisplay.auto)).toBeUndefined();
+    expect(resolveThinkingDisplay('claude-opus-4-6', null)).toBeUndefined();
+    expect(resolveThinkingDisplay('claude-opus-4-6', undefined)).toBeUndefined();
+  });
+
+  test('explicit summarized wins for any adaptive model', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-6', ThinkingDisplay.summarized)).toBe(
+      'summarized',
+    );
+    expect(resolveThinkingDisplay('claude-sonnet-4-6', ThinkingDisplay.summarized)).toBe(
+      'summarized',
+    );
+    expect(resolveThinkingDisplay('claude-opus-4-7', ThinkingDisplay.summarized)).toBe(
+      'summarized',
+    );
+  });
+
+  test('explicit omitted wins even for Opus 4.7', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-7', ThinkingDisplay.omitted)).toBe('omitted');
+    expect(resolveThinkingDisplay('claude-opus-4-6', ThinkingDisplay.omitted)).toBe('omitted');
+  });
+
+  test('unknown string values fall through to auto behavior', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-7', 'bogus')).toBe('summarized');
+    expect(resolveThinkingDisplay('claude-opus-4-6', 'bogus')).toBeUndefined();
   });
 });
 
@@ -535,6 +573,54 @@ describe('bedrockInputParser', () => {
         expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
         expect(additionalFields.thinking).not.toHaveProperty('display');
       });
+    });
+
+    test('explicit thinkingDisplay="summarized" forces display even on Opus 4.6', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        thinkingDisplay: ThinkingDisplay.summarized,
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.thinkingDisplay).toBeUndefined();
+    });
+
+    test('explicit thinkingDisplay="omitted" wins even on Opus 4.7', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinkingDisplay: ThinkingDisplay.omitted,
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'omitted' });
+      expect(additionalFields.thinkingDisplay).toBeUndefined();
+    });
+
+    test('thinkingDisplay="auto" defers to model default', () => {
+      const opus47 = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinkingDisplay: ThinkingDisplay.auto,
+      }) as Record<string, unknown>;
+      expect((opus47.additionalModelRequestFields as Record<string, unknown>).thinking).toEqual({
+        type: 'adaptive',
+        display: 'summarized',
+      });
+
+      const opus46 = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        thinkingDisplay: ThinkingDisplay.auto,
+      }) as Record<string, unknown>;
+      expect((opus46.additionalModelRequestFields as Record<string, unknown>).thinking).toEqual({
+        type: 'adaptive',
+      });
+    });
+
+    test('thinkingDisplay is stripped when model does not support adaptive thinking', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+        thinkingDisplay: ThinkingDisplay.summarized,
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields?.thinkingDisplay).toBeUndefined();
     });
 
     test('should not include output_config when effort is unset (empty string)', () => {

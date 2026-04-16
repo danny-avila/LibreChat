@@ -1,4 +1,4 @@
-import { AnthropicEffort } from 'librechat-data-provider';
+import { AnthropicEffort, ThinkingDisplay } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { getLLMConfig } from './llm';
 
@@ -1069,6 +1069,40 @@ describe('getLLMConfig', () => {
           expect(thinking.type).toBe('adaptive');
           expect(thinking.display).toBeUndefined();
         });
+      });
+
+      it('should honor explicit thinkingDisplay="summarized" on Opus 4.6', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-6',
+            thinking: true,
+            thinkingDisplay: ThinkingDisplay.summarized,
+          },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('summarized');
+      });
+
+      it('should honor explicit thinkingDisplay="omitted" on Opus 4.7', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-7',
+            thinking: true,
+            thinkingDisplay: ThinkingDisplay.omitted,
+          },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('omitted');
       });
 
       it('should exclude topP/topK for Sonnet 4.6 with adaptive thinking', () => {
