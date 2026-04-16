@@ -277,6 +277,24 @@ describe('useHandleKeyUp', () => {
       expect(setShowPromptsPopover).not.toHaveBeenCalled();
     });
 
+    it('does NOT trigger $ skill command for currency-like "$100"', () => {
+      const ref = makeTextAreaRef('$100', 4);
+      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('0')));
+
+      expect(setShowSkillsPopover).not.toHaveBeenCalled();
+    });
+
+    it('does NOT trigger $ skill command for currency-like "$5.99"', () => {
+      const ref = makeTextAreaRef('$5.99', 5);
+      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('9')));
+
+      expect(setShowSkillsPopover).not.toHaveBeenCalled();
+    });
+
     it('does NOT trigger for pasted "@username mentioned in a long message"', () => {
       const ref = makeTextAreaRef('@username mentioned in a long message', 37);
       const { handleKeyUp, setShowMentionPopover } = renderUseHandleKeyUp(ref);

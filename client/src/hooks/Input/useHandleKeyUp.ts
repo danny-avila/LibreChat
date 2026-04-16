@@ -112,9 +112,18 @@ const useHandleKeyUp = ({
     if (!hasSkillsAccess || !dollarCommandEnabled || isAssistantsEndpoint(endpoint)) {
       return;
     }
-    if (shouldTriggerCommand(textAreaRef, '$')) {
-      setShowSkillsPopover(true);
+    if (!shouldTriggerCommand(textAreaRef, '$')) {
+      return;
     }
+    /* Avoid hijacking currency input: bare `$` is a valid browse trigger,
+       but `$100`, `$5.99`, etc. should pass through unchanged. Only open
+       the popover when the character after `$` looks like a skill
+       identifier (lowercase ASCII letter). */
+    const text = textAreaRef.current?.value ?? '';
+    if (text.length > 1 && !/^[a-z]/.test(text.slice(1))) {
+      return;
+    }
+    setShowSkillsPopover(true);
   }, [textAreaRef, hasSkillsAccess, setShowSkillsPopover, dollarCommandEnabled, endpoint]);
 
   const commandHandlers = useMemo(

@@ -214,6 +214,9 @@ function SkillsCommandContent({
               setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
               if (matches.length === 0) {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                }
                 setOpen(false);
                 setShowSkillsPopover(false);
                 textAreaRef.current?.focus();
