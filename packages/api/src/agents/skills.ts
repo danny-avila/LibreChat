@@ -105,18 +105,16 @@ export async function injectSkillCatalog(
     return { toolDefinitions: inputDefs, skillCount: 0 };
   }
 
-  // Filter to only skills the user has activated (per-user active state).
-  // Owned skills default to active; shared skills default to `defaultActiveOnShare`.
-  const activeSkills = userId
-    ? skills.filter((s) => {
-        const override = skillStates?.[s._id.toString()];
-        if (override !== undefined) {
-          return override;
-        }
-        const isOwned = s.author.toString() === userId;
-        return isOwned ? true : defaultActiveOnShare;
-      })
-    : skills;
+  const activeSkills = skills.filter((s) => {
+    const override = skillStates?.[s._id.toString()];
+    if (override !== undefined) {
+      return override;
+    }
+    if (!userId) {
+      return false;
+    }
+    return s.author.toString() === userId ? true : defaultActiveOnShare;
+  });
 
   if (activeSkills.length === 0) {
     return { toolDefinitions: inputDefs, skillCount: 0 };

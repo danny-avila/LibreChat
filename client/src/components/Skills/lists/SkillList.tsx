@@ -21,6 +21,7 @@ export default function SkillList({ skills, isLoading, activeSkillId }: SkillLis
   const [sectionOpen, setSectionOpen] = useState(true);
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>(activeSkillId ?? null);
   const { isActive: isSkillEnabled, toggle: onToggleSkillActive } = useSkillActiveState();
+  const toggleAriaLabel = localize('com_ui_skill_toggle_active');
 
   if (isLoading) {
     return (
@@ -69,8 +70,9 @@ export default function SkillList({ skills, isLoading, activeSkillId }: SkillLis
                 isSkillEnabled={isSkillEnabled(skill)}
                 isExpanded={skill._id === expandedSkillId}
                 activeFile={skill._id === activeSkillId ? activeFile : null}
+                toggleAriaLabel={toggleAriaLabel}
                 onToggleExpand={(id) => setExpandedSkillId((prev) => (prev === id ? null : id))}
-                onToggleEnabled={() => onToggleSkillActive(skill)}
+                onToggleEnabled={onToggleSkillActive}
               />
             ))
           )}

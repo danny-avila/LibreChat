@@ -128,17 +128,14 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       })
     : [];
 
-  // Resolve per-user skill active/inactive overrides and admin default.
   let skillStates;
   let defaultActiveOnShare = false;
   if (accessibleSkillIds.length > 0) {
-    const [skillStatesUser, skillsConfig] = await Promise.all([
-      db.getUserById(req.user.id, 'skillStates'),
-      Promise.resolve(appConfig?.interfaceConfig?.skills),
-    ]);
+    const skillStatesUser = await db.getUserById(req.user.id, 'skillStates');
     const raw = skillStatesUser?.skillStates;
     skillStates =
       raw instanceof Map ? Object.fromEntries(raw) : raw && typeof raw === 'object' ? raw : {};
+    const skillsConfig = appConfig?.interfaceConfig?.skills;
     if (typeof skillsConfig === 'object' && skillsConfig !== null) {
       defaultActiveOnShare = skillsConfig.defaultActiveOnShare === true;
     }

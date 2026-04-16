@@ -25,11 +25,13 @@ function resolveDefault(author: string, userId: string, defaultActiveOnShare: bo
  * Hook for managing per-user skill active/inactive state.
  *
  * The `skillStates` map stores explicit overrides (`{ [skillId]: boolean }`).
- * Skills absent from the map use the ownership-based default: owned → active,
- * shared → `defaultActiveOnShare` from the interface config.
+ * Skills absent from the map use the ownership-based default: owned -> active,
+ * shared -> `defaultActiveOnShare` from the interface config.
  *
- * React Query is the single source of truth — toggling drives an optimistic
+ * React Query is the single source of truth. Toggling drives an optimistic
  * mutation that updates the cache, identical to the favorites pattern.
+ * Toggling is blocked until the initial fetch resolves to prevent overwriting
+ * server-side state with an empty snapshot.
  */
 export default function useSkillActiveState() {
   const localize = useLocalize();
@@ -79,11 +81,13 @@ export default function useSkillActiveState() {
 
   const toggle = useCallback(
     (skill: { _id: string; author: string }) => {
+      if (getQuery.isLoading) {
+        return;
+      }
       const current = isActive(skill);
-      const next = { ...skillStates, [skill._id]: !current };
-      save(next);
+      save({ ...skillStates, [skill._id]: !current });
     },
-    [skillStates, isActive, save],
+    [skillStates, isActive, save, getQuery.isLoading],
   );
 
   return {

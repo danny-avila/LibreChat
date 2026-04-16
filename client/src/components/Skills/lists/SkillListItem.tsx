@@ -5,6 +5,7 @@ import { FixedSizeTree } from 'react-vtree';
 import type { FixedSizeNodeData, TreeWalkerValue, TreeWalker } from 'react-vtree';
 import type { TSkill, TSkillFile } from 'librechat-data-provider';
 import { useListSkillFilesQuery } from '~/data-provider';
+import { SkillToggle } from '../buttons';
 import { cn } from '~/utils';
 
 interface SkillListItemProps {
@@ -13,8 +14,9 @@ interface SkillListItemProps {
   isSkillEnabled: boolean;
   isExpanded: boolean;
   activeFile: string | null;
+  toggleAriaLabel: string;
   onToggleExpand: (skillId: string) => void;
-  onToggleEnabled: () => void;
+  onToggleEnabled: (skill: TSkill) => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -261,10 +263,13 @@ function SkillListItem({
   isSkillEnabled,
   isExpanded,
   activeFile,
+  toggleAriaLabel,
   onToggleExpand,
   onToggleEnabled,
 }: SkillListItemProps) {
   const navigate = useNavigate();
+
+  const handleToggleEnabled = useCallback(() => onToggleEnabled(skill), [onToggleEnabled, skill]);
 
   // Fetch files for active skill (always, since cached fileCount may be stale)
   // or expanded skills. The response is small (metadata only, no content).
@@ -341,29 +346,11 @@ function SkillListItem({
           </span>
         </span>
 
-        <button
-          type="button"
-          role="switch"
-          aria-checked={isSkillEnabled}
-          aria-label="Toggle skill active state"
-          tabIndex={-1}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleEnabled();
-          }}
-          className={cn(
-            'relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full transition-colors duration-200',
-            isSkillEnabled ? 'bg-green-500' : 'bg-border-medium',
-          )}
-        >
-          <span
-            className={cn(
-              'pointer-events-none inline-block size-3 rounded-full bg-white shadow-sm transition-transform duration-200',
-              isSkillEnabled ? 'translate-x-3.5' : 'translate-x-0.5',
-              'mt-0.5',
-            )}
-          />
-        </button>
+        <SkillToggle
+          enabled={isSkillEnabled}
+          onChange={handleToggleEnabled}
+          ariaLabel={toggleAriaLabel}
+        />
 
         {hasFiles && (
           <button

@@ -3,10 +3,17 @@ const { updateUser, getUserById } = require('~/models');
 const MAX_SKILL_STATES = 200;
 const MAX_KEY_LENGTH = 64;
 
-/**
- * Returns the user's skill-active overrides as a plain `{ [skillId]: boolean }` object.
- * An empty object means no explicit overrides — defaults apply.
- */
+/** Mongoose Map keys reject `.` and leading `$`. */
+const INVALID_KEY_PATTERN = /[.$]/;
+
+/** Converts a Mongoose Map (or plain object) to a `Record<string, boolean>`. */
+function toRecord(raw) {
+  if (raw instanceof Map) {
+    return Object.fromEntries(raw);
+  }
+  return raw && typeof raw === 'object' ? raw : {};
+}
+
 const getSkillStatesController = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -16,23 +23,13 @@ const getSkillStatesController = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const raw = user.skillStates;
-    const states =
-      raw instanceof Map ? Object.fromEntries(raw) : raw && typeof raw === 'object' ? raw : {};
-
-    return res.status(200).json(states);
+    return res.status(200).json(toRecord(user.skillStates));
   } catch (error) {
     console.error('Error fetching skill states:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
 
-/**
- * Replaces the user's skill-active overrides. The client performs optimistic
- * merges locally and sends the full map on each mutation.
- *
- * Body: `{ skillStates: { [skillId]: boolean } }`
- */
 const updateSkillStatesController = async (req, res) => {
   try {
     const { skillStates } = req.body;
@@ -58,6 +55,11 @@ const updateSkillStatesController = async (req, res) => {
           message: `Each skill ID must be a non-empty string (max ${MAX_KEY_LENGTH} chars)`,
         });
       }
+      if (INVALID_KEY_PATTERN.test(key)) {
+        return res.status(400).json({
+          message: 'Skill ID must not contain "." or "$"',
+        });
+      }
       if (typeof value !== 'boolean') {
         return res.status(400).json({ message: 'Each skill state value must be a boolean' });
       }
@@ -69,11 +71,7 @@ const updateSkillStatesController = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const raw = user.skillStates;
-    const states =
-      raw instanceof Map ? Object.fromEntries(raw) : raw && typeof raw === 'object' ? raw : {};
-
-    return res.status(200).json(states);
+    return res.status(200).json(toRecord(user.skillStates));
   } catch (error) {
     console.error('Error updating skill states:', error);
     return res.status(500).json({ message: 'Internal server error' });

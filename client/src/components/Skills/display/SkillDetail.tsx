@@ -4,10 +4,10 @@ import { Eye, Code, User, Calendar, EarthIcon, ScrollText } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
 import type { TSkill } from 'librechat-data-provider';
 import { useLocalize, useAuthContext, useSkillPermissions, useSkillActiveState } from '~/hooks';
+import { ShareSkill, SkillToggle } from '../buttons';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
 import { parseFrontmatter } from '../utils';
 import DeleteSkill from '../dialogs/DeleteSkill';
-import { ShareSkill } from '../buttons';
 import { cn } from '~/utils';
 
 interface SkillDetailProps {
@@ -132,32 +132,12 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
 
         {/* Actions */}
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={skillEnabled}
-            aria-label={localize('com_ui_skill_toggle_active')}
-            onClick={() => toggle(skill)}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-surface-hover"
-          >
-            <span
-              className={cn(
-                'relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors duration-200',
-                skillEnabled ? 'bg-green-500' : 'bg-border-medium',
-              )}
-            >
-              <span
-                className={cn(
-                  'pointer-events-none inline-block size-3 rounded-full bg-white shadow-sm transition-transform duration-200',
-                  skillEnabled ? 'translate-x-3.5' : 'translate-x-0.5',
-                  'mt-0.5',
-                )}
-              />
-            </span>
-            <span className={skillEnabled ? 'text-text-primary' : 'text-text-tertiary'}>
-              {localize(skillEnabled ? 'com_ui_skill_active' : 'com_ui_skill_inactive')}
-            </span>
-          </button>
+          <SkillToggle
+            enabled={skillEnabled}
+            onChange={() => toggle(skill)}
+            ariaLabel={localize('com_ui_skill_toggle_active')}
+            label={localize(skillEnabled ? 'com_ui_skill_active' : 'com_ui_skill_inactive')}
+          />
           <ShareSkill skill={skill} />
           {permissions.canEdit && onEdit && (
             <button
