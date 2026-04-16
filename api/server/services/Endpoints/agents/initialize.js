@@ -490,7 +490,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         primeInvokedSkills({
           req,
           payload,
-          accessibleSkillIds,
+          accessibleSkillIds: scopeSkillIds(
+            accessibleSkillIds,
+            ephemeralSkillsToggle ? undefined : primaryAgent.skills,
+          ),
           codeApiKey,
           loadAuthValues,
           ...getSkillToolDeps(),
