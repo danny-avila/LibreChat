@@ -713,6 +713,8 @@
   "com_ui_agent_subagents_info_2": "Enabling with no agents listed still allows self-spawn, so this agent can delegate focused subtasks to a fresh copy of itself.",
   "com_ui_subagent_running": "Subagent \"{{0}}\" is working…",
   "com_ui_subagent_complete": "Subagent \"{{0}}\" finished",
+  "com_ui_subagent_cancelled": "Subagent \"{{0}}\" cancelled",
+  "com_ui_subagent_errored": "Subagent \"{{0}}\" errored",
   "com_ui_subagent_waiting": "Waiting for first update…",
   "com_ui_subagent_dialog_title": "Subagent: {{0}}",
   "com_ui_subagent_dialog_description": "Isolated-context child run. Activity log and final result below.",
