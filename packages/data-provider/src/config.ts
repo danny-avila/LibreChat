@@ -1927,6 +1927,8 @@ export enum Constants {
   EPHEMERAL_AGENT_ID = 'ephemeral',
   /** Programmatic Tool Calling tool name */
   PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
+  /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
+  SUBAGENT = 'subagent',
 }
 
 export enum LocalStorageKeys {
