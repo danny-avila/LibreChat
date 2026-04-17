@@ -689,6 +689,19 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     }
   }
 
+  /** If the capability is off at the endpoint level, strip `subagents` on
+   *  every loaded config — not just the primary. `run.ts` calls
+   *  `buildSubagentConfigs` for every agent in the array, so a handoff
+   *  agent with `subagents.enabled: true` persisted on its document would
+   *  otherwise still expose self-spawn at runtime even though the admin
+   *  has disabled the capability globally. */
+  if (!subagentsCapabilityEnabled) {
+    for (const config of agentConfigs.values()) {
+      config.subagents = undefined;
+      config.subagentAgentConfigs = undefined;
+    }
+  }
+
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {
     try {
