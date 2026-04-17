@@ -70,7 +70,7 @@ export async function loadSkillStates(params: LoadSkillStatesParams): Promise<Lo
   };
 }
 
-export interface ValidationError {
+export interface SkillStatesValidationError {
   code?: string;
   message: string;
   limit?: number;
@@ -78,8 +78,8 @@ export interface ValidationError {
 
 /**
  * Validates a raw skill-states update payload. Returns `null` on success or
- * a structured `ValidationError` describing the first rejection reason. Caller
- * maps the error to an HTTP 400 response.
+ * a structured `SkillStatesValidationError` describing the first rejection
+ * reason. Caller maps the error to an HTTP 400 response.
  *
  * Rejects: non-object payloads, oversize payloads (sanity bound for abuse),
  * non-string/empty/oversize keys, keys that are not valid ObjectIds, and
@@ -87,7 +87,7 @@ export interface ValidationError {
  * pruning, not here, so stale-client payloads near the cap do not get a
  * false-positive rejection.
  */
-export function validateSkillStatesPayload(payload: unknown): ValidationError | null {
+export function validateSkillStatesPayload(payload: unknown): SkillStatesValidationError | null {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return { message: 'skillStates must be a plain object' };
   }
