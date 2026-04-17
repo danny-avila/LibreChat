@@ -233,7 +233,7 @@ describe('SkillsCommand', () => {
       isFetchingNextPage: false,
     });
     mockUseAgentsMapContext.mockReturnValue({
-      'agent-1': { id: 'agent-1', skills: ['2'] },
+      agent_1: { id: 'agent_1', skills: ['2'] },
     });
 
     const textAreaRef = makeTextarea('$');
@@ -242,7 +242,7 @@ describe('SkillsCommand', () => {
         index={0}
         textAreaRef={textAreaRef}
         conversationId={CONVO_ID}
-        agentId="agent-1"
+        agentId="agent_1"
       />,
     );
 
@@ -261,7 +261,7 @@ describe('SkillsCommand', () => {
       isFetchingNextPage: false,
     });
     mockUseAgentsMapContext.mockReturnValue({
-      'agent-1': { id: 'agent-1', skills: [] },
+      agent_1: { id: 'agent_1', skills: [] },
     });
 
     const textAreaRef = makeTextarea('$');
@@ -270,7 +270,7 @@ describe('SkillsCommand', () => {
         index={0}
         textAreaRef={textAreaRef}
         conversationId={CONVO_ID}
-        agentId="agent-1"
+        agentId="agent_1"
       />,
     );
 
@@ -288,7 +288,7 @@ describe('SkillsCommand', () => {
       isFetchingNextPage: false,
     });
     mockUseAgentsMapContext.mockReturnValue({
-      'agent-1': { id: 'agent-1' },
+      agent_1: { id: 'agent_1' },
     });
 
     const textAreaRef = makeTextarea('$');
@@ -297,10 +297,37 @@ describe('SkillsCommand', () => {
         index={0}
         textAreaRef={textAreaRef}
         conversationId={CONVO_ID}
-        agentId="agent-1"
+        agentId="agent_1"
       />,
     );
 
+    expect(await screen.findByRole('button', { name: /Brand Guidelines/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
+  });
+
+  it('treats an ephemeral agent id as unscoped and shows the full ACL catalog', async () => {
+    mockUseSkillsInfiniteQuery.mockReturnValue({
+      data: twoSkillsResponse,
+      isLoading: false,
+      isError: false,
+      fetchNextPage: jest.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+    });
+    mockUseAgentsMapContext.mockReturnValue({});
+
+    const textAreaRef = makeTextarea('$');
+    render(
+      <SkillsCommand
+        index={0}
+        textAreaRef={textAreaRef}
+        conversationId={CONVO_ID}
+        agentId="ephemeral"
+      />,
+    );
+
+    /* `ephemeral` doesn't start with `agent_`, so it's an ephemeral id;
+       scope filter should be skipped and the full catalog displayed. */
     expect(await screen.findByRole('button', { name: /Brand Guidelines/i })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
   });
@@ -322,7 +349,7 @@ describe('SkillsCommand', () => {
         index={0}
         textAreaRef={textAreaRef}
         conversationId={CONVO_ID}
-        agentId="agent-1"
+        agentId="agent_1"
       />,
     );
 
@@ -349,7 +376,7 @@ describe('SkillsCommand', () => {
         index={0}
         textAreaRef={textAreaRef}
         conversationId={CONVO_ID}
-        agentId="agent-1"
+        agentId="agent_1"
       />,
     );
 

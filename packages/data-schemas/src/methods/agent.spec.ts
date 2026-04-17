@@ -3229,6 +3229,33 @@ describe('Support Contact Field', () => {
       expect(result.data[0].name).toBe('Agent A1');
     });
 
+    test('should include the skills field in the list projection', async () => {
+      // Frontend popover scoping relies on `agent.skills` being present in
+      // list results so it can narrow the `$` catalog without refetching the
+      // full agent document. Locks in that projection contract.
+      const targetSkillIds = [
+        new mongoose.Types.ObjectId().toString(),
+        new mongoose.Types.ObjectId().toString(),
+      ];
+      const scopedAgent = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Scoped Agent',
+        description: 'Agent with configured skill scope',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+        skills: targetSkillIds,
+      });
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: [scopedAgent._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].skills).toEqual(targetSkillIds);
+    });
+
     test('should return multiple accessible agents when provided', async () => {
       // Give User B access to two of User A's agents
       const accessibleIds = [agentA1._id, agentA3._id] as mongoose.Types.ObjectId[];

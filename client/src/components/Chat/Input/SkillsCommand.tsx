@@ -10,6 +10,7 @@ import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import { useLocalize, useSkillActiveState } from '~/hooks';
 import { useAgentsMapContext } from '~/Providers';
 import { useSkillsInfiniteQuery } from '~/data-provider';
+import { isEphemeralAgent } from '~/common';
 import { ephemeralAgentByConvoId } from '~/store';
 import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
@@ -101,20 +102,21 @@ function SkillsCommandContent({
 
   /* Resolve the per-agent skill scope. Mirrors backend `scopeSkillIds` for
      the happy path: no `skills` field → no scope, `[]` → opt-out, non-empty
-     → intersection. Fails closed for both "map not hydrated" and "agent not
-     in map" — if we cannot confirm the agent's scope we must not leak the
-     full ACL catalog, since the backend will reject any picked skill that
-     the agent was not configured to allow.
+     → intersection. Ephemeral agent ids (null/undefined/placeholder strings
+     that don't begin with `agent_`) are unscoped — they correspond to
+     conversations without a persisted agent and are intentionally absent
+     from the agents map. Fails closed for "map not hydrated" and "persisted
+     agent missing from map" — scope unknown, don't leak the full catalog.
      `agentId` is threaded in as a prop so this component stays memoizable
      and skips re-renders on unrelated conversation-shape changes. */
   const agentSkillIds = useMemo<string[] | null | undefined>(() => {
-    if (!agentId) {
+    if (isEphemeralAgent(agentId)) {
       return undefined;
     }
     if (!agentsMap) {
       return [];
     }
-    const agent = agentsMap[agentId];
+    const agent = agentsMap[agentId as string];
     if (!agent) {
       return [];
     }
