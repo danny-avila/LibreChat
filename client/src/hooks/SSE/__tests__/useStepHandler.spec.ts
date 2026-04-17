@@ -1773,6 +1773,123 @@ describe('useStepHandler', () => {
       expect(bucket.events[bucket.events.length - 1].label).toBe('delta-204');
     });
 
+    it('keeps parallel subagent streams independent when events interleave', () => {
+      /**
+       * Parallel tool calls: the LLM emits two `subagent` tool calls in the
+       * same AIMessage, LangChain invokes them concurrently, and the SDK
+       * streams `ON_SUBAGENT_UPDATE` envelopes for both runs in arbitrary
+       * order. Each envelope carries `parentToolCallId` (SDK dev.2+), so
+       * correlation stays deterministic. Verify no cross-contamination
+       * between buckets: each tool_call_id's atom should accumulate only
+       * that run's events, and closing one stream must not affect the
+       * other.
+       */
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_a', 'call_b']);
+
+      const makeParallelUpdate = (
+        runId: string,
+        toolCallId: string,
+        overrides: Partial<SubagentUpdateEvent> = {},
+      ): SubagentUpdateEvent => ({
+        ...makeUpdate({ subagentRunId: runId, parentToolCallId: toolCallId }),
+        ...overrides,
+      });
+
+      act(() => {
+        // Interleaved order: a-start, b-start, a-step, b-step, a-stop, b-stop
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeParallelUpdate('run_a', 'call_a', {
+              phase: 'start',
+              label: 'A started',
+            }),
+          },
+          submission,
+        );
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeParallelUpdate('run_b', 'call_b', {
+              phase: 'start',
+              label: 'B started',
+            }),
+          },
+          submission,
+        );
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeParallelUpdate('run_a', 'call_a', {
+              phase: 'run_step',
+              label: 'A using calculator',
+            }),
+          },
+          submission,
+        );
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeParallelUpdate('run_b', 'call_b', {
+              phase: 'run_step',
+              label: 'B using web',
+            }),
+          },
+          submission,
+        );
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeParallelUpdate('run_a', 'call_a', {
+              phase: 'stop',
+              label: 'A done',
+            }),
+          },
+          submission,
+        );
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeParallelUpdate('run_b', 'call_b', {
+              phase: 'run_step',
+              label: 'B still going',
+            }),
+          },
+          submission,
+        );
+      });
+
+      const bucketA = getProgress('call_a') as {
+        subagentRunId: string;
+        status: string;
+        events: SubagentUpdateEvent[];
+      };
+      const bucketB = getProgress('call_b') as {
+        subagentRunId: string;
+        status: string;
+        events: SubagentUpdateEvent[];
+      };
+
+      // Each bucket only has events from its own run
+      expect(bucketA.subagentRunId).toBe('run_a');
+      expect(bucketB.subagentRunId).toBe('run_b');
+      expect(bucketA.events.map((e) => e.label)).toEqual([
+        'A started',
+        'A using calculator',
+        'A done',
+      ]);
+      expect(bucketB.events.map((e) => e.label)).toEqual([
+        'B started',
+        'B using web',
+        'B still going',
+      ]);
+
+      // A reached `stop`, B is still running — their statuses should reflect that
+      expect(bucketA.status).toBe('stop');
+      expect(bucketB.status).toBe('run_step');
+    });
+
     it('clearStepMaps resets tracked subagent atoms back to their default', () => {
       const { result, getProgress } = renderStepHandlerWithReader();
       const { submission } = seedResponseWithSubagentToolCalls(result, ['call_reset']);
