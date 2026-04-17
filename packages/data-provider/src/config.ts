@@ -1931,6 +1931,9 @@ export enum Constants {
   SUBAGENT = 'subagent',
 }
 
+/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
+export const MAX_SUBAGENTS = 10;
+
 export enum LocalStorageKeys {
   /** Key for the admin defined App Title */
   APP_TITLE = 'appTitle',
