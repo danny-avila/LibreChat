@@ -682,6 +682,33 @@ describe('bedrockInputParser', () => {
       expect(persisted.thinkingDisplay).toBe(ThinkingDisplay.omitted);
     });
 
+    test('bedrockInputParser preserves persisted AMRF.thinking.display (Opus 4.7 omitted)', () => {
+      /** initializeBedrock calls bedrockInputParser directly on persisted
+       * model_parameters. Without the parser-side extraction, the 'omitted'
+       * user choice baked into AMRF would be silently reverted to
+       * 'summarized' by the Opus 4.7+ auto fallback. */
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'omitted' },
+        },
+      }) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'omitted' });
+    });
+
+    test('bedrockInputParser: top-level thinkingDisplay wins over persisted AMRF display', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinkingDisplay: ThinkingDisplay.summarized,
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'omitted' },
+        },
+      }) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+    });
+
     test('should not include output_config when effort is unset (empty string)', () => {
       const input = {
         model: 'anthropic.claude-opus-4-6-v1',
