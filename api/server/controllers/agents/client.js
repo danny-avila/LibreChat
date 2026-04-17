@@ -759,6 +759,46 @@ class AgentClient extends BaseClient {
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
         );
       }
+
+      /**
+       * Phase 3 manual skill priming — injected by user via `$` popover.
+       *
+       * Position: just before the final user message. Skill context then
+       * appears adjacent to the instruction that needs it, without polluting
+       * prior conversation history. Matches how `handleSkillToolCall` lands
+       * model-invoked skills via `injectedMessages` — both produce a meta
+       * HumanMessage carrying the SKILL.md body.
+       *
+       * Index accounting: every existing `indexTokenCountMap` entry at or
+       * past the insertion point shifts forward by the number of primes.
+       * `hydrateMissingIndexTokenCounts` below then fills counts for the
+       * fresh positions.
+       */
+      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
+      if (manualSkillPrimes && manualSkillPrimes.length > 0 && initialMessages.length > 0) {
+        const insertIdx = initialMessages.length - 1;
+        const numPrimes = manualSkillPrimes.length;
+        if (indexTokenCountMap) {
+          const shifted = {};
+          for (const [idxStr, count] of Object.entries(indexTokenCountMap)) {
+            const idx = Number(idxStr);
+            shifted[idx >= insertIdx ? idx + numPrimes : idx] = count;
+          }
+          indexTokenCountMap = shifted;
+        }
+        const primeMessages = manualSkillPrimes.map(
+          (p) =>
+            new HumanMessage({
+              content: p.body,
+              additional_kwargs: { isMeta: true, source: 'skill', skillName: p.name },
+            }),
+        );
+        initialMessages.splice(insertIdx, 0, ...primeMessages);
+        logger.debug(
+          `[AgentClient] Primed ${numPrimes} manual skill(s) at message index ${insertIdx}: ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
+        );
+      }
+
       if (indexTokenCountMap && isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
         const entries = Object.entries(indexTokenCountMap);
         const perMsg = entries.map(([idx, count]) => {

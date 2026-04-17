@@ -2,7 +2,7 @@ import { v4 } from 'uuid';
 import { cloneDeep } from 'lodash';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
+import { useSetRecoilState, useResetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import {
   Constants,
   QueryKeys,
@@ -76,6 +76,25 @@ export default function useChatFunctions({
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
 
+  /**
+   * Atomically read + reset the per-conversation queue of manually-invoked
+   * skills from the `$` popover. Reading and resetting in a single Recoil
+   * snapshot guarantees that if the user selects more skills between here and
+   * the next submission, their picks are never silently lost into a reset atom.
+   */
+  const drainPendingManualSkills = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (convoId: string): string[] => {
+        const loadable = snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId));
+        const skills = (loadable.contents as string[]) ?? [];
+        if (skills.length > 0) {
+          reset(store.pendingManualSkillsByConvoId(convoId));
+        }
+        return skills;
+      },
+    [],
+  );
+
   const ask: TAskFunction = (
     {
       text,
@@ -124,6 +143,15 @@ export default function useChatFunctions({
     }
 
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
+    /**
+     * Regenerate reuses a prior user message verbatim — it's not a fresh
+     * invocation from the textarea, so any skill the user queued up for a NEW
+     * turn shouldn't be drained or attached. Leave the atom alone.
+     */
+    const manualSkills =
+      isRegenerate || isContinued || isEdited
+        ? []
+        : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
     const isEditOrContinue = isEdited || isContinued;
 
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
@@ -332,6 +360,7 @@ export default function useChatFunctions({
       ephemeralAgent,
       editedContent,
       addedConvo,
+      manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
     };
 
     if (isRegenerate) {

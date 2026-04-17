@@ -237,6 +237,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const conversationId = req.body.conversationId;
   /** @type {string | undefined} */
   const parentMessageId = req.body.parentMessageId;
+  /**
+   * Skill names the user invoked via the `$` popover for this turn. Only flows
+   * to the primary agent — handoff agents are follow-up turns that don't see
+   * the user's per-submission `$` selections.
+   * @type {string[] | undefined}
+   */
+  const manualSkills = Array.isArray(req.body.manualSkills) ? req.body.manualSkills : undefined;
 
   const primaryConfig = await initializeAgent(
     {
@@ -257,6 +264,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
       skillStates,
       defaultActiveOnShare,
+      manualSkills,
     },
     {
       getFiles: db.getFiles,
@@ -270,6 +278,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
       listSkillsByAccess: db.listSkillsByAccess,
+      getSkillByName: db.getSkillByName,
     },
   );
 
@@ -359,6 +368,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
         listSkillsByAccess: db.listSkillsByAccess,
+        getSkillByName: db.getSkillByName,
       },
     );
 

@@ -4,7 +4,7 @@ import {
   ReadFileToolDefinition,
   BashExecutionToolDefinition,
 } from '@librechat/agents';
-import type { LCToolRegistry, LCTool } from '@librechat/agents';
+import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { Agent } from 'librechat-data-provider';
@@ -239,4 +239,121 @@ export async function injectSkillCatalog(
     skillCount: activeSkills.length,
     activeSkillIds: activeSkills.map((s) => s._id),
   };
+}
+
+/**
+ * Builds the meta user message that carries a skill's SKILL.md body into a
+ * turn's context. Shape mirrors what `handleSkillToolCall` emits when the
+ * model invokes the skill tool directly, so downstream message handling
+ * treats both code paths identically.
+ *
+ * Used by:
+ *  - Phase 3 manual invocation (`$skill-name` popover) — called at turn start.
+ *  - Phase 5 `always-apply` frontmatter — called at turn start.
+ *  - `handleSkillToolCall` for model-invoked skills — called from the tool
+ *    execution handler.
+ */
+export function primeManualSkill(skill: { name: string; body: string }): InjectedMessage {
+  return {
+    role: 'user',
+    content: skill.body,
+    isMeta: true,
+    source: 'skill',
+    skillName: skill.name,
+  };
+}
+
+export interface ResolveManualSkillsParams {
+  /** Skill names the user invoked (via `$` popover or `always-apply`). */
+  names: string[];
+  /** DB lookup: name → skill doc, constrained to ACL-accessible IDs. */
+  getSkillByName: (
+    name: string,
+    accessibleIds: Types.ObjectId[],
+  ) => Promise<{
+    _id: Types.ObjectId;
+    name: string;
+    body: string;
+    author: Types.ObjectId | string;
+  } | null>;
+  /** ACL-accessible skill IDs for this user (already scoped by `scopeSkillIds`). */
+  accessibleSkillIds: Types.ObjectId[];
+  /** Current user ID — required for ownership-based active-state defaults. */
+  userId?: string;
+  /** Per-user skill active/inactive overrides. */
+  skillStates?: Record<string, boolean>;
+  /** Admin-configured default for shared skills. */
+  defaultActiveOnShare?: boolean;
+}
+
+export interface ResolvedManualSkill {
+  name: string;
+  body: string;
+}
+
+/**
+ * Resolves user-provided skill names to `{ name, body }` pairs ready for
+ * priming. Filters out:
+ *  - names not backed by an accessible skill (ACL miss or typo),
+ *  - skills the user has toggled inactive (respects ownership-aware defaults).
+ *
+ * Silently skips unresolvable names with a warn log — a missing `$skill` must
+ * never block the user's actual message from going through.
+ *
+ * Preserves input order and drops duplicate names (first wins) so a user who
+ * types `$foo $foo` doesn't end up with the body primed twice.
+ */
+export async function resolveManualSkills(
+  params: ResolveManualSkillsParams,
+): Promise<ResolvedManualSkill[]> {
+  const { names, getSkillByName, accessibleSkillIds, userId, skillStates, defaultActiveOnShare } =
+    params;
+
+  if (!names.length || accessibleSkillIds.length === 0) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const uniqueNames = names.filter((n) => {
+    if (!n || seen.has(n)) {
+      return false;
+    }
+    seen.add(n);
+    return true;
+  });
+
+  const resolved = await Promise.all(
+    uniqueNames.map(async (name) => {
+      try {
+        const skill = await getSkillByName(name, accessibleSkillIds);
+        if (!skill) {
+          logger.warn(`[resolveManualSkills] Skill "${name}" not found or not accessible`);
+          return null;
+        }
+        if (!skill.body) {
+          logger.warn(`[resolveManualSkills] Skill "${name}" has empty body — skipping`);
+          return null;
+        }
+        const active = resolveSkillActive({
+          skill: { _id: skill._id, author: skill.author },
+          skillStates,
+          userId,
+          defaultActiveOnShare,
+        });
+        if (!active) {
+          logger.warn(`[resolveManualSkills] Skill "${name}" is inactive for this user — skipping`);
+          return null;
+        }
+        return { name: skill.name, body: skill.body };
+      } catch (err) {
+        logger.warn(
+          `[resolveManualSkills] Failed to resolve skill "${name}":`,
+          err instanceof Error ? err.message : err,
+        );
+        return null;
+      }
+    }),
+  );
+
+  return resolved.filter((r): r is ResolvedManualSkill => r !== null);
 }

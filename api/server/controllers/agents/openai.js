@@ -237,6 +237,8 @@ const OpenAIChatCompletionController = async (req, res) => {
       accessibleSkillIds,
     });
 
+    const manualSkills = Array.isArray(req.body?.manualSkills) ? req.body.manualSkills : undefined;
+
     const primaryConfig = await initializeAgent(
       {
         req,
@@ -256,6 +258,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         skillStates,
         defaultActiveOnShare,
+        manualSkills,
       },
       {
         getConvoFiles: db.getConvoFiles,
@@ -268,6 +271,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         listSkillsByAccess: db.listSkillsByAccess,
+        getSkillByName: db.getSkillByName,
       },
     );
 

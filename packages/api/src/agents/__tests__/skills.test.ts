@@ -27,7 +27,13 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Types } from 'mongoose';
-import { scopeSkillIds, resolveSkillActive, injectSkillCatalog } from '../skills';
+import {
+  scopeSkillIds,
+  resolveSkillActive,
+  injectSkillCatalog,
+  primeManualSkill,
+  resolveManualSkills,
+} from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
 
 type PageSkill = {
@@ -557,5 +563,183 @@ describe('injectSkillCatalog', () => {
     );
     expect(result.skillCount).toBe(0);
     expect(result.activeSkillIds).toEqual([]);
+  });
+});
+
+describe('primeManualSkill', () => {
+  it('produces a meta user message carrying SKILL.md body and skillName marker', () => {
+    const msg = primeManualSkill({
+      name: 'brand-guidelines',
+      body: '# Brand guidelines\nUse blue.',
+    });
+    expect(msg).toEqual({
+      role: 'user',
+      content: '# Brand guidelines\nUse blue.',
+      isMeta: true,
+      source: 'skill',
+      skillName: 'brand-guidelines',
+    });
+  });
+
+  it('preserves empty-body content verbatim (resolver should filter before, but helper is agnostic)', () => {
+    const msg = primeManualSkill({ name: 'bare', body: '' });
+    expect(msg.content).toBe('');
+    expect(msg.isMeta).toBe(true);
+  });
+});
+
+describe('resolveManualSkills', () => {
+  const userId = new Types.ObjectId().toString();
+  const userOid = new Types.ObjectId(userId);
+  const otherAuthor = new Types.ObjectId();
+
+  type SkillDoc = {
+    _id: Types.ObjectId;
+    name: string;
+    body: string;
+    author: Types.ObjectId;
+  };
+
+  const buildGetSkillByName =
+    (skills: Record<string, SkillDoc | null>) =>
+    async (name: string, _accessibleIds: Types.ObjectId[]) =>
+      skills[name] ?? null;
+
+  const mkSkill = (name: string, author: Types.ObjectId, body = `body of ${name}`): SkillDoc => ({
+    _id: new Types.ObjectId(),
+    name,
+    body,
+    author,
+  });
+
+  it('returns empty when no names supplied', async () => {
+    const result = await resolveManualSkills({
+      names: [],
+      getSkillByName: buildGetSkillByName({}),
+      accessibleSkillIds: [new Types.ObjectId()],
+      userId,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty when no accessible IDs (ACL empty)', async () => {
+    const result = await resolveManualSkills({
+      names: ['foo'],
+      getSkillByName: buildGetSkillByName({ foo: mkSkill('foo', userOid) }),
+      accessibleSkillIds: [],
+      userId,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('resolves owned skills to { name, body } pairs by default', async () => {
+    const owned = mkSkill('my-skill', userOid, 'MY SKILL BODY');
+    const result = await resolveManualSkills({
+      names: ['my-skill'],
+      getSkillByName: buildGetSkillByName({ 'my-skill': owned }),
+      accessibleSkillIds: [owned._id],
+      userId,
+    });
+    expect(result).toEqual([{ name: 'my-skill', body: 'MY SKILL BODY' }]);
+  });
+
+  it('silently skips names with no backing skill (typo / ACL miss) without failing the batch', async () => {
+    const real = mkSkill('real', userOid);
+    const result = await resolveManualSkills({
+      names: ['real', 'typo'],
+      getSkillByName: buildGetSkillByName({ real }),
+      accessibleSkillIds: [real._id],
+      userId,
+    });
+    expect(result).toEqual([{ name: 'real', body: 'body of real' }]);
+  });
+
+  it('dedupes repeated names, preserving first occurrence order', async () => {
+    const a = mkSkill('a', userOid);
+    const b = mkSkill('b', userOid);
+    const result = await resolveManualSkills({
+      names: ['a', 'b', 'a', 'b', 'a'],
+      getSkillByName: buildGetSkillByName({ a, b }),
+      accessibleSkillIds: [a._id, b._id],
+      userId,
+    });
+    expect(result.map((r) => r.name)).toEqual(['a', 'b']);
+  });
+
+  it('filters shared skills when defaultActiveOnShare is false (unless override active=true)', async () => {
+    const shared = mkSkill('shared', otherAuthor);
+    const result = await resolveManualSkills({
+      names: ['shared'],
+      getSkillByName: buildGetSkillByName({ shared }),
+      accessibleSkillIds: [shared._id],
+      userId,
+      defaultActiveOnShare: false,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('allows shared skills when defaultActiveOnShare is true', async () => {
+    const shared = mkSkill('shared', otherAuthor, 'shared-body');
+    const result = await resolveManualSkills({
+      names: ['shared'],
+      getSkillByName: buildGetSkillByName({ shared }),
+      accessibleSkillIds: [shared._id],
+      userId,
+      defaultActiveOnShare: true,
+    });
+    expect(result).toEqual([{ name: 'shared', body: 'shared-body' }]);
+  });
+
+  it('drops explicitly-deactivated skills (skillStates override wins over ownership default)', async () => {
+    const owned = mkSkill('owned-off', userOid);
+    const result = await resolveManualSkills({
+      names: ['owned-off'],
+      getSkillByName: buildGetSkillByName({ 'owned-off': owned }),
+      accessibleSkillIds: [owned._id],
+      userId,
+      skillStates: { [owned._id.toString()]: false },
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('allows explicitly-activated shared skill even when defaultActiveOnShare is false', async () => {
+    const shared = mkSkill('shared-on', otherAuthor, 'on-body');
+    const result = await resolveManualSkills({
+      names: ['shared-on'],
+      getSkillByName: buildGetSkillByName({ 'shared-on': shared }),
+      accessibleSkillIds: [shared._id],
+      userId,
+      defaultActiveOnShare: false,
+      skillStates: { [shared._id.toString()]: true },
+    });
+    expect(result).toEqual([{ name: 'shared-on', body: 'on-body' }]);
+  });
+
+  it('skips skills with empty bodies (priming nothing adds no value)', async () => {
+    const empty = mkSkill('empty', userOid, '');
+    const result = await resolveManualSkills({
+      names: ['empty'],
+      getSkillByName: buildGetSkillByName({ empty }),
+      accessibleSkillIds: [empty._id],
+      userId,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('swallows getSkillByName errors per-name so one bad lookup does not drop the rest', async () => {
+    const good = mkSkill('good', userOid, 'good-body');
+    const getSkillByName = async (name: string) => {
+      if (name === 'boom') {
+        throw new Error('db exploded');
+      }
+      return name === 'good' ? good : null;
+    };
+    const result = await resolveManualSkills({
+      names: ['boom', 'good'],
+      getSkillByName,
+      accessibleSkillIds: [good._id],
+      userId,
+    });
+    expect(result).toEqual([{ name: 'good', body: 'good-body' }]);
   });
 });
