@@ -7,11 +7,13 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
+import { useLocalize, useSkillActiveState } from '~/hooks';
+import { useAgentsMapContext } from '~/Providers';
 import { useSkillsInfiniteQuery } from '~/data-provider';
+import { isEphemeralAgent } from '~/common';
 import { ephemeralAgentByConvoId } from '~/store';
 import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
-import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const commandChar = '$';
@@ -32,14 +34,61 @@ export function isUserInvocable(skill: TSkillSummary): boolean {
   return mode === InvocationMode.manual;
 }
 
+/**
+ * Filters the skills list down to what should appear in the `$` popover.
+ * Composes three rules, short-circuiting on the cheapest check first:
+ *
+ * 1. Agent scope — mirrors backend `scopeSkillIds` semantics:
+ *    - `null` / `undefined` → no scope filter (ephemeral convo, or agent
+ *      without a `skills` field configured).
+ *    - `[]` → explicit opt-out, nothing passes.
+ *    - non-empty → intersection with the agent's configured skill ids.
+ * 2. Active state — per-user ownership-aware toggle.
+ * 3. Invocation mode — `manual` / `both` / undefined are visible; `auto`
+ *    is model-only and hidden.
+ *
+ * Pure function; exported so tests can exercise the filter in isolation
+ * without rendering the component.
+ */
+export function filterSkillsForPopover(
+  skills: TSkillSummary[],
+  ctx: {
+    agentSkillIds: string[] | null | undefined;
+    isActive: (skill: Pick<TSkillSummary, '_id' | 'author'>) => boolean;
+  },
+): TSkillSummary[] {
+  const { agentSkillIds, isActive } = ctx;
+  if (agentSkillIds != null && agentSkillIds.length === 0) {
+    return [];
+  }
+  const agentSet =
+    agentSkillIds != null && agentSkillIds.length > 0 ? new Set(agentSkillIds) : null;
+  const result: TSkillSummary[] = [];
+  for (const skill of skills) {
+    if (agentSet && !agentSet.has(skill._id)) {
+      continue;
+    }
+    if (!isActive(skill)) {
+      continue;
+    }
+    if (!isUserInvocable(skill)) {
+      continue;
+    }
+    result.push(skill);
+  }
+  return result;
+}
+
 function SkillsCommandContent({
   index,
   textAreaRef,
   conversationId,
+  agentId,
 }: {
   index: number;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   conversationId: string;
+  agentId?: string | null;
 }) {
   const localize = useLocalize();
   const setShowSkillsPopover = useSetRecoilState(store.showSkillsPopoverFamily(index));
@@ -47,6 +96,36 @@ function SkillsCommandContent({
   const setPendingManualSkills = useSetRecoilState(
     store.pendingManualSkillsByConvoId(conversationId),
   );
+
+  const agentsMap = useAgentsMapContext();
+  const { isActive } = useSkillActiveState();
+
+  /* Resolve the per-agent skill scope. Mirrors backend `scopeSkillIds` for
+     the happy path: no `skills` field → no scope, `[]` → opt-out, non-empty
+     → intersection. Ephemeral agent ids (null/undefined/placeholder strings
+     that don't begin with `agent_`) are unscoped — they correspond to
+     conversations without a persisted agent and are intentionally absent
+     from the agents map. While the map is still hydrating we pass through
+     (undefined → full catalog): the backend enforces scope at turn time, so
+     there's no security benefit to flashing an empty popover, and the map
+     typically lands well before the first open. Once the map is authoritative
+     but the agent isn't in it (deleted, or VIEW revoked mid-session), we fail
+     closed — scope is unresolvable and the full catalog would be misleading.
+     `agentId` is threaded in as a prop so this component stays memoizable
+     and skips re-renders on unrelated conversation-shape changes. */
+  const agentSkillIds = useMemo<string[] | null | undefined>(() => {
+    if (!agentId || isEphemeralAgent(agentId)) {
+      return undefined;
+    }
+    if (!agentsMap) {
+      return undefined;
+    }
+    const agent = agentsMap[agentId];
+    if (!agent) {
+      return [];
+    }
+    return agent.skills;
+  }, [agentId, agentsMap]);
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useSkillsInfiniteQuery({ limit: 50 });
@@ -77,21 +156,25 @@ function SkillsCommandContent({
     if (!data?.pages) {
       return [];
     }
-    return data.pages.reduce<MentionOption[]>((acc, page) => {
+    const allSkills: TSkillSummary[] = [];
+    for (const page of data.pages) {
       for (const skill of page.skills) {
-        if (isUserInvocable(skill)) {
-          acc.push({
-            label: skill.displayTitle ?? skill.name,
-            value: skill.name,
-            description: skill.description,
-            type: 'skill',
-            icon: skillIcon,
-          });
-        }
+        allSkills.push(skill);
       }
-      return acc;
-    }, []);
-  }, [data?.pages]);
+    }
+    const filtered = filterSkillsForPopover(allSkills, { agentSkillIds, isActive });
+    const options: MentionOption[] = [];
+    for (const skill of filtered) {
+      options.push({
+        label: skill.displayTitle ?? skill.name,
+        value: skill.name,
+        description: skill.description,
+        type: 'skill',
+        icon: skillIcon,
+      });
+    }
+    return options;
+  }, [data?.pages, agentSkillIds, isActive]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -314,17 +397,24 @@ const SkillsCommand = memo(function SkillsCommand({
   index,
   textAreaRef,
   conversationId,
+  agentId,
 }: {
   index: number;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   conversationId: string;
+  agentId?: string | null;
 }) {
   const show = useRecoilValue(store.showSkillsPopoverFamily(index));
   if (!show) {
     return null;
   }
   return (
-    <SkillsCommandContent index={index} textAreaRef={textAreaRef} conversationId={conversationId} />
+    <SkillsCommandContent
+      index={index}
+      textAreaRef={textAreaRef}
+      conversationId={conversationId}
+      agentId={agentId}
+    />
   );
 });
 

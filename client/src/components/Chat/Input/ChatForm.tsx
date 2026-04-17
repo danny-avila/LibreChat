@@ -255,7 +255,12 @@ const ChatForm = memo(function ChatForm({
             textAreaRef={textAreaRef}
           />
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          <SkillsCommand index={index} textAreaRef={textAreaRef} conversationId={conversationId} />
+          <SkillsCommand
+            index={index}
+            textAreaRef={textAreaRef}
+            conversationId={conversationId}
+            agentId={conversation?.agent_id}
+          />
           <div
             onClick={handleContainerClick}
             className={cn(

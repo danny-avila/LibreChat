@@ -711,6 +711,9 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       category: 1,
       support_contact: 1,
       is_promoted: 1,
+      /* Needed so the client can scope the `$` skill popover to each agent's
+         configured catalog without refetching the full agent document. */
+      skills: 1,
     }).sort({ updatedAt: -1, _id: 1 });
 
     if (isPaginated && normalizedLimit) {
