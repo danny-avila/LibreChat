@@ -29,6 +29,7 @@ const {
   countFormattedMessageTokens,
   hydrateMissingIndexTokenCounts,
   injectManualSkillPrimes,
+  isSkillPrimeMessage,
 } = require('@librechat/api');
 const {
   Callback,
@@ -604,18 +605,27 @@ class AgentClient extends BaseClient {
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
 
-      let messagesToProcess = [...messages];
-      if (messages.length > messageWindowSize) {
-        for (let i = messages.length - messageWindowSize; i >= 0; i--) {
-          const potentialWindow = messages.slice(i, i + messageWindowSize);
+      /**
+       * Strip skill-primed meta messages before memory extraction. The primes
+       * sit next to the latest user message and carry large SKILL.md bodies,
+       * so letting them into the window would crowd out real chat turns and
+       * pollute extracted memories with synthetic instruction content the
+       * user never typed.
+       */
+      const chatMessages = messages.filter((m) => !isSkillPrimeMessage(m));
+
+      let messagesToProcess = [...chatMessages];
+      if (chatMessages.length > messageWindowSize) {
+        for (let i = chatMessages.length - messageWindowSize; i >= 0; i--) {
+          const potentialWindow = chatMessages.slice(i, i + messageWindowSize);
           if (potentialWindow[0]?.role === 'user') {
             messagesToProcess = [...potentialWindow];
             break;
           }
         }
 
-        if (messagesToProcess.length === messages.length) {
-          messagesToProcess = [...messages.slice(-messageWindowSize)];
+        if (messagesToProcess.length === chatMessages.length) {
+          messagesToProcess = [...chatMessages.slice(-messageWindowSize)];
         }
       }
 

@@ -36,6 +36,7 @@ import {
   resolveManualSkills,
   injectManualSkillPrimes,
   extractManualSkills,
+  isSkillPrimeMessage,
   MAX_MANUAL_SKILLS,
 } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
@@ -934,5 +935,51 @@ describe('extractManualSkills', () => {
   it('returns undefined when the array is present but contains no valid strings', () => {
     expect(extractManualSkills({ manualSkills: [123, null, ''] })).toBeUndefined();
     expect(extractManualSkills({ manualSkills: [] })).toBeUndefined();
+  });
+});
+
+describe('isSkillPrimeMessage', () => {
+  it('returns true for a prime produced by injectManualSkillPrimes', () => {
+    const messages = [new HumanMessage('user turn')];
+    injectManualSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes: [{ name: 'x', body: 'x body' }],
+    });
+    expect(isSkillPrimeMessage(messages[0])).toBe(true);
+  });
+
+  it('returns false for plain HumanMessage / AIMessage without the marker', () => {
+    expect(isSkillPrimeMessage(new HumanMessage('hi'))).toBe(false);
+    expect(isSkillPrimeMessage(new AIMessage('reply'))).toBe(false);
+  });
+
+  it('returns false for additional_kwargs with a different source', () => {
+    const m = new HumanMessage({
+      content: 'x',
+      additional_kwargs: { source: 'not-a-skill' },
+    });
+    expect(isSkillPrimeMessage(m)).toBe(false);
+  });
+
+  it('returns false for non-object / null / undefined inputs', () => {
+    expect(isSkillPrimeMessage(null)).toBe(false);
+    expect(isSkillPrimeMessage(undefined)).toBe(false);
+    expect(isSkillPrimeMessage('just a string')).toBe(false);
+    expect(isSkillPrimeMessage(42)).toBe(false);
+  });
+
+  it('filter() on a mixed array keeps the non-prime messages', () => {
+    const user = new HumanMessage('real turn');
+    const messages: (HumanMessage | AIMessage)[] = [new AIMessage('reply'), user];
+    injectManualSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes: [{ name: 'x', body: 'x body' }],
+    });
+    // After priming: [AIMessage, primeHumanMessage, user]
+    const stripped = messages.filter((m) => !isSkillPrimeMessage(m));
+    expect(stripped).toHaveLength(2);
+    expect(stripped[1]).toBe(user);
   });
 });

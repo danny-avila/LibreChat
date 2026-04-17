@@ -35,6 +35,21 @@ export const MAX_MANUAL_SKILLS = 10;
 export const SKILL_MESSAGE_SOURCE = 'skill';
 
 /**
+ * Predicate that identifies a LangChain message as one we spliced in via
+ * `injectManualSkillPrimes` (or the equivalent model-invoked path). Callers
+ * like `runMemory` use this to strip synthetic skill content from windows
+ * that should only contain real user chat — without this filter, SKILL.md
+ * bodies pollute memory extraction and crowd out genuine turns.
+ */
+export function isSkillPrimeMessage(msg: unknown): boolean {
+  if (!msg || typeof msg !== 'object') {
+    return false;
+  }
+  const kwargs = (msg as { additional_kwargs?: { source?: unknown } }).additional_kwargs;
+  return !!kwargs && kwargs.source === SKILL_MESSAGE_SOURCE;
+}
+
+/**
  * Scopes user-accessible skill IDs to only those configured on the agent.
  *
  * Semantics (pinned by unit tests):
