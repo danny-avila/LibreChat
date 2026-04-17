@@ -201,24 +201,33 @@ describe('pruneOrphanSkillStates', () => {
     expect(findAccessibleSkillIds).not.toHaveBeenCalled();
   });
 
-  it('issues existence and access queries in parallel (one await each)', async () => {
+  it('issues existence and access queries in parallel (both called before either resolves)', async () => {
     const id = makeId();
-    const existenceOrder: string[] = [];
-    const findExistingSkillIds = jest.fn().mockImplementation(async () => {
-      existenceOrder.push('existence:start');
-      await Promise.resolve();
-      existenceOrder.push('existence:done');
-      return [id];
+    let resolveExisting: (value: string[]) => void = () => undefined;
+    let resolveAccessible: (value: string[]) => void = () => undefined;
+    const existingPromise = new Promise<string[]>((resolve) => {
+      resolveExisting = resolve;
     });
-    const findAccessibleSkillIds = jest.fn().mockImplementation(async () => {
-      existenceOrder.push('access:start');
-      await Promise.resolve();
-      existenceOrder.push('access:done');
-      return [id];
+    const accessiblePromise = new Promise<string[]>((resolve) => {
+      resolveAccessible = resolve;
     });
-    await pruneOrphanSkillStates({ [id]: true }, { findExistingSkillIds, findAccessibleSkillIds });
-    // Both should start before either completes (Promise.all).
-    expect(existenceOrder.slice(0, 2).sort()).toEqual(['access:start', 'existence:start']);
+    const findExistingSkillIds = jest.fn(() => existingPromise);
+    const findAccessibleSkillIds = jest.fn(() => accessiblePromise);
+
+    const pending = pruneOrphanSkillStates(
+      { [id]: true },
+      { findExistingSkillIds, findAccessibleSkillIds },
+    );
+
+    // Yield one microtask so any sequential-await implementation would have
+    // invoked only the first dep. `Promise.all` invokes both synchronously.
+    await Promise.resolve();
+    expect(findExistingSkillIds).toHaveBeenCalledTimes(1);
+    expect(findAccessibleSkillIds).toHaveBeenCalledTimes(1);
+
+    resolveExisting([id]);
+    resolveAccessible([id]);
+    await pending;
   });
 
   it('accepts Types.ObjectId instances in the accessible list', async () => {

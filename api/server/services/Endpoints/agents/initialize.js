@@ -129,17 +129,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       })
     : [];
 
-  let skillStates;
-  let defaultActiveOnShare = false;
-  if (accessibleSkillIds.length > 0) {
-    const loaded = await loadSkillStates({
-      userId: req.user.id,
-      appConfig,
-      getUserById: db.getUserById,
-    });
-    skillStates = loaded.skillStates;
-    defaultActiveOnShare = loaded.defaultActiveOnShare;
-  }
+  const { skillStates, defaultActiveOnShare } = await loadSkillStates({
+    userId: req.user.id,
+    appConfig,
+    getUserById: db.getUserById,
+    accessibleSkillIds,
+  });
 
   // Resolve code API key once for the entire run (shared by primeInvokedSkills
   // and enrichWithSkillConfigurable) to avoid redundant auth lookups.

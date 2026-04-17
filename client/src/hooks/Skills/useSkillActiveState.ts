@@ -24,11 +24,18 @@ interface WriteQueue {
  * Per-instance refs let two components race full-map POSTs and drop toggles
  * via last-writer-wins. Keying by `userId` prevents pending writes from
  * leaking across account transitions in the same browser tab (logout/login
- * flushing a previous user's snapshot into the new session).
+ * flushing a previous user's snapshot into the new session). `lastSeenUserId`
+ * tracks the most recent active identity so we can evict a prior user's
+ * queue entry when the active identity changes, keeping the map bounded.
  */
 const writeQueues = new Map<string, WriteQueue>();
+let lastSeenUserId: string | null = null;
 
 function getWriteQueue(userId: string): WriteQueue {
+  if (lastSeenUserId !== null && lastSeenUserId !== userId) {
+    writeQueues.delete(lastSeenUserId);
+  }
+  lastSeenUserId = userId;
   let queue = writeQueues.get(userId);
   if (!queue) {
     queue = { pending: null, inFlight: false };

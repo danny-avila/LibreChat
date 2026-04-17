@@ -54,6 +54,12 @@ export interface LoadSkillStatesParams {
     id: string,
     select: string,
   ) => Promise<{ skillStates?: Map<string, boolean> | Record<string, boolean> } | null | undefined>;
+  /**
+   * When provided and empty, the helper short-circuits to defaults without
+   * issuing the user query. Lets every agent entry point skip the DB round
+   * trip when no skills are accessible, without re-implementing the guard.
+   */
+  accessibleSkillIds?: ArrayLike<unknown>;
 }
 
 /**
@@ -62,7 +68,10 @@ export interface LoadSkillStatesParams {
  * same loading block is not duplicated across controllers.
  */
 export async function loadSkillStates(params: LoadSkillStatesParams): Promise<LoadedSkillStates> {
-  const { userId, appConfig, getUserById } = params;
+  const { userId, appConfig, getUserById, accessibleSkillIds } = params;
+  if (accessibleSkillIds !== undefined && accessibleSkillIds.length === 0) {
+    return { skillStates: {}, defaultActiveOnShare: false };
+  }
   const user = await getUserById(userId, 'skillStates');
   return {
     skillStates: toSkillStatesRecord(user?.skillStates),
@@ -100,7 +109,7 @@ export function validateSkillStatesPayload(payload: unknown): SkillStatesValidat
     };
   }
   for (const [key, value] of entries) {
-    if (typeof key !== 'string' || key.length === 0 || key.length > MAX_KEY_LENGTH) {
+    if (key.length === 0 || key.length > MAX_KEY_LENGTH) {
       return {
         message: `Each skill ID must be a non-empty string (max ${MAX_KEY_LENGTH} chars)`,
       };

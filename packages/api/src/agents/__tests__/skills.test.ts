@@ -416,6 +416,13 @@ describe('injectSkillCatalog', () => {
   const userId = new Types.ObjectId().toString();
   const userObjectId = new Types.ObjectId(userId);
 
+  /** Minimal `Agent` shape `injectSkillCatalog` actually reads/writes. */
+  type MockAgent = Parameters<typeof injectSkillCatalog>[0]['agent'];
+
+  function makeAgent(): MockAgent {
+    return { additional_instructions: undefined } as MockAgent;
+  }
+
   function makeSkill(name: string, author: Types.ObjectId = userObjectId): PageSkill {
     return {
       _id: new Types.ObjectId(),
@@ -440,9 +447,7 @@ describe('injectSkillCatalog', () => {
 
   function baseParams(overrides: Partial<Parameters<typeof injectSkillCatalog>[0]> = {}) {
     return {
-      agent: { additional_instructions: undefined } as unknown as Parameters<
-        typeof injectSkillCatalog
-      >[0]['agent'],
+      agent: makeAgent(),
       toolDefinitions: undefined,
       toolRegistry: undefined,
       accessibleSkillIds: [new Types.ObjectId()],
@@ -522,8 +527,9 @@ describe('injectSkillCatalog', () => {
     const listSkillsByAccess = buildPager(pages);
     const result = await injectSkillCatalog(baseParams({ listSkillsByAccess }));
     expect(result.skillCount).toBe(0);
-    // MAX_CATALOG_PAGES = 10 — loop terminates after scanning 10 pages.
-    expect((listSkillsByAccess as jest.Mock).mock.calls.length).toBeLessThanOrEqual(11);
+    expect(result.activeSkillIds).toEqual([]);
+    // MAX_CATALOG_PAGES = 10 — loop terminates after exactly 10 page fetches.
+    expect(listSkillsByAccess).toHaveBeenCalledTimes(10);
   });
 
   it('terminates early when has_more is false even below the catalog limit', async () => {
@@ -536,9 +542,7 @@ describe('injectSkillCatalog', () => {
   it('appends the catalog text to agent.additional_instructions', async () => {
     const owned = makeSkill('my-skill', userObjectId);
     const listSkillsByAccess = buildPager([[owned]]);
-    const agent = { additional_instructions: undefined } as unknown as Parameters<
-      typeof injectSkillCatalog
-    >[0]['agent'];
+    const agent = makeAgent();
     await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
     expect(agent.additional_instructions).toContain('my-skill');
     expect(agent.additional_instructions).toContain('desc-my-skill');

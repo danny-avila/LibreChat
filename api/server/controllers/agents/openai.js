@@ -230,17 +230,12 @@ const OpenAIChatCompletionController = async (req, res) => {
         })
       : [];
 
-    let skillStates;
-    let defaultActiveOnShare = false;
-    if (accessibleSkillIds.length > 0) {
-      const loaded = await loadSkillStates({
-        userId: req.user.id,
-        appConfig,
-        getUserById: db.getUserById,
-      });
-      skillStates = loaded.skillStates;
-      defaultActiveOnShare = loaded.defaultActiveOnShare;
-    }
+    const { skillStates, defaultActiveOnShare } = await loadSkillStates({
+      userId: req.user.id,
+      appConfig,
+      getUserById: db.getUserById,
+      accessibleSkillIds,
+    });
 
     const primaryConfig = await initializeAgent(
       {
