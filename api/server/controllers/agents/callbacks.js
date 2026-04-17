@@ -255,6 +255,17 @@ function getDefaultHandlers({
     handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
   }
 
+  handlers[GraphEvents.ON_SUBAGENT_UPDATE] = {
+    /**
+     * Forwards subagent progress envelopes straight to the client stream.
+     * The UI groups updates by `subagentRunId` to render a compact progress
+     * ticker per spawned subagent — see `SubagentProgress` on the client.
+     */
+    handle: async (event, data) => {
+      await emitEvent(res, streamId, { event, data });
+    },
+  };
+
   if (summarizationOptions?.enabled !== false) {
     handlers[GraphEvents.ON_SUMMARIZE_START] = {
       handle: async (_event, data) => {

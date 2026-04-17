@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { useRecoilCallback } from 'recoil';
 import {
   Constants,
   StepTypes,
@@ -15,10 +16,12 @@ import type {
   EventSubmission,
   SummaryContentPart,
   TMessageContentParts,
+  SubagentUpdateEvent,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
+import { subagentProgressByToolCallId } from '~/store';
 
 type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
@@ -38,7 +41,8 @@ type TStepEvent =
   | { event: StepEvents.ON_RUN_STEP_COMPLETED; data: { result: Agents.ToolEndEvent } }
   | { event: StepEvents.ON_SUMMARIZE_START; data: Agents.SummarizeStartEvent }
   | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
-  | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent };
+  | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
+  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent };
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
@@ -66,6 +70,71 @@ export default function useStepHandler({
   const pendingDeltaBuffer = useRef(new Map<string, TStepEvent[]>());
   /** Coalesces rapid-fire summarize delta renders into a single rAF frame */
   const summarizeDeltaRaf = useRef<number | null>(null);
+  /**
+   * Maps SubagentUpdateEvent.subagentRunId → the parent's tool_call_id.
+   * Seeded on phase='start' by claiming the most-recent unclaimed `subagent`
+   * tool call from the active response message. Used so that subsequent
+   * events for the same subagentRunId can update the Recoil bucket keyed
+   * by tool_call_id (which is what the `SubagentCall` renderer looks up).
+   */
+  const subagentRunToToolCallId = useRef(new Map<string, string>());
+  const claimedSubagentToolCallIds = useRef(new Set<string>());
+
+  /**
+   * Merges an incoming {@link SubagentUpdateEvent} into the Recoil atom bucket
+   * keyed by the parent's `tool_call_id`. First-seen events for a
+   * `subagentRunId` trigger a temporal claim: the most-recent unclaimed
+   * `subagent` tool call in the active message becomes its owner.
+   */
+  const applySubagentUpdate = useRecoilCallback(
+    ({ set }) =>
+      (payload: SubagentUpdateEvent): void => {
+        const { subagentRunId } = payload;
+        let toolCallId = subagentRunToToolCallId.current.get(subagentRunId);
+
+        if (toolCallId == null) {
+          const activeMessages = Array.from(messageMap.current.values());
+          outer: for (let m = activeMessages.length - 1; m >= 0; m--) {
+            const message = activeMessages[m];
+            const content = message.content;
+            if (!Array.isArray(content)) continue;
+            for (let i = content.length - 1; i >= 0; i--) {
+              const part = content[i];
+              if (part?.type !== ContentTypes.TOOL_CALL) continue;
+              const tc = (part as { [ContentTypes.TOOL_CALL]?: { id?: string; name?: string } })[
+                ContentTypes.TOOL_CALL
+              ];
+              if (
+                tc?.name === Constants.SUBAGENT &&
+                tc.id &&
+                !claimedSubagentToolCallIds.current.has(tc.id)
+              ) {
+                toolCallId = tc.id;
+                claimedSubagentToolCallIds.current.add(tc.id);
+                subagentRunToToolCallId.current.set(subagentRunId, tc.id);
+                break outer;
+              }
+            }
+          }
+        }
+
+        if (!toolCallId) {
+          return;
+        }
+
+        set(subagentProgressByToolCallId(toolCallId), (prev) => {
+          const nextEvents = prev ? [...prev.events, payload] : [payload];
+          return {
+            subagentRunId,
+            subagentType: payload.subagentType,
+            events: nextEvents,
+            status: payload.phase,
+            latestLabel: payload.label ?? prev?.latestLabel,
+          };
+        });
+      },
+    [],
+  );
 
   /**
    * Calculate content index for a run step.
@@ -612,6 +681,8 @@ export default function useStepHandler({
 
           setMessages(updatedMessages);
         }
+      } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
+        applySubagentUpdate(stepEvent.data);
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
         announcePolite({ message: 'summarize_started', isStatus: true });
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_DELTA) {
@@ -714,7 +785,14 @@ export default function useStepHandler({
         console.warn('Unhandled step event', (_exhaustive as TStepEvent).event);
       }
     },
-    [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages, calculateContentIndex],
+    [
+      getMessages,
+      lastAnnouncementTimeRef,
+      announcePolite,
+      setMessages,
+      calculateContentIndex,
+      applySubagentUpdate,
+    ],
   );
 
   const clearStepMaps = useCallback(() => {
@@ -726,6 +804,8 @@ export default function useStepHandler({
     messageMap.current.clear();
     stepMap.current.clear();
     pendingDeltaBuffer.current.clear();
+    subagentRunToToolCallId.current.clear();
+    claimedSubagentToolCallIds.current.clear();
   }, []);
 
   /**
