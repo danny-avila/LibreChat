@@ -26,6 +26,15 @@ const CATALOG_PAGE_SIZE = 100;
 export const MAX_MANUAL_SKILLS = 10;
 
 /**
+ * Marker tagged onto every skill-primed message (as `additional_kwargs.source`
+ * on a LangChain `HumanMessage`, or as `source` on the `InjectedMessage` that
+ * `handleSkillToolCall` emits). Downstream filtering/telemetry keys off this,
+ * so both construction paths must agree — keep the literal exported from one
+ * place rather than repeated inline.
+ */
+export const SKILL_MESSAGE_SOURCE = 'skill';
+
+/**
  * Scopes user-accessible skill IDs to only those configured on the agent.
  *
  * Semantics (pinned by unit tests):
@@ -267,7 +276,7 @@ export function buildSkillPrimeMessage(skill: { name: string; body: string }): I
     role: 'user',
     content: skill.body,
     isMeta: true,
-    source: 'skill',
+    source: SKILL_MESSAGE_SOURCE,
     skillName: skill.name,
   };
 }
@@ -452,7 +461,7 @@ export function injectManualSkillPrimes(
     (p) =>
       new HumanMessage({
         content: p.body,
-        additional_kwargs: { isMeta: true, source: 'skill', skillName: p.name },
+        additional_kwargs: { isMeta: true, source: SKILL_MESSAGE_SOURCE, skillName: p.name },
       }),
   );
   initialMessages.splice(insertIdx, 0, ...primeMessages);
