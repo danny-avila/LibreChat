@@ -510,6 +510,66 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs.agent.subagentAgentConfigs).toEqual([]);
   });
 
+  it('clears subagents on handoff agents too when capability is disabled (Codex P2 regression)', async () => {
+    /** Codex P2: the capability gate must suppress `subagents` on EVERY
+     *  loaded config, not just the primary. `run.ts` iterates all agents
+     *  and calls `buildSubagentConfigs` per agent, so a handoff target
+     *  with `subagents.enabled: true` persisted on its document would
+     *  otherwise still expose self-spawn even when the admin has disabled
+     *  the capability globally. */
+    const authorized = await createAgent({
+      id: AUTHORIZED_ID,
+      name: 'Handoff Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: [],
+    });
+    await grantView(authorized);
+
+    const edges = [{ from: PRIMARY_ID, to: AUTHORIZED_ID, edgeType: 'handoff' }];
+    const primaryConfig = makePrimaryConfig({
+      edges,
+      subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+    });
+    const handoffConfig = {
+      id: AUTHORIZED_ID,
+      endpoint: 'agents',
+      edges: [],
+      toolDefinitions: [],
+      toolRegistry: new Map(),
+      userMCPAuthMap: null,
+      tool_resources: {},
+      /** Handoff agent document has subagents enabled of its own accord. */
+      subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+    };
+
+    let callCount = 0;
+    mockInitializeAgent.mockImplementation(() =>
+      Promise.resolve(++callCount === 1 ? primaryConfig : handoffConfig),
+    );
+
+    const req = makeSubagentReq();
+    /** Capability OFF at endpoint level. */
+    req.config.endpoints.agents.capabilities = [];
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    /** Primary cleared. */
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+    /** Handoff target must ALSO be cleared — otherwise its self-spawn
+     *  would still fire when run.ts iterates agentConfigs. */
+    const handoffLoaded = agentClientArgs.agentConfigs.get(AUTHORIZED_ID);
+    expect(handoffLoaded).toBeDefined();
+    expect(handoffLoaded.subagents).toBeUndefined();
+    expect(handoffLoaded.subagentAgentConfigs).toBeUndefined();
+  });
+
   it('skips subagent loading entirely when the feature is disabled on the agent', async () => {
     const primaryConfig = makePrimaryConfig({
       subagents: { enabled: false, allowSelf: true, agent_ids: [SUBAGENT_ID] },
