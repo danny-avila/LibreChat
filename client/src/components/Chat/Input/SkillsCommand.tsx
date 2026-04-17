@@ -114,13 +114,13 @@ function SkillsCommandContent({
      `agentId` is threaded in as a prop so this component stays memoizable
      and skips re-renders on unrelated conversation-shape changes. */
   const agentSkillIds = useMemo<string[] | null | undefined>(() => {
-    if (isEphemeralAgent(agentId)) {
+    if (!agentId || isEphemeralAgent(agentId)) {
       return undefined;
     }
     if (!agentsMap) {
       return undefined;
     }
-    const agent = agentsMap[agentId as string];
+    const agent = agentsMap[agentId];
     if (!agent) {
       return [];
     }
