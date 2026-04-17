@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { MAX_SUBAGENTS as MAX_SUBAGENTS_CAP, EModelEndpoint } from 'librechat-data-provider';
+import { MAX_SUBAGENTS, EModelEndpoint } from 'librechat-data-provider';
 import { X, PlusCircle, Users } from 'lucide-react';
 import {
   Switch,
@@ -22,8 +22,6 @@ interface AgentSubagentsProps {
   field: ControllerRenderProps<AgentForm, 'subagents'>;
   currentAgentId: string;
 }
-
-const MAX_SUBAGENTS = MAX_SUBAGENTS_CAP;
 
 const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }) => {
   const localize = useLocalize();

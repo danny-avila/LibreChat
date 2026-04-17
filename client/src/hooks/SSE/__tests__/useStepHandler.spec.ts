@@ -1,5 +1,12 @@
 import { renderHook, act } from '@testing-library/react';
-import { StepTypes, StepEvents, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { RecoilRoot, useRecoilCallback } from 'recoil';
+import {
+  Constants,
+  StepTypes,
+  StepEvents,
+  ContentTypes,
+  ToolCallTypes,
+} from 'librechat-data-provider';
 import type {
   TMessageContentParts,
   SummaryContentPart,
@@ -7,9 +14,11 @@ import type {
   TEndpointOption,
   TConversation,
   TMessage,
+  SubagentUpdateEvent,
   Agents,
 } from 'librechat-data-provider';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
+import { subagentProgressByToolCallId } from '~/store/subagents';
 
 type TSubmissionForTest = {
   userMessage: TMessage;
@@ -1506,6 +1515,290 @@ describe('useStepHandler', () => {
       });
 
       expect(mockSetMessages).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('on_subagent_update event', () => {
+    /**
+     * These tests exercise the real Recoil `atomFamily` via a `RecoilRoot`
+     * wrapper and a `useRecoilCallback`-powered reader mounted alongside
+     * the hook under test. No mocks of the store module — only the same
+     * `setMessages`/`getMessages` spies the rest of this file uses.
+     */
+    const renderStepHandlerWithReader = (): {
+      result: ReturnType<typeof renderHook>['result'];
+      getProgress: (toolCallId: string) => unknown;
+    } => {
+      /** Composite hook: the step handler under test + a `useRecoilCallback`
+       *  reader that shares the same `RecoilRoot` store. Reading via a
+       *  top-level `snapshot_UNSTABLE()` returns a different root, so the
+       *  writes done by the step handler wouldn't be visible. */
+      const hookResult = renderHook(
+        () => {
+          const stepHandler = useStepHandler(createHookParams());
+          const read = useRecoilCallback(
+            ({ snapshot }) =>
+              (toolCallId: string): unknown =>
+                snapshot.getLoadable(subagentProgressByToolCallId(toolCallId)).valueOrThrow(),
+            [],
+          );
+          return { ...stepHandler, read };
+        },
+        { wrapper: RecoilRoot },
+      );
+
+      const getProgress = (toolCallId: string): unknown =>
+        (hookResult.result.current as any).read(toolCallId);
+      return { result: hookResult.result, getProgress };
+    };
+
+    const buildSubagentToolCallPart = (toolCallId: string): TMessageContentParts =>
+      ({
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: {
+          id: toolCallId,
+          name: Constants.SUBAGENT,
+          args: '{}',
+          type: ToolCallTypes.TOOL_CALL,
+          progress: 0.1,
+        },
+      }) as unknown as TMessageContentParts;
+
+    /**
+     * Directly seed the hook's internal `messageMap` with a response message
+     * whose content contains one or more `subagent` tool calls. Uses the
+     * real `syncStepMessage` export so we exercise the same code path the
+     * SSE pipeline uses for reconnects — no mocks, no patched internals.
+     */
+    const seedResponseWithSubagentToolCalls = (
+      result: ReturnType<typeof renderHook>['result'],
+      toolCallIds: string[],
+    ): { response: TMessage; submission: EventSubmission } => {
+      const response: TMessage = {
+        ...createResponseMessage(),
+        content: toolCallIds.map(buildSubagentToolCallPart),
+      };
+      mockGetMessages.mockReturnValue([response]);
+      const submission = createSubmission({
+        initialResponse: createResponseMessage({
+          messageId: 'initial-response-id',
+        }),
+      });
+      act(() => {
+        (result.current as any).syncStepMessage(response);
+      });
+      return { response, submission };
+    };
+
+    const makeUpdate = (overrides: Partial<SubagentUpdateEvent> = {}): SubagentUpdateEvent => ({
+      runId: 'parent-run',
+      subagentRunId: 'child-run-1',
+      subagentType: 'self',
+      subagentAgentId: 'child-1',
+      parentAgentId: 'parent',
+      phase: 'start',
+      label: 'Subagent "self" started',
+      timestamp: new Date().toISOString(),
+      ...overrides,
+    });
+
+    it('correlates updates to a tool call via parentToolCallId (deterministic path)', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_A']);
+
+      const start = makeUpdate({ parentToolCallId: 'call_A', phase: 'start' });
+      const step = makeUpdate({
+        parentToolCallId: 'call_A',
+        phase: 'run_step',
+        label: 'Using tool: calculator',
+      });
+      const stop = makeUpdate({
+        parentToolCallId: 'call_A',
+        phase: 'stop',
+        label: 'Subagent "self" finished',
+      });
+
+      act(() => {
+        (result.current as any).stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: start },
+          submission,
+        );
+
+        (result.current as any).stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: step },
+          submission,
+        );
+
+        (result.current as any).stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: stop },
+          submission,
+        );
+      });
+
+      const bucket = getProgress('call_A') as {
+        events: SubagentUpdateEvent[];
+        status: string;
+        latestLabel?: string;
+        subagentType: string;
+      };
+      expect(bucket.events).toHaveLength(3);
+      expect(bucket.status).toBe('stop');
+      expect(bucket.latestLabel).toBe('Subagent "self" finished');
+      expect(bucket.subagentType).toBe('self');
+    });
+
+    it('falls back to oldest-unclaimed tool call when parentToolCallId is absent', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      /** Two subagent tool calls seeded in creation order. Without
+       *  `parentToolCallId`, forward iteration must claim `call_old` for
+       *  the first start and `call_new` for the second. */
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_old', 'call_new']);
+
+      const updateOld = makeUpdate({
+        subagentRunId: 'run-1',
+        phase: 'start',
+        label: 'first',
+      });
+      const updateNew = makeUpdate({
+        subagentRunId: 'run-2',
+        phase: 'start',
+        label: 'second',
+      });
+
+      act(() => {
+        (result.current as any).stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: updateOld },
+          submission,
+        );
+
+        (result.current as any).stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: updateNew },
+          submission,
+        );
+      });
+
+      const first = getProgress('call_old') as { latestLabel?: string };
+      const second = getProgress('call_new') as { latestLabel?: string };
+      expect(first.latestLabel).toBe('first');
+      expect(second.latestLabel).toBe('second');
+    });
+
+    it('buffers early-arriving updates and replays once a tool call is claimable', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const submission = createSubmission({
+        initialResponse: createResponseMessage({
+          messageId: 'initial-response-id',
+        }),
+      });
+      /** Deliberately: no `mockGetMessages.mockReturnValue([response])`
+       *  and no ON_RUN_STEP yet, so the tool call isn't visible. The
+       *  first envelope must be buffered. */
+      mockGetMessages.mockReturnValue([]);
+
+      const earlyUpdate = makeUpdate({
+        phase: 'start',
+        label: 'arrives first',
+      });
+      const laterUpdate = makeUpdate({
+        phase: 'run_step',
+        label: 'arrives after correlation',
+      });
+
+      act(() => {
+        (result.current as any).stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: earlyUpdate },
+          submission,
+        );
+      });
+
+      /** Now the tool call appears. Subsequent update can claim and drain. */
+      const responseWithToolCall: TMessage = {
+        ...createResponseMessage(),
+        content: [buildSubagentToolCallPart('call_late')],
+      };
+      mockGetMessages.mockReturnValue([responseWithToolCall]);
+      act(() => {
+        (result.current as any).syncStepMessage(responseWithToolCall);
+      });
+
+      act(() => {
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: { ...laterUpdate, parentToolCallId: 'call_late' },
+          },
+          submission,
+        );
+      });
+
+      const bucket = getProgress('call_late') as {
+        events: SubagentUpdateEvent[];
+        status: string;
+      };
+      /** Both the buffered `start` and the current `run_step` must end up
+       *  in the atom in the correct order. */
+      expect(bucket.events.map((e) => e.label)).toEqual([
+        'arrives first',
+        'arrives after correlation',
+      ]);
+      expect(bucket.status).toBe('run_step');
+    });
+
+    it('caps the per-subagent events array at 200 entries', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_cap']);
+
+      act(() => {
+        for (let i = 0; i < 205; i++) {
+          (result.current as any).stepHandler(
+            {
+              event: StepEvents.ON_SUBAGENT_UPDATE,
+              data: makeUpdate({
+                parentToolCallId: 'call_cap',
+                phase: 'run_step_delta',
+                label: `delta-${i}`,
+              }),
+            },
+            submission,
+          );
+        }
+      });
+
+      const bucket = getProgress('call_cap') as {
+        events: SubagentUpdateEvent[];
+      };
+      expect(bucket.events).toHaveLength(200);
+      /** Oldest entries should be dropped — first retained label is from delta-5. */
+      expect(bucket.events[0].label).toBe('delta-5');
+      expect(bucket.events[bucket.events.length - 1].label).toBe('delta-204');
+    });
+
+    it('clearStepMaps resets tracked subagent atoms back to their default', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_reset']);
+
+      act(() => {
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              parentToolCallId: 'call_reset',
+              phase: 'stop',
+            }),
+          },
+          submission,
+        );
+      });
+
+      expect(getProgress('call_reset')).not.toBeNull();
+
+      act(() => {
+        (result.current as any).clearStepMaps();
+      });
+
+      /** After clear the atom is back to the default (null). If the reset
+       *  was skipped, this would still hold the final envelope and leak. */
+      expect(getProgress('call_reset')).toBeNull();
     });
   });
 });
