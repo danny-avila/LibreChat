@@ -33,6 +33,7 @@ import {
   injectSkillCatalog,
   primeManualSkill,
   resolveManualSkills,
+  MAX_MANUAL_SKILLS,
 } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
 
@@ -741,5 +742,49 @@ describe('resolveManualSkills', () => {
       userId,
     });
     expect(result).toEqual([{ name: 'good', body: 'good-body' }]);
+  });
+
+  it('truncates manual skill lists above MAX_MANUAL_SKILLS to bound concurrent DB lookups', async () => {
+    const skills: Record<string, SkillDoc> = {};
+    const names: string[] = [];
+    for (let i = 0; i < MAX_MANUAL_SKILLS + 5; i++) {
+      const name = `s${i}`;
+      skills[name] = mkSkill(name, userOid, `body-${i}`);
+      names.push(name);
+    }
+    const getSkillByName = jest.fn(buildGetSkillByName(skills));
+    const result = await resolveManualSkills({
+      names,
+      getSkillByName,
+      accessibleSkillIds: names.map((n) => skills[n]._id),
+      userId,
+    });
+    expect(result).toHaveLength(MAX_MANUAL_SKILLS);
+    expect(getSkillByName).toHaveBeenCalledTimes(MAX_MANUAL_SKILLS);
+    // Preserves input order — drops the tail, keeps the head.
+    expect(result.map((r) => r.name)).toEqual(names.slice(0, MAX_MANUAL_SKILLS));
+  });
+
+  it('applies the cap AFTER dedup so repeated names do not consume slots', async () => {
+    const skills: Record<string, SkillDoc> = {};
+    const uniqueCount = MAX_MANUAL_SKILLS;
+    for (let i = 0; i < uniqueCount; i++) {
+      const name = `u${i}`;
+      skills[name] = mkSkill(name, userOid, `body-${i}`);
+    }
+    // Duplicate every name 3x — total length 3 × MAX_MANUAL_SKILLS, unique = MAX_MANUAL_SKILLS.
+    const names: string[] = [];
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i < uniqueCount; i++) {
+        names.push(`u${i}`);
+      }
+    }
+    const result = await resolveManualSkills({
+      names,
+      getSkillByName: buildGetSkillByName(skills),
+      accessibleSkillIds: Object.values(skills).map((s) => s._id),
+      userId,
+    });
+    expect(result).toHaveLength(uniqueCount);
   });
 });

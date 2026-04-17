@@ -15,6 +15,13 @@ const SKILL_CATALOG_LIMIT = 100;
 const MAX_CATALOG_PAGES = 10;
 /** Page size used when paginating to fill the active-skill quota. */
 const CATALOG_PAGE_SIZE = 100;
+/**
+ * Hard ceiling on skill names resolved per request via `$` popover or
+ * `always-apply`. The popover realistically surfaces only a few per turn;
+ * the cap is a defense-in-depth against a crafted payload fanning out into
+ * many concurrent `getSkillByName` DB lookups.
+ */
+export const MAX_MANUAL_SKILLS = 10;
 
 /**
  * Scopes user-accessible skill IDs to only those configured on the agent.
@@ -322,8 +329,21 @@ export async function resolveManualSkills(
     return true;
   });
 
+  /**
+   * Truncate after dedup so a user repeating the same name doesn't consume
+   * cap slots. Kept inside the function (not at the controller) so every
+   * caller — including future internal ones — inherits the protection.
+   */
+  let boundedNames = uniqueNames;
+  if (uniqueNames.length > MAX_MANUAL_SKILLS) {
+    logger.warn(
+      `[resolveManualSkills] Truncating manual skill list from ${uniqueNames.length} to ${MAX_MANUAL_SKILLS}: dropped [${uniqueNames.slice(MAX_MANUAL_SKILLS).join(', ')}]`,
+    );
+    boundedNames = uniqueNames.slice(0, MAX_MANUAL_SKILLS);
+  }
+
   const resolved = await Promise.all(
-    uniqueNames.map(async (name) => {
+    boundedNames.map(async (name) => {
       try {
         const skill = await getSkillByName(name, accessibleSkillIds);
         if (!skill) {

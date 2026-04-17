@@ -769,13 +769,26 @@ class AgentClient extends BaseClient {
        * model-invoked skills via `injectedMessages` — both produce a meta
        * HumanMessage carrying the SKILL.md body.
        *
+       * Scope: single-agent runs only. `initialMessages` is shared with every
+       * agent passed to `createRun`, so splicing here in a multi-agent graph
+       * (handoff targets, added-convo parallels) would leak the skill body
+       * past Phase 1's per-agent `scopeSkillIds` contract — a secondary agent
+       * may have a different skill scope and shouldn't see content its
+       * configuration excludes. A future PR can push primes into
+       * per-agent initial state to lift this restriction.
+       *
        * Index accounting: every existing `indexTokenCountMap` entry at or
        * past the insertion point shifts forward by the number of primes.
        * `hydrateMissingIndexTokenCounts` below then fills counts for the
        * fresh positions.
        */
       const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      if (manualSkillPrimes && manualSkillPrimes.length > 0 && initialMessages.length > 0) {
+      const isMultiAgentRun = (this.agentConfigs?.size ?? 0) > 0;
+      if (manualSkillPrimes && manualSkillPrimes.length > 0 && isMultiAgentRun) {
+        logger.warn(
+          `[AgentClient] Skipping manual skill priming in multi-agent run (${this.agentConfigs.size} additional agent(s)): ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
+        );
+      } else if (manualSkillPrimes && manualSkillPrimes.length > 0 && initialMessages.length > 0) {
         const insertIdx = initialMessages.length - 1;
         const numPrimes = manualSkillPrimes.length;
         if (indexTokenCountMap) {
