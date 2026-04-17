@@ -505,6 +505,16 @@ const createResponse = async (req, res) => {
         throw new Error('Failed to create agent run');
       }
 
+      // Pre-populate code execution session from primed files
+      if (run.Graph && primaryConfig?.codeFiles?.length > 0) {
+        const sessionId = primaryConfig.codeFiles[0].session_id;
+        run.Graph.sessions.set('execute_code', {
+          session_id: sessionId,
+          files: primaryConfig.codeFiles,
+          lastUpdated: Date.now(),
+        });
+      }
+
       // Process the stream
       const config = {
         runName: 'AgentRun',
@@ -666,6 +676,16 @@ const createResponse = async (req, res) => {
 
       if (!run) {
         throw new Error('Failed to create agent run');
+      }
+
+      // Pre-populate code execution session from primed files
+      if (run.Graph && primaryConfig?.codeFiles?.length > 0) {
+        const sessionId = primaryConfig.codeFiles[0].session_id;
+        run.Graph.sessions.set('execute_code', {
+          session_id: sessionId,
+          files: primaryConfig.codeFiles,
+          lastUpdated: Date.now(),
+        });
       }
 
       const config = {

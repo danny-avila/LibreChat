@@ -790,6 +790,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     toolContextMap[Tools.web_search] = buildWebSearchContext();
   }
 
+  let codeFiles;
   if (hasExecuteCode && tool_resources) {
     try {
       const authValues = await loadAuthValues({
@@ -799,10 +800,11 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       const codeApiKey = authValues[EnvVar.CODE_API_KEY];
 
       if (codeApiKey) {
-        const { toolContext } = await primeCodeFiles(
+        const { files, toolContext } = await primeCodeFiles(
           { req, tool_resources, agentId: agent.id },
           codeApiKey,
         );
+        codeFiles = files;
         if (toolContext) {
           toolContextMap[Tools.execute_code] = toolContext;
         }
@@ -856,6 +858,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   }
 
   return {
+    codeFiles,
     toolRegistry,
     userMCPAuthMap,
     toolContextMap,

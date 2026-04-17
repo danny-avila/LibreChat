@@ -845,6 +845,17 @@ class AgentClient extends BaseClient {
 
         this.run = run;
 
+        // Pre-populate code execution session from primed files
+        const primaryAgent = agents[0];
+        if (run.Graph && primaryAgent?.codeFiles?.length > 0) {
+          const sessionId = primaryAgent.codeFiles[0].session_id;
+          run.Graph.sessions.set('execute_code', {
+            session_id: sessionId,
+            files: primaryAgent.codeFiles,
+            lastUpdated: Date.now(),
+          });
+        }
+
         const streamId = this.options.req?._resumableStreamId;
         if (streamId && run.Graph) {
           GenerationJobManager.setGraph(streamId, run.Graph);

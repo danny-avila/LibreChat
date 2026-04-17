@@ -66,6 +66,8 @@ export type InitializedAgent = Agent & {
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
+  /** Pre-primed code execution files from upload, used to seed Graph.sessions */
+  codeFiles?: Array<{ id: string; session_id: string; name: string }>;
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -107,6 +109,8 @@ export interface InitializeAgentParams {
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
     actionsEnabled?: boolean;
+    /** Pre-primed code execution files from upload */
+    codeFiles?: Array<{ id: string; session_id: string; name: string }>;
   } | null>;
   /** Endpoint option (contains model_parameters and endpoint info) */
   endpointOption?: Partial<TEndpointOption>;
@@ -298,6 +302,7 @@ export async function initializeAgent(
   });
 
   const {
+    codeFiles,
     toolRegistry,
     toolContextMap,
     userMCPAuthMap,
@@ -316,6 +321,7 @@ export async function initializeAgent(
     tool_resources,
   })) ?? {
     tools: [],
+    codeFiles: undefined,
     toolContextMap: {},
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
@@ -439,6 +445,7 @@ export async function initializeAgent(
 
   const initializedAgent: InitializedAgent = {
     ...agent,
+    codeFiles,
     resendFiles,
     toolRegistry,
     tool_resources,

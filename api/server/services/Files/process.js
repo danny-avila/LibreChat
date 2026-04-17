@@ -671,6 +671,32 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       basePath,
       entity_id,
     });
+
+    // Auto-upload data files to code bridge when code execution is enabled
+    if (messageAttachment && !isImage) {
+      try {
+        const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
+        if (isCodeEnabled) {
+          const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
+            FileSources.execute_code,
+          );
+          const result = await loadAuthValues({
+            userId: req.user.id,
+            authFields: [EnvVar.CODE_API_KEY],
+          });
+          const stream = fs.createReadStream(file.path);
+          const fileIdentifier = await uploadCodeEnvFile({
+            req,
+            stream,
+            filename: file.originalname,
+            apiKey: result[EnvVar.CODE_API_KEY],
+          });
+          fileInfoMetadata = { fileIdentifier };
+        }
+      } catch (err) {
+        logger.warn('[processAgentFileUpload] Auto-upload to code bridge failed', err);
+      }
+    }
   }
 
   let { bytes, filename, filepath: _filepath, height, width } = storageResult;
