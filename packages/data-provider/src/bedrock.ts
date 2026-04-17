@@ -293,6 +293,7 @@ export const bedrockInputParser = s.tConversationSchema
         if (additionalFields.thinking === false) {
           delete additionalFields.thinking;
           delete additionalFields.thinkingBudget;
+          delete additionalFields.thinkingDisplay;
         } else {
           const thinkingConfig: ThinkingConfig = { type: 'adaptive' };
           const display = resolveThinkingDisplay(

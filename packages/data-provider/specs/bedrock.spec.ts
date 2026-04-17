@@ -623,6 +623,18 @@ describe('bedrockInputParser', () => {
       expect(additionalFields?.thinkingDisplay).toBeUndefined();
     });
 
+    test('thinkingDisplay is stripped when adaptive thinking is disabled', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinking: false,
+        thinkingDisplay: ThinkingDisplay.summarized,
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toBeUndefined();
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.thinkingDisplay).toBeUndefined();
+    });
+
     test('should not include output_config when effort is unset (empty string)', () => {
       const input = {
         model: 'anthropic.claude-opus-4-6-v1',
