@@ -145,6 +145,11 @@ const userSchema = new Schema<IUser>(
       ],
       default: [],
     },
+    skillStates: {
+      type: Map,
+      of: Boolean,
+      default: () => new Map(),
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

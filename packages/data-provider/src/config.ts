@@ -755,6 +755,7 @@ export const interfaceSchema = z
           create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
+          defaultActiveOnShare: z.boolean().optional(),
         }),
       ])
       .optional(),
@@ -808,6 +809,7 @@ export const interfaceSchema = z
       create: true,
       share: false,
       public: false,
+      defaultActiveOnShare: false,
     },
   });
 

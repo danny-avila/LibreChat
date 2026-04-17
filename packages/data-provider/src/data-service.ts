@@ -47,6 +47,17 @@ export function updateSkillFavorites(skillFavorites: string[]): Promise<string[]
   return Promise.resolve(skillFavorites);
 }
 
+/** Per-user skill active/inactive overrides. */
+export function getSkillStates(): Promise<sk.TSkillStatesResponse> {
+  return request.get(endpoints.skillStates());
+}
+
+export function updateSkillStates(
+  skillStates: sk.TSkillStatesResponse,
+): Promise<sk.TSkillStatesResponse> {
+  return request.post(endpoints.skillStates(), { skillStates });
+}
+
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
   return request.get(endpoints.shareMessages(shareId));
 }
