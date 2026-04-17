@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
 import { useToastContext } from '@librechat/client';
@@ -16,6 +16,13 @@ const EMPTY_STATES: TSkillStatesResponse = {};
 interface WriteQueue {
   pending: TSkillStatesResponse | null;
   inFlight: boolean;
+  /**
+   * Set when the active user changes so any in-flight flush loop still
+   * holding a reference to this queue exits before sending another request
+   * under the new user's auth context. Once abandoned, the queue is single-
+   * use-dead: callers must create a new one via `getWriteQueue`.
+   */
+  abandoned: boolean;
 }
 
 /**
@@ -25,20 +32,31 @@ interface WriteQueue {
  * via last-writer-wins. Keying by `userId` prevents pending writes from
  * leaking across account transitions in the same browser tab (logout/login
  * flushing a previous user's snapshot into the new session). `lastSeenUserId`
- * tracks the most recent active identity so we can evict a prior user's
- * queue entry when the active identity changes, keeping the map bounded.
+ * tracks the most recent active identity so we can evict and abandon a prior
+ * user's queue entry when the active identity changes.
  */
 const writeQueues = new Map<string, WriteQueue>();
 let lastSeenUserId: string | null = null;
 
+/** Marks every queue whose userId does not match `activeUserId` as abandoned. */
+function abandonOtherQueues(activeUserId: string): void {
+  for (const [id, queue] of writeQueues) {
+    if (id !== activeUserId) {
+      queue.abandoned = true;
+      queue.pending = null;
+      writeQueues.delete(id);
+    }
+  }
+}
+
 function getWriteQueue(userId: string): WriteQueue {
   if (lastSeenUserId !== null && lastSeenUserId !== userId) {
-    writeQueues.delete(lastSeenUserId);
+    abandonOtherQueues(userId);
   }
   lastSeenUserId = userId;
   let queue = writeQueues.get(userId);
   if (!queue) {
-    queue = { pending: null, inFlight: false };
+    queue = { pending: null, inFlight: false, abandoned: false };
     writeQueues.set(userId, queue);
   }
   return queue;
@@ -73,6 +91,9 @@ function resolveDefault(author: string, userId: string, defaultActiveOnShare: bo
  * latest desired state is sent when the previous one settles. Each toggle
  * reads the latest optimistic state directly from the React Query cache so
  * rapid successive toggles cannot drop earlier changes via stale closure.
+ * An `abandoned` flag on the queue guards against cross-session writes: on
+ * logout/login, the previous user's queue is marked abandoned so an in-flight
+ * flush loop exits instead of posting the stale snapshot under the new auth.
  */
 export default function useSkillActiveState() {
   const localize = useLocalize();
@@ -84,6 +105,22 @@ export default function useSkillActiveState() {
   const updateMutation = useUpdateSkillStatesMutation();
 
   const userId = user?.id ?? '';
+
+  /**
+   * Proactively abandon other users' queues whenever the active identity
+   * changes. `getWriteQueue` already handles this on the next toggle, but an
+   * in-flight flush loop from the previous user can fire its next iteration
+   * before any toggle runs — that iteration would carry the stale payload
+   * under the new user's cookies. Running this effect on every userId change
+   * closes that window for any hook instance that renders post-login.
+   */
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+    abandonOtherQueues(userId);
+    lastSeenUserId = userId;
+  }, [userId]);
 
   const defaultActiveOnShare = useMemo(() => {
     const skills = configQuery.data?.interface?.skills;
@@ -105,7 +142,7 @@ export default function useSkillActiveState() {
       return;
     }
     const queue = getWriteQueue(userId);
-    while (queue.pending !== null) {
+    while (queue.pending !== null && !queue.abandoned) {
       const next = queue.pending;
       queue.pending = null;
       queue.inFlight = true;
