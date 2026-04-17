@@ -488,8 +488,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const subagentAgentConfigs = [];
   /** Subagents are currently primary-only: child agents reached via handoff edges
    *  do not get their own `subagentAgentConfigs` loaded here. Self-spawn still
-   *  works for them (no DB lookup needed), but explicit sub-subagents would be
-   *  silently dropped. See TODO below if that surface is needed later. */
+   *  works for them (no DB lookup needed), but explicit sub-subagents on a
+   *  handoff target would be silently dropped. */
+  // TODO: Extend subagent loading to handoff agents if sub-subagents are ever wanted.
 
   if (subagentsCapabilityEnabled && subagentsConfig?.enabled) {
     /** Dedupe and filter in one pass — a crafted payload could legitimately
