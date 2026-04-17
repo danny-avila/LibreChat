@@ -47,6 +47,26 @@ export class MonitoringStack extends cdk.Stack {
         });
         unhealthyHostsAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
 
+        const elb4xxAlarm = new cloudwatch.Alarm(this, 'AlbElb4xx', {
+            alarmName: `ai-assistant-alb-elb-4xx`,
+            metric: new cloudwatch.Metric({
+                namespace: 'AWS/ApplicationELB',
+                metricName: 'HTTPCode_ELB_4XX_Count',
+                period: Duration.minutes(1),
+                statistic: 'Sum',
+                dimensionsMap: {
+                LoadBalancer: loadBalancer.loadBalancerArn,
+                },
+            }),
+            threshold: 10,
+            evaluationPeriods: 5,
+            datapointsToAlarm: 3,
+            treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+            comparisonOperator:
+                cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        });
+        elb4xxAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+
         const elb5xxAlarm = new cloudwatch.Alarm(this, 'AlbElb5xx', {
             alarmName: `ai-assistant-alb-elb-5xx`,
             metric: new cloudwatch.Metric({
