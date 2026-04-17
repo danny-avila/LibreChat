@@ -13,15 +13,29 @@ import { logger } from '~/utils';
 
 const EMPTY_STATES: TSkillStatesResponse = {};
 
-/**
- * Module-scoped write queue so every hook instance (SkillList, SkillDetail,
- * etc.) shares a single in-flight slot. Per-instance refs let two components
- * race full-map POSTs and drop toggles via last-writer-wins.
- */
-const writeQueue: {
+interface WriteQueue {
   pending: TSkillStatesResponse | null;
   inFlight: boolean;
-} = { pending: null, inFlight: false };
+}
+
+/**
+ * Module-scoped, per-user write queues so every hook instance (SkillList,
+ * SkillDetail, etc.) shares a single in-flight slot for the active user.
+ * Per-instance refs let two components race full-map POSTs and drop toggles
+ * via last-writer-wins. Keying by `userId` prevents pending writes from
+ * leaking across account transitions in the same browser tab (logout/login
+ * flushing a previous user's snapshot into the new session).
+ */
+const writeQueues = new Map<string, WriteQueue>();
+
+function getWriteQueue(userId: string): WriteQueue {
+  let queue = writeQueues.get(userId);
+  if (!queue) {
+    queue = { pending: null, inFlight: false };
+    writeQueues.set(userId, queue);
+  }
+  return queue;
+}
 
 /**
  * Resolves the default active state for a skill the user has never toggled.
@@ -80,10 +94,14 @@ export default function useSkillActiveState() {
   const canToggle = !getQuery.isLoading && !getQuery.isError && getQuery.data !== undefined;
 
   const flush = useCallback(async () => {
-    while (writeQueue.pending !== null) {
-      const next = writeQueue.pending;
-      writeQueue.pending = null;
-      writeQueue.inFlight = true;
+    if (!userId) {
+      return;
+    }
+    const queue = getWriteQueue(userId);
+    while (queue.pending !== null) {
+      const next = queue.pending;
+      queue.pending = null;
+      queue.inFlight = true;
       try {
         await updateMutation.mutateAsync(next);
       } catch (error) {
@@ -92,12 +110,12 @@ export default function useSkillActiveState() {
         const messageKey =
           code === 'MAX_SKILL_STATES_EXCEEDED' ? 'com_ui_skill_states_limit' : 'com_ui_error';
         showToast({ message: localize(messageKey), status: 'error' });
-        writeQueue.pending = null;
+        queue.pending = null;
         break;
       }
     }
-    writeQueue.inFlight = false;
-  }, [updateMutation, showToast, localize]);
+    queue.inFlight = false;
+  }, [userId, updateMutation, showToast, localize]);
 
   const isActive = useCallback(
     (skill: { _id: string; author: string }): boolean => {
@@ -112,12 +130,13 @@ export default function useSkillActiveState() {
 
   const toggle = useCallback(
     (skill: { _id: string; author: string }) => {
-      if (!canToggle) {
+      if (!canToggle || !userId) {
         return;
       }
+      const queue = getWriteQueue(userId);
       const cached =
         queryClient.getQueryData<TSkillStatesResponse>([QueryKeys.skillStates]) ?? EMPTY_STATES;
-      const baseline = writeQueue.pending ?? cached;
+      const baseline = queue.pending ?? cached;
       const defaultValue = resolveDefault(skill.author, userId, defaultActiveOnShare);
       const override = baseline[skill._id];
       const currentActive = override !== undefined ? override : defaultValue;
@@ -128,8 +147,8 @@ export default function useSkillActiveState() {
       } else {
         next[skill._id] = nextValue;
       }
-      writeQueue.pending = next;
-      if (!writeQueue.inFlight) {
+      queue.pending = next;
+      if (!queue.inFlight) {
         flush();
       }
     },

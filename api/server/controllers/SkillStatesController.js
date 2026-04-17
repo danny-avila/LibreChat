@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const { isValidObjectIdString } = require('@librechat/data-schemas');
+const { ResourceType, PermissionBits } = require('librechat-data-provider');
+const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { updateUser, getUserById } = require('~/models');
 
 const MAX_SKILL_STATES = 200;
@@ -20,12 +22,13 @@ function toRecord(raw) {
 }
 
 /**
- * Returns a copy of `skillStates` containing only entries whose key is a valid
- * ObjectId AND points to a Skill document that currently exists. Self-heals
- * orphaned overrides (deleted skills) and malformed keys without requiring
- * cascade logic or a migration.
+ * Returns a copy of `skillStates` containing only entries whose key is a
+ * valid ObjectId, points to a Skill document that currently exists, AND
+ * that the given user still has VIEW access to. Self-heals three classes of
+ * orphans: malformed keys, deleted skills, and revoked shares — none of
+ * which the user has a UI path to clean up on their own.
  */
-async function pruneOrphans(skillStates) {
+async function pruneOrphans(skillStates, user) {
   const validIds = Object.keys(skillStates).filter((id) => isValidObjectIdString(id));
   if (validIds.length === 0) {
     return {};
@@ -38,13 +41,22 @@ async function pruneOrphans(skillStates) {
     }
     return pruned;
   }
-  const existing = await Skill.find({ _id: { $in: validIds } })
-    .select('_id')
-    .lean();
+  const [existing, accessibleIds] = await Promise.all([
+    Skill.find({ _id: { $in: validIds } })
+      .select('_id')
+      .lean(),
+    findAccessibleResources({
+      userId: user.id,
+      role: user.role,
+      resourceType: ResourceType.SKILL,
+      requiredPermissions: PermissionBits.VIEW,
+    }),
+  ]);
   const existingSet = new Set(existing.map((doc) => doc._id.toString()));
+  const accessibleSet = new Set((accessibleIds ?? []).map((oid) => oid.toString()));
   const pruned = {};
   for (const id of validIds) {
-    if (existingSet.has(id)) {
+    if (existingSet.has(id) && accessibleSet.has(id)) {
       pruned[id] = skillStates[id];
     }
   }
@@ -61,7 +73,7 @@ const getSkillStatesController = async (req, res) => {
     }
 
     const states = toRecord(user.skillStates);
-    const pruned = await pruneOrphans(states);
+    const pruned = await pruneOrphans(states, req.user);
     return res.status(200).json(pruned);
   } catch (error) {
     console.error('Error fetching skill states:', error);
@@ -107,7 +119,7 @@ const updateSkillStatesController = async (req, res) => {
       }
     }
 
-    const pruned = await pruneOrphans(skillStates);
+    const pruned = await pruneOrphans(skillStates, req.user);
 
     if (Object.keys(pruned).length > MAX_SKILL_STATES) {
       return res.status(400).json({

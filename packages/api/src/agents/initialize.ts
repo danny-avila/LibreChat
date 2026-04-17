@@ -447,6 +447,13 @@ export async function initializeAgent(
   }
 
   let skillCount = 0;
+  /**
+   * IDs authorized for runtime skill execution — starts as the ACL-scoped set
+   * and gets replaced with the active-filtered subset after catalog injection.
+   * Ensures `getSkillByName` cannot resolve a deactivated skill even if the
+   * LLM (or a direct-invocation path) names one.
+   */
+  let executableSkillIds = params.accessibleSkillIds;
   const { accessibleSkillIds } = params;
   if (accessibleSkillIds && accessibleSkillIds.length > 0) {
     const skillResult = await injectSkillCatalog({
@@ -463,6 +470,7 @@ export async function initializeAgent(
     });
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;
+    executableSkillIds = skillResult.activeSkillIds;
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;
@@ -497,7 +505,7 @@ export async function initializeAgent(
     actionsEnabled,
     baseContextTokens,
     skillCount,
-    accessibleSkillIds: params.accessibleSkillIds,
+    accessibleSkillIds: executableSkillIds,
     attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,

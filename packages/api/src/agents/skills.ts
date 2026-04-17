@@ -94,6 +94,13 @@ export interface InjectSkillCatalogParams {
 export interface InjectSkillCatalogResult {
   toolDefinitions: LCTool[] | undefined;
   skillCount: number;
+  /**
+   * IDs of skills that passed the active-state filter and appear in the
+   * injected catalog. Runtime tool execution must authorize against this set,
+   * not the full `accessibleSkillIds`, so deactivated skills cannot be
+   * invoked by name even if the LLM hallucinates them.
+   */
+  activeSkillIds: Types.ObjectId[];
 }
 
 /**
@@ -124,7 +131,7 @@ export async function injectSkillCatalog(
   } = params;
 
   if (!listSkillsByAccess || accessibleSkillIds.length === 0) {
-    return { toolDefinitions: inputDefs, skillCount: 0 };
+    return { toolDefinitions: inputDefs, skillCount: 0, activeSkillIds: [] };
   }
 
   type SkillSummary = Awaited<ReturnType<NonNullable<typeof listSkillsByAccess>>>['skills'][number];
@@ -162,7 +169,7 @@ export async function injectSkillCatalog(
   }
 
   if (activeSkills.length === 0) {
-    return { toolDefinitions: inputDefs, skillCount: 0 };
+    return { toolDefinitions: inputDefs, skillCount: 0, activeSkillIds: [] };
   }
 
   if (!reachedEnd && activeSkills.length < SKILL_CATALOG_LIMIT) {
@@ -227,5 +234,9 @@ export async function injectSkillCatalog(
     }
   }
 
-  return { toolDefinitions, skillCount: activeSkills.length };
+  return {
+    toolDefinitions,
+    skillCount: activeSkills.length,
+    activeSkillIds: activeSkills.map((s) => s._id),
+  };
 }
