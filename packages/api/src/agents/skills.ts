@@ -11,6 +11,10 @@ import type { Agent } from 'librechat-data-provider';
 import type { InitializeAgentDbMethods } from './initialize';
 
 const SKILL_CATALOG_LIMIT = 100;
+/** Max pages scanned per run when filtering out inactive skills. */
+const MAX_CATALOG_PAGES = 10;
+/** Page size used when paginating to fill the active-skill quota. */
+const CATALOG_PAGE_SIZE = 100;
 
 /**
  * Scopes user-accessible skill IDs to only those configured on the agent.
@@ -37,6 +41,39 @@ export function scopeSkillIds(
   return accessibleSkillIds.filter((oid) => agentSet.has(oid.toString()));
 }
 
+export interface ResolveSkillActiveParams {
+  /** Skill being evaluated. Only `_id` and `author` matter for resolution. */
+  skill: { _id: Types.ObjectId | string; author: Types.ObjectId | string };
+  /** Per-user overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
+  skillStates?: Record<string, boolean>;
+  /** Current user ID. When absent, the function fails closed for all non-overridden skills. */
+  userId?: string;
+  /** Admin-configured default for shared skills. `true` = shared skills auto-activate. */
+  defaultActiveOnShare?: boolean;
+}
+
+/**
+ * Resolves whether a skill should be injected into the agent catalog for the
+ * current user. Precedence (pinned by unit tests):
+ *
+ * 1. Explicit override in `skillStates` wins above all.
+ * 2. Absent `userId` → fail closed. The caller lost user context, so we do
+ *    not fall back to ownership-based defaults that could leak shared skills.
+ * 3. Owned skills (author === userId) default to **active**.
+ * 4. Shared skills default to `defaultActiveOnShare` (admin-configured, default `false`).
+ */
+export function resolveSkillActive(params: ResolveSkillActiveParams): boolean {
+  const { skill, skillStates, userId, defaultActiveOnShare = false } = params;
+  const override = skillStates?.[skill._id.toString()];
+  if (override !== undefined) {
+    return override;
+  }
+  if (!userId) {
+    return false;
+  }
+  return skill.author.toString() === userId ? true : defaultActiveOnShare;
+}
+
 export interface InjectSkillCatalogParams {
   agent: Agent;
   toolDefinitions: LCTool[] | undefined;
@@ -46,11 +83,24 @@ export interface InjectSkillCatalogParams {
   listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'];
   /** When true, registers bash_tool alongside skill + read_file. */
   codeEnvAvailable?: boolean;
+  /** Current user ID — used to determine skill ownership for active-state resolution. */
+  userId?: string;
+  /** Per-user skill overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
+  skillStates?: Record<string, boolean>;
+  /** Admin-configured default for shared skills. `true` = shared skills auto-activate. */
+  defaultActiveOnShare?: boolean;
 }
 
 export interface InjectSkillCatalogResult {
   toolDefinitions: LCTool[] | undefined;
   skillCount: number;
+  /**
+   * IDs of skills that passed the active-state filter and appear in the
+   * injected catalog. Runtime tool execution must authorize against this set,
+   * not the full `accessibleSkillIds`, so deactivated skills cannot be
+   * invoked by name even if the LLM hallucinates them.
+   */
+  activeSkillIds: Types.ObjectId[];
 }
 
 /**
@@ -75,30 +125,62 @@ export async function injectSkillCatalog(
     contextWindowTokens,
     listSkillsByAccess,
     codeEnvAvailable,
+    userId,
+    skillStates,
+    defaultActiveOnShare = false,
   } = params;
 
   if (!listSkillsByAccess || accessibleSkillIds.length === 0) {
-    return { toolDefinitions: inputDefs, skillCount: 0 };
+    return { toolDefinitions: inputDefs, skillCount: 0, activeSkillIds: [] };
   }
 
-  const { skills } = await listSkillsByAccess({
-    accessibleIds: accessibleSkillIds,
-    limit: SKILL_CATALOG_LIMIT,
-  });
+  type SkillSummary = Awaited<ReturnType<NonNullable<typeof listSkillsByAccess>>>['skills'][number];
 
-  if (skills.length === SKILL_CATALOG_LIMIT) {
+  const isActive = (s: SkillSummary): boolean =>
+    resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare });
+
+  const activeSkills: SkillSummary[] = [];
+  let cursor: string | null = null;
+  let pages = 0;
+  let reachedEnd = false;
+
+  while (activeSkills.length < SKILL_CATALOG_LIMIT && pages < MAX_CATALOG_PAGES) {
+    const page = await listSkillsByAccess({
+      accessibleIds: accessibleSkillIds,
+      limit: CATALOG_PAGE_SIZE,
+      cursor,
+    });
+
+    for (const skill of page.skills) {
+      if (activeSkills.length >= SKILL_CATALOG_LIMIT) {
+        break;
+      }
+      if (isActive(skill)) {
+        activeSkills.push(skill);
+      }
+    }
+
+    if (!page.has_more || !page.after) {
+      reachedEnd = true;
+      break;
+    }
+    cursor = page.after;
+    pages += 1;
+  }
+
+  if (activeSkills.length === 0) {
+    return { toolDefinitions: inputDefs, skillCount: 0, activeSkillIds: [] };
+  }
+
+  if (!reachedEnd && activeSkills.length < SKILL_CATALOG_LIMIT) {
     logger.warn(
-      `[injectSkillCatalog] Skill catalog reached limit of ${SKILL_CATALOG_LIMIT}. Some skills may be excluded.`,
+      `[injectSkillCatalog] Scanned ${MAX_CATALOG_PAGES} pages without filling the ${SKILL_CATALOG_LIMIT}-skill catalog. Some active skills may be excluded.`,
     );
-  }
-
-  if (skills.length === 0) {
-    return { toolDefinitions: inputDefs, skillCount: 0 };
   }
 
   // Warn on duplicate names — model may invoke the wrong skill
   const nameCount = new Map<string, number>();
-  for (const s of skills) {
+  for (const s of activeSkills) {
     nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
   }
   for (const [dupName, count] of nameCount) {
@@ -110,7 +192,7 @@ export async function injectSkillCatalog(
   }
 
   const catalog = formatSkillCatalog(
-    skills.map((s) => ({ name: s.name, description: s.description })),
+    activeSkills.map((s) => ({ name: s.name, description: s.description })),
     { contextWindowTokens: contextWindowTokens || 200_000 },
   );
 
@@ -152,5 +234,9 @@ export async function injectSkillCatalog(
     }
   }
 
-  return { toolDefinitions, skillCount: skills.length };
+  return {
+    toolDefinitions,
+    skillCount: activeSkills.length,
+    activeSkillIds: activeSkills.map((s) => s._id),
+  };
 }

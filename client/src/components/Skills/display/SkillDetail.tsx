@@ -3,11 +3,11 @@ import { format } from 'date-fns';
 import { Eye, Code, User, Calendar, EarthIcon, ScrollText } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
 import type { TSkill } from 'librechat-data-provider';
-import { useLocalize, useAuthContext, useSkillPermissions } from '~/hooks';
+import { useLocalize, useAuthContext, useSkillPermissions, useSkillActiveState } from '~/hooks';
+import { ShareSkill, SkillToggle } from '../buttons';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
 import { parseFrontmatter } from '../utils';
 import DeleteSkill from '../dialogs/DeleteSkill';
-import { ShareSkill } from '../buttons';
 import { cn } from '~/utils';
 
 interface SkillDetailProps {
@@ -68,7 +68,9 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
   const localize = useLocalize();
   const { user } = useAuthContext();
   const permissions = useSkillPermissions(skill);
+  const { isActive, toggle } = useSkillActiveState();
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
+  const skillEnabled = isActive(skill);
 
   const isPublic = skill.isPublic === true;
   const isShared = skill.author !== user?.id && Boolean(skill.authorName);
@@ -130,6 +132,11 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
 
         {/* Actions */}
         <div className="flex shrink-0 items-center gap-2">
+          <SkillToggle
+            enabled={skillEnabled}
+            onChange={() => toggle(skill)}
+            ariaLabel={localize('com_ui_skill_toggle_active')}
+          />
           <ShareSkill skill={skill} />
           {permissions.canEdit && onEdit && (
             <button
