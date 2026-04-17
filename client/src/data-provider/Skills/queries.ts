@@ -1,4 +1,4 @@
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type {
   QueryObserverResult,
@@ -9,6 +9,7 @@ import type {
   TSkill,
   TSkillListRequest,
   TSkillListResponse,
+  TSkillStatesResponse,
   TListSkillFilesResponse,
   TSkillFileContentResponse,
 } from 'librechat-data-provider';
@@ -146,6 +147,42 @@ export const useGetSkillFileContentQuery = (
       staleTime: Infinity,
       ...config,
       enabled: enabled && (config?.enabled ?? true),
+    },
+  );
+};
+
+/** Per-user skill active/inactive overrides. */
+export const useGetSkillStatesQuery = (
+  config?: Omit<UseQueryOptions<TSkillStatesResponse, Error>, 'queryKey' | 'queryFn'>,
+) => {
+  return useQuery<TSkillStatesResponse, Error>(
+    [QueryKeys.skillStates],
+    () => dataService.getSkillStates(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useUpdateSkillStatesMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (skillStates: TSkillStatesResponse) => dataService.updateSkillStates(skillStates),
+    {
+      onMutate: async (next) => {
+        await queryClient.cancelQueries([QueryKeys.skillStates]);
+        const previous = queryClient.getQueryData<TSkillStatesResponse>([QueryKeys.skillStates]);
+        queryClient.setQueryData([QueryKeys.skillStates], next);
+        return { previous };
+      },
+      onError: (_err, _next, context) => {
+        if (context?.previous !== undefined) {
+          queryClient.setQueryData([QueryKeys.skillStates], context.previous);
+        }
+      },
     },
   );
 };
