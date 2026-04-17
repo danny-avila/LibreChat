@@ -13,9 +13,25 @@ afterAll(() => {
   jest.useRealTimers();
 });
 
-jest.mock('~/nj/content/release-notes.md?raw', () => ({
+const UPDATE_WIDGET_MD = `# Date
+
+4/14/2026
+
+# Title
+
+AI Office Hours
+
+# Description
+
+My description text.
+
+# Link Text
+
+My link text`;
+
+jest.mock('~/nj/content/update-widget.md?raw', () => ({
   __esModule: true,
-  default: '## April 14, 2026\nFeatures Released...',
+  default: UPDATE_WIDGET_MD,
 }));
 
 describe('NewUpdatesWidget', () => {
@@ -38,7 +54,7 @@ describe('NewUpdatesWidget', () => {
       render(
         <RecoilRoot
           initializeState={({ set }) => {
-            set(newUpdatesWidgetDismissed, 'April 15, 2026');
+            set(newUpdatesWidgetDismissed, new Date('4/15/2026').toISOString());
           }}
         >
           <NewUpdatesWidget />
@@ -54,7 +70,7 @@ describe('NewUpdatesWidget', () => {
       render(
         <RecoilRoot
           initializeState={({ set }) => {
-            set(newUpdatesWidgetDismissed, 'April 14, 2026');
+            set(newUpdatesWidgetDismissed, new Date('4/14/2026').toISOString());
           }}
         >
           <NewUpdatesWidget />

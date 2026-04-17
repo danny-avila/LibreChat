@@ -126,13 +126,7 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
   );
 }
 
-function getMostRecentReleaseDate(releaseNotes: string): string | null {
-  const dateMatch = releaseNotes.match(/#+\s+([A-Za-z]+\s+\d{1,2},\s+\d{4})/);
-  return dateMatch ? dateMatch[1] : null;
-}
-
-function isReleaseDateNew(newReleaseDate: string | null): boolean {
-  if (!newReleaseDate) return false;
+function isReleaseDateNew(newReleaseDate: Date): boolean {
   const releaseDate = new Date(newReleaseDate);
   const today = new Date();
 
@@ -149,18 +143,18 @@ export default function NewUpdatesWidget() {
   const [dismissed, setDismissed] = useRecoilState(newUpdatesWidgetDismissed);
   const [expanded, setExpanded] = useState(false);
 
-  const latestReleaseDate = getMostRecentReleaseDate(releaseNotes);
+  const { date: latestReleaseDate } = getUpdateWidgetContent();
 
   const shouldShowWidget: boolean = isReleaseDateNew(latestReleaseDate);
 
-  const isDismissed = dismissed === latestReleaseDate;
+  const isDismissed = dismissed === latestReleaseDate.toISOString();
 
   if (isDismissed || !shouldShowWidget) {
     return null;
   }
 
   const handleDismiss = () => {
-    setDismissed(latestReleaseDate);
+    setDismissed(latestReleaseDate.toISOString);
     setExpanded(false);
   };
 
