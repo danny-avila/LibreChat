@@ -297,3 +297,84 @@ describe('initialSummary passthrough', () => {
     expect(agents[0].initialSummary).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite 7: subagentConfigs
+// ---------------------------------------------------------------------------
+describe('subagentConfigs', () => {
+  it('is undefined when subagents are not enabled', async () => {
+    const agents = await callAndCapture({});
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('adds self-spawn when enabled and allowSelf defaults to true', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ subagents: { enabled: true } })],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(Array.isArray(configs)).toBe(true);
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({ self: true, type: 'self' });
+  });
+
+  it('omits self-spawn when allowSelf is false', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ subagents: { enabled: true, allowSelf: false } })],
+    });
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('adds explicit subagent configs with agentInputs', async () => {
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Researcher',
+      description: 'Deep web research',
+    });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({
+      type: 'agent_child',
+      name: 'Researcher',
+      description: 'Deep web research',
+    });
+    expect(configs[0].agentInputs).toBeDefined();
+    expect(configs[0].self).toBeUndefined();
+  });
+
+  it('combines self-spawn and explicit subagents when both enabled', async () => {
+    const child = makeAgent({ id: 'agent_child', name: 'Helper' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(2);
+    expect(configs[0].self).toBe(true);
+    expect(configs[1].type).toBe('agent_child');
+  });
+
+  it('skips a child that points at the parent itself', async () => {
+    const self = makeAgent({ id: 'agent_1' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_1'] },
+          subagentAgentConfigs: [self],
+        }),
+      ],
+    });
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+});

@@ -60,6 +60,15 @@ export const toolOptionsSchema = z.object({
 /** Agent tool options - map of tool_id to tool options */
 export const agentToolOptionsSchema = z.record(z.string(), toolOptionsSchema).optional();
 
+/** Subagent spawning configuration for an agent. */
+export const agentSubagentsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    allowSelf: z.boolean().optional(),
+    agent_ids: z.array(z.string()).optional(),
+  })
+  .optional();
+
 /** Base agent schema with all common fields */
 export const agentBaseSchema = z.object({
   name: z.string().nullable().optional(),
@@ -79,6 +88,7 @@ export const agentBaseSchema = z.object({
   conversation_starters: z.array(z.string()).optional(),
   tool_resources: agentToolResourcesSchema,
   tool_options: agentToolOptionsSchema,
+  subagents: agentSubagentsSchema,
   support_contact: agentSupportContactSchema,
   category: z.string().optional(),
 });

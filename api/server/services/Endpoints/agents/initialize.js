@@ -473,6 +473,72 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   primaryConfig.edges = edges;
 
+  // Subagents: load any explicit subagent configs. Subagents run in isolated
+  // context windows and are invoked via a dedicated spawn tool (not handoff
+  // edges). An agent that is only referenced as a subagent must NOT appear in
+  // agentConfigs/agentToolContexts — those power parallel/handoff execution
+  // and user-facing tool events, both of which should stay scoped to the
+  // supervisor and its handoffs.
+  const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+  const subagentsConfig = primaryConfig.subagents;
+  /** @type {Array<Object>} Loaded subagent configs (AgentConfig objects for each subagent) */
+  const subagentAgentConfigs = [];
+
+  if (subagentsCapabilityEnabled && subagentsConfig?.enabled) {
+    const explicitSubagentIds = Array.isArray(subagentsConfig.agent_ids)
+      ? subagentsConfig.agent_ids.filter(
+          (id) => typeof id === 'string' && id && id !== primaryConfig.id,
+        )
+      : [];
+
+    const edgeAgentIds = new Set([primaryConfig.id]);
+    for (const edge of edges ?? []) {
+      const sources = Array.isArray(edge.from) ? edge.from : [edge.from];
+      const targets = Array.isArray(edge.to) ? edge.to : [edge.to];
+      for (const id of sources) {
+        if (typeof id === 'string') edgeAgentIds.add(id);
+      }
+      for (const id of targets) {
+        if (typeof id === 'string') edgeAgentIds.add(id);
+      }
+    }
+
+    for (const subagentId of explicitSubagentIds) {
+      if (skippedAgentIds.has(subagentId)) {
+        continue;
+      }
+
+      let subagentConfig = agentConfigs.get(subagentId);
+      if (!subagentConfig) {
+        try {
+          await processAgent(subagentId);
+          subagentConfig = agentConfigs.get(subagentId);
+        } catch (err) {
+          logger.error(`[initializeClient] Error processing subagent ${subagentId}:`, err);
+          skippedAgentIds.add(subagentId);
+        }
+      }
+
+      if (!subagentConfig) {
+        continue;
+      }
+
+      subagentAgentConfigs.push(subagentConfig);
+
+      /** If this agent is exclusively a subagent (not referenced in any edge),
+       *  drop it from the supervisor's agent/tool maps so the LangGraph pipeline
+       *  doesn't treat it as a parallel/handoff node. Its tool output stays in
+       *  the isolated child graph. */
+      if (!edgeAgentIds.has(subagentId)) {
+        agentConfigs.delete(subagentId);
+        agentToolContexts.delete(subagentId);
+      }
+    }
+  }
+
+  primaryConfig.subagentAgentConfigs = subagentAgentConfigs;
+  primaryConfig.subagents = subagentsCapabilityEnabled ? subagentsConfig : undefined;
+
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {
     try {

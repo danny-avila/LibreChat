@@ -241,6 +241,19 @@ export type ToolOptions = {
  */
 export type AgentToolOptions = Record<string, ToolOptions>;
 
+/**
+ * Configuration for spawning subagents (isolated-context child agents) from an agent.
+ * When `enabled` is true, the agent gets a subagent-spawn tool that can delegate work
+ * to either itself (when `allowSelf` is true) and/or the listed `agent_ids`.
+ */
+export type AgentSubagentsConfig = {
+  enabled?: boolean;
+  /** When true (default), the agent may spawn itself in an isolated context. */
+  allowSelf?: boolean;
+  /** Specific agents that may be spawned as subagents. */
+  agent_ids?: string[];
+};
+
 export type Agent = {
   _id?: string;
   id: string;
@@ -277,6 +290,8 @@ export type Agent = {
   tool_options?: AgentToolOptions;
   /** Skill ObjectIds the agent can invoke — phase 2 wiring in AgentConfig. */
   skills?: string[];
+  /** Subagent spawning configuration — isolated-context child agents. */
+  subagents?: AgentSubagentsConfig;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -303,6 +318,7 @@ export type AgentCreateParams = {
   | 'support_contact'
   | 'tool_options'
   | 'skills'
+  | 'subagents'
 >;
 
 export type AgentUpdateParams = {
@@ -328,6 +344,7 @@ export type AgentUpdateParams = {
   | 'support_contact'
   | 'tool_options'
   | 'skills'
+  | 'subagents'
 >;
 
 export type AgentListParams = {
