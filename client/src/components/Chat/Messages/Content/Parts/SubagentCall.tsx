@@ -12,7 +12,8 @@ import { cn } from '~/utils';
 interface SubagentCallProps {
   toolCallId: string;
   initialProgress: number;
-  isSubmitting: boolean;
+  /** Accepted for parity with other *Call parts; not currently consumed. */
+  isSubmitting?: boolean;
   args?: string | Record<string, unknown>;
   output?: string | null;
   attachments?: TAttachment[];
@@ -32,7 +33,6 @@ interface SubagentCallProps {
 export default function SubagentCall({
   toolCallId,
   initialProgress,
-  isSubmitting,
   args,
   output,
   attachments,
@@ -142,8 +142,6 @@ export default function SubagentCall({
       </OGDialog>
 
       {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
-      {/* Keep announce-polite silent; the rolling status ticker is visual only. */}
-      {!isSubmitting && null}
     </>
   );
 }

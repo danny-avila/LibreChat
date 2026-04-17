@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { MAX_SUBAGENTS as MAX_SUBAGENTS_CAP, EModelEndpoint } from 'librechat-data-provider';
 import { X, PlusCircle, Users } from 'lucide-react';
 import {
   Switch,
@@ -23,7 +23,7 @@ interface AgentSubagentsProps {
   currentAgentId: string;
 }
 
-const MAX_SUBAGENTS = 10;
+const MAX_SUBAGENTS = MAX_SUBAGENTS_CAP;
 
 const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }) => {
   const localize = useLocalize();
@@ -39,7 +39,18 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
   const setEnabled = useCallback(
     (next: boolean) => {
       if (!next) {
-        field.onChange(undefined);
+        /**
+         * Persist `{ enabled: false }` (with the existing selections preserved)
+         * rather than `undefined`. The backend's `removeNullishValues` strips
+         * undefined fields from PATCH payloads, so setting the whole object to
+         * undefined would leave the server copy enabled. An explicit
+         * `enabled: false` flows through as a real update.
+         */
+        field.onChange({
+          enabled: false,
+          allowSelf: value.allowSelf ?? true,
+          agent_ids: value.agent_ids ?? [],
+        });
         return;
       }
       field.onChange({

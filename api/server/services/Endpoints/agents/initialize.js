@@ -475,21 +475,35 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   // Subagents: load any explicit subagent configs. Subagents run in isolated
   // context windows and are invoked via a dedicated spawn tool (not handoff
-  // edges). An agent that is only referenced as a subagent must NOT appear in
-  // agentConfigs/agentToolContexts — those power parallel/handoff execution
-  // and user-facing tool events, both of which should stay scoped to the
-  // supervisor and its handoffs.
+  // edges). An agent that is ONLY referenced as a subagent is dropped from
+  // `agentConfigs` so the LangGraph pipeline doesn't treat it as a
+  // parallel/handoff node, but it is KEPT in `agentToolContexts` — the child's
+  // `ON_TOOL_EXECUTE` dispatches resolve tool execution context (agent,
+  // tool_resources, skill ACLs, ...) from that map, so removing it would leave
+  // action tools skipped and resource-scoped tools running without their
+  // configured resources.
   const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
   const subagentsConfig = primaryConfig.subagents;
   /** @type {Array<Object>} Loaded subagent configs (AgentConfig objects for each subagent) */
   const subagentAgentConfigs = [];
+  /** Subagents are currently primary-only: child agents reached via handoff edges
+   *  do not get their own `subagentAgentConfigs` loaded here. Self-spawn still
+   *  works for them (no DB lookup needed), but explicit sub-subagents would be
+   *  silently dropped. See TODO below if that surface is needed later. */
 
   if (subagentsCapabilityEnabled && subagentsConfig?.enabled) {
-    const explicitSubagentIds = Array.isArray(subagentsConfig.agent_ids)
-      ? subagentsConfig.agent_ids.filter(
-          (id) => typeof id === 'string' && id && id !== primaryConfig.id,
-        )
-      : [];
+    /** Dedupe and filter in one pass — a crafted payload could legitimately
+     *  include the same ID twice; the backend shouldn't create duplicate
+     *  SubagentConfig entries for the LLM to see as separate spawn targets. */
+    const explicitSubagentIds = Array.from(
+      new Set(
+        Array.isArray(subagentsConfig.agent_ids)
+          ? subagentsConfig.agent_ids.filter(
+              (id) => typeof id === 'string' && id && id !== primaryConfig.id,
+            )
+          : [],
+      ),
+    );
 
     const edgeAgentIds = new Set([primaryConfig.id]);
     for (const edge of edges ?? []) {
@@ -526,12 +540,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       subagentAgentConfigs.push(subagentConfig);
 
       /** If this agent is exclusively a subagent (not referenced in any edge),
-       *  drop it from the supervisor's agent/tool maps so the LangGraph pipeline
-       *  doesn't treat it as a parallel/handoff node. Its tool output stays in
-       *  the isolated child graph. */
+       *  drop it from `agentConfigs` so the LangGraph pipeline doesn't treat
+       *  it as a parallel/handoff node. KEEP it in `agentToolContexts` — the
+       *  child's ON_TOOL_EXECUTE handler needs the tool-execution context
+       *  (agent, tool_resources, skill ACLs) to run the child's tools with
+       *  the right scoping. */
       if (!edgeAgentIds.has(subagentId)) {
         agentConfigs.delete(subagentId);
-        agentToolContexts.delete(subagentId);
       }
     }
   }
