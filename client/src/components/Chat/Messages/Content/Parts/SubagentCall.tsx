@@ -12,7 +12,9 @@ import { cn } from '~/utils';
 interface SubagentCallProps {
   toolCallId: string;
   initialProgress: number;
-  /** Accepted for parity with other *Call parts; not currently consumed. */
+  /** True while the parent run is still streaming. Used — along with the
+   *  tool_call's `progress` and any terminal subagent envelope — to decide
+   *  whether the subagent is `running`, `cancelled`, or `finished`. */
   isSubmitting?: boolean;
   args?: string | Record<string, unknown>;
   output?: string | null;
@@ -33,6 +35,7 @@ interface SubagentCallProps {
 export default function SubagentCall({
   toolCallId,
   initialProgress,
+  isSubmitting = false,
   args,
   output,
   attachments,
@@ -42,8 +45,22 @@ export default function SubagentCall({
   const [open, setOpen] = useState(false);
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
-  const running =
-    initialProgress < 1 && progress?.status !== 'stop' && progress?.status !== 'error';
+  /**
+   * Tri-state status resolution, aligned with `ToolCall.tsx`:
+   *
+   * - `finished`: the tool_call's own progress reached 1 (backend wrote a
+   *   result) OR the subagent explicitly emitted a `stop` / `error` phase.
+   * - `cancelled`: the stream has ended (`!isSubmitting`) before either
+   *   condition was met — e.g. user stop, dropped connection, backend
+   *   crash. Without this check, an interrupted run would render as
+   *   permanently "working…".
+   * - `running`: the parent is still streaming and no terminal signal has
+   *   arrived yet.
+   */
+  const hasError = progress?.status === 'error';
+  const finished = initialProgress >= 1 || progress?.status === 'stop' || hasError;
+  const cancelled = !isSubmitting && !finished;
+  const running = !finished && !cancelled;
 
   /** Latest three status lines — short text-only ticker. */
   const recentLines = useMemo(() => {
@@ -60,9 +77,13 @@ export default function SubagentCall({
 
   const description = typeof args === 'string' ? tryDescription(args) : extractDescription(args);
 
-  const headerText = running
-    ? localize('com_ui_subagent_running', { 0: subagentType })
-    : localize('com_ui_subagent_complete', { 0: subagentType });
+  const headerText = hasError
+    ? localize('com_ui_subagent_errored', { 0: subagentType })
+    : cancelled
+      ? localize('com_ui_subagent_cancelled', { 0: subagentType })
+      : running
+        ? localize('com_ui_subagent_running', { 0: subagentType })
+        : localize('com_ui_subagent_complete', { 0: subagentType });
 
   return (
     <>
