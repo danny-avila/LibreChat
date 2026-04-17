@@ -5,6 +5,7 @@ export type UpdateWidgetContent = {
   title: string;
   description: string;
   linkText: string;
+  linkUrl: string;
 };
 
 export function getUpdateWidgetContent(source: string = updateWidget): UpdateWidgetContent {
@@ -18,5 +19,6 @@ export function getUpdateWidgetContent(source: string = updateWidget): UpdateWid
     title: sections[1],
     description: sections[2],
     linkText: sections[3],
+    linkUrl: sections[4],
   };
 }

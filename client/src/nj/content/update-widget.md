@@ -13,3 +13,7 @@ Get your questions answered by the NJ AI Assistant team at AI Office Hours every
 # Release notes link text
 
 Office hours info
+
+# Release notes link
+
+https://ai-assistant.nj.gov/nj/release-notes

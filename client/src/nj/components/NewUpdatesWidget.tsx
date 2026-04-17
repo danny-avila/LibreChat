@@ -10,6 +10,9 @@ import { logEvent } from '~/nj/analytics/logEvent';
 import icons from '@uswds/uswds/img/sprite.svg';
 import { getUpdateWidgetContent } from '~/nj/content/parser/njContentRetrieval';
 import releaseNotes from '~/nj/content/release-notes.md?raw';
+import { createLinkTo } from '~/nj/utils/createLinkTo';
+import ReactMarkdown from 'react-markdown';
+import LinkRenderer from '~/nj/components/info/LinkRenderer';
 
 interface IconProps {
   name: string;
@@ -104,9 +107,11 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
       </div>
 
       <div className="mb-5 pl-5">
-        <p className="mb-3 text-sm">{content.description}</p>
+        <ReactMarkdown className="mb-3 text-sm" components={{ a: LinkRenderer }}>
+          {content.description}
+        </ReactMarkdown>
         <Link
-          to={{ pathname: '/nj/release-notes' }}
+          to={createLinkTo(content.linkUrl)}
           onClick={handleLinkClick}
           className="inline-flex items-center gap-1 text-sm underline hover:decoration-2"
         >

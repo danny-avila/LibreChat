@@ -15,7 +15,11 @@ My description text.
 
 # Link Text
 
-My link text`;
+My link text
+
+# Link URL
+
+https://ai-assistant.nj.gov/some/page`;
 
 describe('getUpdateWidgetContent', () => {
   describe('parsing basics', () => {
@@ -37,6 +41,11 @@ describe('getUpdateWidgetContent', () => {
     it('parses the link text', () => {
       const { linkText } = getUpdateWidgetContent(HARDCODED);
       expect(linkText).toBe('My link text');
+    });
+
+    it('parses the link URL', () => {
+      const { linkUrl } = getUpdateWidgetContent(HARDCODED);
+      expect(linkUrl).toBe('https://ai-assistant.nj.gov/some/page');
     });
   });
 
@@ -60,6 +69,11 @@ describe('getUpdateWidgetContent', () => {
     it('parses a non-empty link text', () => {
       const { linkText } = getUpdateWidgetContent(updateWidget);
       expect(linkText.length).toBeGreaterThan(0);
+    });
+
+    it('parses a non-empty link URL', () => {
+      const { linkUrl } = getUpdateWidgetContent(updateWidget);
+      expect(linkUrl.length).toBeGreaterThan(0);
     });
   });
 });
