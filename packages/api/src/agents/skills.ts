@@ -491,6 +491,63 @@ export function injectManualSkillPrimes(
   return { initialMessages, indexTokenCountMap, inserted: numPrimes, insertIdx };
 }
 
+export interface SkillPrimeContentPart {
+  type: 'tool_call';
+  tool_call: {
+    id: string;
+    name: string;
+    args: string;
+    output: string;
+    progress: number;
+    type: 'tool_call';
+  };
+}
+
+export interface BuildSkillPrimeContentPartsParams {
+  /** Run / response message ID. Used as a stable seed for synthetic tool_call IDs. */
+  runId: string;
+  /**
+   * Optional index offset. When the primes are prepended to an existing
+   * contentParts array, callers can leave this 0 (IDs still stay unique
+   * within the message). Exposed for explicitness only.
+   */
+  startOffset?: number;
+}
+
+/**
+ * Build completed tool_call content parts for each manually-invoked skill.
+ *
+ * Matches the shape the aggregator produces for a model-invoked skill call
+ * on `ON_RUN_STEP_COMPLETED` — `{ type: 'tool_call', tool_call: { id, name,
+ * args, output, progress: 1, type: 'tool_call' } }` — so the existing
+ * `SkillCall` renderer on the frontend shows identical "Skill X loaded"
+ * cards without any new client work.
+ *
+ * Callers (e.g. `AgentClient.chatCompletion`) prepend these to
+ * `this.contentParts` after `runAgents` returns so the cards persist on
+ * the response message and appear ahead of the model's content — matching
+ * the semantic that priming ran before the LLM turn.
+ */
+export function buildSkillPrimeContentParts(
+  primes: ResolvedManualSkill[],
+  { runId, startOffset = 0 }: BuildSkillPrimeContentPartsParams,
+): SkillPrimeContentPart[] {
+  return primes.map((prime, i) => {
+    const args = JSON.stringify({ skillName: prime.name });
+    return {
+      type: 'tool_call',
+      tool_call: {
+        id: `call_manual_skill_${runId}_${startOffset + i}`,
+        name: SkillToolDefinition.name,
+        args,
+        output: `Skill "${prime.name}" loaded. Follow the instructions below.`,
+        progress: 1,
+        type: 'tool_call',
+      },
+    };
+  });
+}
+
 /**
  * Safely pulls `manualSkills` from an untyped request body.
  *

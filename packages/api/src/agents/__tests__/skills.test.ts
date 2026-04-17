@@ -37,6 +37,7 @@ import {
   injectManualSkillPrimes,
   extractManualSkills,
   isSkillPrimeMessage,
+  buildSkillPrimeContentParts,
   MAX_MANUAL_SKILLS,
 } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
@@ -981,5 +982,64 @@ describe('isSkillPrimeMessage', () => {
     const stripped = messages.filter((m) => !isSkillPrimeMessage(m));
     expect(stripped).toHaveLength(2);
     expect(stripped[1]).toBe(user);
+  });
+});
+
+describe('buildSkillPrimeContentParts', () => {
+  it('produces one completed tool_call content part per prime', () => {
+    const parts = buildSkillPrimeContentParts(
+      [
+        { name: 'brand', body: '# Brand' },
+        { name: 'legal', body: '# Legal' },
+      ],
+      { runId: 'msg_abc' },
+    );
+    expect(parts).toHaveLength(2);
+    expect(parts[0].type).toBe('tool_call');
+    expect(parts[0].tool_call.name).toBe('skill');
+    expect(parts[0].tool_call.progress).toBe(1);
+    expect(parts[0].tool_call.type).toBe('tool_call');
+  });
+
+  it('encodes skillName as a JSON string in args (matches the SkillCall renderer contract)', () => {
+    const [part] = buildSkillPrimeContentParts([{ name: 'pdf-reader', body: '...' }], {
+      runId: 'msg_1',
+    });
+    expect(JSON.parse(part.tool_call.args)).toEqual({ skillName: 'pdf-reader' });
+  });
+
+  it('produces a human-readable output string the frontend can expand', () => {
+    const [part] = buildSkillPrimeContentParts([{ name: 'research', body: '...' }], {
+      runId: 'msg_1',
+    });
+    expect(part.tool_call.output).toContain('research');
+    expect(part.tool_call.output).toContain('loaded');
+  });
+
+  it('assigns unique tool_call IDs seeded from runId + index', () => {
+    const parts = buildSkillPrimeContentParts(
+      [
+        { name: 'a', body: 'a' },
+        { name: 'b', body: 'b' },
+      ],
+      { runId: 'msg_xyz' },
+    );
+    const ids = parts.map((p) => p.tool_call.id);
+    expect(new Set(ids).size).toBe(2);
+    expect(ids[0]).toContain('msg_xyz');
+    expect(ids[1]).toContain('msg_xyz');
+  });
+
+  it('returns an empty array for empty input', () => {
+    expect(buildSkillPrimeContentParts([], { runId: 'msg_1' })).toEqual([]);
+  });
+
+  it('respects startOffset when seeding IDs (callers prepending to a populated list)', () => {
+    const first = buildSkillPrimeContentParts([{ name: 'x', body: 'x' }], { runId: 'msg_1' });
+    const second = buildSkillPrimeContentParts([{ name: 'x', body: 'x' }], {
+      runId: 'msg_1',
+      startOffset: 5,
+    });
+    expect(first[0].tool_call.id).not.toBe(second[0].tool_call.id);
   });
 });

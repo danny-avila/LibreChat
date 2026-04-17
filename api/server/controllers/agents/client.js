@@ -30,6 +30,7 @@ const {
   hydrateMissingIndexTokenCounts,
   injectManualSkillPrimes,
   isSkillPrimeMessage,
+  buildSkillPrimeContentParts,
 } = require('@librechat/api');
 const {
   Callback,
@@ -911,6 +912,28 @@ class AgentClient extends BaseClient {
 
       const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
+
+      /**
+       * Surface a completed `skill` tool_call content part per manually-
+       * invoked skill so the existing `SkillCall` frontend renderer shows
+       * a "Skill X loaded" card on the assistant response. Applied after
+       * the graph finishes to avoid clashing with the aggregator's own
+       * per-step content indexing. Prepended (not appended) so the cards
+       * render ahead of the model's output — matching the turn semantics:
+       * priming ran first, the model's reply followed.
+       *
+       * Persistence and final-event reconcile piggyback on the existing
+       * pipeline: `sendCompletion` reads `this.contentParts` verbatim, so
+       * the cards land in the saved response message and the frontend
+       * picks them up via the final SSE event.
+       */
+      const primedSkills = this.options.agent?.manualSkillPrimes;
+      if (primedSkills && primedSkills.length > 0) {
+        const primeParts = buildSkillPrimeContentParts(primedSkills, {
+          runId: this.responseMessageId ?? 'manual-skill',
+        });
+        this.contentParts.unshift(...primeParts);
+      }
 
       /** @deprecated Agent Chain */
       if (hideSequentialOutputs) {
