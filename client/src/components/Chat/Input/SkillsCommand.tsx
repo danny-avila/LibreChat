@@ -7,11 +7,12 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
+import { useChatContext, useAgentsMapContext } from '~/Providers';
+import { useLocalize, useSkillActiveState } from '~/hooks';
 import { useSkillsInfiniteQuery } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
-import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const commandChar = '$';
@@ -32,6 +33,51 @@ export function isUserInvocable(skill: TSkillSummary): boolean {
   return mode === InvocationMode.manual;
 }
 
+/**
+ * Filters the skills list down to what should appear in the `$` popover.
+ * Composes three rules, short-circuiting on the cheapest check first:
+ *
+ * 1. Agent scope — mirrors backend `scopeSkillIds` semantics:
+ *    - `null` / `undefined` → no scope filter (ephemeral convo, or agent
+ *      without a `skills` field configured).
+ *    - `[]` → explicit opt-out, nothing passes.
+ *    - non-empty → intersection with the agent's configured skill ids.
+ * 2. Active state — per-user ownership-aware toggle.
+ * 3. Invocation mode — `manual` / `both` / undefined are visible; `auto`
+ *    is model-only and hidden.
+ *
+ * Pure function; exported so tests can exercise the filter in isolation
+ * without rendering the component.
+ */
+export function filterSkillsForPopover(
+  skills: TSkillSummary[],
+  ctx: {
+    agentSkillIds: string[] | null | undefined;
+    isActive: (skill: Pick<TSkillSummary, '_id' | 'author'>) => boolean;
+  },
+): TSkillSummary[] {
+  const { agentSkillIds, isActive } = ctx;
+  if (agentSkillIds != null && agentSkillIds.length === 0) {
+    return [];
+  }
+  const agentSet =
+    agentSkillIds != null && agentSkillIds.length > 0 ? new Set(agentSkillIds) : null;
+  const result: TSkillSummary[] = [];
+  for (const skill of skills) {
+    if (agentSet && !agentSet.has(skill._id)) {
+      continue;
+    }
+    if (!isActive(skill)) {
+      continue;
+    }
+    if (!isUserInvocable(skill)) {
+      continue;
+    }
+    result.push(skill);
+  }
+  return result;
+}
+
 function SkillsCommandContent({
   index,
   textAreaRef,
@@ -47,6 +93,24 @@ function SkillsCommandContent({
   const setPendingManualSkills = useSetRecoilState(
     store.pendingManualSkillsByConvoId(conversationId),
   );
+
+  const { conversation } = useChatContext();
+  const agentsMap = useAgentsMapContext();
+  const { isActive } = useSkillActiveState();
+
+  /* Resolve the per-agent skill scope. Mirrors backend `scopeSkillIds`:
+     ephemeral convo or agent without a `skills` field → undefined (no scope);
+     configured array (including `[]`) → pass through as-is so the filter can
+     enforce explicit opt-out. Returning `undefined` until the agent is loaded
+     keeps the popover populated instead of flashing empty during hydration;
+     the backend still enforces the agent scope at runtime regardless. */
+  const agentSkillIds = useMemo<string[] | null | undefined>(() => {
+    const agentId = conversation?.agent_id;
+    if (!agentId) {
+      return undefined;
+    }
+    return agentsMap?.[agentId]?.skills;
+  }, [conversation?.agent_id, agentsMap]);
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useSkillsInfiniteQuery({ limit: 50 });
@@ -77,21 +141,25 @@ function SkillsCommandContent({
     if (!data?.pages) {
       return [];
     }
-    return data.pages.reduce<MentionOption[]>((acc, page) => {
+    const allSkills: TSkillSummary[] = [];
+    for (const page of data.pages) {
       for (const skill of page.skills) {
-        if (isUserInvocable(skill)) {
-          acc.push({
-            label: skill.displayTitle ?? skill.name,
-            value: skill.name,
-            description: skill.description,
-            type: 'skill',
-            icon: skillIcon,
-          });
-        }
+        allSkills.push(skill);
       }
-      return acc;
-    }, []);
-  }, [data?.pages]);
+    }
+    const filtered = filterSkillsForPopover(allSkills, { agentSkillIds, isActive });
+    const options: MentionOption[] = [];
+    for (const skill of filtered) {
+      options.push({
+        label: skill.displayTitle ?? skill.name,
+        value: skill.name,
+        description: skill.description,
+        type: 'skill',
+        icon: skillIcon,
+      });
+    }
+    return options;
+  }, [data?.pages, agentSkillIds, isActive]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
