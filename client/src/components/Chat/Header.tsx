@@ -85,7 +85,7 @@ function Header({ index = 0, isLandingPage = false }: { index?: number; isLandin
       </div>
       {/* Empty div for spacing */}
       <div />
-      {/* {isLandingPage && <NewUpdatesWidget />} */}
+      {isLandingPage && <NewUpdatesWidget />}
     </div>
   );
 }

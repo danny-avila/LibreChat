@@ -4,4 +4,7 @@ import { atomWithLocalStorage } from '~/store/utils';
 export const landingHelpOpen = atomWithLocalStorage('landingHelpOpen', false);
 
 /** Whether the new updates widget has been dismissed */
-export const newUpdatesWidgetDismissed = atomWithLocalStorage('newUpdatesWidgetDismissed', false);
+export const newUpdatesWidgetDismissed = atomWithLocalStorage<string | null>(
+  'newUpdatesWidgetDismissed',
+  null,
+);
