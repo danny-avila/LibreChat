@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { EnvVar, createContentAggregator } = require('@librechat/agents');
 const {
   scopeSkillIds,
+  loadSkillStates,
   initializeAgent,
   primeInvokedSkills,
   validateAgentModel,
@@ -124,6 +125,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       })
     : [];
 
+  const { skillStates, defaultActiveOnShare } = await loadSkillStates({
+    userId: req.user.id,
+    appConfig,
+    getUserById: db.getUserById,
+    accessibleSkillIds,
+  });
+
   // Resolve code API key once for the entire run (shared by primeInvokedSkills
   // and enrichWithSkillConfigurable) to avoid redundant auth lookups.
   let codeApiKey;
@@ -243,6 +251,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         ephemeralSkillsToggle ? undefined : primaryAgent.skills,
       ),
       codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+      skillStates,
+      defaultActiveOnShare,
     },
     {
       getFiles: db.getFiles,
@@ -290,6 +300,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       parentMessageId,
       computeAccessibleSkillIds: (agent) =>
         scopeSkillIds(accessibleSkillIds, ephemeralSkillsToggle ? undefined : agent.skills),
+      skillStates,
+      defaultActiveOnShare,
     },
     {
       getAgent: db.getAgent,

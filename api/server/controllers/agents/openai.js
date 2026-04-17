@@ -14,6 +14,7 @@ const {
   createChunk,
   buildToolSet,
   scopeSkillIds,
+  loadSkillStates,
   sendFinalChunk,
   createSafeUser,
   validateRequest,
@@ -256,6 +257,13 @@ const OpenAIChatCompletionController = async (req, res) => {
         })
       : [];
 
+    const { skillStates, defaultActiveOnShare } = await loadSkillStates({
+      userId: req.user.id,
+      appConfig,
+      getUserById: db.getUserById,
+      accessibleSkillIds,
+    });
+
     const primaryConfig = await initializeAgent(
       {
         req,
@@ -273,6 +281,8 @@ const OpenAIChatCompletionController = async (req, res) => {
           ephemeralSkillsToggle ? undefined : agent.skills,
         ),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        skillStates,
+        defaultActiveOnShare,
       },
       dbMethods,
     );

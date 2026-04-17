@@ -69,6 +69,10 @@ export interface DiscoverConnectedAgentsParams {
    * allowlist (or the full accessible set when scoping is disabled).
    */
   computeAccessibleSkillIds?: (agent: Agent) => InitializeAgentParams['accessibleSkillIds'];
+  /** Per-user skill active/inactive state, forwarded to each sub-agent. */
+  skillStates?: InitializeAgentParams['skillStates'];
+  /** Default active-on-share flag, forwarded to each sub-agent. */
+  defaultActiveOnShare?: InitializeAgentParams['defaultActiveOnShare'];
 }
 
 export interface DiscoverConnectedAgentsDeps {
@@ -134,6 +138,8 @@ export async function discoverConnectedAgents(
     parentMessageId,
     resourceType = ResourceType.AGENT,
     computeAccessibleSkillIds,
+    skillStates,
+    defaultActiveOnShare,
   } = params;
 
   const {
@@ -232,6 +238,8 @@ export async function discoverConnectedAgents(
         endpointOption: subAgentEndpointOption,
         allowedProviders,
         accessibleSkillIds: computeAccessibleSkillIds?.(agent),
+        skillStates,
+        defaultActiveOnShare,
       },
       db,
     );
