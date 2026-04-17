@@ -27,12 +27,15 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Types } from 'mongoose';
+import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import {
   scopeSkillIds,
   resolveSkillActive,
   injectSkillCatalog,
-  primeManualSkill,
+  buildSkillPrimeMessage,
   resolveManualSkills,
+  injectManualSkillPrimes,
+  extractManualSkills,
   MAX_MANUAL_SKILLS,
 } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
@@ -567,9 +570,9 @@ describe('injectSkillCatalog', () => {
   });
 });
 
-describe('primeManualSkill', () => {
+describe('buildSkillPrimeMessage', () => {
   it('produces a meta user message carrying SKILL.md body and skillName marker', () => {
-    const msg = primeManualSkill({
+    const msg = buildSkillPrimeMessage({
       name: 'brand-guidelines',
       body: '# Brand guidelines\nUse blue.',
     });
@@ -583,7 +586,7 @@ describe('primeManualSkill', () => {
   });
 
   it('preserves empty-body content verbatim (resolver should filter before, but helper is agnostic)', () => {
-    const msg = primeManualSkill({ name: 'bare', body: '' });
+    const msg = buildSkillPrimeMessage({ name: 'bare', body: '' });
     expect(msg.content).toBe('');
     expect(msg.isMeta).toBe(true);
   });
@@ -786,5 +789,150 @@ describe('resolveManualSkills', () => {
       userId,
     });
     expect(result).toHaveLength(uniqueCount);
+  });
+});
+
+describe('injectManualSkillPrimes', () => {
+  const prime = (name: string, body: string) => ({ name, body });
+
+  it('no-ops when manualSkillPrimes is empty', () => {
+    const messages = [new HumanMessage('hello')];
+    const map = { 0: 10 };
+    const result = injectManualSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: map,
+      manualSkillPrimes: [],
+    });
+    expect(result.inserted).toBe(0);
+    expect(result.insertIdx).toBe(-1);
+    expect(messages).toHaveLength(1);
+    expect(result.indexTokenCountMap).toBe(map);
+  });
+
+  it('no-ops when initialMessages is empty', () => {
+    const messages: HumanMessage[] = [];
+    const result = injectManualSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes: [prime('foo', 'body')],
+    });
+    expect(result.inserted).toBe(0);
+    expect(result.insertIdx).toBe(-1);
+    expect(messages).toHaveLength(0);
+  });
+
+  it('inserts a single prime right before the last message when there is only one message', () => {
+    const userMsg = new HumanMessage('What is X?');
+    const messages = [userMsg];
+    const result = injectManualSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: { 0: 7 },
+      manualSkillPrimes: [prime('x', 'X means...')],
+    });
+    expect(result.inserted).toBe(1);
+    expect(result.insertIdx).toBe(0);
+    expect(messages).toHaveLength(2);
+    expect(messages[0].content).toBe('X means...');
+    expect(messages[1]).toBe(userMsg);
+    // The prior-index-0 count follows the message it was attached to: now at idx 1.
+    expect(result.indexTokenCountMap).toEqual({ 1: 7 });
+  });
+
+  it('inserts multiple primes in input order right before the last message', () => {
+    const messages: (HumanMessage | AIMessage)[] = [
+      new HumanMessage('turn 1 user'),
+      new AIMessage('turn 1 reply'),
+      new HumanMessage('turn 2 user'),
+    ];
+    const result = injectManualSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: { 0: 1, 1: 2, 2: 3 },
+      manualSkillPrimes: [prime('a', 'A body'), prime('b', 'B body')],
+    });
+    expect(result.inserted).toBe(2);
+    expect(result.insertIdx).toBe(2);
+    expect(messages).toHaveLength(5);
+    expect(messages[0].content).toBe('turn 1 user');
+    expect(messages[1].content).toBe('turn 1 reply');
+    expect(messages[2].content).toBe('A body');
+    expect(messages[3].content).toBe('B body');
+    expect(messages[4].content).toBe('turn 2 user');
+    // idx 0 unchanged, idx 1 unchanged, idx 2 shifts to 4 (+ numPrimes).
+    expect(result.indexTokenCountMap).toEqual({ 0: 1, 1: 2, 4: 3 });
+  });
+
+  it('primes carry isMeta / source / skillName advisory markers in additional_kwargs', () => {
+    const messages = [new HumanMessage('hi')];
+    injectManualSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes: [prime('brand', 'brand-body')],
+    });
+    const primed = messages[0] as HumanMessage;
+    expect(primed.additional_kwargs).toEqual({
+      isMeta: true,
+      source: 'skill',
+      skillName: 'brand',
+    });
+  });
+
+  it('uses `>=` when shifting the map so the message originally at insertIdx follows its count forward', () => {
+    // Regression guard: a `>` bug here would leave the last user message's
+    // token count attached to one of the new primes instead.
+    const messages = [new HumanMessage('older'), new HumanMessage('latest')];
+    const result = injectManualSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: { 0: 5, 1: 11 },
+      manualSkillPrimes: [prime('x', 'x body')],
+    });
+    // insertIdx = 1, numPrimes = 1. Entry at idx 1 must move to idx 2.
+    expect(result.indexTokenCountMap).toEqual({ 0: 5, 2: 11 });
+  });
+
+  it('handles undefined indexTokenCountMap (formatAgentMessages omitted the map)', () => {
+    const messages = [new HumanMessage('hi')];
+    const result = injectManualSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes: [prime('x', 'body')],
+    });
+    expect(result.inserted).toBe(1);
+    expect(result.indexTokenCountMap).toBeUndefined();
+  });
+});
+
+describe('extractManualSkills', () => {
+  it('returns undefined for null / non-object bodies', () => {
+    expect(extractManualSkills(null)).toBeUndefined();
+    expect(extractManualSkills(undefined)).toBeUndefined();
+    expect(extractManualSkills('string')).toBeUndefined();
+    expect(extractManualSkills(42)).toBeUndefined();
+  });
+
+  it('returns undefined when manualSkills is missing or not an array', () => {
+    expect(extractManualSkills({})).toBeUndefined();
+    expect(extractManualSkills({ manualSkills: 'foo' })).toBeUndefined();
+    expect(extractManualSkills({ manualSkills: { 0: 'foo' } })).toBeUndefined();
+  });
+
+  it('passes through valid string[] input untouched', () => {
+    expect(extractManualSkills({ manualSkills: ['a', 'b'] })).toEqual(['a', 'b']);
+  });
+
+  it('filters out non-string elements that a TS-oblivious payload might include', () => {
+    expect(
+      extractManualSkills({
+        manualSkills: ['ok', 123, null, { $gt: '' }, undefined, 'also-ok'],
+      }),
+    ).toEqual(['ok', 'also-ok']);
+  });
+
+  it('filters out empty strings', () => {
+    expect(extractManualSkills({ manualSkills: ['', 'real', ''] })).toEqual(['real']);
+  });
+
+  it('returns undefined when the array is present but contains no valid strings', () => {
+    expect(extractManualSkills({ manualSkills: [123, null, ''] })).toBeUndefined();
+    expect(extractManualSkills({ manualSkills: [] })).toBeUndefined();
   });
 });

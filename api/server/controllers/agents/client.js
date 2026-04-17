@@ -28,6 +28,7 @@ const {
   filterMalformedContentParts,
   countFormattedMessageTokens,
   hydrateMissingIndexTokenCounts,
+  injectManualSkillPrimes,
 } = require('@librechat/api');
 const {
   Callback,
@@ -763,24 +764,17 @@ class AgentClient extends BaseClient {
       /**
        * Phase 3 manual skill priming — injected by user via `$` popover.
        *
-       * Position: just before the final user message. Skill context then
-       * appears adjacent to the instruction that needs it, without polluting
-       * prior conversation history. Matches how `handleSkillToolCall` lands
-       * model-invoked skills via `injectedMessages` — both produce a meta
-       * HumanMessage carrying the SKILL.md body.
-       *
        * Scope: single-agent runs only. `initialMessages` is shared with every
        * agent passed to `createRun`, so splicing here in a multi-agent graph
        * (handoff targets, added-convo parallels) would leak the skill body
        * past Phase 1's per-agent `scopeSkillIds` contract — a secondary agent
        * may have a different skill scope and shouldn't see content its
-       * configuration excludes. A future PR can push primes into
-       * per-agent initial state to lift this restriction.
+       * configuration excludes. A future PR can push primes into per-agent
+       * initial state to lift this restriction.
        *
-       * Index accounting: every existing `indexTokenCountMap` entry at or
-       * past the insertion point shifts forward by the number of primes.
-       * `hydrateMissingIndexTokenCounts` below then fills counts for the
-       * fresh positions.
+       * Splice + index-shift logic lives in `injectManualSkillPrimes`
+       * (packages/api/src/agents/skills.ts) so the delicate position math
+       * can be unit-tested in TS without standing up AgentClient.
        */
       const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
       const isMultiAgentRun = (this.agentConfigs?.size ?? 0) > 0;
@@ -788,28 +782,18 @@ class AgentClient extends BaseClient {
         logger.warn(
           `[AgentClient] Skipping manual skill priming in multi-agent run (${this.agentConfigs.size} additional agent(s)): ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
         );
-      } else if (manualSkillPrimes && manualSkillPrimes.length > 0 && initialMessages.length > 0) {
-        const insertIdx = initialMessages.length - 1;
-        const numPrimes = manualSkillPrimes.length;
-        if (indexTokenCountMap) {
-          const shifted = {};
-          for (const [idxStr, count] of Object.entries(indexTokenCountMap)) {
-            const idx = Number(idxStr);
-            shifted[idx >= insertIdx ? idx + numPrimes : idx] = count;
-          }
-          indexTokenCountMap = shifted;
+      } else if (manualSkillPrimes && manualSkillPrimes.length > 0) {
+        const primeResult = injectManualSkillPrimes({
+          initialMessages,
+          indexTokenCountMap,
+          manualSkillPrimes,
+        });
+        indexTokenCountMap = primeResult.indexTokenCountMap;
+        if (primeResult.inserted > 0) {
+          logger.debug(
+            `[AgentClient] Primed ${primeResult.inserted} manual skill(s) at message index ${primeResult.insertIdx}: ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
+          );
         }
-        const primeMessages = manualSkillPrimes.map(
-          (p) =>
-            new HumanMessage({
-              content: p.body,
-              additional_kwargs: { isMeta: true, source: 'skill', skillName: p.name },
-            }),
-        );
-        initialMessages.splice(insertIdx, 0, ...primeMessages);
-        logger.debug(
-          `[AgentClient] Primed ${numPrimes} manual skill(s) at message index ${insertIdx}: ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
-        );
       }
 
       if (indexTokenCountMap && isEnabled(process.env.AGENT_DEBUG_LOGGING)) {

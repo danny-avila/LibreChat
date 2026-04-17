@@ -476,9 +476,6 @@ describe('initializeAgent — manual skill priming (Phase 3)', () => {
       { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
     );
 
-    // Suppress unused-import note; Types kept in scope for callers reading this test.
-    void Types;
-
     expect(result.manualSkillPrimes).toEqual([
       { name: 'brand-guidelines', body: '# Brand guidelines\nUse blue.' },
     ]);

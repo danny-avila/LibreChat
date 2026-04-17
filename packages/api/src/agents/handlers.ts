@@ -14,7 +14,7 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { ServerRequest } from '~/types';
 import { primeSkillFiles } from './skillFiles';
 import type { SkillFileRecord } from './skillFiles';
-import { primeManualSkill } from './skills';
+import { buildSkillPrimeMessage } from './skills';
 import { runOutsideTracing } from '~/utils';
 
 export interface ToolEndCallbackData {
@@ -438,7 +438,7 @@ async function handleSkillToolCall(
     body = body.replace(/\$ARGUMENTS/g, args.args);
   }
 
-  const injectedMessages: InjectedMessage[] = [primeManualSkill({ name: skill.name, body })];
+  const injectedMessages: InjectedMessage[] = [buildSkillPrimeMessage({ name: skill.name, body })];
 
   const contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
   let artifact:

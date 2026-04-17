@@ -81,12 +81,17 @@ export default function useChatFunctions({
    * skills from the `$` popover. Reading and resetting in a single Recoil
    * snapshot guarantees that if the user selects more skills between here and
    * the next submission, their picks are never silently lost into a reset atom.
+   *
+   * The `hasValue` guard is defensive: this atom has a synchronous default of
+   * `[]` so `.contents` is always the resolved value in practice, but reading
+   * `.contents` on a loading/errored loadable yields a Promise/Error, which
+   * would make the `string[]` cast unsound.
    */
   const drainPendingManualSkills = useRecoilCallback(
     ({ snapshot, reset }) =>
       (convoId: string): string[] => {
         const loadable = snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId));
-        const skills = (loadable.contents as string[]) ?? [];
+        const skills = loadable.state === 'hasValue' ? ((loadable.contents as string[]) ?? []) : [];
         if (skills.length > 0) {
           reset(store.pendingManualSkillsByConvoId(convoId));
         }

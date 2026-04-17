@@ -4,6 +4,8 @@ import {
   ReadFileToolDefinition,
   BashExecutionToolDefinition,
 } from '@librechat/agents';
+import { HumanMessage } from '@langchain/core/messages';
+import type { BaseMessage } from '@langchain/core/messages';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
@@ -252,7 +254,7 @@ export async function injectSkillCatalog(
  * Builds the meta user message that carries a skill's SKILL.md body into a
  * turn's context. Shape mirrors what `handleSkillToolCall` emits when the
  * model invokes the skill tool directly, so downstream message handling
- * treats both code paths identically.
+ * treats all three paths identically.
  *
  * Used by:
  *  - Phase 3 manual invocation (`$skill-name` popover) — called at turn start.
@@ -260,7 +262,7 @@ export async function injectSkillCatalog(
  *  - `handleSkillToolCall` for model-invoked skills — called from the tool
  *    execution handler.
  */
-export function primeManualSkill(skill: { name: string; body: string }): InjectedMessage {
+export function buildSkillPrimeMessage(skill: { name: string; body: string }): InjectedMessage {
   return {
     role: 'user',
     content: skill.body,
@@ -303,6 +305,15 @@ export interface ResolvedManualSkill {
  * priming. Filters out:
  *  - names not backed by an accessible skill (ACL miss or typo),
  *  - skills the user has toggled inactive (respects ownership-aware defaults).
+ *
+ * The active-state filter is intentional even for explicit `$` selections:
+ *  1. Phase 2 closes the loop on the UI side by hiding inactive skills from
+ *     the popover, so a deactivated skill shouldn't be reachable through the
+ *     normal flow in the first place.
+ *  2. For API-direct callers bypassing the popover, honoring the user's
+ *     own activation toggle is the safer default — an opt-out toggle that
+ *     stops working the moment someone crafts a raw payload isn't much of
+ *     a toggle.
  *
  * Silently skips unresolvable names with a warn log — a missing `$skill` must
  * never block the user's actual message from going through.
@@ -376,4 +387,99 @@ export async function resolveManualSkills(
   );
 
   return resolved.filter((r): r is ResolvedManualSkill => r !== null);
+}
+
+export interface InjectManualSkillPrimesParams {
+  /** Formatted LangChain messages produced by `formatAgentMessages`. Mutated in place. */
+  initialMessages: BaseMessage[];
+  /** Per-index token count map returned by `formatAgentMessages`. */
+  indexTokenCountMap: Record<number, number> | undefined;
+  /** Resolved skill primes to splice in. */
+  manualSkillPrimes: ResolvedManualSkill[];
+}
+
+export interface InjectManualSkillPrimesResult {
+  /** Same array reference as input (mutated). */
+  initialMessages: BaseMessage[];
+  /** New token map with indices shifted; same reference as input when no-op. */
+  indexTokenCountMap: Record<number, number> | undefined;
+  /** Number of prime messages actually inserted (for logging by the caller). */
+  inserted: number;
+  /** Position where primes were inserted, or -1 when no-op. */
+  insertIdx: number;
+}
+
+/**
+ * Splices skill prime messages into a formatted message array just before
+ * the latest user message, and shifts the `indexTokenCountMap` so downstream
+ * `hydrateMissingIndexTokenCounts` fills counts for the new positions
+ * without corrupting accounting for pre-existing ones.
+ *
+ * Insertion semantics:
+ *  - `insertIdx = initialMessages.length - 1`. Empty input → no-op.
+ *  - Single-message input → `insertIdx = 0`, primes appear before the lone message.
+ *  - Map shift: entries with `idx >= insertIdx` move forward by `numPrimes`.
+ *    Using `>=` (not `>`) is load-bearing: the message that was at `insertIdx`
+ *    is pushed to `insertIdx + numPrimes` by the splice, so its count must
+ *    follow it.
+ *
+ * Callers are responsible for scoping (e.g. single-agent runs only — see
+ * `AgentClient.chatCompletion`). This helper is agent-agnostic.
+ */
+export function injectManualSkillPrimes(
+  params: InjectManualSkillPrimesParams,
+): InjectManualSkillPrimesResult {
+  const { initialMessages, manualSkillPrimes } = params;
+  let { indexTokenCountMap } = params;
+
+  if (manualSkillPrimes.length === 0 || initialMessages.length === 0) {
+    return { initialMessages, indexTokenCountMap, inserted: 0, insertIdx: -1 };
+  }
+
+  const insertIdx = initialMessages.length - 1;
+  const numPrimes = manualSkillPrimes.length;
+
+  if (indexTokenCountMap) {
+    const shifted: Record<number, number> = {};
+    for (const [idxStr, count] of Object.entries(indexTokenCountMap)) {
+      const idx = Number(idxStr);
+      shifted[idx >= insertIdx ? idx + numPrimes : idx] = count;
+    }
+    indexTokenCountMap = shifted;
+  }
+
+  const primeMessages = manualSkillPrimes.map(
+    (p) =>
+      new HumanMessage({
+        content: p.body,
+        additional_kwargs: { isMeta: true, source: 'skill', skillName: p.name },
+      }),
+  );
+  initialMessages.splice(insertIdx, 0, ...primeMessages);
+
+  return { initialMessages, indexTokenCountMap, inserted: numPrimes, insertIdx };
+}
+
+/**
+ * Safely pulls `manualSkills` from an untyped request body.
+ *
+ * Accepts only string[] in practice: filters out non-string elements and
+ * empty strings so a crafted payload (numbers, objects, nulls) can't reach
+ * `getSkillByName` and waste DB round-trips, matching the TypeScript
+ * contract (`manualSkills?: string[]` on TPayload). Returns `undefined` for
+ * missing / non-array inputs OR for arrays that contain no valid strings —
+ * callers treat undefined as "no manual invocation this turn."
+ */
+export function extractManualSkills(body: unknown): string[] | undefined {
+  if (!body || typeof body !== 'object') {
+    return undefined;
+  }
+  const raw = (body as { manualSkills?: unknown }).manualSkills;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const filtered = raw.filter(
+    (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+  );
+  return filtered.length > 0 ? filtered : undefined;
 }

@@ -19,6 +19,7 @@ const {
   validateRequest,
   initializeAgent,
   getBalanceConfig,
+  extractManualSkills,
   createErrorResponse,
   recordCollectedUsage,
   getTransactionsConfig,
@@ -237,7 +238,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       accessibleSkillIds,
     });
 
-    const manualSkills = Array.isArray(req.body?.manualSkills) ? req.body.manualSkills : undefined;
+    const manualSkills = extractManualSkills(req.body);
 
     const primaryConfig = await initializeAgent(
       {

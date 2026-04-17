@@ -8,6 +8,7 @@ const {
   validateAgentModel,
   createEdgeCollector,
   filterOrphanedEdges,
+  extractManualSkills,
   GenerationJobManager,
   getCustomEndpointConfig,
   createSequentialChainEdges,
@@ -240,10 +241,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   /**
    * Skill names the user invoked via the `$` popover for this turn. Only flows
    * to the primary agent — handoff agents are follow-up turns that don't see
-   * the user's per-submission `$` selections.
+   * the user's per-submission `$` selections. `extractManualSkills` also
+   * drops non-string / empty elements so a crafted payload can't reach the
+   * `getSkillByName` DB query with nonsense values.
    * @type {string[] | undefined}
    */
-  const manualSkills = Array.isArray(req.body.manualSkills) ? req.body.manualSkills : undefined;
+  const manualSkills = extractManualSkills(req.body);
 
   const primaryConfig = await initializeAgent(
     {
