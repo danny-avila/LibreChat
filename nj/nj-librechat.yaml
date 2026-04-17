@@ -24,11 +24,11 @@ interface:
   modelSelect: false
 
   # We're purposefully disabling most LibreChat features (for now)
-  agents: false
+  agents: false # Can be overriden with env var INTERFACE_AGENTS
   bookmarks: false
   endpointsMenu: false
   fileCitations: false
-  fileSearch: false
+  fileSearch: false # Can be overriden with env var INTERFACE_FILE_SEARCH
   marketplace:
     use: false
   memories: false
@@ -68,6 +68,7 @@ endpoints:
     capabilities:
       - "context"
       - "ocr"
+      - "file_search"
 
 # We explicitly spec our models (since we only have a few models and this makes the selector simpler)
 modelSpecs:
