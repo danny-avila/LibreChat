@@ -332,7 +332,7 @@ describe('SkillsCommand', () => {
     expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
   });
 
-  it('fails closed (empty list) when the agents map is not yet hydrated', () => {
+  it('shows the full ACL catalog while the agents map is hydrating (backend still gates the turn)', async () => {
     mockUseSkillsInfiniteQuery.mockReturnValue({
       data: twoSkillsResponse,
       isLoading: false,
@@ -353,10 +353,11 @@ describe('SkillsCommand', () => {
       />,
     );
 
-    /* Scope unknown → do not leak the full ACL catalog (backend would
-       reject anything picked here anyway). */
-    expect(screen.queryByRole('button', { name: /Brand Guidelines/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Style Guide/i })).toBeNull();
+    /* Hydration race: map not yet loaded. Pass through to full catalog —
+       the backend scopes at turn time and blanking the popover during
+       sub-second hydration is worse UX for no security benefit. */
+    expect(await screen.findByRole('button', { name: /Brand Guidelines/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
   });
 
   it('fails closed when the agent id is set but missing from the agents map', () => {

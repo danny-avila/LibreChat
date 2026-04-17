@@ -105,8 +105,12 @@ function SkillsCommandContent({
      → intersection. Ephemeral agent ids (null/undefined/placeholder strings
      that don't begin with `agent_`) are unscoped — they correspond to
      conversations without a persisted agent and are intentionally absent
-     from the agents map. Fails closed for "map not hydrated" and "persisted
-     agent missing from map" — scope unknown, don't leak the full catalog.
+     from the agents map. While the map is still hydrating we pass through
+     (undefined → full catalog): the backend enforces scope at turn time, so
+     there's no security benefit to flashing an empty popover, and the map
+     typically lands well before the first open. Once the map is authoritative
+     but the agent isn't in it (deleted, or VIEW revoked mid-session), we fail
+     closed — scope is unresolvable and the full catalog would be misleading.
      `agentId` is threaded in as a prop so this component stays memoizable
      and skips re-renders on unrelated conversation-shape changes. */
   const agentSkillIds = useMemo<string[] | null | undefined>(() => {
@@ -114,7 +118,7 @@ function SkillsCommandContent({
       return undefined;
     }
     if (!agentsMap) {
-      return [];
+      return undefined;
     }
     const agent = agentsMap[agentId as string];
     if (!agent) {
