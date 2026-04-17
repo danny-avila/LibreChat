@@ -305,6 +305,58 @@ describe('SkillsCommand', () => {
     expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
   });
 
+  it('fails closed (empty list) when the agents map is not yet hydrated', () => {
+    mockUseSkillsInfiniteQuery.mockReturnValue({
+      data: twoSkillsResponse,
+      isLoading: false,
+      isError: false,
+      fetchNextPage: jest.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+    });
+    mockUseAgentsMapContext.mockReturnValue(undefined);
+
+    const textAreaRef = makeTextarea('$');
+    render(
+      <SkillsCommand
+        index={0}
+        textAreaRef={textAreaRef}
+        conversationId={CONVO_ID}
+        agentId="agent-1"
+      />,
+    );
+
+    /* Scope unknown → do not leak the full ACL catalog (backend would
+       reject anything picked here anyway). */
+    expect(screen.queryByRole('button', { name: /Brand Guidelines/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Style Guide/i })).toBeNull();
+  });
+
+  it('fails closed when the agent id is set but missing from the agents map', () => {
+    mockUseSkillsInfiniteQuery.mockReturnValue({
+      data: twoSkillsResponse,
+      isLoading: false,
+      isError: false,
+      fetchNextPage: jest.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+    });
+    mockUseAgentsMapContext.mockReturnValue({});
+
+    const textAreaRef = makeTextarea('$');
+    render(
+      <SkillsCommand
+        index={0}
+        textAreaRef={textAreaRef}
+        conversationId={CONVO_ID}
+        agentId="agent-1"
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /Brand Guidelines/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Style Guide/i })).toBeNull();
+  });
+
   it('hides inactive skills from the popover', () => {
     mockUseSkillsInfiniteQuery.mockReturnValue({
       data: twoSkillsResponse,

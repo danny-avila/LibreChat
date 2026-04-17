@@ -99,19 +99,26 @@ function SkillsCommandContent({
   const agentsMap = useAgentsMapContext();
   const { isActive } = useSkillActiveState();
 
-  /* Resolve the per-agent skill scope. Mirrors backend `scopeSkillIds`:
-     ephemeral convo or agent without a `skills` field → undefined (no scope);
-     configured array (including `[]`) → pass through as-is so the filter can
-     enforce explicit opt-out. Returning `undefined` until the agent is loaded
-     keeps the popover populated instead of flashing empty during hydration;
-     the backend still enforces the agent scope at runtime regardless.
+  /* Resolve the per-agent skill scope. Mirrors backend `scopeSkillIds` for
+     the happy path: no `skills` field → no scope, `[]` → opt-out, non-empty
+     → intersection. Fails closed for both "map not hydrated" and "agent not
+     in map" — if we cannot confirm the agent's scope we must not leak the
+     full ACL catalog, since the backend will reject any picked skill that
+     the agent was not configured to allow.
      `agentId` is threaded in as a prop so this component stays memoizable
      and skips re-renders on unrelated conversation-shape changes. */
   const agentSkillIds = useMemo<string[] | null | undefined>(() => {
     if (!agentId) {
       return undefined;
     }
-    return agentsMap?.[agentId]?.skills;
+    if (!agentsMap) {
+      return [];
+    }
+    const agent = agentsMap[agentId];
+    if (!agent) {
+      return [];
+    }
+    return agent.skills;
   }, [agentId, agentsMap]);
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
