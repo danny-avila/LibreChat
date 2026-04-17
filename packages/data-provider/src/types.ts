@@ -54,6 +54,7 @@ export type TEndpointOption = Pick<
   | 'thinkingBudget'
   | 'thinkingLevel'
   | 'effort'
+  | 'thinkingDisplay'
   // Assistant/Agent fields
   | 'assistant_id'
   | 'agent_id'
