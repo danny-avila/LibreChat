@@ -446,9 +446,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   // Subagents: load any explicit subagent configs. Subagents run in isolated
   // context windows and are invoked via a dedicated spawn tool (not handoff
-  // edges). An agent that is only referenced as a subagent is dropped from
+  // edges). An agent that is ONLY referenced as a subagent is dropped from
   // `agentConfigs` so the LangGraph pipeline doesn't treat it as a
-  // parallel/handoff node, but it stays in `agentToolContexts` — the child's
+  // parallel/handoff node, but it is KEPT in `agentToolContexts` — the child's
   // `ON_TOOL_EXECUTE` dispatches resolve tool execution context (agent,
   // tool_resources, skill ACLs, ...) from that map, so removing it would leave
   // action tools skipped and resource-scoped tools running without their
