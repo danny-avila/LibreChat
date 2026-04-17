@@ -1105,6 +1105,41 @@ describe('getLLMConfig', () => {
         expect(thinking.display).toBe('omitted');
       });
 
+      it('should recover display from persisted agent thinking object (Opus 4.7 omitted)', () => {
+        /** Agents persist `thinking` as the full Anthropic object. Without
+         * extracting `.display` back into `thinkingDisplay`, Opus 4.7's auto
+         * resolver would silently flip it to 'summarized'. */
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-7',
+            thinking: { type: 'adaptive', display: 'omitted' },
+          } as unknown as t.AnthropicModelOptions,
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('omitted');
+      });
+
+      it('explicit thinkingDisplay wins over persisted thinking.display', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-7',
+            thinking: { type: 'adaptive', display: 'summarized' },
+            thinkingDisplay: ThinkingDisplay.omitted,
+          } as unknown as t.AnthropicModelOptions,
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.display).toBe('omitted');
+      });
+
       it('should exclude topP/topK for Sonnet 4.6 with adaptive thinking', () => {
         const result = getLLMConfig('test-key', {
           modelOptions: {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Dispatcher } from 'undici';
 import { AuthKeys, anthropicSchema, TVertexAISchema } from 'librechat-data-provider';
 import type { AnthropicClientOptions } from '@librechat/agents';
+import type { ThinkingDisplayWireValue } from 'librechat-data-provider';
 import type { LLMConfigResult } from './openai';
 import type { GoogleServiceKey } from '../utils/key';
 
@@ -44,23 +45,9 @@ export interface ThinkingConfigEnabled {
   type: 'enabled';
 }
 
-/**
- * Controls whether the model's reasoning content is returned in the response.
- *
- * - `'summarized'` — return a post-hoc summary of the reasoning (restores the
- *   pre-Opus-4.7 default visibility).
- * - `'omitted'` — reasoning blocks are still streamed but the `thinking` field
- *   is empty. This is the API default starting with Claude Opus 4.7.
- *
- * See
- * [What's new in Claude 4.7](https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default)
- * for details.
- */
-export type ThinkingDisplay = 'summarized' | 'omitted';
-
 export interface ThinkingConfigAdaptive {
   type: 'adaptive';
-  display?: ThinkingDisplay;
+  display?: ThinkingDisplayWireValue;
 }
 
 /**

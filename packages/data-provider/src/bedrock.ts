@@ -6,11 +6,9 @@ const DEFAULT_THINKING_BUDGET = 2000;
 
 const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReasoningConfig));
 
-type ThinkingDisplayValue = 'summarized' | 'omitted';
-
 type ThinkingConfig =
   | { type: 'enabled'; budget_tokens: number }
-  | { type: 'adaptive'; display?: ThinkingDisplayValue };
+  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue };
 
 /**
  * Resolves the final `thinking.display` value for an adaptive-thinking request.
@@ -26,15 +24,15 @@ type ThinkingConfig =
 export function resolveThinkingDisplay(
   model: string,
   explicit?: s.ThinkingDisplay | string | null,
-): ThinkingDisplayValue | undefined {
+): s.ThinkingDisplayWireValue | undefined {
   if (explicit === s.ThinkingDisplay.summarized) {
-    return 'summarized';
+    return s.ThinkingDisplay.summarized;
   }
   if (explicit === s.ThinkingDisplay.omitted) {
-    return 'omitted';
+    return s.ThinkingDisplay.omitted;
   }
   if (omitsThinkingByDefault(model)) {
-    return 'summarized';
+    return s.ThinkingDisplay.summarized;
   }
   return undefined;
 }
@@ -201,6 +199,21 @@ export const bedrockInputSchema = s.tConversationSchema
         typeof thinking === 'object' && 'budget_tokens' in thinking
           ? thinking.budget_tokens
           : undefined;
+      if (
+        obj.thinkingDisplay == null &&
+        typeof thinking === 'object' &&
+        thinking != null &&
+        'display' in thinking &&
+        typeof (thinking as { display?: unknown }).display === 'string'
+      ) {
+        const persistedDisplay = (thinking as { display: string }).display;
+        if (
+          persistedDisplay === s.ThinkingDisplay.summarized ||
+          persistedDisplay === s.ThinkingDisplay.omitted
+        ) {
+          obj.thinkingDisplay = persistedDisplay as s.ThinkingDisplay;
+        }
+      }
       delete obj.additionalModelRequestFields;
     }
     return s.removeNullishValues(obj);

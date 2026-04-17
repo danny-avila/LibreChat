@@ -5,6 +5,7 @@ import {
   resolveThinkingDisplay,
   bedrockOutputParser,
   bedrockInputParser,
+  bedrockInputSchema,
   supportsContext1m,
 } from '../src/bedrock';
 
@@ -633,6 +634,52 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.thinking).toBeUndefined();
       expect(additionalFields.thinkingBudget).toBeUndefined();
       expect(additionalFields.thinkingDisplay).toBeUndefined();
+    });
+
+    test('round-trips persisted display from AMRF.thinking.display (Opus 4.7 omitted)', () => {
+      /** Simulates a persisted conversation where the prior parse already set
+       * display on the nested AMRF.thinking object but did not persist the
+       * top-level thinkingDisplay field. The schema (bedrockInputSchema) should
+       * recover display → thinkingDisplay so the parser can honor the explicit
+       * choice on subsequent requests. */
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-opus-4-7',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'omitted' },
+        },
+      }) as Record<string, unknown>;
+      expect(persisted.thinkingDisplay).toBe('omitted');
+    });
+
+    test('round-trips persisted display from AMRF.thinking.display (summarized)', () => {
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'summarized' },
+        },
+      }) as Record<string, unknown>;
+      expect(persisted.thinkingDisplay).toBe('summarized');
+    });
+
+    test('ignores unknown display values during round-trip extraction', () => {
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-opus-4-7',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'bogus' },
+        },
+      }) as Record<string, unknown>;
+      expect(persisted.thinkingDisplay).toBeUndefined();
+    });
+
+    test('top-level thinkingDisplay wins over persisted AMRF display', () => {
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinkingDisplay: ThinkingDisplay.omitted,
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'summarized' },
+        },
+      }) as Record<string, unknown>;
+      expect(persisted.thinkingDisplay).toBe(ThinkingDisplay.omitted);
     });
 
     test('should not include output_config when effort is unset (empty string)', () => {

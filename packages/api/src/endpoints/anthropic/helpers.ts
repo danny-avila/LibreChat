@@ -95,6 +95,12 @@ function configureReasoning(
     const adaptive = display
       ? { type: 'adaptive' as const, display }
       : { type: 'adaptive' as const };
+    /**
+     * TODO: Remove the cast once `@librechat/agents` updates its
+     * `ChatAnthropicMessages['thinking']` type to include the `display` field
+     * added with Claude Opus 4.7. The cast is required because the installed
+     * agents SDK still uses the pre-4.7 `ThinkingConfigAdaptive` shape.
+     */
     updatedOptions.thinking = adaptive as AnthropicClientOptions['thinking'];
 
     const effort = extendedOptions.effort;

@@ -1,7 +1,12 @@
 import { Dispatcher, ProxyAgent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
+import {
+  anthropicSettings,
+  removeNullishValues,
+  ThinkingDisplay,
+  AuthKeys,
+} from 'librechat-data-provider';
 import type {
   AnthropicLLMConfigResult,
   AnthropicConfigOptions,
@@ -83,6 +88,22 @@ function getLLMConfig(
   credentials: string | AnthropicCredentials | undefined,
   options: AnthropicConfigOptions = {},
 ): AnthropicLLMConfigResult {
+  /**
+   * Persisted agent `model_parameters` may round-trip `thinking` as the full
+   * Anthropic object `{ type: 'adaptive', display: 'omitted' }` rather than a
+   * boolean. Pull any `.display` out of it so an explicit user choice is not
+   * silently demoted to `'auto'` (which would then resolve to `'summarized'`
+   * on Opus 4.7+).
+   */
+  const persistedThinking = options.modelOptions?.thinking;
+  const persistedDisplay =
+    typeof persistedThinking === 'object' &&
+    persistedThinking != null &&
+    'display' in persistedThinking &&
+    typeof (persistedThinking as { display?: unknown }).display === 'string'
+      ? ((persistedThinking as { display: string }).display as ThinkingDisplay | string)
+      : undefined;
+
   const systemOptions = {
     thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
     promptCache: options.modelOptions?.promptCache ?? anthropicSettings.promptCache.default,
@@ -90,7 +111,9 @@ function getLLMConfig(
       options.modelOptions?.thinkingBudget ?? anthropicSettings.thinkingBudget.default,
     effort: options.modelOptions?.effort ?? anthropicSettings.effort.default,
     thinkingDisplay:
-      options.modelOptions?.thinkingDisplay ?? anthropicSettings.thinkingDisplay.default,
+      options.modelOptions?.thinkingDisplay ??
+      persistedDisplay ??
+      anthropicSettings.thinkingDisplay.default,
   };
 
   if (options.modelOptions) {
