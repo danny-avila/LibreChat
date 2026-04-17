@@ -7,8 +7,8 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
-import { useChatContext, useAgentsMapContext } from '~/Providers';
 import { useLocalize, useSkillActiveState } from '~/hooks';
+import { useAgentsMapContext } from '~/Providers';
 import { useSkillsInfiniteQuery } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { removeCharIfLast } from '~/utils';
@@ -82,10 +82,12 @@ function SkillsCommandContent({
   index,
   textAreaRef,
   conversationId,
+  agentId,
 }: {
   index: number;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   conversationId: string;
+  agentId?: string | null;
 }) {
   const localize = useLocalize();
   const setShowSkillsPopover = useSetRecoilState(store.showSkillsPopoverFamily(index));
@@ -94,7 +96,6 @@ function SkillsCommandContent({
     store.pendingManualSkillsByConvoId(conversationId),
   );
 
-  const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
   const { isActive } = useSkillActiveState();
 
@@ -103,14 +104,15 @@ function SkillsCommandContent({
      configured array (including `[]`) → pass through as-is so the filter can
      enforce explicit opt-out. Returning `undefined` until the agent is loaded
      keeps the popover populated instead of flashing empty during hydration;
-     the backend still enforces the agent scope at runtime regardless. */
+     the backend still enforces the agent scope at runtime regardless.
+     `agentId` is threaded in as a prop so this component stays memoizable
+     and skips re-renders on unrelated conversation-shape changes. */
   const agentSkillIds = useMemo<string[] | null | undefined>(() => {
-    const agentId = conversation?.agent_id;
     if (!agentId) {
       return undefined;
     }
     return agentsMap?.[agentId]?.skills;
-  }, [conversation?.agent_id, agentsMap]);
+  }, [agentId, agentsMap]);
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useSkillsInfiniteQuery({ limit: 50 });
@@ -382,17 +384,24 @@ const SkillsCommand = memo(function SkillsCommand({
   index,
   textAreaRef,
   conversationId,
+  agentId,
 }: {
   index: number;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   conversationId: string;
+  agentId?: string | null;
 }) {
   const show = useRecoilValue(store.showSkillsPopoverFamily(index));
   if (!show) {
     return null;
   }
   return (
-    <SkillsCommandContent index={index} textAreaRef={textAreaRef} conversationId={conversationId} />
+    <SkillsCommandContent
+      index={index}
+      textAreaRef={textAreaRef}
+      conversationId={conversationId}
+      agentId={agentId}
+    />
   );
 });
 

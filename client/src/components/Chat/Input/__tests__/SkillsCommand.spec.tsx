@@ -65,15 +65,13 @@ jest.mock('~/data-provider', () => ({
   useSkillsInfiniteQuery: () => mockUseSkillsInfiniteQuery(),
 }));
 
-/* Phase 2: the popover must consult useChatContext() for the current
-   conversation's agent_id and useAgentsMapContext() for its `skills`
-   config, then intersect that with the ACL catalog. The test harness
-   swaps these in so individual cases can configure ephemeral vs.
-   agent-scoped behavior without standing up real providers. */
-const mockUseChatContext = jest.fn();
+/* Phase 2: the popover reads agent skill config via useAgentsMapContext
+   and the agent id is threaded down as a prop from ChatForm (so the
+   component stays memoizable across unrelated convo-shape changes). The
+   test harness swaps the agents map in so cases can configure ephemeral
+   vs. agent-scoped behavior without standing up a real provider. */
 const mockUseAgentsMapContext = jest.fn();
 jest.mock('~/Providers', () => ({
-  useChatContext: () => mockUseChatContext(),
   useAgentsMapContext: () => mockUseAgentsMapContext(),
 }));
 
@@ -175,9 +173,9 @@ beforeEach(() => {
     hasNextPage: false,
     isFetchingNextPage: false,
   });
-  /* Defaults: ephemeral conversation (no agent) and every skill active.
-     Individual tests override these to exercise the Phase 2 filter. */
-  mockUseChatContext.mockReturnValue({ conversation: { conversationId: CONVO_ID } });
+  /* Defaults: empty agents map and every skill active. Individual tests
+     override these and pass `agentId` as a prop to exercise the Phase 2
+     filter composition. */
   mockUseAgentsMapContext.mockReturnValue({});
   mockIsActive.mockReturnValue(true);
 });
@@ -234,15 +232,19 @@ describe('SkillsCommand', () => {
       hasNextPage: false,
       isFetchingNextPage: false,
     });
-    mockUseChatContext.mockReturnValue({
-      conversation: { conversationId: CONVO_ID, agent_id: 'agent-1' },
-    });
     mockUseAgentsMapContext.mockReturnValue({
       'agent-1': { id: 'agent-1', skills: ['2'] },
     });
 
     const textAreaRef = makeTextarea('$');
-    render(<SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />);
+    render(
+      <SkillsCommand
+        index={0}
+        textAreaRef={textAreaRef}
+        conversationId={CONVO_ID}
+        agentId="agent-1"
+      />,
+    );
 
     /* Only the skill whose _id is in agent.skills should appear. */
     expect(screen.queryByRole('button', { name: /Brand Guidelines/i })).toBeNull();
@@ -258,15 +260,19 @@ describe('SkillsCommand', () => {
       hasNextPage: false,
       isFetchingNextPage: false,
     });
-    mockUseChatContext.mockReturnValue({
-      conversation: { conversationId: CONVO_ID, agent_id: 'agent-1' },
-    });
     mockUseAgentsMapContext.mockReturnValue({
       'agent-1': { id: 'agent-1', skills: [] },
     });
 
     const textAreaRef = makeTextarea('$');
-    render(<SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />);
+    render(
+      <SkillsCommand
+        index={0}
+        textAreaRef={textAreaRef}
+        conversationId={CONVO_ID}
+        agentId="agent-1"
+      />,
+    );
 
     expect(screen.queryByRole('button', { name: /Brand Guidelines/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /Style Guide/i })).toBeNull();
@@ -281,15 +287,19 @@ describe('SkillsCommand', () => {
       hasNextPage: false,
       isFetchingNextPage: false,
     });
-    mockUseChatContext.mockReturnValue({
-      conversation: { conversationId: CONVO_ID, agent_id: 'agent-1' },
-    });
     mockUseAgentsMapContext.mockReturnValue({
       'agent-1': { id: 'agent-1' },
     });
 
     const textAreaRef = makeTextarea('$');
-    render(<SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />);
+    render(
+      <SkillsCommand
+        index={0}
+        textAreaRef={textAreaRef}
+        conversationId={CONVO_ID}
+        agentId="agent-1"
+      />,
+    );
 
     expect(await screen.findByRole('button', { name: /Brand Guidelines/i })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
