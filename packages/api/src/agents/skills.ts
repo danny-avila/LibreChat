@@ -1,15 +1,15 @@
+import { logger } from '@librechat/data-schemas';
+import { HumanMessage } from '@langchain/core/messages';
 import {
   formatSkillCatalog,
   SkillToolDefinition,
   ReadFileToolDefinition,
   BashExecutionToolDefinition,
 } from '@librechat/agents';
-import { HumanMessage } from '@langchain/core/messages';
-import type { BaseMessage } from '@langchain/core/messages';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
-import { logger } from '@librechat/data-schemas';
-import type { Types } from 'mongoose';
+import type { BaseMessage } from '@langchain/core/messages';
 import type { Agent } from 'librechat-data-provider';
+import type { Types } from 'mongoose';
 import type { InitializeAgentDbMethods } from './initialize';
 
 const SKILL_CATALOG_LIMIT = 100;
@@ -356,8 +356,15 @@ export async function resolveManualSkills(
    */
   let boundedNames = uniqueNames;
   if (uniqueNames.length > MAX_MANUAL_SKILLS) {
+    const droppedAll = uniqueNames.slice(MAX_MANUAL_SKILLS);
+    const DROPPED_LOG_SAMPLE = 5;
+    const droppedSample = droppedAll.slice(0, DROPPED_LOG_SAMPLE).join(', ');
+    const droppedSuffix =
+      droppedAll.length > DROPPED_LOG_SAMPLE
+        ? `, ... (${droppedAll.length - DROPPED_LOG_SAMPLE} more)`
+        : '';
     logger.warn(
-      `[resolveManualSkills] Truncating manual skill list from ${uniqueNames.length} to ${MAX_MANUAL_SKILLS}: dropped [${uniqueNames.slice(MAX_MANUAL_SKILLS).join(', ')}]`,
+      `[resolveManualSkills] Truncating manual skill list from ${uniqueNames.length} to ${MAX_MANUAL_SKILLS}: dropped [${droppedSample}${droppedSuffix}]`,
     );
     boundedNames = uniqueNames.slice(0, MAX_MANUAL_SKILLS);
   }

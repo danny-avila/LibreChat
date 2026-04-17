@@ -91,7 +91,7 @@ export default function useChatFunctions({
     ({ snapshot, reset }) =>
       (convoId: string): string[] => {
         const loadable = snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId));
-        const skills = loadable.state === 'hasValue' ? ((loadable.contents as string[]) ?? []) : [];
+        const skills = loadable.state === 'hasValue' ? (loadable.contents as string[]) : [];
         if (skills.length > 0) {
           reset(store.pendingManualSkillsByConvoId(convoId));
         }

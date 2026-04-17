@@ -764,25 +764,15 @@ class AgentClient extends BaseClient {
       /**
        * Phase 3 manual skill priming — injected by user via `$` popover.
        *
-       * Scope: single-agent runs only. `initialMessages` is shared with every
-       * agent passed to `createRun`, so splicing here in a multi-agent graph
-       * (handoff targets, added-convo parallels) would leak the skill body
-       * past Phase 1's per-agent `scopeSkillIds` contract — a secondary agent
-       * may have a different skill scope and shouldn't see content its
-       * configuration excludes. A future PR can push primes into per-agent
-       * initial state to lift this restriction.
-       *
        * Splice + index-shift logic lives in `injectManualSkillPrimes`
        * (packages/api/src/agents/skills.ts) so the delicate position math
-       * can be unit-tested in TS without standing up AgentClient.
+       * can be unit-tested in TS without standing up AgentClient. Runs for
+       * both single-agent and multi-agent runs; how primes interact with
+       * handoff / added-convo agents' per-agent state is an agents-SDK
+       * concern, not this layer's to gate.
        */
       const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      const isMultiAgentRun = (this.agentConfigs?.size ?? 0) > 0;
-      if (manualSkillPrimes && manualSkillPrimes.length > 0 && isMultiAgentRun) {
-        logger.warn(
-          `[AgentClient] Skipping manual skill priming in multi-agent run (${this.agentConfigs.size} additional agent(s)): ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
-        );
-      } else if (manualSkillPrimes && manualSkillPrimes.length > 0) {
+      if (manualSkillPrimes && manualSkillPrimes.length > 0) {
         const primeResult = injectManualSkillPrimes({
           initialMessages,
           indexTokenCountMap,
