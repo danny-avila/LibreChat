@@ -19,6 +19,7 @@ import {
   SkillCall,
   ReadFileCall,
   BashCall,
+  SubagentCall,
 } from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
@@ -162,6 +163,17 @@ const Part = memo(function Part({
     } else if (isToolCall && toolCall.name === 'skill') {
       return (
         <SkillCall
+          args={toolCall.args}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+        />
+      );
+    } else if (isToolCall && toolCall.name === Constants.SUBAGENT) {
+      return (
+        <SubagentCall
+          toolCallId={toolCall.id ?? ''}
           args={toolCall.args}
           output={toolCall.output ?? ''}
           initialProgress={toolCall.progress ?? 0.1}
