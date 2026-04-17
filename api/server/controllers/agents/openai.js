@@ -13,6 +13,7 @@ const {
   createChunk,
   buildToolSet,
   scopeSkillIds,
+  loadSkillStates,
   sendFinalChunk,
   createSafeUser,
   validateRequest,
@@ -232,14 +233,13 @@ const OpenAIChatCompletionController = async (req, res) => {
     let skillStates;
     let defaultActiveOnShare = false;
     if (accessibleSkillIds.length > 0) {
-      const skillStatesUser = await db.getUserById(req.user.id, 'skillStates');
-      const raw = skillStatesUser?.skillStates;
-      skillStates =
-        raw instanceof Map ? Object.fromEntries(raw) : raw && typeof raw === 'object' ? raw : {};
-      const skillsConfig = appConfig?.interfaceConfig?.skills;
-      if (typeof skillsConfig === 'object' && skillsConfig !== null) {
-        defaultActiveOnShare = skillsConfig.defaultActiveOnShare === true;
-      }
+      const loaded = await loadSkillStates({
+        userId: req.user.id,
+        appConfig,
+        getUserById: db.getUserById,
+      });
+      skillStates = loaded.skillStates;
+      defaultActiveOnShare = loaded.defaultActiveOnShare;
     }
 
     const primaryConfig = await initializeAgent(

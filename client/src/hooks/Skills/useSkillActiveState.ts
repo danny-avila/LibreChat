@@ -106,10 +106,13 @@ export default function useSkillActiveState() {
         await updateMutation.mutateAsync(next);
       } catch (error) {
         logger.error('Error updating skill states:', error);
-        const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
-        const messageKey =
-          code === 'MAX_SKILL_STATES_EXCEEDED' ? 'com_ui_skill_states_limit' : 'com_ui_error';
-        showToast({ message: localize(messageKey), status: 'error' });
+        const data = (error as { response?: { data?: { code?: string; limit?: number } } })
+          ?.response?.data;
+        const message =
+          data?.code === 'MAX_SKILL_STATES_EXCEEDED'
+            ? localize('com_ui_skill_states_limit', { 0: String(data.limit ?? '') })
+            : localize('com_ui_error');
+        showToast({ message, status: 'error' });
         queue.pending = null;
         break;
       }

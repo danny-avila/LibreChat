@@ -1,4 +1,8 @@
-/** Mock Constants.SKILL_TOOL since the installed SDK version may not include it yet */
+/**
+ * Mock the pieces of `@librechat/agents` the installed SDK version may not
+ * export yet. Includes both the `Constants.SKILL_TOOL` stub and the skill
+ * catalog/tool-definition helpers needed to exercise `injectSkillCatalog`.
+ */
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
   Constants: {
@@ -6,11 +10,32 @@ jest.mock('@librechat/agents', () => ({
       .Constants,
     SKILL_TOOL: 'skill',
   },
+  formatSkillCatalog: (skills: Array<{ name: string; description: string }>) =>
+    skills.map((s) => `- ${s.name}: ${s.description}`).join('\n'),
+  SkillToolDefinition: { name: 'skill', description: 'skill tool', parameters: {} },
+  ReadFileToolDefinition: {
+    name: 'read_file',
+    description: 'read file',
+    parameters: {},
+    responseFormat: 'content',
+  },
+  BashExecutionToolDefinition: {
+    name: 'bash_tool',
+    description: 'bash',
+    schema: {},
+  },
 }));
 
 import { Types } from 'mongoose';
-import { scopeSkillIds, resolveSkillActive } from '../skills';
+import { scopeSkillIds, resolveSkillActive, injectSkillCatalog } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
+
+type PageSkill = {
+  _id: Types.ObjectId;
+  name: string;
+  description: string;
+  author: Types.ObjectId;
+};
 
 describe('extractInvokedSkillsFromPayload', () => {
   it('extracts skill names from assistant messages with skill tool_calls', () => {
@@ -384,5 +409,149 @@ describe('resolveSkillActive', () => {
         defaultActiveOnShare: false,
       }),
     ).toBe(true);
+  });
+});
+
+describe('injectSkillCatalog', () => {
+  const userId = new Types.ObjectId().toString();
+  const userObjectId = new Types.ObjectId(userId);
+
+  function makeSkill(name: string, author: Types.ObjectId = userObjectId): PageSkill {
+    return {
+      _id: new Types.ObjectId(),
+      name,
+      description: `desc-${name}`,
+      author,
+    };
+  }
+
+  function buildPager(pages: PageSkill[][]) {
+    return jest.fn().mockImplementation(async ({ cursor }: { cursor?: string | null }) => {
+      const pageIndex = cursor ? Number(cursor) : 0;
+      const skills = pages[pageIndex] ?? [];
+      const has_more = pageIndex < pages.length - 1;
+      return {
+        skills,
+        has_more,
+        after: has_more ? String(pageIndex + 1) : null,
+      };
+    });
+  }
+
+  function baseParams(overrides: Partial<Parameters<typeof injectSkillCatalog>[0]> = {}) {
+    return {
+      agent: { additional_instructions: undefined } as unknown as Parameters<
+        typeof injectSkillCatalog
+      >[0]['agent'],
+      toolDefinitions: undefined,
+      toolRegistry: undefined,
+      accessibleSkillIds: [new Types.ObjectId()],
+      contextWindowTokens: 200_000,
+      listSkillsByAccess: jest.fn(),
+      userId,
+      skillStates: {},
+      defaultActiveOnShare: false,
+      ...overrides,
+    };
+  }
+
+  it('returns empty when no skills are accessible', async () => {
+    const result = await injectSkillCatalog(
+      baseParams({ accessibleSkillIds: [], listSkillsByAccess: jest.fn() }),
+    );
+    expect(result.skillCount).toBe(0);
+    expect(result.activeSkillIds).toEqual([]);
+  });
+
+  it('returns empty when listSkillsByAccess is not provided', async () => {
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess: undefined }));
+    expect(result.skillCount).toBe(0);
+    expect(result.activeSkillIds).toEqual([]);
+  });
+
+  it('filters out inactive skills on a single page (shared, default inactive)', async () => {
+    const owned = makeSkill('my-skill', userObjectId);
+    const sharedInactive = makeSkill('other-skill', new Types.ObjectId());
+    const listSkillsByAccess = buildPager([[owned, sharedInactive]]);
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess }));
+    expect(result.skillCount).toBe(1);
+    expect(result.activeSkillIds.map((id) => id.toString())).toEqual([owned._id.toString()]);
+  });
+
+  it('includes shared skills when defaultActiveOnShare is true', async () => {
+    const shared = makeSkill('other-skill', new Types.ObjectId());
+    const listSkillsByAccess = buildPager([[shared]]);
+    const result = await injectSkillCatalog(
+      baseParams({ listSkillsByAccess, defaultActiveOnShare: true }),
+    );
+    expect(result.skillCount).toBe(1);
+    expect(result.activeSkillIds.map((id) => id.toString())).toEqual([shared._id.toString()]);
+  });
+
+  it('honors explicit overrides (deactivated owned skill absent from catalog)', async () => {
+    const owned = makeSkill('off', userObjectId);
+    const listSkillsByAccess = buildPager([[owned]]);
+    const result = await injectSkillCatalog(
+      baseParams({
+        listSkillsByAccess,
+        skillStates: { [owned._id.toString()]: false },
+      }),
+    );
+    expect(result.skillCount).toBe(0);
+    expect(result.activeSkillIds).toEqual([]);
+  });
+
+  it('paginates across pages and collects active skills from later pages', async () => {
+    const sharedInactive = Array.from({ length: 3 }, (_, i) =>
+      makeSkill(`shared-${i}`, new Types.ObjectId()),
+    );
+    const owned = makeSkill('my-skill', userObjectId);
+    const listSkillsByAccess = buildPager([sharedInactive, [owned]]);
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess }));
+    expect(result.skillCount).toBe(1);
+    expect(result.activeSkillIds.map((id) => id.toString())).toEqual([owned._id.toString()]);
+    expect(listSkillsByAccess).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops paginating at MAX_CATALOG_PAGES even if no active skills found', async () => {
+    const inactivePage = Array.from({ length: 10 }, (_, i) =>
+      makeSkill(`shared-${i}`, new Types.ObjectId()),
+    );
+    // Build 12 pages, all inactive — scanner should stop at page cap.
+    const pages = Array.from({ length: 12 }, () => inactivePage);
+    const listSkillsByAccess = buildPager(pages);
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess }));
+    expect(result.skillCount).toBe(0);
+    // MAX_CATALOG_PAGES = 10 — loop terminates after scanning 10 pages.
+    expect((listSkillsByAccess as jest.Mock).mock.calls.length).toBeLessThanOrEqual(11);
+  });
+
+  it('terminates early when has_more is false even below the catalog limit', async () => {
+    const owned = makeSkill('solo', userObjectId);
+    const listSkillsByAccess = buildPager([[owned]]);
+    await injectSkillCatalog(baseParams({ listSkillsByAccess }));
+    expect(listSkillsByAccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('appends the catalog text to agent.additional_instructions', async () => {
+    const owned = makeSkill('my-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[owned]]);
+    const agent = { additional_instructions: undefined } as unknown as Parameters<
+      typeof injectSkillCatalog
+    >[0]['agent'];
+    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
+    expect(agent.additional_instructions).toContain('my-skill');
+    expect(agent.additional_instructions).toContain('desc-my-skill');
+  });
+
+  it('fails closed when userId is absent (shared skills drop, owned would need override)', async () => {
+    const owned = makeSkill('my-skill', userObjectId);
+    const shared = makeSkill('shared-skill', new Types.ObjectId());
+    const listSkillsByAccess = buildPager([[owned, shared]]);
+    const result = await injectSkillCatalog(
+      baseParams({ listSkillsByAccess, userId: undefined, defaultActiveOnShare: true }),
+    );
+    expect(result.skillCount).toBe(0);
+    expect(result.activeSkillIds).toEqual([]);
   });
 });
