@@ -4,6 +4,9 @@ const { updateUser, getUserById } = require('~/models');
 
 const MAX_SKILL_STATES = 200;
 const MAX_KEY_LENGTH = 64;
+/** Generous upper bound on raw payload size to reject abusive inputs before
+ *  we spend cycles validating or querying the DB for orphan cleanup. */
+const MAX_RAW_PAYLOAD = MAX_SKILL_STATES * 2;
 
 /** Mongoose Map keys reject `.` and leading `$`. */
 const INVALID_KEY_PATTERN = /[.$]/;
@@ -17,26 +20,32 @@ function toRecord(raw) {
 }
 
 /**
- * Drops entries whose skill no longer exists. Self-heals orphaned overrides
- * from deleted skills without requiring cascade logic or a migration.
+ * Returns a copy of `skillStates` containing only entries whose key is a valid
+ * ObjectId AND points to a Skill document that currently exists. Self-heals
+ * orphaned overrides (deleted skills) and malformed keys without requiring
+ * cascade logic or a migration.
  */
 async function pruneOrphans(skillStates) {
-  const ids = Object.keys(skillStates).filter((id) => isValidObjectIdString(id));
-  if (ids.length === 0) {
-    return skillStates;
+  const validIds = Object.keys(skillStates).filter((id) => isValidObjectIdString(id));
+  if (validIds.length === 0) {
+    return {};
   }
   const Skill = mongoose.models.Skill;
   if (!Skill) {
-    return skillStates;
+    const pruned = {};
+    for (const id of validIds) {
+      pruned[id] = skillStates[id];
+    }
+    return pruned;
   }
-  const existing = await Skill.find({ _id: { $in: ids } })
+  const existing = await Skill.find({ _id: { $in: validIds } })
     .select('_id')
     .lean();
   const existingSet = new Set(existing.map((doc) => doc._id.toString()));
   const pruned = {};
-  for (const [id, value] of Object.entries(skillStates)) {
+  for (const id of validIds) {
     if (existingSet.has(id)) {
-      pruned[id] = value;
+      pruned[id] = skillStates[id];
     }
   }
   return pruned;
@@ -71,11 +80,11 @@ const updateSkillStatesController = async (req, res) => {
 
     const entries = Object.entries(skillStates);
 
-    if (entries.length > MAX_SKILL_STATES) {
+    if (entries.length > MAX_RAW_PAYLOAD) {
       return res.status(400).json({
-        code: 'MAX_SKILL_STATES_EXCEEDED',
-        message: `Maximum ${MAX_SKILL_STATES} skill state overrides allowed`,
-        limit: MAX_SKILL_STATES,
+        code: 'SKILL_STATES_PAYLOAD_TOO_LARGE',
+        message: `Payload exceeds ${MAX_RAW_PAYLOAD} entries`,
+        limit: MAX_RAW_PAYLOAD,
       });
     }
 
@@ -90,12 +99,24 @@ const updateSkillStatesController = async (req, res) => {
           message: 'Skill ID must not contain "." or "$"',
         });
       }
+      if (!isValidObjectIdString(key)) {
+        return res.status(400).json({ message: 'Each skill ID must be a valid ObjectId' });
+      }
       if (typeof value !== 'boolean') {
         return res.status(400).json({ message: 'Each skill state value must be a boolean' });
       }
     }
 
     const pruned = await pruneOrphans(skillStates);
+
+    if (Object.keys(pruned).length > MAX_SKILL_STATES) {
+      return res.status(400).json({
+        code: 'MAX_SKILL_STATES_EXCEEDED',
+        message: `Maximum ${MAX_SKILL_STATES} skill state overrides allowed`,
+        limit: MAX_SKILL_STATES,
+      });
+    }
+
     const user = await updateUser(userId, { skillStates: pruned });
 
     if (!user) {
