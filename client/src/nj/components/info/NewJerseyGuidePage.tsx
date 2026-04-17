@@ -9,6 +9,7 @@ import AiLearning from '~/nj/components/info/AiLearning';
 import RelatedLinks from '~/nj/components/info/RelatedLinks';
 import { useState } from 'react';
 import { RelatedLinkType } from '~/nj/components/info/RelatedLinks';
+import GettingStarted from '~/nj/components/info/GettingStarted';
 
 /**
  * Content for "guide to using the assistant" page
@@ -37,6 +38,7 @@ export default function NewJerseyGuidePage() {
       <InfoTitle text="Guides and FAQs" />
       <HorizontalRule spacing="mb-6" />
       <ResponsibleInfoAlert />
+      <GettingStarted openFaq={openFaq} setOpenFaq={setOpenFaq} />
       <UsingAIAsst openFaq={openFaq} setOpenFaq={setOpenFaq} />
       <HelpAndSupport openFaq={openFaq} setOpenFaq={setOpenFaq} />
       <UpcomingFeatures openFaq={openFaq} setOpenFaq={setOpenFaq} />

@@ -6,25 +6,6 @@ import React from 'react';
 
 const helpSupportFAQs: FAQ[] = [
   {
-    question: 'Are there AI Office Hours to support my AI work?',
-    answer: (
-      <p className="mb-6">
-        Join weekly AI Office Hours to discuss AI, a project you’re working on, or feedback about
-        the NJ AI Assistant.{' '}
-        <a
-          href="https://outlook.office365.com/book/AIOfficeHours1@SoNJ.onmicrosoft.com/s/5Hx9mVbMJUK8H1YcXwEr6A2?ismsaljsauthenabled"
-          className="inline-flex items-center gap-1 underline hover:decoration-2"
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Book time on any Thursday (opens in new window)"
-        >
-          Book time on any Thursday
-        </a>{' '}
-        with the team.
-      </p>
-    ),
-  },
-  {
     question: 'How can I get in touch with the team?',
     answer: (
       <p className="mb-6">

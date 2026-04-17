@@ -1,19 +1,19 @@
 # Date (as month/day/year)
 
-4/7/2026
+4/21/26
 
 # Title
 
-AI Office Hours
+New Prompt Writing Guide
 
 # Description
 
-Get your questions answered by the NJ AI Assistant team at AI Office Hours every Thursday\!
+Learn how to use prompts and context to improve AI results with a new guide\!
 
 # Release notes link text
 
-Office hours info
+AI Prompting Guide
 
 # Release notes link
 
-https://ai-assistant.nj.gov/nj/release-notes
+https://innovation.nj.gov/skills/ai-how-tos/prompts-and-context

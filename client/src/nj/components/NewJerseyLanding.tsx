@@ -90,6 +90,23 @@ export function NewJerseyLanding() {
                   <div className="mb-5 flex gap-3">
                     <p>
                       Check out these resources on how to use AI tools —{' '}
+                      <a
+                        href="https://innovation.nj.gov/skills/ai-how-tos/"
+                        className="inline-flex items-center gap-1 underline hover:decoration-2"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        AI Prompting Guide{' '}
+                        <svg
+                          className="usa-icon usa-icon--size-2"
+                          aria-hidden="true"
+                          focusable="false"
+                          role="img"
+                        >
+                          <use href={`${icons}#launch`} />
+                        </svg>
+                      </a>{' '}
+                      ,{' '}
                       <Link
                         to={{ pathname: '/nj/guide' }}
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
@@ -104,7 +121,7 @@ export function NewJerseyLanding() {
                           <use href={`${icons}#school`} />
                         </svg>
                       </Link>{' '}
-                      ,{' '}
+                      , other{' '}
                       <a
                         href="https://innovation.nj.gov/skills/ai-how-tos/"
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
@@ -121,7 +138,7 @@ export function NewJerseyLanding() {
                           <use href={`${icons}#launch`} />
                         </svg>
                       </a>
-                      and the{' '}
+                      , and the{' '}
                       <a
                         href="https://innovation.nj.gov/ai-faq-state-employees/"
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
