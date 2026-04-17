@@ -3,8 +3,8 @@ import { ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { Skeleton } from '@librechat/client';
 import type { TSkill } from 'librechat-data-provider';
-import SkillListItem from './SkillListItem';
 import { useLocalize } from '~/hooks';
+import SkillListItem from './SkillListItem';
 import { cn } from '~/utils';
 
 interface SkillListProps {
@@ -13,9 +13,7 @@ interface SkillListProps {
   activeSkillId?: string;
 }
 
-/**
- * Claude.ai–style skill list with a collapsible "Personal skills" section.
- */
+/** Collapsible skill list. Active/inactive toggling lives in the detail view. */
 export default function SkillList({ skills, isLoading, activeSkillId }: SkillListProps) {
   const localize = useLocalize();
   const [searchParams] = useSearchParams();

@@ -12,6 +12,7 @@ const {
   createRun,
   buildToolSet,
   scopeSkillIds,
+  loadSkillStates,
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
@@ -369,6 +370,13 @@ const createResponse = async (req, res) => {
         })
       : [];
 
+    const { skillStates, defaultActiveOnShare } = await loadSkillStates({
+      userId: req.user.id,
+      appConfig,
+      getUserById: db.getUserById,
+      accessibleSkillIds,
+    });
+
     const primaryConfig = await initializeAgent(
       {
         req,
@@ -386,6 +394,8 @@ const createResponse = async (req, res) => {
           ephemeralSkillsToggle ? undefined : agent.skills,
         ),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        skillStates,
+        defaultActiveOnShare,
       },
       {
         getConvoFiles: db.getConvoFiles,
