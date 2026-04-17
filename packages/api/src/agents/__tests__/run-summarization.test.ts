@@ -885,4 +885,38 @@ describe('subagentConfigs', () => {
     });
     expect(agents[0].subagentConfigs).toBeUndefined();
   });
+
+  it('does NOT leak the parent run `initialSummary` into an explicit child (Codex P1 regression)', async () => {
+    /**
+     * `buildAgentInput` is a shared factory that always stamps the parent
+     * run's `initialSummary` on the returned AgentInputs. When it's reused
+     * to build a subagent child's inputs, `buildSubagentConfigs` must clear
+     * that field — otherwise the child inherits unrelated conversation
+     * context, defeating the isolation contract (and burning extra tokens).
+     */
+    const summary = { text: 'parent conversation summary', tokenCount: 99 };
+    const child = makeAgent({ id: 'agent_child', name: 'Child' });
+    const agents = await callAndCapture({
+      initialSummary: summary,
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+
+    const parent = agents[0];
+    /** The parent itself keeps the summary — that's how it receives
+     *  cross-turn context. */
+    expect(parent.initialSummary).toEqual(summary);
+
+    const childConfig = (parent.subagentConfigs as Array<Record<string, unknown>>)[0];
+    const childInputs = childConfig.agentInputs as {
+      initialSummary?: unknown;
+      discoveredTools?: unknown;
+    };
+    expect(childInputs.initialSummary).toBeUndefined();
+    expect(childInputs.discoveredTools).toBeUndefined();
+  });
 });

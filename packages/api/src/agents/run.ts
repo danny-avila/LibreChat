@@ -534,6 +534,20 @@ function buildSubagentConfigs(
       continue;
     }
     const childInputs = toInput(child);
+    /**
+     * Strip parent-conversation-scoped fields from the child's AgentInputs.
+     * `buildAgentInput` is a shared factory that stamps the parent run's
+     * `initialSummary` (a cross-run summary of the user-visible conversation)
+     * and `discoveredTools` (tools the parent's LLM searched for earlier)
+     * onto every agent input it builds. A subagent runs in an isolated
+     * context by contract — inheriting those fields leaks unrelated chat
+     * history and prior tool-search state into the child, silently
+     * defeating context isolation and burning extra tokens. Keep the
+     * provider / summarization / pruning config (those are policy, not
+     * context) but clear the run-scoped memory.
+     */
+    childInputs.initialSummary = undefined;
+    childInputs.discoveredTools = undefined;
     configs.push({
       type: child.id,
       name: child.name ?? child.id,
