@@ -1,5 +1,4 @@
 self.addEventListener('push', function (event) {
-  console.log('🔥 PUSH EVENT RECEIVED', event);
   let data = {};
   if (event.data) {
     try {
