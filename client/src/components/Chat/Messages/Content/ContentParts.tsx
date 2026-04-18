@@ -10,8 +10,9 @@ import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
 import { EditTextPart, EmptyText } from './Parts';
+import parseJsonField from './Parts/parseJsonField';
 import MemoryArtifacts from './MemoryArtifacts';
-import InvokingSkillsIndicator from './InvokingSkillsIndicator';
+import SkillCall from './Parts/SkillCall';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
@@ -99,6 +100,40 @@ type ContentPartsProps = {
 };
 
 /**
+ * Derive the set of skill names already present in content as real `skill`
+ * tool_call parts (from the backend's prime injection or a model call).
+ * Used to drop the pending placeholder once the real prime part lands at
+ * finalize — de-duplication is by `args.skillName`, not tool_call id, since
+ * the synthetic's id (`pending_${name}`) differs from the real one
+ * (`call_manual_skill_${runId}_${idx}`).
+ */
+function collectExistingSkillNames(
+  content: Array<TMessageContentParts | undefined> | undefined,
+): Set<string> {
+  const names = new Set<string>();
+  if (!content) {
+    return names;
+  }
+  for (const part of content) {
+    if (part?.type !== ContentTypes.TOOL_CALL) {
+      continue;
+    }
+    const toolCall = (part as { tool_call?: { name?: string; args?: unknown } }).tool_call;
+    if (toolCall?.name !== 'skill') {
+      continue;
+    }
+    const skillName = parseJsonField(
+      toolCall.args as string | Record<string, unknown> | undefined,
+      'skillName',
+    );
+    if (skillName) {
+      names.add(skillName);
+    }
+  }
+  return names;
+}
+
+/**
  * ContentParts renders message content parts, handling both sequential and parallel layouts.
  *
  * For 90% of messages (single-agent, no parallel execution), this renders sequentially.
@@ -124,27 +159,48 @@ const ContentParts = memo(function ContentParts({
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
   /**
-   * Show the assistant-side skill-loading chips only when:
-   *  - this is an assistant message (user side gets `ManualSkillPills`
-   *    on the user bubble instead);
-   *  - the turn carried manual skill picks;
-   *  - the real `skill` tool_call content part hasn't landed yet (once
-   *    it does, `Part` / `SkillCall` is the authoritative renderer and
-   *    the placeholder steps aside).
-   * Computed here so the visibility check happens on the same render
-   * cycle that updates the Parts iteration, and `InvokingSkillsIndicator`
-   * stays a pure presentational component.
+   * Pending skill cards — rendered ABOVE the Parts iteration as a separate
+   * slot (not prepended to `content`), so synthetic entries don't shift
+   * the indices React uses as keys for streamed text/tool parts and cause
+   * remount flicker mid-stream.
+   *
+   * Each pending entry renders through the real `SkillCall` component with
+   * `progress < 1` + empty `output` → the pulsing "Running X" UI. When the
+   * backend's real prime `tool_call` (same skillName) lands in `content` at
+   * finalize, `collectExistingSkillNames` filters it out of the pending set
+   * and the real prime takes over in the Parts iteration. Layout is
+   * identical because the backend unshifts primes to the front of content,
+   * so the skill cards stay anchored to the top either way.
+   *
+   * Skipped on the user side (users see `ManualSkillPills` on their
+   * bubble) and when no skills were queued on this turn.
    */
-  const showInvokingSkills =
-    !isCreatedByUser &&
-    manualSkills != null &&
-    manualSkills.length > 0 &&
-    !(content ?? []).some(
-      (part) =>
-        part != null &&
-        part.type === ContentTypes.TOOL_CALL &&
-        (part as { tool_call?: { name?: string } }).tool_call?.name === 'skill',
+  const pendingSkillNames = useMemo(() => {
+    if (isCreatedByUser || !manualSkills || manualSkills.length === 0) {
+      return [];
+    }
+    const existingNames = collectExistingSkillNames(content);
+    return manualSkills.filter((name) => !existingNames.has(name));
+  }, [content, manualSkills, isCreatedByUser]);
+
+  const renderPendingSkills = () => {
+    if (pendingSkillNames.length === 0) {
+      return null;
+    }
+    return (
+      <>
+        {pendingSkillNames.map((name) => (
+          <SkillCall
+            key={`pending-skill-${name}`}
+            args={JSON.stringify({ skillName: name })}
+            output=""
+            initialProgress={0.1}
+            isSubmitting={effectiveIsSubmitting}
+          />
+        ))}
+      </>
     );
+  };
 
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
@@ -178,16 +234,17 @@ const ContentParts = memo(function ContentParts({
     ],
   );
 
-  // Early return: no content
-  if (!content) {
+  // Early return: no content to render AND no pending skill placeholders
+  if (!content && pendingSkillNames.length === 0) {
     return null;
   }
 
-  // Edit mode: render editable text parts
+  // Edit mode: render editable text parts. Pending skill placeholders are
+  // a mid-stream concern, not relevant in edit mode.
   if (edit === true && enterEdit && setSiblingIdx) {
     return (
       <>
-        {content.map((part, idx) => {
+        {(content ?? []).map((part, idx) => {
           if (!part) {
             return null;
           }
@@ -223,15 +280,16 @@ const ContentParts = memo(function ContentParts({
     );
   }
 
-  const showEmptyCursor = content.length === 0 && effectiveIsSubmitting;
-  const lastContentIdx = content.length - 1;
+  const safeContent = content ?? [];
+  const showEmptyCursor = safeContent.length === 0 && effectiveIsSubmitting;
+  const lastContentIdx = safeContent.length - 1;
 
   // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
-  const hasParallelContent = content.some((part) => part?.groupId != null);
+  const hasParallelContent = safeContent.some((part) => part?.groupId != null);
   if (hasParallelContent) {
     return (
       <>
-        {showInvokingSkills && <InvokingSkillsIndicator skills={manualSkills} />}
+        {renderPendingSkills()}
         <ParallelContentRenderer
           content={content}
           messageId={messageId}
@@ -247,7 +305,7 @@ const ContentParts = memo(function ContentParts({
 
   // Sequential content: render parts in order (90% of cases)
   const sequentialParts: PartWithIndex[] = [];
-  content.forEach((part, idx) => {
+  safeContent.forEach((part, idx) => {
     if (part) {
       sequentialParts.push({ part, idx });
     }
@@ -257,14 +315,7 @@ const ContentParts = memo(function ContentParts({
   return (
     <SearchContext.Provider value={{ searchResults }}>
       <MemoryArtifacts attachments={attachments} />
-      {/**
-       * Sibling render slot above the Parts iteration. Visibility is
-       * computed above from `manualSkills` + `content`; the indicator
-       * itself is purely presentational so the scalar `skills` prop is
-       * the only thing that flows in — no message reference, no memo
-       * churn.
-       */}
-      {showInvokingSkills && <InvokingSkillsIndicator skills={manualSkills} />}
+      {renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
           <EmptyText />

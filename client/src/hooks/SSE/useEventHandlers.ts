@@ -353,14 +353,15 @@ export default function useEventHandlers({
         messageId: userMessage.messageId + '_',
         /**
          * Seed the assistant placeholder with the turn's manual skill
-         * invocations so `InvokingSkillsIndicator` can render chips off a
-         * message field rather than reading Recoil state per-render. The
-         * field rides through subsequent message mutations via spread
-         * (`useStepHandler` response creation, `updateContent` result
-         * spreads), and `finalHandler`'s server-backed `responseMessage`
-         * replacement drops it — which is the right behavior: by finalize
-         * the real `skill` tool_call is in `content`, the indicator steps
-         * aside on its own, and the field is no longer needed.
+         * invocations so `ContentParts` can synthesize pending `skill`
+         * tool_call parts and let the existing `SkillCall` renderer show
+         * the pulsing "Running X" card mid-stream. The field rides through
+         * subsequent message mutations via spread (`useStepHandler`
+         * response creation, `updateContent` result spreads), and
+         * `finalHandler`'s server-backed `responseMessage` replacement
+         * drops it — which is the right behavior: by finalize the real
+         * `skill` tool_call is in `content`, the synthesizer detects it
+         * and steps aside, and the field is no longer needed.
          */
         manualSkills:
           submission.manualSkills && submission.manualSkills.length > 0
