@@ -531,6 +531,61 @@ describe('custom-endpoint provider resolution', () => {
     expect(defaultHeaders['X-Custom-Header']).toBe('value-123');
   });
 
+  it('skips overrides when summarization targets the same endpoint as the agent', async () => {
+    /**
+     * When summarization provider matches the agent's endpoint, we rely on
+     * the SDK's self-summarize path (which reuses agentContext.clientOptions).
+     * Overriding here would shallow-replace the agent's resolved configuration
+     * (dynamic headers, proxy/fetch options) with yaml-only config.
+     */
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      agents: [makeAgent({ provider: 'openAI', endpoint: 'Ollama' })],
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('openAI');
+    /** No overrides injected — SDK will pull from agentContext.clientOptions. */
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('skips overrides when endpoints differ only by case for Ollama', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      agents: [makeAgent({ provider: 'openAI', endpoint: 'Ollama' })],
+      summarizationConfig: { provider: 'ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('applies overrides when summarization targets a different endpoint than the agent', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+      { name: 'Together', baseURL: 'https://api.together.ai/v1', apiKey: 'together-key' },
+    ]);
+    const agents = await callAndCapture({
+      agents: [makeAgent({ provider: 'openAI', endpoint: 'Ollama' })],
+      summarizationConfig: { provider: 'Together', model: 'mixtral' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    expect(parameters.apiKey).toBe('together-key');
+    expect((parameters.configuration as Record<string, unknown>).baseURL).toBe(
+      'https://api.together.ai/v1',
+    );
+  });
+
   it('does not leak model/modelName from getOpenAIConfig defaults', async () => {
     const appConfig = makeAppConfig([
       { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },

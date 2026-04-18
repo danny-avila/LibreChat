@@ -196,6 +196,17 @@ function hasUnresolvedPlaceholder(value: string): boolean {
   return UNRESOLVED_ENV_VAR_PLACEHOLDER.test(value);
 }
 
+/**
+ * Lightweight endpoint-name normalizer for comparing summarization-provider
+ * strings against the agent's endpoint. Mirrors `normalizeEndpointName` in
+ * `librechat-data-provider` (only Ollama is special-cased to be
+ * case-insensitive), so an agent on `"Ollama"` and summarization on `"ollama"`
+ * are treated as the same endpoint.
+ */
+function normalizedEndpointName(name: string): string {
+  return name.toLowerCase() === 'ollama' ? 'ollama' : name;
+}
+
 /** Client-option overrides for summarization models targeting custom endpoints. */
 type SummarizationClientOverrides = Record<string, unknown>;
 
@@ -300,9 +311,25 @@ function shapeSummarizationConfig(
   fallbackProvider: string,
   fallbackModel: string | undefined,
   appConfig: AppConfig | undefined,
+  agentEndpoint: string | undefined,
 ) {
   const rawProvider = config?.provider ?? fallbackProvider;
-  const { provider, clientOverrides } = resolveSummarizationProvider(rawProvider, appConfig);
+  /**
+   * When the summarization provider resolves to the same custom endpoint as
+   * the main agent, skip client-option overrides. The SDK's self-summarize
+   * path will reuse `agentContext.clientOptions` as-is, preserving any
+   * request-resolved dynamic headers, fetch/proxy options, and other state
+   * that `getOpenAIConfig` produced from raw yaml config does not capture.
+   */
+  const isSameEndpointAsAgent =
+    agentEndpoint != null &&
+    isNonEmptyString(rawProvider) &&
+    normalizedEndpointName(rawProvider) === normalizedEndpointName(agentEndpoint);
+
+  const { provider, clientOverrides } = isSameEndpointAsAgent
+    ? { provider: fallbackProvider, clientOverrides: undefined }
+    : resolveSummarizationProvider(rawProvider, appConfig);
+
   const model = config?.model ?? fallbackModel;
   const trigger =
     config?.trigger?.type && config?.trigger?.value
@@ -310,10 +337,11 @@ function shapeSummarizationConfig(
       : undefined;
 
   /**
-   * Custom-endpoint overrides (baseURL/apiKey) are merged into `parameters` so
-   * that the SDK's `buildSummarizationClientConfig` spreads them onto the
-   * summarization client options. This is required when summarization targets
-   * a different custom endpoint than the main agent.
+   * Custom-endpoint overrides are merged into `parameters` so the SDK's
+   * `buildSummarizationClientConfig` spreads them onto the summarization
+   * client options. Only applied when summarization targets a *different*
+   * custom endpoint than the main agent; the same-endpoint case leaves
+   * `parameters` untouched so `agentContext.clientOptions` wins.
    */
   const parameters =
     clientOverrides != null
@@ -438,6 +466,7 @@ export async function createRun({
       provider as string,
       selfModel,
       appConfig,
+      agent.endpoint ?? undefined,
     );
 
     const llmConfig: t.RunLLMConfig = Object.assign(
