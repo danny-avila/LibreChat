@@ -1,6 +1,7 @@
 import { memo, useMemo, useCallback } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
+  TMessage,
   TMessageContentParts,
   SearchResultData,
   TAttachment,
@@ -11,6 +12,7 @@ import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
 import { EditTextPart, EmptyText } from './Parts';
 import MemoryArtifacts from './MemoryArtifacts';
+import InvokingSkillsIndicator from './InvokingSkillsIndicator';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
@@ -73,6 +75,14 @@ const PartWithContext = memo(function PartWithContext({
 type ContentPartsProps = {
   content: Array<TMessageContentParts | undefined> | undefined;
   messageId: string;
+  /**
+   * Full message prop — used by `InvokingSkillsIndicator` to render a
+   * sibling chip row alongside the parts. Kept as a separate prop so
+   * the delta-driven `content` updates don't force us to synthesize a
+   * message-shaped object, and so the indicator's lifetime tracks the
+   * same reference the handlers spread when they mutate the message.
+   */
+  message?: TMessage;
   conversationId?: string | null;
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
@@ -99,6 +109,7 @@ const ContentParts = memo(function ContentParts({
   edit,
   isLast,
   content,
+  message,
   messageId,
   enterEdit,
   siblingIdx,
@@ -197,15 +208,18 @@ const ContentParts = memo(function ContentParts({
   const hasParallelContent = content.some((part) => part?.groupId != null);
   if (hasParallelContent) {
     return (
-      <ParallelContentRenderer
-        content={content}
-        messageId={messageId}
-        conversationId={conversationId}
-        attachments={attachments}
-        searchResults={searchResults}
-        isSubmitting={effectiveIsSubmitting}
-        renderPart={renderPart}
-      />
+      <>
+        <InvokingSkillsIndicator message={message} />
+        <ParallelContentRenderer
+          content={content}
+          messageId={messageId}
+          conversationId={conversationId}
+          attachments={attachments}
+          searchResults={searchResults}
+          isSubmitting={effectiveIsSubmitting}
+          renderPart={renderPart}
+        />
+      </>
     );
   }
 
@@ -221,6 +235,14 @@ const ContentParts = memo(function ContentParts({
   return (
     <SearchContext.Provider value={{ searchResults }}>
       <MemoryArtifacts attachments={attachments} />
+      {/**
+       * Sibling render slot above the Parts iteration. Reads `message.manualSkills`
+       * (seeded by `createdHandler` from `submission.manualSkills`) and lives
+       * outside the `content.map` so `content` delta updates never wipe it —
+       * the indicator's visibility is driven entirely by the field and its
+       * own `content`-scan for the real `skill` tool_call hide condition.
+       */}
+      <InvokingSkillsIndicator message={message} />
       {showEmptyCursor && (
         <Container>
           <EmptyText />

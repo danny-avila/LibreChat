@@ -7,7 +7,6 @@ import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } fr
 import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
-import InvokingSkillsIndicator from './Content/InvokingSkillsIndicator';
 import { fontSizeAtom } from '~/store/fontSize';
 import SiblingSwitch from './SiblingSwitch';
 import MultiMessage from './MultiMessage';
@@ -134,11 +133,11 @@ export default function Message(props: TMessageProps) {
               )}
               <div className="flex flex-col gap-1">
                 <div className="flex min-h-[20px] max-w-full flex-grow flex-col gap-0">
-                  <InvokingSkillsIndicator message={message} />
                   <ContentParts
                     edit={edit}
                     isLast={isLast}
                     enterEdit={enterEdit}
+                    message={message}
                     siblingIdx={siblingIdx}
                     attachments={attachments}
                     isSubmitting={isSubmitting}
