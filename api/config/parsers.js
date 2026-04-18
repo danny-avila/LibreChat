@@ -107,15 +107,17 @@ function extractMetaObject(source) {
   }
   const meta = {};
   for (const key of Object.keys(source)) {
-    if (RESERVED_LOG_KEYS.has(key) || key.startsWith('_')) {
+    if (RESERVED_LOG_KEYS.has(key)) {
       continue;
     }
     /*
      * Skip numeric-index-like keys. When a caller passes a primitive as
      * the second argument to `logger.warn/error`, `format.splat()` can
      * leave character-index keys ("0", "1", ...) on `info`. Those are
-     * synthetic splat artifacts, not real metadata, and would otherwise
-     * produce noisy output now that warn/error share this path.
+     * synthetic splat artifacts, not real metadata.
+     *
+     * Note: we intentionally do NOT filter keys starting with `_`, since
+     * legitimate fields like MongoDB `_id` use that prefix.
      */
     if (/^\d+$/.test(key)) {
       continue;
@@ -186,68 +188,48 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
   let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), DEBUG_MESSAGE_LENGTH)}`;
   const levelStr = typeof level === 'string' ? level : String(level);
   const isErrorOrWarn = levelStr.includes('error') || levelStr.includes('warn');
-  const finalize = (text) => (isErrorOrWarn ? redactMessage(text) : text);
+
+  /*
+   * Warn/error follow a simpler code path: append a single-line JSON
+   * metadata trailer (same shape as the console formatter) and pass the
+   * result through `redactMessage`. The complex object-traversal below is
+   * kept for debug level only, where detailed multi-line output is the
+   * intended behavior and its splat/interpolation interactions were
+   * already tolerated.
+   */
+  if (isErrorOrWarn) {
+    const trailer = formatConsoleMeta(metadata);
+    const line = trailer ? `${msg} ${trailer}` : msg;
+    return redactMessage(line);
+  }
+
   try {
-    if (level !== 'debug' && !isErrorOrWarn) {
-      return finalize(msg);
+    if (level !== 'debug') {
+      return msg;
     }
 
     if (!metadata) {
-      return finalize(msg);
+      return msg;
     }
 
-    /*
-     * Prefer the structured metadata object (which winston merges into info)
-     * over `SPLAT_SYMBOL[0]`. For primitive splat values, skip only if the
-     * value already appears in the interpolated message (i.e. `%s`/`%d`
-     * consumed it) — `logger.warn('failed for %s', tenant)` leaves `tenant`
-     * in `SPLAT[0]` after interpolation and would otherwise be appended a
-     * second time. Unconsumed primitives like
-     * `logger.debug('prefix:', detail)` still surface.
-     */
-    const extracted = extractMetaObject(metadata);
-    const splatFirst = metadata[SPLAT_SYMBOL]?.[0];
-    const splatUsable = (() => {
-      if (splatFirst == null) {
-        return false;
-      }
-      if (Array.isArray(splatFirst) || typeof splatFirst === 'object') {
-        return true;
-      }
-      if (
-        typeof splatFirst === 'string' ||
-        typeof splatFirst === 'number' ||
-        typeof splatFirst === 'boolean'
-      ) {
-        const splatStr = String(splatFirst);
-        return splatStr !== '' && !message.includes(splatStr);
-      }
-      return false;
-    })();
-    const debugValue = extracted ?? (splatUsable ? splatFirst : undefined);
+    const debugValue = metadata[SPLAT_SYMBOL]?.[0];
 
     if (!debugValue) {
-      return finalize(msg);
+      return msg;
     }
 
     if (debugValue && Array.isArray(debugValue)) {
       msg += `\n${JSON.stringify(debugValue.map(condenseArray))}`;
-      return finalize(msg);
+      return msg;
     }
 
     if (typeof debugValue !== 'object') {
-      return finalize((msg += ` ${debugValue}`));
+      return (msg += ` ${debugValue}`);
     }
 
     msg += '\n{';
 
-    /*
-     * Traverse the filtered metadata (`debugValue`), not the raw `metadata`
-     * object. `extractMetaObject` strips reserved keys, underscore-prefixed
-     * internals, and numeric-string splat artifacts — re-reading from raw
-     * `metadata` here would put those artifacts back into the output.
-     */
-    const copy = klona(debugValue);
+    const copy = klona(metadata);
     traverse(copy).forEach(function (value) {
       if (typeof this?.key === 'symbol') {
         return;
@@ -283,9 +265,9 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
     });
 
     msg += '\n}';
-    return finalize(msg);
+    return msg;
   } catch (e) {
-    return finalize((msg += `\n[LOGGER PARSING ERROR] ${e.message}`));
+    return (msg += `\n[LOGGER PARSING ERROR] ${e.message}`);
   }
 });
 

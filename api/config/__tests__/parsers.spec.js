@@ -30,17 +30,19 @@ describe('formatConsoleMeta', () => {
     expect(meta).toContain('"messagesToRefineCount":42');
   });
 
-  it('ignores reserved winston keys and underscore-prefixed internals', () => {
+  it('ignores reserved winston keys but preserves legitimate fields like _id', () => {
     const meta = formatConsoleMeta({
       level: 'error',
       message: 'boom',
       timestamp: 'ts',
       splat: [1, 2],
-      _internal: 'skip',
+      _id: '507f191e810c19729de860ea',
       userField: 'keep',
     });
 
-    expect(meta).toBe('{"userField":"keep"}');
+    expect(meta).toContain('"_id":"507f191e810c19729de860ea"');
+    expect(meta).toContain('"userField":"keep"');
+    expect(meta).not.toContain('"splat"');
   });
 
   it('drops numeric-index-like keys (splat artifacts from primitive args)', () => {
