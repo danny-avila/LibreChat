@@ -2,11 +2,16 @@ import { useMemo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronRight, Users } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-import type { TAttachment, SubagentUpdateEvent } from 'librechat-data-provider';
-import Markdown from '~/components/Chat/Messages/Content/Markdown';
+import { ContentTypes } from 'librechat-data-provider';
+import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
+import Text from './Text';
+import Reasoning from './Reasoning';
 import { AttachmentGroup } from './Attachment';
+import { MessageContext } from '~/Providers/MessageContext';
 import { useLocalize } from '~/hooks';
 import { subagentProgressByToolCallId } from '~/store';
+import { aggregateSubagentContent, buildSubagentTickerLines } from '~/utils/subagentContent';
 import { cn } from '~/utils';
 
 interface SubagentCallProps {
@@ -21,12 +26,16 @@ interface SubagentCallProps {
   attachments?: TAttachment[];
 }
 
+const TICKER_MAX_LINES = 3;
+
 /**
- * Renders the parent's `subagent` tool call as a compact "what the child
- * is doing right now" ticker. Unlike a normal tool call, the body is a
- * rolling list of short text snippets — no arg JSON or tool output
- * formatting. Clicking opens a dialog with the full markdown result once
- * the child returns (and a list of all captured update events).
+ * Renders the parent's `subagent` tool call as a compact "what the child is
+ * doing right now" ticker. The collapsed view shows short, user-readable
+ * status lines — streaming text/reasoning previews plus tool-call lifecycle
+ * markers — built from the `SubagentUpdateEvent` stream. Clicking opens a
+ * dialog that renders the child's aggregated content parts through the same
+ * `<Part />` pipeline the main conversation uses, so tool calls, reasoning
+ * blocks, and the final response all look like a regular assistant message.
  *
  * Progress is sourced from the `subagentProgressByToolCallId` Recoil atom
  * family, populated by `useStepHandler` as `ON_SUBAGENT_UPDATE` SSE
@@ -62,18 +71,44 @@ export default function SubagentCall({
   const cancelled = !isSubmitting && !finished;
   const running = !finished && !cancelled;
 
-  /** Latest three status lines — short text-only ticker. */
-  const recentLines = useMemo(() => {
-    if (!progress?.events.length) {
-      return running ? [localize('com_ui_subagent_waiting')] : [];
+  const events = progress?.events;
+
+  /** Aggregated content parts for the dialog — rebuilt from the full event
+   *  stream on every update. The computation is O(events) and cheap; no
+   *  need for incremental merging. */
+  const contentParts = useMemo<TMessageContentParts[]>(
+    () => aggregateSubagentContent(events ?? []),
+    [events],
+  );
+
+  /** Semantic status lines for the ticker. Message/reasoning deltas collapse
+   *  into a single running preview; tool calls are discrete entries with
+   *  input/output snippets. No event names are shown to the user. */
+  const tickerLines = useMemo(() => {
+    const lines = buildSubagentTickerLines(events ?? [], {
+      writingPrefix: localize('com_ui_subagent_ticker_writing'),
+      reasoningPrefix: localize('com_ui_subagent_ticker_reasoning'),
+      errorPrefix: localize('com_ui_subagent_ticker_error'),
+      formatUsingTool: (names, snippet) =>
+        snippet
+          ? localize('com_ui_subagent_ticker_using_with_args', {
+              0: names,
+              1: snippet,
+            })
+          : localize('com_ui_subagent_ticker_using', { 0: names }),
+      formatToolComplete: (name, snippet) =>
+        snippet
+          ? localize('com_ui_subagent_ticker_tool_output', {
+              0: name,
+              1: snippet,
+            })
+          : localize('com_ui_subagent_ticker_tool_complete', { 0: name }),
+    });
+    if (lines.length === 0 && running) {
+      return [{ text: localize('com_ui_subagent_waiting') }];
     }
-    const labels = progress.events
-      .slice(-6)
-      .map((e) => e.label)
-      .filter((l): l is string => typeof l === 'string' && l.length > 0);
-    const tail = labels.slice(-3);
-    return tail.length > 0 ? tail : [localize('com_ui_subagent_waiting')];
-  }, [progress, running, localize]);
+    return lines.slice(-TICKER_MAX_LINES);
+  }, [events, running, localize]);
 
   const description = typeof args === 'string' ? tryDescription(args) : extractDescription(args);
 
@@ -84,6 +119,26 @@ export default function SubagentCall({
       : running
         ? localize('com_ui_subagent_running', { 0: subagentType })
         : localize('com_ui_subagent_complete', { 0: subagentType });
+
+  /**
+   * Minimal `MessageContext` for the dialog's `<Part />` tree. Subagent
+   * content rendering needs the same context the main conversation uses
+   * (reasoning expand state, latest-message cursor, etc.) — synthesizing
+   * a scoped context lets us reuse the real part renderers without
+   * pulling the full `ChatView` / `MessagesView` tree into the dialog.
+   */
+  const dialogMessageContext = useMemo(
+    () => ({
+      messageId: `subagent-${toolCallId}`,
+      isExpanded: true,
+      isSubmitting: running,
+      isLatestMessage: running,
+      conversationId: null,
+    }),
+    [toolCallId, running],
+  );
+
+  const lastPartIndex = contentParts.length - 1;
 
   return (
     <>
@@ -110,10 +165,13 @@ export default function SubagentCall({
           />
         </div>
 
-        <ul className="space-y-0.5 pl-5 text-xs text-text-secondary">
-          {recentLines.map((line, i) => (
-            <li key={`${i}-${line}`} className="truncate">
-              {line}
+        <ul className="space-y-0.5 pl-5 font-mono text-xs text-text-secondary">
+          {tickerLines.map((line, i) => (
+            <li
+              key={`${i}-${line.text}`}
+              className={cn('truncate', line.live && 'text-text-primary')}
+            >
+              {line.text}
             </li>
           ))}
         </ul>
@@ -129,28 +187,25 @@ export default function SubagentCall({
           </OGDialogDescription>
 
           <div className="mt-3 max-h-[60vh] overflow-y-auto">
-            {progress?.events?.length ? (
-              <div className="mb-4 rounded-md border border-border-light bg-surface-secondary p-3">
-                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-text-tertiary">
-                  {localize('com_ui_subagent_activity_log')}
-                </div>
-                <ol className="space-y-1 text-xs text-text-secondary">
-                  {progress.events.map((e, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="w-12 shrink-0 uppercase tracking-wide text-text-tertiary">
-                        {shortPhase(e.phase)}
-                      </span>
-                      <span className="break-words">{e.label ?? e.phase}</span>
-                    </li>
+            {contentParts.length > 0 ? (
+              <MessageContext.Provider value={dialogMessageContext}>
+                <div className="space-y-1">
+                  {contentParts.map((part, i) => (
+                    <SubagentDialogPart
+                      key={`${toolCallId}-part-${i}`}
+                      part={part}
+                      isSubmitting={running}
+                      showCursor={running && i === lastPartIndex}
+                      isLast={i === lastPartIndex}
+                    />
                   ))}
-                </ol>
-              </div>
-            ) : null}
-
-            {output ? (
-              <div className="markdown prose dark:prose-invert max-w-none">
-                <Markdown content={output} isLatestMessage={false} />
-              </div>
+                </div>
+              </MessageContext.Provider>
+            ) : output ? (
+              /** Fallback: no aggregated content parts but the backend
+               *  wrote a final tool_call output. Happens for older subagent
+               *  runs recorded before the event forwarder existed. */
+              <div className="text-sm text-text-secondary">{output}</div>
             ) : (
               <div className="text-sm italic text-text-secondary">
                 {running
@@ -194,25 +249,55 @@ function tryDescription(args: string): string | undefined {
   }
 }
 
-function shortPhase(phase: SubagentUpdateEvent['phase']): string {
-  switch (phase) {
-    case 'start':
-      return 'start';
-    case 'stop':
-      return 'end';
-    case 'error':
-      return 'error';
-    case 'run_step':
-      return 'step';
-    case 'run_step_completed':
-      return 'done';
-    case 'run_step_delta':
-      return 'delta';
-    case 'message_delta':
-      return 'msg';
-    case 'reasoning_delta':
-      return 'reason';
-    default:
-      return String(phase);
+/**
+ * Minimal renderer for a subagent's aggregated content parts. Mirrors the
+ * three types the aggregator produces (`TEXT`, `THINK`, `TOOL_CALL`) —
+ * everything else would require the full `<Part />` tree and its imports,
+ * which creates an import cycle through `Parts/index`. Using the leaf
+ * components directly keeps this self-contained and avoids rendering a
+ * nested `SubagentCall` if a child somehow emits a subagent tool call.
+ */
+function SubagentDialogPart({
+  part,
+  isSubmitting,
+  showCursor,
+  isLast,
+}: {
+  part: TMessageContentParts;
+  isSubmitting: boolean;
+  showCursor: boolean;
+  isLast: boolean;
+}): JSX.Element | null {
+  if (part.type === ContentTypes.TEXT) {
+    const text = (part as { text: string }).text;
+    return <Text text={text} showCursor={showCursor} isCreatedByUser={false} />;
   }
+  if (part.type === ContentTypes.THINK) {
+    const think = (part as { think: string }).think;
+    return <Reasoning reasoning={think} isLast={isLast} />;
+  }
+  if (part.type === ContentTypes.TOOL_CALL) {
+    const tc = (
+      part as {
+        [ContentTypes.TOOL_CALL]?: {
+          args?: string | Record<string, unknown>;
+          output?: string;
+          name?: string;
+          progress?: number;
+        };
+      }
+    )[ContentTypes.TOOL_CALL];
+    if (!tc) return null;
+    return (
+      <ToolCall
+        args={tc.args ?? ''}
+        output={tc.output ?? ''}
+        initialProgress={tc.progress ?? 0.1}
+        isSubmitting={isSubmitting}
+        isLast={isLast}
+        name={tc.name ?? ''}
+      />
+    );
+  }
+  return null;
 }
