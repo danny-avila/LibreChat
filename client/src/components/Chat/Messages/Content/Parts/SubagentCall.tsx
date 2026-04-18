@@ -65,6 +65,11 @@ const DIALOG_AT_BOTTOM_THRESHOLD_PX = 120;
  * reference each render (e.g. a `useMemo` whose deps are stable by
  * content but not by identity), because `setState` with a new-reference
  * input always schedules another render.
+ *
+ * Ref mutations happen during render (idempotent — same value on
+ * re-invoke under Strict/Concurrent rendering), but `setTimeout` is
+ * confined to a `useEffect` so discarded renders don't leave orphan
+ * timers firing against stale trees.
  */
 function useThrottledValue<T>(value: T, intervalMs: number, enabled: boolean): T {
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
@@ -79,7 +84,49 @@ function useThrottledValue<T>(value: T, intervalMs: number, enabled: boolean): T
 
   latestValueRef.current = value;
 
-  /** Clean up any pending timer on unmount. */
+  /** Render-time computation: pick the value the caller should see, and
+   *  commit refs if we're past the throttle window. Ref writes are
+   *  idempotent under Strict Mode double-invoke. No `setTimeout` here —
+   *  that lives in the effect below so replayed renders don't strand
+   *  timers. */
+  let effectiveValue: T;
+  if (!enabled) {
+    effectiveValue = value;
+  } else {
+    const now = performance.now();
+    const sinceLast = now - lastFireAtRef.current;
+    if (sinceLast >= intervalMs) {
+      throttledRef.current = value;
+      lastFireAtRef.current = now;
+      effectiveValue = value;
+    } else {
+      effectiveValue = throttledRef.current;
+    }
+  }
+
+  /** Schedule the trailing-edge timer after commit. Runs whenever the
+   *  throttled frame is stale relative to the latest value; the timer
+   *  callback fires `forceUpdate` so the next render's render-time
+   *  check commits the now-latest value. */
+  useEffect(() => {
+    if (!enabled) {
+      if (timerRef.current != null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+    if (Object.is(throttledRef.current, latestValueRef.current)) return;
+    if (timerRef.current != null) return;
+    const sinceLast = performance.now() - lastFireAtRef.current;
+    const delay = Math.max(0, intervalMs - sinceLast);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      forceUpdate();
+    }, delay);
+  }, [value, intervalMs, enabled]);
+
+  /** Cleanup on unmount. */
   useEffect(
     () => () => {
       if (timerRef.current != null) clearTimeout(timerRef.current);
@@ -87,37 +134,7 @@ function useThrottledValue<T>(value: T, intervalMs: number, enabled: boolean): T
     [],
   );
 
-  if (!enabled) {
-    if (timerRef.current != null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    return value;
-  }
-
-  const now = performance.now();
-  const sinceLast = now - lastFireAtRef.current;
-
-  /** Past the throttle window — commit the latest value synchronously
-   *  (via refs, so no render cascade) and return it. */
-  if (sinceLast >= intervalMs) {
-    throttledRef.current = value;
-    lastFireAtRef.current = now;
-    return value;
-  }
-
-  /** Inside the throttle window — hold the previous frame and schedule
-   *  a trailing-edge fire if nothing is queued yet. `forceUpdate` kicks
-   *  a re-render when the timer lands; that render's `sinceLast` check
-   *  will then commit the latest `latestValueRef.current`. */
-  if (timerRef.current == null) {
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      forceUpdate();
-    }, intervalMs - sinceLast);
-  }
-
-  return throttledRef.current;
+  return effectiveValue;
 }
 
 /**
