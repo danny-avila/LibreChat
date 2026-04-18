@@ -506,13 +506,14 @@ describe('interfaceSchema', () => {
 });
 
 describe('summarizationTriggerSchema', () => {
-  it.each(['token_ratio', 'remaining_tokens', 'messages_to_refine'] as const)(
-    'accepts documented trigger type "%s"',
-    (type) => {
-      const result = summarizationTriggerSchema.safeParse({ type, value: 0.8 });
-      expect(result.success).toBe(true);
-    },
-  );
+  it.each([
+    ['token_ratio', 0.8],
+    ['remaining_tokens', 500],
+    ['messages_to_refine', 4],
+  ] as const)('accepts documented trigger type "%s" with a sensible value', (type, value) => {
+    const result = summarizationTriggerSchema.safeParse({ type, value });
+    expect(result.success).toBe(true);
+  });
 
   it('rejects the legacy/typoed "token_count" trigger type', () => {
     const result = summarizationTriggerSchema.safeParse({
@@ -537,6 +538,36 @@ describe('summarizationTriggerSchema', () => {
     expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: -0.5 }).success).toBe(
       false,
     );
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 0 }).success,
+    ).toBe(false);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: 0 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects token_ratio values > 1 to catch the "80 meant as 80%" mistake', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 80 }).success).toBe(
+      false,
+    );
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 1.01 }).success).toBe(
+      false,
+    );
+  });
+
+  it('accepts token_ratio value at the upper bound of 1', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 1 }).success).toBe(
+      true,
+    );
+  });
+
+  it('allows remaining_tokens and messages_to_refine values above 1 (token/message counts)', () => {
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 2000 }).success,
+    ).toBe(true);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: 20 }).success,
+    ).toBe(true);
   });
 
   it('parses inside the full summarization config', () => {
