@@ -300,5 +300,60 @@ describe('text', () => {
         source: FileSources.text,
       });
     });
+
+    it.each([
+      { mimetype: 'text/markdown', originalname: 'notes.md' },
+      { mimetype: 'text/x-markdown', originalname: 'notes.md' },
+      { mimetype: 'application/markdown', originalname: 'notes.md' },
+      { mimetype: 'application/x-markdown', originalname: 'notes.md' },
+      { mimetype: 'application/octet-stream', originalname: 'README.md' },
+      { mimetype: 'application/octet-stream', originalname: 'GUIDE.MARKDOWN' },
+    ])(
+      'should short-circuit to native parsing for markdown file (%o)',
+      async ({ mimetype, originalname }) => {
+        process.env.RAG_API_URL = 'http://rag-api.test';
+        const mockText = '# Heading\n\n**bold** text';
+        const mockBytes = Buffer.byteLength(mockText, 'utf8');
+
+        mockedReadFileAsString.mockResolvedValue({
+          content: mockText,
+          bytes: mockBytes,
+        });
+
+        const result = await parseText({
+          req: mockReq,
+          file: { ...mockFile, mimetype, originalname },
+          file_id: mockFileId,
+        });
+
+        expect(mockedAxios.get).not.toHaveBeenCalled();
+        expect(mockedAxios.post).not.toHaveBeenCalled();
+        expect(result).toEqual({
+          text: mockText,
+          bytes: mockBytes,
+          source: FileSources.text,
+        });
+      },
+    );
+
+    it('should still call the RAG API for non-markdown text files', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      const mockText = 'plain text content';
+
+      mockedAxios.get.mockResolvedValue({ status: 200, statusText: 'OK' });
+      mockedAxios.post.mockResolvedValue({ data: { text: mockText } });
+
+      await parseText({
+        req: mockReq,
+        file: mockFile,
+        file_id: mockFileId,
+      });
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'http://rag-api.test/text',
+        expect.any(Object),
+        expect.objectContaining({ timeout: 300000 }),
+      );
+    });
   });
 });
