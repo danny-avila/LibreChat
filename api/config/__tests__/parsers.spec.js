@@ -256,6 +256,17 @@ describe('debugTraverse', () => {
     expect(tenantMatches.length).toBe(1);
   });
 
+  it('surfaces unconsumed primitive SPLAT[0] (no %s in message) for debug level', () => {
+    const info = {
+      level: 'debug',
+      message: 'prefix:',
+      timestamp: 'ts',
+      [SPLAT_SYMBOL]: ['detailValueXYZ'],
+    };
+    const out = runFormatter(info);
+    expect(out).toContain('detailValueXYZ');
+  });
+
   it('still surfaces array metadata in SPLAT[0] when no object is extracted', () => {
     const info = {
       level: 'debug',

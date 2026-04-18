@@ -198,17 +198,32 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
 
     /*
      * Prefer the structured metadata object (which winston merges into info)
-     * over `SPLAT_SYMBOL[0]`. The first splat entry may be a *consumed*
-     * printf arg — e.g. `logger.warn('failed for %s', tenant)` leaves
-     * `tenant` in `SPLAT[0]` after interpolation, and appending it again
-     * would emit `failed for tenant tenant`. Only fall back to the splat
-     * entry when it's a non-primitive (array or plain object); a string
-     * or number there is almost certainly a consumed %s/%d arg.
+     * over `SPLAT_SYMBOL[0]`. For primitive splat values, skip only if the
+     * value already appears in the interpolated message (i.e. `%s`/`%d`
+     * consumed it) — `logger.warn('failed for %s', tenant)` leaves `tenant`
+     * in `SPLAT[0]` after interpolation and would otherwise be appended a
+     * second time. Unconsumed primitives like
+     * `logger.debug('prefix:', detail)` still surface.
      */
     const extracted = extractMetaObject(metadata);
     const splatFirst = metadata[SPLAT_SYMBOL]?.[0];
-    const splatUsable =
-      Array.isArray(splatFirst) || (splatFirst != null && typeof splatFirst === 'object');
+    const splatUsable = (() => {
+      if (splatFirst == null) {
+        return false;
+      }
+      if (Array.isArray(splatFirst) || typeof splatFirst === 'object') {
+        return true;
+      }
+      if (
+        typeof splatFirst === 'string' ||
+        typeof splatFirst === 'number' ||
+        typeof splatFirst === 'boolean'
+      ) {
+        const splatStr = String(splatFirst);
+        return splatStr !== '' && !message.includes(splatStr);
+      }
+      return false;
+    })();
     const debugValue = extracted ?? (splatUsable ? splatFirst : undefined);
 
     if (!debugValue) {
