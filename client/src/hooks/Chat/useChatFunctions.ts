@@ -117,6 +117,7 @@ export default function useChatFunctions({
       isEdited = false,
       overrideMessages,
       overrideFiles,
+      overrideManualSkills,
       addedConvo,
     } = {},
   ) => {
@@ -149,14 +150,22 @@ export default function useChatFunctions({
 
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
     /**
-     * Regenerate reuses a prior user message verbatim — it's not a fresh
-     * invocation from the textarea, so any skill the user queued up for a NEW
-     * turn shouldn't be drained or attached. Leave the atom alone.
+     * Manual skill selection resolution:
+     *  - Explicit `overrideManualSkills` wins (regenerate / save-and-submit
+     *    pass the original user message's persisted `manualSkills` so the
+     *    resubmitted turn primes the same skills — the pills are still
+     *    visible to the user, it would be strange to quietly drop them).
+     *  - Regenerate / continue / edit without an override → empty, and the
+     *    compose-time atom is deliberately NOT drained (those flows replay
+     *    a prior turn, not compose a new one).
+     *  - Fresh submit → drain the per-convo atom into the message.
      */
     const manualSkills =
-      isRegenerate || isContinued || isEdited
-        ? []
-        : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
+      overrideManualSkills != null
+        ? overrideManualSkills
+        : isRegenerate || isContinued || isEdited
+          ? []
+          : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
     const isEditOrContinue = isEdited || isContinued;
 
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
@@ -395,7 +404,16 @@ export default function useChatFunctions({
     if (parentMessage && parentMessage.isCreatedByUser) {
       ask(
         { ...parentMessage },
-        { isRegenerate: true, addedConvo: options?.addedConvo ?? undefined },
+        {
+          isRegenerate: true,
+          addedConvo: options?.addedConvo ?? undefined,
+          /** Carry the original user message's manual skill picks forward
+           *  so the regenerated response is primed with the same skills.
+           *  The compose-time atom was drained on the first submit; without
+           *  this the model sees an unprimed turn even though the pills
+           *  still show on the user bubble. */
+          overrideManualSkills: parentMessage.manualSkills,
+        },
       );
     } else {
       console.error(

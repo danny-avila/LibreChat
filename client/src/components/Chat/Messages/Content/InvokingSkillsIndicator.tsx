@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { ScrollText } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
-import { ContentTypes, QueryKeys } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
+import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -21,25 +21,31 @@ import { useLocalize } from '~/hooks';
  * via a sparse-array offset (card ends up at the bottom after compaction).
  * Mirroring the parent user message's `manualSkills` into a sibling render
  * slot above `ContentParts` sidesteps the index math entirely.
+ *
+ * Parent lookup goes through `useChatContext().getMessages()` rather than a
+ * direct `queryClient` read. The underlying React Query cache is keyed by
+ * `paramId` (from the URL), which for a new chat is literally `"new"` until
+ * the server assigns a real conversation ID — but `message.conversationId`
+ * is already the server ID by the time events arrive. Going through the
+ * chat context keeps us on the same `paramId` the rest of the UI reads
+ * from, so lookups work on new chats too.
  */
 export default function InvokingSkillsIndicator({ message }: { message?: TMessage }) {
   const localize = useLocalize();
-  const queryClient = useQueryClient();
+  const { getMessages } = useChatContext();
 
   const skills = useMemo(() => {
     if (!message || message.isCreatedByUser) {
       return [];
     }
-    if (!message.parentMessageId || !message.conversationId) {
+    const parentId = message.parentMessageId;
+    if (!parentId || parentId === Constants.NO_PARENT) {
       return [];
     }
-    const messages = queryClient.getQueryData<TMessage[]>([
-      QueryKeys.messages,
-      message.conversationId,
-    ]);
-    const parent = messages?.find((m) => m.messageId === message.parentMessageId);
+    const messages = getMessages();
+    const parent = messages?.find((m) => m.messageId === parentId);
     return parent?.manualSkills ?? [];
-  }, [message, queryClient]);
+  }, [message, getMessages]);
 
   /**
    * Once the real card (server's unshifted `skill` tool_call content part)
