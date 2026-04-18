@@ -1,4 +1,4 @@
-const { formatConsoleMeta } = jest.requireActual('../parsers');
+const { formatConsoleMeta, redactMessage } = jest.requireActual('../parsers');
 
 describe('formatConsoleMeta', () => {
   it('returns empty string when there is no user metadata', () => {
@@ -79,5 +79,58 @@ describe('formatConsoleMeta', () => {
     });
 
     expect(meta).toBe('');
+  });
+
+  it('redacts sensitive patterns inside string metadata values', () => {
+    const meta = formatConsoleMeta({
+      level: 'error',
+      message: 'leak test',
+      timestamp: 'ts',
+      openaiKey: 'sk-abc123def456',
+      auth: 'Bearer eyJhbGciOi...tokenvalue',
+      google: 'https://example.com/?key=AIzaSyXX',
+    });
+
+    expect(meta).not.toContain('sk-abc123def456');
+    expect(meta).not.toContain('eyJhbGciOi...tokenvalue');
+    expect(meta).not.toContain('AIzaSyXX');
+    expect(meta).toContain('sk-[REDACTED]');
+    expect(meta).toContain('Bearer [REDACTED]');
+    expect(meta).toContain('key=[REDACTED]');
+  });
+
+  it('redacts multiple occurrences of the same pattern in one value', () => {
+    const meta = formatConsoleMeta({
+      level: 'error',
+      message: 'two keys',
+      timestamp: 'ts',
+      combined: 'first sk-aaa and then sk-bbb',
+    });
+
+    expect(meta).not.toContain('sk-aaa');
+    expect(meta).not.toContain('sk-bbb');
+    expect(meta.match(/sk-\[REDACTED\]/g)?.length).toBe(2);
+  });
+});
+
+describe('redactMessage', () => {
+  it('redacts sk- keys that are not at line start (inside JSON-like text)', () => {
+    const input = '{"apiKey":"sk-abc123"}';
+    expect(redactMessage(input)).toBe('{"apiKey":"sk-[REDACTED]"}');
+  });
+
+  it('redacts all sk- occurrences in a single pass', () => {
+    const input = 'sk-one sk-two sk-three';
+    expect(redactMessage(input)).toBe('sk-[REDACTED] sk-[REDACTED] sk-[REDACTED]');
+  });
+
+  it('trims redacted output when trimLength is provided', () => {
+    const input = 'Bearer supersecretvalue';
+    expect(redactMessage(input, 10)).toBe('Bearer [RE...');
+  });
+
+  it('returns empty string for falsy input', () => {
+    expect(redactMessage('')).toBe('');
+    expect(redactMessage(undefined)).toBe('');
   });
 });

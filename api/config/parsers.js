@@ -8,25 +8,11 @@ const CONSOLE_JSON_STRING_LENGTH = parseInt(process.env.CONSOLE_JSON_STRING_LENG
 const DEBUG_MESSAGE_LENGTH = parseInt(process.env.DEBUG_MESSAGE_LENGTH) || 150;
 
 const sensitiveKeys = [
-  /^(sk-)[^\s]+/, // OpenAI API key pattern
-  /(Bearer )[^\s]+/, // Header: Bearer token pattern
-  /(api-key:? )[^\s]+/, // Header: API key pattern
-  /(key=)[^\s]+/, // URL query param: sensitive key pattern (Google)
+  /(sk-)[^\s"']+/g, // OpenAI API key pattern (also catches keys embedded in JSON/quoted strings)
+  /(Bearer )[^\s"']+/g, // Header: Bearer token pattern
+  /(api-key:? )[^\s"']+/g, // Header: API key pattern
+  /(key=)[^\s"']+/g, // URL query param: sensitive key pattern (Google)
 ];
-
-/**
- * Determines if a given value string is sensitive and returns matching regex patterns.
- *
- * @param {string} valueStr - The value string to check.
- * @returns {Array<RegExp>} An array of regex patterns that match the value string.
- */
-function getMatchingSensitivePatterns(valueStr) {
-  if (valueStr) {
-    // Filter and return all regex patterns that match the value string
-    return sensitiveKeys.filter((regex) => regex.test(valueStr));
-  }
-  return [];
-}
 
 /**
  * Redacts sensitive information from a console message and trims it to a specified length if provided.
@@ -39,16 +25,16 @@ function redactMessage(str, trimLength) {
     return '';
   }
 
-  const patterns = getMatchingSensitivePatterns(str);
-  patterns.forEach((pattern) => {
-    str = str.replace(pattern, '$1[REDACTED]');
-  });
-
-  if (trimLength !== undefined && str.length > trimLength) {
-    return `${str.substring(0, trimLength)}...`;
+  let redacted = str;
+  for (const pattern of sensitiveKeys) {
+    redacted = redacted.replace(pattern, '$1[REDACTED]');
   }
 
-  return str;
+  if (trimLength !== undefined && redacted.length > trimLength) {
+    return `${redacted.substring(0, trimLength)}...`;
+  }
+
+  return redacted;
 }
 
 /**
@@ -141,10 +127,13 @@ function formatConsoleMeta(info) {
   }
   try {
     return JSON.stringify(meta, (_key, value) => {
-      if (typeof value === 'string' && value.length > CONSOLE_JSON_STRING_LENGTH) {
-        return `${value.substring(0, CONSOLE_JSON_STRING_LENGTH)}...`;
+      if (typeof value !== 'string') {
+        return value;
       }
-      return value;
+      const safe = redactMessage(value);
+      return safe.length > CONSOLE_JSON_STRING_LENGTH
+        ? `${safe.substring(0, CONSOLE_JSON_STRING_LENGTH)}...`
+        : safe;
     });
   } catch {
     return '';
