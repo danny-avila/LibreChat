@@ -1,4 +1,6 @@
+import type { AppConfig } from '@librechat/data-schemas';
 import type { SummarizationConfig } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { createRun } from '~/agents/run';
 
 // Mock winston logger
@@ -57,6 +59,7 @@ async function callAndCapture(
     agents?: ReturnType<typeof makeAgent>[];
     summarizationConfig?: SummarizationConfig;
     initialSummary?: { text: string; tokenCount: number };
+    appConfig?: AppConfig;
   } = {},
 ) {
   const agents = opts.agents ?? [makeAgent()];
@@ -67,6 +70,7 @@ async function callAndCapture(
     signal,
     summarizationConfig: opts.summarizationConfig,
     initialSummary: opts.initialSummary,
+    appConfig: opts.appConfig,
     streaming: true,
     streamUsage: true,
   });
@@ -75,6 +79,17 @@ async function callAndCapture(
   expect(createMock).toHaveBeenCalledTimes(1);
   const callArgs = createMock.mock.calls[0][0];
   return callArgs.graphConfig.agents as Array<Record<string, unknown>>;
+}
+
+/** Minimal AppConfig with a single custom endpoint for testing provider resolution. */
+function makeAppConfig(
+  customEndpoints: Array<{ name: string; baseURL: string; apiKey: string }>,
+): AppConfig {
+  return {
+    endpoints: {
+      [EModelEndpoint.custom]: customEndpoints,
+    },
+  } as unknown as AppConfig;
 }
 
 beforeEach(() => {
@@ -295,5 +310,158 @@ describe('initialSummary passthrough', () => {
   it('undefined when not provided', async () => {
     const agents = await callAndCapture({});
     expect(agents[0].initialSummary).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite 7: custom-endpoint provider resolution
+// ---------------------------------------------------------------------------
+describe('custom-endpoint provider resolution', () => {
+  it('remaps a custom endpoint name to openAI and injects baseURL/apiKey', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('openAI');
+    expect(config.model).toBe('llama3');
+
+    const parameters = config.parameters as Record<string, unknown>;
+    expect(parameters).toMatchObject({
+      configuration: { baseURL: 'http://localhost:11434/v1' },
+      apiKey: 'ollama-key',
+    });
+  });
+
+  it('is case-insensitive when matching custom endpoint names', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('openAI');
+    expect((config.parameters as Record<string, unknown>).apiKey).toBe('ollama-key');
+  });
+
+  it('leaves known SDK providers untouched', async () => {
+    const appConfig = makeAppConfig([]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'anthropic', model: 'claude' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('anthropic');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('preserves unknown provider names when appConfig is missing', async () => {
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('Ollama');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('leaves unrecognized names untouched when no matching custom endpoint exists', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'nonexistent', model: 'foo' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('nonexistent');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('extracts ${ENV_VAR} references in custom endpoint credentials', async () => {
+    process.env.TEST_OLLAMA_KEY = 'resolved-key-value';
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: '${TEST_OLLAMA_KEY}',
+      },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    expect(parameters.apiKey).toBe('resolved-key-value');
+    delete process.env.TEST_OLLAMA_KEY;
+  });
+
+  it('skips override when apiKey is marked user_provided', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'user_provided' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    // Provider still remapped to the SDK-recognized name...
+    expect(config.provider).toBe('openAI');
+    // ...but credentials are not forwarded (async user lookup not supported here;
+    // SDK's self-summarize path will reuse the agent's clientOptions).
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('skips override when env var reference cannot be resolved', async () => {
+    delete process.env.UNSET_TEST_KEY;
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: '${UNSET_TEST_KEY}',
+      },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('openAI');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('merges overrides alongside user-supplied parameters', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: 'Ollama',
+        model: 'llama3',
+        parameters: { temperature: 0.2 },
+      },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    expect(parameters).toMatchObject({
+      temperature: 0.2,
+      configuration: { baseURL: 'http://localhost:11434/v1' },
+      apiKey: 'ollama-key',
+    });
   });
 });

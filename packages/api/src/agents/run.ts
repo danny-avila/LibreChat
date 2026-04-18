@@ -1,5 +1,10 @@
 import { Run, Providers, Constants } from '@librechat/agents';
-import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
+import {
+  envVarRegex,
+  KnownEndpoints,
+  extractEnvVariable,
+  providerEndpointMap,
+} from 'librechat-data-provider';
 import type {
   SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
@@ -15,9 +20,11 @@ import type {
 } from '@librechat/agents';
 import type { Agent, SummarizationConfig } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
-import type { IUser } from '@librechat/data-schemas';
+import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
+import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+import { isUserProvided } from '~/utils/common';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -186,18 +193,94 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+/** Client-option overrides for summarization models targeting custom endpoints. */
+interface SummarizationClientOverrides {
+  configuration?: { baseURL: string };
+  apiKey?: string;
+}
+
+/**
+ * Resolves a summarization provider string (which may be a custom-endpoint name
+ * like "Ollama") into the SDK-recognized provider and any baseURL/apiKey
+ * overrides required to talk to that endpoint.
+ *
+ * Without this step, a `summarization.provider: "Ollama"` entry in
+ * `librechat.yaml` flows verbatim to the agents SDK, which only knows a fixed
+ * set of provider names and throws "Unsupported LLM provider: Ollama".
+ */
+function resolveSummarizationProvider(
+  rawProvider: string,
+  appConfig: AppConfig | undefined,
+): {
+  provider: string;
+  clientOverrides?: SummarizationClientOverrides;
+} {
+  if (!appConfig || !isNonEmptyString(rawProvider)) {
+    return { provider: rawProvider };
+  }
+  try {
+    const { overrideProvider, customEndpointConfig } = getProviderConfig({
+      provider: rawProvider,
+      appConfig,
+    });
+    if (!customEndpointConfig) {
+      return { provider: overrideProvider };
+    }
+    const rawApiKey = customEndpointConfig.apiKey ?? '';
+    const rawBaseURL = customEndpointConfig.baseURL ?? '';
+    /**
+     * User-provided credentials require an async DB lookup and expiry checks
+     * that are out of scope here. Fall back to the remapped provider and let
+     * the SDK's self-summarize path reuse the agent's own client options.
+     */
+    if (isUserProvided(rawApiKey) || isUserProvided(rawBaseURL)) {
+      return { provider: overrideProvider };
+    }
+    const apiKey = extractEnvVariable(rawApiKey);
+    const baseURL = extractEnvVariable(rawBaseURL);
+    if (!apiKey || !baseURL || apiKey.match(envVarRegex) || baseURL.match(envVarRegex)) {
+      return { provider: overrideProvider };
+    }
+    return {
+      provider: overrideProvider,
+      clientOverrides: {
+        configuration: { baseURL },
+        apiKey,
+      },
+    };
+  } catch {
+    return { provider: rawProvider };
+  }
+}
+
 /** Shapes a SummarizationConfig into the format expected by AgentInputs. */
 function shapeSummarizationConfig(
   config: SummarizationConfig | undefined,
   fallbackProvider: string,
   fallbackModel: string | undefined,
+  appConfig: AppConfig | undefined,
 ) {
-  const provider = config?.provider ?? fallbackProvider;
+  const rawProvider = config?.provider ?? fallbackProvider;
+  const { provider, clientOverrides } = resolveSummarizationProvider(rawProvider, appConfig);
   const model = config?.model ?? fallbackModel;
   const trigger =
     config?.trigger?.type && config?.trigger?.value
       ? { type: config.trigger.type, value: config.trigger.value }
       : undefined;
+
+  /**
+   * Custom-endpoint overrides (baseURL/apiKey) are merged into `parameters` so
+   * that the SDK's `buildSummarizationClientConfig` spreads them onto the
+   * summarization client options. This is required when summarization targets
+   * a different custom endpoint than the main agent.
+   */
+  const parameters =
+    clientOverrides != null
+      ? {
+          ...(config?.parameters ?? {}),
+          ...clientOverrides,
+        }
+      : config?.parameters;
 
   return {
     enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
@@ -205,7 +288,7 @@ function shapeSummarizationConfig(
       trigger,
       provider,
       model,
-      parameters: config?.parameters,
+      parameters,
       prompt: config?.prompt,
       updatePrompt: config?.updatePrompt,
       reserveRatio: config?.reserveRatio,
@@ -260,6 +343,7 @@ export async function createRun({
   summarizationConfig,
   initialSummary,
   calibrationRatio,
+  appConfig,
   streaming = true,
   streamUsage = true,
 }: {
@@ -277,6 +361,11 @@ export async function createRun({
   initialSummary?: { text: string; tokenCount: number };
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
+  /**
+   * Resolved app config. Used to translate custom-endpoint provider names
+   * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
+   */
+  appConfig?: AppConfig;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -307,6 +396,7 @@ export async function createRun({
       agent.summarization ?? summarizationConfig,
       provider as string,
       selfModel,
+      appConfig,
     );
 
     const llmConfig: t.RunLLMConfig = Object.assign(

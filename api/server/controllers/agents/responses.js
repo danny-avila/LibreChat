@@ -492,6 +492,7 @@ const createResponse = async (req, res) => {
         initialSummary,
         runId: responseId,
         summarizationConfig,
+        appConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -655,6 +656,7 @@ const createResponse = async (req, res) => {
         initialSummary,
         runId: responseId,
         summarizationConfig,
+        appConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
