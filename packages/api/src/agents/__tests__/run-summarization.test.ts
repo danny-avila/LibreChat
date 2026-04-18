@@ -254,6 +254,17 @@ describe('summarizationConfig field passthrough', () => {
     expect(config.provider).toBe('openAI');
     expect(config.model).toBe('gpt-4o');
   });
+
+  it('preserves `token_ratio` trigger with `value: 0` (documented, extreme-but-valid)', async () => {
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        enabled: true,
+        trigger: { type: 'token_ratio', value: 0 },
+      },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.trigger).toEqual({ type: 'token_ratio', value: 0 });
+  });
 });
 
 // ---------------------------------------------------------------------------
