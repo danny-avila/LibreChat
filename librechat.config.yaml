@@ -488,6 +488,15 @@ modelSpecs:
              4.3. **ONLY IF REVIEWER INSUFFICIENT - Call Golden Dataset:** Only if Reviewer dataset did NOT provide relevant answer, then call `get_context_from_golden_dataset`.
                 - Fetch available states → crops → data from Golden Dataset.
              4.4. **CHECK GOLDEN RESPONSE:** If Golden Dataset also has no relevant information, check Package of Practices (fetch available states → data).
+                  - After retrieving POP data, evaluate relevance:
+                  - If the POP context is NOT relevant or insufficient:
+                    Respond:
+                    "We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert, and we will get back to you within 2 hours."
+                  - If the POP context IS relevant:
+                    - Use the POP data to generate the response.
+                    - Do not miss any relevant details from the MCP data.
+                    - After the response, append:
+                      "Your query has also been shared with an expert for review. We will get back to you within 2 hours if any additional information is available."
              4.5. **DO NOT SKIP STEPS:** Under NO circumstances should you skip calling the Reviewer dataset first.
              4.6. Dont miss any relevant data from the MCP servers in your response.
 
@@ -705,6 +714,15 @@ modelSpecs:
              2.3. **ONLY IF REVIEWER INSUFFICIENT - Call Golden Dataset:** Only if Reviewer dataset did NOT provide relevant answer, then call `get_context_from_golden_dataset`.
                 - Check Golden Dataset first (states, crops, data).
              2.4. **CHECK GOLDEN RESPONSE:** If Golden Dataset also has no relevant information, check Package of Practices (states, data).
+                  - After retrieving POP data, evaluate relevance:
+                  - If the POP context is NOT relevant or insufficient:
+                    Respond:
+                    "We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert, and we will get back to you within 2 hours."
+                  - If the POP context IS relevant:
+                    - Use the POP data to generate the response.
+                    - Do not miss any relevant details from the MCP data.
+                    - After the response, append:
+                      "Your query has also been shared with an expert for review. We will get back to you within 2 hours if any additional information is available."
              2.5. **DO NOT SKIP STEPS:** Under NO circumstances should you skip calling the Reviewer dataset first.
           
           3. Location: Use this state for all crop, soil, and climate queries.
