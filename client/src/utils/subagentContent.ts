@@ -387,31 +387,45 @@ export function foldSubagentEventIntoTicker(
   if (event.phase === 'message_delta') {
     const chunk = extractTextChunk(event.data as MessageDeltaData | undefined);
     if (!chunk) return state;
-    const textBuffer = state.textBuffer + chunk;
+    /** Delta-type transition: close any open reasoning buffer/cursor so
+     *  a later `reasoning_delta` starts a NEW line below this text,
+     *  rather than appending to the original reasoning line (which
+     *  would produce merged / out-of-order previews). Mirrors the
+     *  content-parts reducer's chronological-order rule. */
+    const afterClose =
+      state.thinkLineIdx != null || state.thinkBuffer
+        ? { ...state, thinkLineIdx: null, thinkBuffer: '' }
+        : state;
+    const textBuffer = afterClose.textBuffer + chunk;
     const body = truncatePreview(textBuffer);
     const line: SubagentTickerLine = { kind: 'writing', body };
-    if (state.textLineIdx == null) {
-      const lines = state.lines.concat(line);
-      return { ...state, textBuffer, lines, textLineIdx: lines.length - 1 };
+    if (afterClose.textLineIdx == null) {
+      const lines = afterClose.lines.concat(line);
+      return { ...afterClose, textBuffer, lines, textLineIdx: lines.length - 1 };
     }
-    const lines = state.lines.slice();
-    lines[state.textLineIdx] = line;
-    return { ...state, textBuffer, lines };
+    const lines = afterClose.lines.slice();
+    lines[afterClose.textLineIdx] = line;
+    return { ...afterClose, textBuffer, lines };
   }
 
   if (event.phase === 'reasoning_delta') {
     const chunk = extractThinkChunk(event.data as ReasoningDeltaData | undefined);
     if (!chunk) return state;
-    const thinkBuffer = state.thinkBuffer + chunk;
+    /** Symmetric: close any open text buffer/cursor. */
+    const afterClose =
+      state.textLineIdx != null || state.textBuffer
+        ? { ...state, textLineIdx: null, textBuffer: '' }
+        : state;
+    const thinkBuffer = afterClose.thinkBuffer + chunk;
     const body = truncatePreview(thinkBuffer);
     const line: SubagentTickerLine = { kind: 'reasoning', body };
-    if (state.thinkLineIdx == null) {
-      const lines = state.lines.concat(line);
-      return { ...state, thinkBuffer, lines, thinkLineIdx: lines.length - 1 };
+    if (afterClose.thinkLineIdx == null) {
+      const lines = afterClose.lines.concat(line);
+      return { ...afterClose, thinkBuffer, lines, thinkLineIdx: lines.length - 1 };
     }
-    const lines = state.lines.slice();
-    lines[state.thinkLineIdx] = line;
-    return { ...state, thinkBuffer, lines };
+    const lines = afterClose.lines.slice();
+    lines[afterClose.thinkLineIdx] = line;
+    return { ...afterClose, thinkBuffer, lines };
   }
 
   if (event.phase === 'run_step') {
