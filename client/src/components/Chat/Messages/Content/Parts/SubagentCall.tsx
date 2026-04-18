@@ -24,6 +24,12 @@ interface SubagentCallProps {
   args?: string | Record<string, unknown>;
   output?: string | null;
   attachments?: TAttachment[];
+  /** Aggregated content parts the backend attached to the tool_call at
+   *  message-save time. Takes precedence over the in-memory Recoil atom
+   *  so a page refresh shows the same history the user saw live. Older
+   *  runs recorded before the persistence path landed will not have this
+   *  field; those fall back to the atom (or the raw `output` string). */
+  persistedContent?: TMessageContentParts[];
 }
 
 const TICKER_MAX_LINES = 3;
@@ -48,6 +54,7 @@ export default function SubagentCall({
   args,
   output,
   attachments,
+  persistedContent,
 }: SubagentCallProps) {
   const localize = useLocalize();
   const progress = useRecoilValue(subagentProgressByToolCallId(toolCallId));
@@ -73,13 +80,28 @@ export default function SubagentCall({
 
   const events = progress?.events;
 
-  /** Aggregated content parts for the dialog — rebuilt from the full event
-   *  stream on every update. The computation is O(events) and cheap; no
-   *  need for incremental merging. */
-  const contentParts = useMemo<TMessageContentParts[]>(
-    () => aggregateSubagentContent(events ?? []),
+  /**
+   * Aggregated content parts for the dialog.
+   *
+   * Preference order:
+   *   1. **Persisted** `subagent_content` on the parent tool_call — written
+   *      by the backend at message-save time, survives a page refresh.
+   *      Preferred *only* when the run is not currently streaming, so an
+   *      in-progress re-render still tracks live deltas (persisted content
+   *      is only correct post-finalize).
+   *   2. **Live aggregation** from the Recoil atom's event stream —
+   *      covers the current session before the backend has written the
+   *      persisted snapshot.
+   */
+  const liveParts = useMemo<TMessageContentParts[]>(
+    () => aggregateSubagentContent(events ?? []) as unknown as TMessageContentParts[],
     [events],
   );
+  const contentParts = useMemo<TMessageContentParts[]>(() => {
+    if (liveParts.length > 0) return liveParts;
+    if (persistedContent && persistedContent.length > 0) return persistedContent;
+    return liveParts;
+  }, [liveParts, persistedContent]);
 
   /** Semantic status lines for the ticker. Message/reasoning deltas collapse
    *  into a single running preview; tool calls are discrete entries with

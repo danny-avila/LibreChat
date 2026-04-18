@@ -8,6 +8,7 @@ const {
   GraphNodeKeys,
   ToolEndHandler,
   CODE_EXECUTION_TOOLS,
+  createContentAggregator,
 } = require('@librechat/agents');
 const {
   sendEvent,
@@ -118,6 +119,48 @@ async function emitEvent(res, streamId, eventData) {
 }
 
 /**
+ * Maps a {@link SubagentUpdateEvent} phase to the corresponding
+ * {@link GraphEvents} name that the SDK's `createContentAggregator`
+ * knows how to consume. Phases that don't carry content (`start`, `stop`,
+ * `error`) or whose payload doesn't match a handled event (`run_step`
+ * with an `ON_TOOL_EXECUTE`-shaped batch request rather than a RunStep)
+ * return `null` so the caller skips them.
+ * @param {SubagentUpdateEvent} event
+ * @returns {string | null}
+ */
+function subagentPhaseToGraphEvent(event) {
+  switch (event?.phase) {
+    case 'run_step':
+      /** `ON_RUN_STEP` and `ON_TOOL_EXECUTE` both forward with phase
+       *  `run_step`; only the former matches the aggregator's RunStep
+       *  schema. Detect by presence of `stepDetails`. */
+      return event.data?.stepDetails ? GraphEvents.ON_RUN_STEP : null;
+    case 'run_step_delta':
+      return GraphEvents.ON_RUN_STEP_DELTA;
+    case 'run_step_completed':
+      return GraphEvents.ON_RUN_STEP_COMPLETED;
+    case 'message_delta':
+      return GraphEvents.ON_MESSAGE_DELTA;
+    case 'reasoning_delta':
+      return GraphEvents.ON_REASONING_DELTA;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Folds a single {@link SubagentUpdateEvent} into the given content
+ * aggregator. Silent no-op for phases outside the aggregator's domain.
+ * @param {{ aggregateContent: Function }} aggregator
+ * @param {SubagentUpdateEvent} event
+ */
+function feedSubagentAggregator(aggregator, event) {
+  const graphEvent = subagentPhaseToGraphEvent(event);
+  if (!graphEvent) return;
+  aggregator.aggregateContent({ event: graphEvent, data: event.data });
+}
+
+/**
  * @typedef {Object} ToolExecuteOptions
  * @property {(toolNames: string[]) => Promise<{loadedTools: StructuredTool[]}>} loadTools - Function to load tools by name
  * @property {Object} configurable - Configurable context for tool invocation
@@ -143,6 +186,7 @@ function getDefaultHandlers({
   streamId = null,
   toolExecuteOptions = null,
   summarizationOptions = null,
+  subagentAggregatorsByToolCallId = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -257,11 +301,31 @@ function getDefaultHandlers({
 
   handlers[GraphEvents.ON_SUBAGENT_UPDATE] = {
     /**
-     * Forwards subagent progress envelopes straight to the client stream.
-     * The UI groups updates by `subagentRunId` to render a compact progress
-     * ticker per spawned subagent — see `SubagentProgress` on the client.
+     * Forwards subagent progress envelopes straight to the client stream,
+     * and (when a caller-owned aggregator map is provided) also folds each
+     * event into a per-tool-call `createContentAggregator` instance. The
+     * resulting `contentParts` are attached to the parent's `subagent`
+     * tool_call at message-save time so the child's reasoning / tool calls
+     * / final text survive a page refresh — in-memory Recoil atoms alone
+     * wouldn't persist that. Reuses the SDK's own aggregator so the
+     * persisted content shape matches the parent graph's output exactly.
      */
     handle: async (event, data) => {
+      if (subagentAggregatorsByToolCallId && data?.parentToolCallId) {
+        const key = data.parentToolCallId;
+        let aggregator = subagentAggregatorsByToolCallId.get(key);
+        if (!aggregator) {
+          aggregator = createContentAggregator();
+          subagentAggregatorsByToolCallId.set(key, aggregator);
+        }
+        try {
+          feedSubagentAggregator(aggregator, data);
+        } catch (err) {
+          logger.warn(
+            `[ON_SUBAGENT_UPDATE] Failed to aggregate phase "${data?.phase}" for tool_call ${key}: ${err?.message ?? err}`,
+          );
+        }
+      }
       await emitEvent(res, streamId, { event, data });
     },
   };
