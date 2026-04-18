@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot, useRecoilCallback } from 'recoil';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import SubagentCall from '../SubagentCall';
 import { subagentProgressByToolCallId, type SubagentProgress } from '~/store/subagents';
 import {
@@ -304,7 +304,7 @@ describe('SubagentCall — status resolution', () => {
 });
 
 describe('SubagentCall — ticker', () => {
-  it('renders semantic text lines instead of raw event names', () => {
+  it('renders semantic text lines instead of raw event names', async () => {
     renderWithState({
       toolCallId: 'call_ticker',
       initialProgress: 0.3,
@@ -360,15 +360,23 @@ describe('SubagentCall — ticker', () => {
       }),
     });
 
+    /** The ticker throttles displayed frames by ~1.2s so rapid deltas
+     *  stay readable. `waitFor` gives the trailing-edge update time to
+     *  land before we assert — otherwise the test races the throttle
+     *  and sees the stale placeholder. */
+    await waitFor(
+      () => {
+        expect(screen.getByText('Using calculator(expression=42*58)')).toBeInTheDocument();
+      },
+      { timeout: 2500 },
+    );
     /** Raw event names never appear in the ticker. */
     expect(screen.queryByText(/on_run_step/)).not.toBeInTheDocument();
     expect(screen.queryByText(/on_message_delta/)).not.toBeInTheDocument();
-    /** Semantic lines do. */
-    expect(screen.getByText('Using calculator(expression=42*58)')).toBeInTheDocument();
     expect(screen.getByText('calculator → 42*58 = 2436')).toBeInTheDocument();
   });
 
-  it('collapses a streak of message_delta events into one live Writing line', () => {
+  it('collapses a streak of message_delta events into one live Writing line', async () => {
     renderWithState({
       toolCallId: 'call_writing',
       initialProgress: 0.3,
@@ -388,7 +396,15 @@ describe('SubagentCall — ticker', () => {
         })),
       }),
     });
-    expect(screen.getByText('Writing: Hello world!')).toBeInTheDocument();
+    /** Wait out the ticker throttle so the trailing-edge update lands
+     *  (`useThrottledValue` holds the previous frame for up to
+     *  `TICKER_THROTTLE_MS`). */
+    await waitFor(
+      () => {
+        expect(screen.getByText('Writing: Hello world!')).toBeInTheDocument();
+      },
+      { timeout: 2500 },
+    );
     /** Only one "Writing" line, not three. */
     expect(screen.getAllByText(/Writing:/)).toHaveLength(1);
   });
