@@ -307,16 +307,32 @@ const showSkillsPopoverFamily = atomFamily<boolean, string | number | null>({
 
 /**
  * Per-conversation queue of skill names the user invoked manually via the
- * `$` popover for the next submission. Acts as the structured channel
- * paired with the cosmetic `$skill-name ` text inserted into the textarea.
- *
- * Phase 1: only the writer (SkillsCommand) is wired; the submit pipeline
- * does not yet read or clear this atom. The follow-up PR will read this
- * at `ask()` time, attach to the payload, and reset to `[]`. Until then
- * the backend continues to receive only the textual `$name` reference.
+ * `$` popover for the next submission. Structured channel that the submit
+ * pipeline (`useChatFunctions.ask`) drains and attaches to the ask payload
+ * as `manualSkills`, then resets to `[]`. No longer paired with textarea
+ * text — the popover used to insert `$skill-name ` as a visual cue but
+ * that implied free-form text invocation was supported; `ManualSkillPills`
+ * on the submitted user message carries that signal instead.
  */
 const pendingManualSkillsByConvoId = atomFamily<string[], string>({
   key: 'pendingManualSkillsByConvoId',
+  default: [],
+});
+
+/**
+ * Skill names attached to a specific user message at submit time. Read by
+ * `ManualSkillPills` to render compact pills on the submitted user bubble
+ * before any server events arrive. The pills self-extinguish once the
+ * sibling assistant response grows a `skill` tool_call content part (the
+ * live-streamed card from the backend's `buildSkillPrimeStepEvents`).
+ *
+ * Keyed by the user's own messageId (the client-side intermediate UUID or
+ * the eventual server-assigned ID — whichever the message currently
+ * carries). Entries are short-lived in practice; `useClearStates` resets
+ * on conversation switch to prevent long-term accumulation.
+ */
+const attachedSkillsByMessageId = atomFamily<string[], string>({
+  key: 'attachedSkillsByMessageId',
   default: [],
 });
 
@@ -519,5 +535,6 @@ export default {
   showPromptsPopoverFamily,
   showSkillsPopoverFamily,
   pendingManualSkillsByConvoId,
+  attachedSkillsByMessageId,
   updateConversationSelector,
 };

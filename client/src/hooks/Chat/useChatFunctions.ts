@@ -100,6 +100,23 @@ export default function useChatFunctions({
     [],
   );
 
+  /**
+   * Pin the drained skills onto the submitted user message so
+   * `ManualSkillPills` can render them on the bubble until the live
+   * skill-card stream takes over. atomFamily is keyed by messageId; no-op
+   * for empty input so we don't allocate entries for every turn.
+   */
+  const attachSkillsToMessage = useRecoilCallback(
+    ({ set }) =>
+      (messageId: string, skills: string[]) => {
+        if (skills.length === 0) {
+          return;
+        }
+        set(store.attachedSkillsByMessageId(messageId), skills);
+      },
+    [],
+  );
+
   const ask: TAskFunction = (
     {
       text,
@@ -249,6 +266,14 @@ export default function useChatFunctions({
       thread_id,
       error: false,
     };
+
+    /**
+     * Pin the manual-skill selection onto the submitted user message for
+     * `ManualSkillPills` to render. Keyed by the message's own ID — the
+     * drain/skip logic above already prevents regenerate/continue/edit
+     * from re-pinning, so we only write for fresh turns.
+     */
+    attachSkillsToMessage(currentMsg.messageId, manualSkills);
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
     const reuseFiles =
