@@ -88,17 +88,21 @@ describe('formatConsoleMeta', () => {
     expect(meta).toContain('...');
   });
 
-  it('gracefully handles circular objects', () => {
+  it('preserves non-circular fields when one value is circular', () => {
     const circular = {};
     circular.self = circular;
     const meta = formatConsoleMeta({
       level: 'error',
       message: 'circular',
       timestamp: 'ts',
+      provider: 'openai',
+      model: 'gpt-5.4-mini',
       circular,
     });
 
-    expect(meta).toBe('');
+    expect(meta).toContain('"provider":"openai"');
+    expect(meta).toContain('"model":"gpt-5.4-mini"');
+    expect(meta).toContain('[Circular]');
   });
 
   it('redacts sensitive patterns inside string metadata values', () => {

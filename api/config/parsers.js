@@ -147,18 +147,54 @@ function formatConsoleMeta(info) {
   if (!meta) {
     return '';
   }
-  try {
-    return JSON.stringify(meta, (_key, value) => {
-      if (typeof value !== 'string') {
-        return value;
-      }
+  const seen = new WeakSet();
+  const replacer = (_key, value) => {
+    if (typeof value === 'string') {
       const safe = redactMessage(value);
       return safe.length > CONSOLE_JSON_STRING_LENGTH
         ? `${safe.substring(0, CONSOLE_JSON_STRING_LENGTH)}...`
         : safe;
-    });
+    }
+    if (value !== null && typeof value === 'object') {
+      if (seen.has(value)) {
+        return '[Circular]';
+      }
+      seen.add(value);
+    }
+    return value;
+  };
+
+  try {
+    return JSON.stringify(meta, replacer);
   } catch {
-    return '';
+    /*
+     * Fall back to per-field serialization: a single unserializable field
+     * shouldn't drop every other scalar in the trailer. Scalars are emitted
+     * as-is; values that still fail serialization are replaced with a
+     * placeholder so `provider`, `model`, etc. continue to surface.
+     */
+    const parts = [];
+    for (const key of Object.keys(meta)) {
+      const perFieldSeen = new WeakSet();
+      const perFieldReplacer = (k, value) => {
+        if (typeof value === 'string') {
+          return replacer(k, value);
+        }
+        if (value !== null && typeof value === 'object') {
+          if (perFieldSeen.has(value)) {
+            return '[Circular]';
+          }
+          perFieldSeen.add(value);
+        }
+        return value;
+      };
+      try {
+        parts.push(`${JSON.stringify(key)}:${JSON.stringify(meta[key], perFieldReplacer)}`);
+      } catch {
+        parts.push(`${JSON.stringify(key)}:"[Unserializable]"`);
+      }
+    }
+    return parts.length > 0 ? `{${parts.join(',')}}` : '';
   }
 }
 
