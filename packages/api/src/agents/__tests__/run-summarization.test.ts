@@ -534,6 +534,64 @@ describe('custom-endpoint provider resolution', () => {
     expect(defaultHeaders['X-Custom-Header']).toBe('value-123');
   });
 
+  it('runs custom-endpoint headers through resolveHeaders (not forwarded raw)', async () => {
+    const { resolveHeaders } = jest.requireMock('~/utils/env') as {
+      resolveHeaders: jest.Mock;
+    };
+    resolveHeaders.mockClear();
+
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: 'ollama-key',
+        headers: { Authorization: 'Bearer ${TEST_PORTKEY_KEY}' },
+      } as unknown as { name: string; baseURL: string; apiKey: string },
+    ]);
+    await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    /**
+     * Templated header values must go through the same `resolveHeaders`
+     * pipeline the main agent flow uses, so `${VAR}`/`{{BODY_FIELD}}`
+     * references don't get forwarded verbatim to the summarization backend.
+     */
+    const call = resolveHeaders.mock.calls.find(
+      (args: unknown[]) =>
+        (args[0] as { headers?: Record<string, string> }).headers?.Authorization ===
+        'Bearer ${TEST_PORTKEY_KEY}',
+    );
+    expect(call).toBeDefined();
+  });
+
+  it('forwards PROXY env var into summarization client configuration', async () => {
+    const originalProxy = process.env.PROXY;
+    process.env.PROXY = 'http://proxy.internal:3128';
+    try {
+      const appConfig = makeAppConfig([
+        { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+      ]);
+      const agents = await callAndCapture({
+        summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+        appConfig,
+      });
+
+      const config = agents[0].summarizationConfig as Record<string, unknown>;
+      const parameters = config.parameters as Record<string, unknown>;
+      const configuration = parameters.configuration as Record<string, unknown>;
+      /** getOpenAIConfig wires proxy through to fetchOptions.dispatcher (undici ProxyAgent). */
+      expect(configuration.fetchOptions).toBeDefined();
+    } finally {
+      if (originalProxy === undefined) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+    }
+  });
+
   it('skips overrides when summarization targets the same endpoint as the agent', async () => {
     /**
      * When summarization provider matches the agent's endpoint, we rely on

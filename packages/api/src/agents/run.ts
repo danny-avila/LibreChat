@@ -222,6 +222,7 @@ type SummarizationClientOverrides = Record<string, unknown>;
 function resolveSummarizationProvider(
   rawProvider: string,
   appConfig: AppConfig | undefined,
+  headerContext: { user?: IUser; requestBody?: t.RequestBody },
 ): {
   provider: string;
   clientOverrides?: SummarizationClientOverrides;
@@ -267,18 +268,34 @@ function resolveSummarizationProvider(
       return { provider: rawProvider };
     }
     /**
+     * Resolve templated header values (e.g. `${PORTKEY_API_KEY}`,
+     * `{{LIBRECHAT_BODY_PARENTMESSAGEID}}`) before handing them to
+     * `getOpenAIConfig`, matching the agent main flow where `resolveHeaders`
+     * runs on `llmConfig.configuration.defaultHeaders`.
+     */
+    const resolvedHeaders =
+      customEndpointConfig.headers != null
+        ? resolveHeaders({
+            headers: customEndpointConfig.headers as Record<string, string>,
+            user: createSafeUser(headerContext.user),
+            body: headerContext.requestBody,
+          })
+        : undefined;
+    /**
      * Run the endpoint config through `getOpenAIConfig` so summarization
      * inherits the same `headers`, `defaultQuery`, `addParams`/`dropParams`,
      * and `customParams` transforms that `initializeCustom` applies for the
      * main agent flow. Without this, summarization drops endpoint-specific
      * behavior (e.g. Anthropic/Google param transforms, required headers)
-     * that the main agent relied on.
+     * that the main agent relied on. `proxy` is forwarded so outbound proxy
+     * dispatchers (`PROXY` env var) apply to cross-endpoint summarization.
      */
     const { llmConfig, configOptions } = getOpenAIConfig(
       apiKey,
       {
         reverseProxyUrl: baseURL,
-        headers: customEndpointConfig.headers,
+        proxy: process.env.PROXY ?? null,
+        headers: resolvedHeaders,
         addParams: customEndpointConfig.addParams,
         dropParams: customEndpointConfig.dropParams,
         customParams: customEndpointConfig.customParams,
@@ -315,6 +332,7 @@ function shapeSummarizationConfig(
   fallbackModel: string | undefined,
   appConfig: AppConfig | undefined,
   agentEndpoint: string | undefined,
+  headerContext: { user?: IUser; requestBody?: t.RequestBody },
 ) {
   const rawProvider = config?.provider ?? fallbackProvider;
   /**
@@ -331,7 +349,7 @@ function shapeSummarizationConfig(
 
   const { provider, clientOverrides } = isSameEndpointAsAgent
     ? { provider: fallbackProvider, clientOverrides: undefined }
-    : resolveSummarizationProvider(rawProvider, appConfig);
+    : resolveSummarizationProvider(rawProvider, appConfig, headerContext);
 
   const model = config?.model ?? fallbackModel;
   const trigger =
@@ -470,6 +488,7 @@ export async function createRun({
       selfModel,
       appConfig,
       agent.endpoint ?? undefined,
+      { user, requestBody },
     );
 
     const llmConfig: t.RunLLMConfig = Object.assign(
