@@ -27,8 +27,13 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
   const isStandard =
     'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
   if (isStandard) {
-    const tc = toolCall as Agents.ToolCall;
-    return { name: tc.name ?? '', hasOutput: !!tc.output };
+    const tc = toolCall as Agents.ToolCall & { progress?: number };
+    /** Subagents can finish with `progress === 1` and no final output
+     *  text (the parent saw "" / undefined back). Fall back to progress
+     *  so the group header flips from "Running N agents" to "Ran N
+     *  agents" on completion even when the child returned no text. */
+    const completed = !!tc.output || tc.progress === 1;
+    return { name: tc.name ?? '', hasOutput: completed };
   }
 
   if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
