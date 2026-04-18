@@ -1,10 +1,5 @@
 import { Run, Providers, Constants } from '@librechat/agents';
-import {
-  envVarRegex,
-  KnownEndpoints,
-  extractEnvVariable,
-  providerEndpointMap,
-} from 'librechat-data-provider';
+import { KnownEndpoints, extractEnvVariable, providerEndpointMap } from 'librechat-data-provider';
 import type {
   SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
@@ -193,6 +188,13 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+const UNRESOLVED_ENV_VAR_PLACEHOLDER = /\$\{[^}]+\}/;
+
+/** True if the string still contains a `${VAR}` placeholder after env extraction. */
+function hasUnresolvedPlaceholder(value: string): boolean {
+  return UNRESOLVED_ENV_VAR_PLACEHOLDER.test(value);
+}
+
 /** Client-option overrides for summarization models targeting custom endpoints. */
 interface SummarizationClientOverrides {
   configuration?: { baseURL: string };
@@ -238,7 +240,18 @@ function resolveSummarizationProvider(
     }
     const apiKey = extractEnvVariable(rawApiKey);
     const baseURL = extractEnvVariable(rawBaseURL);
-    if (!apiKey || !baseURL || apiKey.match(envVarRegex) || baseURL.match(envVarRegex)) {
+    /**
+     * `extractEnvVariable` leaves any unresolved `${VAR}` placeholder in place
+     * — including in the middle of a prefix/suffix string — when the env var
+     * is missing. Reject overrides whenever either value still contains any
+     * unresolved placeholder so the SDK doesn't receive a broken URL/key.
+     */
+    if (
+      !apiKey ||
+      !baseURL ||
+      hasUnresolvedPlaceholder(apiKey) ||
+      hasUnresolvedPlaceholder(baseURL)
+    ) {
       return { provider: overrideProvider };
     }
     return {

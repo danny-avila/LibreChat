@@ -337,7 +337,7 @@ describe('custom-endpoint provider resolution', () => {
     });
   });
 
-  it('is case-insensitive when matching custom endpoint names', async () => {
+  it('matches Ollama case-insensitively (via normalizeEndpointName)', async () => {
     const appConfig = makeAppConfig([
       { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
     ]);
@@ -349,6 +349,30 @@ describe('custom-endpoint provider resolution', () => {
     const config = agents[0].summarizationConfig as Record<string, unknown>;
     expect(config.provider).toBe('openAI');
     expect((config.parameters as Record<string, unknown>).apiKey).toBe('ollama-key');
+  });
+
+  it('resolves non-Ollama endpoints on exact-case match', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Together', baseURL: 'https://api.together.ai/v1', apiKey: 'together-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Together', model: 'mixtral' },
+      appConfig,
+    });
+    expect((agents[0].summarizationConfig as Record<string, unknown>).provider).toBe('openAI');
+  });
+
+  it('does not match non-Ollama endpoints with different casing', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Together', baseURL: 'https://api.together.ai/v1', apiKey: 'together-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'together', model: 'mixtral' },
+      appConfig,
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('together');
+    expect(config.parameters).toBeUndefined();
   });
 
   it('leaves known SDK providers untouched', async () => {
@@ -440,6 +464,26 @@ describe('custom-endpoint provider resolution', () => {
 
     const config = agents[0].summarizationConfig as Record<string, unknown>;
     expect(config.provider).toBe('openAI');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('skips override when partial env var reference (prefix/suffix) stays unresolved', async () => {
+    delete process.env.UNSET_TEST_SEGMENT;
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'https://${UNSET_TEST_SEGMENT}.example.com/v1',
+        apiKey: 'ollama-key',
+      },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('openAI');
+    /** Even though the baseURL is a partial-match pattern, it must not be forwarded. */
     expect(config.parameters).toBeUndefined();
   });
 
