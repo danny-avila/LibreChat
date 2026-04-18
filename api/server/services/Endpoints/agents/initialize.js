@@ -260,8 +260,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
       },
+      // The callback fires during BFS, before the helper prunes agents
+      // whose edges end up filtered. Don't populate `agentConfigs` here —
+      // `discoveredConfigs` (returned below) is the authoritative pruned
+      // set. The per-agent tool context map is OK to keep populated even
+      // for pruned ids: it's only read by closure in ON_TOOL_EXECUTE,
+      // stale entries are unreachable at runtime.
       onAgentInitialized: (agentId, agent, config) => {
-        agentConfigs.set(agentId, config);
         agentToolContexts.set(agentId, {
           agent,
           toolRegistry: config.toolRegistry,
@@ -277,12 +282,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     },
   );
 
-  // Merge any entries the onAgentInitialized callback did not receive
-  // (defensive: discoverConnectedAgents already returns a canonical map)
+  // Copy the pruned discovery result into the outer map. Anything the
+  // helper dropped (skipped or unreachable after edge filtering) is
+  // intentionally absent. `processAddedConvo` below may still add more
+  // entries for parallel multi-convo execution.
   for (const [agentId, config] of discoveredConfigs) {
-    if (!agentConfigs.has(agentId)) {
-      agentConfigs.set(agentId, config);
-    }
+    agentConfigs.set(agentId, config);
   }
 
   let userMCPAuthMap = discoveredMCPAuthMap;
