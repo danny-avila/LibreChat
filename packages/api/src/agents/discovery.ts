@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { ResourceType, PermissionBits } from 'librechat-data-provider';
+import { ResourceType, PermissionBits, EModelEndpoint } from 'librechat-data-provider';
 import type { Agent, GraphEdge, TModelsConfig, TEndpointOption } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
 import type { ServerRequest } from '~/types';
@@ -196,6 +196,20 @@ export async function discoverConnectedAgents(
       throw new Error(validation.error?.message);
     }
 
+    /**
+     * Force `endpoint: agents` on the per-sub-agent init call so
+     * `initializeAgent`'s `isAgentsEndpoint`-gated `allowedProviders`
+     * check always fires for handoff sub-agents, regardless of which
+     * endpoint the caller entered through. Without this, the OpenAI-
+     * compat routes (whose `endpointOption.endpoint` is the primary
+     * provider, not `agents`) would silently bypass the provider
+     * allowlist configured under `endpoints.agents.allowedProviders`.
+     */
+    const subAgentEndpointOption: Partial<TEndpointOption> = {
+      ...(endpointOption ?? {}),
+      endpoint: EModelEndpoint.agents,
+    };
+
     const config = await initializeAgent(
       {
         req,
@@ -205,7 +219,7 @@ export async function discoverConnectedAgents(
         requestFiles,
         conversationId,
         parentMessageId,
-        endpointOption,
+        endpointOption: subAgentEndpointOption,
         allowedProviders,
       },
       db,

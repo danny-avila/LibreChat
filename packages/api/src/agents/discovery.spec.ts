@@ -1,3 +1,4 @@
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent, GraphEdge } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
@@ -200,6 +201,39 @@ describe('discoverConnectedAgents', () => {
     expect(result.agentConfigs.has('FORBIDDEN')).toBe(false);
     expect(result.skippedAgentIds.has('FORBIDDEN')).toBe(true);
     expect(result.edges.map((e) => e.to)).toEqual(['B']);
+  });
+
+  it('forces `endpoint: agents` on sub-agent init so allowedProviders is always enforced', async () => {
+    const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
+    const getAgent = jest.fn(async () => makeAgent('B', []));
+    const checkPermission = jest.fn().mockResolvedValue(true);
+
+    await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        // Caller passes a non-agents endpoint (e.g. the OpenAI-compat
+        // controllers do this — endpoint = primary provider)
+        endpointOption: { endpoint: EModelEndpoint.openAI, model_parameters: {} },
+        allowedProviders: new Set(['openai']),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    // The helper must override `endpoint` to 'agents' so
+    // `isAgentsEndpoint` is true and the allowedProviders guard in
+    // `initializeAgent` actually runs for sub-agents.
+    expect(mockInitializeAgent).toHaveBeenCalled();
+    const initArgs = mockInitializeAgent.mock.calls[0][0];
+    expect(initArgs.endpointOption.endpoint).toBe(EModelEndpoint.agents);
   });
 
   it('passes the configured resourceType (e.g. REMOTE_AGENT) to checkPermission', async () => {
