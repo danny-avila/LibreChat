@@ -97,131 +97,176 @@ const stringifyArgs = (args: unknown): string =>
   typeof args === 'string' ? args : JSON.stringify(args ?? {});
 
 /**
- * Walk the event stream and rebuild the child's content array.
- *
- * Adjacent `message_delta` / `reasoning_delta` events concatenate into a
- * single TEXT / THINK part. A text chunk arriving after reasoning closes
- * the open THINK buffer first so chronological order is preserved — the
- * parts array reflects what the user observed, not the order our buffers
- * happen to flush.
- *
- * Tool calls become TOOL_CALL parts. `run_step` with `tool_calls` closes
- * any open text/think so tool calls split text runs correctly.
- * `run_step_completed` finalizes the matching TOOL_CALL with its output
- * and progress = 1. Late-arriving completions without a prior `run_step`
- * synthesize the part.
- *
- * `start` / `stop` / `error` / `run_step_delta` do not contribute content.
+ * Cursor carried across `foldSubagentEvent` calls so the aggregator can
+ * extend an in-flight TEXT/THINK run without re-scanning earlier parts
+ * on every event. `null` means the corresponding buffer is closed;
+ * otherwise it's the index of the still-growing part in `contentParts`.
  */
-export function aggregateSubagentContent(events: SubagentUpdateEvent[]): SubagentContentPart[] {
-  const parts: SubagentContentPart[] = [];
-  let currentText: TextPart | null = null;
-  let currentThink: ThinkPart | null = null;
-  const toolCallById = new Map<string, ToolCallPart['tool_call']>();
+export interface SubagentAggregatorState {
+  /** Index of the currently-open TEXT part, or `null` when none. */
+  openTextIdx: number | null;
+  /** Index of the currently-open THINK part, or `null` when none. */
+  openThinkIdx: number | null;
+  /** `tool_call.id` → its index in `contentParts` for O(1) updates. */
+  toolCallIndexById: Record<string, number>;
+}
 
-  const closeText = (): void => {
-    if (currentText && currentText.text.length > 0) {
-      parts.push(currentText);
-    }
-    currentText = null;
+/** Initial empty aggregator state. */
+export function initSubagentAggregatorState(): SubagentAggregatorState {
+  return {
+    openTextIdx: null,
+    openThinkIdx: null,
+    toolCallIndexById: {},
   };
-  const closeThink = (): void => {
-    if (currentThink && currentThink.think.length > 0) {
-      parts.push(currentThink);
-    }
-    currentThink = null;
-  };
+}
 
-  for (const event of events) {
-    if (event.phase === 'message_delta') {
-      const chunk = extractTextChunk(event.data as MessageDeltaData | undefined);
-      if (chunk) {
-        /** Close the think buffer first so a reasoning→text transition
-         *  flushes the THINK part BEFORE the TEXT part — preserves
-         *  chronological order. */
-        closeThink();
-        if (!currentText) {
-          currentText = { type: ContentTypes.TEXT, text: '' };
-        }
-        currentText.text += chunk;
-      }
-      continue;
+/**
+ * Incrementally fold a single {@link SubagentUpdateEvent} into an existing
+ * `contentParts` array, returning a new array + updated cursor state.
+ * Pure function — never mutates inputs.
+ *
+ * Adjacent `message_delta` / `reasoning_delta` events extend the in-flight
+ * TEXT / THINK part (tracked via the open*Idx cursors). When a delta
+ * type switches, the opposite buffer is closed first so chronological
+ * order is preserved — what the user saw is what lands in the array.
+ *
+ * `run_step` with `tool_calls` closes any open text/think and appends a
+ * TOOL_CALL part per unique id. `run_step_completed` updates the matching
+ * TOOL_CALL (output + progress). Late-arriving completions without a
+ * prior `run_step` synthesize the part. `start` / `stop` / `error` /
+ * `run_step_delta` contribute nothing to content.
+ */
+export function foldSubagentEvent(
+  parts: SubagentContentPart[],
+  state: SubagentAggregatorState,
+  event: SubagentUpdateEvent,
+): { parts: SubagentContentPart[]; state: SubagentAggregatorState } {
+  if (event.phase === 'message_delta') {
+    const chunk = extractTextChunk(event.data as MessageDeltaData | undefined);
+    if (!chunk) return { parts, state };
+    /** Reasoning→text transition: close the open THINK so the THINK part
+     *  lands BEFORE the TEXT part in chronological order. */
+    const afterThinkClose = state.openThinkIdx != null ? { ...state, openThinkIdx: null } : state;
+    if (afterThinkClose.openTextIdx != null) {
+      const idx = afterThinkClose.openTextIdx;
+      const existing = parts[idx] as TextPart;
+      const next = parts.slice();
+      next[idx] = { type: ContentTypes.TEXT, text: existing.text + chunk };
+      return { parts: next, state: afterThinkClose };
     }
+    const next = parts.slice();
+    const newIdx = next.length;
+    next.push({ type: ContentTypes.TEXT, text: chunk });
+    return { parts: next, state: { ...afterThinkClose, openTextIdx: newIdx } };
+  }
 
-    if (event.phase === 'reasoning_delta') {
-      const chunk = extractThinkChunk(event.data as ReasoningDeltaData | undefined);
-      if (chunk) {
-        /** Symmetric: close any open text buffer first. */
-        closeText();
-        if (!currentThink) {
-          currentThink = { type: ContentTypes.THINK, think: '' };
-        }
-        currentThink.think += chunk;
-      }
-      continue;
+  if (event.phase === 'reasoning_delta') {
+    const chunk = extractThinkChunk(event.data as ReasoningDeltaData | undefined);
+    if (!chunk) return { parts, state };
+    const afterTextClose = state.openTextIdx != null ? { ...state, openTextIdx: null } : state;
+    if (afterTextClose.openThinkIdx != null) {
+      const idx = afterTextClose.openThinkIdx;
+      const existing = parts[idx] as ThinkPart;
+      const next = parts.slice();
+      next[idx] = { type: ContentTypes.THINK, think: existing.think + chunk };
+      return { parts: next, state: afterTextClose };
     }
+    const next = parts.slice();
+    const newIdx = next.length;
+    next.push({ type: ContentTypes.THINK, think: chunk });
+    return { parts: next, state: { ...afterTextClose, openThinkIdx: newIdx } };
+  }
 
-    if (event.phase === 'run_step') {
-      const data = event.data as RunStepData | undefined;
-      const detailType = data?.stepDetails?.type;
-      if (detailType === 'tool_calls') {
-        closeText();
-        closeThink();
-        const toolCalls = data?.stepDetails?.tool_calls ?? [];
-        for (const tc of toolCalls) {
-          if (typeof tc?.id !== 'string' || !tc.id || toolCallById.has(tc.id)) {
-            continue;
-          }
-          const toolCallPart: ToolCallPart['tool_call'] = {
-            id: tc.id,
-            name: tc.name ?? '',
-            args: stringifyArgs(tc.args),
-            progress: 0.1,
-            type: tc.type ?? ToolCallTypes.TOOL_CALL,
-          };
-          toolCallById.set(tc.id, toolCallPart);
-          parts.push({
-            type: ContentTypes.TOOL_CALL,
-            tool_call: toolCallPart,
-          });
-        }
-      }
-      continue;
-    }
-
-    if (event.phase === 'run_step_completed') {
-      const data = event.data as RunStepCompletedData | undefined;
-      const tc = data?.result?.tool_call;
-      if (typeof tc?.id !== 'string' || !tc.id) continue;
-      const existing = toolCallById.get(tc.id);
-      if (existing) {
-        if (tc.name) existing.name = tc.name;
-        if (typeof tc.args === 'string' || tc.args != null) {
-          existing.args = stringifyArgs(tc.args);
-        }
-        if (tc.output != null) existing.output = tc.output;
-        existing.progress = tc.progress ?? 1;
-      } else {
-        const toolCallPart: ToolCallPart['tool_call'] = {
+  if (event.phase === 'run_step') {
+    const data = event.data as RunStepData | undefined;
+    if (data?.stepDetails?.type !== 'tool_calls') return { parts, state };
+    const toolCalls = data.stepDetails.tool_calls ?? [];
+    let next = parts;
+    const toolCallIndexById = { ...state.toolCallIndexById };
+    for (const tc of toolCalls) {
+      if (typeof tc?.id !== 'string' || !tc.id || tc.id in toolCallIndexById) continue;
+      if (next === parts) next = parts.slice();
+      toolCallIndexById[tc.id] = next.length;
+      next.push({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
           id: tc.id,
           name: tc.name ?? '',
           args: stringifyArgs(tc.args),
-          output: tc.output,
-          progress: tc.progress ?? 1,
-          type: ToolCallTypes.TOOL_CALL,
-        };
-        toolCallById.set(tc.id, toolCallPart);
-        parts.push({
-          type: ContentTypes.TOOL_CALL,
-          tool_call: toolCallPart,
-        });
-      }
-      continue;
+          progress: 0.1,
+          type: tc.type ?? ToolCallTypes.TOOL_CALL,
+        },
+      });
     }
+    if (next === parts) return { parts, state: { ...state, toolCallIndexById } };
+    /** New tool_call parts bound any open TEXT/THINK to the run before
+     *  them — close the buffers. */
+    return {
+      parts: next,
+      state: { openTextIdx: null, openThinkIdx: null, toolCallIndexById },
+    };
   }
 
-  closeText();
-  closeThink();
+  if (event.phase === 'run_step_completed') {
+    const data = event.data as RunStepCompletedData | undefined;
+    const tc = data?.result?.tool_call;
+    if (typeof tc?.id !== 'string' || !tc.id) return { parts, state };
+    const existingIdx = state.toolCallIndexById[tc.id];
+    if (existingIdx != null) {
+      const existing = parts[existingIdx] as ToolCallPart;
+      const merged: ToolCallPart = {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          ...existing.tool_call,
+          ...(tc.name ? { name: tc.name } : {}),
+          ...(tc.args != null ? { args: stringifyArgs(tc.args) } : {}),
+          ...(tc.output != null ? { output: tc.output } : {}),
+          progress: tc.progress ?? 1,
+        },
+      };
+      const next = parts.slice();
+      next[existingIdx] = merged;
+      return { parts: next, state };
+    }
+    /** Late-arriving completion without a prior run_step — synthesize the
+     *  part (and close any open buffer like run_step would). */
+    const next = parts.slice();
+    const newIdx = next.length;
+    next.push({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: {
+        id: tc.id,
+        name: tc.name ?? '',
+        args: stringifyArgs(tc.args),
+        output: tc.output,
+        progress: tc.progress ?? 1,
+        type: ToolCallTypes.TOOL_CALL,
+      },
+    });
+    return {
+      parts: next,
+      state: {
+        openTextIdx: null,
+        openThinkIdx: null,
+        toolCallIndexById: { ...state.toolCallIndexById, [tc.id]: newIdx },
+      },
+    };
+  }
+
+  return { parts, state };
+}
+
+/**
+ * Batch wrapper around {@link foldSubagentEvent}: folds an entire event
+ * stream in one go and returns just the parts. Kept for tests and for
+ * legacy call-sites that don't need cursor state.
+ */
+export function aggregateSubagentContent(events: SubagentUpdateEvent[]): SubagentContentPart[] {
+  let parts: SubagentContentPart[] = [];
+  let state = initSubagentAggregatorState();
+  for (const event of events) {
+    ({ parts, state } = foldSubagentEvent(parts, state, event));
+  }
   return parts;
 }
 

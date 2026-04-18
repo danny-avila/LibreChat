@@ -1,18 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronRight, Users } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
+import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
+import Container from '~/components/Chat/Messages/Content/Container';
+import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import Text from './Text';
 import Reasoning from './Reasoning';
 import { AttachmentGroup } from './Attachment';
 import { MessageContext } from '~/Providers/MessageContext';
 import { useLocalize } from '~/hooks';
 import { subagentProgressByToolCallId } from '~/store';
-import { aggregateSubagentContent, buildSubagentTickerLines } from '~/utils/subagentContent';
-import { cn } from '~/utils';
+import { buildSubagentTickerLines } from '~/utils/subagentContent';
+import { cn, groupSequentialToolCalls } from '~/utils';
 
 interface SubagentCallProps {
   toolCallId: string;
@@ -61,6 +64,7 @@ export default function SubagentCall({
   const [open, setOpen] = useState(false);
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
+  const isSelfSpawn = subagentType === 'self';
   /**
    * Tri-state status resolution, aligned with `ToolCall.tsx`:
    *
@@ -81,26 +85,20 @@ export default function SubagentCall({
   const events = progress?.events;
 
   /**
-   * Aggregated content parts for the dialog.
-   *
-   * Preference order:
-   *   1. **Persisted** `subagent_content` on the parent tool_call — written
-   *      by the backend at message-save time, survives a page refresh.
-   *      Preferred *only* when the run is not currently streaming, so an
-   *      in-progress re-render still tracks live deltas (persisted content
-   *      is only correct post-finalize).
-   *   2. **Live aggregation** from the Recoil atom's event stream —
-   *      covers the current session before the backend has written the
-   *      persisted snapshot.
+   * Content parts for the dialog. Live state is incrementally aggregated
+   * in the Recoil atom by `foldSubagentEvent` as each envelope arrives,
+   * so the full child history is always available — no re-aggregation
+   * at render time, and tool_call records can't be lost to the ticker's
+   * event trim window. Persisted `subagent_content` (written by the
+   * backend at message-save time) is the fallback for older runs
+   * recorded before the incremental path landed and for rehydrated
+   * messages after a page refresh.
    */
-  const liveParts = useMemo<TMessageContentParts[]>(
-    () => aggregateSubagentContent(events ?? []) as unknown as TMessageContentParts[],
-    [events],
-  );
+  const liveParts = progress?.contentParts as TMessageContentParts[] | undefined;
   const contentParts = useMemo<TMessageContentParts[]>(() => {
-    if (liveParts.length > 0) return liveParts;
+    if (liveParts && liveParts.length > 0) return liveParts;
     if (persistedContent && persistedContent.length > 0) return persistedContent;
-    return liveParts;
+    return [];
   }, [liveParts, persistedContent]);
 
   /** Semantic status lines for the ticker. Message/reasoning deltas collapse
@@ -134,13 +132,24 @@ export default function SubagentCall({
 
   const description = typeof args === 'string' ? tryDescription(args) : extractDescription(args);
 
+  /** Self-spawned runs get a name-free label ('Running subtask') because
+   *  the type token is the string 'self' — rendering `Running "self" agent`
+   *  reads poorly. Named subagents use the `{{type}}` label verbatim. */
   const headerText = hasError
-    ? localize('com_ui_subagent_errored', { 0: subagentType })
+    ? isSelfSpawn
+      ? localize('com_ui_subagent_errored_self')
+      : localize('com_ui_subagent_errored', { 0: subagentType })
     : cancelled
-      ? localize('com_ui_subagent_cancelled', { 0: subagentType })
+      ? isSelfSpawn
+        ? localize('com_ui_subagent_cancelled_self')
+        : localize('com_ui_subagent_cancelled', { 0: subagentType })
       : running
-        ? localize('com_ui_subagent_running', { 0: subagentType })
-        : localize('com_ui_subagent_complete', { 0: subagentType });
+        ? isSelfSpawn
+          ? localize('com_ui_subagent_running_self')
+          : localize('com_ui_subagent_running', { 0: subagentType })
+        : isSelfSpawn
+          ? localize('com_ui_subagent_complete_self')
+          : localize('com_ui_subagent_complete', { 0: subagentType });
 
   /**
    * Minimal `MessageContext` for the dialog's `<Part />` tree. Subagent
@@ -161,6 +170,39 @@ export default function SubagentCall({
   );
 
   const lastPartIndex = contentParts.length - 1;
+
+  /**
+   * Dialog renderer used by {@link ToolCallGroup} (for grouped tool_call
+   * batches) and by the per-part map (for single parts). Mirrors the
+   * main `<Part />` dispatch table but stays scoped to the three types
+   * a subagent run emits — avoiding the import cycle that would come
+   * from routing through `Parts/index`.
+   */
+  const renderDialogPart = useCallback(
+    (part: TMessageContentParts, idx: number, isLastPart: boolean): JSX.Element | null => {
+      return (
+        <SubagentDialogPart
+          key={`${toolCallId}-part-${idx}`}
+          part={part}
+          isSubmitting={running}
+          showCursor={running && isLastPart}
+          isLast={isLastPart}
+        />
+      );
+    },
+    [toolCallId, running],
+  );
+
+  /**
+   * Apply the same consecutive-tool-call batching the main `ContentParts`
+   * uses so the dialog renders with visual parity: grouped tools collapse
+   * into a single `Used N tools` header, single parts wrap in `Container`
+   * for the same `gap-3` flex column spacing the main conversation has.
+   */
+  const groupedParts = useMemo(() => {
+    const withIdx: PartWithIndex[] = contentParts.map((part, idx) => ({ part, idx }));
+    return groupSequentialToolCalls(withIdx);
+  }, [contentParts]);
 
   /**
    * Auto-scroll the dialog's content area to the bottom as new parts / delta
@@ -221,15 +263,17 @@ export default function SubagentCall({
         <OGDialogContent
           className={cn(
             'max-h-[85vh] overflow-hidden',
-            /** Responsive width: narrow on phones, scales up to 5xl on
-             *  desktops maximized windows. Uses viewport-relative max so
-             *  the dialog never bleeds to the edges but still takes real
-             *  estate on laptops/widescreens. */
-            'w-[min(95vw,64rem)] max-w-[min(95vw,64rem)]',
+            /** Responsive width: narrow on phones, scales up to ~80rem on
+             *  widescreens. Viewport-relative max keeps margin on the
+             *  edges while still using real estate on laptops / large
+             *  displays — noticeably wider than the default dialog. */
+            'w-[min(96vw,80rem)] max-w-[min(96vw,80rem)]',
           )}
         >
           <OGDialogTitle>
-            {localize('com_ui_subagent_dialog_title', { 0: subagentType })}
+            {isSelfSpawn
+              ? localize('com_ui_subagent_dialog_title_self')
+              : localize('com_ui_subagent_dialog_title', { 0: subagentType })}
           </OGDialogTitle>
           <OGDialogDescription className="text-sm text-text-secondary">
             {description || localize('com_ui_subagent_dialog_description')}
@@ -238,17 +282,33 @@ export default function SubagentCall({
           <div ref={scrollRef} className="mt-3 max-h-[65vh] overflow-y-auto pr-1">
             {contentParts.length > 0 ? (
               <MessageContext.Provider value={dialogMessageContext}>
-                <div className="space-y-1">
-                  {contentParts.map((part, i) => (
-                    <SubagentDialogPart
-                      key={`${toolCallId}-part-${i}`}
-                      part={part}
+                {groupedParts.map((group) => {
+                  if (group.type === 'single') {
+                    const { part, idx } = group.part;
+                    /** Single parts wrap in `Container` for the same
+                     *  `gap-3` flex column spacing the main conversation
+                     *  uses. THINK/TEXT/single-TOOL_CALL all flow through
+                     *  here. */
+                    return (
+                      <Container key={`${toolCallId}-single-${idx}`}>
+                        {renderDialogPart(part, idx, idx === lastPartIndex)}
+                      </Container>
+                    );
+                  }
+                  /** Consecutive tool_calls (2+) collapse into a
+                   *  `Used N tools` group — same behavior as the main
+                   *  message view. */
+                  return (
+                    <ToolCallGroup
+                      key={`${toolCallId}-group-${group.parts[0].idx}`}
+                      parts={group.parts}
                       isSubmitting={running}
-                      showCursor={running && i === lastPartIndex}
-                      isLast={i === lastPartIndex}
+                      isLast={group.parts.some((p) => p.idx === lastPartIndex)}
+                      renderPart={renderDialogPart}
+                      lastContentIdx={lastPartIndex}
                     />
-                  ))}
-                </div>
+                  );
+                })}
               </MessageContext.Provider>
             ) : output ? (
               /** Fallback: no aggregated content parts but the backend
@@ -258,17 +318,19 @@ export default function SubagentCall({
                *  markdown (headers, lists, bold) renders properly instead
                *  of showing raw `##` / `**` characters. */
               <MessageContext.Provider value={dialogMessageContext}>
-                <SubagentDialogPart
-                  part={
-                    {
-                      type: ContentTypes.TEXT,
-                      text: output,
-                    } as unknown as TMessageContentParts
-                  }
-                  isSubmitting={false}
-                  showCursor={false}
-                  isLast
-                />
+                <Container>
+                  <SubagentDialogPart
+                    part={
+                      {
+                        type: ContentTypes.TEXT,
+                        text: output,
+                      } as unknown as TMessageContentParts
+                    }
+                    isSubmitting={false}
+                    showCursor={false}
+                    isLast
+                  />
+                </Container>
               </MessageContext.Provider>
             ) : (
               <div className="text-sm italic text-text-secondary">
