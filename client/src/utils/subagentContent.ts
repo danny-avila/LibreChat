@@ -279,8 +279,11 @@ export interface SubagentTickerLine {
   live?: boolean;
 }
 
-const PREVIEW_MAX_CHARS = 60;
-/** Keep the tail of the buffer so the user sees what's being generated now. */
+/** Generous tail window so wide ticker containers aren't half-empty.
+ *  Paired with CSS tail-ellipsis (direction:rtl + bdi in SubagentCall) so
+ *  narrow viewports still clip from the oldest side — the reader always
+ *  sees the characters being generated *now*. */
+const PREVIEW_MAX_CHARS = 300;
 const truncatePreview = (input: string): string => {
   const normalized = input.replace(/\s+/g, ' ').trim();
   if (normalized.length <= PREVIEW_MAX_CHARS) return normalized;

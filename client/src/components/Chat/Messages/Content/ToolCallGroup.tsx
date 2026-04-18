@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
-import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
 import type { TranslationKeys } from '~/hooks';
@@ -88,6 +88,15 @@ export default function ToolCallGroup({
   );
   const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
 
+  /** Subagent tool calls get their own label verb ("Running/Ran N agents")
+   *  since "Used N tools" reads oddly when the "tools" are actually child
+   *  agents. `subagentCount === count` ⇒ the group is 100% subagents. */
+  const subagentCount = useMemo(
+    () => toolNames.filter((n) => n === Constants.SUBAGENT).length,
+    [toolNames],
+  );
+  const allSubagents = subagentCount > 0 && subagentCount === count;
+
   const toolNameSummary = useMemo(() => {
     const seen = new Set<string>();
     const labels: string[] = [];
@@ -144,7 +153,13 @@ export default function ToolCallGroup({
         className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
         onClick={handleToggle}
         aria-expanded={isExpanded}
-        aria-label={localize('com_ui_used_n_tools', { 0: String(count) })}
+        aria-label={
+          allSubagents
+            ? allCompleted
+              ? localize('com_ui_ran_n_agents', { 0: String(count) })
+              : localize('com_ui_running_n_agents', { 0: String(count) })
+            : localize('com_ui_used_n_tools', { 0: String(count) })
+        }
       >
         <StackedToolIcons
           toolNames={toolNames}
@@ -153,9 +168,16 @@ export default function ToolCallGroup({
           isAnimating={!allCompleted && isSubmitting}
         />
         <span className="tool-status-text font-medium">
-          {localize('com_ui_used_n_tools', { 0: String(count) })}
+          {allSubagents
+            ? allCompleted
+              ? localize('com_ui_ran_n_agents', { 0: String(count) })
+              : localize('com_ui_running_n_agents', { 0: String(count) })
+            : localize('com_ui_used_n_tools', { 0: String(count) })}
         </span>
-        {toolNameSummary && (
+        {/** Hide the tool-name summary for pure-subagent groups — every
+         *   entry deduplicates to the same "subagent" token, which adds
+         *   noise without info. Mixed groups keep the summary. */}
+        {toolNameSummary && !allSubagents && (
           <span className="text-xs font-normal text-text-secondary">— {toolNameSummary}</span>
         )}
         <ChevronDown
