@@ -8,6 +8,7 @@ import {
   useAuthContext,
   useAgentsMap,
   useFileMap,
+  useWebPush,
 } from '~/hooks';
 import {
   PromptGroupsProvider,
@@ -46,6 +47,7 @@ export default function Root() {
   });
 
   useSearchEnabled(isAuthenticated);
+  useWebPush();
 
   useEffect(() => {
     if (!termsData) {

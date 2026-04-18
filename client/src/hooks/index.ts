@@ -20,6 +20,7 @@ export * from './AuthContext';
 export * from './ScreenshotContext';
 export * from './ApiErrorBoundaryContext';
 export * from './Endpoint';
+export { default as useWebPush } from './useWebPush';
 
 export type { TranslationKeys } from './useLocalize';
 

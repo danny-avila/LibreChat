@@ -65,6 +65,13 @@ export interface IUser extends Document {
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
   farmerProfile?: IFarmerProfile;
+  pushSubscriptions?: Array<{
+    endpoint: string;
+    keys: {
+      p256dh: string;
+      auth: string;
+    };
+  }>;
 }
 
 export interface BalanceConfig {

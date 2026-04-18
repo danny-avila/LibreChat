@@ -46,6 +46,18 @@ const FarmerProfileSchema = new Schema(
   { _id: false },
 );
 
+const PushSubscriptionSchema = new Schema(
+  {
+    endpoint: { type: String, required: true },
+    keys: {
+      p256dh: { type: String, required: true },
+      auth: { type: String, required: true },
+    },
+  },
+  { _id: false },
+);
+
+
 const userSchema = new Schema<IUser>(
   {
     name: {
@@ -188,6 +200,10 @@ const userSchema = new Schema<IUser>(
       type: FarmerProfileSchema,
       required: false,
       default: {},
+    },
+    pushSubscriptions: {
+      type: [PushSubscriptionSchema],
+      default: [],
     },
   },
   { timestamps: true },
