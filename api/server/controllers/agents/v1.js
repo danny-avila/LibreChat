@@ -212,7 +212,15 @@ const createAgentHandler = async (req, res) => {
       }
     }
 
-    if (agentData.subagents?.agent_ids?.length) {
+    /**
+     * Only validate subagent ACL when the feature is actually enabled.
+     * The UI keeps the `agent_ids` list intact when a user toggles
+     * subagents off, so someone who subsequently lost VIEW access to
+     * one child would otherwise be locked out of saving *any* edit
+     * that echoes the old list back — even the edit that disables
+     * the feature. Empty list also no-ops (nothing to check).
+     */
+    if (agentData.subagents?.enabled !== false && agentData.subagents?.agent_ids?.length) {
       const unauthorized = await validateSubagentAccess(agentData.subagents, userId, userRole);
       if (unauthorized.length > 0) {
         return res.status(403).json({
@@ -394,7 +402,10 @@ const updateAgentHandler = async (req, res) => {
       }
     }
 
-    if (updateData.subagents?.agent_ids?.length) {
+    /** Same guard as the create path: only validate when the feature
+     *  is enabled, so a user who lost access to a child can still
+     *  disable subagents without hitting a 403 loop. */
+    if (updateData.subagents?.enabled !== false && updateData.subagents?.agent_ids?.length) {
       const { id: userId, role: userRole } = req.user;
       const unauthorized = await validateSubagentAccess(updateData.subagents, userId, userRole);
       if (unauthorized.length > 0) {

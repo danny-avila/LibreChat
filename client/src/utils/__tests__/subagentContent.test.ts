@@ -426,6 +426,43 @@ describe('buildSubagentTickerLines', () => {
     expect(lines[0]).toEqual({ kind: 'reasoning', body: 'Step 1' });
   });
 
+  it('closes the opposite cursor on text↔reasoning phase switches (chronological order)', () => {
+    /** Codex P2 regression: a `reasoning → text → reasoning` sequence
+     *  used to append the second reasoning chunk to the first
+     *  reasoning line (cursor never reset across the text switch),
+     *  producing merged/out-of-order previews. Now each delta-type
+     *  transition closes the opposite buffer/cursor, matching the
+     *  content-parts reducer's chronological rule. */
+    const lines = buildSubagentTickerLines([
+      makeEvent({
+        phase: 'reasoning_delta',
+        data: { delta: { content: [{ type: 'think', think: 'Plan step.' }] } },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'Answer part 1.' }] } },
+      }),
+      makeEvent({
+        phase: 'reasoning_delta',
+        data: { delta: { content: [{ type: 'think', think: 'Refined plan.' }] } },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'Answer part 2.' }] } },
+      }),
+    ]);
+    expect(lines.map((l) => (l as { kind: string }).kind)).toEqual([
+      'reasoning',
+      'writing',
+      'reasoning',
+      'writing',
+    ]);
+    expect((lines[0] as { body: string }).body).toBe('Plan step.');
+    expect((lines[1] as { body: string }).body).toBe('Answer part 1.');
+    expect((lines[2] as { body: string }).body).toBe('Refined plan.');
+    expect((lines[3] as { body: string }).body).toBe('Answer part 2.');
+  });
+
   it('surfaces error envelopes with their message', () => {
     const lines = buildSubagentTickerLines([
       makeEvent({ phase: 'error', data: { message: 'recursion limit' } }),
