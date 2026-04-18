@@ -4,25 +4,11 @@ import { ChevronDown, Users } from 'lucide-react';
 import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
-import type { TranslationKeys } from '~/hooks';
-import { StackedToolIcons, getMCPServerName } from './ToolOutput';
+import { StackedToolIcons } from './ToolOutput';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useMCPIconMap } from '~/hooks/MCP';
-import { cn } from '~/utils';
+import { cn, getToolDisplayLabel } from '~/utils';
 import store from '~/store';
-
-/** Maps tool names to translation keys — resolved via localize() at render time. */
-const FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
-  execute_code: 'com_ui_tool_name_code',
-  run_tools_with_code: 'com_ui_tool_name_code',
-  web_search: 'com_ui_tool_name_web_search',
-  image_gen_oai: 'com_ui_tool_name_image_gen',
-  image_edit_oai: 'com_ui_tool_name_image_edit',
-  gemini_image_gen: 'com_ui_tool_name_image_gen',
-  file_search: 'com_ui_tool_name_file_search',
-  code_interpreter: 'com_ui_tool_name_code_analysis',
-  retrieval: 'com_ui_tool_name_file_search',
-};
 
 interface ToolMeta {
   name: string;
@@ -101,12 +87,8 @@ export default function ToolCallGroup({
     const seen = new Set<string>();
     const labels: string[] = [];
     for (const rawName of toolNames) {
-      if (!rawName) {
-        continue;
-      }
-      const serverName = getMCPServerName(rawName);
-      const nameKey = FRIENDLY_NAME_KEYS[rawName];
-      const label = serverName || (nameKey ? localize(nameKey) : rawName);
+      if (!rawName) continue;
+      const label = getToolDisplayLabel(rawName, localize);
       if (!seen.has(label)) {
         seen.add(label);
         labels.push(label);
