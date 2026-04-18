@@ -47,13 +47,18 @@ export async function enrichRemoteAgentPrincipals(
       ? Types.ObjectId.createFromHexString(resourceId)
       : resourceId;
 
+  /**
+   * Filter `permBits` application-side (not via `$bitsAllSet`) for compatibility
+   * with MongoDB forks (e.g. Azure Cosmos DB for MongoDB) that do not implement
+   * the `$bitsAllSet` query operator. Entry count is bounded by ACL entries on a
+   * single agent, so the extra documents fetched are negligible.
+   */
   const agentOwnerEntries = await deps.aggregateAclEntries([
     {
       $match: {
         resourceType: ResourceType.AGENT,
         resourceId: resourceObjectId,
         principalType: PrincipalType.USER,
-        permBits: { $bitsAllSet: PermissionBits.SHARE },
       },
     },
     {
@@ -67,6 +72,7 @@ export async function enrichRemoteAgentPrincipals(
     {
       $project: {
         principalId: 1,
+        permBits: 1,
         userInfo: { $arrayElemAt: ['$userInfo', 0] },
       },
     },
@@ -76,6 +82,10 @@ export async function enrichRemoteAgentPrincipals(
   const entriesToBackfill: Types.ObjectId[] = [];
 
   for (const entry of agentOwnerEntries) {
+    const permBits = entry.permBits as number;
+    if ((permBits & PermissionBits.SHARE) !== PermissionBits.SHARE) {
+      continue;
+    }
     if (!entry.userInfo) {
       continue;
     }
