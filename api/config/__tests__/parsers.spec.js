@@ -229,4 +229,29 @@ describe('debugTraverse', () => {
     const tenantMatches = out.match(/tenant-7/g) ?? [];
     expect(tenantMatches.length).toBeLessThanOrEqual(1);
   });
+
+  it('does not duplicate a consumed %s arg when there is no structured metadata', () => {
+    const info = {
+      level: 'warn',
+      message: 'failed for tenant-7',
+      timestamp: 'ts',
+      [SPLAT_SYMBOL]: ['tenant-7'],
+    };
+    const out = runFormatter(info);
+    const tenantMatches = out.match(/tenant-7/g) ?? [];
+    expect(tenantMatches.length).toBe(1);
+  });
+
+  it('still surfaces array metadata in SPLAT[0] when no object is extracted', () => {
+    const info = {
+      level: 'debug',
+      message: 'list',
+      timestamp: 'ts',
+      [SPLAT_SYMBOL]: [['alpha', 'beta', 'gamma']],
+    };
+    const out = runFormatter(info);
+    expect(out).toContain('alpha');
+    expect(out).toContain('beta');
+    expect(out).toContain('gamma');
+  });
 });
