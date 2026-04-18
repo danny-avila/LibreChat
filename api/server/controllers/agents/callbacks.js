@@ -314,6 +314,18 @@ function getDefaultHandlers({
      * chain is configured to suppress intermediates.
      */
     handle: async (event, data, metadata) => {
+      const isLastAgent = checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node);
+      const visible = isLastAgent || !metadata?.hide_sequential_outputs;
+      /**
+       * Gate BOTH aggregation (persistence) AND streaming on the same
+       * visibility rule. If we aggregated for a hidden intermediate
+       * agent, `finalizeSubagentContent` would still attach its
+       * child's reasoning / tool output to the saved message — so a
+       * page refresh would reveal activity that was intentionally
+       * suppressed live. Treat hide_sequential_outputs as a
+       * consistent "don't record" rule for subagent traces.
+       */
+      if (!visible) return;
       if (subagentAggregatorsByToolCallId && data?.parentToolCallId) {
         const key = data.parentToolCallId;
         let aggregator = subagentAggregatorsByToolCallId.get(key);
@@ -329,10 +341,7 @@ function getDefaultHandlers({
           );
         }
       }
-      const isLastAgent = checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node);
-      if (isLastAgent || !metadata?.hide_sequential_outputs) {
-        await emitEvent(res, streamId, { event, data });
-      }
+      await emitEvent(res, streamId, { event, data });
     },
   };
 
