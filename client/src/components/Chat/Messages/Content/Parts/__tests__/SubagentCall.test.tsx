@@ -34,9 +34,8 @@ jest.mock('~/hooks', () => ({
         com_ui_subagent_ticker_writing: 'Writing',
         com_ui_subagent_ticker_reasoning: 'Reasoning',
         com_ui_subagent_ticker_error: 'Error',
-        com_ui_subagent_ticker_using: `Using tool: ${arg0}`,
-        com_ui_subagent_ticker_using_with_args: `Using ${arg0}(${arg1})`,
-        com_ui_subagent_ticker_tool_complete: `Tool ${arg0} complete`,
+        com_ui_subagent_ticker_using: 'Using',
+        com_ui_subagent_ticker_tool_done: 'done',
         com_ui_subagent_ticker_tool_output: `${arg0} → ${arg1}`,
       };
       return translations[key] ?? key;
@@ -110,6 +109,7 @@ jest.mock('~/components/Share/MessageIcon', () => ({
 
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/groupToolCalls'),
+  ...jest.requireActual('~/utils/toolLabels'),
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
 }));
 
@@ -370,20 +370,25 @@ describe('SubagentCall — ticker', () => {
       }),
     });
 
-    /** The ticker throttles displayed frames by ~1.2s so rapid deltas
-     *  stay readable. `waitFor` gives the trailing-edge update time to
-     *  land before we assert — otherwise the test races the throttle
-     *  and sees the stale placeholder. */
+    /** Ticker now renders a structured `using_tool` line — prefix span
+     *  ("Using"), a code-style badge for the tool name, and a muted
+     *  args snippet. Check the pieces individually rather than a
+     *  combined text match. */
     await waitFor(
       () => {
-        expect(screen.getByText('Using calculator(expression=42*58)')).toBeInTheDocument();
+        expect(screen.getByText('Using')).toBeInTheDocument();
       },
       { timeout: 2500 },
     );
     /** Raw event names never appear in the ticker. */
     expect(screen.queryByText(/on_run_step/)).not.toBeInTheDocument();
     expect(screen.queryByText(/on_message_delta/)).not.toBeInTheDocument();
-    expect(screen.getByText('calculator → 42*58 = 2436')).toBeInTheDocument();
+    /** Tool name renders as a `<code>` badge, args snippet in parens. */
+    const calcBadges = screen.getAllByText('calculator');
+    expect(calcBadges.some((el) => el.tagName === 'CODE')).toBe(true);
+    expect(screen.getByText('(expression=42*58)')).toBeInTheDocument();
+    /** Completion line renders the output snippet in the body span. */
+    expect(screen.getAllByText('42*58 = 2436').length).toBeGreaterThan(0);
   });
 
   it('collapses a streak of message_delta events into one live Writing line', async () => {

@@ -17,7 +17,7 @@ import { MessageContext } from '~/Providers/MessageContext';
 import { useLocalize } from '~/hooks';
 import { subagentProgressByToolCallId } from '~/store';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
-import { cn, groupSequentialToolCalls } from '~/utils';
+import { cn, groupSequentialToolCalls, parseToolName } from '~/utils';
 
 interface SubagentCallProps {
   toolCallId: string;
@@ -550,6 +550,42 @@ function tickerLineKey(line: SubagentTickerLine): string {
   }
 }
 
+/** Inline code-style tool-name badge. Matches the monospace styling of
+ *  the ticker itself but with a subtle background so the tool identifier
+ *  reads as a "code" token rather than plain prose. */
+function ToolNameBadge({ name }: { name: string }): JSX.Element {
+  return (
+    <code className="shrink-0 rounded bg-surface-tertiary px-1 text-text-primary">{name}</code>
+  );
+}
+
+/** Render a single tool id as a compact JSX fragment: MCP tools split
+ *  into `<server> · <code>toolName</code>`, native tools resolve their
+ *  friendly name via `FRIENDLY_NAME_KEYS`, unknown ids fall back to a
+ *  bare code badge of the raw name. */
+function ToolIdentifier({
+  rawName,
+  localize,
+}: {
+  rawName: string;
+  localize: ReturnType<typeof useLocalize>;
+}): JSX.Element {
+  const parsed = parseToolName(rawName);
+  if (parsed.mcpServer) {
+    return (
+      <span className="inline-flex min-w-0 shrink items-baseline gap-1">
+        <span className="truncate">{parsed.mcpServer}</span>
+        <span className="shrink-0 text-text-tertiary">·</span>
+        <ToolNameBadge name={parsed.toolName} />
+      </span>
+    );
+  }
+  if (parsed.friendlyKey) {
+    return <span className="truncate">{localize(parsed.friendlyKey)}</span>;
+  }
+  return <ToolNameBadge name={parsed.toolName} />;
+}
+
 /**
  * Renderer for one ticker line. Splits a fixed label (e.g. "Writing:")
  * into its own `shrink-0` span so the label is never clipped when the
@@ -558,6 +594,11 @@ function tickerLineKey(line: SubagentTickerLine): string {
  * right, oldest clip off the left). The rtl trick is scoped to the
  * body span so trailing punctuation on non-streaming lines (e.g. the
  * `…` in "Waiting for first update…") can't get flipped by bidi.
+ *
+ * Tool lines (`using_tool`, `tool_complete`) go through `ToolIdentifier`
+ * so MCP-hosted tools render as `<server> · <tool>` badges and native
+ * tools use their friendly names — matching the delimiter-aware
+ * rendering the main tool UI already uses.
  */
 function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
   const localize = useLocalize();
@@ -579,22 +620,46 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
     );
   }
   if (line.kind === 'using_tool') {
-    const names = line.toolNames.join(', ');
-    const text = line.argsSnippet
-      ? localize('com_ui_subagent_ticker_using_with_args', { 0: names, 1: line.argsSnippet })
-      : localize('com_ui_subagent_ticker_using', { 0: names });
-    return <li className="truncate">{text}</li>;
+    const prefix = localize('com_ui_subagent_ticker_using');
+    return (
+      <li className="flex w-full items-baseline gap-1 overflow-hidden whitespace-nowrap">
+        <span className="shrink-0">{prefix}</span>
+        <span className="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden">
+          {line.toolNames.map((name, i) => (
+            <span key={`${i}-${name}`} className="flex min-w-0 items-baseline gap-1">
+              {i > 0 && <span className="shrink-0 text-text-tertiary">,</span>}
+              <ToolIdentifier rawName={name} localize={localize} />
+            </span>
+          ))}
+          {line.argsSnippet && (
+            <span className="min-w-0 truncate text-text-tertiary">({line.argsSnippet})</span>
+          )}
+        </span>
+      </li>
+    );
   }
   if (line.kind === 'tool_complete') {
-    const text = line.outputSnippet
-      ? localize('com_ui_subagent_ticker_tool_output', { 0: line.toolName, 1: line.outputSnippet })
-      : localize('com_ui_subagent_ticker_tool_complete', { 0: line.toolName });
-    return <li className="truncate">{text}</li>;
+    return (
+      <li className="flex w-full items-baseline gap-1 overflow-hidden whitespace-nowrap">
+        <ToolIdentifier rawName={line.toolName} localize={localize} />
+        <span className="shrink-0 text-text-tertiary">→</span>
+        <span
+          dir="rtl"
+          className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left"
+        >
+          {line.outputSnippet ?? localize('com_ui_subagent_ticker_tool_done')}
+        </span>
+      </li>
+    );
   }
   /* error */
   const errorPrefix = localize('com_ui_subagent_ticker_error');
-  const text = line.message ? `${errorPrefix}: ${line.message}` : errorPrefix;
-  return <li className="truncate text-text-warning">{text}</li>;
+  return (
+    <li className="flex w-full items-baseline gap-1 overflow-hidden text-text-warning">
+      <span className="shrink-0">{errorPrefix}:</span>
+      <span className="min-w-0 flex-1 truncate">{line.message ?? ''}</span>
+    </li>
+  );
 }
 
 /**
