@@ -154,6 +154,77 @@ describe('aggregateSubagentContent', () => {
     expect(parts).toEqual([]);
   });
 
+  it('preserves chronological order when reasoning and text arrive interleaved (ordering regression)', () => {
+    /**
+     * Before the delta-type-switch close, a run where the LLM emitted
+     * reasoning FIRST, then text, then a tool call would flush both
+     * buffers at the tool_call boundary in a fixed (text, think) order —
+     * landing text BEFORE think in the content array even though the
+     * user observed reasoning first. Fix: when a text chunk arrives
+     * close any open think buffer first, and vice versa.
+     */
+    const parts = aggregateSubagentContent([
+      makeEvent({
+        phase: 'reasoning_delta',
+        data: { delta: { content: [{ type: 'think', think: 'Let me think.' }] } },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'Sure!' }] } },
+      }),
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'c1', name: 'calculator', args: '{}' }],
+          },
+        },
+      }),
+    ]);
+    expect(parts).toHaveLength(3);
+    expect((parts[0] as { type: string; think?: string }).type).toBe(ContentTypes.THINK);
+    expect((parts[0] as { think: string }).think).toBe('Let me think.');
+    expect((parts[1] as { type: string; text?: string }).type).toBe(ContentTypes.TEXT);
+    expect((parts[1] as { text: string }).text).toBe('Sure!');
+    expect((parts[2] as { type: string }).type).toBe(ContentTypes.TOOL_CALL);
+  });
+
+  it('handles repeated reasoning → text → reasoning flows across a turn', () => {
+    /** Second pattern from the screenshot: reasoning before the final
+     *  text, and the completed run still ending with streaming text.
+     *  A new reasoning after a text streak should appear AFTER the text,
+     *  not before. */
+    const parts = aggregateSubagentContent([
+      makeEvent({
+        phase: 'reasoning_delta',
+        data: { delta: { content: [{ type: 'think', think: 'Pre-thinking.' }] } },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'First draft.' }] } },
+      }),
+      makeEvent({
+        phase: 'reasoning_delta',
+        data: { delta: { content: [{ type: 'think', think: 'Post-thinking.' }] } },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'Final.' }] } },
+      }),
+    ]);
+    expect(parts.map((p) => (p as { type: string }).type)).toEqual([
+      ContentTypes.THINK,
+      ContentTypes.TEXT,
+      ContentTypes.THINK,
+      ContentTypes.TEXT,
+    ]);
+    expect((parts[0] as { think: string }).think).toBe('Pre-thinking.');
+    expect((parts[1] as { text: string }).text).toBe('First draft.');
+    expect((parts[2] as { think: string }).think).toBe('Post-thinking.');
+    expect((parts[3] as { text: string }).text).toBe('Final.');
+  });
+
   it('handles a run_step_completed without a preceding run_step (late arrival)', () => {
     const parts = aggregateSubagentContent([
       makeEvent({
