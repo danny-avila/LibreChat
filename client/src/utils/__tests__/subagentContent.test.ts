@@ -254,7 +254,7 @@ describe('buildSubagentTickerLines', () => {
     ).toEqual([]);
   });
 
-  it('produces a single live "Writing" line that updates as deltas arrive', () => {
+  it('produces a single writing line whose body extends as deltas arrive', () => {
     const lines = buildSubagentTickerLines([
       makeEvent({
         phase: 'message_delta',
@@ -266,10 +266,10 @@ describe('buildSubagentTickerLines', () => {
       }),
     ]);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toEqual({ text: 'Writing: Hello world', live: true });
+    expect(lines[0]).toEqual({ kind: 'writing', body: 'Hello world' });
   });
 
-  it('truncates the writing preview to the tail when it grows past the cap', () => {
+  it('truncates the writing body to the tail when it grows past the cap', () => {
     const longText = 'x'.repeat(1000);
     const lines = buildSubagentTickerLines([
       makeEvent({
@@ -278,15 +278,17 @@ describe('buildSubagentTickerLines', () => {
       }),
     ]);
     expect(lines).toHaveLength(1);
-    expect(lines[0].text.startsWith('Writing: …')).toBe(true);
-    /** The cap is generous (300) so wide containers aren't half-empty —
-     *  paired with a CSS tail-ellipsis in the component so narrow
-     *  viewports still clip the oldest side, not the newest. */
-    expect(lines[0].text.length).toBeLessThanOrEqual('Writing: …'.length + 300);
-    expect(lines[0].text.length).toBeGreaterThan('Writing: …'.length + 60);
+    expect(lines[0].kind).toBe('writing');
+    const body = (lines[0] as { body: string }).body;
+    expect(body.startsWith('…')).toBe(true);
+    /** Cap of 300 chars + leading ellipsis. Wide enough for wide
+     *  containers; the component's CSS tail-ellipsis handles narrow
+     *  viewports without losing the newest chars. */
+    expect(body.length).toBeLessThanOrEqual(301);
+    expect(body.length).toBeGreaterThan(60);
   });
 
-  it('emits discrete lines for tool-call start and completion with output snippet', () => {
+  it('emits using_tool + tool_complete lines', () => {
     const lines = buildSubagentTickerLines([
       makeEvent({
         phase: 'run_step',
@@ -308,8 +310,8 @@ describe('buildSubagentTickerLines', () => {
       }),
     ]);
     expect(lines).toEqual([
-      { text: 'Using tool: calculator' },
-      { text: 'calculator → 42*58 = 2436' },
+      { kind: 'using_tool', toolNames: ['calculator'] },
+      { kind: 'tool_complete', toolName: 'calculator', outputSnippet: '42*58 = 2436' },
     ]);
   });
 
@@ -325,7 +327,11 @@ describe('buildSubagentTickerLines', () => {
         },
       }),
     ]);
-    expect(single[0].text).toBe('Using calculator(expression=42*58)');
+    expect(single[0]).toEqual({
+      kind: 'using_tool',
+      toolNames: ['calculator'],
+      argsSnippet: 'expression=42*58',
+    });
 
     const parallel = buildSubagentTickerLines([
       makeEvent({
@@ -341,7 +347,10 @@ describe('buildSubagentTickerLines', () => {
         },
       }),
     ]);
-    expect(parallel[0].text).toBe('Using tool: calculator, web_search');
+    expect(parallel[0]).toEqual({
+      kind: 'using_tool',
+      toolNames: ['calculator', 'web_search'],
+    });
   });
 
   it('truncates long tool output to a 48-char head snippet', () => {
@@ -357,12 +366,14 @@ describe('buildSubagentTickerLines', () => {
         },
       }),
     ]);
-    expect(lines[0].text).toMatch(/^reader → x+…$/);
-    /** 48-char snippet + "reader → " prefix (9 chars) + trailing "…". */
-    expect(lines[0].text.length).toBe(9 + 48 + 1);
+    expect(lines[0].kind).toBe('tool_complete');
+    const snippet = (lines[0] as { outputSnippet?: string }).outputSnippet ?? '';
+    expect(snippet).toMatch(/^x+…$/);
+    /** 48-char head + trailing ellipsis. */
+    expect(snippet.length).toBe(49);
   });
 
-  it('falls back to generic complete label when output is empty', () => {
+  it('omits outputSnippet when output is empty', () => {
     const lines = buildSubagentTickerLines([
       makeEvent({
         phase: 'run_step_completed',
@@ -374,7 +385,7 @@ describe('buildSubagentTickerLines', () => {
         },
       }),
     ]);
-    expect(lines[0].text).toBe('Tool noop complete');
+    expect(lines[0]).toEqual({ kind: 'tool_complete', toolName: 'noop' });
   });
 
   it('closes a streaming line when a tool call arrives so subsequent deltas start fresh', () => {
@@ -398,47 +409,26 @@ describe('buildSubagentTickerLines', () => {
       }),
     ]);
     expect(lines).toEqual([
-      { text: 'Writing: I will compute', live: true },
-      /** No args present → generic label. */
-      { text: 'Using tool: calculator' },
-      { text: 'Writing: Result: 4', live: true },
+      { kind: 'writing', body: 'I will compute' },
+      { kind: 'using_tool', toolNames: ['calculator'] },
+      { kind: 'writing', body: 'Result: 4' },
     ]);
   });
 
-  it('prefixes reasoning deltas distinctly from message deltas', () => {
+  it('distinguishes reasoning from writing', () => {
     const lines = buildSubagentTickerLines([
       makeEvent({
         phase: 'reasoning_delta',
         data: { delta: { content: [{ type: 'think', think: 'Step 1' }] } },
       }),
     ]);
-    expect(lines[0]).toEqual({ text: 'Reasoning: Step 1', live: true });
+    expect(lines[0]).toEqual({ kind: 'reasoning', body: 'Step 1' });
   });
 
   it('surfaces error envelopes with their message', () => {
     const lines = buildSubagentTickerLines([
       makeEvent({ phase: 'error', data: { message: 'recursion limit' } }),
     ]);
-    expect(lines).toEqual([{ text: 'Error: recursion limit' }]);
-  });
-
-  it('accepts host-supplied label formatters for i18n', () => {
-    const lines = buildSubagentTickerLines(
-      [
-        makeEvent({
-          phase: 'run_step',
-          data: {
-            stepDetails: {
-              type: 'tool_calls',
-              tool_calls: [{ id: 'c1', name: 'calculator' }],
-            },
-          },
-        }),
-      ],
-      {
-        formatUsingTool: (names, args) => (args ? `outil ${names}(${args})` : `outil : ${names}`),
-      },
-    );
-    expect(lines[0].text).toBe('outil : calculator');
+    expect(lines).toEqual([{ kind: 'error', message: 'recursion limit' }]);
   });
 });

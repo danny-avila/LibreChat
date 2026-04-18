@@ -22,7 +22,12 @@ import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { subagentProgressByToolCallId } from '~/store';
-import { foldSubagentEvent, initSubagentAggregatorState } from '~/utils/subagentContent';
+import {
+  foldSubagentEvent,
+  foldSubagentEventIntoTicker,
+  initSubagentAggregatorState,
+  initSubagentTickerState,
+} from '~/utils/subagentContent';
 
 type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
@@ -95,11 +100,11 @@ export default function useStepHandler({
    */
   const knownSubagentAtomKeys = useRef(new Set<string>());
 
-  /** Rolling window for the ticker only. Content parts are aggregated
-   *  incrementally into `progress.contentParts` (bounded by structure,
-   *  not event volume) so trimming this window never drops tool-call
-   *  history from the dialog. */
-  const MAX_SUBAGENT_EVENTS = 200;
+  /** Both content parts and ticker lines are aggregated incrementally
+   *  into the atom as each `ON_SUBAGENT_UPDATE` arrives — we never
+   *  retain the raw event array, so no rolling window is needed. A
+   *  talkative subagent can emit thousands of deltas without growing
+   *  memory past what the structural output requires. */
 
   /**
    * Attempts to resolve the parent `tool_call_id` for a subagent run, using
@@ -170,35 +175,29 @@ export default function useStepHandler({
 
         knownSubagentAtomKeys.current.add(toolCallId);
         set(subagentProgressByToolCallId(toolCallId), (prev) => {
-          const existingEvents = prev?.events ?? [];
-          const nextEvents = existingEvents.concat(toApply);
-          const trimmedEvents =
-            nextEvents.length > MAX_SUBAGENT_EVENTS
-              ? nextEvents.slice(nextEvents.length - MAX_SUBAGENT_EVENTS)
-              : nextEvents;
-
-          /** Incrementally fold this batch into the content-parts array.
-           *  `foldSubagentEvent` is pure and returns new references only
-           *  when something changed, so React bails out of unnecessary
-           *  re-renders. Full history is preserved regardless of the
-           *  ticker's event trim window. */
+          /** Fold the batch into both aggregators. Pure functions — they
+           *  return a new reference only when something actually changed,
+           *  so React bails out of unnecessary re-renders downstream. */
           let contentParts = prev?.contentParts ?? [];
           let aggregatorState = prev?.aggregatorState ?? initSubagentAggregatorState();
+          let tickerState = prev?.tickerState ?? initSubagentTickerState();
           for (const event of toApply) {
             ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
               contentParts,
               aggregatorState,
               event,
             ));
+            tickerState = foldSubagentEventIntoTicker(tickerState, event);
           }
 
           const last = toApply[toApply.length - 1];
           return {
             subagentRunId: payload.subagentRunId,
             subagentType: payload.subagentType,
-            events: trimmedEvents,
+            subagentAgentId: payload.subagentAgentId ?? prev?.subagentAgentId,
             contentParts,
             aggregatorState,
+            tickerState,
             status: last.phase,
             latestLabel: last.label ?? prev?.latestLabel,
           };
