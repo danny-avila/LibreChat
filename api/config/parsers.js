@@ -164,30 +164,31 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
   }
 
   let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), DEBUG_MESSAGE_LENGTH)}`;
+  const levelStr = typeof level === 'string' ? level : String(level);
+  const isErrorOrWarn = levelStr.includes('error') || levelStr.includes('warn');
+  const finalize = (text) => (isErrorOrWarn ? redactMessage(text) : text);
   try {
-    const levelStr = typeof level === 'string' ? level : String(level);
-    const isErrorOrWarn = levelStr.includes('error') || levelStr.includes('warn');
     if (level !== 'debug' && !isErrorOrWarn) {
-      return msg;
+      return finalize(msg);
     }
 
     if (!metadata) {
-      return msg;
+      return finalize(msg);
     }
 
     const debugValue = metadata[SPLAT_SYMBOL]?.[0] ?? extractMetaObject(metadata);
 
     if (!debugValue) {
-      return msg;
+      return finalize(msg);
     }
 
     if (debugValue && Array.isArray(debugValue)) {
       msg += `\n${JSON.stringify(debugValue.map(condenseArray))}`;
-      return msg;
+      return finalize(msg);
     }
 
     if (typeof debugValue !== 'object') {
-      return (msg += ` ${debugValue}`);
+      return finalize((msg += ` ${debugValue}`));
     }
 
     msg += '\n{';
@@ -228,9 +229,9 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
     });
 
     msg += '\n}';
-    return msg;
+    return finalize(msg);
   } catch (e) {
-    return (msg += `\n[LOGGER PARSING ERROR] ${e.message}`);
+    return finalize((msg += `\n[LOGGER PARSING ERROR] ${e.message}`));
   }
 });
 

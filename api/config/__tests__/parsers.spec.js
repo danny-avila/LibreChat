@@ -1,4 +1,7 @@
-const { formatConsoleMeta, redactMessage } = jest.requireActual('../parsers');
+jest.unmock('winston');
+
+const { formatConsoleMeta, redactMessage, debugTraverse } = jest.requireActual('../parsers');
+const SPLAT_SYMBOL = Symbol.for('splat');
 
 describe('formatConsoleMeta', () => {
   it('returns empty string when there is no user metadata', () => {
@@ -132,5 +135,46 @@ describe('redactMessage', () => {
   it('returns empty string for falsy input', () => {
     expect(redactMessage('')).toBe('');
     expect(redactMessage(undefined)).toBe('');
+  });
+});
+
+describe('debugTraverse', () => {
+  const runFormatter = (info) => {
+    const transformed = debugTraverse.transform(info);
+    const MESSAGE = Symbol.for('message');
+    if (transformed && typeof transformed === 'object') {
+      return transformed[MESSAGE] ?? String(transformed);
+    }
+    return String(transformed);
+  };
+
+  const buildInfo = (level, meta) => {
+    const info = {
+      level,
+      message: 'test',
+      timestamp: 'ts',
+      ...meta,
+    };
+    info[SPLAT_SYMBOL] = [meta];
+    return info;
+  };
+
+  it('redacts sensitive strings in metadata for error level', () => {
+    const out = runFormatter(buildInfo('error', { auth: 'Bearer eyJabc123', openai: 'sk-abc123' }));
+    expect(out).not.toContain('eyJabc123');
+    expect(out).not.toContain('sk-abc123');
+    expect(out).toContain('Bearer [REDACTED]');
+    expect(out).toContain('sk-[REDACTED]');
+  });
+
+  it('redacts sensitive strings in metadata for warn level', () => {
+    const out = runFormatter(buildInfo('warn', { header: 'Bearer supersecrettoken' }));
+    expect(out).not.toContain('supersecrettoken');
+    expect(out).toContain('Bearer [REDACTED]');
+  });
+
+  it('preserves debug-level metadata unmodified (existing behavior)', () => {
+    const out = runFormatter(buildInfo('debug', { someField: 'not-sensitive' }));
+    expect(out).toContain('not-sensitive');
   });
 });
