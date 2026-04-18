@@ -22,13 +22,13 @@ jest.mock('~/hooks', () => ({
         com_ui_subagent_complete: `Ran "${arg0}" agent`,
         com_ui_subagent_cancelled: `Cancelled "${arg0}" agent`,
         com_ui_subagent_errored: `"${arg0}" agent errored`,
-        com_ui_subagent_running_self: 'Running subtask',
-        com_ui_subagent_complete_self: 'Ran subtask',
-        com_ui_subagent_cancelled_self: 'Cancelled subtask',
-        com_ui_subagent_errored_self: 'Subtask errored',
+        com_ui_subagent_running_self: 'Running agent',
+        com_ui_subagent_complete_self: 'Ran agent',
+        com_ui_subagent_cancelled_self: 'Cancelled agent',
+        com_ui_subagent_errored_self: 'Agent errored',
         com_ui_subagent_waiting: 'Waiting for first update…',
         com_ui_subagent_dialog_title: `"${arg0}" agent`,
-        com_ui_subagent_dialog_title_self: 'Subtask',
+        com_ui_subagent_dialog_title_self: 'Agent',
         com_ui_subagent_dialog_description: 'Isolated child run.',
         com_ui_subagent_no_result_yet: 'No result yet.',
         com_ui_subagent_empty_result: 'No text.',
@@ -91,6 +91,22 @@ jest.mock('lucide-react', () => ({
   ChevronRight: () => <span>chevron</span>,
   // eslint-disable-next-line i18next/no-literal-string
   Users: () => <span>users</span>,
+}));
+
+/** Stub out the agents-map provider so the header doesn't look up real
+ *  agent data. Tests don't exercise the avatar lookup path; the default
+ *  (no agent) renders the `Users` SVG fallback. */
+jest.mock('~/Providers', () => ({
+  useAgentsMapContext: () => ({}),
+}));
+
+/** Stub `MessageIcon` — only relevant when `useAgentsMapContext` returns
+ *  a matching agent; with the stub above it never renders. */
+jest.mock('~/components/Share/MessageIcon', () => ({
+  __esModule: true,
+  default: ({ agent }: { agent?: { name?: string } }) => (
+    <span data-testid="agent-icon">{agent?.name ?? ''}</span>
+  ),
 }));
 
 jest.mock('~/utils', () => ({
@@ -195,7 +211,7 @@ function renderWithState(args: {
 }
 
 describe('SubagentCall — status resolution', () => {
-  it('renders "Running subtask" while streaming and no terminal envelope has arrived', () => {
+  it('renders "Running agent" while streaming and no terminal envelope has arrived', () => {
     renderWithState({
       toolCallId: 'call_running',
       initialProgress: 0.3,
@@ -207,10 +223,10 @@ describe('SubagentCall — status resolution', () => {
         status: 'run_step',
       }),
     });
-    expect(screen.getByText('Running subtask')).toBeInTheDocument();
+    expect(screen.getByText('Running agent')).toBeInTheDocument();
   });
 
-  it('renders "Ran subtask" when the subagent emits a `stop` phase', () => {
+  it('renders "Ran agent" when the subagent emits a `stop` phase', () => {
     renderWithState({
       toolCallId: 'call_stopped',
       initialProgress: 1,
@@ -222,20 +238,20 @@ describe('SubagentCall — status resolution', () => {
         status: 'stop',
       }),
     });
-    expect(screen.getByText('Ran subtask')).toBeInTheDocument();
+    expect(screen.getByText('Ran agent')).toBeInTheDocument();
   });
 
-  it('renders "Ran subtask" when the tool call progress reaches 1', () => {
+  it('renders "Ran agent" when the tool call progress reaches 1', () => {
     renderWithState({
       toolCallId: 'call_done',
       initialProgress: 1,
       isSubmitting: false,
       progress: null,
     });
-    expect(screen.getByText('Ran subtask')).toBeInTheDocument();
+    expect(screen.getByText('Ran agent')).toBeInTheDocument();
   });
 
-  it('renders "Cancelled subtask" when the stream stops before a terminal envelope (Codex P2 regression)', () => {
+  it('renders "Cancelled agent" when the stream stops before a terminal envelope (Codex P2 regression)', () => {
     /**
      * Codex P2 on #12725: the old `running` computation ignored whether the
      * parent run was still streaming, so a user stop or dropped connection
@@ -253,10 +269,10 @@ describe('SubagentCall — status resolution', () => {
         status: 'run_step',
       }),
     });
-    expect(screen.getByText('Cancelled subtask')).toBeInTheDocument();
+    expect(screen.getByText('Cancelled agent')).toBeInTheDocument();
   });
 
-  it('renders "Subtask errored" when the subagent emits an `error` phase', () => {
+  it('renders "Agent errored" when the subagent emits an `error` phase', () => {
     renderWithState({
       toolCallId: 'call_error',
       initialProgress: 0.4,
@@ -268,7 +284,7 @@ describe('SubagentCall — status resolution', () => {
         status: 'error',
       }),
     });
-    expect(screen.getByText('Subtask errored')).toBeInTheDocument();
+    expect(screen.getByText('Agent errored')).toBeInTheDocument();
   });
 
   it('uses the agent-name label template for non-self subagent types', () => {

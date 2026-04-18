@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronRight, Users } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-import { ContentTypes } from 'librechat-data-provider';
-import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
+import type { TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
 import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
 import Container from '~/components/Chat/Messages/Content/Container';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
+import MessageIcon from '~/components/Share/MessageIcon';
+import { useAgentsMapContext } from '~/Providers';
 import Text from './Text';
 import Reasoning from './Reasoning';
 import { AttachmentGroup } from './Attachment';
@@ -61,10 +63,18 @@ export default function SubagentCall({
 }: SubagentCallProps) {
   const localize = useLocalize();
   const progress = useRecoilValue(subagentProgressByToolCallId(toolCallId));
+  const agentsMap = useAgentsMapContext();
   const [open, setOpen] = useState(false);
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = subagentType === 'self';
+  /** Avatar lookup for the header icon. We use the child's agent id when
+   *  present (explicit subagents); self-spawn falls back to the agents
+   *  map being unavailable → the Users SVG. The tool UI has a similar
+   *  icon-left-of-label pattern; this reuses `MessageIcon` so the agent's
+   *  configured avatar lands here without a separate image pipeline. */
+  const subagentAgentId = progress?.subagentAgentId;
+  const subagentAgent = subagentAgentId ? agentsMap?.[subagentAgentId] : undefined;
   /**
    * Tri-state status resolution, aligned with `ToolCall.tsx`:
    *
@@ -234,11 +244,27 @@ export default function SubagentCall({
         aria-label={headerText}
       >
         <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
-          <Users
-            size={14}
-            className={cn('shrink-0', running && 'animate-pulse text-primary')}
+          <div
+            className={cn(
+              'flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full',
+              running && !subagentAgent && 'animate-pulse text-primary',
+            )}
             aria-hidden="true"
-          />
+          >
+            {subagentAgent ? (
+              <MessageIcon
+                message={
+                  {
+                    endpoint: EModelEndpoint.agents,
+                    isCreatedByUser: false,
+                  } as TMessage
+                }
+                agent={subagentAgent}
+              />
+            ) : (
+              <Users size={14} />
+            )}
+          </div>
           <span className="flex-1 truncate">{headerText}</span>
           <ChevronRight
             size={14}
@@ -279,46 +305,53 @@ export default function SubagentCall({
             {description || localize('com_ui_subagent_dialog_description')}
           </OGDialogDescription>
 
-          <div ref={scrollRef} className="mt-3 max-h-[65vh] overflow-y-auto pr-1">
-            {contentParts.length > 0 ? (
-              <MessageContext.Provider value={dialogMessageContext}>
-                {groupedParts.map((group) => {
-                  if (group.type === 'single') {
-                    const { part, idx } = group.part;
-                    /** Single parts wrap in `Container` for the same
-                     *  `gap-3` flex column spacing the main conversation
-                     *  uses. THINK/TEXT/single-TOOL_CALL all flow through
-                     *  here. */
+          <div
+            ref={scrollRef}
+            /** Mirrors the main conversation's content-parts wrapper
+             *  (`max-w-full flex-grow flex-col gap-0` from
+             *  `MessageParts.tsx`). Part-specific wrappers (`Container`
+             *  on TEXT, the Reasoning component's own wrapper on THINK,
+             *  `ToolCallGroup` margins on grouped tools) handle their
+             *  own spacing — we don't re-wrap everything in `Container`
+             *  because that would constrain Reasoning's full-column
+             *  width the way it has in regular messages.
+             *  Outer `px-4 py-3` gives the dialog breathing room. */
+            className="mt-3 max-h-[65vh] overflow-y-auto px-4 py-3"
+          >
+            <div className="flex max-w-full flex-grow flex-col gap-0">
+              {contentParts.length > 0 ? (
+                <MessageContext.Provider value={dialogMessageContext}>
+                  {groupedParts.map((group) => {
+                    if (group.type === 'single') {
+                      const { part, idx } = group.part;
+                      /** Per-type dispatch handles wrapping: TEXT goes
+                       *  through `Container`, THINK/TOOL_CALL render
+                       *  directly so their own wrappers set the width
+                       *  and spacing. */
+                      return renderDialogPart(part, idx, idx === lastPartIndex);
+                    }
+                    /** Consecutive tool_calls (2+) collapse into a
+                     *  `Used N tools` group — same behavior as the main
+                     *  message view. */
                     return (
-                      <Container key={`${toolCallId}-single-${idx}`}>
-                        {renderDialogPart(part, idx, idx === lastPartIndex)}
-                      </Container>
+                      <ToolCallGroup
+                        key={`${toolCallId}-group-${group.parts[0].idx}`}
+                        parts={group.parts}
+                        isSubmitting={running}
+                        isLast={group.parts.some((p) => p.idx === lastPartIndex)}
+                        renderPart={renderDialogPart}
+                        lastContentIdx={lastPartIndex}
+                      />
                     );
-                  }
-                  /** Consecutive tool_calls (2+) collapse into a
-                   *  `Used N tools` group — same behavior as the main
-                   *  message view. */
-                  return (
-                    <ToolCallGroup
-                      key={`${toolCallId}-group-${group.parts[0].idx}`}
-                      parts={group.parts}
-                      isSubmitting={running}
-                      isLast={group.parts.some((p) => p.idx === lastPartIndex)}
-                      renderPart={renderDialogPart}
-                      lastContentIdx={lastPartIndex}
-                    />
-                  );
-                })}
-              </MessageContext.Provider>
-            ) : output ? (
-              /** Fallback: no aggregated content parts but the backend
-               *  wrote a final tool_call output. Happens for older subagent
-               *  runs recorded before the event forwarder existed. Route
-               *  through the same leaf renderer as content parts so
-               *  markdown (headers, lists, bold) renders properly instead
-               *  of showing raw `##` / `**` characters. */
-              <MessageContext.Provider value={dialogMessageContext}>
-                <Container>
+                  })}
+                </MessageContext.Provider>
+              ) : output ? (
+                /** Fallback: no aggregated content parts but the backend
+                 *  wrote a final tool_call output. Happens for older
+                 *  subagent runs recorded before the event forwarder
+                 *  existed. Route through the same leaf renderer so
+                 *  markdown renders properly. */
+                <MessageContext.Provider value={dialogMessageContext}>
                   <SubagentDialogPart
                     part={
                       {
@@ -330,15 +363,15 @@ export default function SubagentCall({
                     showCursor={false}
                     isLast
                   />
-                </Container>
-              </MessageContext.Provider>
-            ) : (
-              <div className="text-sm italic text-text-secondary">
-                {running
-                  ? localize('com_ui_subagent_no_result_yet')
-                  : localize('com_ui_subagent_empty_result')}
-              </div>
-            )}
+                </MessageContext.Provider>
+              ) : (
+                <div className="text-sm italic text-text-secondary">
+                  {running
+                    ? localize('com_ui_subagent_no_result_yet')
+                    : localize('com_ui_subagent_empty_result')}
+                </div>
+              )}
+            </div>
           </div>
         </OGDialogContent>
       </OGDialog>
@@ -376,12 +409,15 @@ function tryDescription(args: string): string | undefined {
 }
 
 /**
- * Minimal renderer for a subagent's aggregated content parts. Mirrors the
- * three types the aggregator produces (`TEXT`, `THINK`, `TOOL_CALL`) —
- * everything else would require the full `<Part />` tree and its imports,
- * which creates an import cycle through `Parts/index`. Using the leaf
- * components directly keeps this self-contained and avoids rendering a
- * nested `SubagentCall` if a child somehow emits a subagent tool call.
+ * Per-part renderer for the dialog. Mirrors the wrapper choices `<Part>`
+ * makes in regular messages so subagent content matches the visual width
+ * and spacing the user already knows: TEXT wraps in `Container` (which
+ * provides `gap-3` column spacing and the `mt-5` sibling margin), while
+ * THINK and TOOL_CALL render bare — their own wrappers (`Reasoning`'s
+ * `mb-2 pb-2 pt-2` box, `ToolCall`'s own margins) control their layout
+ * and full-column width. Staying inline (vs. calling `<Part>`) avoids
+ * the `Parts/index.ts → SubagentCall → Part` import cycle and keeps us
+ * from accidentally rendering a nested subagent dialog.
  */
 function SubagentDialogPart({
   part,
@@ -396,7 +432,11 @@ function SubagentDialogPart({
 }): JSX.Element | null {
   if (part.type === ContentTypes.TEXT) {
     const text = (part as { text: string }).text;
-    return <Text text={text} showCursor={showCursor} isCreatedByUser={false} />;
+    return (
+      <Container>
+        <Text text={text} showCursor={showCursor} isCreatedByUser={false} />
+      </Container>
+    );
   }
   if (part.type === ContentTypes.THINK) {
     const think = (part as { think: string }).think;
