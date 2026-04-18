@@ -1023,15 +1023,15 @@ export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 export const summarizationTriggerSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('token_ratio'),
-    value: z.number().min(0).max(1),
+    value: z.number().finite().min(0).max(1),
   }),
   z.object({
     type: z.literal('remaining_tokens'),
-    value: z.number().positive(),
+    value: z.number().finite().positive(),
   }),
   z.object({
     type: z.literal('messages_to_refine'),
-    value: z.number().positive(),
+    value: z.number().finite().positive(),
   }),
 ]);
 

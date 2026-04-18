@@ -579,6 +579,14 @@ describe('summarizationTriggerSchema', () => {
     ).toBe(true);
   });
 
+  it('rejects non-finite values (Infinity, NaN) for every trigger type', () => {
+    for (const type of ['token_ratio', 'remaining_tokens', 'messages_to_refine'] as const) {
+      expect(summarizationTriggerSchema.safeParse({ type, value: Infinity }).success).toBe(false);
+      expect(summarizationTriggerSchema.safeParse({ type, value: -Infinity }).success).toBe(false);
+      expect(summarizationTriggerSchema.safeParse({ type, value: NaN }).success).toBe(false);
+    }
+  });
+
   it('parses inside the full summarization config', () => {
     const result = summarizationConfigSchema.safeParse({
       enabled: true,
