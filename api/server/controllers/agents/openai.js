@@ -278,6 +278,10 @@ const OpenAIChatCompletionController = async (req, res) => {
         requestFiles: [],
         conversationId,
         parentMessageId,
+        // The route enforces REMOTE_AGENT on the primary; every discovered
+        // sub-agent must clear the same sharing boundary, not the looser
+        // in-app AGENT one.
+        resourceType: ResourceType.REMOTE_AGENT,
       },
       {
         getAgent: db.getAgent,

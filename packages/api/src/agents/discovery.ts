@@ -54,6 +54,14 @@ export interface DiscoverConnectedAgentsParams {
   requestFiles?: InitializeAgentParams['requestFiles'];
   conversationId?: string | null;
   parentMessageId?: string | null;
+  /**
+   * ResourceType to check each sub-agent's access against. Defaults to
+   * `AGENT` for the in-app chat flow. Callers whose entry-point gates on
+   * a different resource type (e.g. the OpenAI-compat controllers gate on
+   * `REMOTE_AGENT`) must pass the matching resource type so sub-agents
+   * don't bypass the same sharing boundary enforced at the route.
+   */
+  resourceType?: string;
 }
 
 export interface DiscoverConnectedAgentsDeps {
@@ -117,6 +125,7 @@ export async function discoverConnectedAgents(
     requestFiles,
     conversationId,
     parentMessageId,
+    resourceType = ResourceType.AGENT,
   } = params;
 
   const {
@@ -162,7 +171,7 @@ export async function discoverConnectedAgents(
     const hasAccess = await checkPermission({
       userId,
       role: req.user?.role,
-      resourceType: ResourceType.AGENT,
+      resourceType,
       resourceId: agent._id,
       requiredPermission: PermissionBits.VIEW,
     });

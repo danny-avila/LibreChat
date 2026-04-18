@@ -202,6 +202,34 @@ describe('discoverConnectedAgents', () => {
     expect(result.edges.map((e) => e.to)).toEqual(['B']);
   });
 
+  it('passes the configured resourceType (e.g. REMOTE_AGENT) to checkPermission', async () => {
+    const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
+    const getAgent = jest.fn(async () => makeAgent('B', []));
+    const checkPermission = jest.fn().mockResolvedValue(true);
+
+    await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        resourceType: 'REMOTE_AGENT',
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(checkPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ resourceType: 'REMOTE_AGENT' }),
+    );
+  });
+
   it('drops edges whose `from` references a skipped agent (bidirectional graph)', async () => {
     // Orchestrator A with bidirectional handoffs A<->B. B is inaccessible,
     // so `A -> B` and `B -> A` must both be filtered — otherwise `B -> A`
