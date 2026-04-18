@@ -496,45 +496,54 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   // action tools skipped and resource-scoped tools running without their
   // configured resources.
   const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
-  const subagentsConfig = primaryConfig.subagents;
-  /** @type {Array<Object>} Loaded subagent configs (AgentConfig objects for each subagent) */
-  const subagentAgentConfigs = [];
-  /** Subagents are currently primary-only: child agents reached via handoff edges
-   *  do not get their own `subagentAgentConfigs` loaded here. Self-spawn still
-   *  works for them (no DB lookup needed), but explicit sub-subagents on a
-   *  handoff target would be silently dropped. */
-  // TODO: Extend subagent loading to handoff agents if sub-subagents are ever wanted.
 
-  if (subagentsCapabilityEnabled && subagentsConfig?.enabled) {
-    /** Dedupe and filter in one pass — a crafted payload could legitimately
-     *  include the same ID twice; the backend shouldn't create duplicate
-     *  SubagentConfig entries for the LLM to see as separate spawn targets. */
+  /** All agent ids referenced on any edge (source OR target) — used to
+   *  decide whether an agent that's only a subagent can be safely
+   *  removed from `agentConfigs` (the LangGraph pipeline doesn't treat
+   *  pure subagents as parallel/handoff nodes). */
+  const edgeAgentIds = new Set([primaryConfig.id]);
+  for (const edge of edges ?? []) {
+    const sources = Array.isArray(edge.from) ? edge.from : [edge.from];
+    const targets = Array.isArray(edge.to) ? edge.to : [edge.to];
+    for (const id of sources) {
+      if (typeof id === 'string') edgeAgentIds.add(id);
+    }
+    for (const id of targets) {
+      if (typeof id === 'string') edgeAgentIds.add(id);
+    }
+  }
+
+  /**
+   * Loads `subagentAgentConfigs` for a single agent config. Shared
+   * between the primary agent and handoff-target agents so an agent
+   * used via handoff that has its own explicit `subagents.agent_ids`
+   * gets them honored at runtime — previously those were silently
+   * dropped because only the primary's subagents were resolved
+   * (Codex P2). Self-spawn works regardless (no DB lookup needed).
+   */
+  const loadSubagentsFor = async (config) => {
+    const sub = config.subagents;
+    if (!subagentsCapabilityEnabled || !sub?.enabled) {
+      config.subagentAgentConfigs = [];
+      return;
+    }
+
+    /** Dedupe and filter in one pass — a crafted payload could
+     *  legitimately include the same ID twice; the backend shouldn't
+     *  create duplicate SubagentConfig entries for the LLM to see as
+     *  separate spawn targets. */
     const explicitSubagentIds = Array.from(
       new Set(
-        Array.isArray(subagentsConfig.agent_ids)
-          ? subagentsConfig.agent_ids.filter(
-              (id) => typeof id === 'string' && id && id !== primaryConfig.id,
-            )
+        Array.isArray(sub.agent_ids)
+          ? sub.agent_ids.filter((id) => typeof id === 'string' && id && id !== config.id)
           : [],
       ),
     );
 
-    const edgeAgentIds = new Set([primaryConfig.id]);
-    for (const edge of edges ?? []) {
-      const sources = Array.isArray(edge.from) ? edge.from : [edge.from];
-      const targets = Array.isArray(edge.to) ? edge.to : [edge.to];
-      for (const id of sources) {
-        if (typeof id === 'string') edgeAgentIds.add(id);
-      }
-      for (const id of targets) {
-        if (typeof id === 'string') edgeAgentIds.add(id);
-      }
-    }
-
+    /** @type {Array<Object>} */
+    const resolved = [];
     for (const subagentId of explicitSubagentIds) {
-      if (skippedAgentIds.has(subagentId)) {
-        continue;
-      }
+      if (skippedAgentIds.has(subagentId)) continue;
 
       let subagentConfig = agentConfigs.get(subagentId);
       if (!subagentConfig) {
@@ -547,26 +556,38 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         }
       }
 
-      if (!subagentConfig) {
-        continue;
-      }
+      if (!subagentConfig) continue;
 
-      subagentAgentConfigs.push(subagentConfig);
+      resolved.push(subagentConfig);
 
-      /** If this agent is exclusively a subagent (not referenced in any edge),
-       *  drop it from `agentConfigs` so the LangGraph pipeline doesn't treat
-       *  it as a parallel/handoff node. KEEP it in `agentToolContexts` — the
-       *  child's ON_TOOL_EXECUTE handler needs the tool-execution context
-       *  (agent, tool_resources, skill ACLs) to run the child's tools with
+      /** If this agent is exclusively a subagent (not referenced in
+       *  any edge), drop it from `agentConfigs` so the LangGraph
+       *  pipeline doesn't treat it as a parallel/handoff node. KEEP
+       *  it in `agentToolContexts` — the child's ON_TOOL_EXECUTE
+       *  handler needs the tool-execution context (agent,
+       *  tool_resources, skill ACLs) to run the child's tools with
        *  the right scoping. */
       if (!edgeAgentIds.has(subagentId)) {
         agentConfigs.delete(subagentId);
       }
     }
+
+    config.subagentAgentConfigs = resolved;
+  };
+
+  /** Resolve subagents for the primary first (it always needs them),
+   *  then for each handoff agent so their explicit children match
+   *  the saved configuration at runtime instead of being silently
+   *  dropped. Snapshot the keys up front because `loadSubagentsFor`
+   *  may delete entries as it runs (pure-subagent cleanup). */
+  await loadSubagentsFor(primaryConfig);
+  const handoffIds = Array.from(agentConfigs.keys()).filter((id) => id !== primaryConfig.id);
+  for (const id of handoffIds) {
+    const cfg = agentConfigs.get(id);
+    if (cfg) await loadSubagentsFor(cfg);
   }
 
-  primaryConfig.subagentAgentConfigs = subagentAgentConfigs;
-  primaryConfig.subagents = subagentsCapabilityEnabled ? subagentsConfig : undefined;
+  primaryConfig.subagents = subagentsCapabilityEnabled ? primaryConfig.subagents : undefined;
 
   /** If the capability is off at the endpoint level, strip `subagents` on
    *  every loaded config — not just the primary. `run.ts` calls
