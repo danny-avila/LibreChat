@@ -128,7 +128,7 @@ const consoleFormat = winston.format.combine(
       }
     }
 
-    if (isError) {
+    if (isError || isWarn) {
       return redactMessage(line);
     }
 
