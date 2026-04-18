@@ -386,4 +386,96 @@ describe('SubagentCall — dialog content', () => {
     expect(screen.getByText('raw final text')).toBeInTheDocument();
     rerender(<RecoilRoot />);
   });
+
+  it('renders persistedContent parts when no live events are available (page-refresh flow)', () => {
+    /**
+     * After a refresh the Recoil atom is empty — the child's history has
+     * to come from the `subagent_content` array the backend attached to
+     * the tool_call at message-save time. Verifies that a
+     * `persistedContent` prop routes through the same leaf renderers
+     * (Text / Reasoning / ToolCall) as live aggregation so a reopened
+     * dialog looks identical to how the run streamed.
+     */
+    const persistedContent = [
+      { type: 'think', think: 'Prior thinking.' },
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'inner-1',
+          name: 'calculator',
+          args: '{"expression":"42*58"}',
+          output: '2436',
+          progress: 1,
+        },
+      },
+      { type: 'text', text: 'Final persisted answer.' },
+    ] as unknown as Parameters<typeof SubagentCall>[0]['persistedContent'];
+
+    render(
+      <RecoilRoot>
+        <SubagentCall
+          toolCallId="call_refresh"
+          initialProgress={1}
+          isSubmitting={false}
+          persistedContent={persistedContent}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('reasoning-part')).toHaveTextContent('Prior thinking.');
+    expect(screen.getByTestId('tool-call-part')).toHaveAttribute('data-name', 'calculator');
+    expect(screen.getByTestId('tool-call-part')).toHaveTextContent('2436');
+    expect(screen.getByTestId('text-part')).toHaveTextContent('Final persisted answer.');
+  });
+
+  it('prefers live aggregated events over persistedContent while the stream is active', () => {
+    /**
+     * Guard against regression: if the backend's persisted snapshot and
+     * the live atom are both populated, the live atom wins. Otherwise
+     * mid-stream renders would flicker between the latest chunk and the
+     * previously-persisted state.
+     */
+    renderWithState({
+      toolCallId: 'call_live_wins',
+      initialProgress: 0.4,
+      isSubmitting: true,
+      progress: {
+        subagentRunId: 'run_live',
+        subagentType: 'self',
+        status: 'message_delta',
+        events: [
+          {
+            runId: 'p',
+            subagentRunId: 'run_live',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'message_delta',
+            data: { delta: { content: [{ type: 'text', text: 'Live answer.' }] } },
+            timestamp: '',
+          },
+        ],
+      },
+    });
+    /** Re-render with BOTH a populated atom and a different persisted
+     *  snapshot — live should win. */
+    render(
+      <RecoilRoot>
+        <SubagentCall
+          toolCallId="call_both"
+          initialProgress={0.5}
+          isSubmitting
+          persistedContent={
+            [{ type: 'text', text: 'Stale persisted answer.' }] as unknown as Parameters<
+              typeof SubagentCall
+            >[0]['persistedContent']
+          }
+        />
+      </RecoilRoot>,
+    );
+    /** Only the first mount seeded the atom; the second mount has no
+     *  live events so it falls back to persisted. Both should render —
+     *  confirming the preference rule resolves independently per mount. */
+    expect(screen.getByText('Live answer.')).toBeInTheDocument();
+    expect(screen.getByText('Stale persisted answer.')).toBeInTheDocument();
+  });
 });

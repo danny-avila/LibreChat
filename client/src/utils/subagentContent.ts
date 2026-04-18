@@ -1,19 +1,20 @@
 import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
-import type { SubagentUpdateEvent, TMessageContentParts } from 'librechat-data-provider';
+import type { SubagentUpdateEvent } from 'librechat-data-provider';
 
 /**
- * Pure-function helpers that turn a running `SubagentUpdateEvent[]` stream
- * into the structures the UI renders:
+ * Client-side helpers for rendering the live `SubagentCall` UI while
+ * `ON_SUBAGENT_UPDATE` events stream in. Exports two pure transforms:
  *
- *   - `aggregateSubagentContent` — a `TMessageContentParts[]` array the
- *     SubagentCall dialog feeds into `<Part />` so the child's output
- *     renders exactly like a regular assistant message (text + reasoning
- *     + tool calls).
- *
- *   - `buildSubagentTickerLines` — short, user-readable status lines for
- *     the collapsed ticker. Aggregates message/reasoning deltas into
- *     running previews, surfaces tool-call lifecycle discretely, and
- *     drops low-signal events (start, stop, run_step_delta).
+ *   - `aggregateSubagentContent` — folds the raw event stream into an
+ *     ordered array of TEXT / THINK / TOOL_CALL parts so the dialog can
+ *     render the child's activity through the same `<Part />` pipeline
+ *     the parent conversation uses. Frontend-only: on the backend we
+ *     fold directly into the SDK's `createContentAggregator` in the
+ *     `ON_SUBAGENT_UPDATE` handler, so no shared aggregator is needed.
+ *   - `buildSubagentTickerLines` — short, user-readable status lines
+ *     for the collapsed ticker. Aggregates message/reasoning deltas
+ *     into running previews, surfaces tool-call lifecycle with
+ *     args/output snippets, drops low-signal events.
  */
 
 type RunStepData = {
@@ -43,17 +44,11 @@ type RunStepCompletedData = {
 };
 
 type MessageDeltaData = {
-  id?: string;
-  delta?: {
-    content?: Array<{ type?: string; text?: string }>;
-  };
+  delta?: { content?: Array<{ type?: string; text?: string }> };
 };
 
 type ReasoningDeltaData = {
-  id?: string;
-  delta?: {
-    content?: Array<{ type?: string; think?: string }>;
-  };
+  delta?: { content?: Array<{ type?: string; think?: string }> };
 };
 
 type ErrorData = { message?: string };
@@ -72,8 +67,9 @@ type ToolCallPart = {
   };
 };
 
-const stringifyArgs = (args: unknown): string =>
-  typeof args === 'string' ? args : JSON.stringify(args ?? {});
+/** Single content-part-shaped entry produced by the aggregator. The union
+ *  matches the subset of `TMessageContentParts` a subagent run emits. */
+export type SubagentContentPart = TextPart | ThinkPart | ToolCallPart;
 
 const extractTextChunk = (data: MessageDeltaData | undefined): string => {
   const content = data?.delta?.content;
@@ -97,28 +93,41 @@ const extractThinkChunk = (data: ReasoningDeltaData | undefined): string => {
   return '';
 };
 
+const stringifyArgs = (args: unknown): string =>
+  typeof args === 'string' ? args : JSON.stringify(args ?? {});
+
 /**
- * Walk the event stream and rebuild the child's content array. Adjacent
- * `message_delta` / `reasoning_delta` events concatenate into a single
- * TEXT / THINK part. Tool calls become TOOL_CALL parts and `run_step`
- * boundaries close out the running text/think buffers so tool calls and
- * later text don't get merged into one blob.
+ * Walk the event stream and rebuild the child's content array.
+ *
+ * Adjacent `message_delta` / `reasoning_delta` events concatenate into a
+ * single TEXT / THINK part. A text chunk arriving after reasoning closes
+ * the open THINK buffer first so chronological order is preserved — the
+ * parts array reflects what the user observed, not the order our buffers
+ * happen to flush.
+ *
+ * Tool calls become TOOL_CALL parts. `run_step` with `tool_calls` closes
+ * any open text/think so tool calls split text runs correctly.
+ * `run_step_completed` finalizes the matching TOOL_CALL with its output
+ * and progress = 1. Late-arriving completions without a prior `run_step`
+ * synthesize the part.
+ *
+ * `start` / `stop` / `error` / `run_step_delta` do not contribute content.
  */
-export function aggregateSubagentContent(events: SubagentUpdateEvent[]): TMessageContentParts[] {
-  const parts: TMessageContentParts[] = [];
+export function aggregateSubagentContent(events: SubagentUpdateEvent[]): SubagentContentPart[] {
+  const parts: SubagentContentPart[] = [];
   let currentText: TextPart | null = null;
   let currentThink: ThinkPart | null = null;
   const toolCallById = new Map<string, ToolCallPart['tool_call']>();
 
   const closeText = (): void => {
     if (currentText && currentText.text.length > 0) {
-      parts.push(currentText as unknown as TMessageContentParts);
+      parts.push(currentText);
     }
     currentText = null;
   };
   const closeThink = (): void => {
     if (currentThink && currentThink.think.length > 0) {
-      parts.push(currentThink as unknown as TMessageContentParts);
+      parts.push(currentThink);
     }
     currentThink = null;
   };
@@ -128,10 +137,8 @@ export function aggregateSubagentContent(events: SubagentUpdateEvent[]): TMessag
       const chunk = extractTextChunk(event.data as MessageDeltaData | undefined);
       if (chunk) {
         /** Close the think buffer first so a reasoning→text transition
-         *  flushes the THINK part BEFORE the TEXT part — preserves the
-         *  chronological order the user actually observed. Without this
-         *  both buffers grow in parallel and the fixed flush order at the
-         *  next step boundary can swap them (text-before-think, etc.). */
+         *  flushes the THINK part BEFORE the TEXT part — preserves
+         *  chronological order. */
         closeThink();
         if (!currentText) {
           currentText = { type: ContentTypes.TEXT, text: '' };
@@ -144,8 +151,7 @@ export function aggregateSubagentContent(events: SubagentUpdateEvent[]): TMessag
     if (event.phase === 'reasoning_delta') {
       const chunk = extractThinkChunk(event.data as ReasoningDeltaData | undefined);
       if (chunk) {
-        /** Symmetric: a text→reasoning transition flushes the TEXT part
-         *  first so the subsequent THINK part appears after it in order. */
+        /** Symmetric: close any open text buffer first. */
         closeText();
         if (!currentThink) {
           currentThink = { type: ContentTypes.THINK, think: '' };
@@ -176,13 +182,10 @@ export function aggregateSubagentContent(events: SubagentUpdateEvent[]): TMessag
           toolCallById.set(tc.id, toolCallPart);
           parts.push({
             type: ContentTypes.TOOL_CALL,
-            [ContentTypes.TOOL_CALL]: toolCallPart,
-          } as unknown as TMessageContentParts);
+            tool_call: toolCallPart,
+          });
         }
       }
-      /** `message_creation` just marks a new AI turn — the following
-       *  `message_delta` events will populate `currentText`, no extra
-       *  work needed. */
       continue;
     }
 
@@ -210,14 +213,11 @@ export function aggregateSubagentContent(events: SubagentUpdateEvent[]): TMessag
         toolCallById.set(tc.id, toolCallPart);
         parts.push({
           type: ContentTypes.TOOL_CALL,
-          [ContentTypes.TOOL_CALL]: toolCallPart,
-        } as unknown as TMessageContentParts);
+          tool_call: toolCallPart,
+        });
       }
       continue;
     }
-
-    /** start / stop / error / run_step_delta phases don't aggregate into
-     *  the content array; the ticker handles those separately. */
   }
 
   closeText();
@@ -364,9 +364,6 @@ export function buildSubagentTickerLines(
     }
 
     if (event.phase === 'run_step') {
-      /** A new run step closes any in-flight text/reasoning streaks —
-       *  subsequent deltas will start fresh lines, and the just-finished
-       *  preview becomes a fixed entry in the scrollback. */
       resetTextStreak();
       resetThinkStreak();
 
@@ -378,9 +375,6 @@ export function buildSubagentTickerLines(
             typeof tc?.name === 'string' && tc.name.length > 0,
         );
         if (named.length > 0) {
-          /** For a single call we can show `Using name(args)`; for
-           *  parallel calls, drop args to keep the line short — users
-           *  can open the dialog to see the full payload. */
           const names = named.map((tc) => tc.name).join(', ');
           const argsSnippet = named.length === 1 ? summarizeArgs(named[0].args) : '';
           lines.push({ text: d.formatUsingTool(names, argsSnippet) });
@@ -405,8 +399,6 @@ export function buildSubagentTickerLines(
       lines.push({ text: msg ? `${d.errorPrefix}: ${msg}` : d.errorPrefix });
       continue;
     }
-
-    /** start / stop / run_step_delta suppressed. */
   }
 
   return lines;

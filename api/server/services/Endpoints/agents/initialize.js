@@ -192,6 +192,18 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const summarizationOptions =
     appConfig?.summarization?.enabled === false ? { enabled: false } : { enabled: true };
 
+  /**
+   * Per-request map of per-subagent `createContentAggregator` instances
+   * keyed by the parent's `tool_call_id`. The handler in `callbacks.js`
+   * lazily creates an aggregator for each distinct `parentToolCallId`
+   * and folds every `ON_SUBAGENT_UPDATE` event into it as they stream
+   * in. `AgentClient` pulls each aggregator's `contentParts` at message
+   * save time and attaches them to the matching `subagent` tool_call so
+   * the child's reasoning / tool calls / final text survive a page
+   * refresh — the client-side Recoil atom is best-effort live-only.
+   */
+  const subagentAggregatorsByToolCallId = new Map();
+
   const eventHandlers = getDefaultHandlers({
     res,
     toolExecuteOptions,
@@ -200,6 +212,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolEndCallback,
     collectedUsage,
     streamId,
+    subagentAggregatorsByToolCallId,
   });
 
   if (!endpointOption.agent) {
@@ -761,6 +774,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     resendFiles: primaryConfig.resendFiles ?? true,
     maxContextTokens: primaryConfig.maxContextTokens,
     endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
+    subagentAggregatorsByToolCallId,
   });
 
   if (streamId) {

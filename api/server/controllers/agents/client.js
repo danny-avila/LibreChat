@@ -82,6 +82,7 @@ class AgentClient extends BaseClient {
       collectedUsage,
       artifactPromises,
       maxContextTokens,
+      subagentAggregatorsByToolCallId,
       ...clientOptions
     } = options;
 
@@ -93,6 +94,12 @@ class AgentClient extends BaseClient {
     this.collectedUsage = collectedUsage;
     /** @type {ArtifactPromises} */
     this.artifactPromises = artifactPromises;
+    /** Per-request map of `createContentAggregator` instances keyed by
+     *  the parent's `tool_call_id`. `ON_SUBAGENT_UPDATE` events stream
+     *  into each aggregator as they arrive; `finalizeSubagentContent`
+     *  harvests `contentParts` onto the matching `subagent` tool_call
+     *  so the child's full activity survives a page refresh. */
+    this.subagentAggregatorsByToolCallId = subagentAggregatorsByToolCallId ?? new Map();
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -116,6 +123,45 @@ class AgentClient extends BaseClient {
    * @returns {MessageContentComplex[]} */
   getContentParts() {
     return this.contentParts;
+  }
+
+  /**
+   * Harvest the `contentParts` from each per-subagent `createContentAggregator`
+   * instance and attach them onto the matching parent `subagent` tool_call
+   * as `subagent_content`. Runs once per message save (from
+   * `sendCompletion`'s `finally`) so the child's full reasoning / tool
+   * calls / final text survive a page refresh — the client-side Recoil
+   * atom is session-only. Aggregators keyed by a tool_call_id that never
+   * appeared in `contentParts` are discarded (no home to attach to).
+   */
+  finalizeSubagentContent() {
+    const buffer = this.subagentAggregatorsByToolCallId;
+    if (!buffer || buffer.size === 0 || !Array.isArray(this.contentParts)) {
+      return;
+    }
+    for (const part of this.contentParts) {
+      if (part?.type !== ContentTypes.TOOL_CALL) continue;
+      const toolCall = part[ContentTypes.TOOL_CALL];
+      if (!toolCall || toolCall.name !== Constants.SUBAGENT || !toolCall.id) continue;
+      const aggregator = buffer.get(toolCall.id);
+      if (!aggregator) continue;
+      try {
+        /** `createContentAggregator` returns a sparse array (undefined
+         *  slots for indices that never received content). Strip those
+         *  so the persisted shape is a clean `TMessageContentParts[]`. */
+        const parts = Array.isArray(aggregator.contentParts)
+          ? aggregator.contentParts.filter((p) => p != null)
+          : [];
+        if (parts.length > 0) {
+          toolCall.subagent_content = parts;
+        }
+      } catch (err) {
+        logger.warn(
+          `[AgentClient] Failed to attach subagent content for tool_call ${toolCall.id}: ${err?.message ?? err}`,
+        );
+      }
+    }
+    buffer.clear();
   }
 
   setOptions(_options) {}
@@ -1016,6 +1062,8 @@ class AgentClient extends BaseClient {
       } else {
         this.contextMeta = undefined;
       }
+
+      this.finalizeSubagentContent();
 
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
