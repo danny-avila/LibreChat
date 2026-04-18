@@ -123,6 +123,10 @@ jobs:
               -e INFISICAL_PROJECT_ID='${{ secrets.INFISICAL_PROJECT_ID }}' \
               -e INFISICAL_SECRET_PATH='${{ env.INFISICAL_SECRET_PATH }}' \
               -e INFISICAL_TOKEN="$INFISICAL_TOKEN" \
+              -e WEB_WEBHOOK_API_KEY='${{ secrets.WEB_WEBHOOK_API_KEY }}' \
+              -e VAPID_PUBLIC_KEY='${{ secrets.VAPID_PUBLIC_KEY }}' \
+              -e VAPID_PRIVATE_KEY='${{ secrets.VAPID_PRIVATE_KEY }}' \
+              -e VAPID_EMAIL='${{ secrets.VAPID_EMAIL }}' \
               $IMAGE
         
             echo "Deployment complete"
