@@ -647,6 +647,32 @@ describe('custom-endpoint provider resolution', () => {
     );
   });
 
+  it('user-supplied summarization.parameters override endpoint defaults', async () => {
+    /**
+     * `getOpenAIConfig` defaults `streaming: true`, but a user who sets
+     * `summarization.parameters.streaming: false` in their config has
+     * explicitly opted out; the user's setting must win over endpoint
+     * defaults injected from the custom endpoint config.
+     */
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: 'Ollama',
+        model: 'llama3',
+        parameters: { streaming: false },
+      },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    expect(parameters.streaming).toBe(false);
+    /** Endpoint defaults still injected for the rest. */
+    expect(parameters.apiKey).toBe('ollama-key');
+  });
+
   it('does not leak model/modelName from getOpenAIConfig defaults', async () => {
     const appConfig = makeAppConfig([
       { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },

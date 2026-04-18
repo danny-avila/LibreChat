@@ -363,12 +363,17 @@ function shapeSummarizationConfig(
    * client options. Only applied when summarization targets a *different*
    * custom endpoint than the main agent; the same-endpoint case leaves
    * `parameters` untouched so `agentContext.clientOptions` wins.
+   *
+   * Order matters: `clientOverrides` supplies endpoint defaults (baseURL,
+   * apiKey, headers, transforms), then explicit user `summarization.parameters`
+   * are spread on top so settings like `streaming: false` still win over
+   * `getOpenAIConfig`'s defaults.
    */
   const parameters =
     clientOverrides != null
       ? {
-          ...(config?.parameters ?? {}),
           ...clientOverrides,
+          ...(config?.parameters ?? {}),
         }
       : config?.parameters;
 
