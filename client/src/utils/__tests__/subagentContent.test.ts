@@ -280,12 +280,13 @@ describe('buildSubagentTickerLines', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0].kind).toBe('writing');
     const body = (lines[0] as { body: string }).body;
-    expect(body.startsWith('…')).toBe(true);
-    /** Cap of 300 chars + leading ellipsis. Wide enough for wide
-     *  containers; the component's CSS tail-ellipsis handles narrow
-     *  viewports without losing the newest chars. */
-    expect(body.length).toBeLessThanOrEqual(301);
-    expect(body.length).toBeGreaterThan(60);
+    /** No data-level ellipsis prefix — the component's CSS tail-ellipsis
+     *  (`dir="rtl"` + `text-overflow: ellipsis`) handles the visual cue
+     *  on overflow. Prepending one in data would stack a visible dot
+     *  right after the "Writing:" label even when the body fits the
+     *  container. */
+    expect(body.startsWith('…')).toBe(false);
+    expect(body.length).toBe(300);
   });
 
   it('emits using_tool + tool_complete lines', () => {

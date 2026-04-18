@@ -311,14 +311,16 @@ export function initSubagentTickerState(): SubagentTickerState {
 }
 
 /** Generous tail window so wide ticker containers aren't half-empty.
- *  Paired with CSS tail-ellipsis (direction:rtl + bdi in SubagentCall) so
- *  narrow viewports still clip from the oldest side — the reader always
- *  sees the characters being generated *now*. */
+ *  The component applies CSS tail-ellipsis (`dir="rtl"` +
+ *  `text-overflow: ellipsis`) so narrow viewports clip from the oldest
+ *  side; we deliberately DON'T prepend a data-level `…` on top of that
+ *  CSS ellipsis — double-eliding would render a stray dot character
+ *  right next to the "Writing:" / "Reasoning:" label. */
 const PREVIEW_MAX_CHARS = 300;
 const truncatePreview = (input: string): string => {
   const normalized = input.replace(/\s+/g, ' ').trim();
   if (normalized.length <= PREVIEW_MAX_CHARS) return normalized;
-  return `…${normalized.slice(-PREVIEW_MAX_CHARS)}`;
+  return normalized.slice(-PREVIEW_MAX_CHARS);
 };
 
 const SNIPPET_MAX_CHARS = 48;
