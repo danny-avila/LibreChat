@@ -1027,11 +1027,11 @@ export const summarizationTriggerSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('remaining_tokens'),
-    value: z.number().finite().positive(),
+    value: z.number().finite().int().positive(),
   }),
   z.object({
     type: z.literal('messages_to_refine'),
-    value: z.number().finite().positive(),
+    value: z.number().finite().int().positive(),
   }),
 ]);
 

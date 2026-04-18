@@ -587,6 +587,21 @@ describe('summarizationTriggerSchema', () => {
     }
   });
 
+  it('requires integer values for count-based triggers', () => {
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 500.5 }).success,
+    ).toBe(false);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: 2.5 }).success,
+    ).toBe(false);
+  });
+
+  it('still allows fractional values for token_ratio', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 0.8 }).success).toBe(
+      true,
+    );
+  });
+
   it('parses inside the full summarization config', () => {
     const result = summarizationConfigSchema.safeParse({
       enabled: true,

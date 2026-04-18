@@ -265,6 +265,20 @@ describe('summarizationConfig field passthrough', () => {
     const config = agents[0].summarizationConfig as Record<string, unknown>;
     expect(config.trigger).toEqual({ type: 'token_ratio', value: 0 });
   });
+
+  it.each([
+    ['remaining_tokens', 500],
+    ['messages_to_refine', 4],
+  ] as const)('passes %s trigger through unchanged', async (type, value) => {
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        enabled: true,
+        trigger: { type, value },
+      },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.trigger).toEqual({ type, value });
+  });
 });
 
 // ---------------------------------------------------------------------------
