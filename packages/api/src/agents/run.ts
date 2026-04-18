@@ -492,6 +492,7 @@ export async function createRun({
      * undo registry writes).
      */
     let toolDefinitions = agent.toolDefinitions ?? [];
+    let toolRegistry = agent.toolRegistry;
     if (!isSubagent && discoveredTools.size > 0 && agent.toolRegistry) {
       overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
 
@@ -506,6 +507,25 @@ export async function createRun({
           toolDefinitions = [...toolDefinitions, toolDef];
         }
       }
+    } else if (isSubagent && agent.toolRegistry) {
+      /**
+       * Subagent children: hand the child a deep-enough clone of the
+       * registry so later parent-graph builds (e.g. when the same
+       * agent also appears as a handoff target in the outer loop)
+       * can't mutate `defer_loading` on tool definitions the child
+       * already holds a reference to. Clone the `Map` *and* each
+       * `LCTool` — `overrideDeferLoadingForDiscoveredTools` writes
+       * through to the tool object itself, so a shallow Map copy
+       * alone wouldn't isolate the flag.
+       */
+      toolRegistry = new Map();
+      for (const [name, tool] of agent.toolRegistry.entries()) {
+        toolRegistry.set(name, { ...tool });
+      }
+      /** Child's own `toolDefinitions` list gets the same shallow-
+       *  copied view so any later parent mutation of shared definitions
+       *  is contained to the parent-graph path. */
+      toolDefinitions = toolDefinitions.map((def) => ({ ...def }));
     }
 
     const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
@@ -524,7 +544,7 @@ export async function createRun({
       clientOptions: llmConfig,
       instructions: systemContent,
       name: agent.name ?? undefined,
-      toolRegistry: agent.toolRegistry,
+      toolRegistry,
       maxContextTokens: effectiveMaxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
       discoveredTools:
