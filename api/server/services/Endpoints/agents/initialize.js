@@ -621,6 +621,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       return;
     }
 
+    /** Dedupe and filter in one pass — a crafted payload could
+     *  legitimately include the same ID twice; the backend shouldn't
+     *  create duplicate SubagentConfig entries for the LLM to see as
+     *  separate spawn targets. */
     const explicitSubagentIds = Array.from(
       new Set(
         Array.isArray(sub.agent_ids)
@@ -695,17 +699,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   }
 
   primaryConfig.subagents = subagentsCapabilityEnabled ? primaryConfig.subagents : undefined;
-
-  /** If the capability is off at the endpoint level, strip `subagents`
-   *  on every loaded config — not just the primary — so handoff agents
-   *  with `subagents.enabled: true` persisted on their document don't
-   *  still expose self-spawn at runtime after an admin rollback. */
-  if (!subagentsCapabilityEnabled) {
-    for (const config of agentConfigs.values()) {
-      config.subagents = undefined;
-      config.subagentAgentConfigs = undefined;
-    }
-  }
 
   /** If the capability is off at the endpoint level, strip `subagents` on
    *  every loaded config — not just the primary. `run.ts` calls
