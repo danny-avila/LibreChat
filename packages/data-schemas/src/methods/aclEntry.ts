@@ -72,6 +72,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Check if a set of principals has a specific permission on a resource
+   * Filters bitwise in application code for compatibility with MongoDB forks
+   * (e.g. Azure Cosmos DB for MongoDB) that do not support `$bitsAllSet`.
    * @param principalsList - List of principals, each containing { principalType, principalId }
    * @param resourceType - The type of resource
    * @param resourceId - The ID of the resource
@@ -90,14 +92,15 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
     }));
 
-    const entry = await AclEntry.findOne({
+    const entries = await AclEntry.find({
       $or: principalsQuery,
       resourceType,
       resourceId,
-      permBits: { $bitsAllSet: permissionBit },
-    }).lean();
+    })
+      .select('permBits')
+      .lean();
 
-    return !!entry;
+    return entries.some((entry) => (entry.permBits & permissionBit) === permissionBit);
   }
 
   /**
@@ -331,6 +334,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Find all resources of a specific type that a set of principals has access to
+   * Filters bitwise in application code for compatibility with MongoDB forks
+   * (e.g. Azure Cosmos DB for MongoDB) that do not support `$bitsAllSet`.
    * @param principalsList - List of principals, each containing { principalType, principalId }
    * @param resourceType - The type of resource
    * @param requiredPermBit - Required permission bit (use PermissionBits enum)
@@ -350,10 +355,21 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     const entries = await AclEntry.find({
       $or: principalsQuery,
       resourceType,
-      permBits: { $bitsAllSet: requiredPermBit },
-    }).distinct('resourceId');
+    })
+      .select('resourceId permBits')
+      .lean();
 
-    return entries;
+    const uniqueIds = new Map<string, Types.ObjectId>();
+    for (const entry of entries) {
+      if ((entry.permBits & requiredPermBit) !== requiredPermBit) {
+        continue;
+      }
+      const key = entry.resourceId.toString();
+      if (!uniqueIds.has(key)) {
+        uniqueIds.set(key, entry.resourceId);
+      }
+    }
+    return Array.from(uniqueIds.values());
   }
 
   /**
@@ -384,6 +400,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Finds all publicly accessible resource IDs for a given resource type.
+   * Filters bitwise in application code for compatibility with MongoDB forks
+   * (e.g. Azure Cosmos DB for MongoDB) that do not support `$bitsAllSet`.
    * @param resourceType - The type of resource
    * @param requiredPermissions - Required permission bits
    */
@@ -392,11 +410,24 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     requiredPermissions: number,
   ): Promise<Types.ObjectId[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    return AclEntry.find({
+    const entries = await AclEntry.find({
       principalType: PrincipalType.PUBLIC,
       resourceType,
-      permBits: { $bitsAllSet: requiredPermissions },
-    }).distinct('resourceId');
+    })
+      .select('resourceId permBits')
+      .lean();
+
+    const uniqueIds = new Map<string, Types.ObjectId>();
+    for (const entry of entries) {
+      if ((entry.permBits & requiredPermissions) !== requiredPermissions) {
+        continue;
+      }
+      const key = entry.resourceId.toString();
+      if (!uniqueIds.has(key)) {
+        uniqueIds.set(key, entry.resourceId);
+      }
+    }
+    return Array.from(uniqueIds.values());
   }
 
   /**
@@ -411,6 +442,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   /**
    * Returns resource IDs solely owned by the given user (no other principals
    * hold DELETE on the same resource). Handles both single and array resource types.
+   * Filters bitwise in application code for compatibility with MongoDB forks
+   * (e.g. Azure Cosmos DB for MongoDB) that do not support `$bitsAllSet`.
    */
   async function getSoleOwnedResourceIds(
     userObjectId: Types.ObjectId,
@@ -423,35 +456,33 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       principalType: PrincipalType.USER,
       principalId: userObjectId,
       resourceType: { $in: types },
-      permBits: { $bitsAllSet: PermissionBits.DELETE },
     })
-      .select('resourceId')
+      .select('resourceId permBits')
       .lean();
 
-    if (ownedEntries.length === 0) {
+    const ownedIds = ownedEntries
+      .filter((e) => (e.permBits & PermissionBits.DELETE) === PermissionBits.DELETE)
+      .map((e) => e.resourceId);
+
+    if (ownedIds.length === 0) {
       return [];
     }
 
-    const ownedIds = ownedEntries.map((e) => e.resourceId);
+    const otherEntries = await AclEntry.find({
+      resourceType: { $in: types },
+      resourceId: { $in: ownedIds },
+      $or: [{ principalId: { $ne: userObjectId } }, { principalType: { $ne: PrincipalType.USER } }],
+    })
+      .select('resourceId permBits')
+      .lean();
 
-    const otherOwners = await AclEntry.aggregate([
-      {
-        $match: {
-          resourceType: { $in: types },
-          resourceId: { $in: ownedIds },
-          permBits: { $bitsAllSet: PermissionBits.DELETE },
-          $or: [
-            { principalId: { $ne: userObjectId } },
-            { principalType: { $ne: PrincipalType.USER } },
-          ],
-        },
-      },
-      { $group: { _id: '$resourceId' } },
-    ]);
+    const multiOwnerIds = new Set<string>();
+    for (const entry of otherEntries) {
+      if ((entry.permBits & PermissionBits.DELETE) === PermissionBits.DELETE) {
+        multiOwnerIds.add(entry.resourceId.toString());
+      }
+    }
 
-    const multiOwnerIds = new Set(
-      otherOwners.map((doc: { _id: Types.ObjectId }) => doc._id.toString()),
-    );
     return ownedIds.filter((id) => !multiOwnerIds.has(id.toString()));
   }
 

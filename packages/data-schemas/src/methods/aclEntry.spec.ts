@@ -1240,4 +1240,276 @@ describe('AclEntry Model Tests', () => {
       expect(results).toEqual([]);
     });
   });
+
+  /**
+   * These cases exercise the application-layer bitwise filtering that replaced
+   * the `$bitsAllSet` query operator (which is not supported by MongoDB forks
+   * such as Azure Cosmos DB for MongoDB). They verify logical equivalence:
+   * a query for bit B must match entries whose `permBits` are a superset of B,
+   * and must not match subset or disjoint entries.
+   */
+  describe('Application-layer bitwise filtering (Cosmos DB compatibility)', () => {
+    describe('hasPermission', () => {
+      test('returns true when entry has exact required bit', async () => {
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+        const result = await methods.hasPermission(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW,
+        );
+        expect(result).toBe(true);
+      });
+
+      test('returns true when entry has superset of required bits', async () => {
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+          grantedById,
+        );
+        const result = await methods.hasPermission(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+        );
+        expect(result).toBe(true);
+      });
+
+      test('returns false when entry has only subset of required bits', async () => {
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+        const result = await methods.hasPermission(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+        );
+        expect(result).toBe(false);
+      });
+
+      test('returns false when no entries match', async () => {
+        const result = await methods.hasPermission(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW,
+        );
+        expect(result).toBe(false);
+      });
+    });
+
+    describe('findAccessibleResources', () => {
+      test('returns deduplicated resource IDs across multiple matching entries', async () => {
+        const shared = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          shared,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.GROUP,
+          groupId,
+          ResourceType.AGENT,
+          shared,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+          grantedById,
+        );
+
+        const result = await methods.findAccessibleResources(
+          [
+            { principalType: PrincipalType.USER, principalId: userId },
+            { principalType: PrincipalType.GROUP, principalId: groupId },
+          ],
+          ResourceType.AGENT,
+          PermissionBits.VIEW,
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(shared.toString());
+      });
+
+      test('excludes resources whose entries only hold subset bits', async () => {
+        const viewOnly = new mongoose.Types.ObjectId();
+        const viewEdit = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          viewOnly,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          viewEdit,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+          grantedById,
+        );
+
+        const result = await methods.findAccessibleResources(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          PermissionBits.EDIT,
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(viewEdit.toString());
+      });
+    });
+
+    describe('findPublicResourceIds', () => {
+      test('returns deduplicated IDs even if the public principal has multiple entries', async () => {
+        const shared = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.PUBLIC,
+          null,
+          ResourceType.AGENT,
+          shared,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+          grantedById,
+        );
+
+        const result = await methods.findPublicResourceIds(
+          ResourceType.AGENT,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(shared.toString());
+      });
+    });
+
+    describe('getSoleOwnedResourceIds', () => {
+      test('returns resources where the user is the only DELETE holder', async () => {
+        const soleRes = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          soleRes,
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(soleRes.toString());
+      });
+
+      test('excludes resources where another principal also holds DELETE', async () => {
+        const sharedRes = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          sharedRes,
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.GROUP,
+          groupId,
+          ResourceType.AGENT,
+          sharedRes,
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toHaveLength(0);
+      });
+
+      test('ignores other principals that lack the DELETE bit', async () => {
+        const soleRes = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          soleRes,
+          PermissionBits.VIEW | PermissionBits.DELETE,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.GROUP,
+          groupId,
+          ResourceType.AGENT,
+          soleRes,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(soleRes.toString());
+      });
+
+      test('excludes resources where the user entry lacks DELETE', async () => {
+        const noDelete = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          noDelete,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toHaveLength(0);
+      });
+
+      test('handles an array of resource types', async () => {
+        const agentRes = new mongoose.Types.ObjectId();
+        const mcpRes = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          agentRes,
+          PermissionBits.VIEW | PermissionBits.DELETE,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.MCPSERVER,
+          mcpRes,
+          PermissionBits.VIEW | PermissionBits.DELETE,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, [
+          ResourceType.AGENT,
+          ResourceType.MCPSERVER,
+        ]);
+        expect(result).toHaveLength(2);
+        const idStrings = result.map((id) => id.toString()).sort();
+        expect(idStrings).toEqual([agentRes.toString(), mcpRes.toString()].sort());
+      });
+
+      test('returns empty array when no owned entries exist', async () => {
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toEqual([]);
+      });
+    });
+  });
 });
