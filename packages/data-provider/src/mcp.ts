@@ -102,7 +102,7 @@ const BaseOptionsSchema = z.object({
   obo: z
     .object({
       /** Scopes to request for the downstream MCP server (e.g., "api://<client-id>/Mcp.Tools.ReadWrite") */
-      scopes: z.string(),
+      scopes: z.string().min(1),
     })
     .optional(),
   customUserVars: z
@@ -234,7 +234,6 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     requiresOAuth: true,
     customUserVars: true,
     oauth_headers: true,
-    obo: true,
   });
 
 const envVarPattern = /\$\{[^}]+\}/;
