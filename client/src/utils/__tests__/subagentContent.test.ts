@@ -269,8 +269,8 @@ describe('buildSubagentTickerLines', () => {
     expect(lines[0]).toEqual({ text: 'Writing: Hello world', live: true });
   });
 
-  it('truncates the writing preview to the tail when it grows past 60 chars', () => {
-    const longText = 'x'.repeat(200);
+  it('truncates the writing preview to the tail when it grows past the cap', () => {
+    const longText = 'x'.repeat(1000);
     const lines = buildSubagentTickerLines([
       makeEvent({
         phase: 'message_delta',
@@ -279,7 +279,11 @@ describe('buildSubagentTickerLines', () => {
     ]);
     expect(lines).toHaveLength(1);
     expect(lines[0].text.startsWith('Writing: …')).toBe(true);
-    expect(lines[0].text.length).toBeLessThanOrEqual('Writing: …'.length + 60);
+    /** The cap is generous (300) so wide containers aren't half-empty —
+     *  paired with a CSS tail-ellipsis in the component so narrow
+     *  viewports still clip the oldest side, not the newest. */
+    expect(lines[0].text.length).toBeLessThanOrEqual('Writing: …'.length + 300);
+    expect(lines[0].text.length).toBeGreaterThan('Writing: …'.length + 60);
   });
 
   it('emits discrete lines for tool-call start and completion with output snippet', () => {

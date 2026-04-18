@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { ChevronRight, Users } from 'lucide-react';
+import { ArrowDown, ChevronRight, Users } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import type { TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
@@ -38,6 +38,82 @@ interface SubagentCallProps {
 }
 
 const TICKER_MAX_LINES = 3;
+/** Streaming tokens land on the ticker faster than a human can read — a
+ *  1.2s trailing-edge throttle gives each frame enough time to glance at
+ *  without feeling sluggish. Aggregation keeps running at full speed; only
+ *  the displayed preview lags. */
+const TICKER_THROTTLE_MS = 1200;
+/** Distance from the dialog scroller's bottom that still counts as
+ *  "following along". Inside this window new content auto-scrolls; past
+ *  it we pause so the user can read. Slightly looser than the main
+ *  messages view since the dialog is a smaller scroller. */
+const DIALOG_AT_BOTTOM_THRESHOLD_PX = 120;
+
+/**
+ * Trailing-edge throttle. Forwards `value` at most once per `intervalMs`
+ * when `enabled` is true; pass-through when false so the final frame
+ * lands without waiting out the interval.
+ *
+ * Uses refs + `useReducer` for the re-render trigger instead of
+ * `useState(value)`: storing the throttled value as state would drive
+ * an infinite update loop whenever the upstream `value` is a new
+ * reference each render (e.g. a `useMemo` whose deps are stable by
+ * content but not by identity), because `setState` with a new-reference
+ * input always schedules another render.
+ */
+function useThrottledValue<T>(value: T, intervalMs: number, enabled: boolean): T {
+  const [, forceUpdate] = useReducer((x) => x + 1, 0);
+  const throttledRef = useRef<T>(value);
+  const latestValueRef = useRef<T>(value);
+  /** Negative-infinity sentinel so the very first render always falls
+   *  through the "past the window" branch and the caller sees the
+   *  initial value synchronously — no dead 1.2s while the first frame
+   *  sits in the throttle. */
+  const lastFireAtRef = useRef<number>(Number.NEGATIVE_INFINITY);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  latestValueRef.current = value;
+
+  /** Clean up any pending timer on unmount. */
+  useEffect(
+    () => () => {
+      if (timerRef.current != null) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  if (!enabled) {
+    if (timerRef.current != null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    return value;
+  }
+
+  const now = performance.now();
+  const sinceLast = now - lastFireAtRef.current;
+
+  /** Past the throttle window — commit the latest value synchronously
+   *  (via refs, so no render cascade) and return it. */
+  if (sinceLast >= intervalMs) {
+    throttledRef.current = value;
+    lastFireAtRef.current = now;
+    return value;
+  }
+
+  /** Inside the throttle window — hold the previous frame and schedule
+   *  a trailing-edge fire if nothing is queued yet. `forceUpdate` kicks
+   *  a re-render when the timer lands; that render's `sinceLast` check
+   *  will then commit the latest `latestValueRef.current`. */
+  if (timerRef.current == null) {
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      forceUpdate();
+    }, intervalMs - sinceLast);
+  }
+
+  return throttledRef.current;
+}
 
 /**
  * Renders the parent's `subagent` tool call as a compact "what the child is
@@ -140,6 +216,11 @@ export default function SubagentCall({
     return lines.slice(-TICKER_MAX_LINES);
   }, [events, running, localize]);
 
+  /** Throttle the displayed ticker so the live preview doesn't flicker
+   *  faster than the eye can read. Aggregation upstream is still
+   *  real-time — only what the user sees pauses between frames. */
+  const displayedTickerLines = useThrottledValue(tickerLines, TICKER_THROTTLE_MS, running);
+
   const description = typeof args === 'string' ? tryDescription(args) : extractDescription(args);
 
   /** Self-spawned runs get a name-free label ('Running subtask') because
@@ -215,22 +296,52 @@ export default function SubagentCall({
   }, [contentParts]);
 
   /**
-   * Auto-scroll the dialog's content area to the bottom as new parts / delta
-   * chunks stream in, mirroring `MessagesView`'s behavior. We only scroll
-   * while the subagent is running and the dialog is open so the user isn't
-   * yanked to the bottom when re-reading a completed run. `contentParts.length`
-   * is a cheap trigger that fires on every structural change; the running
-   * text's own char-by-char growth is handled by a `progress.events.length`
-   * trigger so the scroll stays pinned to the live cursor.
+   * Auto-scroll the dialog's content area as new parts / delta chunks
+   * stream in. Same pattern as `MessagesView` but with a dialog-tuned
+   * threshold — the user can scroll up to read back without auto-scroll
+   * snatching control. Explicit "jump to bottom" button lets them resume
+   * following along without having to scroll all the way down.
    */
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const eventCount = events?.length ?? 0;
+  const [isAtBottom, setIsAtBottom] = useState(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setIsAtBottom(distance <= DIALOG_AT_BOTTOM_THRESHOLD_PX);
+  }, []);
+
+  /** (Re)attach the scroll listener whenever the dialog mounts its scroll
+   *  container. Re-snap to bottom on open so a freshly-opened dialog
+   *  starts from the live cursor. */
   useEffect(() => {
-    if (!open || !running) return;
+    if (!open) return;
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [open, running, contentParts.length, eventCount]);
+    setIsAtBottom(true);
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [open, handleScroll]);
+
+  /** Auto-scroll only while the user is following along. Once they scroll
+   *  up past the threshold, the button below takes over and new content
+   *  stays where it is. */
+  useEffect(() => {
+    if (!open || !running || !isAtBottom) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [open, running, contentParts.length, eventCount, isAtBottom]);
+
+  const scrollDialogToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    setIsAtBottom(true);
+  }, []);
 
   return (
     <>
@@ -273,11 +384,23 @@ export default function SubagentCall({
           />
         </div>
 
-        <ul className="space-y-0.5 pl-5 font-mono text-xs text-text-secondary">
-          {tickerLines.map((line, i) => (
+        <ul className="w-full space-y-0.5 pl-5 font-mono text-xs text-text-secondary">
+          {displayedTickerLines.map((line, i) => (
+            /**
+             * RTL container + `text-overflow: ellipsis` gives a
+             * tail-side truncate: for pure-Latin ticker text the bidi
+             * algorithm still lays the characters out LTR, but the
+             * ellipsis clips the *start* of the line (visually the
+             * left) rather than the end, so the newest tokens are
+             * always flush-right regardless of container width.
+             */
             <li
               key={`${i}-${line.text}`}
-              className={cn('truncate', line.live && 'text-text-primary')}
+              dir="rtl"
+              className={cn(
+                'w-full overflow-hidden overflow-ellipsis whitespace-nowrap text-left',
+                line.live && 'text-text-primary',
+              )}
             >
               {line.text}
             </li>
@@ -305,72 +428,84 @@ export default function SubagentCall({
             {description || localize('com_ui_subagent_dialog_description')}
           </OGDialogDescription>
 
-          <div
-            ref={scrollRef}
-            /** Mirrors the main conversation's content-parts wrapper
-             *  (`max-w-full flex-grow flex-col gap-0` from
-             *  `MessageParts.tsx`). Part-specific wrappers (`Container`
-             *  on TEXT, the Reasoning component's own wrapper on THINK,
-             *  `ToolCallGroup` margins on grouped tools) handle their
-             *  own spacing — we don't re-wrap everything in `Container`
-             *  because that would constrain Reasoning's full-column
-             *  width the way it has in regular messages.
-             *  Outer `px-4 py-3` gives the dialog breathing room. */
-            className="mt-3 max-h-[65vh] overflow-y-auto px-4 py-3"
-          >
-            <div className="flex max-w-full flex-grow flex-col gap-0">
-              {contentParts.length > 0 ? (
-                <MessageContext.Provider value={dialogMessageContext}>
-                  {groupedParts.map((group) => {
-                    if (group.type === 'single') {
-                      const { part, idx } = group.part;
-                      /** Per-type dispatch handles wrapping: TEXT goes
-                       *  through `Container`, THINK/TOOL_CALL render
-                       *  directly so their own wrappers set the width
-                       *  and spacing. */
-                      return renderDialogPart(part, idx, idx === lastPartIndex);
-                    }
-                    /** Consecutive tool_calls (2+) collapse into a
-                     *  `Used N tools` group — same behavior as the main
-                     *  message view. */
-                    return (
-                      <ToolCallGroup
-                        key={`${toolCallId}-group-${group.parts[0].idx}`}
-                        parts={group.parts}
-                        isSubmitting={running}
-                        isLast={group.parts.some((p) => p.idx === lastPartIndex)}
-                        renderPart={renderDialogPart}
-                        lastContentIdx={lastPartIndex}
-                      />
-                    );
-                  })}
-                </MessageContext.Provider>
-              ) : output ? (
-                /** Fallback: no aggregated content parts but the backend
-                 *  wrote a final tool_call output. Happens for older
-                 *  subagent runs recorded before the event forwarder
-                 *  existed. Route through the same leaf renderer so
-                 *  markdown renders properly. */
-                <MessageContext.Provider value={dialogMessageContext}>
-                  <SubagentDialogPart
-                    part={
-                      {
-                        type: ContentTypes.TEXT,
-                        text: output,
-                      } as unknown as TMessageContentParts
-                    }
-                    isSubmitting={false}
-                    showCursor={false}
-                    isLast
-                  />
-                </MessageContext.Provider>
-              ) : (
-                <div className="text-sm italic text-text-secondary">
-                  {running
-                    ? localize('com_ui_subagent_no_result_yet')
-                    : localize('com_ui_subagent_empty_result')}
-                </div>
-              )}
+          <div className="relative mt-3">
+            {!isAtBottom && (
+              <button
+                type="button"
+                onClick={scrollDialogToBottom}
+                aria-label={localize('com_ui_subagent_scroll_to_bottom')}
+                className="absolute bottom-3 right-6 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
+              >
+                <ArrowDown size={16} aria-hidden="true" />
+              </button>
+            )}
+            <div
+              ref={scrollRef}
+              /** Mirrors the main conversation's content-parts wrapper
+               *  (`max-w-full flex-grow flex-col gap-0` from
+               *  `MessageParts.tsx`). Part-specific wrappers (`Container`
+               *  on TEXT, the Reasoning component's own wrapper on THINK,
+               *  `ToolCallGroup` margins on grouped tools) handle their
+               *  own spacing — we don't re-wrap everything in `Container`
+               *  because that would constrain Reasoning's full-column
+               *  width the way it has in regular messages.
+               *  Outer `px-4 py-3` gives the dialog breathing room. */
+              className="max-h-[65vh] overflow-y-auto px-4 py-3"
+            >
+              <div className="flex max-w-full flex-grow flex-col gap-0">
+                {contentParts.length > 0 ? (
+                  <MessageContext.Provider value={dialogMessageContext}>
+                    {groupedParts.map((group) => {
+                      if (group.type === 'single') {
+                        const { part, idx } = group.part;
+                        /** Per-type dispatch handles wrapping: TEXT goes
+                         *  through `Container`, THINK/TOOL_CALL render
+                         *  directly so their own wrappers set the width
+                         *  and spacing. */
+                        return renderDialogPart(part, idx, idx === lastPartIndex);
+                      }
+                      /** Consecutive tool_calls (2+) collapse into a
+                       *  `Used N tools` group — same behavior as the main
+                       *  message view. */
+                      return (
+                        <ToolCallGroup
+                          key={`${toolCallId}-group-${group.parts[0].idx}`}
+                          parts={group.parts}
+                          isSubmitting={running}
+                          isLast={group.parts.some((p) => p.idx === lastPartIndex)}
+                          renderPart={renderDialogPart}
+                          lastContentIdx={lastPartIndex}
+                        />
+                      );
+                    })}
+                  </MessageContext.Provider>
+                ) : output ? (
+                  /** Fallback: no aggregated content parts but the backend
+                   *  wrote a final tool_call output. Happens for older
+                   *  subagent runs recorded before the event forwarder
+                   *  existed. Route through the same leaf renderer so
+                   *  markdown renders properly. */
+                  <MessageContext.Provider value={dialogMessageContext}>
+                    <SubagentDialogPart
+                      part={
+                        {
+                          type: ContentTypes.TEXT,
+                          text: output,
+                        } as unknown as TMessageContentParts
+                      }
+                      isSubmitting={false}
+                      showCursor={false}
+                      isLast
+                    />
+                  </MessageContext.Provider>
+                ) : (
+                  <div className="text-sm italic text-text-secondary">
+                    {running
+                      ? localize('com_ui_subagent_no_result_yet')
+                      : localize('com_ui_subagent_empty_result')}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </OGDialogContent>
