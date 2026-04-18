@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
@@ -188,7 +188,7 @@ export default function useEventHandlers({
   const { token } = useAuthContext();
 
   const { contentHandler, resetContentHandler } = useContentHandler({ setMessages, getMessages });
-  const { stepHandler, clearStepMaps, syncStepMessage } = useStepHandler({
+  const { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -196,6 +196,20 @@ export default function useEventHandlers({
     lastAnnouncementTimeRef,
   });
   const attachmentHandler = useAttachmentHandler(queryClient);
+
+  /** Wipe the per-subagent Recoil atoms when the user navigates to a
+   *  different conversation. Historical subagent dialogs rehydrate from
+   *  the persisted `subagent_content` on each tool_call (written by the
+   *  backend at message-save time), so clearing live atoms on switch
+   *  doesn't lose any viewable history — it just prevents unbounded
+   *  `atomFamily` growth across multi-conversation sessions. */
+  const lastConversationIdRef = useRef<string | null | undefined>(paramId);
+  useEffect(() => {
+    if (lastConversationIdRef.current !== paramId) {
+      lastConversationIdRef.current = paramId;
+      resetSubagentAtoms();
+    }
+  }, [paramId, resetSubagentAtoms]);
 
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {

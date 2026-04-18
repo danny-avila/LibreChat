@@ -901,8 +901,12 @@ export default function useStepHandler({
     pendingSubagentBuffer.current.clear();
     /** Intentionally NOT calling `resetSubagentAtoms()` here — users need
      *  to be able to reopen the SubagentCall dialog after completion to
-     *  audit what the child did. `resetSubagentAtoms` is still exported
-     *  below for conversation-switch cleanup if a future caller needs it. */
+     *  audit what the child did. `resetSubagentAtoms` is returned below
+     *  so callers can wipe atoms on conversation-switch (see
+     *  `useEventHandlers`) — that's the correct cleanup boundary:
+     *  persisted `subagent_content` takes over for historical messages
+     *  once the conversation is saved, and we prevent unbounded
+     *  atomFamily growth across multi-conversation sessions. */
   }, []);
 
   /**
@@ -916,5 +920,5 @@ export default function useStepHandler({
     }
   }, []);
 
-  return { stepHandler, clearStepMaps, syncStepMessage };
+  return { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage };
 }
