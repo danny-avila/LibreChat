@@ -110,6 +110,16 @@ function extractMetaObject(source) {
     if (RESERVED_LOG_KEYS.has(key) || key.startsWith('_')) {
       continue;
     }
+    /*
+     * Skip numeric-index-like keys. When a caller passes a primitive as
+     * the second argument to `logger.warn/error`, `format.splat()` can
+     * leave character-index keys ("0", "1", ...) on `info`. Those are
+     * synthetic splat artifacts, not real metadata, and would otherwise
+     * produce noisy output now that warn/error share this path.
+     */
+    if (/^\d+$/.test(key)) {
+      continue;
+    }
     const value = source[key];
     if (value === undefined || value === null || value === '') {
       continue;

@@ -43,6 +43,20 @@ describe('formatConsoleMeta', () => {
     expect(meta).toBe('{"userField":"keep"}');
   });
 
+  it('drops numeric-index-like keys (splat artifacts from primitive args)', () => {
+    const meta = formatConsoleMeta({
+      level: 'warn',
+      message: 'Unhandled step:',
+      timestamp: 'ts',
+      0: 'f',
+      1: 'o',
+      2: 'o',
+      realField: 'real',
+    });
+
+    expect(meta).toBe('{"realField":"real"}');
+  });
+
   it('drops empty, null, undefined, function, and symbol values', () => {
     const meta = formatConsoleMeta({
       level: 'warn',
