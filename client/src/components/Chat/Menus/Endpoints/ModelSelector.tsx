@@ -73,7 +73,7 @@ function ModelSelectorContent() {
               {selectedIcon}
             </div>
           )}
-          <span className="flex-grow truncate text-left">{selectedDisplayValue}</span>
+          <span className="flex-grow truncate text-left">{selectedDisplayValue?.length >18 ? `${selectedDisplayValue?.substring(0, 10)}...` : selectedDisplayValue}</span>
         </button>
       }
     />

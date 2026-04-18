@@ -78,7 +78,7 @@ export default function Header() {
               </motion.div>
             )}
           </AnimatePresence>
-          {!isSmallScreen &&bannerPortal ? createPortal(modelSelectorNodes, bannerPortal) : null}
+          {!isSmallScreen && bannerPortal ? createPortal(modelSelectorNodes, bannerPortal) : null}
           
           {!(navVisible && isSmallScreen) && (
             <div
