@@ -513,13 +513,23 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     }
   }
 
+  /** Collected during resolution; applied to `agentConfigs` only after
+   *  every config has had its subagents resolved. Eager pruning would
+   *  hide pure-subagent ids from the subsequent `loadSubagentsFor`
+   *  loop, which would leave *their* `subagentAgentConfigs` empty and
+   *  silently break nested delegation like A → B → C where B is only
+   *  a subagent of A (Codex P2). */
+  const pureSubagentIds = new Set();
+
   /**
    * Loads `subagentAgentConfigs` for a single agent config. Shared
-   * between the primary agent and handoff-target agents so an agent
-   * used via handoff that has its own explicit `subagents.agent_ids`
-   * gets them honored at runtime — previously those were silently
-   * dropped because only the primary's subagents were resolved
-   * (Codex P2). Self-spawn works regardless (no DB lookup needed).
+   * between the primary agent and handoff-target agents (and pure
+   * subagents, transitively) so an agent used via handoff or
+   * nested-subagent that has its own explicit `subagents.agent_ids`
+   * gets them honored at runtime instead of being silently dropped.
+   * Self-spawn works regardless (no DB lookup needed). Pruning
+   * decisions are deferred to `pureSubagentIds` so the caller can
+   * apply them after every config has been resolved.
    */
   const loadSubagentsFor = async (config) => {
     const sub = config.subagents;
@@ -560,31 +570,64 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
       resolved.push(subagentConfig);
 
-      /** If this agent is exclusively a subagent (not referenced in
-       *  any edge), drop it from `agentConfigs` so the LangGraph
-       *  pipeline doesn't treat it as a parallel/handoff node. KEEP
-       *  it in `agentToolContexts` — the child's ON_TOOL_EXECUTE
-       *  handler needs the tool-execution context (agent,
-       *  tool_resources, skill ACLs) to run the child's tools with
-       *  the right scoping. */
+      /** Defer pruning: record the id if it isn't reachable via any
+       *  edge. Later, after every reachable config has been visited
+       *  (including this one's own subagents, if any), the caller
+       *  drops the collected ids from `agentConfigs` so the LangGraph
+       *  pipeline doesn't treat them as parallel/handoff nodes.
+       *  `agentToolContexts` retains them — the child's
+       *  ON_TOOL_EXECUTE handler needs that context to run the
+       *  child's tools with the right scoping. */
       if (!edgeAgentIds.has(subagentId)) {
-        agentConfigs.delete(subagentId);
+        pureSubagentIds.add(subagentId);
       }
     }
 
     config.subagentAgentConfigs = resolved;
   };
 
-  /** Resolve subagents for the primary first (it always needs them),
-   *  then for each handoff agent so their explicit children match
-   *  the saved configuration at runtime instead of being silently
-   *  dropped. Snapshot the keys up front because `loadSubagentsFor`
-   *  may delete entries as it runs (pure-subagent cleanup). */
-  await loadSubagentsFor(primaryConfig);
-  const handoffIds = Array.from(agentConfigs.keys()).filter((id) => id !== primaryConfig.id);
-  for (const id of handoffIds) {
-    const cfg = agentConfigs.get(id);
-    if (cfg) await loadSubagentsFor(cfg);
+  /** Resolve subagents breadth-first across the entire agent map so
+   *  multi-level chains like A → B → C (where B is only a subagent)
+   *  all get their children populated before any pure-subagent
+   *  pruning happens. Each config is visited exactly once. */
+  const visitedConfigIds = new Set();
+  const pending = [primaryConfig];
+  while (pending.length > 0) {
+    const cfg = pending.shift();
+    if (!cfg || visitedConfigIds.has(cfg.id)) continue;
+    visitedConfigIds.add(cfg.id);
+    await loadSubagentsFor(cfg);
+    /** Include this config's freshly-resolved children so their own
+     *  subagents get loaded too (multi-level delegation). Handoff
+     *  agents still in `agentConfigs` are queued from the outer scan
+     *  below. */
+    for (const child of cfg.subagentAgentConfigs ?? []) {
+      if (child?.id && !visitedConfigIds.has(child.id)) {
+        pending.push(child);
+      }
+    }
+  }
+  /** Any agent still in the map that wasn't visited via the
+   *  primary's subagent tree is a handoff target — resolve its
+   *  subagents too. */
+  for (const [id, cfg] of agentConfigs.entries()) {
+    if (id === primaryConfig.id || visitedConfigIds.has(id)) continue;
+    visitedConfigIds.add(id);
+    await loadSubagentsFor(cfg);
+    for (const child of cfg.subagentAgentConfigs ?? []) {
+      if (child?.id && !visitedConfigIds.has(child.id)) {
+        visitedConfigIds.add(child.id);
+        await loadSubagentsFor(child);
+      }
+    }
+  }
+
+  /** Now that every reachable config has had its subagents resolved,
+   *  drop the pure-subagent entries from `agentConfigs`. They stay
+   *  in `agentToolContexts` so their tools still execute with the
+   *  right scoping. */
+  for (const id of pureSubagentIds) {
+    agentConfigs.delete(id);
   }
 
   primaryConfig.subagents = subagentsCapabilityEnabled ? primaryConfig.subagents : undefined;
