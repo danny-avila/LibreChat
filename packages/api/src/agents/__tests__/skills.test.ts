@@ -1092,14 +1092,20 @@ describe('buildSkillPrimeStepEvents', () => {
     expect(result.tool_call.output).toContain('loaded');
   });
 
-  it('assigns increasing indices per prime so multiple cards render at distinct positions', () => {
+  it('starts indices at SKILL_PRIME_INDEX_OFFSET by default so cards sit clear of LLM index-0 content', () => {
     const events = buildSkillPrimeStepEvents([
       { name: 'a', body: '.' },
       { name: 'b', body: '.' },
       { name: 'c', body: '.' },
     ]);
     const startEvents = events.filter((e) => e.event === 'on_run_step');
-    expect(startEvents.map((e) => e.data.index)).toEqual([0, 1, 2]);
+    expect(startEvents.map((e) => e.data.index)).toEqual([100, 101, 102]);
+  });
+
+  it('honors an explicit startIndex for callers that want cards at a different offset', () => {
+    const events = buildSkillPrimeStepEvents([{ name: 'a', body: '.' }], { startIndex: 0 });
+    const startEvents = events.filter((e) => e.event === 'on_run_step');
+    expect(startEvents[0].data.index).toBe(0);
   });
 
   it('pairs start + completed via the same stepId and tool_call ID', () => {

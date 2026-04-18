@@ -38,6 +38,17 @@ export const MAX_MANUAL_SKILLS = 10;
 export const SKILL_MESSAGE_SOURCE = 'skill';
 
 /**
+ * Sparse-array offset used for skill prime content parts in both the live
+ * SSE emit and the server-side `contentParts`. Placing cards at this high
+ * index keeps them out of the way of the LLM's own content parts (which
+ * start at index 0) — no `updateContent` type-mismatch collision, so the
+ * model's text streams through normally and cards render alongside it.
+ * `filterMalformedContentParts` compacts the resulting sparse array to
+ * dense `[text, ..., card]` before persistence.
+ */
+export const SKILL_PRIME_INDEX_OFFSET = 100;
+
+/**
  * Predicate that identifies a LangChain message as one we spliced in via
  * `injectManualSkillPrimes` (or the equivalent model-invoked path). Callers
  * like `runMemory` use this to strip synthetic skill content from windows
@@ -587,18 +598,26 @@ export interface SkillPrimeStepEvent {
  * step, so `useStepHandler.ts` on the frontend handles them identically.
  *
  * Callers emit these via `sendEvent` / `GenerationJobManager.emitChunk`
- * before `runAgents` starts so the cards appear optimistically ahead of the
- * LLM's stream. The graph's own content at index 0 may overwrite these
- * during streaming, but the final-event reconcile (driven by the persisted
- * `contentParts` — see `buildSkillPrimeContentParts`) restores them.
+ * before `runAgents` starts so the cards appear optimistically alongside the
+ * LLM's stream.
  *
- * Uses `Constants.USE_PRELIM_RESPONSE_MESSAGE_ID` as `runId` so the
- * frontend maps the events to the in-flight preliminary response message,
- * matching the MCP OAuth live-emit pattern in `ToolService`.
+ * Defaults:
+ *  - `runId`: pass the real response messageId (e.g. `this.responseMessageId`
+ *    in `AgentClient.chatCompletion`) so the synthetic steps attach to the
+ *    same `messageMap` entry the graph's own step events target on the
+ *    client. Falls back to `USE_PRELIM_RESPONSE_MESSAGE_ID` to match the
+ *    MCP OAuth live-emit pattern when no response ID is available yet.
+ *  - `startIndex`: set to `SKILL_PRIME_INDEX_OFFSET` (100) so cards sit at
+ *    a sparse-array offset clear of the LLM's index-0 content. Without the
+ *    offset, the frontend's `updateContent` type-mismatch guard would
+ *    suppress the model's text stream into the card's slot.
  */
 export function buildSkillPrimeStepEvents(
   primes: ResolvedManualSkill[],
-  { runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID }: { runId?: string } = {},
+  {
+    runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+    startIndex = SKILL_PRIME_INDEX_OFFSET,
+  }: { runId?: string; startIndex?: number } = {},
 ): SkillPrimeStepEvent[] {
   const events: SkillPrimeStepEvent[] = [];
   for (let i = 0; i < primes.length; i++) {
@@ -614,7 +633,7 @@ export function buildSkillPrimeStepEvents(
         id: stepId,
         runId,
         type: StepTypes.TOOL_CALLS,
-        index: i,
+        index: startIndex + i,
         stepDetails: {
           type: StepTypes.TOOL_CALLS,
           tool_calls: [
