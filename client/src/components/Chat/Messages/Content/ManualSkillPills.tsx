@@ -1,71 +1,21 @@
-import { useMemo } from 'react';
 import { ScrollText } from 'lucide-react';
-import { useRecoilValue } from 'recoil';
-import { useQueryClient } from '@tanstack/react-query';
-import { ContentTypes, QueryKeys } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import store from '~/store';
 
 /**
- * Small pill row rendered on a submitted user message showing which skills
- * the user invoked manually via the `$` popover. Transient UI that bridges
- * the gap between submission and the first server-streamed skill cards on
- * the sibling assistant response.
- *
- * Hide condition: once the assistant response for this user message
- * contains a `tool_call` content part with `name: 'skill'`, the real cards
- * are rendering in the assistant bubble and the pills are redundant. We
- * don't need to explicitly clear the atom — the render-side predicate is
- * sufficient, and `useClearStates` resets the family on convo switch.
+ * Compact pill row rendered on a submitted user message, one chip per skill
+ * the user invoked via the `$` popover. Renders directly from the message's
+ * `manualSkills` field — backend persists the field, so pills survive page
+ * reloads and show in conversation history. Distinct from the live skill
+ * tool-call cards that land on the sibling assistant message at finalize:
+ * pills live on the user side and stay forever, cards live on the assistant
+ * side once the response completes.
  */
 export default function ManualSkillPills({ message }: { message?: TMessage }) {
-  const skills = useRecoilValue(store.attachedSkillsByMessageId(message?.messageId ?? ''));
-  const queryClient = useQueryClient();
-
-  const hasLiveSkillCard = useMemo(() => {
-    if (!message?.messageId || !message.conversationId) {
-      return false;
-    }
-    const messages = queryClient.getQueryData<TMessage[]>([
-      QueryKeys.messages,
-      message.conversationId,
-    ]);
-    if (!messages) {
-      return false;
-    }
-    /**
-     * The assistant response sits as the child of this user message.
-     * Scan the conversation for a non-user message whose parent is us and
-     * whose content has a skill tool_call — that's the backend's live
-     * card arriving. One pass, no recursion.
-     */
-    for (const m of messages) {
-      if (m.isCreatedByUser || m.parentMessageId !== message.messageId) {
-        continue;
-      }
-      if (!Array.isArray(m.content)) {
-        continue;
-      }
-      for (const part of m.content) {
-        if (
-          part != null &&
-          typeof part === 'object' &&
-          (part as { type?: string }).type === ContentTypes.TOOL_CALL
-        ) {
-          const toolCall = (part as { tool_call?: { name?: string } }).tool_call;
-          if (toolCall?.name === 'skill') {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-    /** Re-evaluate on every render — the pills component mounts under the
-     * message bubble which re-renders as the stream progresses, so a
-     * subscription isn't needed here. */
-  }, [message?.messageId, message?.conversationId, queryClient]);
-
-  if (!message?.isCreatedByUser || skills.length === 0 || hasLiveSkillCard) {
+  if (!message?.isCreatedByUser) {
+    return null;
+  }
+  const skills = message.manualSkills;
+  if (!skills || skills.length === 0) {
     return null;
   }
 

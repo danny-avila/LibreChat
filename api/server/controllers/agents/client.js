@@ -2,7 +2,6 @@ require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const {
-  sendEvent,
   createRun,
   isEnabled,
   checkAccess,
@@ -32,8 +31,6 @@ const {
   injectManualSkillPrimes,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
-  buildSkillPrimeStepEvents,
-  SKILL_PRIME_INDEX_OFFSET,
 } = require('@librechat/api');
 const {
   Callback,
@@ -798,37 +795,6 @@ class AgentClient extends BaseClient {
             `[AgentClient] Primed ${primeResult.inserted} manual skill(s) at message index ${primeResult.insertIdx}: ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
           );
         }
-
-        /**
-         * Emit completed skill tool-call steps optimistically so the
-         * `SkillCall` renderer displays "Skill X loaded" cards as soon as
-         * the stream starts, rather than waiting for the final message
-         * reconcile.
-         *
-         * runId: the real response messageId (same one `createRun` uses
-         * below), so these synthetic steps attach to the SAME `messageMap`
-         * entry the graph's own events target on the client. Using
-         * `USE_PRELIM_RESPONSE_MESSAGE_ID` (the OAuth pattern) orphans the
-         * cards on the client's placeholder response, which is why they
-         * weren't rendering mid-stream in an earlier attempt.
-         *
-         * index: `SKILL_PRIME_INDEX_OFFSET` (= 100) keeps cards out of the
-         * LLM's index-0 slot so the model's text streams through without
-         * hitting `updateContent`'s type-mismatch guard. The post-run
-         * sparse assignment below mirrors the same offset for persistence.
-         */
-        const streamId = this.options.req?._resumableStreamId;
-        const res = this.options.res;
-        const primeEvents = buildSkillPrimeStepEvents(manualSkillPrimes, {
-          runId: this.responseMessageId,
-        });
-        for (const primeEvent of primeEvents) {
-          if (streamId) {
-            await GenerationJobManager.emitChunk(streamId, primeEvent);
-          } else if (res && !res.writableEnded) {
-            sendEvent(res, primeEvent);
-          }
-        }
       }
 
       if (indexTokenCountMap && isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
@@ -952,24 +918,24 @@ class AgentClient extends BaseClient {
        * invoked skill so the existing `SkillCall` frontend renderer shows
        * a "Skill X loaded" card on the assistant response. Applied after
        * the graph finishes to avoid clashing with the aggregator's own
-       * per-step content indexing.
+       * per-step content indexing. Prepended (not appended) so cards sit
+       * above the model's output — priming ran before the turn, the
+       * reply follows.
        *
-       * Sparse placement at `SKILL_PRIME_INDEX_OFFSET` (= 100) mirrors the
-       * same offset used by the live SSE emit above — so the streaming UI
-       * and the persisted responseMessage.content end up in the same
-       * shape, and the client never needs to re-order at finalize.
-       * `filterMalformedContentParts` (run from `sendCompletion`) compacts
-       * the sparse array to dense `[...llm_content, ...skill_cards]`
-       * before the message is saved.
+       * Live streaming display of cards is handled on the user side via
+       * `ManualSkillPills` reading the message's `manualSkills` field;
+       * no separate SSE emit is needed here, and trying to stream a
+       * mid-run tool_call at index 0 collided with the LLM's first text
+       * content, while emitting at a sparse offset pushed the card below
+       * the reply on finalize. Post-run unshift keeps the final
+       * responseMessage.content in the right order.
        */
       const primedSkills = this.options.agent?.manualSkillPrimes;
       if (primedSkills && primedSkills.length > 0) {
         const primeParts = buildSkillPrimeContentParts(primedSkills, {
           runId: this.responseMessageId ?? 'manual-skill',
         });
-        for (let i = 0; i < primeParts.length; i++) {
-          this.contentParts[SKILL_PRIME_INDEX_OFFSET + i] = primeParts[i];
-        }
+        this.contentParts.unshift(...primeParts);
       }
 
       /** @deprecated Agent Chain */

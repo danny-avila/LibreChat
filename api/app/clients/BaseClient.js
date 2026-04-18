@@ -492,6 +492,21 @@ class BaseClient {
         }
         delete userMessage.image_urls;
       }
+      /**
+       * Persist the user's manual skill picks onto the user message so the
+       * frontend `ManualSkillPills` component can render them in history
+       * after reload. UI-only metadata — the runtime skill resolution
+       * pipeline reads the top-level `req.body.manualSkills` separately.
+       * Schema-validated at the Mongoose layer so string[] is enforced
+       * without a second filter here.
+       */
+      const rawManualSkills = this.options.req?.body?.manualSkills;
+      if (Array.isArray(rawManualSkills) && rawManualSkills.length > 0) {
+        const skills = rawManualSkills.filter((s) => typeof s === 'string' && s.length > 0);
+        if (skills.length > 0) {
+          userMessage.manualSkills = skills;
+        }
+      }
       userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
         (err) => {
           logger.error('[BaseClient] Failed to save user message:', err);

@@ -1,9 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { HumanMessage } from '@langchain/core/messages';
-import { Constants } from 'librechat-data-provider';
 import {
-  GraphEvents,
-  StepTypes,
   formatSkillCatalog,
   SkillToolDefinition,
   ReadFileToolDefinition,
@@ -36,17 +33,6 @@ export const MAX_MANUAL_SKILLS = 10;
  * place rather than repeated inline.
  */
 export const SKILL_MESSAGE_SOURCE = 'skill';
-
-/**
- * Sparse-array offset used for skill prime content parts in both the live
- * SSE emit and the server-side `contentParts`. Placing cards at this high
- * index keeps them out of the way of the LLM's own content parts (which
- * start at index 0) — no `updateContent` type-mismatch collision, so the
- * model's text streams through normally and cards render alongside it.
- * `filterMalformedContentParts` compacts the resulting sparse array to
- * dense `[text, ..., card]` before persistence.
- */
-export const SKILL_PRIME_INDEX_OFFSET = 100;
 
 /**
  * Predicate that identifies a LangChain message as one we spliced in via
@@ -584,84 +570,4 @@ export function extractManualSkills(body: unknown): string[] | undefined {
     (entry): entry is string => typeof entry === 'string' && entry.length > 0,
   );
   return filtered.length > 0 ? filtered : undefined;
-}
-
-export interface SkillPrimeStepEvent {
-  event: string;
-  data: Record<string, unknown>;
-}
-
-/**
- * Build the `ON_RUN_STEP` + `ON_RUN_STEP_COMPLETED` event pair per prime that
- * the client consumes to render a completed "Skill X loaded" tool-call card
- * immediately — same shape the agents SDK emits for a model-invoked skill
- * step, so `useStepHandler.ts` on the frontend handles them identically.
- *
- * Callers emit these via `sendEvent` / `GenerationJobManager.emitChunk`
- * before `runAgents` starts so the cards appear optimistically alongside the
- * LLM's stream.
- *
- * Defaults:
- *  - `runId`: pass the real response messageId (e.g. `this.responseMessageId`
- *    in `AgentClient.chatCompletion`) so the synthetic steps attach to the
- *    same `messageMap` entry the graph's own step events target on the
- *    client. Falls back to `USE_PRELIM_RESPONSE_MESSAGE_ID` to match the
- *    MCP OAuth live-emit pattern when no response ID is available yet.
- *  - `startIndex`: set to `SKILL_PRIME_INDEX_OFFSET` (100) so cards sit at
- *    a sparse-array offset clear of the LLM's index-0 content. Without the
- *    offset, the frontend's `updateContent` type-mismatch guard would
- *    suppress the model's text stream into the card's slot.
- */
-export function buildSkillPrimeStepEvents(
-  primes: ResolvedManualSkill[],
-  {
-    runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
-    startIndex = SKILL_PRIME_INDEX_OFFSET,
-  }: { runId?: string; startIndex?: number } = {},
-): SkillPrimeStepEvent[] {
-  const events: SkillPrimeStepEvent[] = [];
-  for (let i = 0; i < primes.length; i++) {
-    const prime = primes[i];
-    const stepId = `step_manual_skill_${runId}_${i}`;
-    const toolCallId = `call_manual_skill_${runId}_${i}`;
-    const args = JSON.stringify({ skillName: prime.name });
-    const output = `Skill "${prime.name}" loaded. Follow the instructions below.`;
-
-    events.push({
-      event: GraphEvents.ON_RUN_STEP,
-      data: {
-        id: stepId,
-        runId,
-        type: StepTypes.TOOL_CALLS,
-        index: startIndex + i,
-        stepDetails: {
-          type: StepTypes.TOOL_CALLS,
-          tool_calls: [
-            {
-              id: toolCallId,
-              name: SkillToolDefinition.name,
-              args,
-            },
-          ],
-        },
-      },
-    });
-
-    events.push({
-      event: GraphEvents.ON_RUN_STEP_COMPLETED,
-      data: {
-        result: {
-          id: stepId,
-          tool_call: {
-            id: toolCallId,
-            name: SkillToolDefinition.name,
-            args,
-            output,
-            progress: 1,
-          },
-        },
-      },
-    });
-  }
-  return events;
 }
