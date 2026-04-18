@@ -202,11 +202,19 @@ export default function useEventHandlers({
    *  the persisted `subagent_content` on each tool_call (written by the
    *  backend at message-save time), so clearing live atoms on switch
    *  doesn't lose any viewable history — it just prevents unbounded
-   *  `atomFamily` growth across multi-conversation sessions. */
+   *  `atomFamily` growth across multi-conversation sessions.
+   *
+   *  Skip the initial `undefined → newId` transition that happens when
+   *  a brand-new chat's URL is stamped with the freshly-created
+   *  conversation id mid-stream — resetting then would drop subagent
+   *  progress collected from the in-flight first response. Only reset
+   *  when switching between two established ids. */
   const lastConversationIdRef = useRef<string | null | undefined>(paramId);
   useEffect(() => {
-    if (lastConversationIdRef.current !== paramId) {
-      lastConversationIdRef.current = paramId;
+    const previous = lastConversationIdRef.current;
+    lastConversationIdRef.current = paramId;
+    const bothEstablished = previous != null && paramId != null && previous !== paramId;
+    if (bothEstablished) {
       resetSubagentAtoms();
     }
   }, [paramId, resetSubagentAtoms]);

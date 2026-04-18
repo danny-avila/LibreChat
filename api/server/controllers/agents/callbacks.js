@@ -301,16 +301,22 @@ function getDefaultHandlers({
 
   handlers[GraphEvents.ON_SUBAGENT_UPDATE] = {
     /**
-     * Forwards subagent progress envelopes straight to the client stream,
-     * and (when a caller-owned aggregator map is provided) also folds each
-     * event into a per-tool-call `createContentAggregator` instance. The
+     * Forwards subagent progress envelopes to the client stream, and
+     * (when a caller-owned aggregator map is provided) also folds each
+     * event into a per-tool-call `createContentAggregator`. The
      * resulting `contentParts` are attached to the parent's `subagent`
-     * tool_call at message-save time so the child's reasoning / tool calls
-     * / final text survive a page refresh — in-memory Recoil atoms alone
-     * wouldn't persist that. Reuses the SDK's own aggregator so the
-     * persisted content shape matches the parent graph's output exactly.
+     * tool_call at message-save time so the child's reasoning / tool
+     * calls / final text survive a page refresh — in-memory Recoil
+     * atoms alone wouldn't persist that.
+     *
+     * Aggregation runs regardless of stream visibility (persistence +
+     * dialog depend on it), but the SSE forward respects
+     * `hide_sequential_outputs` the same way `ON_RUN_STEP`,
+     * `ON_MESSAGE_DELTA`, etc. do — so intermediate agents in a
+     * sequential chain don't leak their subagent activity when the
+     * chain is configured to suppress intermediates.
      */
-    handle: async (event, data) => {
+    handle: async (event, data, metadata) => {
       if (subagentAggregatorsByToolCallId && data?.parentToolCallId) {
         const key = data.parentToolCallId;
         let aggregator = subagentAggregatorsByToolCallId.get(key);
@@ -326,7 +332,10 @@ function getDefaultHandlers({
           );
         }
       }
-      await emitEvent(res, streamId, { event, data });
+      const isLastAgent = checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node);
+      if (isLastAgent || !metadata?.hide_sequential_outputs) {
+        await emitEvent(res, streamId, { event, data });
+      }
     },
   };
 
