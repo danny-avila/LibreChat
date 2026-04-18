@@ -1,101 +1,109 @@
 import React from 'react';
+import { RecoilRoot, MutableSnapshot } from 'recoil';
 import { render, screen } from '@testing-library/react';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TSubmission } from 'librechat-data-provider';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, params?: Record<string, unknown>) =>
     `${key}:${params?.[0] ?? ''}`,
 }));
 
-const mockGetMessages = jest.fn<TMessage[] | undefined, []>();
 jest.mock('~/Providers', () => ({
-  useChatContext: () => ({ getMessages: mockGetMessages }),
+  useChatContext: () => ({ index: 0 }),
 }));
 
 import InvokingSkillsIndicator from '../InvokingSkillsIndicator';
+import store from '~/store';
 
-const CONVO_ID = 'convo-1';
 const USER_MSG_ID = 'user-msg-1';
 
-const userMsg = (manualSkills?: string[]): TMessage =>
-  ({
-    messageId: USER_MSG_ID,
-    conversationId: CONVO_ID,
-    parentMessageId: '00000000-0000-0000-0000-000000000000',
-    isCreatedByUser: true,
-    sender: 'User',
-    text: 'hi',
-    manualSkills,
-  }) as TMessage;
-
-const assistantMsg = (content?: unknown[]): TMessage =>
+const makeAssistantMessage = (overrides: Partial<TMessage> = {}): TMessage =>
   ({
     messageId: 'asst-1',
     parentMessageId: USER_MSG_ID,
-    conversationId: CONVO_ID,
+    conversationId: 'convo-1',
     isCreatedByUser: false,
     sender: 'Assistant',
     text: '',
-    content,
-  }) as unknown as TMessage;
+    ...overrides,
+  }) as TMessage;
 
-beforeEach(() => {
-  mockGetMessages.mockReset();
-});
+const makeSubmission = (manualSkills?: string[], userMessageId = USER_MSG_ID): TSubmission =>
+  ({
+    userMessage: { messageId: userMessageId, text: 'hi', isCreatedByUser: true } as TMessage,
+    manualSkills,
+    messages: [],
+    conversation: {},
+    endpointOption: {},
+    isTemporary: false,
+  }) as unknown as TSubmission;
+
+const renderWithSubmission = (ui: React.ReactNode, submission: TSubmission | null) => {
+  const initializeState = (snapshot: MutableSnapshot) => {
+    snapshot.set(store.submissionByIndex(0), submission);
+  };
+  return render(<RecoilRoot initializeState={initializeState}>{ui}</RecoilRoot>);
+};
 
 describe('InvokingSkillsIndicator', () => {
   it('renders nothing for user messages', () => {
-    mockGetMessages.mockReturnValue([userMsg(['pptx'])]);
-    const { container } = render(<InvokingSkillsIndicator message={userMsg(['pptx'])} />);
+    const userMsg = { ...makeAssistantMessage(), isCreatedByUser: true } as TMessage;
+    const { container } = renderWithSubmission(
+      <InvokingSkillsIndicator message={userMsg} />,
+      makeSubmission(['pptx']),
+    );
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders nothing when the parent user message has no manualSkills', () => {
-    const a = assistantMsg();
-    mockGetMessages.mockReturnValue([userMsg(), a]);
-    const { container } = render(<InvokingSkillsIndicator message={a} />);
+  it('renders nothing when there is no in-flight submission (history render)', () => {
+    const a = makeAssistantMessage();
+    const { container } = renderWithSubmission(<InvokingSkillsIndicator message={a} />, null);
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders one loading chip per parent.manualSkills entry while the assistant has no skill card yet', () => {
-    const u = userMsg(['brand-guidelines', 'pptx']);
-    const a = assistantMsg([{ type: 'text', text: 'streaming tokens...' }]);
-    mockGetMessages.mockReturnValue([u, a]);
-    render(<InvokingSkillsIndicator message={a} />);
+  it('renders nothing when the submission has no manualSkills', () => {
+    const a = makeAssistantMessage();
+    const { container } = renderWithSubmission(
+      <InvokingSkillsIndicator message={a} />,
+      makeSubmission(),
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders one chip per submission.manualSkills entry on the matching assistant message', () => {
+    const a = makeAssistantMessage();
+    renderWithSubmission(
+      <InvokingSkillsIndicator message={a} />,
+      makeSubmission(['brand-guidelines', 'pptx']),
+    );
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(2);
     expect(items[0]).toHaveTextContent(/brand-guidelines/);
     expect(items[1]).toHaveTextContent(/pptx/);
   });
 
-  it('steps aside once the assistant content carries a `skill` tool_call (real card landed)', () => {
-    const u = userMsg(['pptx']);
-    const a = assistantMsg([
-      {
-        type: 'tool_call',
-        tool_call: { id: 'c1', name: 'skill', args: '{"skillName":"pptx"}', progress: 1 },
-      },
-      { type: 'text', text: 'response...' },
-    ]);
-    mockGetMessages.mockReturnValue([u, a]);
-    const { container } = render(<InvokingSkillsIndicator message={a} />);
+  it('steps aside once the assistant content carries a skill tool_call (real card landed)', () => {
+    const a = makeAssistantMessage({
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: { id: 'c1', name: 'skill', args: '{"skillName":"pptx"}', progress: 1 },
+        },
+      ] as unknown as TMessage['content'],
+    });
+    const { container } = renderWithSubmission(
+      <InvokingSkillsIndicator message={a} />,
+      makeSubmission(['pptx']),
+    );
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders nothing when the assistant message has no parent (orphan / root)', () => {
-    const orphan = {
-      ...assistantMsg(),
-      parentMessageId: '00000000-0000-0000-0000-000000000000',
-    } as TMessage;
-    mockGetMessages.mockReturnValue([orphan]);
-    const { container } = render(<InvokingSkillsIndicator message={orphan} />);
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('renders nothing when getMessages returns undefined (cache miss)', () => {
-    const a = assistantMsg();
-    mockGetMessages.mockReturnValue(undefined);
-    const { container } = render(<InvokingSkillsIndicator message={a} />);
+  it("does not render on an assistant message that belongs to a different submission's turn", () => {
+    const unrelated = makeAssistantMessage({ parentMessageId: 'some-other-user-msg' });
+    const { container } = renderWithSubmission(
+      <InvokingSkillsIndicator message={unrelated} />,
+      makeSubmission(['pptx'], USER_MSG_ID),
+    );
     expect(container.firstChild).toBeNull();
   });
 });

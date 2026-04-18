@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 import { ScrollText } from 'lucide-react';
-import { Constants, ContentTypes } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import store from '~/store';
 
 /**
  * Transient mid-stream indicator rendered on an assistant message whose
@@ -11,41 +13,52 @@ import { useLocalize } from '~/hooks';
  * between submit and the real `skill` tool_call content part landing at
  * finalize (via the backend's `buildSkillPrimeContentParts` unshift).
  *
- * Hides as soon as the assistant message's own content grows a `skill`
- * tool_call — that's the authoritative card, we step aside. Transient by
- * render condition, no Recoil/SSE coupling needed.
+ * Data source is the in-flight submission (per-chat-index Recoil atom),
+ * not the messages array. Messages flip IDs mid-stream — the user message
+ * keeps its client-side intermediate UUID, then finalize swaps in the
+ * server ID — and the conversation also gets a fresh server ID on brand
+ * new chats, which means any `getMessages()` / `queryClient` lookup by
+ * key races the server. The submission object is stable from
+ * `setSubmission(...)` to `setSubmission(null)` and already carries the
+ * skill list plus the authoritative user-message ID, so keying the
+ * indicator off of it sidesteps the whole ID-drift problem.
+ *
+ * Hide condition: once the assistant content grows a `skill` tool_call,
+ * the real card took over and the indicator steps aside. Also hides
+ * outside the in-flight window (submission null, or parent mismatch)
+ * so history renders don't flash placeholder chips.
  *
  * Why not a proper streaming content part: the LLM's first `ON_MESSAGE_DELTA`
  * lands at content index 0 and would either collide with a pre-seeded skill
  * tool_call (type-mismatch guard blocks the text stream) or sit below it
  * via a sparse-array offset (card ends up at the bottom after compaction).
- * Mirroring the parent user message's `manualSkills` into a sibling render
- * slot above `ContentParts` sidesteps the index math entirely.
- *
- * Parent lookup goes through `useChatContext().getMessages()` rather than a
- * direct `queryClient` read. The underlying React Query cache is keyed by
- * `paramId` (from the URL), which for a new chat is literally `"new"` until
- * the server assigns a real conversation ID — but `message.conversationId`
- * is already the server ID by the time events arrive. Going through the
- * chat context keeps us on the same `paramId` the rest of the UI reads
- * from, so lookups work on new chats too.
+ * Mirroring the submission's `manualSkills` into a sibling render slot
+ * above `ContentParts` sidesteps the index math entirely.
  */
 export default function InvokingSkillsIndicator({ message }: { message?: TMessage }) {
   const localize = useLocalize();
-  const { getMessages } = useChatContext();
+  const { index } = useChatContext();
+  const submission = useRecoilValue(store.submissionByIndex(index));
 
   const skills = useMemo(() => {
-    if (!message || message.isCreatedByUser) {
+    if (!message || message.isCreatedByUser || !submission) {
       return [];
     }
-    const parentId = message.parentMessageId;
-    if (!parentId || parentId === Constants.NO_PARENT) {
+    const manualSkills = submission.manualSkills;
+    if (!manualSkills || manualSkills.length === 0) {
       return [];
     }
-    const messages = getMessages();
-    const parent = messages?.find((m) => m.messageId === parentId);
-    return parent?.manualSkills ?? [];
-  }, [message, getMessages]);
+    /**
+     * Only surface on the assistant message for THIS submission's turn.
+     * `submission.userMessage.messageId` is the client-side intermediate
+     * UUID — same ID the backend echoes back in the `created` event and
+     * the same ID on `message.parentMessageId` during the stream.
+     */
+    if (message.parentMessageId !== submission.userMessage?.messageId) {
+      return [];
+    }
+    return manualSkills;
+  }, [message, submission]);
 
   /**
    * Once the real card (server's unshifted `skill` tool_call content part)
