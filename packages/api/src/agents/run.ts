@@ -510,7 +510,7 @@ const SELF_SUBAGENT_TYPE = 'self';
 function buildSubagentConfigs(
   agent: RunAgent,
   agentInput: AgentInputs,
-  toInput: (child: RunAgent) => AgentInputs,
+  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
 ): SubagentConfig[] {
   if (!agent.subagents?.enabled) {
     return [];
@@ -533,21 +533,20 @@ function buildSubagentConfigs(
     if (!child?.id || child.id === agent.id) {
       continue;
     }
-    const childInputs = toInput(child);
     /**
-     * Strip parent-conversation-scoped fields from the child's AgentInputs.
-     * `buildAgentInput` is a shared factory that stamps the parent run's
-     * `initialSummary` (a cross-run summary of the user-visible conversation)
-     * and `discoveredTools` (tools the parent's LLM searched for earlier)
-     * onto every agent input it builds. A subagent runs in an isolated
-     * context by contract — inheriting those fields leaks unrelated chat
-     * history and prior tool-search state into the child, silently
-     * defeating context isolation and burning extra tokens. Keep the
-     * provider / summarization / pruning config (those are policy, not
-     * context) but clear the run-scoped memory.
+     * `buildAgentInput` applies parent-run context (initialSummary +
+     * discoveredTools) to the returned AgentInputs *and* to the
+     * passed-in agent's `toolRegistry` / `toolDefinitions` — flipping
+     * `defer_loading: true → false` on tools the parent had previously
+     * searched for, and injecting those tools' definitions into the
+     * child's `toolDefinitions`. Clearing fields on the returned
+     * object post-hoc would leave those side-effects in place, leaking
+     * the parent's tool-search state into an "isolated" subagent and
+     * inflating the child's prompt/token budget. The `isSubagent` flag
+     * skips both the field stamping and the registry mutation at the
+     * source so children truly start fresh.
      */
-    childInputs.initialSummary = undefined;
-    childInputs.discoveredTools = undefined;
+    const childInputs = toInput(child, { isSubagent: true });
     configs.push({
       type: child.id,
       name: child.name ?? child.id,
@@ -632,7 +631,8 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const buildAgentInput = (agent: RunAgent): AgentInputs => {
+  const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
+    const isSubagent = opts.isSubagent === true;
     const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
@@ -693,12 +693,21 @@ export async function createRun({
     }
 
     /**
-     * Override defer_loading for tools that were discovered in previous turns.
-     * This prevents the LLM from having to re-discover tools via tool_search.
-     * Also add the discovered tools' definitions so the LLM has their schemas.
+     * Override defer_loading for tools that were discovered in previous
+     * turns. This prevents the LLM from having to re-discover tools via
+     * tool_search. Also add the discovered tools' definitions so the
+     * LLM has their schemas.
+     *
+     * Skipped for subagent children (`isSubagent`) — they run in an
+     * isolated context by contract, so inheriting the parent's
+     * tool-search state leaks unrelated history and pre-loads tools the
+     * child shouldn't care about. Mutations on `agent.toolRegistry`
+     * and additions to `toolDefinitions` both happen here, so the flag
+     * has to gate the whole block (clearing fields post-return can't
+     * undo registry writes).
      */
     let toolDefinitions = agent.toolDefinitions ?? [];
-    if (discoveredTools.size > 0 && agent.toolRegistry) {
+    if (!isSubagent && discoveredTools.size > 0 && agent.toolRegistry) {
       overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
 
       /** Add discovered tools' definitions so the LLM can see their schemas */
@@ -733,10 +742,11 @@ export async function createRun({
       toolRegistry: agent.toolRegistry,
       maxContextTokens: effectiveMaxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
-      discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
+      discoveredTools:
+        !isSubagent && discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
       summarizationEnabled: summarization.enabled,
       summarizationConfig: summarization.config,
-      initialSummary,
+      initialSummary: isSubagent ? undefined : initialSummary,
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
