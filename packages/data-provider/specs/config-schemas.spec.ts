@@ -531,13 +531,19 @@ describe('summarizationTriggerSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects zero or negative values', () => {
-    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 0 }).success).toBe(
-      false,
-    );
+  it('rejects negative values on any trigger type', () => {
     expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: -0.5 }).success).toBe(
       false,
     );
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: -1 }).success,
+    ).toBe(false);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: -1 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects zero for count-based triggers where it has no meaningful effect', () => {
     expect(
       summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 0 }).success,
     ).toBe(false);
@@ -555,7 +561,10 @@ describe('summarizationTriggerSchema', () => {
     );
   });
 
-  it('accepts token_ratio value at the upper bound of 1', () => {
+  it('accepts token_ratio values at the inclusive 0 and 1 bounds per docs', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 0 }).success).toBe(
+      true,
+    );
     expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 1 }).success).toBe(
       true,
     );
