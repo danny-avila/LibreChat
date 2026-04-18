@@ -10,6 +10,29 @@ import type {
 import type { AclEntry, IAclEntry } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 
+/**
+ * Filter entries by a required permission bitmask and deduplicate by resourceId,
+ * preserving the first-seen `Types.ObjectId` instance. Used in place of
+ * `$bitsAllSet` for compatibility with MongoDB forks (e.g. Azure Cosmos DB for
+ * MongoDB) that do not implement the `$bitsAllSet` query operator.
+ */
+function filterByBitsAndDedup(
+  entries: Array<{ resourceId: Types.ObjectId; permBits: number }>,
+  requiredBits: number,
+): Types.ObjectId[] {
+  const uniqueIds = new Map<string, Types.ObjectId>();
+  for (const entry of entries) {
+    if ((entry.permBits & requiredBits) !== requiredBits) {
+      continue;
+    }
+    const key = entry.resourceId.toString();
+    if (!uniqueIds.has(key)) {
+      uniqueIds.set(key, entry.resourceId);
+    }
+  }
+  return Array.from(uniqueIds.values());
+}
+
 export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   /**
    * Find ACL entries for a specific principal (user or group)
@@ -359,17 +382,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       .select('resourceId permBits')
       .lean();
 
-    const uniqueIds = new Map<string, Types.ObjectId>();
-    for (const entry of entries) {
-      if ((entry.permBits & requiredPermBit) !== requiredPermBit) {
-        continue;
-      }
-      const key = entry.resourceId.toString();
-      if (!uniqueIds.has(key)) {
-        uniqueIds.set(key, entry.resourceId);
-      }
-    }
-    return Array.from(uniqueIds.values());
+    return filterByBitsAndDedup(entries, requiredPermBit);
   }
 
   /**
@@ -417,17 +430,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       .select('resourceId permBits')
       .lean();
 
-    const uniqueIds = new Map<string, Types.ObjectId>();
-    for (const entry of entries) {
-      if ((entry.permBits & requiredPermissions) !== requiredPermissions) {
-        continue;
-      }
-      const key = entry.resourceId.toString();
-      if (!uniqueIds.has(key)) {
-        uniqueIds.set(key, entry.resourceId);
-      }
-    }
-    return Array.from(uniqueIds.values());
+    return filterByBitsAndDedup(entries, requiredPermissions);
   }
 
   /**
