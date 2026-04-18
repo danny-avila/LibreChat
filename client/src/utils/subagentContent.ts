@@ -127,6 +127,12 @@ export function aggregateSubagentContent(events: SubagentUpdateEvent[]): TMessag
     if (event.phase === 'message_delta') {
       const chunk = extractTextChunk(event.data as MessageDeltaData | undefined);
       if (chunk) {
+        /** Close the think buffer first so a reasoning→text transition
+         *  flushes the THINK part BEFORE the TEXT part — preserves the
+         *  chronological order the user actually observed. Without this
+         *  both buffers grow in parallel and the fixed flush order at the
+         *  next step boundary can swap them (text-before-think, etc.). */
+        closeThink();
         if (!currentText) {
           currentText = { type: ContentTypes.TEXT, text: '' };
         }
@@ -138,6 +144,9 @@ export function aggregateSubagentContent(events: SubagentUpdateEvent[]): TMessag
     if (event.phase === 'reasoning_delta') {
       const chunk = extractThinkChunk(event.data as ReasoningDeltaData | undefined);
       if (chunk) {
+        /** Symmetric: a text→reasoning transition flushes the TEXT part
+         *  first so the subsequent THINK part appears after it in order. */
+        closeText();
         if (!currentThink) {
           currentThink = { type: ContentTypes.THINK, think: '' };
         }

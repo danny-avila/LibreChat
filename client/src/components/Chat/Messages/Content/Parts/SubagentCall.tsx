@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronRight, Users } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
@@ -140,6 +140,24 @@ export default function SubagentCall({
 
   const lastPartIndex = contentParts.length - 1;
 
+  /**
+   * Auto-scroll the dialog's content area to the bottom as new parts / delta
+   * chunks stream in, mirroring `MessagesView`'s behavior. We only scroll
+   * while the subagent is running and the dialog is open so the user isn't
+   * yanked to the bottom when re-reading a completed run. `contentParts.length`
+   * is a cheap trigger that fires on every structural change; the running
+   * text's own char-by-char growth is handled by a `progress.events.length`
+   * trigger so the scroll stays pinned to the live cursor.
+   */
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const eventCount = events?.length ?? 0;
+  useEffect(() => {
+    if (!open || !running) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [open, running, contentParts.length, eventCount]);
+
   return (
     <>
       <button
@@ -178,7 +196,16 @@ export default function SubagentCall({
       </button>
 
       <OGDialog open={open} onOpenChange={setOpen}>
-        <OGDialogContent className="max-h-[80vh] w-full max-w-2xl overflow-hidden">
+        <OGDialogContent
+          className={cn(
+            'max-h-[85vh] overflow-hidden',
+            /** Responsive width: narrow on phones, scales up to 5xl on
+             *  desktops maximized windows. Uses viewport-relative max so
+             *  the dialog never bleeds to the edges but still takes real
+             *  estate on laptops/widescreens. */
+            'w-[min(95vw,64rem)] max-w-[min(95vw,64rem)]',
+          )}
+        >
           <OGDialogTitle>
             {localize('com_ui_subagent_dialog_title', { 0: subagentType })}
           </OGDialogTitle>
@@ -186,7 +213,7 @@ export default function SubagentCall({
             {description || localize('com_ui_subagent_dialog_description')}
           </OGDialogDescription>
 
-          <div className="mt-3 max-h-[60vh] overflow-y-auto">
+          <div ref={scrollRef} className="mt-3 max-h-[65vh] overflow-y-auto pr-1">
             {contentParts.length > 0 ? (
               <MessageContext.Provider value={dialogMessageContext}>
                 <div className="space-y-1">
@@ -204,8 +231,23 @@ export default function SubagentCall({
             ) : output ? (
               /** Fallback: no aggregated content parts but the backend
                *  wrote a final tool_call output. Happens for older subagent
-               *  runs recorded before the event forwarder existed. */
-              <div className="text-sm text-text-secondary">{output}</div>
+               *  runs recorded before the event forwarder existed. Route
+               *  through the same leaf renderer as content parts so
+               *  markdown (headers, lists, bold) renders properly instead
+               *  of showing raw `##` / `**` characters. */
+              <MessageContext.Provider value={dialogMessageContext}>
+                <SubagentDialogPart
+                  part={
+                    {
+                      type: ContentTypes.TEXT,
+                      text: output,
+                    } as unknown as TMessageContentParts
+                  }
+                  isSubmitting={false}
+                  showCursor={false}
+                  isLast
+                />
+              </MessageContext.Provider>
             ) : (
               <div className="text-sm italic text-text-secondary">
                 {running

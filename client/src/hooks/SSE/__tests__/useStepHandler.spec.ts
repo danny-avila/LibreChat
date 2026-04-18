@@ -1890,16 +1890,25 @@ describe('useStepHandler', () => {
       expect(bucketB.status).toBe('run_step');
     });
 
-    it('clearStepMaps resets tracked subagent atoms back to their default', () => {
+    it('clearStepMaps preserves subagent atoms so the dialog can be re-opened for auditability', () => {
+      /**
+       * Intentionally the inverse of the earlier behavior: the collapsed
+       * `SubagentCall` ticker and its dialog must stay readable after the
+       * stream ends. Wiping the atoms on `clearStepMaps` would leave a
+       * completed subagent tool call with no content to display, forcing
+       * the fallback "raw tool output" branch and losing interleaved tool
+       * calls / reasoning from the rendering. Growth is bounded (200-event
+       * cap per atom, one atom per subagent spawn).
+       */
       const { result, getProgress } = renderStepHandlerWithReader();
-      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_reset']);
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_keep']);
 
       act(() => {
         (result.current as any).stepHandler(
           {
             event: StepEvents.ON_SUBAGENT_UPDATE,
             data: makeUpdate({
-              parentToolCallId: 'call_reset',
+              parentToolCallId: 'call_keep',
               phase: 'stop',
             }),
           },
@@ -1907,15 +1916,13 @@ describe('useStepHandler', () => {
         );
       });
 
-      expect(getProgress('call_reset')).not.toBeNull();
+      expect(getProgress('call_keep')).not.toBeNull();
 
       act(() => {
         (result.current as any).clearStepMaps();
       });
 
-      /** After clear the atom is back to the default (null). If the reset
-       *  was skipped, this would still hold the final envelope and leak. */
-      expect(getProgress('call_reset')).toBeNull();
+      expect(getProgress('call_keep')).not.toBeNull();
     });
   });
 });

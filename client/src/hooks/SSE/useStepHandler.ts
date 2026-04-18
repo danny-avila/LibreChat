@@ -189,9 +189,15 @@ export default function useStepHandler({
   );
 
   /**
-   * Resets all accumulated subagent Recoil state. Called from `clearStepMaps`.
-   * Without this, every subagent invocation leaves a persistent atom in the
-   * family.
+   * Resets all accumulated subagent Recoil state. Kept for conversation-
+   * switch cleanup (see top-level hook usage) but NOT called from
+   * `clearStepMaps` — the collapsed SubagentCall ticker and its dialog
+   * read from these atoms to render the child's content parts, and we
+   * want that history to remain visible after the stream ends so the
+   * user can reopen the dialog for auditability. The atoms are bounded
+   * per-call (200-event cap) and per-conversation (one atom per
+   * subagent spawn), so growth is proportional to messages — the same
+   * growth profile as the rest of the conversation state.
    */
   const resetSubagentAtoms = useRecoilCallback(
     ({ reset }) =>
@@ -875,8 +881,11 @@ export default function useStepHandler({
     subagentRunToToolCallId.current.clear();
     claimedSubagentToolCallIds.current.clear();
     pendingSubagentBuffer.current.clear();
-    resetSubagentAtoms();
-  }, [resetSubagentAtoms]);
+    /** Intentionally NOT calling `resetSubagentAtoms()` here — users need
+     *  to be able to reopen the SubagentCall dialog after completion to
+     *  audit what the child did. `resetSubagentAtoms` is still exported
+     *  below for conversation-switch cleanup if a future caller needs it. */
+  }, []);
 
   /**
    * Sync a message into the step handler's messageMap.
