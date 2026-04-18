@@ -241,19 +241,22 @@ function resolveSummarizationProvider(
     const rawBaseURL = customEndpointConfig.baseURL ?? '';
     /**
      * User-provided credentials require an async DB lookup and expiry checks
-     * that are out of scope here. Fall back to the remapped provider and let
-     * the SDK's self-summarize path reuse the agent's own client options.
+     * that are out of scope here. Keep the raw provider so the SDK surfaces
+     * a clear "Unsupported LLM provider" error rather than silently
+     * remapping to `openAI` and routing summaries to the default backend.
+     * Callers wanting user-provided summarization against a non-agent
+     * endpoint must hit the same endpoint as the agent (handled upstream).
      */
     if (isUserProvided(rawApiKey) || isUserProvided(rawBaseURL)) {
-      return { provider: overrideProvider };
+      return { provider: rawProvider };
     }
     const apiKey = extractEnvVariable(rawApiKey);
     const baseURL = extractEnvVariable(rawBaseURL);
     /**
      * `extractEnvVariable` leaves any unresolved `${VAR}` placeholder in place
      * — including in the middle of a prefix/suffix string — when the env var
-     * is missing. Reject overrides whenever either value still contains any
-     * unresolved placeholder so the SDK doesn't receive a broken URL/key.
+     * is missing. If the value is still broken, keep the raw provider so the
+     * SDK errors out loudly instead of forwarding a malformed URL/key.
      */
     if (
       !apiKey ||
@@ -261,7 +264,7 @@ function resolveSummarizationProvider(
       hasUnresolvedPlaceholder(apiKey) ||
       hasUnresolvedPlaceholder(baseURL)
     ) {
-      return { provider: overrideProvider };
+      return { provider: rawProvider };
     }
     /**
      * Run the endpoint config through `getOpenAIConfig` so summarization

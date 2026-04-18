@@ -431,7 +431,7 @@ describe('custom-endpoint provider resolution', () => {
     delete process.env.TEST_OLLAMA_KEY;
   });
 
-  it('skips override when apiKey is marked user_provided', async () => {
+  it('keeps raw provider when apiKey is marked user_provided', async () => {
     const appConfig = makeAppConfig([
       { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'user_provided' },
     ]);
@@ -441,14 +441,17 @@ describe('custom-endpoint provider resolution', () => {
     });
 
     const config = agents[0].summarizationConfig as Record<string, unknown>;
-    // Provider still remapped to the SDK-recognized name...
-    expect(config.provider).toBe('openAI');
-    // ...but credentials are not forwarded (async user lookup not supported here;
-    // SDK's self-summarize path will reuse the agent's clientOptions).
+    /**
+     * Keep the raw name so the SDK raises "Unsupported LLM provider: Ollama"
+     * rather than silently remapping to `openAI` and routing summaries to the
+     * default backend. (User-provided creds cannot be resolved here — the
+     * async DB lookup is out of scope for this synchronous code path.)
+     */
+    expect(config.provider).toBe('Ollama');
     expect(config.parameters).toBeUndefined();
   });
 
-  it('skips override when env var reference cannot be resolved', async () => {
+  it('keeps raw provider when env var reference cannot be resolved', async () => {
     delete process.env.UNSET_TEST_KEY;
     const appConfig = makeAppConfig([
       {
@@ -463,11 +466,11 @@ describe('custom-endpoint provider resolution', () => {
     });
 
     const config = agents[0].summarizationConfig as Record<string, unknown>;
-    expect(config.provider).toBe('openAI');
+    expect(config.provider).toBe('Ollama');
     expect(config.parameters).toBeUndefined();
   });
 
-  it('skips override when partial env var reference (prefix/suffix) stays unresolved', async () => {
+  it('keeps raw provider when partial env var reference (prefix/suffix) stays unresolved', async () => {
     delete process.env.UNSET_TEST_SEGMENT;
     const appConfig = makeAppConfig([
       {
@@ -482,7 +485,7 @@ describe('custom-endpoint provider resolution', () => {
     });
 
     const config = agents[0].summarizationConfig as Record<string, unknown>;
-    expect(config.provider).toBe('openAI');
+    expect(config.provider).toBe('Ollama');
     /** Even though the baseURL is a partial-match pattern, it must not be forwarded. */
     expect(config.parameters).toBeUndefined();
   });
