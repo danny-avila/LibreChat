@@ -224,6 +224,19 @@ export default function useEventHandlers({
     }
   }, [paramId, resetSubagentAtoms]);
 
+  /** Final cleanup on component unmount. `useStepHandler` keeps the
+   *  set of known atom keys in a ref; when the hook unmounts (user
+   *  navigates away from the chat route entirely) that ref is lost,
+   *  so a subsequent remount can't clear atoms it never saw created.
+   *  Flush at the teardown boundary to keep `atomFamily` bounded
+   *  across route changes. */
+  useEffect(
+    () => () => {
+      resetSubagentAtoms();
+    },
+    [resetSubagentAtoms],
+  );
+
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {
       const { messages, userMessage, initialResponse, isRegenerate = false } = submission;
