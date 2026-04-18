@@ -96,6 +96,61 @@ const condenseArray = (item) => {
   return item;
 };
 
+const RESERVED_LOG_KEYS = new Set(['level', 'message', 'timestamp', 'splat']);
+
+/**
+ * Extracts user-supplied metadata from a winston info object, filtering out
+ * reserved keys, internal underscore-prefixed keys, and non-serializable values.
+ *
+ * @param {Record<string, unknown>} source - The object to extract metadata from.
+ * @returns {Record<string, unknown> | undefined} - The extracted metadata, or undefined if empty.
+ */
+function extractMetaObject(source) {
+  if (source == null || typeof source !== 'object') {
+    return undefined;
+  }
+  const meta = {};
+  for (const key of Object.keys(source)) {
+    if (RESERVED_LOG_KEYS.has(key) || key.startsWith('_')) {
+      continue;
+    }
+    const value = source[key];
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    if (typeof value === 'function' || typeof value === 'symbol') {
+      continue;
+    }
+    meta[key] = value;
+  }
+  return Object.keys(meta).length > 0 ? meta : undefined;
+}
+
+/**
+ * Formats the metadata portion of a winston info object as a compact
+ * single-line JSON trailer, suitable for appending to the console message.
+ * Returns an empty string when there is no meaningful metadata.
+ *
+ * @param {Record<string, unknown>} info - The winston info object.
+ * @returns {string} - The serialized metadata, or an empty string.
+ */
+function formatConsoleMeta(info) {
+  const meta = extractMetaObject(info);
+  if (!meta) {
+    return '';
+  }
+  try {
+    return JSON.stringify(meta, (_key, value) => {
+      if (typeof value === 'string' && value.length > CONSOLE_JSON_STRING_LENGTH) {
+        return `${value.substring(0, CONSOLE_JSON_STRING_LENGTH)}...`;
+      }
+      return value;
+    });
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Formats log messages for debugging purposes.
  * - Truncates long strings within log messages.
@@ -121,7 +176,9 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
 
   let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), DEBUG_MESSAGE_LENGTH)}`;
   try {
-    if (level !== 'debug') {
+    const levelStr = typeof level === 'string' ? level : String(level);
+    const isErrorOrWarn = levelStr.includes('error') || levelStr.includes('warn');
+    if (level !== 'debug' && !isErrorOrWarn) {
       return msg;
     }
 
@@ -129,7 +186,7 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
       return msg;
     }
 
-    const debugValue = metadata[SPLAT_SYMBOL]?.[0];
+    const debugValue = metadata[SPLAT_SYMBOL]?.[0] ?? extractMetaObject(metadata);
 
     if (!debugValue) {
       return msg;
@@ -229,4 +286,5 @@ module.exports = {
   redactMessage,
   debugTraverse,
   jsonTruncateFormat,
+  formatConsoleMeta,
 };

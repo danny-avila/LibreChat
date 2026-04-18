@@ -56,5 +56,6 @@ jest.mock('~/config/parsers', () => {
     redactMessage: jest.fn(),
     redactFormat: jest.fn(),
     debugTraverse: jest.fn(),
+    formatConsoleMeta: jest.fn(() => ''),
   };
 });
