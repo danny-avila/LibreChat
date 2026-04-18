@@ -87,6 +87,14 @@ export default function ToolCallGroup({
     [toolNames],
   );
   const allSubagents = subagentCount > 0 && subagentCount === count;
+  /** Past-tense label once the parent stream is no longer live OR every
+   *  child has a terminal signal (output / progress === 1). Without the
+   *  `!isSubmitting` branch, a cancelled or errored subagent that never
+   *  reached `progress === 1` would leave the header stuck on "Running
+   *  N agents" forever — each individual card already renders its own
+   *  terminal state ("Cancelled agent", "Agent errored"), so the group
+   *  summary needs to match that tense. */
+  const subagentsDone = allSubagents && (allCompleted || !isSubmitting);
 
   const toolNameSummary = useMemo(() => {
     const seen = new Set<string>();
@@ -142,7 +150,7 @@ export default function ToolCallGroup({
         aria-expanded={isExpanded}
         aria-label={
           allSubagents
-            ? allCompleted
+            ? subagentsDone
               ? localize('com_ui_ran_n_agents', { 0: String(count) })
               : localize('com_ui_running_n_agents', { 0: String(count) })
             : localize('com_ui_used_n_tools', { 0: String(count) })
@@ -172,7 +180,7 @@ export default function ToolCallGroup({
         )}
         <span className="tool-status-text font-medium">
           {allSubagents
-            ? allCompleted
+            ? subagentsDone
               ? localize('com_ui_ran_n_agents', { 0: String(count) })
               : localize('com_ui_running_n_agents', { 0: String(count) })
             : localize('com_ui_used_n_tools', { 0: String(count) })}
