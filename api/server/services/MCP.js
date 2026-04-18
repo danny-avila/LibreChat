@@ -25,6 +25,7 @@ const {
 } = require('~/config');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { getGraphApiToken } = require('./GraphTokenService');
+const { exchangeOboToken } = require('./OboTokenService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
@@ -659,6 +660,7 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
         graphTokenResolver: getGraphApiToken,
+        oboTokenResolver: exchangeOboToken,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

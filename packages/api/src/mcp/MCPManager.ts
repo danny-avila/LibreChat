@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { OboTokenResolver } from '~/mcp/oauth/obo';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
@@ -14,6 +15,7 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
+import { resolveOboToken } from '~/mcp/oauth';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
@@ -274,6 +276,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthEnd,
     customUserVars,
     graphTokenResolver,
+    oboTokenResolver,
   }: {
     user?: IUser;
     serverName: string;
@@ -290,6 +293,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthStart?: (authURL: string) => Promise<void>;
     oauthEnd?: () => Promise<void>;
     graphTokenResolver?: GraphTokenResolver;
+    oboTokenResolver?: OboTokenResolver;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -306,6 +310,7 @@ Please follow these instructions when using tools from the respective MCP server
         tokenMethods,
         oauthStart,
         oauthEnd,
+        oboTokenResolver,
         signal: options?.signal,
         customUserVars,
         requestBody,
@@ -346,9 +351,20 @@ Please follow these instructions when using tools from the respective MCP server
         options: graphProcessedConfig,
         customUserVars,
       });
-      if ('headers' in currentOptions) {
-        connection.setRequestHeaders(currentOptions.headers || {});
+
+      const resolvedHeaders: Record<string, string> =
+        'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
+
+      /** Refresh OBO token on each tool call to ensure it's current */
+      const oboConfig = rawConfig.obo;
+      if (oboConfig && oboTokenResolver && user) {
+        const oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
+        if (oboTokens?.access_token) {
+          resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
+        }
       }
+
+      connection.setRequestHeaders(resolvedHeaders);
 
       const result = await connection.client.request(
         {
