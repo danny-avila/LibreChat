@@ -555,6 +555,22 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     for (const subagentId of explicitSubagentIds) {
       if (skippedAgentIds.has(subagentId)) continue;
 
+      /** Cycle guard: a configuration like `A ↔ B` (B lists A as
+       *  its subagent) would otherwise trigger `processAgent` on the
+       *  primary when we visit B — inserting a second config for the
+       *  same primary id, which downstream duplicates in
+       *  `[primary, ...agentConfigs.values()]` and can replace the
+       *  primary's toolContext with a freshly-loaded copy. Reuse the
+       *  existing primary config when the subagent ref points back
+       *  at it. */
+      if (subagentId === primaryConfig.id) {
+        resolved.push(primaryConfig);
+        /** Primary is always an edge id (seeded at `edgeAgentIds`
+         *  creation above), so we never add it to `pureSubagentIds`;
+         *  no pruning needed. */
+        continue;
+      }
+
       let subagentConfig = agentConfigs.get(subagentId);
       if (!subagentConfig) {
         try {
