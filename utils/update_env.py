@@ -80,15 +80,14 @@ def update_env_file_with_local_env(input_file_path, output_file_path):
         print("Updated the following variables:")
         for var in updated_vars:
             print(var)
-    
+
     print(f"Processed {input_file_path} and wrote updates to {output_file_path}.")
 
 if __name__ == "__main__":
-    # Parse command-line arguments for input and output file paths
+    # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Update .env file with local environment variables.')
-    parser.add_argument('input_file_path', type=str, help='Path to the input .env file')
-    parser.add_argument('output_file_path', type=str, help='Path to the output .env file')
+    parser.add_argument('input_file', help='Path to the input .env file')
+    parser.add_argument('output_file', help='Path to the output .env file')
     args = parser.parse_args()
 
-    # Update the .env file with local environment variables
-    update_env_file_with_local_env(args.input_file_path, args.output_file_path)
+    update_env_file_with_local_env(args.input_file, args.output_file)
