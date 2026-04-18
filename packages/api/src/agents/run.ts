@@ -305,6 +305,7 @@ function buildSubagentConfigs(
   agent: RunAgent,
   agentInput: AgentInputs,
   toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+  ancestors: Set<string> = new Set(),
 ): SubagentConfig[] {
   if (!agent.subagents?.enabled) {
     return [];
@@ -323,8 +324,19 @@ function buildSubagentConfigs(
     });
   }
 
+  /** Cycle-safety: include the current agent in `ancestors` before
+   *  descending into children so a `A → B → A` configuration stops at
+   *  the second encounter of A rather than recursing forever. Skip
+   *  `A → A` too (already guarded) and anything that would re-enter
+   *  an ancestor. */
+  const nextAncestors = new Set(ancestors);
+  nextAncestors.add(agent.id);
+
   for (const child of agent.subagentAgentConfigs ?? []) {
     if (!child?.id || child.id === agent.id) {
+      continue;
+    }
+    if (ancestors.has(child.id)) {
       continue;
     }
     /**
@@ -341,6 +353,18 @@ function buildSubagentConfigs(
      * source so children truly start fresh.
      */
     const childInputs = toInput(child, { isSubagent: true });
+    /**
+     * Recursively resolve the child's own spawn targets so multi-level
+     * delegation (A → B → C) works. Without this, a child whose own
+     * `subagents.enabled` is true loses every explicit target when
+     * invoked as a subagent — only the top-level loop attaches
+     * `subagentConfigs`, and that only runs for the outer agents in
+     * `agents[]`. Cycle-safe via `nextAncestors`.
+     */
+    const grandchildConfigs = buildSubagentConfigs(child, childInputs, toInput, nextAncestors);
+    if (grandchildConfigs.length > 0) {
+      childInputs.subagentConfigs = grandchildConfigs;
+    }
     configs.push({
       type: child.id,
       name: child.name ?? child.id,
