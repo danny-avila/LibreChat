@@ -10,7 +10,6 @@ import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
 import { EditTextPart, EmptyText } from './Parts';
-import parseJsonField from './Parts/parseJsonField';
 import MemoryArtifacts from './MemoryArtifacts';
 import SkillCall from './Parts/SkillCall';
 import ToolCallGroup from './ToolCallGroup';
@@ -76,11 +75,12 @@ type ContentPartsProps = {
   content: Array<TMessageContentParts | undefined> | undefined;
   messageId: string;
   /**
-   * Skill names the user invoked manually via the `$` popover on this turn,
-   * seeded onto the message by `createdHandler` from `submission.manualSkills`.
-   * Scalar array (not the full message object) so `React.memo`'s shallow
-   * comparison on this component doesn't get churned every time the message
-   * reference changes for unrelated reasons.
+   * Skill names the user invoked manually via the `$` popover on this turn.
+   * `createdHandler` seeds this on the assistant placeholder from
+   * `submission.manualSkills`, and `finalHandler`'s server-backed
+   * `responseMessage` replacement drops it — so the field is naturally
+   * present only for the lifetime of the stream. Scalar string array (not
+   * the full message object) so `React.memo` stays shallow-happy.
    */
   manualSkills?: string[];
   conversationId?: string | null;
@@ -98,40 +98,6 @@ type ContentPartsProps = {
     | null
     | undefined;
 };
-
-/**
- * Derive the set of skill names already present in content as real `skill`
- * tool_call parts (from the backend's prime injection or a model call).
- * Used to drop the pending placeholder once the real prime part lands at
- * finalize — de-duplication is by `args.skillName`, not tool_call id, since
- * the synthetic's id (`pending_${name}`) differs from the real one
- * (`call_manual_skill_${runId}_${idx}`).
- */
-function collectExistingSkillNames(
-  content: Array<TMessageContentParts | undefined> | undefined,
-): Set<string> {
-  const names = new Set<string>();
-  if (!content) {
-    return names;
-  }
-  for (const part of content) {
-    if (part?.type !== ContentTypes.TOOL_CALL) {
-      continue;
-    }
-    const toolCall = (part as { tool_call?: { name?: string; args?: unknown } }).tool_call;
-    if (toolCall?.name !== 'skill') {
-      continue;
-    }
-    const skillName = parseJsonField(
-      toolCall.args as string | Record<string, unknown> | undefined,
-      'skillName',
-    );
-    if (skillName) {
-      names.add(skillName);
-    }
-  }
-  return names;
-}
 
 /**
  * ContentParts renders message content parts, handling both sequential and parallel layouts.
@@ -159,37 +125,32 @@ const ContentParts = memo(function ContentParts({
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
   /**
-   * Pending skill cards — rendered ABOVE the Parts iteration as a separate
-   * slot (not prepended to `content`), so synthetic entries don't shift
-   * the indices React uses as keys for streamed text/tool parts and cause
-   * remount flicker mid-stream.
+   * Interim skill cards — rendered in a separate slot ABOVE the Parts
+   * iteration based purely on the `manualSkills` message field. `content`
+   * is never read here, so backend deltas / optimistic emissions can't
+   * race the pending cards off the screen mid-stream.
    *
-   * Each pending entry renders through the real `SkillCall` component with
-   * `progress < 1` + empty `output` → the pulsing "Running X" UI. When the
-   * backend's real prime `tool_call` (same skillName) lands in `content` at
-   * finalize, `collectExistingSkillNames` filters it out of the pending set
-   * and the real prime takes over in the Parts iteration. Layout is
-   * identical because the backend unshifts primes to the front of content,
-   * so the skill cards stay anchored to the top either way.
+   * Lifecycle:
+   *  - `createdHandler` copies `submission.manualSkills` onto the
+   *    assistant placeholder → cards appear immediately on submit.
+   *  - Through the stream, `useStepHandler` spreads the response on every
+   *    update so `manualSkills` rides along untouched.
+   *  - At finalize, `finalHandler` replaces the message with the server
+   *    response (no `manualSkills` field) → cards disappear and the
+   *    server's real `skill` tool_call part in `content` takes over.
    *
-   * Skipped on the user side (users see `ManualSkillPills` on their
-   * bubble) and when no skills were queued on this turn.
+   * Skipped on the user side (they get `ManualSkillPills` on the user
+   * bubble) and when no skills were invoked on this turn.
    */
-  const pendingSkillNames = useMemo(() => {
-    if (isCreatedByUser || !manualSkills || manualSkills.length === 0) {
-      return [];
-    }
-    const existingNames = collectExistingSkillNames(content);
-    return manualSkills.filter((name) => !existingNames.has(name));
-  }, [content, manualSkills, isCreatedByUser]);
+  const hasPendingSkills = !isCreatedByUser && manualSkills != null && manualSkills.length > 0;
 
   const renderPendingSkills = () => {
-    if (pendingSkillNames.length === 0) {
+    if (isCreatedByUser || !manualSkills || manualSkills.length === 0) {
       return null;
     }
     return (
       <>
-        {pendingSkillNames.map((name) => (
+        {manualSkills.map((name) => (
           <SkillCall
             key={`pending-skill-${name}`}
             args={JSON.stringify({ skillName: name })}
@@ -234,13 +195,13 @@ const ContentParts = memo(function ContentParts({
     ],
   );
 
-  // Early return: no content to render AND no pending skill placeholders
-  if (!content && pendingSkillNames.length === 0) {
+  // Early return: no content to render AND no pending skill cards
+  if (!content && !hasPendingSkills) {
     return null;
   }
 
-  // Edit mode: render editable text parts. Pending skill placeholders are
-  // a mid-stream concern, not relevant in edit mode.
+  // Edit mode: render editable text parts. Interim skill cards are a
+  // mid-stream concern, not relevant in edit mode.
   if (edit === true && enterEdit && setSiblingIdx) {
     return (
       <>

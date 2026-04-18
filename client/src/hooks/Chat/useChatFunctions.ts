@@ -310,6 +310,16 @@ export default function useChatFunctions({
       model: convo?.model,
       error: false,
       iconURL,
+      /**
+       * Seed the assistant placeholder with the turn's manually-invoked
+       * skill names so `ContentParts` can render interim `SkillCall` cards
+       * from the very first render — no round-trip through the `created`
+       * SSE event required. Rides along with every subsequent spread
+       * (`useStepHandler` response construction, `updateContent` result
+       * spreads) and drops out naturally at `finalHandler` when the
+       * server-backed `responseMessage` replacement takes over.
+       */
+      manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
     };
 
     if (isAssistantsEndpoint(endpoint)) {
