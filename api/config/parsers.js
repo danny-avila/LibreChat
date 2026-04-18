@@ -241,7 +241,13 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
 
     msg += '\n{';
 
-    const copy = klona(metadata);
+    /*
+     * Traverse the filtered metadata (`debugValue`), not the raw `metadata`
+     * object. `extractMetaObject` strips reserved keys, underscore-prefixed
+     * internals, and numeric-string splat artifacts — re-reading from raw
+     * `metadata` here would put those artifacts back into the output.
+     */
+    const copy = klona(debugValue);
     traverse(copy).forEach(function (value) {
       if (typeof this?.key === 'symbol') {
         return;

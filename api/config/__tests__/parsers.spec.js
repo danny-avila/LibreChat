@@ -256,6 +256,23 @@ describe('debugTraverse', () => {
     expect(tenantMatches.length).toBe(1);
   });
 
+  it('omits numeric splat-artifact keys from the traversed output', () => {
+    const info = {
+      level: 'error',
+      message: 'boom',
+      timestamp: 'ts',
+      0: 'x',
+      1: 'y',
+      realField: 'keep',
+      [SPLAT_SYMBOL]: [{ realField: 'keep' }],
+    };
+    const out = runFormatter(info);
+    expect(out).toContain('realField');
+    expect(out).toContain('keep');
+    expect(out).not.toMatch(/^\s*0:/m);
+    expect(out).not.toMatch(/^\s*1:/m);
+  });
+
   it('surfaces unconsumed primitive SPLAT[0] (no %s in message) for debug level', () => {
     const info = {
       level: 'debug',
