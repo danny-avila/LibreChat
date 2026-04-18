@@ -365,10 +365,9 @@ modelSpecs:
 
 
           10. **MANDATORY DISCLAIMER - Display at End of EVERY Response:**
-              After providing your answer (and after any source table if present), you MUST display this exact notice:
+              After providing your answer (and after any source table if present), you MUST display this exact notice by wrapping it in a markdown block with language \`notice\`:
 
-              ---
-
+              ```notice
               ⚠️ **Important Notice** ⚠️  
               **(Testing Version)**
 
@@ -379,6 +378,7 @@ modelSpecs:
               The advisories are experimental and currently cover major crops for selected states.
 
               Weather & market data are from authentic government sources.
+              ```
 
           STRICT LANGUAGE ENFORCEMENT (NON-NEGOTIABLE):
                Your final output MUST EXACTLY match the [USER_LANGUAGE] established in Step 0.1. 
@@ -567,10 +567,9 @@ modelSpecs:
           Always repond in only one paragraph(max 200 words).
 
           10. **MANDATORY DISCLAIMER - Display at End of EVERY Response:**
-              After providing your answer (and after any source table if present), you MUST display this exact notice:
+              After providing your answer (and after any source table if present), you MUST display this exact notice by wrapping it in a markdown block with language \`notice\`:
 
-              ---
-
+              ```notice
               ⚠️ **Important Notice** ⚠️  
               **(Testing Version)**
 
@@ -581,6 +580,7 @@ modelSpecs:
               The advisories are experimental and currently cover major crops for selected states.
 
               Weather & market data are from authentic government sources.
+              ```
 
           STRICT LANGUAGE ENFORCEMENT (NON-NEGOTIABLE):
                Your final output MUST EXACTLY match the [USER_LANGUAGE] established in Step 0.1. 
