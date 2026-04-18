@@ -46,6 +46,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
       { value: AuthTypeEnum.None, label: localize('com_ui_no_auth') },
       { value: AuthTypeEnum.ServiceHttp, label: localize('com_ui_api_key') },
       { value: AuthTypeEnum.OAuth, label: 'OAuth' },
+      { value: AuthTypeEnum.OBO, label: localize('com_ui_obo') },
     ],
     [localize],
   );
@@ -276,6 +277,39 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* OBO Fields */}
+      {authType === AuthTypeEnum.OBO && (
+        <div className="space-y-3 rounded-lg border border-border-light p-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="obo_scopes" className="text-sm font-medium">
+              {localize('com_ui_obo_scopes')}{' '}
+              <span aria-hidden="true" className="text-text-secondary">
+                *
+              </span>
+              <span className="sr-only">{localize('com_ui_field_required')}</span>
+            </Label>
+            <Input
+              id="obo_scopes"
+              placeholder="api://<client-id>/Mcp.Tools.ReadWrite"
+              aria-invalid={errors.auth?.obo_scopes ? 'true' : 'false'}
+              aria-describedby="obo-scopes-description"
+              {...register('auth.obo_scopes', {
+                required: authType === AuthTypeEnum.OBO,
+              })}
+              className={cn(errors.auth?.obo_scopes && 'border-border-destructive')}
+            />
+            {errors.auth?.obo_scopes && (
+              <p role="alert" className="text-xs text-text-destructive">
+                {localize('com_ui_field_required')}
+              </p>
+            )}
+            <p id="obo-scopes-description" className="text-xs text-text-secondary">
+              {localize('com_ui_obo_scopes_description')}
+            </p>
+          </div>
         </div>
       )}
     </div>

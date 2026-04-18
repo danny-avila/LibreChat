@@ -144,4 +144,58 @@ describe('MCPServerUserInputSchema', () => {
       expect(result.success).toBe(true);
     });
   });
+
+  describe('OBO configuration', () => {
+    it('should accept obo field with valid scopes', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.obo).toEqual({
+          scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite',
+        });
+      }
+    });
+
+    it('should accept obo on streamable-http transport', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        obo: { scopes: 'api://other-app/Custom.Scope' },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject obo with empty scopes', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        obo: { scopes: '' },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject obo without scopes property', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        obo: {},
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept config without obo (optional)', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.obo).toBeUndefined();
+      }
+    });
+  });
 });
