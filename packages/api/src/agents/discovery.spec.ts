@@ -1,5 +1,6 @@
 import type { Agent, GraphEdge } from 'librechat-data-provider';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
+import type { ServerRequest } from '~/types';
 import type { InitializedAgent } from './initialize';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -23,10 +24,10 @@ jest.mock('./validation', () => ({
 
 import { discoverConnectedAgents } from './discovery';
 
-const makeReq = (userId = 'u1', role = 'USER'): Request =>
+const makeReq = (userId = 'u1', role = 'USER'): ServerRequest =>
   ({
     user: { id: userId, role },
-  }) as unknown as Request;
+  }) as unknown as ServerRequest;
 
 const makeRes = (): Response => ({}) as unknown as Response;
 
@@ -352,7 +353,7 @@ describe('discoverConnectedAgents', () => {
 
     const result = await discoverConnectedAgents(
       {
-        req: { user: undefined } as unknown as Request,
+        req: { user: undefined } as unknown as ServerRequest,
         res: makeRes(),
         primaryConfig,
         allowedProviders: new Set(),
