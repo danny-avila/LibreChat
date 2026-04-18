@@ -41,15 +41,22 @@ function redactMessage(str, trimLength) {
 }
 
 /**
- * Redacts sensitive information from log messages if the log level is 'error'.
+ * Redacts sensitive information from log messages when the log level is
+ * `error` or `warn`. Runs on the raw `info.message` before any colorize /
+ * splat transforms so the sensitive-token regexes don't have to contend
+ * with ANSI escape sequences (whose trailing `m` would otherwise defeat
+ * `\b` anchors).
+ *
  * Note: Intentionally mutates the object.
  * @param {Object} info - The log information object.
  * @returns {Object} - The modified log information object.
  */
 const redactFormat = winston.format((info) => {
-  if (info.level === 'error') {
-    info.message = redactMessage(info.message);
-    if (info[MESSAGE_SYMBOL]) {
+  if (info.level === 'error' || info.level === 'warn') {
+    if (typeof info.message === 'string') {
+      info.message = redactMessage(info.message);
+    }
+    if (typeof info[MESSAGE_SYMBOL] === 'string') {
       info[MESSAGE_SYMBOL] = redactMessage(info[MESSAGE_SYMBOL]);
     }
   }

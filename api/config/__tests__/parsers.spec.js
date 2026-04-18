@@ -1,6 +1,7 @@
 jest.unmock('winston');
 
-const { formatConsoleMeta, redactMessage, debugTraverse } = jest.requireActual('../parsers');
+const { formatConsoleMeta, redactMessage, redactFormat, debugTraverse } =
+  jest.requireActual('../parsers');
 const SPLAT_SYMBOL = Symbol.for('splat');
 
 describe('formatConsoleMeta', () => {
@@ -150,6 +151,28 @@ describe('redactMessage', () => {
   it('still redacts standalone sk- keys at word boundaries', () => {
     expect(redactMessage('token: sk-abc123def')).toBe('token: sk-[REDACTED]');
     expect(redactMessage('"sk-abc123def"')).toBe('"sk-[REDACTED]"');
+  });
+});
+
+describe('redactFormat', () => {
+  const runFormat = (info) => redactFormat().transform(info) || info;
+
+  it('redacts info.message for error level before any colorize step runs', () => {
+    const info = runFormat({ level: 'error', message: 'Bearer secretvalue' });
+    expect(info.message).toBe('Bearer [REDACTED]');
+  });
+
+  it('redacts info.message for warn level too (avoids ANSI boundary issues later)', () => {
+    const info = runFormat({ level: 'warn', message: 'apiKey=sk-abc123def' });
+    expect(info.message).toContain('sk-[REDACTED]');
+  });
+
+  it('leaves info.message untouched for info and debug levels', () => {
+    const infoInfo = runFormat({ level: 'info', message: 'Bearer looksSensitive' });
+    expect(infoInfo.message).toBe('Bearer looksSensitive');
+
+    const infoDebug = runFormat({ level: 'debug', message: 'Bearer looksSensitive' });
+    expect(infoDebug.message).toBe('Bearer looksSensitive');
   });
 });
 
