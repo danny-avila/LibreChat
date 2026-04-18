@@ -504,8 +504,47 @@ describe('custom-endpoint provider resolution', () => {
     const parameters = config.parameters as Record<string, unknown>;
     expect(parameters).toMatchObject({
       temperature: 0.2,
-      configuration: { baseURL: 'http://localhost:11434/v1' },
       apiKey: 'ollama-key',
     });
+    const configuration = parameters.configuration as Record<string, unknown>;
+    expect(configuration.baseURL).toBe('http://localhost:11434/v1');
+  });
+
+  it('forwards custom-endpoint headers as configuration.defaultHeaders', async () => {
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: 'ollama-key',
+        headers: { 'X-Custom-Header': 'value-123' },
+      } as unknown as { name: string; baseURL: string; apiKey: string },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    const configuration = parameters.configuration as Record<string, unknown>;
+    const defaultHeaders = configuration.defaultHeaders as Record<string, string>;
+    expect(defaultHeaders['X-Custom-Header']).toBe('value-123');
+  });
+
+  it('does not leak model/modelName from getOpenAIConfig defaults', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.model).toBe('llama3');
+    const parameters = config.parameters as Record<string, unknown>;
+    /** Summarization.model must win — parameters must not carry a stale model/modelName. */
+    expect(parameters.model).toBeUndefined();
+    expect(parameters.modelName).toBeUndefined();
   });
 });

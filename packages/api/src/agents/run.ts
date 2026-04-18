@@ -18,6 +18,7 @@ import type { BaseMessage } from '@langchain/core/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { isUserProvided } from '~/utils/common';
 
@@ -196,14 +197,11 @@ function hasUnresolvedPlaceholder(value: string): boolean {
 }
 
 /** Client-option overrides for summarization models targeting custom endpoints. */
-interface SummarizationClientOverrides {
-  configuration?: { baseURL: string };
-  apiKey?: string;
-}
+type SummarizationClientOverrides = Record<string, unknown>;
 
 /**
  * Resolves a summarization provider string (which may be a custom-endpoint name
- * like "Ollama") into the SDK-recognized provider and any baseURL/apiKey
+ * like "Ollama") into the SDK-recognized provider and any client-option
  * overrides required to talk to that endpoint.
  *
  * Without this step, a `summarization.provider: "Ollama"` entry in
@@ -254,12 +252,42 @@ function resolveSummarizationProvider(
     ) {
       return { provider: overrideProvider };
     }
+    /**
+     * Run the endpoint config through `getOpenAIConfig` so summarization
+     * inherits the same `headers`, `defaultQuery`, `addParams`/`dropParams`,
+     * and `customParams` transforms that `initializeCustom` applies for the
+     * main agent flow. Without this, summarization drops endpoint-specific
+     * behavior (e.g. Anthropic/Google param transforms, required headers)
+     * that the main agent relied on.
+     */
+    const { llmConfig, configOptions } = getOpenAIConfig(
+      apiKey,
+      {
+        reverseProxyUrl: baseURL,
+        headers: customEndpointConfig.headers,
+        addParams: customEndpointConfig.addParams,
+        dropParams: customEndpointConfig.dropParams,
+        customParams: customEndpointConfig.customParams,
+        directEndpoint: customEndpointConfig.directEndpoint,
+      },
+      rawProvider,
+    );
+    const clientOverrides: SummarizationClientOverrides = {
+      ...llmConfig,
+    };
+    if (configOptions) {
+      clientOverrides.configuration = configOptions;
+    }
+    /**
+     * `model`/`modelName` on `llmConfig` default to whatever `getOpenAIConfig`
+     * produces from empty modelOptions. Strip them so the user-supplied
+     * `summarization.model` wins.
+     */
+    delete clientOverrides.model;
+    delete clientOverrides.modelName;
     return {
       provider: overrideProvider,
-      clientOverrides: {
-        configuration: { baseURL },
-        apiKey,
-      },
+      clientOverrides,
     };
   } catch {
     return { provider: rawProvider };
