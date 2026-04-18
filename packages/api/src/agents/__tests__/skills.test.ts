@@ -38,6 +38,7 @@ import {
   extractManualSkills,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
+  buildSkillPrimeStepEvents,
   MAX_MANUAL_SKILLS,
 } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
@@ -1041,5 +1042,80 @@ describe('buildSkillPrimeContentParts', () => {
       startOffset: 5,
     });
     expect(first[0].tool_call.id).not.toBe(second[0].tool_call.id);
+  });
+});
+
+describe('buildSkillPrimeStepEvents', () => {
+  it('emits a run_step + run_step_completed pair per prime', () => {
+    const events = buildSkillPrimeStepEvents([
+      { name: 'alpha', body: '...' },
+      { name: 'beta', body: '...' },
+    ]);
+    expect(events).toHaveLength(4);
+    expect(events[0].event).toBe('on_run_step');
+    expect(events[1].event).toBe('on_run_step_completed');
+    expect(events[2].event).toBe('on_run_step');
+    expect(events[3].event).toBe('on_run_step_completed');
+  });
+
+  it('uses USE_PRELIM_RESPONSE_MESSAGE_ID as the default runId so the frontend maps events to the in-flight response', () => {
+    const [start] = buildSkillPrimeStepEvents([{ name: 'x', body: '...' }]);
+    expect(start.data.runId).toBe('USE_PRELIM_RESPONSE_MESSAGE_ID');
+  });
+
+  it('honors an explicit runId', () => {
+    const [start] = buildSkillPrimeStepEvents([{ name: 'x', body: '...' }], {
+      runId: 'custom_run_id',
+    });
+    expect(start.data.runId).toBe('custom_run_id');
+  });
+
+  it('sets stepDetails to TOOL_CALLS with the skill tool name and JSON-encoded skillName args', () => {
+    const [start] = buildSkillPrimeStepEvents([{ name: 'brand', body: '...' }]);
+    const details = start.data.stepDetails as {
+      type: string;
+      tool_calls: Array<{ name: string; args: string }>;
+    };
+    expect(details.type).toBe('tool_calls');
+    expect(details.tool_calls).toHaveLength(1);
+    expect(details.tool_calls[0].name).toBe('skill');
+    expect(JSON.parse(details.tool_calls[0].args)).toEqual({ skillName: 'brand' });
+  });
+
+  it('marks the completed event with progress: 1 and a loaded-output string', () => {
+    const [, completed] = buildSkillPrimeStepEvents([{ name: 'brand', body: '...' }]);
+    const result = (
+      completed.data as { result: { tool_call: { progress: number; output: string } } }
+    ).result;
+    expect(result.tool_call.progress).toBe(1);
+    expect(result.tool_call.output).toContain('brand');
+    expect(result.tool_call.output).toContain('loaded');
+  });
+
+  it('assigns increasing indices per prime so multiple cards render at distinct positions', () => {
+    const events = buildSkillPrimeStepEvents([
+      { name: 'a', body: '.' },
+      { name: 'b', body: '.' },
+      { name: 'c', body: '.' },
+    ]);
+    const startEvents = events.filter((e) => e.event === 'on_run_step');
+    expect(startEvents.map((e) => e.data.index)).toEqual([0, 1, 2]);
+  });
+
+  it('pairs start + completed via the same stepId and tool_call ID', () => {
+    const [start, completed] = buildSkillPrimeStepEvents([{ name: 'x', body: '.' }]);
+    const startToolCallId = (start.data.stepDetails as { tool_calls: Array<{ id: string }> })
+      .tool_calls[0].id;
+    const completedResult = (
+      completed.data as {
+        result: { id: string; tool_call: { id: string } };
+      }
+    ).result;
+    expect(completedResult.id).toBe(start.data.id);
+    expect(completedResult.tool_call.id).toBe(startToolCallId);
+  });
+
+  it('returns an empty array for empty input', () => {
+    expect(buildSkillPrimeStepEvents([])).toEqual([]);
   });
 });

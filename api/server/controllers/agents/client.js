@@ -2,6 +2,7 @@ require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const {
+  sendEvent,
   createRun,
   isEnabled,
   checkAccess,
@@ -31,6 +32,7 @@ const {
   injectManualSkillPrimes,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
+  buildSkillPrimeStepEvents,
 } = require('@librechat/api');
 const {
   Callback,
@@ -794,6 +796,26 @@ class AgentClient extends BaseClient {
           logger.debug(
             `[AgentClient] Primed ${primeResult.inserted} manual skill(s) at message index ${primeResult.insertIdx}: ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
           );
+        }
+
+        /**
+         * Emit completed skill tool-call steps optimistically so the
+         * `SkillCall` renderer displays "Skill X loaded" cards as soon as
+         * the stream starts, rather than waiting for the final message
+         * reconcile. The graph's own content at index 0 may overwrite
+         * these during streaming — the post-run `buildSkillPrimeContentParts`
+         * prepend below restores them for the persisted response.
+         * Same pattern as the MCP OAuth emitter in ToolService.
+         */
+        const streamId = this.options.req?._resumableStreamId;
+        const res = this.options.res;
+        const primeEvents = buildSkillPrimeStepEvents(manualSkillPrimes);
+        for (const primeEvent of primeEvents) {
+          if (streamId) {
+            await GenerationJobManager.emitChunk(streamId, primeEvent);
+          } else if (res && !res.writableEnded) {
+            sendEvent(res, primeEvent);
+          }
         }
       }
 

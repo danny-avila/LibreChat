@@ -28,6 +28,7 @@ const {
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   createOpenAIContentAggregator,
+  injectManualSkillPrimes,
   isChatCompletionValidationFailure,
 } = require('@librechat/api');
 const {
@@ -336,11 +337,26 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    const {
-      messages: formattedMessages,
-      indexTokenCountMap,
-      summary: initialSummary,
-    } = formatAgentMessages(openaiMessages, {}, toolSet);
+    const formatted = formatAgentMessages(openaiMessages, {}, toolSet);
+    const formattedMessages = formatted.messages;
+    const initialSummary = formatted.summary;
+    let indexTokenCountMap = formatted.indexTokenCountMap;
+
+    /**
+     * Inject manual skill primes so the model sees SKILL.md bodies for this
+     * turn — parity with AgentClient's chat path. OpenAI-compatible streaming
+     * uses its own tracker/aggregator shape, so the LibreChat-style card SSE
+     * events don't apply here; only the message-context part carries over.
+     */
+    const manualSkillPrimes = primaryConfig.manualSkillPrimes;
+    if (manualSkillPrimes && manualSkillPrimes.length > 0) {
+      const primeResult = injectManualSkillPrimes({
+        initialMessages: formattedMessages,
+        indexTokenCountMap,
+        manualSkillPrimes,
+      });
+      indexTokenCountMap = primeResult.indexTokenCountMap;
+    }
 
     /**
      * Create a simple handler that processes data

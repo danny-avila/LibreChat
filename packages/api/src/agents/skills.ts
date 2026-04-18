@@ -1,6 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import { HumanMessage } from '@langchain/core/messages';
+import { Constants } from 'librechat-data-provider';
 import {
+  GraphEvents,
+  StepTypes,
   formatSkillCatalog,
   SkillToolDefinition,
   ReadFileToolDefinition,
@@ -570,4 +573,76 @@ export function extractManualSkills(body: unknown): string[] | undefined {
     (entry): entry is string => typeof entry === 'string' && entry.length > 0,
   );
   return filtered.length > 0 ? filtered : undefined;
+}
+
+export interface SkillPrimeStepEvent {
+  event: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * Build the `ON_RUN_STEP` + `ON_RUN_STEP_COMPLETED` event pair per prime that
+ * the client consumes to render a completed "Skill X loaded" tool-call card
+ * immediately — same shape the agents SDK emits for a model-invoked skill
+ * step, so `useStepHandler.ts` on the frontend handles them identically.
+ *
+ * Callers emit these via `sendEvent` / `GenerationJobManager.emitChunk`
+ * before `runAgents` starts so the cards appear optimistically ahead of the
+ * LLM's stream. The graph's own content at index 0 may overwrite these
+ * during streaming, but the final-event reconcile (driven by the persisted
+ * `contentParts` — see `buildSkillPrimeContentParts`) restores them.
+ *
+ * Uses `Constants.USE_PRELIM_RESPONSE_MESSAGE_ID` as `runId` so the
+ * frontend maps the events to the in-flight preliminary response message,
+ * matching the MCP OAuth live-emit pattern in `ToolService`.
+ */
+export function buildSkillPrimeStepEvents(
+  primes: ResolvedManualSkill[],
+  { runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID }: { runId?: string } = {},
+): SkillPrimeStepEvent[] {
+  const events: SkillPrimeStepEvent[] = [];
+  for (let i = 0; i < primes.length; i++) {
+    const prime = primes[i];
+    const stepId = `step_manual_skill_${runId}_${i}`;
+    const toolCallId = `call_manual_skill_${runId}_${i}`;
+    const args = JSON.stringify({ skillName: prime.name });
+    const output = `Skill "${prime.name}" loaded. Follow the instructions below.`;
+
+    events.push({
+      event: GraphEvents.ON_RUN_STEP,
+      data: {
+        id: stepId,
+        runId,
+        type: StepTypes.TOOL_CALLS,
+        index: i,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: toolCallId,
+              name: SkillToolDefinition.name,
+              args,
+            },
+          ],
+        },
+      },
+    });
+
+    events.push({
+      event: GraphEvents.ON_RUN_STEP_COMPLETED,
+      data: {
+        result: {
+          id: stepId,
+          tool_call: {
+            id: toolCallId,
+            name: SkillToolDefinition.name,
+            args,
+            output,
+            progress: 1,
+          },
+        },
+      },
+    });
+  }
+  return events;
 }

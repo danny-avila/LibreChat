@@ -19,6 +19,7 @@ const {
   recordCollectedUsage,
   getTransactionsConfig,
   extractManualSkills,
+  injectManualSkillPrimes,
   createToolExecuteHandler,
   // Responses API
   writeDone,
@@ -436,11 +437,26 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    const {
-      messages: formattedMessages,
-      indexTokenCountMap,
-      summary: initialSummary,
-    } = formatAgentMessages(allMessages, {}, toolSet);
+    const formatted = formatAgentMessages(allMessages, {}, toolSet);
+    const formattedMessages = formatted.messages;
+    const initialSummary = formatted.summary;
+    let indexTokenCountMap = formatted.indexTokenCountMap;
+
+    /**
+     * Inject manual skill primes so the model sees SKILL.md bodies for this
+     * turn — parity with AgentClient's chat path. The Responses API uses its
+     * own response-builder shape, so LibreChat-style card SSE events don't
+     * apply; only the message-context part carries over.
+     */
+    const manualSkillPrimes = primaryConfig.manualSkillPrimes;
+    if (manualSkillPrimes && manualSkillPrimes.length > 0) {
+      const primeResult = injectManualSkillPrimes({
+        initialMessages: formattedMessages,
+        indexTokenCountMap,
+        manualSkillPrimes,
+      });
+      indexTokenCountMap = primeResult.indexTokenCountMap;
+    }
 
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = actuallyStreaming ? createResponseTracker() : null;
