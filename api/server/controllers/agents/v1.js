@@ -232,19 +232,20 @@ const createAgentHandler = async (req, res) => {
     /**
      * Only validate subagent ACL when the feature is actually enabled
      * on BOTH the endpoint (capability flag in appConfig) AND the
-     * agent payload (`subagents.enabled !== false`). The UI keeps the
-     * `agent_ids` list intact when a user toggles subagents off, so
-     * someone who subsequently lost VIEW access to one child would
-     * otherwise be locked out of saving *any* edit that echoes the
-     * old list back — even the edit that disables the feature. And
-     * if the capability is off at the endpoint level, `initializeClient`
-     * strips the `subagents` block at runtime, so persisted
-     * `agent_ids` are inert and shouldn't gate saves. Empty list
-     * also no-ops (nothing to check).
+     * agent payload. Runtime (`initializeClient` + `run.ts`) checks
+     * `subagents?.enabled` as a truthy predicate — so `undefined` /
+     * `null` / missing `enabled` all disable the feature. The ACL
+     * check must match exactly: only enforce when `enabled === true`.
+     * Otherwise a payload that omits `enabled` (e.g. API clients, or
+     * legacy records that never set the field) could 403 here while
+     * runtime would happily no-op on the subagent tool. Disable-path
+     * is also untouched: toggling `enabled: false` always passes the
+     * gate, so a user who lost VIEW on a child can still save the
+     * disable edit.
      */
     if (
       isSubagentsCapabilityEnabled(req) &&
-      agentData.subagents?.enabled !== false &&
+      agentData.subagents?.enabled === true &&
       agentData.subagents?.agent_ids?.length
     ) {
       const unauthorized = await validateSubagentAccess(agentData.subagents, userId, userRole);
@@ -428,13 +429,16 @@ const updateAgentHandler = async (req, res) => {
       }
     }
 
-    /** Same guard as the create path: capability must be enabled at
-     *  the endpoint level AND on the payload; otherwise skip so
-     *  disabling or capability-off rollbacks don't trip stale
-     *  references. */
+    /** Same guard as the create path: capability on the endpoint,
+     *  AND `subagents.enabled === true` on the payload (runtime's
+     *  truthy check treats `undefined` / `null` / `false` as
+     *  disabled, so the ACL check must too). Missing or explicitly-
+     *  disabled payloads always pass the gate — that preserves the
+     *  "can always save a disable edit" behavior a user might need
+     *  after losing VIEW on a referenced child. */
     if (
       isSubagentsCapabilityEnabled(req) &&
-      updateData.subagents?.enabled !== false &&
+      updateData.subagents?.enabled === true &&
       updateData.subagents?.agent_ids?.length
     ) {
       const { id: userId, role: userRole } = req.user;
