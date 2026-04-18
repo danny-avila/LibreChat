@@ -3,6 +3,13 @@ import { ViolationTypes, ErrorTypes } from 'librechat-data-provider';
 import type { Agent, TModelsConfig } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 
+/**
+ * Permissive Request alias used by {@link validateAgentModel}. Accepts either
+ * the default Express `Request` or the project-specific `ServerRequest`
+ * (see `~/types/http`), whose `params` type is widened to `unknown`.
+ */
+type LooseRequest = Request<unknown, unknown, unknown>;
+
 /** Avatar schema shared between create and update */
 export const agentAvatarSchema = z.object({
   filepath: z.string(),
@@ -96,13 +103,13 @@ export const agentUpdateSchema = agentBaseSchema.extend({
   model: z.string().nullable().optional(),
 });
 
-interface ValidateAgentModelParams {
-  req: Request;
+export interface ValidateAgentModelParams {
+  req: LooseRequest;
   res: Response;
   agent: Agent;
   modelsConfig: TModelsConfig;
   logViolation: (
-    req: Request,
+    req: LooseRequest,
     res: Response,
     type: string,
     errorMessage: Record<string, unknown>,
