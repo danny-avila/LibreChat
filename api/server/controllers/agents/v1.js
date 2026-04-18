@@ -55,21 +55,22 @@ const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Validates that the requesting user has VIEW access to every agent referenced in edges.
- * Agents that do not exist in the database are skipped — at create time, the `from` field
- * often references the agent being built, which has no DB record yet.
- * @param {import('librechat-data-provider').GraphEdge[]} edges
+ * Returns the subset of the given agent IDs the requesting user does NOT
+ * have VIEW permission on. Missing agents (no DB record) are skipped —
+ * at create time, `from` in a self-referential edge often refers to the
+ * agent being created, which has no ID yet.
+ * @param {Iterable<string>} agentIds
  * @param {string} userId
  * @param {string} userRole - Used for group/role principal resolution
  * @returns {Promise<string[]>} Agent IDs the user cannot VIEW (empty if all accessible)
  */
-const validateEdgeAgentAccess = async (edges, userId, userRole) => {
-  const edgeAgentIds = collectEdgeAgentIds(edges);
-  if (edgeAgentIds.size === 0) {
+const collectUnauthorizedAgentIds = async (agentIds, userId, userRole) => {
+  const ids = new Set(agentIds);
+  if (ids.size === 0) {
     return [];
   }
 
-  const agents = await db.getAgents({ id: { $in: [...edgeAgentIds] } });
+  const agents = await db.getAgents({ id: { $in: [...ids] } });
 
   if (agents.length === 0) {
     return [];
@@ -89,6 +90,20 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
     })
     .map((a) => a.id);
 };
+
+/** Validates VIEW access for every agent referenced in `edges`. */
+const validateEdgeAgentAccess = (edges, userId, userRole) =>
+  collectUnauthorizedAgentIds(collectEdgeAgentIds(edges), userId, userRole);
+
+/**
+ * Validates VIEW access for every agent referenced in `subagents.agent_ids`.
+ * Without this check, `initializeClient`'s `processAgent` ACL gate would
+ * silently drop unviewable IDs at runtime — the persisted config would
+ * still list them, making the divergence between saved state and actual
+ * behavior difficult to diagnose (Codex P2).
+ */
+const validateSubagentAccess = (subagents, userId, userRole) =>
+  collectUnauthorizedAgentIds(subagents?.agent_ids ?? [], userId, userRole);
 
 /**
  * Filters tools to only include those the user is authorized to use.
@@ -194,6 +209,16 @@ const createAgentHandler = async (req, res) => {
       if (unauthorized.length > 0) {
         return res.status(403).json({
           error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
+    if (agentData.subagents?.agent_ids?.length) {
+      const unauthorized = await validateSubagentAccess(agentData.subagents, userId, userRole);
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in subagents',
           agent_ids: unauthorized,
         });
       }
@@ -366,6 +391,17 @@ const updateAgentHandler = async (req, res) => {
       if (unauthorized.length > 0) {
         return res.status(403).json({
           error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
+    if (updateData.subagents?.agent_ids?.length) {
+      const { id: userId, role: userRole } = req.user;
+      const unauthorized = await validateSubagentAccess(updateData.subagents, userId, userRole);
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in subagents',
           agent_ids: unauthorized,
         });
       }
