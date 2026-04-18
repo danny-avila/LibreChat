@@ -297,38 +297,49 @@ export default function SubagentCall({
    * following along without having to scroll all the way down.
    */
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const contentPartsLen = contentParts.length;
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
+  /** React `onScroll` prop instead of manual `addEventListener` so the
+   *  handler attaches as part of DOM commit — no race with Radix's
+   *  portal-mount timing that would leave `scrollRef.current` null when
+   *  the effect runs and silently skip the listener. */
+  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const el = event.currentTarget;
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
     setIsAtBottom(distance <= DIALOG_AT_BOTTOM_THRESHOLD_PX);
   }, []);
 
-  /** (Re)attach the scroll listener whenever the dialog mounts its scroll
-   *  container. Re-snap to bottom on open so a freshly-opened dialog
-   *  starts from the live cursor. */
+  /** Snap to bottom every time the dialog opens so a freshly-opened
+   *  dialog starts parked on the live cursor. */
   useEffect(() => {
     if (!open) return;
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     setIsAtBottom(true);
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => el.removeEventListener('scroll', handleScroll);
-  }, [open, handleScroll]);
+  }, [open]);
 
-  /** Auto-scroll only while the user is following along. Once they scroll
-   *  up past the threshold, the button below takes over and new content
-   *  stays where it is. */
+  /** Keep the view pinned to the bottom while the user is at/near it —
+   *  including during delta streams that grow the last TEXT/THINK part
+   *  without changing `contentParts.length`. A `ResizeObserver` on the
+   *  inner content div catches every height change, whether structural
+   *  (new tool call) or incremental (writing text grows in-place), so
+   *  auto-scroll doesn't desync just because tokens are piling into an
+   *  existing part. */
   useEffect(() => {
-    if (!open || !running || !isAtBottom) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [open, running, contentPartsLen, isAtBottom]);
+    if (!open) return;
+    const scrollEl = scrollRef.current;
+    const contentEl = contentRef.current;
+    if (!scrollEl || !contentEl) return;
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (!isAtBottom) return;
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+    });
+    observer.observe(contentEl);
+    return () => observer.disconnect();
+  }, [open, isAtBottom]);
 
   const scrollDialogToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -431,6 +442,7 @@ export default function SubagentCall({
             )}
             <div
               ref={scrollRef}
+              onScroll={handleScroll}
               /** Mirrors the main conversation's content-parts wrapper
                *  (`max-w-full flex-grow flex-col gap-0` from
                *  `MessageParts.tsx`). Part-specific wrappers (`Container`
@@ -442,7 +454,7 @@ export default function SubagentCall({
                *  Outer `px-4 py-3` gives the dialog breathing room. */
               className="max-h-[65vh] overflow-y-auto px-4 py-3"
             >
-              <div className="flex max-w-full flex-grow flex-col gap-0">
+              <div ref={contentRef} className="flex max-w-full flex-grow flex-col gap-0">
                 {contentParts.length > 0 ? (
                   <MessageContext.Provider value={dialogMessageContext}>
                     {groupedParts.map((group) => {
