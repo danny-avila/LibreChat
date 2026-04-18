@@ -25,34 +25,34 @@ function configureWebPush() {
   return true;
 }
 
-router.post('/whatsapp', async (req, res) => {
+router.post('/notifications', async (req, res) => {
   try {
     const internalApiKey = req.headers['x-internal-api-key'];
     const expectedApiKey = process.env.WEB_WEBHOOK_API_KEY;
-    console.log("the api key coming====",internalApiKey,expectedApiKey)
+   // console.log("the api key coming====",internalApiKey,expectedApiKey)
 
     if (!expectedApiKey || internalApiKey !== expectedApiKey) {
       return res.status(403).json({ message: 'Forbidden: Invalid API key' });
     }
 
-    const { question_id, status, answer, author, sources, messageId } = req.body;
+    const { question_id, status, answer, author, sources, messageId,question,originalQuestion } = req.body;
 
     // Send immediate OK
     res.status(200).json({ message: 'Webhook received' });
 
-   /* if (!messageId) {
+    if (!messageId) {
       logger.error('Webhook missing messageId:', req.body);
       return;
     }
-
+    const displayQuestion=originalQuestion?originalQuestion:question
     // Try to find the related message
     const message = await Message.findOne({ messageId }).lean();
     if (!message || !message.user) {
       logger.error(`Webhook Message not found or missing user field for messageId: ${messageId}`);
       return;
-    }*/
-    const userId="69da2a7207752c2de1b2b372"
-   // const userId = message.user;
+    }
+   // const userId="69da2a7207752c2de1b2b372"
+    const userId = message.user;
     const user = await User.findById(userId).lean();
     
     // GUARD FIX: We must check 'user' here, not 'userId', otherwise user.pushSubscriptions crashes if user doesn't exist
@@ -67,27 +67,28 @@ router.post('/whatsapp', async (req, res) => {
        return;
     }
     
-    console.log(`[DEBUG] Found user ${userId} with ${user.pushSubscriptions.length} subscriptions. Proceeding to send push.`);
+   // console.log(`[DEBUG] Found user ${userId} with ${user.pushSubscriptions.length} subscriptions. Proceeding to send push.`);
 
     if (!configureWebPush()) {
       console.log(` [DEBUG] configureWebPush() failed. Check VAPID keys in .env`);
       return;
     }
+    const conversationId=message.conversationId
 
     // Send push logic inside a loop
     for (const sub of user.pushSubscriptions) {
        try {
          // Determine truncated text for the body to prevent giant payloads
-         const shortText = "Notification Testing=="
+        // const shortText = question
          const payload = JSON.stringify({
             title: 'Your answer is ready!',
-            body: `Your question "${shortText}" was recently answered.`,
+            body: `Your question "${displayQuestion}" was recently answered.`,
             icon: '/assets/favicon.ico', 
-            url: `/chat` 
+           // url: `https://chat.annam.ai/c/${con}` 
+           url:`https://chat.annam.ai/c/${conversationId}`
          });
 
         const result= await webpush.sendNotification(sub, payload);
-        console.log("the final result coming===",result)
        } catch (err) {
          if (err.statusCode === 410 || err.statusCode === 404) {
            // Subscription is expired or invalid, remove it
