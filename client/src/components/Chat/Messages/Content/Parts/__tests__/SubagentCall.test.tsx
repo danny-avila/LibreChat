@@ -5,27 +5,54 @@ import SubagentCall from '../SubagentCall';
 import { subagentProgressByToolCallId, type SubagentProgress } from '~/store/subagents';
 
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string, values?: Record<string, unknown>) => {
-    const type = (values?.[0] as string | undefined) ?? '';
-    const translations: Record<string, string> = {
-      com_ui_subagent_running: `Subagent "${type}" is working…`,
-      com_ui_subagent_complete: `Subagent "${type}" finished`,
-      com_ui_subagent_cancelled: `Subagent "${type}" cancelled`,
-      com_ui_subagent_errored: `Subagent "${type}" errored`,
-      com_ui_subagent_waiting: 'Waiting for first update…',
-      com_ui_subagent_dialog_title: `Subagent: ${type}`,
-      com_ui_subagent_dialog_description: 'Isolated child run.',
-      com_ui_subagent_activity_log: 'Activity log',
-      com_ui_subagent_no_result_yet: 'No result yet.',
-      com_ui_subagent_empty_result: 'No text.',
-    };
-    return translations[key] ?? key;
-  },
+  useLocalize:
+    () =>
+    (key: string, values?: Record<string, unknown>): string => {
+      const arg0 = (values?.[0] as string | undefined) ?? '';
+      const arg1 = (values?.[1] as string | undefined) ?? '';
+      const translations: Record<string, string> = {
+        com_ui_subagent_running: `Subagent "${arg0}" is working…`,
+        com_ui_subagent_complete: `Subagent "${arg0}" finished`,
+        com_ui_subagent_cancelled: `Subagent "${arg0}" cancelled`,
+        com_ui_subagent_errored: `Subagent "${arg0}" errored`,
+        com_ui_subagent_waiting: 'Waiting for first update…',
+        com_ui_subagent_dialog_title: `Subagent: ${arg0}`,
+        com_ui_subagent_dialog_description: 'Isolated child run.',
+        com_ui_subagent_no_result_yet: 'No result yet.',
+        com_ui_subagent_empty_result: 'No text.',
+        com_ui_subagent_ticker_writing: 'Writing',
+        com_ui_subagent_ticker_reasoning: 'Reasoning',
+        com_ui_subagent_ticker_error: 'Error',
+        com_ui_subagent_ticker_using: `Using tool: ${arg0}`,
+        com_ui_subagent_ticker_using_with_args: `Using ${arg0}(${arg1})`,
+        com_ui_subagent_ticker_tool_complete: `Tool ${arg0} complete`,
+        com_ui_subagent_ticker_tool_output: `${arg0} → ${arg1}`,
+      };
+      return translations[key] ?? key;
+    },
 }));
 
-jest.mock('~/components/Chat/Messages/Content/Markdown', () => ({
+/** Stub the leaf content-part renderers — the tests only need to confirm
+ *  that the right TMessageContentParts flow through to them. */
+jest.mock('../Text', () => ({
   __esModule: true,
-  default: ({ content }: { content: string }) => <div data-testid="markdown">{content}</div>,
+  default: ({ text }: { text: string }) => <div data-testid="text-part">{text}</div>,
+}));
+
+jest.mock('../Reasoning', () => ({
+  __esModule: true,
+  default: ({ reasoning }: { reasoning: string }) => (
+    <div data-testid="reasoning-part">{reasoning}</div>
+  ),
+}));
+
+jest.mock('~/components/Chat/Messages/Content/ToolCall', () => ({
+  __esModule: true,
+  default: ({ name, output }: { name: string; output: string }) => (
+    <div data-testid="tool-call-part" data-name={name}>
+      {output}
+    </div>
+  ),
 }));
 
 jest.mock('../Attachment', () => ({
@@ -173,5 +200,190 @@ describe('SubagentCall — status resolution', () => {
       },
     });
     expect(screen.getByText('Subagent "self" errored')).toBeInTheDocument();
+  });
+});
+
+describe('SubagentCall — ticker', () => {
+  it('renders semantic text lines instead of raw event names', () => {
+    renderWithState({
+      toolCallId: 'call_ticker',
+      initialProgress: 0.3,
+      isSubmitting: true,
+      progress: {
+        subagentRunId: 'run_a',
+        subagentType: 'self',
+        status: 'run_step',
+        events: [
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'message_delta',
+            data: { delta: { content: [{ type: 'text', text: 'Computing result…' }] } },
+            timestamp: '',
+          },
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'run_step',
+            data: {
+              stepDetails: {
+                type: 'tool_calls',
+                tool_calls: [{ id: 'c1', name: 'calculator', args: '{"expression":"42*58"}' }],
+              },
+            },
+            timestamp: '',
+          },
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'run_step_completed',
+            data: {
+              result: {
+                type: 'tool_call',
+                tool_call: {
+                  id: 'c1',
+                  name: 'calculator',
+                  output: '42*58 = 2436',
+                  progress: 1,
+                },
+              },
+            },
+            timestamp: '',
+          },
+        ],
+      },
+    });
+
+    /** Raw event names never appear in the ticker. */
+    expect(screen.queryByText(/on_run_step/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/on_message_delta/)).not.toBeInTheDocument();
+    /** Semantic lines do. */
+    expect(screen.getByText('Using calculator(expression=42*58)')).toBeInTheDocument();
+    expect(screen.getByText('calculator → 42*58 = 2436')).toBeInTheDocument();
+  });
+
+  it('collapses a streak of message_delta events into one live Writing line', () => {
+    renderWithState({
+      toolCallId: 'call_writing',
+      initialProgress: 0.3,
+      isSubmitting: true,
+      progress: {
+        subagentRunId: 'run_a',
+        subagentType: 'self',
+        status: 'message_delta',
+        events: ['Hello ', 'world', '!'].map((text) => ({
+          runId: 'p',
+          subagentRunId: 'run_a',
+          subagentType: 'self',
+          subagentAgentId: 'child',
+          phase: 'message_delta' as const,
+          data: { delta: { content: [{ type: 'text', text }] } },
+          timestamp: '',
+        })),
+      },
+    });
+    expect(screen.getByText('Writing: Hello world!')).toBeInTheDocument();
+    /** Only one "Writing" line, not three. */
+    expect(screen.getAllByText(/Writing:/)).toHaveLength(1);
+  });
+});
+
+describe('SubagentCall — dialog content', () => {
+  it('renders aggregated text, reasoning, and tool_call parts through leaf renderers', () => {
+    renderWithState({
+      toolCallId: 'call_dialog',
+      initialProgress: 0.4,
+      isSubmitting: true,
+      progress: {
+        subagentRunId: 'run_a',
+        subagentType: 'self',
+        status: 'stop',
+        events: [
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'reasoning_delta',
+            data: { delta: { content: [{ type: 'think', think: 'Let me compute.' }] } },
+            timestamp: '',
+          },
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'run_step',
+            data: {
+              stepDetails: {
+                type: 'tool_calls',
+                tool_calls: [{ id: 'c1', name: 'calculator', args: '{}' }],
+              },
+            },
+            timestamp: '',
+          },
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'run_step_completed',
+            data: {
+              result: {
+                type: 'tool_call',
+                tool_call: { id: 'c1', name: 'calculator', output: '4', progress: 1 },
+              },
+            },
+            timestamp: '',
+          },
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'message_delta',
+            data: { delta: { content: [{ type: 'text', text: 'The answer is 4.' }] } },
+            timestamp: '',
+          },
+        ],
+      },
+    });
+
+    /** The mocked `OGDialog` always renders children, so dialog content is
+     *  inspectable without simulating a click. */
+    expect(screen.getByTestId('reasoning-part')).toHaveTextContent('Let me compute.');
+    expect(screen.getByTestId('tool-call-part')).toHaveAttribute('data-name', 'calculator');
+    expect(screen.getByTestId('tool-call-part')).toHaveTextContent('4');
+    expect(screen.getByTestId('text-part')).toHaveTextContent('The answer is 4.');
+  });
+
+  it('falls back to the raw tool output when no content parts were recorded', () => {
+    renderWithState({
+      toolCallId: 'call_fallback',
+      initialProgress: 1,
+      isSubmitting: false,
+      progress: null,
+    });
+    /** No events → no aggregated parts. The SubagentCall should still
+     *  render the raw final `output` that came back in the parent's
+     *  tool_call (we pass it explicitly below). */
+    const { rerender } = render(
+      <RecoilRoot>
+        <SubagentCall
+          toolCallId="call_fallback_2"
+          initialProgress={1}
+          output="raw final text"
+          isSubmitting={false}
+        />
+      </RecoilRoot>,
+    );
+    expect(screen.getByText('raw final text')).toBeInTheDocument();
+    rerender(<RecoilRoot />);
   });
 });
