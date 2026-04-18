@@ -20,12 +20,12 @@ export default function ManualSkillPills({ message }: { message?: TMessage }) {
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5" role="list" aria-label="Manually invoked skills">
+    <div className="flex flex-wrap gap-1.5 py-0.5" role="list" aria-label="Manually invoked skills">
       {skills.map((name) => (
         <span
           key={name}
           role="listitem"
-          className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-secondary px-2 py-0.5 text-xs text-text-secondary"
+          className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-secondary px-2 py-1 text-xs text-text-secondary"
         >
           <ScrollText className="h-3 w-3 text-cyan-500" aria-hidden="true" />
           <span className="max-w-[12rem] truncate">{name}</span>
