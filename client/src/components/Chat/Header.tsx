@@ -78,7 +78,8 @@ export default function Header() {
               </motion.div>
             )}
           </AnimatePresence>
-          {/* {bannerPortal ? createPortal(modelSelectorNodes, bannerPortal) : null} */}
+          {!isSmallScreen &&bannerPortal ? createPortal(modelSelectorNodes, bannerPortal) : null}
+          
           {!(navVisible && isSmallScreen) && (
             <div
               className={cn(
@@ -107,7 +108,6 @@ export default function Header() {
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />
-            {modelSelectorNodes}
             <TemporaryChat />
           </div>
         )}
