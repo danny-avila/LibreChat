@@ -313,6 +313,7 @@ describe('text', () => {
       { mimetype: 'application/octet-stream', originalname: 'post.mdown' },
       { mimetype: 'application/octet-stream', originalname: 'post.mkdn' },
       { mimetype: 'application/octet-stream', originalname: 'post.mkd' },
+      { mimetype: 'application/octet-stream', originalname: 'docs.mdwn' },
       { mimetype: 'text/markdown; charset=utf-8', originalname: 'notes' },
       { mimetype: 'TEXT/MARKDOWN', originalname: 'notes' },
       { mimetype: '  text/markdown ; charset=UTF-8  ', originalname: 'notes' },
