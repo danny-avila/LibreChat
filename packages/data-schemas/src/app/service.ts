@@ -23,7 +23,11 @@ export function loadSummarizationConfig(
     return undefined;
   }
 
-  if (raw.trigger && typeof raw.trigger === 'object' && raw.trigger.type === 'token_count') {
+  if (
+    raw.trigger &&
+    typeof raw.trigger === 'object' &&
+    (raw.trigger as { type?: unknown }).type === 'token_count'
+  ) {
     logger.warn(
       "[AppService] `summarization.trigger.type: 'token_count'` is no longer supported. " +
         "Use 'token_ratio' (0-1), 'remaining_tokens' (positive integer), or " +
