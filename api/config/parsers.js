@@ -186,7 +186,17 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
       return finalize(msg);
     }
 
-    const debugValue = metadata[SPLAT_SYMBOL]?.[0] ?? extractMetaObject(metadata);
+    /*
+     * Prefer the structured metadata object (which winston merges into info)
+     * over `SPLAT_SYMBOL[0]`. The first splat entry may be a *consumed*
+     * printf arg — e.g. `logger.warn('failed for %s', tenant, { provider })`
+     * leaves `tenant` in `SPLAT[0]` after interpolation, which would then
+     * be appended again to the line instead of surfacing the real metadata
+     * object `{ provider }`.
+     */
+    const extracted = extractMetaObject(metadata);
+    const splatFirst = metadata[SPLAT_SYMBOL]?.[0];
+    const debugValue = extracted ?? splatFirst;
 
     if (!debugValue) {
       return finalize(msg);

@@ -215,4 +215,18 @@ describe('debugTraverse', () => {
     const out = runFormatter(buildInfo('debug', { someField: 'not-sensitive' }));
     expect(out).toContain('not-sensitive');
   });
+
+  it('prefers structured metadata over a consumed printf arg in SPLAT[0]', () => {
+    const info = {
+      level: 'warn',
+      message: 'failed for tenant-7',
+      timestamp: 'ts',
+      provider: 'openai',
+      [SPLAT_SYMBOL]: ['tenant-7', { provider: 'openai' }],
+    };
+    const out = runFormatter(info);
+    expect(out).toContain('openai');
+    const tenantMatches = out.match(/tenant-7/g) ?? [];
+    expect(tenantMatches.length).toBeLessThanOrEqual(1);
+  });
 });
