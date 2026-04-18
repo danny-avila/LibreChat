@@ -14,12 +14,15 @@ router.get('/key', (req, res) => {
 
 router.post('/subscribe', requireJwtAuth, async (req, res) => {
   try {
+   console.log("the first console====")
     const subscription = req.body;
+    console.log("the subscription is calling====",subscription)
     
     // Using $addToSet to avoid exact duplicate subscriptions, although endpoints might vary
     // If the endpoint already exists, we might want to update it instead handling unique endpoints.
     // For simplicity, let's pull the existing endpoint first, then push the new one.
     if (subscription && subscription.endpoint) {
+      console.log("the subscription if block===",subscription.endpoint)
        await User.findByIdAndUpdate(req.user.id, {
          $pull: { pushSubscriptions: { endpoint: subscription.endpoint } }
        });

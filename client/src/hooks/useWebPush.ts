@@ -14,11 +14,11 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export default function useWebPush() {
   const isInitialized = useRef(false);
-  const { user } = useAuthContext();
+  const { user, token } = useAuthContext();
 
   useEffect(() => {
     // Only attempt if user is logged in
-    if (!user || isInitialized.current) return;
+    if (!user || !token || isInitialized.current) return;
 
     // Check support
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -42,7 +42,9 @@ export default function useWebPush() {
         }
 
         // Fetch the VAPID key
-        const keyRes = await fetch('/api/push/key');
+        const keyRes = await fetch('/api/push/key', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
         if (!keyRes.ok) return;
         const { key } = await keyRes.json();
         const applicationServerKey = urlBase64ToUint8Array(key);
@@ -52,10 +54,13 @@ export default function useWebPush() {
           applicationServerKey
         });
 
-        // Send to backend using relative path so cookies (session) are included automatically
+        // Send to backend 
         await fetch('/api/push/subscribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify(subscription)
         });
 
@@ -66,5 +71,5 @@ export default function useWebPush() {
     }
 
     setupPush();
-  }, [user]);
+  }, [user, token]);
 }
