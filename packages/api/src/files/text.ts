@@ -10,12 +10,22 @@ import { generateShortLivedToken } from '~/crypto/jwt';
 const MARKDOWN_MIME_TYPES = new Set([
   'text/markdown',
   'text/x-markdown',
+  'text/md',
   'application/markdown',
   'application/x-markdown',
 ]);
 
+function normalizeMimeType(mimetype: string | undefined): string {
+  if (!mimetype) {
+    return '';
+  }
+  const semi = mimetype.indexOf(';');
+  const base = semi === -1 ? mimetype : mimetype.slice(0, semi);
+  return base.trim().toLowerCase();
+}
+
 function isMarkdownFile(file: Express.Multer.File): boolean {
-  if (file.mimetype && MARKDOWN_MIME_TYPES.has(file.mimetype)) {
+  if (MARKDOWN_MIME_TYPES.has(normalizeMimeType(file.mimetype))) {
     return true;
   }
   const name = file.originalname?.toLowerCase() ?? '';
