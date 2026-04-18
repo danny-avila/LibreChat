@@ -141,8 +141,10 @@ export async function discoverConnectedAgents(
 
   const agentConfigs = new Map<string, InitializedAgent>();
   const skippedAgentIds = new Set<string>();
+  // Shallow-clone so the sub-agent merges below don't silently mutate
+  // `primaryConfig.userMCPAuthMap` on the caller's object.
   let userMCPAuthMap: Record<string, Record<string, string>> | undefined =
-    primaryConfig.userMCPAuthMap;
+    primaryConfig.userMCPAuthMap ? { ...primaryConfig.userMCPAuthMap } : undefined;
 
   const markSkipped = (agentId: string): void => {
     skippedAgentIds.add(agentId);
@@ -285,22 +287,37 @@ export async function discoverConnectedAgents(
     collectEdges(chain as unknown as GraphEdge[]);
   }
 
-  const edges = filterOrphanedEdges(Array.from(edgeMap.values()), skippedAgentIds);
+  const filteredEdges = filterOrphanedEdges(Array.from(edgeMap.values()), skippedAgentIds);
 
   /**
-   * Prune sub-agents that were initialized eagerly during BFS but whose
-   * connecting edges were later dropped by `filterOrphanedEdges` (e.g. an
-   * `A -> B -> C` chain where B is skipped, so both edges disappear but
-   * C had already been loaded from the primary's edge scan). Without this,
-   * those disconnected agents still flow into `createRun` — which flips
-   * into multi-agent mode whenever `agents.length > 1` and turns the
-   * stranded sub-agent into an unintended parallel start node.
+   * Compute the set of agent ids reachable from the primary through
+   * surviving edges, then prune both `agentConfigs` AND the edge list to
+   * that set. Two independent failure modes are in play here:
+   *
+   * 1. BFS eagerly initializes sub-agents discovered via the primary's
+   *    edge scan. If an intermediate hop gets skipped (missing / no
+   *    access), its neighbors can still be loaded — those neighbors
+   *    become disconnected once the skipped hop's edges are removed.
+   *
+   * 2. `filterOrphanedEdges` only drops edges whose endpoints are in
+   *    `skippedAgentIds`. Edges between two non-skipped but
+   *    unreachable-from-primary agents (e.g. a `C -> D` tail left over
+   *    after `A -> B -> C -> D` loses its B-adjacent edges) survive
+   *    filtering but still reference agents that are about to be pruned
+   *    from `agentConfigs`. Those edges would otherwise flow into
+   *    `createRun`, flip it into multi-agent mode (edges.length > 0)
+   *    with `agents.length === 1`, and trigger the exact
+   *    `Found edge ending at unknown node` crash this PR fixes.
+   *
+   * Do both prunes together so the returned shape is self-consistent:
+   * every agent id referenced by an edge is guaranteed to be either
+   * `primaryConfig.id` or a key of `agentConfigs`.
    */
   const reachable = new Set<string>([primaryConfig.id]);
   const frontier: string[] = [primaryConfig.id];
   while (frontier.length > 0) {
     const current = frontier.pop() as string;
-    for (const edge of edges) {
+    for (const edge of filteredEdges) {
       const sources = Array.isArray(edge.from) ? edge.from : [edge.from];
       if (!sources.includes(current)) {
         continue;
@@ -320,6 +337,14 @@ export async function discoverConnectedAgents(
       agentConfigs.delete(agentId);
     }
   }
+
+  const edgeEndpointIsReachable = (value: string | string[]): boolean => {
+    const ids = Array.isArray(value) ? value : [value];
+    return ids.every((id) => typeof id !== 'string' || reachable.has(id));
+  };
+  const edges = filteredEdges.filter(
+    (edge) => edgeEndpointIsReachable(edge.from) && edgeEndpointIsReachable(edge.to),
+  );
 
   return {
     agentConfigs,

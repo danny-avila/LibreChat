@@ -261,50 +261,54 @@ const OpenAIChatCompletionController = async (req, res) => {
       actionsEnabled: primaryConfig.actionsEnabled,
     });
 
-    const modelsConfig = await getModelsConfig(req);
-    const {
-      agentConfigs: handoffAgentConfigs,
-      edges: discoveredEdges,
-      userMCPAuthMap: discoveredMCPAuthMap,
-    } = await discoverConnectedAgents(
-      {
-        req,
-        res,
-        primaryConfig,
-        endpointOption,
-        allowedProviders,
-        modelsConfig,
-        loadTools,
-        requestFiles: [],
-        conversationId,
-        parentMessageId,
-        // The route enforces REMOTE_AGENT on the primary; every discovered
-        // sub-agent must clear the same sharing boundary, not the looser
-        // in-app AGENT one.
-        resourceType: ResourceType.REMOTE_AGENT,
-      },
-      {
-        getAgent: db.getAgent,
-        checkPermission,
-        logViolation,
-        db: dbMethods,
-        onAgentInitialized: (agentId, handoffAgent, config) => {
-          agentToolContexts.set(agentId, {
-            agent: handoffAgent,
-            toolRegistry: config.toolRegistry,
-            userMCPAuthMap: config.userMCPAuthMap,
-            tool_resources: config.tool_resources,
-            actionsEnabled: config.actionsEnabled,
-          });
+    // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
+    // primary has edges to follow — the common API case is single-agent.
+    let handoffAgentConfigs = new Map();
+    let discoveredEdges = [];
+    let discoveredMCPAuthMap;
+    if (primaryConfig.edges?.length) {
+      const modelsConfig = await getModelsConfig(req);
+      ({
+        agentConfigs: handoffAgentConfigs,
+        edges: discoveredEdges,
+        userMCPAuthMap: discoveredMCPAuthMap,
+      } = await discoverConnectedAgents(
+        {
+          req,
+          res,
+          primaryConfig,
+          endpointOption,
+          allowedProviders,
+          modelsConfig,
+          loadTools,
+          requestFiles: [],
+          conversationId,
+          parentMessageId,
+          // The route enforces REMOTE_AGENT on the primary; every discovered
+          // sub-agent must clear the same sharing boundary, not the looser
+          // in-app AGENT one.
+          resourceType: ResourceType.REMOTE_AGENT,
         },
-        initializeAgent,
-      },
-    );
+        {
+          getAgent: db.getAgent,
+          checkPermission,
+          logViolation,
+          db: dbMethods,
+          onAgentInitialized: (agentId, handoffAgent, config) => {
+            agentToolContexts.set(agentId, {
+              agent: handoffAgent,
+              toolRegistry: config.toolRegistry,
+              userMCPAuthMap: config.userMCPAuthMap,
+              tool_resources: config.tool_resources,
+              actionsEnabled: config.actionsEnabled,
+            });
+          },
+          initializeAgent,
+        },
+      ));
+    }
 
-    // Ensure edges is an array when multi-agent mode is active
-    // (MultiAgentGraph.categorizeEdges requires edges to be iterable)
-    const edges = handoffAgentConfigs.size > 0 ? (discoveredEdges ?? []) : discoveredEdges;
-    primaryConfig.edges = edges;
+    primaryConfig.edges = discoveredEdges;
 
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;

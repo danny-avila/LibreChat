@@ -311,6 +311,103 @@ describe('discoverConnectedAgents', () => {
     expect(result.agentConfigs.size).toBe(0);
   });
 
+  it('prunes surviving-but-unreachable edges from the return value (A->B->C->D, B skipped)', async () => {
+    // All three edges are stored on the primary A. When B is skipped,
+    // `filterOrphanedEdges` removes A->B (to=B) and B->C (from=B) — but
+    // `C->D` has no skipped endpoint and would otherwise survive,
+    // referencing agents that the reachability pass then prunes from
+    // `agentConfigs`. That combination is the exact shape that re-raises
+    // the "Found edge ending at unknown node" crash in `createRun`.
+    const edges: GraphEdge[] = [
+      { from: 'A', to: 'B', edgeType: 'handoff' },
+      { from: 'B', to: 'C', edgeType: 'handoff' },
+      { from: 'C', to: 'D', edgeType: 'handoff' },
+    ];
+    const primaryConfig = makeConfig('A', edges);
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      C: makeAgent('C', []),
+      D: makeAgent('D', []),
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    const checkPermission = jest.fn(
+      async ({ resourceId }: { resourceId: unknown }) => resourceId !== 'mongo-B',
+    );
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(result.skippedAgentIds.has('B')).toBe(true);
+    expect(result.agentConfigs.has('C')).toBe(false);
+    expect(result.agentConfigs.has('D')).toBe(false);
+    // Every returned edge must reference only agents present in
+    // `agentConfigs` or the primary — no stranded `C->D` survives.
+    for (const edge of result.edges) {
+      const endpoints = [edge.from, edge.to].flatMap((v) => (Array.isArray(v) ? v : [v]));
+      for (const id of endpoints) {
+        expect(id === primaryConfig.id || result.agentConfigs.has(id)).toBe(true);
+      }
+    }
+    expect(result.edges).toHaveLength(0);
+  });
+
+  it('does not mutate the caller-supplied primaryConfig.userMCPAuthMap', async () => {
+    const primaryAuth = { serverA: { token: 'primary' } };
+    const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
+    primaryConfig.userMCPAuthMap = primaryAuth;
+
+    const getAgent = jest.fn(async () => makeAgent('B', []));
+    const checkPermission = jest.fn().mockResolvedValue(true);
+
+    mockInitializeAgent.mockImplementation(async ({ agent }: { agent: Agent }) => {
+      const cfg = makeConfig(agent.id);
+      cfg.userMCPAuthMap = { serverB: { token: 'secondary' } };
+      return cfg;
+    });
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    // Caller's map is unchanged — only the returned merged map has the
+    // sub-agent entries.
+    expect(primaryConfig.userMCPAuthMap).toBe(primaryAuth);
+    expect(primaryConfig.userMCPAuthMap).toEqual({ serverA: { token: 'primary' } });
+    expect(result.userMCPAuthMap).toEqual({
+      serverA: { token: 'primary' },
+      serverB: { token: 'secondary' },
+    });
+    expect(result.userMCPAuthMap).not.toBe(primaryAuth);
+  });
+
   it('keeps sub-agents that remain reachable via surviving edges', async () => {
     // Graph: A -> [B, C]; B is skipped, C is kept. C must remain because
     // A -> C survives filtering.
