@@ -561,15 +561,44 @@ describe('SubagentCall — dialog content', () => {
     expect(screen.getByTestId('text-part')).toHaveTextContent('Final persisted answer.');
   });
 
-  it('prefers live aggregated events over persistedContent while the stream is active', () => {
+  it('prefers persistedContent when both are populated (sync/reconnect canonical)', () => {
     /**
-     * Guard against regression: if the backend's persisted snapshot and
-     * the live atom are both populated, the live atom wins. Otherwise
-     * mid-stream renders would flicker between the latest chunk and the
-     * previously-persisted state.
+     * Codex P2 regression: after a disconnect/reconnect the live
+     * Recoil bucket can be stale or partial — it missed events
+     * while the socket was down. The server-written
+     * `persistedContent` on the `tool_call` is the canonical trace
+     * of the completed run, so when it's present the dialog should
+     * show it, not the (possibly lossy) live aggregation.
+     *
+     * This also covers the post-stream case where persistence has
+     * landed and both snapshots carry the same content — preferring
+     * persisted is still correct because it's the authoritative copy.
+     */
+    render(
+      <RecoilRoot>
+        <SubagentCall
+          toolCallId="call_both_seeded"
+          initialProgress={1}
+          isSubmitting={false}
+          persistedContent={
+            [{ type: 'text', text: 'Persisted answer.' }] as unknown as Parameters<
+              typeof SubagentCall
+            >[0]['persistedContent']
+          }
+        />
+      </RecoilRoot>,
+    );
+    expect(screen.getByText('Persisted answer.')).toBeInTheDocument();
+  });
+
+  it('falls back to live aggregated events when persistedContent is empty (mid-stream)', () => {
+    /**
+     * Before the parent message saves, `persistedContent` is
+     * undefined/empty — the live atom is the only source of truth.
+     * Verify we render the live aggregation in that case.
      */
     renderWithState({
-      toolCallId: 'call_live_wins',
+      toolCallId: 'call_live_fallback',
       initialProgress: 0.4,
       isSubmitting: true,
       progress: progressFromEvents({
@@ -589,29 +618,9 @@ describe('SubagentCall — dialog content', () => {
         ],
       }),
     });
-    /** Re-render with BOTH a populated atom and a different persisted
-     *  snapshot — live should win. */
-    render(
-      <RecoilRoot>
-        <SubagentCall
-          toolCallId="call_both"
-          initialProgress={0.5}
-          isSubmitting
-          persistedContent={
-            [{ type: 'text', text: 'Stale persisted answer.' }] as unknown as Parameters<
-              typeof SubagentCall
-            >[0]['persistedContent']
-          }
-        />
-      </RecoilRoot>,
-    );
-    /** Only the first mount seeded the atom; the second mount has no
-     *  live events so it falls back to persisted. Both should render —
-     *  confirming the preference rule resolves independently per mount.
-     *  "Live answer." appears twice on the first mount: once in the
-     *  ticker preview, once in the dialog body. Use getAllByText so
-     *  the duplicate doesn't trip the assertion. */
+    /** Live content renders — both in the ticker preview (collapsed
+     *  card) and inside the dialog body (mocked OGDialog renders
+     *  children). */
     expect(screen.getAllByText('Live answer.').length).toBeGreaterThan(0);
-    expect(screen.getByText('Stale persisted answer.')).toBeInTheDocument();
   });
 });

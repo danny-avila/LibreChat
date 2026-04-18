@@ -191,19 +191,25 @@ export default function SubagentCall({
   const running = !finished && !cancelled;
 
   /**
-   * Content parts for the dialog. Live state is incrementally aggregated
-   * in the Recoil atom by `foldSubagentEvent` as each envelope arrives,
-   * so the full child history is always available — no re-aggregation
-   * at render time, and tool_call records can't be lost to the ticker's
-   * event trim window. Persisted `subagent_content` (written by the
-   * backend at message-save time) is the fallback for older runs
-   * recorded before the incremental path landed and for rehydrated
-   * messages after a page refresh.
+   * Content parts for the dialog. Preference order:
+   *
+   *   1. **Persisted** `subagent_content` on the parent `tool_call`
+   *      when available. Written by the backend at message-save time
+   *      and refreshed on sync / reconnect — the canonical record of
+   *      the run. After a disconnect the client's live atom may have
+   *      missed events, so trusting `persistedContent` prevents the
+   *      dialog from showing a stale/partial view of a completed
+   *      subagent.
+   *   2. **Live atom** incrementally built by `foldSubagentEvent` as
+   *      each `ON_SUBAGENT_UPDATE` arrives. Used while the subagent
+   *      is mid-run (before the parent message saves, the persisted
+   *      snapshot is empty) and as a fallback for older runs recorded
+   *      before the persistence path landed.
    */
   const liveParts = progress?.contentParts as TMessageContentParts[] | undefined;
   const contentParts = useMemo<TMessageContentParts[]>(() => {
-    if (liveParts && liveParts.length > 0) return liveParts;
     if (persistedContent && persistedContent.length > 0) return persistedContent;
+    if (liveParts && liveParts.length > 0) return liveParts;
     return [];
   }, [liveParts, persistedContent]);
 
