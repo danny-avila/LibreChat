@@ -7,6 +7,8 @@ import {
   interfaceSchema,
   fileStorageSchema,
   fileStrategiesSchema,
+  summarizationTriggerSchema,
+  summarizationConfigSchema,
 } from '../src/config';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
 import { FileSources } from '../src/types/files';
@@ -500,5 +502,48 @@ describe('interfaceSchema', () => {
     expect(result).not.toHaveProperty('endpointsMenu');
     expect(result).not.toHaveProperty('sidePanel');
     expect(result.modelSelect).toBe(false);
+  });
+});
+
+describe('summarizationTriggerSchema', () => {
+  it.each(['token_ratio', 'remaining_tokens', 'messages_to_refine'] as const)(
+    'accepts documented trigger type "%s"',
+    (type) => {
+      const result = summarizationTriggerSchema.safeParse({ type, value: 0.8 });
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it('rejects the legacy/typoed "token_count" trigger type', () => {
+    const result = summarizationTriggerSchema.safeParse({
+      type: 'token_count',
+      value: 8000,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown trigger types', () => {
+    const result = summarizationTriggerSchema.safeParse({
+      type: 'never_heard_of_it',
+      value: 1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects zero or negative values', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 0 }).success).toBe(
+      false,
+    );
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: -0.5 }).success).toBe(
+      false,
+    );
+  });
+
+  it('parses inside the full summarization config', () => {
+    const result = summarizationConfigSchema.safeParse({
+      enabled: true,
+      trigger: { type: 'token_ratio', value: 0.8 },
+    });
+    expect(result.success).toBe(true);
   });
 });
