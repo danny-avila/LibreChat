@@ -287,6 +287,40 @@ export async function discoverConnectedAgents(
 
   const edges = filterOrphanedEdges(Array.from(edgeMap.values()), skippedAgentIds);
 
+  /**
+   * Prune sub-agents that were initialized eagerly during BFS but whose
+   * connecting edges were later dropped by `filterOrphanedEdges` (e.g. an
+   * `A -> B -> C` chain where B is skipped, so both edges disappear but
+   * C had already been loaded from the primary's edge scan). Without this,
+   * those disconnected agents still flow into `createRun` — which flips
+   * into multi-agent mode whenever `agents.length > 1` and turns the
+   * stranded sub-agent into an unintended parallel start node.
+   */
+  const reachable = new Set<string>([primaryConfig.id]);
+  const frontier: string[] = [primaryConfig.id];
+  while (frontier.length > 0) {
+    const current = frontier.pop() as string;
+    for (const edge of edges) {
+      const sources = Array.isArray(edge.from) ? edge.from : [edge.from];
+      if (!sources.includes(current)) {
+        continue;
+      }
+      const dests = Array.isArray(edge.to) ? edge.to : [edge.to];
+      for (const dest of dests) {
+        if (typeof dest === 'string' && !reachable.has(dest)) {
+          reachable.add(dest);
+          frontier.push(dest);
+        }
+      }
+    }
+  }
+
+  for (const agentId of [...agentConfigs.keys()]) {
+    if (!reachable.has(agentId)) {
+      agentConfigs.delete(agentId);
+    }
+  }
+
   return {
     agentConfigs,
     edges,

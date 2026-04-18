@@ -264,6 +264,94 @@ describe('discoverConnectedAgents', () => {
     );
   });
 
+  it('prunes sub-agents disconnected from the primary after edge filtering', async () => {
+    // Graph: primary A has edges [A->B, B->C] stored directly on A.
+    // BFS loads B and C before permission is checked. B is skipped, and
+    // both edges reference B so they are filtered out. C was initialized
+    // but is now unreachable from A through any surviving edge — it must
+    // NOT be returned (otherwise it becomes a stray start node when
+    // createRun sees `agents.length > 1`).
+    const edges: GraphEdge[] = [
+      { from: 'A', to: 'B', edgeType: 'handoff' },
+      { from: 'B', to: 'C', edgeType: 'handoff' },
+    ];
+    const primaryConfig = makeConfig('A', edges);
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      C: makeAgent('C', []),
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    // B fails permission, C passes.
+    const checkPermission = jest.fn(
+      async ({ resourceId }: { resourceId: unknown }) => resourceId !== 'mongo-B',
+    );
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(result.skippedAgentIds.has('B')).toBe(true);
+    expect(result.edges).toHaveLength(0);
+    // C is unreachable once B's edges are filtered → must be pruned.
+    expect(result.agentConfigs.has('C')).toBe(false);
+    expect(result.agentConfigs.size).toBe(0);
+  });
+
+  it('keeps sub-agents that remain reachable via surviving edges', async () => {
+    // Graph: A -> [B, C]; B is skipped, C is kept. C must remain because
+    // A -> C survives filtering.
+    const edges: GraphEdge[] = [
+      { from: 'A', to: 'B', edgeType: 'handoff' },
+      { from: 'A', to: 'C', edgeType: 'handoff' },
+    ];
+    const primaryConfig = makeConfig('A', edges);
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      C: makeAgent('C', []),
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    const checkPermission = jest.fn(
+      async ({ resourceId }: { resourceId: unknown }) => resourceId !== 'mongo-B',
+    );
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(result.agentConfigs.has('C')).toBe(true);
+    expect(result.agentConfigs.has('B')).toBe(false);
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges[0].to).toBe('C');
+  });
+
   it('drops edges whose `from` references a skipped agent (bidirectional graph)', async () => {
     // Orchestrator A with bidirectional handoffs A<->B. B is inaccessible,
     // so `A -> B` and `B -> A` must both be filtered — otherwise `B -> A`
