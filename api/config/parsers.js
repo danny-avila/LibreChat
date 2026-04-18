@@ -8,10 +8,13 @@ const CONSOLE_JSON_STRING_LENGTH = parseInt(process.env.CONSOLE_JSON_STRING_LENG
 const DEBUG_MESSAGE_LENGTH = parseInt(process.env.DEBUG_MESSAGE_LENGTH) || 150;
 
 const sensitiveKeys = [
-  /(sk-)[^\s"']+/g, // OpenAI API key pattern (also catches keys embedded in JSON/quoted strings)
-  /(Bearer )[^\s"']+/g, // Header: Bearer token pattern
-  /(api-key:? )[^\s"']+/g, // Header: API key pattern
-  /(key=)[^\s"']+/g, // URL query param: sensitive key pattern (Google)
+  // OpenAI API key: `sk-` at a word boundary, followed by the documented
+  // charset for keys. `\b` keeps `task-runner`, `mask-value`, etc. from
+  // being mis-redacted.
+  /\b(sk-)[a-zA-Z0-9_-]+/g,
+  /\b(Bearer )[^\s"']+/g, // Header: Bearer token pattern
+  /\b(api-key:? )[^\s"']+/g, // Header: API key pattern
+  /\b(key=)[^\s"'&]+/g, // URL query param: sensitive key pattern (Google)
 ];
 
 /**

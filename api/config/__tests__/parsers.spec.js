@@ -136,6 +136,21 @@ describe('redactMessage', () => {
     expect(redactMessage('')).toBe('');
     expect(redactMessage(undefined)).toBe('');
   });
+
+  it('does not redact ordinary words that contain "sk-" inside them', () => {
+    expect(redactMessage('task-runner failed')).toBe('task-runner failed');
+    expect(redactMessage('mask-value computed')).toBe('mask-value computed');
+    expect(redactMessage('desk-lamp is on')).toBe('desk-lamp is on');
+  });
+
+  it('does not redact words that contain "key=" inside them', () => {
+    expect(redactMessage('monkey=10 bananas')).toBe('monkey=10 bananas');
+  });
+
+  it('still redacts standalone sk- keys at word boundaries', () => {
+    expect(redactMessage('token: sk-abc123def')).toBe('token: sk-[REDACTED]');
+    expect(redactMessage('"sk-abc123def"')).toBe('"sk-[REDACTED]"');
+  });
 });
 
 describe('debugTraverse', () => {
