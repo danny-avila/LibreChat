@@ -45,14 +45,6 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
         <Mermaid id={`mermaid-${blockIndex}`}>{content}</Mermaid>
       </MermaidErrorBoundary>
     );
-  } else if (lang === 'notice') {
-    return (
-      <div className="my-4 border-2 border-red-600 rounded-lg p-4 bg-red-50/10 text-text-primary shadow-sm">
-        <div className="flex flex-col items-center justify-center text-center space-y-1 whitespace-pre-wrap">
-          {children}
-        </div>
-      </div>
-    );
   } else if (isSingleLine) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
@@ -80,14 +72,6 @@ export const codeNoExecution: React.ElementType = memo(({ className, children }:
   } else if (lang === 'mermaid') {
     const content = typeof children === 'string' ? children : String(children);
     return <Mermaid>{content}</Mermaid>;
-  } else if (lang === 'notice') {
-    return (
-      <div className="my-4 border-2 border-red-600 rounded-lg p-4 bg-red-50/10 text-text-primary shadow-sm">
-        <div className="flex flex-col items-center justify-center text-center space-y-2 whitespace-pre-wrap">
-          {children}
-        </div>
-      </div>
-    );
   } else if (typeof children === 'string' && children.split('\n').length === 1) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
