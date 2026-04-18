@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Users } from 'lucide-react';
 import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
@@ -161,12 +161,28 @@ export default function ToolCallGroup({
             : localize('com_ui_used_n_tools', { 0: String(count) })
         }
       >
-        <StackedToolIcons
-          toolNames={toolNames}
-          mcpIconMap={mcpIconMap}
-          maxIcons={4}
-          isAnimating={!allCompleted && isSubmitting}
-        />
+        {allSubagents ? (
+          /** Subagent groups don't have per-tool icons — StackedToolIcons
+           *  falls back to a generic wrench that reads as "tools" rather
+           *  than "agents". A single Users glyph matches the individual
+           *  subagent card header and keeps the visual language consistent. */
+          <div
+            className={cn(
+              'flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary',
+              !allCompleted && isSubmitting && 'animate-pulse text-primary',
+            )}
+            aria-hidden="true"
+          >
+            <Users size={14} />
+          </div>
+        ) : (
+          <StackedToolIcons
+            toolNames={toolNames}
+            mcpIconMap={mcpIconMap}
+            maxIcons={4}
+            isAnimating={!allCompleted && isSubmitting}
+          />
+        )}
         <span className="tool-status-text font-medium">
           {allSubagents
             ? allCompleted

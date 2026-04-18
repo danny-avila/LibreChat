@@ -270,13 +270,44 @@ export function aggregateSubagentContent(events: SubagentUpdateEvent[]): Subagen
   return parts;
 }
 
-/** Shape of one line in the collapsed ticker. Kept as a plain string for
- *  simple rendering; the `live` flag lets the UI animate the streaming
- *  preview if it wants to. */
-export interface SubagentTickerLine {
-  text: string;
-  /** True when this line represents a still-streaming text/reasoning buffer. */
-  live?: boolean;
+/**
+ * Discriminated-union ticker line. Keeping the label tokens + body/snippets
+ * separate from their rendered strings lets the caller localize at
+ * render time (hooks can't live in a pure aggregator) and — more
+ * importantly — lets the UI split a fixed prefix (e.g. "Writing: ")
+ * from a tail-truncatable body, so the prefix never gets clipped out
+ * of view when the body overflows.
+ */
+export type SubagentTickerLine =
+  | { kind: 'writing'; body: string }
+  | { kind: 'reasoning'; body: string }
+  | { kind: 'using_tool'; toolNames: string[]; argsSnippet?: string }
+  | { kind: 'tool_complete'; toolName: string; outputSnippet?: string }
+  | { kind: 'error'; message?: string };
+
+/** Live-update cursor carried across incremental folds. Mirrors the
+ *  content-parts aggregator pattern so the atom can own the ticker
+ *  state and never has to re-aggregate from a trimmed event buffer. */
+export interface SubagentTickerState {
+  lines: SubagentTickerLine[];
+  /** Index of the in-flight 'writing' line (for in-place tail updates). */
+  textLineIdx: number | null;
+  /** Index of the in-flight 'reasoning' line. */
+  thinkLineIdx: number | null;
+  /** Raw message-delta accumulator — truncated into `writing.body` but
+   *  preserved so subsequent deltas extend the running preview. */
+  textBuffer: string;
+  thinkBuffer: string;
+}
+
+export function initSubagentTickerState(): SubagentTickerState {
+  return {
+    lines: [],
+    textLineIdx: null,
+    thinkLineIdx: null,
+    textBuffer: '',
+    thinkBuffer: '',
+  };
 }
 
 /** Generous tail window so wide ticker containers aren't half-empty.
@@ -334,120 +365,116 @@ const summarizeOutput = (output: unknown): string => {
   }
 };
 
-interface TickerDeps {
-  /** i18n-friendly formatters. When called with `args`/`output` the
-   *  formatter receives a short already-truncated snippet (≤48 chars).
-   *  `args`/`output` are empty strings when not extractable — the
-   *  formatter decides whether to append them. */
-  formatUsingTool?: (toolNames: string, args: string) => string;
-  formatToolComplete?: (toolName: string, output: string) => string;
-  writingPrefix?: string;
-  reasoningPrefix?: string;
-  errorPrefix?: string;
-}
-
-const defaultDeps: Required<TickerDeps> = {
-  formatUsingTool: (names, args) => (args ? `Using ${names}(${args})` : `Using tool: ${names}`),
-  formatToolComplete: (name, output) => (output ? `${name} → ${output}` : `Tool ${name} complete`),
-  writingPrefix: 'Writing',
-  reasoningPrefix: 'Reasoning',
-  errorPrefix: 'Error',
-};
-
 /**
- * Turn the event stream into short status lines the ticker can display.
+ * Incrementally fold a single {@link SubagentUpdateEvent} into the ticker
+ * state. Pure — never mutates inputs. Stored in the Recoil atom so the
+ * ticker always reflects the *full* run, not just the rolling event
+ * window (which trims as deltas pile up and can drop earlier tool_call
+ * lifecycle events).
  *
- * Adjacent message/reasoning deltas collapse into a single live line that
- * updates in place (tail of the buffer). Tool call starts/completions
- * emit their own discrete line. Start/stop/run_step_delta events are
- * suppressed — they're either lifecycle-only or too granular to show.
+ * Message/reasoning deltas extend an in-flight line via the `textLineIdx`
+ * / `thinkLineIdx` cursors. A `run_step` with tool_calls closes the
+ * running buffers and appends a `using_tool` line. `run_step_completed`
+ * appends a `tool_complete` line. `error` appends an `error` line.
+ * Phases we ignore (`start`, `stop`, `run_step_delta`): pass-through.
  */
-export function buildSubagentTickerLines(
-  events: SubagentUpdateEvent[],
-  deps: TickerDeps = {},
-): SubagentTickerLine[] {
-  const d = { ...defaultDeps, ...deps };
-  const lines: SubagentTickerLine[] = [];
-  let textBuffer = '';
-  let thinkBuffer = '';
-  let textLineIdx: number | null = null;
-  let thinkLineIdx: number | null = null;
-
-  const resetTextStreak = (): void => {
-    textBuffer = '';
-    textLineIdx = null;
-  };
-  const resetThinkStreak = (): void => {
-    thinkBuffer = '';
-    thinkLineIdx = null;
-  };
-
-  for (const event of events) {
-    if (event.phase === 'message_delta') {
-      const chunk = extractTextChunk(event.data as MessageDeltaData | undefined);
-      if (!chunk) continue;
-      textBuffer += chunk;
-      const preview = `${d.writingPrefix}: ${truncatePreview(textBuffer)}`;
-      if (textLineIdx === null) {
-        lines.push({ text: preview, live: true });
-        textLineIdx = lines.length - 1;
-      } else {
-        lines[textLineIdx] = { text: preview, live: true };
-      }
-      continue;
+export function foldSubagentEventIntoTicker(
+  state: SubagentTickerState,
+  event: SubagentUpdateEvent,
+): SubagentTickerState {
+  if (event.phase === 'message_delta') {
+    const chunk = extractTextChunk(event.data as MessageDeltaData | undefined);
+    if (!chunk) return state;
+    const textBuffer = state.textBuffer + chunk;
+    const body = truncatePreview(textBuffer);
+    const line: SubagentTickerLine = { kind: 'writing', body };
+    if (state.textLineIdx == null) {
+      const lines = state.lines.concat(line);
+      return { ...state, textBuffer, lines, textLineIdx: lines.length - 1 };
     }
-
-    if (event.phase === 'reasoning_delta') {
-      const chunk = extractThinkChunk(event.data as ReasoningDeltaData | undefined);
-      if (!chunk) continue;
-      thinkBuffer += chunk;
-      const preview = `${d.reasoningPrefix}: ${truncatePreview(thinkBuffer)}`;
-      if (thinkLineIdx === null) {
-        lines.push({ text: preview, live: true });
-        thinkLineIdx = lines.length - 1;
-      } else {
-        lines[thinkLineIdx] = { text: preview, live: true };
-      }
-      continue;
-    }
-
-    if (event.phase === 'run_step') {
-      resetTextStreak();
-      resetThinkStreak();
-
-      const data = event.data as RunStepData | undefined;
-      if (data?.stepDetails?.type === 'tool_calls') {
-        const toolCalls = data.stepDetails.tool_calls ?? [];
-        const named = toolCalls.filter(
-          (tc): tc is { id?: string; name: string; args?: unknown } =>
-            typeof tc?.name === 'string' && tc.name.length > 0,
-        );
-        if (named.length > 0) {
-          const names = named.map((tc) => tc.name).join(', ');
-          const argsSnippet = named.length === 1 ? summarizeArgs(named[0].args) : '';
-          lines.push({ text: d.formatUsingTool(names, argsSnippet) });
-        }
-      }
-      continue;
-    }
-
-    if (event.phase === 'run_step_completed') {
-      const data = event.data as RunStepCompletedData | undefined;
-      const tc = data?.result?.tool_call;
-      if (typeof tc?.name === 'string' && tc.name.length > 0) {
-        const outputSnippet = summarizeOutput(tc.output);
-        lines.push({ text: d.formatToolComplete(tc.name, outputSnippet) });
-      }
-      continue;
-    }
-
-    if (event.phase === 'error') {
-      const data = event.data as ErrorData | undefined;
-      const msg = data?.message ?? '';
-      lines.push({ text: msg ? `${d.errorPrefix}: ${msg}` : d.errorPrefix });
-      continue;
-    }
+    const lines = state.lines.slice();
+    lines[state.textLineIdx] = line;
+    return { ...state, textBuffer, lines };
   }
 
-  return lines;
+  if (event.phase === 'reasoning_delta') {
+    const chunk = extractThinkChunk(event.data as ReasoningDeltaData | undefined);
+    if (!chunk) return state;
+    const thinkBuffer = state.thinkBuffer + chunk;
+    const body = truncatePreview(thinkBuffer);
+    const line: SubagentTickerLine = { kind: 'reasoning', body };
+    if (state.thinkLineIdx == null) {
+      const lines = state.lines.concat(line);
+      return { ...state, thinkBuffer, lines, thinkLineIdx: lines.length - 1 };
+    }
+    const lines = state.lines.slice();
+    lines[state.thinkLineIdx] = line;
+    return { ...state, thinkBuffer, lines };
+  }
+
+  if (event.phase === 'run_step') {
+    /** A new run_step starts a fresh lifecycle marker and closes any
+     *  in-flight streaming line — the delta cursors reset so the *next*
+     *  message/reasoning delta starts its own line below the tool call. */
+    const afterClose: SubagentTickerState = {
+      ...state,
+      textBuffer: '',
+      thinkBuffer: '',
+      textLineIdx: null,
+      thinkLineIdx: null,
+    };
+    const data = event.data as RunStepData | undefined;
+    if (data?.stepDetails?.type !== 'tool_calls') return afterClose;
+    const toolCalls = data.stepDetails.tool_calls ?? [];
+    const named = toolCalls.filter(
+      (tc): tc is { id?: string; name: string; args?: unknown } =>
+        typeof tc?.name === 'string' && tc.name.length > 0,
+    );
+    if (named.length === 0) return afterClose;
+    const toolNames = named.map((tc) => tc.name);
+    const argsSnippet = named.length === 1 ? summarizeArgs(named[0].args) : undefined;
+    const line: SubagentTickerLine = {
+      kind: 'using_tool',
+      toolNames,
+      ...(argsSnippet ? { argsSnippet } : {}),
+    };
+    return { ...afterClose, lines: afterClose.lines.concat(line) };
+  }
+
+  if (event.phase === 'run_step_completed') {
+    const data = event.data as RunStepCompletedData | undefined;
+    const tc = data?.result?.tool_call;
+    if (typeof tc?.name !== 'string' || tc.name.length === 0) return state;
+    const outputSnippet = tc.output != null ? summarizeOutput(tc.output) : undefined;
+    const line: SubagentTickerLine = {
+      kind: 'tool_complete',
+      toolName: tc.name,
+      ...(outputSnippet ? { outputSnippet } : {}),
+    };
+    return { ...state, lines: state.lines.concat(line) };
+  }
+
+  if (event.phase === 'error') {
+    const data = event.data as ErrorData | undefined;
+    const line: SubagentTickerLine = {
+      kind: 'error',
+      ...(data?.message ? { message: data.message } : {}),
+    };
+    return { ...state, lines: state.lines.concat(line) };
+  }
+
+  return state;
+}
+
+/**
+ * Batch wrapper around {@link foldSubagentEventIntoTicker} — folds an
+ * entire event stream in one shot. Kept for tests and any legacy
+ * consumer that prefers a one-call API.
+ */
+export function buildSubagentTickerLines(events: SubagentUpdateEvent[]): SubagentTickerLine[] {
+  let state = initSubagentTickerState();
+  for (const event of events) {
+    state = foldSubagentEventIntoTicker(state, event);
+  }
+  return state.lines;
 }

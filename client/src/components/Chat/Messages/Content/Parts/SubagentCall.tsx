@@ -16,7 +16,7 @@ import { AttachmentGroup } from './Attachment';
 import { MessageContext } from '~/Providers/MessageContext';
 import { useLocalize } from '~/hooks';
 import { subagentProgressByToolCallId } from '~/store';
-import { buildSubagentTickerLines } from '~/utils/subagentContent';
+import type { SubagentTickerLine } from '~/utils/subagentContent';
 import { cn, groupSequentialToolCalls } from '~/utils';
 
 interface SubagentCallProps {
@@ -38,11 +38,16 @@ interface SubagentCallProps {
 }
 
 const TICKER_MAX_LINES = 3;
-/** Streaming tokens land on the ticker faster than a human can read — a
- *  1.2s trailing-edge throttle gives each frame enough time to glance at
- *  without feeling sluggish. Aggregation keeps running at full speed; only
- *  the displayed preview lags. */
-const TICKER_THROTTLE_MS = 1200;
+/** Trailing-edge throttle window for the live preview. Tuned down from
+ *  the original 1.2s so the ticker feels snappy when the container is
+ *  already full and frames are scrolling. */
+const TICKER_THROTTLE_MS = 800;
+/** Below this live-buffer length we skip throttling entirely. Without
+ *  this the user would see "Reasoning: I" for ~1s while the model
+ *  streams the rest of the sentence — the pass-through lets early
+ *  tokens appear right away, and throttling only kicks in once the
+ *  preview is long enough to "fill the container". */
+const TICKER_PASSTHROUGH_CHARS = 120;
 /** Distance from the dialog scroller's bottom that still counts as
  *  "following along". Inside this window new content auto-scrolls; past
  *  it we pause so the user can read. Slightly looser than the main
@@ -168,8 +173,6 @@ export default function SubagentCall({
   const cancelled = !isSubmitting && !finished;
   const running = !finished && !cancelled;
 
-  const events = progress?.events;
-
   /**
    * Content parts for the dialog. Live state is incrementally aggregated
    * in the Recoil atom by `foldSubagentEvent` as each envelope arrives,
@@ -187,60 +190,51 @@ export default function SubagentCall({
     return [];
   }, [liveParts, persistedContent]);
 
-  /** Semantic status lines for the ticker. Message/reasoning deltas collapse
-   *  into a single running preview; tool calls are discrete entries with
-   *  input/output snippets. No event names are shown to the user. */
-  const tickerLines = useMemo(() => {
-    const lines = buildSubagentTickerLines(events ?? [], {
-      writingPrefix: localize('com_ui_subagent_ticker_writing'),
-      reasoningPrefix: localize('com_ui_subagent_ticker_reasoning'),
-      errorPrefix: localize('com_ui_subagent_ticker_error'),
-      formatUsingTool: (names, snippet) =>
-        snippet
-          ? localize('com_ui_subagent_ticker_using_with_args', {
-              0: names,
-              1: snippet,
-            })
-          : localize('com_ui_subagent_ticker_using', { 0: names }),
-      formatToolComplete: (name, snippet) =>
-        snippet
-          ? localize('com_ui_subagent_ticker_tool_output', {
-              0: name,
-              1: snippet,
-            })
-          : localize('com_ui_subagent_ticker_tool_complete', { 0: name }),
-    });
-    if (lines.length === 0 && running) {
-      return [{ text: localize('com_ui_subagent_waiting') }];
-    }
+  /** Last `TICKER_MAX_LINES` lines from the atom's incrementally-built
+   *  ticker state, so history isn't lost to any event trimming. */
+  const tickerLines = useMemo<SubagentTickerLine[]>(() => {
+    const lines = progress?.tickerState?.lines ?? [];
     return lines.slice(-TICKER_MAX_LINES);
-  }, [events, running, localize]);
+  }, [progress?.tickerState?.lines]);
 
-  /** Throttle the displayed ticker so the live preview doesn't flicker
-   *  faster than the eye can read. Aggregation upstream is still
-   *  real-time — only what the user sees pauses between frames. */
-  const displayedTickerLines = useThrottledValue(tickerLines, TICKER_THROTTLE_MS, running);
+  /** Only throttle once the running buffer is wide enough to "fill the
+   *  container" — pre-threshold updates pass through so the user sees
+   *  early tokens immediately, not a static "Reasoning: I" while more
+   *  text piles up behind the throttle. */
+  const shouldThrottleTicker = useMemo(() => {
+    if (!running) return false;
+    const liveBody = tickerLines.reduce((max, line) => {
+      if (line.kind === 'writing' || line.kind === 'reasoning') {
+        return Math.max(max, line.body.length);
+      }
+      return max;
+    }, 0);
+    return liveBody >= TICKER_PASSTHROUGH_CHARS;
+  }, [running, tickerLines]);
+
+  const displayedTickerLines = useThrottledValue(
+    tickerLines,
+    TICKER_THROTTLE_MS,
+    shouldThrottleTicker,
+  );
 
   const description = typeof args === 'string' ? tryDescription(args) : extractDescription(args);
 
-  /** Self-spawned runs get a name-free label ('Running subtask') because
-   *  the type token is the string 'self' — rendering `Running "self" agent`
-   *  reads poorly. Named subagents use the `{{type}}` label verbatim. */
+  /** Base verb-only label ("Running agent" / "Ran agent"). The agent name
+   *  is rendered separately as a muted sub-label so "agent" stays a
+   *  constant visual anchor regardless of name length. */
   const headerText = hasError
-    ? isSelfSpawn
-      ? localize('com_ui_subagent_errored_self')
-      : localize('com_ui_subagent_errored', { 0: subagentType })
+    ? localize('com_ui_subagent_errored')
     : cancelled
-      ? isSelfSpawn
-        ? localize('com_ui_subagent_cancelled_self')
-        : localize('com_ui_subagent_cancelled', { 0: subagentType })
+      ? localize('com_ui_subagent_cancelled')
       : running
-        ? isSelfSpawn
-          ? localize('com_ui_subagent_running_self')
-          : localize('com_ui_subagent_running', { 0: subagentType })
-        : isSelfSpawn
-          ? localize('com_ui_subagent_complete_self')
-          : localize('com_ui_subagent_complete', { 0: subagentType });
+        ? localize('com_ui_subagent_running')
+        : localize('com_ui_subagent_complete');
+  /** Muted sub-label shown to the right of the base label: the
+   *  configured agent name for named subagents. Self-spawns omit it
+   *  (redundant — the header already says "agent") as do cases where
+   *  the name isn't resolvable (agent map miss). */
+  const subagentNameLabel = !isSelfSpawn && subagentAgent?.name ? subagentAgent.name : '';
 
   /**
    * Minimal `MessageContext` for the dialog's `<Part />` tree. Subagent
@@ -303,7 +297,7 @@ export default function SubagentCall({
    * following along without having to scroll all the way down.
    */
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const eventCount = events?.length ?? 0;
+  const contentPartsLen = contentParts.length;
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const handleScroll = useCallback(() => {
@@ -334,7 +328,7 @@ export default function SubagentCall({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [open, running, contentParts.length, eventCount, isAtBottom]);
+  }, [open, running, contentPartsLen, isAtBottom]);
 
   const scrollDialogToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -376,7 +370,17 @@ export default function SubagentCall({
               <Users size={14} />
             )}
           </div>
-          <span className="flex-1 truncate">{headerText}</span>
+          <span className="shrink-0">{headerText}</span>
+          {subagentNameLabel ? (
+            <span
+              className="min-w-0 flex-1 truncate font-normal text-text-secondary"
+              title={subagentNameLabel}
+            >
+              {subagentNameLabel}
+            </span>
+          ) : (
+            <span className="flex-1" />
+          )}
           <ChevronRight
             size={14}
             className="shrink-0 text-text-secondary transition group-hover:translate-x-0.5"
@@ -385,25 +389,11 @@ export default function SubagentCall({
         </div>
 
         <ul className="w-full space-y-0.5 pl-5 font-mono text-xs text-text-secondary">
+          {displayedTickerLines.length === 0 && running ? (
+            <li className="truncate opacity-70">{localize('com_ui_subagent_waiting')}</li>
+          ) : null}
           {displayedTickerLines.map((line, i) => (
-            /**
-             * RTL container + `text-overflow: ellipsis` gives a
-             * tail-side truncate: for pure-Latin ticker text the bidi
-             * algorithm still lays the characters out LTR, but the
-             * ellipsis clips the *start* of the line (visually the
-             * left) rather than the end, so the newest tokens are
-             * always flush-right regardless of container width.
-             */
-            <li
-              key={`${i}-${line.text}`}
-              dir="rtl"
-              className={cn(
-                'w-full overflow-hidden overflow-ellipsis whitespace-nowrap text-left',
-                line.live && 'text-text-primary',
-              )}
-            >
-              {line.text}
-            </li>
+            <TickerLineView key={`${i}-${tickerLineKey(line)}`} line={line} />
           ))}
         </ul>
       </button>
@@ -541,6 +531,70 @@ function tryDescription(args: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Stable key for a ticker line — helps React reuse the DOM node across
+ *  in-place updates to the same live `writing` / `reasoning` line, and
+ *  gives tool-call lines a stable identity by tool name. */
+function tickerLineKey(line: SubagentTickerLine): string {
+  switch (line.kind) {
+    case 'writing':
+    case 'reasoning':
+      return line.kind;
+    case 'using_tool':
+      return `using:${line.toolNames.join(',')}`;
+    case 'tool_complete':
+      return `done:${line.toolName}`;
+    case 'error':
+      return `error:${line.message ?? ''}`;
+  }
+}
+
+/**
+ * Renderer for one ticker line. Splits a fixed label (e.g. "Writing:")
+ * into its own `shrink-0` span so the label is never clipped when the
+ * body overflows; the body then uses `dir="rtl"` + `text-align: left`
+ * to push tail-side ellipsis behavior (newest characters stay flush-
+ * right, oldest clip off the left). The rtl trick is scoped to the
+ * body span so trailing punctuation on non-streaming lines (e.g. the
+ * `…` in "Waiting for first update…") can't get flipped by bidi.
+ */
+function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
+  const localize = useLocalize();
+  if (line.kind === 'writing' || line.kind === 'reasoning') {
+    const prefix =
+      line.kind === 'writing'
+        ? localize('com_ui_subagent_ticker_writing')
+        : localize('com_ui_subagent_ticker_reasoning');
+    return (
+      <li className="flex w-full items-baseline gap-1 overflow-hidden text-text-primary">
+        <span className="shrink-0">{prefix}:</span>
+        <span
+          dir="rtl"
+          className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left"
+        >
+          {line.body}
+        </span>
+      </li>
+    );
+  }
+  if (line.kind === 'using_tool') {
+    const names = line.toolNames.join(', ');
+    const text = line.argsSnippet
+      ? localize('com_ui_subagent_ticker_using_with_args', { 0: names, 1: line.argsSnippet })
+      : localize('com_ui_subagent_ticker_using', { 0: names });
+    return <li className="truncate">{text}</li>;
+  }
+  if (line.kind === 'tool_complete') {
+    const text = line.outputSnippet
+      ? localize('com_ui_subagent_ticker_tool_output', { 0: line.toolName, 1: line.outputSnippet })
+      : localize('com_ui_subagent_ticker_tool_complete', { 0: line.toolName });
+    return <li className="truncate">{text}</li>;
+  }
+  /* error */
+  const errorPrefix = localize('com_ui_subagent_ticker_error');
+  const text = line.message ? `${errorPrefix}: ${line.message}` : errorPrefix;
+  return <li className="truncate text-text-warning">{text}</li>;
 }
 
 /**
