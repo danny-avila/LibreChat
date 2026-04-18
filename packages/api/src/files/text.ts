@@ -15,7 +15,9 @@ const MARKDOWN_MIME_TYPES = new Set([
   'application/x-markdown',
 ]);
 
-function normalizeMimeType(mimetype: string | undefined): string {
+const MARKDOWN_EXTENSIONS_RE = /\.(md|markdown|mdown|mkdn|mkd|mdwn)$/i;
+
+function normalizeMimeType(mimetype: string): string {
   if (!mimetype) {
     return '';
   }
@@ -28,8 +30,7 @@ function isMarkdownFile(file: Express.Multer.File): boolean {
   if (MARKDOWN_MIME_TYPES.has(normalizeMimeType(file.mimetype))) {
     return true;
   }
-  const name = file.originalname?.toLowerCase() ?? '';
-  return name.endsWith('.md') || name.endsWith('.markdown');
+  return MARKDOWN_EXTENSIONS_RE.test(file.originalname ?? '');
 }
 
 /**
@@ -56,7 +57,7 @@ export async function parseText({
 
   if (isMarkdownFile(file)) {
     logger.debug(
-      '[parseText] Markdown file detected, using native parsing to preserve raw formatting',
+      `[parseText] Markdown file detected (${file.originalname}, ${file.mimetype}), using native parsing to preserve raw formatting`,
     );
     return parseTextNative(file);
   }

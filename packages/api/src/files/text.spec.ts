@@ -307,11 +307,16 @@ describe('text', () => {
       { mimetype: 'text/md', originalname: 'notes' },
       { mimetype: 'application/markdown', originalname: 'notes.md' },
       { mimetype: 'application/x-markdown', originalname: 'notes.md' },
+      { mimetype: 'text/plain', originalname: 'notes.md' },
       { mimetype: 'application/octet-stream', originalname: 'README.md' },
       { mimetype: 'application/octet-stream', originalname: 'GUIDE.MARKDOWN' },
+      { mimetype: 'application/octet-stream', originalname: 'post.mdown' },
+      { mimetype: 'application/octet-stream', originalname: 'post.mkdn' },
+      { mimetype: 'application/octet-stream', originalname: 'post.mkd' },
       { mimetype: 'text/markdown; charset=utf-8', originalname: 'notes' },
       { mimetype: 'TEXT/MARKDOWN', originalname: 'notes' },
       { mimetype: '  text/markdown ; charset=UTF-8  ', originalname: 'notes' },
+      { mimetype: '', originalname: 'notes.md' },
     ])(
       'should short-circuit to native parsing for markdown file (%o)',
       async ({ mimetype, originalname }) => {
@@ -332,6 +337,9 @@ describe('text', () => {
 
         expect(mockedAxios.get).not.toHaveBeenCalled();
         expect(mockedAxios.post).not.toHaveBeenCalled();
+        expect(mockedReadFileAsString).toHaveBeenCalledWith('/tmp/test.txt', {
+          fileSize: 100,
+        });
         expect(result).toEqual({
           text: mockText,
           bytes: mockBytes,
