@@ -1,6 +1,4 @@
 import { ScrollText } from 'lucide-react';
-import { ContentTypes } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -8,58 +6,21 @@ import { useLocalize } from '~/hooks';
  * window between submit and the real `skill` tool_call content part landing
  * at finalize (via the backend's `buildSkillPrimeContentParts` unshift).
  *
- * Reads a single field off the message prop — `message.manualSkills` —
- * which `createdHandler` seeds onto the assistant placeholder from
- * `submission.manualSkills` when the stream starts. No hooks that
- * subscribe to state, so the component only re-renders when its own
- * `message` prop changes (unlike the previous `useRecoilValue`
- * variant, which would re-render every message's indicator whenever
- * the submission atom shifted).
+ * Presentational component. All visibility logic — user-vs-assistant, whether
+ * a skill card has arrived, whether any skills were queued — belongs to the
+ * caller, so this stays a simple map over `skills`. No full-message object
+ * gets passed in (that would bust `React.memo` comparisons upstream in
+ * `ContentParts`); only the scalar array the UI actually renders from.
  *
- * Lifecycle: seeded → rides through `ON_RUN_STEP` / `updateContent`
- * message spreads → finalHandler replaces the message with the
- * server's `responseMessage`, which doesn't carry the frontend-only
- * field, and by then the authoritative `skill` tool_call is in
- * `content` anyway. Indicator hides the moment the real card lands
- * (checked by scanning `message.content`).
- *
- * Why not a proper streaming content part: the LLM's first
- * `ON_MESSAGE_DELTA` lands at content index 0 and would either
- * collide with a pre-seeded skill tool_call (type-mismatch guard
- * blocks the text stream) or sit below it via a sparse-array offset
- * (card ends up at the bottom after compaction). A sibling render
- * slot above `ContentParts` sidesteps the index math entirely.
+ * `createdHandler` in `useEventHandlers` seeds the source of `skills`
+ * (copied from `submission.manualSkills` onto the initial response), and
+ * the field rides through subsequent SSE mutations via spread preservation.
  */
-export default function InvokingSkillsIndicator({ message }: { message?: TMessage }) {
+export default function InvokingSkillsIndicator({ skills }: { skills?: string[] }) {
   const localize = useLocalize();
 
-  if (!message || message.isCreatedByUser) {
-    return null;
-  }
-  const skills = message.manualSkills;
   if (!skills || skills.length === 0) {
     return null;
-  }
-
-  /**
-   * Once the assistant content grows a `skill` tool_call, the real card
-   * rendering in `ContentParts` takes over and the placeholder is
-   * redundant. Plain iteration, no `useMemo` — skipping one `includes`
-   * per render is cheaper than tracking a dep array.
-   */
-  if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      if (
-        part != null &&
-        typeof part === 'object' &&
-        (part as { type?: string }).type === ContentTypes.TOOL_CALL
-      ) {
-        const toolCall = (part as { tool_call?: { name?: string } }).tool_call;
-        if (toolCall?.name === 'skill') {
-          return null;
-        }
-      }
-    }
   }
 
   return (

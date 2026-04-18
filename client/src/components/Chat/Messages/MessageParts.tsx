@@ -137,11 +137,11 @@ export default function Message(props: TMessageProps) {
                     edit={edit}
                     isLast={isLast}
                     enterEdit={enterEdit}
-                    message={message}
                     siblingIdx={siblingIdx}
                     attachments={attachments}
                     isSubmitting={isSubmitting}
                     searchResults={searchResults}
+                    manualSkills={message.manualSkills}
                     messageId={message.messageId}
                     setSiblingIdx={setSiblingIdx}
                     isCreatedByUser={message.isCreatedByUser}

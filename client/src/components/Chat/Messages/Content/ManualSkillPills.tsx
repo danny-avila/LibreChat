@@ -1,20 +1,16 @@
 import { ScrollText } from 'lucide-react';
-import type { TMessage } from 'librechat-data-provider';
 
 /**
  * Compact pill row rendered on a submitted user message, one chip per skill
- * the user invoked via the `$` popover. Renders directly from the message's
- * `manualSkills` field — backend persists the field, so pills survive page
- * reloads and show in conversation history. Distinct from the live skill
- * tool-call cards that land on the sibling assistant message at finalize:
- * pills live on the user side and stay forever, cards live on the assistant
- * side once the response completes.
+ * the user invoked via the `$` popover. Presentational component — takes
+ * only the scalar `skills` array, no full message object (keeps
+ * `React.memo` comparisons on parent wrappers shallow and cheap).
+ *
+ * Backend persists the source field (`message.manualSkills`), so callers
+ * reading from the message pass `skills={message.manualSkills}` and pills
+ * survive page reloads / history renders.
  */
-export default function ManualSkillPills({ message }: { message?: TMessage }) {
-  if (!message?.isCreatedByUser) {
-    return null;
-  }
-  const skills = message.manualSkills;
+export default function ManualSkillPills({ skills }: { skills?: string[] }) {
   if (!skills || skills.length === 0) {
     return null;
   }

@@ -8,7 +8,7 @@ const Container = ({ children, message }: { children: React.ReactNode; message?:
     dir="auto"
   >
     {message?.isCreatedByUser === true && <Files message={message} />}
-    {message?.isCreatedByUser === true && <ManualSkillPills message={message} />}
+    {message?.isCreatedByUser === true && <ManualSkillPills skills={message.manualSkills} />}
     {children}
   </div>
 );

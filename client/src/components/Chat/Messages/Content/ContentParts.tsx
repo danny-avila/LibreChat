@@ -1,7 +1,6 @@
 import { memo, useMemo, useCallback } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
-  TMessage,
   TMessageContentParts,
   SearchResultData,
   TAttachment,
@@ -76,13 +75,13 @@ type ContentPartsProps = {
   content: Array<TMessageContentParts | undefined> | undefined;
   messageId: string;
   /**
-   * Full message prop — used by `InvokingSkillsIndicator` to render a
-   * sibling chip row alongside the parts. Kept as a separate prop so
-   * the delta-driven `content` updates don't force us to synthesize a
-   * message-shaped object, and so the indicator's lifetime tracks the
-   * same reference the handlers spread when they mutate the message.
+   * Skill names the user invoked manually via the `$` popover on this turn,
+   * seeded onto the message by `createdHandler` from `submission.manualSkills`.
+   * Scalar array (not the full message object) so `React.memo`'s shallow
+   * comparison on this component doesn't get churned every time the message
+   * reference changes for unrelated reasons.
    */
-  message?: TMessage;
+  manualSkills?: string[];
   conversationId?: string | null;
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
@@ -109,7 +108,7 @@ const ContentParts = memo(function ContentParts({
   edit,
   isLast,
   content,
-  message,
+  manualSkills,
   messageId,
   enterEdit,
   siblingIdx,
@@ -123,6 +122,29 @@ const ContentParts = memo(function ContentParts({
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+
+  /**
+   * Show the assistant-side skill-loading chips only when:
+   *  - this is an assistant message (user side gets `ManualSkillPills`
+   *    on the user bubble instead);
+   *  - the turn carried manual skill picks;
+   *  - the real `skill` tool_call content part hasn't landed yet (once
+   *    it does, `Part` / `SkillCall` is the authoritative renderer and
+   *    the placeholder steps aside).
+   * Computed here so the visibility check happens on the same render
+   * cycle that updates the Parts iteration, and `InvokingSkillsIndicator`
+   * stays a pure presentational component.
+   */
+  const showInvokingSkills =
+    !isCreatedByUser &&
+    manualSkills != null &&
+    manualSkills.length > 0 &&
+    !(content ?? []).some(
+      (part) =>
+        part != null &&
+        part.type === ContentTypes.TOOL_CALL &&
+        (part as { tool_call?: { name?: string } }).tool_call?.name === 'skill',
+    );
 
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
@@ -209,7 +231,7 @@ const ContentParts = memo(function ContentParts({
   if (hasParallelContent) {
     return (
       <>
-        <InvokingSkillsIndicator message={message} />
+        {showInvokingSkills && <InvokingSkillsIndicator skills={manualSkills} />}
         <ParallelContentRenderer
           content={content}
           messageId={messageId}
@@ -236,13 +258,13 @@ const ContentParts = memo(function ContentParts({
     <SearchContext.Provider value={{ searchResults }}>
       <MemoryArtifacts attachments={attachments} />
       {/**
-       * Sibling render slot above the Parts iteration. Reads `message.manualSkills`
-       * (seeded by `createdHandler` from `submission.manualSkills`) and lives
-       * outside the `content.map` so `content` delta updates never wipe it —
-       * the indicator's visibility is driven entirely by the field and its
-       * own `content`-scan for the real `skill` tool_call hide condition.
+       * Sibling render slot above the Parts iteration. Visibility is
+       * computed above from `manualSkills` + `content`; the indicator
+       * itself is purely presentational so the scalar `skills` prop is
+       * the only thing that flows in — no message reference, no memo
+       * churn.
        */}
-      <InvokingSkillsIndicator message={message} />
+      {showInvokingSkills && <InvokingSkillsIndicator skills={manualSkills} />}
       {showEmptyCursor && (
         <Container>
           <EmptyText />
