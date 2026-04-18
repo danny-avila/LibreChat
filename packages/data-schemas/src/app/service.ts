@@ -26,9 +26,11 @@ export function loadSummarizationConfig(
   if (raw.trigger && typeof raw.trigger === 'object' && raw.trigger.type === 'token_count') {
     logger.warn(
       "[AppService] `summarization.trigger.type: 'token_count'` is no longer supported. " +
-        "Use 'token_ratio' (0–1), 'remaining_tokens' (positive integer), or " +
-        "'messages_to_refine' (positive integer). Summarization will be disabled until " +
-        'this is fixed.',
+        "Use 'token_ratio' (0-1), 'remaining_tokens' (positive integer), or " +
+        "'messages_to_refine' (positive integer). Your `summarization` config will be " +
+        'ignored and summarization will fall back to self-summarize defaults (the ' +
+        "agent's own provider/model, fires on every pruning event) until this is " +
+        'corrected.',
     );
     return undefined;
   }

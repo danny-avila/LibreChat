@@ -51,6 +51,19 @@ describe('loadSummarizationConfig', () => {
     expect(message).toContain('token_ratio');
     expect(message).toContain('remaining_tokens');
     expect(message).toContain('messages_to_refine');
+    expect(message).toContain('fall back');
+  });
+
+  it('falls back to the generic warning when trigger is a bare string (not an object)', () => {
+    const result = loadSummarizationConfig({
+      summarization: {
+        trigger: 'token_count',
+      },
+    } as unknown as DeepPartial<TCustomConfig>);
+
+    expect(result).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toContain('Invalid summarization config');
   });
 
   it('falls back to the generic warning for other schema violations', () => {
