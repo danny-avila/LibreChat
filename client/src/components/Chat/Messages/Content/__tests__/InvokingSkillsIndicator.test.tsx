@@ -1,26 +1,18 @@
 import React from 'react';
-import { RecoilRoot, MutableSnapshot } from 'recoil';
 import { render, screen } from '@testing-library/react';
-import type { TMessage, TSubmission } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, params?: Record<string, unknown>) =>
     `${key}:${params?.[0] ?? ''}`,
 }));
 
-jest.mock('~/Providers', () => ({
-  useChatContext: () => ({ index: 0 }),
-}));
-
 import InvokingSkillsIndicator from '../InvokingSkillsIndicator';
-import store from '~/store';
-
-const USER_MSG_ID = 'user-msg-1';
 
 const makeAssistantMessage = (overrides: Partial<TMessage> = {}): TMessage =>
   ({
     messageId: 'asst-1',
-    parentMessageId: USER_MSG_ID,
+    parentMessageId: 'user-1',
     conversationId: 'convo-1',
     isCreatedByUser: false,
     sender: 'Assistant',
@@ -28,54 +20,25 @@ const makeAssistantMessage = (overrides: Partial<TMessage> = {}): TMessage =>
     ...overrides,
   }) as TMessage;
 
-const makeSubmission = (manualSkills?: string[], userMessageId = USER_MSG_ID): TSubmission =>
-  ({
-    userMessage: { messageId: userMessageId, text: 'hi', isCreatedByUser: true } as TMessage,
-    manualSkills,
-    messages: [],
-    conversation: {},
-    endpointOption: {},
-    isTemporary: false,
-  }) as unknown as TSubmission;
-
-const renderWithSubmission = (ui: React.ReactNode, submission: TSubmission | null) => {
-  const initializeState = (snapshot: MutableSnapshot) => {
-    snapshot.set(store.submissionByIndex(0), submission);
-  };
-  return render(<RecoilRoot initializeState={initializeState}>{ui}</RecoilRoot>);
-};
-
 describe('InvokingSkillsIndicator', () => {
-  it('renders nothing for user messages', () => {
-    const userMsg = { ...makeAssistantMessage(), isCreatedByUser: true } as TMessage;
-    const { container } = renderWithSubmission(
-      <InvokingSkillsIndicator message={userMsg} />,
-      makeSubmission(['pptx']),
-    );
+  it('renders nothing for user messages even when manualSkills is set', () => {
+    const userMsg = {
+      ...makeAssistantMessage(),
+      isCreatedByUser: true,
+      manualSkills: ['pptx'],
+    } as TMessage;
+    const { container } = render(<InvokingSkillsIndicator message={userMsg} />);
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders nothing when there is no in-flight submission (history render)', () => {
-    const a = makeAssistantMessage();
-    const { container } = renderWithSubmission(<InvokingSkillsIndicator message={a} />, null);
+  it('renders nothing when the assistant message has no manualSkills seeded', () => {
+    const { container } = render(<InvokingSkillsIndicator message={makeAssistantMessage()} />);
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders nothing when the submission has no manualSkills', () => {
-    const a = makeAssistantMessage();
-    const { container } = renderWithSubmission(
-      <InvokingSkillsIndicator message={a} />,
-      makeSubmission(),
-    );
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('renders one chip per submission.manualSkills entry on the matching assistant message', () => {
-    const a = makeAssistantMessage();
-    renderWithSubmission(
-      <InvokingSkillsIndicator message={a} />,
-      makeSubmission(['brand-guidelines', 'pptx']),
-    );
+  it('renders one chip per manualSkills entry seeded by createdHandler', () => {
+    const a = makeAssistantMessage({ manualSkills: ['brand-guidelines', 'pptx'] });
+    render(<InvokingSkillsIndicator message={a} />);
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(2);
     expect(items[0]).toHaveTextContent(/brand-guidelines/);
@@ -84,6 +47,7 @@ describe('InvokingSkillsIndicator', () => {
 
   it('steps aside once the assistant content carries a skill tool_call (real card landed)', () => {
     const a = makeAssistantMessage({
+      manualSkills: ['pptx'],
       content: [
         {
           type: 'tool_call',
@@ -91,19 +55,35 @@ describe('InvokingSkillsIndicator', () => {
         },
       ] as unknown as TMessage['content'],
     });
-    const { container } = renderWithSubmission(
-      <InvokingSkillsIndicator message={a} />,
-      makeSubmission(['pptx']),
-    );
+    const { container } = render(<InvokingSkillsIndicator message={a} />);
     expect(container.firstChild).toBeNull();
   });
 
-  it("does not render on an assistant message that belongs to a different submission's turn", () => {
-    const unrelated = makeAssistantMessage({ parentMessageId: 'some-other-user-msg' });
-    const { container } = renderWithSubmission(
-      <InvokingSkillsIndicator message={unrelated} />,
-      makeSubmission(['pptx'], USER_MSG_ID),
-    );
+  it('keeps chips visible when content has non-skill tool_calls (e.g. web_search in progress)', () => {
+    const a = makeAssistantMessage({
+      manualSkills: ['pptx'],
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: { id: 'c1', name: 'web_search', args: '{}', progress: 0.5 },
+        },
+      ] as unknown as TMessage['content'],
+    });
+    render(<InvokingSkillsIndicator message={a} />);
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('keeps chips visible when content is text only (still streaming, no card yet)', () => {
+    const a = makeAssistantMessage({
+      manualSkills: ['pptx'],
+      content: [{ type: 'text', text: 'streaming tokens...' }] as unknown as TMessage['content'],
+    });
+    render(<InvokingSkillsIndicator message={a} />);
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('renders nothing when message prop is absent', () => {
+    const { container } = render(<InvokingSkillsIndicator />);
     expect(container.firstChild).toBeNull();
   });
 });
