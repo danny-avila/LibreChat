@@ -202,6 +202,40 @@ describe('discoverConnectedAgents', () => {
     expect(result.edges.map((e) => e.to)).toEqual(['B']);
   });
 
+  it('drops edges whose `from` references a skipped agent (bidirectional graph)', async () => {
+    // Orchestrator A with bidirectional handoffs A<->B. B is inaccessible,
+    // so `A -> B` and `B -> A` must both be filtered — otherwise `B -> A`
+    // leaks into createRun and triggers `Found edge ending at unknown node`.
+    const edges: GraphEdge[] = [
+      { from: 'A', to: 'B', edgeType: 'handoff' },
+      { from: 'B', to: 'A', edgeType: 'handoff' },
+    ];
+    const primaryConfig = makeConfig('A', edges);
+
+    const getAgent = jest.fn(async () => makeAgent('B', []));
+    const checkPermission = jest.fn().mockResolvedValue(false);
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(result.skippedAgentIds.has('B')).toBe(true);
+    expect(result.edges).toHaveLength(0);
+  });
+
   it('does not re-initialize agents that are already known (dedup)', async () => {
     const edges: GraphEdge[] = [
       { from: 'A', to: 'B', edgeType: 'handoff' },

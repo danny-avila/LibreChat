@@ -30,17 +30,21 @@ export function getEdgeParticipants(edge: GraphEdge): string[] {
 }
 
 /**
- * Filters out edges that reference non-existent (orphaned) agents.
- * Only filters based on the 'to' field since those are the handoff targets.
+ * Filters out edges that reference non-existent (orphaned) agents on
+ * either endpoint. Any edge whose `from` OR `to` references a skipped
+ * agent id is dropped — leaving a source-side orphan in place would
+ * still fail graph compilation with `Found edge ending at unknown node`
+ * because `agents` no longer contains the source.
  */
 export function filterOrphanedEdges(edges: GraphEdge[], skippedAgentIds: Set<string>): GraphEdge[] {
   if (!edges || skippedAgentIds.size === 0) {
     return edges;
   }
-  return edges.filter((edge) => {
-    const toIds = Array.isArray(edge.to) ? edge.to : [edge.to];
-    return !toIds.some((id) => typeof id === 'string' && skippedAgentIds.has(id));
-  });
+  const referencesSkipped = (value: string | string[]): boolean => {
+    const ids = Array.isArray(value) ? value : [value];
+    return ids.some((id) => typeof id === 'string' && skippedAgentIds.has(id));
+  };
+  return edges.filter((edge) => !referencesSkipped(edge.from) && !referencesSkipped(edge.to));
 }
 
 /** Collects all unique agent IDs referenced across an array of edges. */
