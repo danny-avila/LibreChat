@@ -1636,12 +1636,14 @@ describe('useStepHandler', () => {
       });
 
       const bucket = getProgress('call_A') as {
-        events: SubagentUpdateEvent[];
         status: string;
         latestLabel?: string;
         subagentType: string;
       };
-      expect(bucket.events).toHaveLength(3);
+      /** The atom no longer retains raw envelopes — they're folded
+       *  incrementally into `contentParts`/`tickerState`. Metadata
+       *  (status, latestLabel, subagentType) still reflects the last
+       *  update, which is what the UI actually renders from. */
       expect(bucket.status).toBe('stop');
       expect(bucket.latestLabel).toBe('Subagent "self" finished');
       expect(bucket.subagentType).toBe('self');
@@ -1732,24 +1734,29 @@ describe('useStepHandler', () => {
       });
 
       const bucket = getProgress('call_late') as {
-        events: SubagentUpdateEvent[];
         status: string;
+        latestLabel?: string;
       };
-      /** Both the buffered `start` and the current `run_step` must end up
-       *  in the atom in the correct order. */
-      expect(bucket.events.map((e) => e.label)).toEqual([
-        'arrives first',
-        'arrives after correlation',
-      ]);
+      /** The buffered `start` event and the current `run_step` both
+       *  get applied in order — the latest label reflects the most
+       *  recently processed envelope. */
       expect(bucket.status).toBe('run_step');
+      expect(bucket.latestLabel).toBe('arrives after correlation');
     });
 
-    it('caps the per-subagent events array at 200 entries', () => {
+    it('keeps atom state bounded under a large burst of lifecycle-only updates', () => {
+      /** Previously the atom retained a 200-event rolling window so long
+       *  runs could lose earlier tool_call records. We now fold events
+       *  into `contentParts` + `tickerState` incrementally — no raw
+       *  event array is stored, so memory is bounded by the structural
+       *  output (text/reasoning runs + tool calls), not delta volume.
+       *  A pile of pass-through phases like `run_step_delta` must not
+       *  create lines at all. */
       const { result, getProgress } = renderStepHandlerWithReader();
       const { submission } = seedResponseWithSubagentToolCalls(result, ['call_cap']);
 
       act(() => {
-        for (let i = 0; i < 205; i++) {
+        for (let i = 0; i < 500; i++) {
           (result.current as any).stepHandler(
             {
               event: StepEvents.ON_SUBAGENT_UPDATE,
@@ -1765,12 +1772,13 @@ describe('useStepHandler', () => {
       });
 
       const bucket = getProgress('call_cap') as {
-        events: SubagentUpdateEvent[];
+        contentParts: unknown[];
+        tickerState: { lines: unknown[] };
+        latestLabel?: string;
       };
-      expect(bucket.events).toHaveLength(200);
-      /** Oldest entries should be dropped — first retained label is from delta-5. */
-      expect(bucket.events[0].label).toBe('delta-5');
-      expect(bucket.events[bucket.events.length - 1].label).toBe('delta-204');
+      expect(bucket.contentParts).toEqual([]);
+      expect(bucket.tickerState.lines).toEqual([]);
+      expect(bucket.latestLabel).toBe('delta-499');
     });
 
     it('keeps parallel subagent streams independent when events interleave', () => {
@@ -1863,27 +1871,21 @@ describe('useStepHandler', () => {
       const bucketA = getProgress('call_a') as {
         subagentRunId: string;
         status: string;
-        events: SubagentUpdateEvent[];
+        latestLabel?: string;
       };
       const bucketB = getProgress('call_b') as {
         subagentRunId: string;
         status: string;
-        events: SubagentUpdateEvent[];
+        latestLabel?: string;
       };
 
-      // Each bucket only has events from its own run
+      /** Each bucket only captures its own run's lifecycle — metadata
+       *  (status, latestLabel, subagentRunId) stays scoped to the
+       *  matching tool_call_id despite interleaved delivery order. */
       expect(bucketA.subagentRunId).toBe('run_a');
       expect(bucketB.subagentRunId).toBe('run_b');
-      expect(bucketA.events.map((e) => e.label)).toEqual([
-        'A started',
-        'A using calculator',
-        'A done',
-      ]);
-      expect(bucketB.events.map((e) => e.label)).toEqual([
-        'B started',
-        'B using web',
-        'B still going',
-      ]);
+      expect(bucketA.latestLabel).toBe('A done');
+      expect(bucketB.latestLabel).toBe('B still going');
 
       // A reached `stop`, B is still running — their statuses should reflect that
       expect(bucketA.status).toBe('stop');

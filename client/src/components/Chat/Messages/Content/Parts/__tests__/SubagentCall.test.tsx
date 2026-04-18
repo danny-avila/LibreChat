@@ -5,9 +5,12 @@ import SubagentCall from '../SubagentCall';
 import { subagentProgressByToolCallId, type SubagentProgress } from '~/store/subagents';
 import {
   foldSubagentEvent,
+  foldSubagentEventIntoTicker,
   initSubagentAggregatorState,
+  initSubagentTickerState,
   type SubagentContentPart,
   type SubagentAggregatorState,
+  type SubagentTickerState,
 } from '~/utils/subagentContent';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 
@@ -18,14 +21,10 @@ jest.mock('~/hooks', () => ({
       const arg0 = (values?.[0] as string | undefined) ?? '';
       const arg1 = (values?.[1] as string | undefined) ?? '';
       const translations: Record<string, string> = {
-        com_ui_subagent_running: `Running "${arg0}" agent`,
-        com_ui_subagent_complete: `Ran "${arg0}" agent`,
-        com_ui_subagent_cancelled: `Cancelled "${arg0}" agent`,
-        com_ui_subagent_errored: `"${arg0}" agent errored`,
-        com_ui_subagent_running_self: 'Running agent',
-        com_ui_subagent_complete_self: 'Ran agent',
-        com_ui_subagent_cancelled_self: 'Cancelled agent',
-        com_ui_subagent_errored_self: 'Agent errored',
+        com_ui_subagent_running: 'Running agent',
+        com_ui_subagent_complete: 'Ran agent',
+        com_ui_subagent_cancelled: 'Cancelled agent',
+        com_ui_subagent_errored: 'Agent errored',
         com_ui_subagent_waiting: 'Waiting for first update…',
         com_ui_subagent_dialog_title: `"${arg0}" agent`,
         com_ui_subagent_dialog_title_self: 'Agent',
@@ -142,32 +141,40 @@ jest.mock('~/components/Chat/Messages/Content/ToolCallGroup', () => ({
   ),
 }));
 
-/** Helper: fold an event sequence through the real incremental aggregator
- *  so each test seeds the atom with the same shape `useStepHandler`
- *  produces in live state. */
+/** Helper: fold an event sequence through the real incremental
+ *  aggregators so each test seeds the atom with the same shape
+ *  `useStepHandler` produces in live state. */
 function foldEvents(events: SubagentUpdateEvent[]): {
   contentParts: SubagentContentPart[];
   aggregatorState: SubagentAggregatorState;
+  tickerState: SubagentTickerState;
 } {
   let contentParts: SubagentContentPart[] = [];
   let aggregatorState = initSubagentAggregatorState();
+  let tickerState = initSubagentTickerState();
   for (const event of events) {
     ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
       contentParts,
       aggregatorState,
       event,
     ));
+    tickerState = foldSubagentEventIntoTicker(tickerState, event);
   }
-  return { contentParts, aggregatorState };
+  return { contentParts, aggregatorState, tickerState };
 }
 
-/** Thin wrapper so each test can pass just the events and optional
- *  overrides without re-typing aggregator fields. */
+/** Thin wrapper: tests pass `{status, subagentRunId, subagentType, events}`
+ *  and get back a full-shape `SubagentProgress` with all three aggregator
+ *  outputs filled. */
 function progressFromEvents(
-  base: Omit<SubagentProgress, 'contentParts' | 'aggregatorState'>,
+  base: { events: SubagentUpdateEvent[] } & Omit<
+    SubagentProgress,
+    'contentParts' | 'aggregatorState' | 'tickerState'
+  >,
 ): SubagentProgress {
-  const { contentParts, aggregatorState } = foldEvents(base.events);
-  return { ...base, contentParts, aggregatorState };
+  const { events, ...rest } = base;
+  const aggregates = foldEvents(events);
+  return { ...rest, ...aggregates };
 }
 
 /**
@@ -287,7 +294,7 @@ describe('SubagentCall — status resolution', () => {
     expect(screen.getByText('Agent errored')).toBeInTheDocument();
   });
 
-  it('uses the agent-name label template for non-self subagent types', () => {
+  it('uses the base "Running agent" label for non-self subagent types (name shown as sub-label elsewhere)', () => {
     renderWithState({
       toolCallId: 'call_named',
       initialProgress: 0.3,
@@ -299,7 +306,10 @@ describe('SubagentCall — status resolution', () => {
         status: 'run_step',
       }),
     });
-    expect(screen.getByText('Running "researcher" agent')).toBeInTheDocument();
+    /** Header base label is constant ("Running agent"). The agent
+     *  display name is rendered as a muted sub-label, which this test
+     *  doesn't exercise (no agents-map context is seeded). */
+    expect(screen.getByText('Running agent')).toBeInTheDocument();
   });
 });
 
@@ -396,17 +406,19 @@ describe('SubagentCall — ticker', () => {
         })),
       }),
     });
-    /** Wait out the ticker throttle so the trailing-edge update lands
-     *  (`useThrottledValue` holds the previous frame for up to
-     *  `TICKER_THROTTLE_MS`). */
+    /** Ticker renders the "Writing:" label and the body in separate spans
+     *  (prefix is `shrink-0`, body is a tail-truncatable sibling) so the
+     *  label never gets clipped when the body overflows. "Hello world!"
+     *  also appears in the dialog body (mocked OGDialog renders
+     *  children), so `getAllByText` is needed for the body. */
     await waitFor(
       () => {
-        expect(screen.getByText('Writing: Hello world!')).toBeInTheDocument();
+        expect(screen.getAllByText('Hello world!').length).toBeGreaterThan(0);
       },
       { timeout: 2500 },
     );
-    /** Only one "Writing" line, not three. */
-    expect(screen.getAllByText(/Writing:/)).toHaveLength(1);
+    /** Only one "Writing:" label, not three — deltas collapse into one live line. */
+    expect(screen.getAllByText('Writing:')).toHaveLength(1);
   });
 });
 
@@ -590,8 +602,11 @@ describe('SubagentCall — dialog content', () => {
     );
     /** Only the first mount seeded the atom; the second mount has no
      *  live events so it falls back to persisted. Both should render —
-     *  confirming the preference rule resolves independently per mount. */
-    expect(screen.getByText('Live answer.')).toBeInTheDocument();
+     *  confirming the preference rule resolves independently per mount.
+     *  "Live answer." appears twice on the first mount: once in the
+     *  ticker preview, once in the dialog body. Use getAllByText so
+     *  the duplicate doesn't trip the assertion. */
+    expect(screen.getAllByText('Live answer.').length).toBeGreaterThan(0);
     expect(screen.getByText('Stale persisted answer.')).toBeInTheDocument();
   });
 });
