@@ -1378,7 +1378,7 @@ describe('AclEntry Model Tests', () => {
     });
 
     describe('findPublicResourceIds', () => {
-      test('returns deduplicated IDs even if the public principal has multiple entries', async () => {
+      test('returns the public resource ID when required bits are present', async () => {
         const shared = new mongoose.Types.ObjectId();
         await methods.grantPermission(
           PrincipalType.PUBLIC,
@@ -1393,6 +1393,35 @@ describe('AclEntry Model Tests', () => {
           ResourceType.AGENT,
           PermissionBits.VIEW | PermissionBits.EDIT,
         );
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(shared.toString());
+      });
+
+      test('deduplicates when duplicate public entries exist for the same resource', async () => {
+        /**
+         * `grantPermission` upserts, so duplicates are not reachable through the
+         * public API. Bypass it with `AclEntry.create` to confirm the
+         * application-layer dedup logic handles the defensive case.
+         */
+        const shared = new mongoose.Types.ObjectId();
+        await AclEntry.create([
+          {
+            principalType: PrincipalType.PUBLIC,
+            resourceType: ResourceType.AGENT,
+            resourceId: shared,
+            permBits: PermissionBits.VIEW,
+            grantedBy: grantedById,
+          },
+          {
+            principalType: PrincipalType.PUBLIC,
+            resourceType: ResourceType.AGENT,
+            resourceId: shared,
+            permBits: PermissionBits.VIEW | PermissionBits.EDIT,
+            grantedBy: grantedById,
+          },
+        ]);
+
+        const result = await methods.findPublicResourceIds(ResourceType.AGENT, PermissionBits.VIEW);
         expect(result).toHaveLength(1);
         expect(result[0].toString()).toBe(shared.toString());
       });
