@@ -26,6 +26,8 @@ const {
   EToolResources,
   PermissionBits,
   actionDelimiter,
+  AgentCapabilities,
+  EModelEndpoint,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -104,6 +106,21 @@ const validateEdgeAgentAccess = (edges, userId, userRole) =>
  */
 const validateSubagentAccess = (subagents, userId, userRole) =>
   collectUnauthorizedAgentIds(subagents?.agent_ids ?? [], userId, userRole);
+
+/**
+ * Returns true when the agents-endpoint `subagents` capability is
+ * enabled in this request's resolved app config. When disabled,
+ * `initializeClient` already strips the `subagents` block at runtime
+ * so persisted `agent_ids` are inert — gating the ACL check on this
+ * keeps stale references in legacy records from blocking unrelated
+ * edits after a capability-off rollback (Codex P2).
+ * @param {Express.Request} req
+ */
+const isSubagentsCapabilityEnabled = (req) => {
+  const capabilities = req.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
+  if (!Array.isArray(capabilities)) return false;
+  return capabilities.includes(AgentCapabilities.subagents);
+};
 
 /**
  * Filters tools to only include those the user is authorized to use.
@@ -215,14 +232,23 @@ const createAgentHandler = async (req, res) => {
     }
 
     /**
-     * Only validate subagent ACL when the feature is actually enabled.
-     * The UI keeps the `agent_ids` list intact when a user toggles
-     * subagents off, so someone who subsequently lost VIEW access to
-     * one child would otherwise be locked out of saving *any* edit
-     * that echoes the old list back — even the edit that disables
-     * the feature. Empty list also no-ops (nothing to check).
+     * Only validate subagent ACL when the feature is actually enabled
+     * on BOTH the endpoint (capability flag in appConfig) AND the
+     * agent payload (`subagents.enabled !== false`). The UI keeps the
+     * `agent_ids` list intact when a user toggles subagents off, so
+     * someone who subsequently lost VIEW access to one child would
+     * otherwise be locked out of saving *any* edit that echoes the
+     * old list back — even the edit that disables the feature. And
+     * if the capability is off at the endpoint level, `initializeClient`
+     * strips the `subagents` block at runtime, so persisted
+     * `agent_ids` are inert and shouldn't gate saves. Empty list
+     * also no-ops (nothing to check).
      */
-    if (agentData.subagents?.enabled !== false && agentData.subagents?.agent_ids?.length) {
+    if (
+      isSubagentsCapabilityEnabled(req) &&
+      agentData.subagents?.enabled !== false &&
+      agentData.subagents?.agent_ids?.length
+    ) {
       const unauthorized = await validateSubagentAccess(agentData.subagents, userId, userRole);
       if (unauthorized.length > 0) {
         return res.status(403).json({
@@ -404,10 +430,15 @@ const updateAgentHandler = async (req, res) => {
       }
     }
 
-    /** Same guard as the create path: only validate when the feature
-     *  is enabled, so a user who lost access to a child can still
-     *  disable subagents without hitting a 403 loop. */
-    if (updateData.subagents?.enabled !== false && updateData.subagents?.agent_ids?.length) {
+    /** Same guard as the create path: capability must be enabled at
+     *  the endpoint level AND on the payload; otherwise skip so
+     *  disabling or capability-off rollbacks don't trip stale
+     *  references. */
+    if (
+      isSubagentsCapabilityEnabled(req) &&
+      updateData.subagents?.enabled !== false &&
+      updateData.subagents?.agent_ids?.length
+    ) {
       const { id: userId, role: userRole } = req.user;
       const unauthorized = await validateSubagentAccess(updateData.subagents, userId, userRole);
       if (unauthorized.length > 0) {
