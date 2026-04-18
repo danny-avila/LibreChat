@@ -29,9 +29,11 @@ router.post('/notifications', async (req, res) => {
   try {
     const internalApiKey = req.headers['x-internal-api-key'];
     const expectedApiKey = process.env.WEB_WEBHOOK_API_KEY;
-   // console.log("the api key coming====",internalApiKey,expectedApiKey)
 
     if (!expectedApiKey || internalApiKey !== expectedApiKey) {
+      console.log(`[DEBUG-AUTH] expectedApiKey exists? ${!!expectedApiKey}`,expectedApiKey);
+      console.log(`[DEBUG-AUTH] internalApiKey provided? ${!!internalApiKey}`,internalApiKey);
+      console.log(`[DEBUG-AUTH] Do they match? ${internalApiKey === expectedApiKey}`);
       return res.status(403).json({ message: 'Forbidden: Invalid API key' });
     }
 
