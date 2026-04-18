@@ -197,24 +197,29 @@ export default function useEventHandlers({
   });
   const attachmentHandler = useAttachmentHandler(queryClient);
 
-  /** Wipe the per-subagent Recoil atoms when the user navigates to a
-   *  different conversation. Historical subagent dialogs rehydrate from
-   *  the persisted `subagent_content` on each tool_call (written by the
-   *  backend at message-save time), so clearing live atoms on switch
-   *  doesn't lose any viewable history — it just prevents unbounded
+  /** Wipe the per-subagent Recoil atoms on conversation navigation.
+   *  Historical subagent dialogs rehydrate from the persisted
+   *  `subagent_content` on each tool_call (written by the backend at
+   *  message-save time), so clearing live atoms on switch doesn't
+   *  lose any viewable history — it just prevents unbounded
    *  `atomFamily` growth across multi-conversation sessions.
    *
-   *  Skip the initial `undefined → newId` transition that happens when
-   *  a brand-new chat's URL is stamped with the freshly-created
-   *  conversation id mid-stream — resetting then would drop subagent
-   *  progress collected from the in-flight first response. Only reset
-   *  when switching between two established ids. */
+   *  One-time guard: skip the very first `undefined → id` transition
+   *  that stamps a brand-new chat's URL mid-stream — resetting then
+   *  would drop subagent progress collected from the in-flight first
+   *  response. Any subsequent change (id→id, id→null, id→another)
+   *  resets normally. If the user started on an established chat the
+   *  guard is a no-op (`hasEstablished` is true from mount). */
   const lastConversationIdRef = useRef<string | null | undefined>(paramId);
+  const hasEstablishedConversationRef = useRef<boolean>(paramId != null);
   useEffect(() => {
     const previous = lastConversationIdRef.current;
     lastConversationIdRef.current = paramId;
-    const bothEstablished = previous != null && paramId != null && previous !== paramId;
-    if (bothEstablished) {
+    if (!hasEstablishedConversationRef.current && paramId != null) {
+      hasEstablishedConversationRef.current = true;
+      return;
+    }
+    if (previous !== paramId) {
       resetSubagentAtoms();
     }
   }, [paramId, resetSubagentAtoms]);
