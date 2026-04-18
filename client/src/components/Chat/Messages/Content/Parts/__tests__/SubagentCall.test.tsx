@@ -3,6 +3,13 @@ import { RecoilRoot, useRecoilCallback } from 'recoil';
 import { render, screen, act } from '@testing-library/react';
 import SubagentCall from '../SubagentCall';
 import { subagentProgressByToolCallId, type SubagentProgress } from '~/store/subagents';
+import {
+  foldSubagentEvent,
+  initSubagentAggregatorState,
+  type SubagentContentPart,
+  type SubagentAggregatorState,
+} from '~/utils/subagentContent';
+import type { SubagentUpdateEvent } from 'librechat-data-provider';
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -11,12 +18,17 @@ jest.mock('~/hooks', () => ({
       const arg0 = (values?.[0] as string | undefined) ?? '';
       const arg1 = (values?.[1] as string | undefined) ?? '';
       const translations: Record<string, string> = {
-        com_ui_subagent_running: `Subagent "${arg0}" is working…`,
-        com_ui_subagent_complete: `Subagent "${arg0}" finished`,
-        com_ui_subagent_cancelled: `Subagent "${arg0}" cancelled`,
-        com_ui_subagent_errored: `Subagent "${arg0}" errored`,
+        com_ui_subagent_running: `Running "${arg0}" agent`,
+        com_ui_subagent_complete: `Ran "${arg0}" agent`,
+        com_ui_subagent_cancelled: `Cancelled "${arg0}" agent`,
+        com_ui_subagent_errored: `"${arg0}" agent errored`,
+        com_ui_subagent_running_self: 'Running subtask',
+        com_ui_subagent_complete_self: 'Ran subtask',
+        com_ui_subagent_cancelled_self: 'Cancelled subtask',
+        com_ui_subagent_errored_self: 'Subtask errored',
         com_ui_subagent_waiting: 'Waiting for first update…',
-        com_ui_subagent_dialog_title: `Subagent: ${arg0}`,
+        com_ui_subagent_dialog_title: `"${arg0}" agent`,
+        com_ui_subagent_dialog_title_self: 'Subtask',
         com_ui_subagent_dialog_description: 'Isolated child run.',
         com_ui_subagent_no_result_yet: 'No result yet.',
         com_ui_subagent_empty_result: 'No text.',
@@ -82,8 +94,65 @@ jest.mock('lucide-react', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils/groupToolCalls'),
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
 }));
+
+/** The dialog wraps single parts in `Container` and grouped tool_calls in
+ *  `ToolCallGroup`. Stub both as transparent wrappers so the tests still
+ *  assert on the leaf renderers (Text/Reasoning/ToolCall) without pulling
+ *  Recoil-backed tool-call batching state into the component tree. */
+jest.mock('~/components/Chat/Messages/Content/Container', () => ({
+  __esModule: true,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-container">{children}</div>
+  ),
+}));
+
+jest.mock('~/components/Chat/Messages/Content/ToolCallGroup', () => ({
+  __esModule: true,
+  default: ({
+    parts,
+    renderPart,
+    lastContentIdx,
+  }: {
+    parts: Array<{ part: unknown; idx: number }>;
+    renderPart: (part: unknown, idx: number, isLast: boolean) => React.ReactNode;
+    lastContentIdx: number;
+  }) => (
+    <div data-testid="tool-call-group">
+      {parts.map(({ part, idx }) => renderPart(part, idx, idx === lastContentIdx))}
+    </div>
+  ),
+}));
+
+/** Helper: fold an event sequence through the real incremental aggregator
+ *  so each test seeds the atom with the same shape `useStepHandler`
+ *  produces in live state. */
+function foldEvents(events: SubagentUpdateEvent[]): {
+  contentParts: SubagentContentPart[];
+  aggregatorState: SubagentAggregatorState;
+} {
+  let contentParts: SubagentContentPart[] = [];
+  let aggregatorState = initSubagentAggregatorState();
+  for (const event of events) {
+    ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
+      contentParts,
+      aggregatorState,
+      event,
+    ));
+  }
+  return { contentParts, aggregatorState };
+}
+
+/** Thin wrapper so each test can pass just the events and optional
+ *  overrides without re-typing aggregator fields. */
+function progressFromEvents(
+  base: Omit<SubagentProgress, 'contentParts' | 'aggregatorState'>,
+): SubagentProgress {
+  const { contentParts, aggregatorState } = foldEvents(base.events);
+  return { ...base, contentParts, aggregatorState };
+}
 
 /**
  * Mount the component inside a RecoilRoot and expose a setter so each test
@@ -126,47 +195,47 @@ function renderWithState(args: {
 }
 
 describe('SubagentCall — status resolution', () => {
-  it('renders "working…" while streaming and no terminal envelope has arrived', () => {
+  it('renders "Running subtask" while streaming and no terminal envelope has arrived', () => {
     renderWithState({
       toolCallId: 'call_running',
       initialProgress: 0.3,
       isSubmitting: true,
-      progress: {
+      progress: progressFromEvents({
         subagentRunId: 'run_a',
         subagentType: 'self',
         events: [],
         status: 'run_step',
-      },
+      }),
     });
-    expect(screen.getByText('Subagent "self" is working…')).toBeInTheDocument();
+    expect(screen.getByText('Running subtask')).toBeInTheDocument();
   });
 
-  it('renders "finished" when the subagent emits a `stop` phase', () => {
+  it('renders "Ran subtask" when the subagent emits a `stop` phase', () => {
     renderWithState({
       toolCallId: 'call_stopped',
-      initialProgress: 0.3,
+      initialProgress: 1,
       isSubmitting: true,
-      progress: {
+      progress: progressFromEvents({
         subagentRunId: 'run_a',
         subagentType: 'self',
         events: [],
         status: 'stop',
-      },
+      }),
     });
-    expect(screen.getByText('Subagent "self" finished')).toBeInTheDocument();
+    expect(screen.getByText('Ran subtask')).toBeInTheDocument();
   });
 
-  it('renders "finished" when the tool call progress reaches 1', () => {
+  it('renders "Ran subtask" when the tool call progress reaches 1', () => {
     renderWithState({
       toolCallId: 'call_done',
       initialProgress: 1,
       isSubmitting: false,
       progress: null,
     });
-    expect(screen.getByText('Subagent "self" finished')).toBeInTheDocument();
+    expect(screen.getByText('Ran subtask')).toBeInTheDocument();
   });
 
-  it('renders "cancelled" when the stream stops before a terminal envelope (Codex P2 regression)', () => {
+  it('renders "Cancelled subtask" when the stream stops before a terminal envelope (Codex P2 regression)', () => {
     /**
      * Codex P2 on #12725: the old `running` computation ignored whether the
      * parent run was still streaming, so a user stop or dropped connection
@@ -177,29 +246,44 @@ describe('SubagentCall — status resolution', () => {
       toolCallId: 'call_cancelled',
       initialProgress: 0.4,
       isSubmitting: false,
-      progress: {
+      progress: progressFromEvents({
         subagentRunId: 'run_a',
         subagentType: 'self',
         events: [],
         status: 'run_step',
-      },
+      }),
     });
-    expect(screen.getByText('Subagent "self" cancelled')).toBeInTheDocument();
+    expect(screen.getByText('Cancelled subtask')).toBeInTheDocument();
   });
 
-  it('renders "errored" when the subagent emits an `error` phase', () => {
+  it('renders "Subtask errored" when the subagent emits an `error` phase', () => {
     renderWithState({
       toolCallId: 'call_error',
       initialProgress: 0.4,
       isSubmitting: true,
-      progress: {
+      progress: progressFromEvents({
         subagentRunId: 'run_a',
         subagentType: 'self',
         events: [],
         status: 'error',
-      },
+      }),
     });
-    expect(screen.getByText('Subagent "self" errored')).toBeInTheDocument();
+    expect(screen.getByText('Subtask errored')).toBeInTheDocument();
+  });
+
+  it('uses the agent-name label template for non-self subagent types', () => {
+    renderWithState({
+      toolCallId: 'call_named',
+      initialProgress: 0.3,
+      isSubmitting: true,
+      progress: progressFromEvents({
+        subagentRunId: 'run_b',
+        subagentType: 'researcher',
+        events: [],
+        status: 'run_step',
+      }),
+    });
+    expect(screen.getByText('Running "researcher" agent')).toBeInTheDocument();
   });
 });
 
@@ -209,7 +293,7 @@ describe('SubagentCall — ticker', () => {
       toolCallId: 'call_ticker',
       initialProgress: 0.3,
       isSubmitting: true,
-      progress: {
+      progress: progressFromEvents({
         subagentRunId: 'run_a',
         subagentType: 'self',
         status: 'run_step',
@@ -257,7 +341,7 @@ describe('SubagentCall — ticker', () => {
             timestamp: '',
           },
         ],
-      },
+      }),
     });
 
     /** Raw event names never appear in the ticker. */
@@ -273,7 +357,7 @@ describe('SubagentCall — ticker', () => {
       toolCallId: 'call_writing',
       initialProgress: 0.3,
       isSubmitting: true,
-      progress: {
+      progress: progressFromEvents({
         subagentRunId: 'run_a',
         subagentType: 'self',
         status: 'message_delta',
@@ -286,7 +370,7 @@ describe('SubagentCall — ticker', () => {
           data: { delta: { content: [{ type: 'text', text }] } },
           timestamp: '',
         })),
-      },
+      }),
     });
     expect(screen.getByText('Writing: Hello world!')).toBeInTheDocument();
     /** Only one "Writing" line, not three. */
@@ -300,7 +384,7 @@ describe('SubagentCall — dialog content', () => {
       toolCallId: 'call_dialog',
       initialProgress: 0.4,
       isSubmitting: true,
-      progress: {
+      progress: progressFromEvents({
         subagentRunId: 'run_a',
         subagentType: 'self',
         status: 'stop',
@@ -352,7 +436,7 @@ describe('SubagentCall — dialog content', () => {
             timestamp: '',
           },
         ],
-      },
+      }),
     });
 
     /** The mocked `OGDialog` always renders children, so dialog content is
@@ -439,7 +523,7 @@ describe('SubagentCall — dialog content', () => {
       toolCallId: 'call_live_wins',
       initialProgress: 0.4,
       isSubmitting: true,
-      progress: {
+      progress: progressFromEvents({
         subagentRunId: 'run_live',
         subagentType: 'self',
         status: 'message_delta',
@@ -454,7 +538,7 @@ describe('SubagentCall — dialog content', () => {
             timestamp: '',
           },
         ],
-      },
+      }),
     });
     /** Re-render with BOTH a populated atom and a different persisted
      *  snapshot — live should win. */

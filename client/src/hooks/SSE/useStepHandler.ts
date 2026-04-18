@@ -22,6 +22,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { subagentProgressByToolCallId } from '~/store';
+import { foldSubagentEvent, initSubagentAggregatorState } from '~/utils/subagentContent';
 
 type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
@@ -94,10 +95,10 @@ export default function useStepHandler({
    */
   const knownSubagentAtomKeys = useRef(new Set<string>());
 
-  /** Hard cap on per-subagent event history kept in Recoil. The ticker only
-   *  shows the latest few labels; the dialog shows the full log. For very
-   *  long-running subagents this cap prevents unbounded growth and repeated
-   *  O(n) array copies on every update. */
+  /** Rolling window for the ticker only. Content parts are aggregated
+   *  incrementally into `progress.contentParts` (bounded by structure,
+   *  not event volume) so trimming this window never drops tool-call
+   *  history from the dialog. */
   const MAX_SUBAGENT_EVENTS = 200;
 
   /**
@@ -169,17 +170,35 @@ export default function useStepHandler({
 
         knownSubagentAtomKeys.current.add(toolCallId);
         set(subagentProgressByToolCallId(toolCallId), (prev) => {
-          const existing = prev?.events ?? [];
-          const nextEvents = existing.concat(toApply);
-          const trimmed =
+          const existingEvents = prev?.events ?? [];
+          const nextEvents = existingEvents.concat(toApply);
+          const trimmedEvents =
             nextEvents.length > MAX_SUBAGENT_EVENTS
               ? nextEvents.slice(nextEvents.length - MAX_SUBAGENT_EVENTS)
               : nextEvents;
+
+          /** Incrementally fold this batch into the content-parts array.
+           *  `foldSubagentEvent` is pure and returns new references only
+           *  when something changed, so React bails out of unnecessary
+           *  re-renders. Full history is preserved regardless of the
+           *  ticker's event trim window. */
+          let contentParts = prev?.contentParts ?? [];
+          let aggregatorState = prev?.aggregatorState ?? initSubagentAggregatorState();
+          for (const event of toApply) {
+            ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
+              contentParts,
+              aggregatorState,
+              event,
+            ));
+          }
+
           const last = toApply[toApply.length - 1];
           return {
             subagentRunId: payload.subagentRunId,
             subagentType: payload.subagentType,
-            events: trimmed,
+            events: trimmedEvents,
+            contentParts,
+            aggregatorState,
             status: last.phase,
             latestLabel: last.label ?? prev?.latestLabel,
           };
