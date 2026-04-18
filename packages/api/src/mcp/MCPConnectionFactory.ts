@@ -3,9 +3,15 @@ import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/au
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, OAuthMetadata, MCPOAuthFlowMetadata } from '~/mcp/oauth';
+import type { OboTokenResolver } from '~/mcp/oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
-import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
+import {
+  MCPTokenStorage,
+  MCPOAuthHandler,
+  ReauthenticationRequiredError,
+  resolveOboToken,
+} from '~/mcp/oauth';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { sanitizeUrlForLogging, isClientRejectionMessage } from './utils';
 import { withTimeout } from '~/utils/promise';
@@ -34,6 +40,7 @@ export class MCPConnectionFactory {
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
+  protected readonly user?: t.OAuthConnectionOptions['user'];
   protected readonly flowManager?: FlowStateManager<MCPOAuthTokens | null>;
   protected readonly tokenMethods?: TokenMethods;
   protected readonly signal?: AbortSignal;
@@ -41,6 +48,7 @@ export class MCPConnectionFactory {
   protected readonly oauthEnd?: () => Promise<void>;
   protected readonly returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
+  protected readonly oboTokenResolver?: OboTokenResolver;
 
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
@@ -72,7 +80,12 @@ export class MCPConnectionFactory {
     const oauthUrl: string | null = null;
     let oauthRequired = false;
 
-    const oauthTokens = this.useOAuth ? await this.getOAuthTokens() : null;
+    let oauthTokens: MCPOAuthTokens | null = null;
+    if (this.usesObo) {
+      oauthTokens = await this.getOboTokens();
+    } else if (this.useOAuth) {
+      oauthTokens = await this.getOAuthTokens();
+    }
     const connection = new MCPConnection({
       serverName: this.serverName,
       serverConfig: this.serverConfig,
@@ -204,6 +217,8 @@ export class MCPConnectionFactory {
       ? `[MCP][${basic.serverName}][${options.user.id}]`
       : `[MCP][${basic.serverName}]`;
 
+    this.user = options?.user;
+
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
       this.userId = options.user?.id;
@@ -213,14 +228,44 @@ export class MCPConnectionFactory {
       this.oauthStart = options.oauthStart;
       this.oauthEnd = options.oauthEnd;
       this.returnOnOAuth = options.returnOnOAuth;
+      this.oboTokenResolver = options.oboTokenResolver;
     } else {
       this.useOAuth = false;
     }
   }
 
+  /** Resolves OBO tokens when the server config specifies obo, returns null otherwise */
+  protected async getOboTokens(): Promise<MCPOAuthTokens | null> {
+    const oboConfig = this.serverConfig.obo;
+    if (!oboConfig || !this.oboTokenResolver || !this.user) {
+      return null;
+    }
+
+    logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);
+    return resolveOboToken(this.user, oboConfig, this.oboTokenResolver);
+  }
+
+  /** Returns true if this server uses OBO instead of standard OAuth */
+  protected get usesObo(): boolean {
+    return !!this.serverConfig.obo && !!this.oboTokenResolver && !!this.user;
+  }
+
   /** Creates the base MCP connection with OAuth tokens */
   protected async createConnection(): Promise<MCPConnection> {
-    const oauthTokens = this.useOAuth ? await this.getOAuthTokens() : null;
+    let oauthTokens: MCPOAuthTokens | null = null;
+
+    if (this.usesObo) {
+      oauthTokens = await this.getOboTokens();
+      if (!oauthTokens) {
+        throw new Error(
+          `OBO token exchange failed for "${this.serverName}". ` +
+            'Ensure the user is authenticated via OpenID Connect and the federated access token is available.',
+        );
+      }
+    } else if (this.useOAuth) {
+      oauthTokens = await this.getOAuthTokens();
+    }
+
     const connection = new MCPConnection({
       serverName: this.serverName,
       serverConfig: this.serverConfig,
@@ -230,7 +275,7 @@ export class MCPConnectionFactory {
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;
-    if (this.useOAuth) {
+    if (this.useOAuth && !this.usesObo) {
       cleanupOAuthHandlers = this.handleOAuthEvents(connection);
     }
 

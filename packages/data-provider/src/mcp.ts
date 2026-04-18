@@ -92,6 +92,19 @@ const BaseOptionsSchema = z.object({
       custom_header: z.string().optional(),
     })
     .optional(),
+  /**
+   * On-Behalf-Of (OBO) token exchange configuration.
+   * When configured, LibreChat exchanges the logged-in user's federated access token
+   * for a token scoped to this MCP server via the OAuth 2.0 OBO flow (jwt-bearer grant).
+   * The exchanged token is injected as a Bearer Authorization header automatically.
+   * Requires the user to be authenticated via OpenID Connect (e.g., Entra ID).
+   */
+  obo: z
+    .object({
+      /** Scopes to request for the downstream MCP server (e.g., "api://<client-id>/Mcp.Tools.ReadWrite") */
+      scopes: z.string(),
+    })
+    .optional(),
   customUserVars: z
     .record(
       z.string(),
@@ -221,6 +234,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     requiresOAuth: true,
     customUserVars: true,
     oauth_headers: true,
+    obo: true,
   });
 
 const envVarPattern = /\$\{[^}]+\}/;

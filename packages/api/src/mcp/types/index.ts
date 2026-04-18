@@ -22,6 +22,7 @@ import type { LCTool } from '@librechat/agents';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
+import type { OboTokenResolver } from '~/mcp/oauth/obo';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -200,6 +201,7 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
   oauthStart?: (authURL: string) => Promise<void>;
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
+  oboTokenResolver?: OboTokenResolver;
 }
 
 export interface ToolDiscoveryOptions {
