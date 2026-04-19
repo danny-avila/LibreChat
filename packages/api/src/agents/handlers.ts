@@ -185,15 +185,22 @@ async function handleReadFileCall(
   }
 
   /**
-   * `disable-model-invocation: true` skills are off-limits for any model
-   * tool, not just the `skill` tool. Without this gate, a model that
-   * learned a disabled skill's name (stale catalog, hallucination) could
-   * still read its `SKILL.md` body or bundled files via `read_file`,
-   * defeating the contract. The skill stays in `accessibleSkillIds` only
-   * so handlers can fetch the doc and emit this explicit rejection
-   * instead of a misleading generic "not found".
+   * `disable-model-invocation: true` blocks AUTONOMOUS read_file probes:
+   * a model that learned a hidden skill's name (stale catalog, hallucination)
+   * shouldn't be able to read its SKILL.md body or bundled files. But when
+   * the user explicitly invoked the skill manually this turn, the body is
+   * already primed into context — and a manually-primed skill that depends
+   * on `references/foo.md` would be non-functional if read_file were
+   * blocked. Bypass the gate for manually-primed skill names so manual `$`
+   * invocation of disabled skills stays usable end-to-end.
+   *
+   * Sticky-primed skills (manually or model-invoked in prior turns) are not
+   * yet in this exception list — that's a known limitation tracked for
+   * a follow-up. Same-turn manual invocation is the load-bearing path.
    */
-  if (skill.disableModelInvocation === true) {
+  const manualSkillNames = (mergedConfigurable?.manualSkillNames as string[] | undefined) ?? [];
+  const isManuallyPrimedThisTurn = manualSkillNames.includes(skillName);
+  if (skill.disableModelInvocation === true && !isManuallyPrimedThisTurn) {
     return {
       toolCallId: tc.id,
       status: 'error',

@@ -28,15 +28,23 @@ function getSkillToolDeps() {
  * @param {object} req - The Express request object
  * @param {Array} accessibleSkillIds - Pre-computed accessible skill IDs
  * @param {string} [preResolvedCodeApiKey] - Pre-resolved code API key (skips redundant lookup)
+ * @param {string[]} [manualSkillNames] - Skill names manually invoked this turn via the `$` popover
  * @returns {Promise<object>} Augmented result with skill configurable
  */
-function enrichConfigurable(result, req, accessibleSkillIds, preResolvedCodeApiKey) {
+function enrichConfigurable(
+  result,
+  req,
+  accessibleSkillIds,
+  preResolvedCodeApiKey,
+  manualSkillNames,
+) {
   return enrichWithSkillConfigurable(
     result,
     req,
     accessibleSkillIds,
     loadAuthValues,
     preResolvedCodeApiKey,
+    manualSkillNames,
   );
 }
 

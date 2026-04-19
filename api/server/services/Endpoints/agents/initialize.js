@@ -185,7 +185,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
-      return enrichWithSkillConfigurable(result, req, ctx.accessibleSkillIds, codeApiKey);
+      return enrichWithSkillConfigurable(
+        result,
+        req,
+        ctx.accessibleSkillIds,
+        codeApiKey,
+        ctx.manualSkillNames,
+      );
     },
     toolEndCallback,
     ...getSkillToolDeps(),
@@ -295,6 +301,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     tool_resources: primaryConfig.tool_resources,
     actionsEnabled: primaryConfig.actionsEnabled,
     accessibleSkillIds: primaryConfig.accessibleSkillIds,
+    manualSkillNames: primaryConfig.manualSkillPrimes?.map((p) => p.name),
   });
 
   const agent_ids = primaryConfig.agent_ids;

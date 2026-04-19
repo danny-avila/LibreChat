@@ -566,6 +566,109 @@ describe('Skill CRUD methods', () => {
     expect(updated.skill.allowedTools).toBeUndefined();
   });
 
+  it('backfills legacy skills from frontmatter when columns are unset (getSkillByName)', async () => {
+    /* Simulate a pre-Phase-6 skill: it has `user-invocable` /
+       `disable-model-invocation` / `allowed-tools` set in frontmatter
+       but the structured columns were never populated (no migration). */
+    const legacy = await Skill.create({
+      name: 'legacy-skill',
+      description: 'A legacy skill from before Phase 6.',
+      body: 'body',
+      frontmatter: {
+        name: 'legacy-skill',
+        description: 'A legacy skill from before Phase 6.',
+        'disable-model-invocation': true,
+        'user-invocable': false,
+        'allowed-tools': ['execute_code'],
+      },
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    /* Strip the columns to simulate pre-Phase-6 state — `Skill.create`
+       above would have run the new derive helper, so we explicitly unset
+       to recreate the legacy shape. */
+    await Skill.collection.updateOne(
+      { _id: legacy._id },
+      { $unset: { disableModelInvocation: '', userInvocable: '', allowedTools: '' } },
+    );
+
+    const fetched = await methods.getSkillByName('legacy-skill', [
+      legacy._id as mongoose.Types.ObjectId,
+    ]);
+    /* Backfill must populate the columns from frontmatter so runtime
+       gates fire correctly without a write migration. */
+    expect(fetched?.disableModelInvocation).toBe(true);
+    expect(fetched?.userInvocable).toBe(false);
+    expect(fetched?.allowedTools).toEqual(['execute_code']);
+  });
+
+  it('backfills legacy skills from frontmatter on listSkillsByAccess summaries', async () => {
+    /* Same legacy-shape simulation; the summary projection now includes
+       frontmatter so the backfill helper has data to read. */
+    const legacy = await Skill.create({
+      name: 'legacy-summary',
+      description: 'A legacy skill listed in summaries.',
+      body: 'body',
+      frontmatter: {
+        name: 'legacy-summary',
+        description: 'A legacy skill listed in summaries.',
+        'disable-model-invocation': true,
+        'user-invocable': false,
+      },
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    await Skill.collection.updateOne(
+      { _id: legacy._id },
+      { $unset: { disableModelInvocation: '', userInvocable: '' } },
+    );
+
+    const result = await methods.listSkillsByAccess({
+      accessibleIds: [legacy._id as mongoose.Types.ObjectId],
+      limit: 10,
+    });
+    expect(result.skills.length).toBe(1);
+    expect(result.skills[0].disableModelInvocation).toBe(true);
+    expect(result.skills[0].userInvocable).toBe(false);
+  });
+
+  it('does not overwrite explicit columns with frontmatter values (column wins)', async () => {
+    /* If both column and frontmatter are set (e.g. an admin edited the
+       column directly via the API but the frontmatter still says
+       otherwise), the column is authoritative — backfill only fills
+       undefined fields. */
+    const skill = await Skill.create({
+      name: 'column-wins',
+      description: 'A demo skill used in tests.',
+      body: 'body',
+      frontmatter: {
+        name: 'column-wins',
+        description: 'A demo skill used in tests.',
+        'disable-model-invocation': true,
+        'user-invocable': false,
+      },
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      disableModelInvocation: false,
+      userInvocable: true,
+    });
+
+    const fetched = await methods.getSkillByName('column-wins', [
+      skill._id as mongoose.Types.ObjectId,
+    ]);
+    expect(fetched?.disableModelInvocation).toBe(false);
+    expect(fetched?.userInvocable).toBe(true);
+  });
+
   it('listSkillsByAccess returns disableModelInvocation / userInvocable / allowedTools on summary rows', async () => {
     const { skill } = await methods.createSkill(
       makeSkillInput({

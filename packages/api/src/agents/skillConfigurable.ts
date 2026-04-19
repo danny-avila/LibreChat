@@ -4,6 +4,13 @@ import { logger } from '@librechat/data-schemas';
 /**
  * Augments a loadTools result with skill-specific configurable properties.
  * Loads the code API key and merges it with accessibleSkillIds and the request object.
+ *
+ * `manualSkillNames` carries the names of skills the user explicitly invoked
+ * this turn via the `$` popover. Skill-tool handlers consult it to relax the
+ * `disable-model-invocation` gate on `read_file`: a manually-primed skill
+ * needs to be able to read its own bundled `references/` and `scripts/`
+ * files even when its frontmatter blocks autonomous model invocation.
+ * Empty/missing → no exception, the gate applies as normal.
  */
 export async function enrichWithSkillConfigurable(
   result: { loadedTools: unknown[]; configurable?: Record<string, unknown> },
@@ -15,6 +22,8 @@ export async function enrichWithSkillConfigurable(
   }) => Promise<Record<string, string>>,
   /** Pre-resolved code API key. When provided, loadAuthValues is skipped. */
   preResolvedCodeApiKey?: string,
+  /** Names of skills the user manually invoked this turn (`$` popover). */
+  manualSkillNames?: string[],
 ): Promise<{ loadedTools: unknown[]; configurable: Record<string, unknown> }> {
   let codeApiKey: string | undefined = preResolvedCodeApiKey;
   if (!codeApiKey) {
@@ -38,6 +47,7 @@ export async function enrichWithSkillConfigurable(
       req,
       codeApiKey,
       accessibleSkillIds,
+      manualSkillNames,
     },
   };
 }

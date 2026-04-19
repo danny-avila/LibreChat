@@ -502,6 +502,44 @@ export function deriveStructuredFrontmatterFields(
   return derived;
 }
 
+/**
+ * Read-time fallback for skills authored before the structured columns
+ * existed: if the column is unset but the matching key is present in
+ * `frontmatter`, fill the column in on the returned object so downstream
+ * runtime checks (`skill.userInvocable === false`,
+ * `skill.disableModelInvocation === true`, `skill.allowedTools`) behave
+ * the same way they would for a freshly-created skill.
+ *
+ * Pure: takes a lean skill object, mutates its undefined fields in place,
+ * returns the same reference. No DB writes — when the skill is next
+ * updated, `updateSkill` re-derives and persists the columns naturally.
+ *
+ * Skills with the columns already populated short-circuit to no-op.
+ */
+export function backfillDerivedFromFrontmatter<
+  T extends {
+    frontmatter?: Record<string, unknown>;
+    disableModelInvocation?: boolean;
+    userInvocable?: boolean;
+    allowedTools?: string[];
+  },
+>(skill: T | null): T | null {
+  if (!skill || !skill.frontmatter) {
+    return skill;
+  }
+  const derived = deriveStructuredFrontmatterFields(skill.frontmatter);
+  if (skill.disableModelInvocation === undefined && derived.disableModelInvocation !== undefined) {
+    skill.disableModelInvocation = derived.disableModelInvocation;
+  }
+  if (skill.userInvocable === undefined && derived.userInvocable !== undefined) {
+    skill.userInvocable = derived.userInvocable;
+  }
+  if (skill.allowedTools === undefined && derived.allowedTools !== undefined) {
+    skill.allowedTools = derived.allowedTools;
+  }
+  return skill;
+}
+
 export type UpsertSkillFileInput = {
   skillId: Types.ObjectId | string;
   relativePath: string;
@@ -678,7 +716,11 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } })
       .sort({ updatedAt: -1 })
       .lean();
-    return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
+    /* Read-time fallback: legacy skills authored before the structured
+       columns existed still need the runtime gates to fire. */
+    return backfillDerivedFromFrontmatter(
+      (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null,
+    );
   }
 
   async function listSkillsByAccess(
@@ -704,10 +746,21 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     const rows = await Skill.find(filter)
       .sort({ updatedAt: -1, _id: 1 })
       .limit(limit + 1)
+      /* `frontmatter` is included so `backfillDerivedFromFrontmatter` can
+         restore the runtime fields for skills authored before Phase 6
+         landed the columns. Body is still excluded — the size win was
+         body, not frontmatter (which is bounded by the validator). */
       .select(
-        'name displayTitle description category author authorName version source sourceMetadata fileCount tenantId disableModelInvocation userInvocable allowedTools createdAt updatedAt',
+        'name displayTitle description category author authorName version source sourceMetadata fileCount tenantId disableModelInvocation userInvocable allowedTools frontmatter createdAt updatedAt',
       )
       .lean();
+
+    /* Read-time fallback: pre-Phase-6 skills with `user-invocable` /
+       `disable-model-invocation` only in frontmatter (no derived column)
+       must still be filtered correctly by the catalog and the popover. */
+    for (const row of rows) {
+      backfillDerivedFromFrontmatter(row as unknown as ISkill);
+    }
 
     const has_more = rows.length > limit;
     const sliced = has_more ? rows.slice(0, limit) : rows;

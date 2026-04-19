@@ -302,5 +302,71 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('success');
       expect(result.content).toContain('Body');
     });
+
+    it('allows read_file for a manually-primed disabled skill (manual `$` invocation must stay usable)', async () => {
+      /* Disabled skill that the user manually invoked this turn. The body
+         is already primed into context via `manualSkillPrimes`; if read_file
+         were also blocked here, any skill referencing `references/foo.md`
+         in its body would be non-functional under manual invocation. The
+         autonomous-block contract is preserved because the bypass is
+         scoped to the per-turn `manualSkillNames` allowlist. */
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'manual-only-skill',
+        body: '# Use references/docs.md for details',
+        fileCount: 0,
+        disableModelInvocation: true,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: { manualSkillNames: ['manual-only-skill'] },
+        })),
+        getSkillByName,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_read_3',
+          name: Constants.READ_FILE,
+          args: { file_path: 'manual-only-skill/SKILL.md' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('references/docs.md');
+    });
+
+    it('still blocks read_file for a disabled skill the user did NOT manually prime this turn', async () => {
+      /* Defense-in-depth: the manual-prime exception is scoped to the
+         specific skill names in `manualSkillNames`. A model trying to
+         read a different disabled skill (one the user never manually
+         invoked) is still rejected. */
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'other-disabled-skill',
+        body: 'restricted',
+        fileCount: 0,
+        disableModelInvocation: true,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: { manualSkillNames: ['something-else'] },
+        })),
+        getSkillByName,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_read_4',
+          name: Constants.READ_FILE,
+          args: { file_path: 'other-disabled-skill/SKILL.md' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('cannot be invoked by the model');
+    });
   });
 });
