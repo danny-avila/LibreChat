@@ -1614,6 +1614,73 @@ describe('AclEntry Model Tests', () => {
         (result as number[]).push(99);
       }).toThrow(TypeError);
     });
+
+    /**
+     * Controllers forward user input directly into this path (e.g.
+     * `req.query.requiredPermission` in agents/v1.js is parsed by `parseInt`
+     * and passed to `findAccessibleResources`). Without a guard, attacker-
+     * supplied unique integers would grow the process-global `supersetCache`
+     * indefinitely (a DoS vector). Verify the function rejects every
+     * out-of-range shape without touching the cache.
+     */
+    describe('rejection of out-of-range inputs (cache-growth safety)', () => {
+      const MAX =
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+      const SHARED_EMPTY = permissionBitSupersets(MAX + 1);
+
+      test('returns a frozen empty array for requiredBits above MAX_PERM_BITS', () => {
+        expect(permissionBitSupersets(MAX + 1)).toEqual([]);
+        expect(Object.isFrozen(permissionBitSupersets(MAX + 1))).toBe(true);
+      });
+
+      test('returns the same shared empty instance for every rejected input', () => {
+        /**
+         * Shared reference identity means rejected inputs do not each allocate
+         * a fresh array on every call — key to avoiding GC churn under load.
+         */
+        expect(permissionBitSupersets(MAX + 1)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(MAX + 100)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(-1)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(Number.MAX_SAFE_INTEGER)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(NaN)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(1.5)).toBe(SHARED_EMPTY);
+      });
+
+      test('rejects inputs with bits above MAX_PERM_BITS even if some in-range bits are set', () => {
+        /**
+         * `permBits = 17 = 0b10001` has VIEW set AND bit 4 (out of range). A
+         * stored `permBits` can never be both ≤ 15 and have bit 4 set, so the
+         * match set is necessarily empty — reject before caching.
+         */
+        expect(permissionBitSupersets(MAX + PermissionBits.VIEW)).toBe(SHARED_EMPTY);
+      });
+
+      test('does NOT cache rejected inputs', () => {
+        /**
+         * Fire a burst of unique attacker-supplied integers and verify that
+         * none of them can be retrieved from the cache via a legitimate call
+         * — i.e., they were never cached. We do this by asserting shared
+         * reference identity across repeated calls with varied bogus values.
+         * If any of these were being cached, repeat calls would return
+         * distinct frozen arrays.
+         */
+        const ref = permissionBitSupersets(MAX + 1);
+        for (let i = 0; i < 1000; i++) {
+          expect(permissionBitSupersets(MAX + 1 + i)).toBe(ref);
+        }
+        for (let i = 0; i < 1000; i++) {
+          expect(permissionBitSupersets(-(i + 1))).toBe(ref);
+        }
+      });
+
+      test('in-range inputs are still cached normally (memoized reference)', () => {
+        const first = permissionBitSupersets(PermissionBits.EDIT);
+        const second = permissionBitSupersets(PermissionBits.EDIT);
+        expect(second).toBe(first);
+        expect(Object.isFrozen(first)).toBe(true);
+        expect(first).not.toBe(SHARED_EMPTY);
+      });
+    });
   });
 
   /**
