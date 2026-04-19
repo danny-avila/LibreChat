@@ -318,8 +318,8 @@ export interface ResolveManualSkillsParams {
     author: Types.ObjectId | string;
     /**
      * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
-     * Surfaced on `ResolvedManualSkill` so future runtime enforcement (Phase 6)
-     * can union it into the agent's effective tool set for the turn without
+     * Surfaced on `ResolvedManualSkill` so future runtime enforcement can
+     * union it into the agent's effective tool set for the turn without
      * re-fetching the document. Populated by the DB method when available.
      */
     allowedTools?: string[];
@@ -340,8 +340,8 @@ export interface ResolvedManualSkill {
   /**
    * Skill-declared tool allowlist passed through from the skill doc. Present
    * only when the skill author declared `allowed-tools` in frontmatter.
-   * Currently populated but not consumed — Phase 6 will union these into the
-   * agent's effective tool set for the turn.
+   * Currently populated but not consumed — future runtime enforcement will
+   * union these into the agent's effective tool set for the turn.
    */
   allowedTools?: string[];
 }

@@ -204,7 +204,7 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     /**
      * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
      * Surfaced so the resolver can carry it onto `ResolvedManualSkill` for
-     * future runtime enforcement (Phase 6) without a second round-trip.
+     * future runtime enforcement without a second round-trip.
      */
     allowedTools?: string[];
   } | null>;
