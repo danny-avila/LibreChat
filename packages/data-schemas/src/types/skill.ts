@@ -37,6 +37,26 @@ export interface ISkill {
    * are rejected so expanding the allowed set is an intentional code change.
    */
   frontmatter: Record<string, unknown>;
+  /**
+   * Mirrors the `disable-model-invocation` frontmatter field. `true` removes
+   * the skill from the model's catalog and rejects model-side `skill` tool
+   * calls; manual `$` invocation is unaffected. Defaults to `false`.
+   */
+  disableModelInvocation?: boolean;
+  /**
+   * Mirrors the `user-invocable` frontmatter field. `false` hides the skill
+   * from the `$` popover and rejects manual invocation. Defaults to `true`.
+   */
+  userInvocable?: boolean;
+  /**
+   * Skill-declared tool allowlist (mirrors the `allowed-tools` frontmatter
+   * field). When the skill is invoked, these tools are unioned into the
+   * agent's effective tool set for the turn. Tolerant of unknown names —
+   * the runtime intersects against the loaded tool registry and silently
+   * drops anything missing, so cross-ecosystem skills authored against
+   * unimplemented tools import without breaking.
+   */
+  allowedTools?: string[];
   category?: string;
   author: Types.ObjectId;
   authorName: string;

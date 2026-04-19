@@ -449,6 +449,59 @@ export type UpdateSkillInput = {
   category?: string;
 };
 
+/**
+ * Maps the runtime-enforced frontmatter fields onto their first-class
+ * column equivalents. Returns only the keys that were explicitly set on the
+ * frontmatter so callers can decide whether to write `undefined` (skip the
+ * `$set`) versus a concrete value.
+ *
+ * `allowed-tools` accepts string or string[] per the validator; both are
+ * normalized to an array. Empty strings are filtered out so a stray comma
+ * in YAML doesn't leak through as `''`.
+ */
+export function deriveStructuredFrontmatterFields(
+  frontmatter: Record<string, unknown> | undefined,
+): {
+  disableModelInvocation?: boolean;
+  userInvocable?: boolean;
+  allowedTools?: string[];
+} {
+  if (!frontmatter || typeof frontmatter !== 'object') {
+    return {};
+  }
+  const out: {
+    disableModelInvocation?: boolean;
+    userInvocable?: boolean;
+    allowedTools?: string[];
+  } = {};
+  const dmi = frontmatter['disable-model-invocation'];
+  if (typeof dmi === 'boolean') {
+    out.disableModelInvocation = dmi;
+  }
+  const ui = frontmatter['user-invocable'];
+  if (typeof ui === 'boolean') {
+    out.userInvocable = ui;
+  }
+  const at = frontmatter['allowed-tools'];
+  if (typeof at === 'string') {
+    /**
+     * YAML scalars like `allowed-tools: web_search` are parsed as a single
+     * string. Wrap into a one-element array; we deliberately do NOT split
+     * on commas — the validator already accepts string-array form and
+     * trying to "be helpful" by splitting `"web_search, file_search"`
+     * would silently invent semantics the spec doesn't promise.
+     */
+    if (at.length > 0) {
+      out.allowedTools = [at];
+    }
+  } else if (Array.isArray(at)) {
+    out.allowedTools = at.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+    );
+  }
+  return out;
+}
+
 export type UpsertSkillFileInput = {
   skillId: Types.ObjectId | string;
   relativePath: string;
@@ -582,6 +635,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       throw error;
     }
 
+    const derived = deriveStructuredFrontmatterFields(data.frontmatter);
     const doc = await Skill.create({
       name: data.name,
       displayTitle: data.displayTitle,
@@ -596,6 +650,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       sourceMetadata: data.sourceMetadata,
       fileCount: 0,
       tenantId: data.tenantId,
+      ...derived,
     });
     return {
       skill: doc.toObject() as unknown as ISkill & { _id: Types.ObjectId },
@@ -650,7 +705,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       .sort({ updatedAt: -1, _id: 1 })
       .limit(limit + 1)
       .select(
-        'name displayTitle description category author authorName version source sourceMetadata fileCount tenantId createdAt updatedAt',
+        'name displayTitle description category author authorName version source sourceMetadata fileCount tenantId disableModelInvocation userInvocable allowedTools createdAt updatedAt',
       )
       .lean();
 
@@ -701,16 +756,40 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
 
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
     const setPayload: Record<string, unknown> = {};
+    const unsetPayload: Record<string, ''> = {};
     if (update.name !== undefined) setPayload.name = update.name;
     if (update.displayTitle !== undefined) setPayload.displayTitle = update.displayTitle;
     if (update.description !== undefined) setPayload.description = update.description;
     if (update.body !== undefined) setPayload.body = update.body;
-    if (update.frontmatter !== undefined) setPayload.frontmatter = update.frontmatter;
+    if (update.frontmatter !== undefined) {
+      setPayload.frontmatter = update.frontmatter;
+      /**
+       * Derived columns track frontmatter — when frontmatter changes, the
+       * derived view must follow. Fields the new frontmatter omits are
+       * unset (back to schema default) so removing `disable-model-invocation`
+       * from a SKILL.md re-enables model invocation on the next save.
+       */
+      const derived = deriveStructuredFrontmatterFields(update.frontmatter);
+      for (const key of ['disableModelInvocation', 'userInvocable', 'allowedTools'] as const) {
+        if (derived[key] !== undefined) {
+          setPayload[key] = derived[key];
+        } else {
+          unsetPayload[key] = '';
+        }
+      }
+    }
     if (update.category !== undefined) setPayload.category = update.category;
 
+    const updateOps: Record<string, unknown> = {
+      $set: setPayload,
+      $inc: { version: 1 },
+    };
+    if (Object.keys(unsetPayload).length > 0) {
+      updateOps.$unset = unsetPayload;
+    }
     const result = await Skill.findOneAndUpdate(
       { _id: new ObjectId(id), version: expectedVersion },
-      { $set: setPayload, $inc: { version: 1 } },
+      updateOps,
       { new: true },
     ).lean();
 

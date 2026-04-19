@@ -116,6 +116,39 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
       type: Schema.Types.Mixed,
       default: {},
     },
+    /**
+     * When `true`, the model cannot invoke this skill via the `skill` tool
+     * and the skill is excluded from the catalog injected into the agent's
+     * additional_instructions. Manual `$` invocation is unaffected. Mirrors
+     * the `disable-model-invocation` frontmatter field; indexed because
+     * catalog injection filters on it on every turn.
+     */
+    disableModelInvocation: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    /**
+     * When `false`, the skill is hidden from the `$` popover and rejected
+     * by the manual-invocation resolver. Defaults to `true` so existing
+     * skills remain user-invocable without a migration. Mirrors the
+     * `user-invocable` frontmatter field.
+     */
+    userInvocable: {
+      type: Boolean,
+      default: true,
+    },
+    /**
+     * Skill-declared tool allowlist forwarded verbatim from frontmatter.
+     * Surfaced on resolved skill primes so the agent's effective tool set
+     * for the turn can union these in alongside the agent-configured tools.
+     * `default: undefined` (not `[]`) preserves the distinction between
+     * "author declared no extras" and "author explicitly declared none".
+     */
+    allowedTools: {
+      type: [String],
+      default: undefined,
+    },
     category: {
       type: String,
       default: '',
