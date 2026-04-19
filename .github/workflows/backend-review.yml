@@ -9,48 +9,204 @@ on:
     paths:
       - 'api/**'
       - 'packages/**'
+
+env:
+  NODE_ENV: CI
+  NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
+
 jobs:
-  tests_Backend:
-    name: Run Backend unit tests
-    timeout-minutes: 60
+  build:
+    name: Build packages
     runs-on: ubuntu-latest
-    env:
-      MONGO_URI: ${{ secrets.MONGO_URI }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      CREDS_KEY: ${{ secrets.CREDS_KEY }}
-      CREDS_IV: ${{ secrets.CREDS_IV }}
-      BAN_VIOLATIONS: ${{ secrets.BAN_VIOLATIONS }}
-      BAN_DURATION: ${{ secrets.BAN_DURATION }}
-      BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
-      NODE_ENV: CI
-      NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js 20.x
+
+      - name: Use Node.js 20.19
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            api/node_modules
+            packages/api/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Install Data Provider Package
+      - name: Restore data-provider build cache
+        id: cache-data-provider
+        uses: actions/cache@v4
+        with:
+          path: packages/data-provider/dist
+          key: build-data-provider-${{ runner.os }}-${{ hashFiles('packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-provider/package.json') }}
+
+      - name: Build data-provider
+        if: steps.cache-data-provider.outputs.cache-hit != 'true'
         run: npm run build:data-provider
 
-      - name: Install Data Schemas Package
+      - name: Restore data-schemas build cache
+        id: cache-data-schemas
+        uses: actions/cache@v4
+        with:
+          path: packages/data-schemas/dist
+          key: build-data-schemas-${{ runner.os }}-${{ hashFiles('packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/rollup.config.js', 'packages/data-schemas/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-provider/package.json') }}
+
+      - name: Build data-schemas
+        if: steps.cache-data-schemas.outputs.cache-hit != 'true'
         run: npm run build:data-schemas
 
-      - name: Install API Package
+      - name: Restore api build cache
+        id: cache-api
+        uses: actions/cache@v4
+        with:
+          path: packages/api/dist
+          key: build-api-${{ runner.os }}-${{ hashFiles('packages/api/src/**', 'packages/api/tsconfig*.json', 'packages/api/server-rollup.config.js', 'packages/api/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-provider/package.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/rollup.config.js', 'packages/data-schemas/package.json') }}
+
+      - name: Build api
+        if: steps.cache-api.outputs.cache-hit != 'true'
         run: npm run build:api
 
-      - name: Create empty auth.json file
-        run: |
-          mkdir -p api/data
-          echo '{}' > api/data/auth.json
+      - name: Upload data-provider build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+          retention-days: 2
 
-      - name: Check for Circular dependency in rollup
+      - name: Upload data-schemas build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+          retention-days: 2
+
+      - name: Upload api build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-api
+          path: packages/api/dist
+          retention-days: 2
+
+  typecheck:
+    name: TypeScript type checks
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            api/node_modules
+            packages/api/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+
+      - name: Download api build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-api
+          path: packages/api/dist
+
+      - name: Type check data-provider
+        run: npx tsc --noEmit -p packages/data-provider/tsconfig.json
+
+      - name: Type check data-schemas
+        run: npx tsc --noEmit -p packages/data-schemas/tsconfig.json
+
+      - name: Type check @librechat/api
+        run: npx tsc --noEmit -p packages/api/tsconfig.json
+
+      - name: Type check @librechat/client
+        run: npx tsc --noEmit -p packages/client/tsconfig.json
+
+  circular-deps:
+    name: Circular dependency checks
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            api/node_modules
+            packages/api/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+
+      - name: Rebuild @librechat/api and check for circular dependencies
+        run: |
+          output=$(npm run build:api 2>&1)
+          echo "$output"
+          if echo "$output" | grep -q "Circular depend"; then
+            echo "Error: Circular dependency detected in @librechat/api!"
+            exit 1
+          fi
+
+      - name: Detect circular dependencies in rollup
         working-directory: ./packages/data-provider
         run: |
           output=$(npm run rollup:api)
@@ -60,17 +216,201 @@ jobs:
             exit 1
           fi
 
+  test-api:
+    name: 'Tests: api'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      CREDS_KEY: ${{ secrets.CREDS_KEY }}
+      CREDS_IV: ${{ secrets.CREDS_IV }}
+      BAN_VIOLATIONS: ${{ secrets.BAN_VIOLATIONS }}
+      BAN_DURATION: ${{ secrets.BAN_DURATION }}
+      BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            api/node_modules
+            packages/api/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+
+      - name: Download api build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-api
+          path: packages/api/dist
+
+      - name: Create empty auth.json file
+        run: |
+          mkdir -p api/data
+          echo '{}' > api/data/auth.json
+
       - name: Prepare .env.test file
         run: cp api/test/.env.test.example api/test/.env.test
 
       - name: Run unit tests
         run: cd api && npm run test:ci
 
-      - name: Run librechat-data-provider unit tests
+  test-data-provider:
+    name: 'Tests: data-provider'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            api/node_modules
+            packages/api/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Run unit tests
         run: cd packages/data-provider && npm run test:ci
 
-      - name: Run @librechat/data-schemas unit tests
+  test-data-schemas:
+    name: 'Tests: data-schemas'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            api/node_modules
+            packages/api/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+
+      - name: Run unit tests
         run: cd packages/data-schemas && npm run test:ci
 
-      - name: Run @librechat/api unit tests
+  test-packages-api:
+    name: 'Tests: @librechat/api'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            api/node_modules
+            packages/api/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download data-schemas build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-schemas
+          path: packages/data-schemas/dist
+
+      - name: Download api build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-api
+          path: packages/api/dist
+
+      - name: Run unit tests
         run: cd packages/api && npm run test:ci

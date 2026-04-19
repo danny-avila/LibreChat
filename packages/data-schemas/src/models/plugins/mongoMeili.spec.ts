@@ -73,7 +73,10 @@ describe('Meilisearch Mongoose plugin', () => {
       title: 'Test Conversation',
       endpoint: EModelEndpoint.openAI,
     });
-    expect(mockAddDocuments).toHaveBeenCalled();
+    expect(mockAddDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ conversationId: expect.anything() })],
+      { primaryKey: 'conversationId' },
+    );
   });
 
   test('saving conversation indexes with expiredAt=null w/ meilisearch', async () => {
@@ -105,7 +108,10 @@ describe('Meilisearch Mongoose plugin', () => {
       user: new mongoose.Types.ObjectId(),
       isCreatedByUser: true,
     });
-    expect(mockAddDocuments).toHaveBeenCalled();
+    expect(mockAddDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ messageId: expect.anything() })],
+      { primaryKey: 'messageId' },
+    );
   });
 
   test('saving messages with expiredAt=null indexes w/ meilisearch', async () => {
@@ -128,6 +134,87 @@ describe('Meilisearch Mongoose plugin', () => {
       expiredAt: new Date(),
     });
     expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('updating an indexed conversation calls updateDocuments with primaryKey', async () => {
+    const conversationModel = createConversationModel(mongoose);
+    const convo = await conversationModel.create({
+      conversationId: new mongoose.Types.ObjectId().toString(),
+      user: new mongoose.Types.ObjectId(),
+      title: 'Original Title',
+      endpoint: EModelEndpoint.openAI,
+    });
+    mockUpdateDocuments.mockClear();
+
+    convo._meiliIndex = true;
+    convo.title = 'Updated Title';
+    await convo.save();
+
+    expect(mockUpdateDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ conversationId: expect.anything() })],
+      { primaryKey: 'conversationId' },
+    );
+  });
+
+  test('updating an indexed message calls updateDocuments with primaryKey: messageId', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const msg = await messageModel.create({
+      messageId: new mongoose.Types.ObjectId().toString(),
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      isCreatedByUser: true,
+    });
+    mockUpdateDocuments.mockClear();
+
+    msg._meiliIndex = true;
+    msg.text = 'Updated text';
+    await msg.save();
+
+    expect(mockUpdateDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ messageId: expect.anything() })],
+      { primaryKey: 'messageId' },
+    );
+  });
+
+  test('deleteObjectFromMeili calls deleteDocument with messageId, not _id', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const msgId = new mongoose.Types.ObjectId().toString();
+    const msg = await messageModel.create({
+      messageId: msgId,
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      isCreatedByUser: true,
+    });
+    mockDeleteDocument.mockClear();
+
+    const typedMsg = msg as unknown as import('./mongoMeili').DocumentWithMeiliIndex;
+    await new Promise<void>((resolve, reject) => {
+      typedMsg.deleteObjectFromMeili!((err) => (err ? reject(err) : resolve()));
+    });
+
+    expect(mockDeleteDocument).toHaveBeenCalledWith(msgId);
+    expect(mockDeleteDocument).not.toHaveBeenCalledWith(String(msg._id));
+  });
+
+  test('updateDocuments receives preprocessed data with primaryKey', async () => {
+    const conversationModel = createConversationModel(mongoose);
+    const conversationId = 'abc|def|ghi';
+    const convo = await conversationModel.create({
+      conversationId,
+      user: new mongoose.Types.ObjectId(),
+      title: 'Pipe Test',
+      endpoint: EModelEndpoint.openAI,
+    });
+    mockUpdateDocuments.mockClear();
+
+    convo._meiliIndex = true;
+    convo.title = 'Updated Pipe Test';
+    await convo.save();
+
+    expect(mockUpdateDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ conversationId: 'abc--def--ghi' })],
+      { primaryKey: 'conversationId' },
+    );
   });
 
   test('sync w/ meili does not include TTL documents', async () => {
@@ -299,8 +386,10 @@ describe('Meilisearch Mongoose plugin', () => {
       // Run sync which should call processSyncBatch internally
       await conversationModel.syncWithMeili();
 
-      // Verify addDocumentsInBatches was called (new batch method)
-      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+      // Verify addDocumentsInBatches was called with explicit primaryKey
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(expect.any(Array), undefined, {
+        primaryKey: 'conversationId',
+      });
     });
 
     test('addObjectToMeili retries on failure', async () => {
@@ -1013,6 +1102,105 @@ describe('Meilisearch Mongoose plugin', () => {
         orphanedIds[1],
         orphanedIds[2],
       ]);
+    });
+  });
+
+  describe('processSyncBatch does not modify updatedAt timestamps', () => {
+    test('syncWithMeili preserves original updatedAt on conversations', async () => {
+      const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      const pastDate = new Date('2024-01-15T12:00:00Z');
+
+      // Insert documents with specific updatedAt timestamps using raw collection
+      await conversationModel.collection.insertMany([
+        {
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'Old Conversation 1',
+          endpoint: EModelEndpoint.openAI,
+          _meiliIndex: false,
+          expiredAt: null,
+          createdAt: pastDate,
+          updatedAt: pastDate,
+        },
+        {
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: new mongoose.Types.ObjectId(),
+          title: 'Old Conversation 2',
+          endpoint: EModelEndpoint.openAI,
+          _meiliIndex: false,
+          expiredAt: null,
+          createdAt: pastDate,
+          updatedAt: pastDate,
+        },
+      ]);
+
+      // Verify timestamps before sync
+      const beforeSync = await conversationModel.find({}).lean();
+      for (const doc of beforeSync) {
+        expect(new Date(doc.updatedAt as Date).getTime()).toBe(pastDate.getTime());
+      }
+
+      // Run sync which calls processSyncBatch internally
+      await conversationModel.syncWithMeili();
+
+      // Verify _meiliIndex was updated
+      const indexedCount = await conversationModel.countDocuments({ _meiliIndex: true });
+      expect(indexedCount).toBe(2);
+
+      // Verify updatedAt was NOT modified
+      const afterSync = await conversationModel.find({}).lean();
+      for (const doc of afterSync) {
+        expect(new Date(doc.updatedAt as Date).getTime()).toBe(pastDate.getTime());
+      }
+    });
+
+    test('syncWithMeili preserves original updatedAt on messages', async () => {
+      const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+      await messageModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      const pastDate = new Date('2023-06-01T08:30:00Z');
+
+      await messageModel.collection.insertMany([
+        {
+          messageId: new mongoose.Types.ObjectId().toString(),
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: true,
+          _meiliIndex: false,
+          expiredAt: null,
+          createdAt: pastDate,
+          updatedAt: pastDate,
+        },
+        {
+          messageId: new mongoose.Types.ObjectId().toString(),
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: new mongoose.Types.ObjectId(),
+          isCreatedByUser: false,
+          _meiliIndex: false,
+          expiredAt: null,
+          createdAt: pastDate,
+          updatedAt: pastDate,
+        },
+      ]);
+
+      const beforeSync = await messageModel.find({}).lean();
+      for (const doc of beforeSync) {
+        expect(new Date(doc.updatedAt as Date).getTime()).toBe(pastDate.getTime());
+      }
+
+      await messageModel.syncWithMeili();
+
+      const indexedCount = await messageModel.countDocuments({ _meiliIndex: true });
+      expect(indexedCount).toBe(2);
+
+      const afterSync = await messageModel.find({}).lean();
+      for (const doc of afterSync) {
+        expect(new Date(doc.updatedAt as Date).getTime()).toBe(pastDate.getTime());
+      }
     });
   });
 

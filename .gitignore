@@ -63,6 +63,7 @@ bower_components/
 .clineignore
 .cursor
 .aider*
+.bg-shell/
 
 # Floobits
 .floo
@@ -129,12 +130,14 @@ helm/**/charts/
 helm/**/.values.yaml
 
 !/client/src/@types/i18next.d.ts
+!/client/src/@types/react.d.ts
 
 # SAML Idp cert
 *.cert
 
 # AI Assistants
 /.claude/
+/.codex/
 /.cursor/
 /.copilot/
 /.aider/
@@ -142,7 +145,6 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 *.local.md
-
 
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
@@ -154,16 +156,16 @@ claude-flow.config.json
 .swarm/
 .hive-mind/
 .claude-flow/
-memory/
-coordination/
-memory/claude-flow-data.json
-memory/sessions/*
-!memory/sessions/README.md
-memory/agents/*
-!memory/agents/README.md
-coordination/memory_bank/*
-coordination/subtasks/*
-coordination/orchestration/*
+/memory/
+/coordination/
+/memory/claude-flow-data.json
+/memory/sessions/*
+!/memory/sessions/README.md
+/memory/agents/*
+!/memory/agents/README.md
+/coordination/memory_bank/*
+/coordination/subtasks/*
+/coordination/orchestration/*
 *.db
 *.db-journal
 *.db-wal
@@ -171,5 +173,8 @@ coordination/orchestration/*
 *.sqlite-journal
 *.sqlite-wal
 claude-flow
+.playwright-mcp/*
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
+CLAUDE.md
+.gsd

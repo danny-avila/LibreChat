@@ -1,4 +1,6 @@
 import { loadToolDefinitions } from './definitions';
+import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
+import { getToolDefinition } from './registry/definitions';
 import type {
   LoadToolDefinitionsParams,
   LoadToolDefinitionsDeps,
@@ -115,6 +117,39 @@ describe('definitions.ts', () => {
         );
         expect(actionDef).toBeDefined();
         expect(actionDef?.parameters).toBeUndefined();
+      });
+
+      it('should not classify MCP tools with _action in name as action tools', async () => {
+        const mockGetActionToolDefinitions = jest.fn();
+        const mcpTool = 'get_action_mcp_myserver';
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue({
+          tools: [
+            {
+              name: 'get_action',
+              description: 'Gets an action',
+              inputSchema: { type: 'object', properties: {} },
+            },
+          ],
+        });
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: [mcpTool],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+          getActionToolDefinitions: mockGetActionToolDefinitions,
+        };
+
+        await loadToolDefinitions(params, deps);
+
+        expect(mockGetActionToolDefinitions).not.toHaveBeenCalled();
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalled();
       });
 
       it('should not call getActionToolDefinitions when no action tools present', async () => {
@@ -471,6 +506,73 @@ describe('definitions.ts', () => {
         const toolDef = result.toolDefinitions[0];
         expect(toolDef.name).toBe('list_items_mcp_my-server');
         expect((toolDef as { serverName?: string }).serverName).toBe('my-server');
+      });
+    });
+
+    describe('toolkit expansion', () => {
+      it('should expand image_gen_oai to include image_edit_oai', async () => {
+        mockIsBuiltInTool.mockImplementation((name) => name === 'image_gen_oai');
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['image_gen_oai'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const genDef = result.toolDefinitions.find((d) => d.name === 'image_gen_oai');
+        const editDef = result.toolDefinitions.find((d) => d.name === 'image_edit_oai');
+        expect(genDef).toBeDefined();
+        expect(editDef).toBeDefined();
+        expect(editDef?.parameters).toBeDefined();
+        expect(result.toolRegistry.has('image_gen_oai')).toBe(true);
+        expect(result.toolRegistry.has('image_edit_oai')).toBe(true);
+      });
+
+      it('should not duplicate image_edit_oai when toolkit is the only tool', async () => {
+        mockIsBuiltInTool.mockImplementation((name) => name === 'image_gen_oai');
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['image_gen_oai'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          loadAuthValues: mockLoadAuthValues,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const editDefs = result.toolDefinitions.filter((d) => d.name === 'image_edit_oai');
+        expect(editDefs).toHaveLength(1);
+      });
+    });
+
+    describe('toolkit mapping invariants', () => {
+      it('toolkitParent should be the inverse of toolkitExpansion', () => {
+        expect(toolkitParent['image_edit_oai']).toBe('image_gen_oai');
+        const parentKeys = Object.keys(toolkitParent).sort();
+        const expansionChildren = Object.values(toolkitExpansion).flat().sort();
+        expect(parentKeys).toEqual(expansionChildren);
+      });
+
+      it('every toolkitExpansion entry should reference existing tool definitions', () => {
+        for (const [parent, children] of Object.entries(toolkitExpansion)) {
+          expect(getToolDefinition(parent)).toBeDefined();
+          for (const child of children) {
+            expect(getToolDefinition(child)).toBeDefined();
+          }
+        }
       });
     });
 

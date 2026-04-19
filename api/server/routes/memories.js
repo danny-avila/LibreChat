@@ -4,12 +4,12 @@ const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
   toggleUserMemories,
+  getRoleByName,
   createMemory,
   deleteMemory,
   setMemory,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
-const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
 

@@ -1,31 +1,17 @@
-import React, { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRecoilValue } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
-import { CLOSE_SIDEBAR_ID, OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import { useLocalize, useNewConvo, useBranding } from '~/hooks';
-import { clearMessagesCache } from '~/utils';
+import { CLOSE_SIDEBAR_ID, OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { clearMessagesCache, cn } from '~/utils';
 import store from '~/store';
 
-export default function NewChat({
-  index = 0,
-  toggleNav,
-  subHeaders,
-  isSmallScreen,
-  headerButtons,
-}: {
-  index?: number;
-  toggleNav: () => void;
-  isSmallScreen?: boolean;
-  subHeaders?: React.ReactNode;
-  headerButtons?: React.ReactNode;
-}) {
-  const queryClient = useQueryClient();
-  /** Note: this component needs an explicit index passed if using more than one */
-  const { newConversation: newConvo } = useNewConvo(index);
-  const navigate = useNavigate();
+export default function NewChat({ className }: { className?: string }) {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
+  const { newConversation } = useNewConvo();
+  const conversation = useRecoilValue(store.conversationByIndex(0));
   const branding = useBranding();
   const { conversation } = store.useCreateConversationAtom(index);
 
@@ -37,22 +23,15 @@ export default function NewChat({
     }, 250);
   }, [toggleNav]);
 
-  const clickHandler: React.MouseEventHandler<HTMLButtonElement> = useCallback(
-    (e) => {
-      if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
-        window.open('/c/new', '_blank');
-        return;
-      }
-      clearMessagesCache(queryClient, conversation?.conversationId);
-      queryClient.invalidateQueries([QueryKeys.messages]);
-      newConvo();
-      navigate('/c/new', { state: { focusChat: true } });
-      if (isSmallScreen) {
-        toggleNav();
-      }
-    },
-    [queryClient, conversation, newConvo, navigate, toggleNav, isSmallScreen],
-  );
+  const clickHandler: React.MouseEventHandler<HTMLButtonElement> = (e) => {
+    if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
+      window.open('/c/new', '_blank');
+      return;
+    }
+    clearMessagesCache(queryClient, conversation?.conversationId);
+    queryClient.invalidateQueries([QueryKeys.messages]);
+    newConversation();
+  };
 
   return (
     <>

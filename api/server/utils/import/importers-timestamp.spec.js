@@ -1,25 +1,23 @@
+const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
 const { getImporter } = require('./importers');
 
 // Mock the database methods
-jest.mock('~/models/Conversation', () => ({
+jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
-}));
-jest.mock('~/models/Message', () => ({
   bulkSaveMessages: jest.fn(),
 }));
-jest.mock('~/cache/getLogStores');
-const getLogStores = require('~/cache/getLogStores');
-const mockedCacheGet = jest.fn();
-getLogStores.mockImplementation(() => ({
-  get: mockedCacheGet,
+
+const mockGetEndpointsConfig = jest.fn().mockResolvedValue(null);
+jest.mock('~/server/services/Config', () => ({
+  getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
 }));
 
 describe('Import Timestamp Ordering', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedCacheGet.mockResolvedValue(null);
+    mockGetEndpointsConfig.mockResolvedValue(null);
   });
 
   describe('LibreChat Import - Timestamp Issues', () => {
@@ -367,6 +365,133 @@ describe('Import Timestamp Ordering', () => {
       expect(new Date(validTimeMsg.createdAt).getTime()).toBeGreaterThan(
         new Date(nullTimeMsg.createdAt).getTime(),
       );
+    });
+
+    test('should terminate on cyclic parent relationships and break cycles before saving', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn');
+      const jsonData = [
+        {
+          title: 'Cycle Test',
+          create_time: 1700000000,
+          mapping: {
+            'root-node': {
+              id: 'root-node',
+              message: null,
+              parent: null,
+              children: ['message-a'],
+            },
+            'message-a': {
+              id: 'message-a',
+              message: {
+                id: 'message-a',
+                author: { role: 'user' },
+                create_time: 1700000000,
+                content: { content_type: 'text', parts: ['Message A'] },
+                metadata: {},
+              },
+              parent: 'message-b',
+              children: ['message-b'],
+            },
+            'message-b': {
+              id: 'message-b',
+              message: {
+                id: 'message-b',
+                author: { role: 'assistant' },
+                create_time: 1700000000,
+                content: { content_type: 'text', parts: ['Message B'] },
+                metadata: {},
+              },
+              parent: 'message-a',
+              children: ['message-a'],
+            },
+          },
+        },
+      ];
+
+      const requestUserId = 'user-123';
+      const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+      const importer = getImporter(jsonData);
+      await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+      const { messages } = importBatchBuilder;
+      expect(messages).toHaveLength(2);
+
+      const msgA = messages.find((m) => m.text === 'Message A');
+      const msgB = messages.find((m) => m.text === 'Message B');
+      expect(msgA).toBeDefined();
+      expect(msgB).toBeDefined();
+
+      const roots = messages.filter((m) => m.parentMessageId === Constants.NO_PARENT);
+      expect(roots).toHaveLength(1);
+
+      const [root] = roots;
+      const nonRoot = messages.find((m) => m.parentMessageId !== Constants.NO_PARENT);
+      expect(nonRoot.parentMessageId).toBe(root.messageId);
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('cyclic parent relationships'));
+      warnSpy.mockRestore();
+    });
+
+    test('should not hang when findValidParent encounters a skippable-message cycle', async () => {
+      const jsonData = [
+        {
+          title: 'Skippable Cycle Test',
+          create_time: 1700000000,
+          mapping: {
+            'root-node': {
+              id: 'root-node',
+              message: null,
+              parent: null,
+              children: ['real-msg'],
+            },
+            'sys-a': {
+              id: 'sys-a',
+              message: {
+                id: 'sys-a',
+                author: { role: 'system' },
+                create_time: 1700000000,
+                content: { content_type: 'text', parts: ['system a'] },
+                metadata: {},
+              },
+              parent: 'sys-b',
+              children: ['real-msg'],
+            },
+            'sys-b': {
+              id: 'sys-b',
+              message: {
+                id: 'sys-b',
+                author: { role: 'system' },
+                create_time: 1700000000,
+                content: { content_type: 'text', parts: ['system b'] },
+                metadata: {},
+              },
+              parent: 'sys-a',
+              children: [],
+            },
+            'real-msg': {
+              id: 'real-msg',
+              message: {
+                id: 'real-msg',
+                author: { role: 'user' },
+                create_time: 1700000001,
+                content: { content_type: 'text', parts: ['Hello'] },
+                metadata: {},
+              },
+              parent: 'sys-a',
+              children: [],
+            },
+          },
+        },
+      ];
+
+      const importBatchBuilder = new ImportBatchBuilder('user-123');
+      const importer = getImporter(jsonData);
+      await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+      const realMsg = importBatchBuilder.messages.find((m) => m.text === 'Hello');
+      expect(realMsg).toBeDefined();
+      expect(realMsg.parentMessageId).toBe(Constants.NO_PARENT);
     });
   });
 

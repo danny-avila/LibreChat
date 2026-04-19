@@ -462,4 +462,69 @@ describe('performSync() - syncThreshold logic', () => {
     );
     expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting convos sync (50 unindexed)');
   });
+
+  test('forces sync when zero documents indexed (reset scenario) even if below threshold', async () => {
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 0,
+      totalDocuments: 680,
+      isComplete: false,
+    });
+
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 0,
+      totalDocuments: 76,
+      isComplete: false,
+    });
+
+    Message.syncWithMeili.mockResolvedValue(undefined);
+    Conversation.syncWithMeili.mockResolvedValue(undefined);
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] No messages marked as indexed, forcing full sync',
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] Starting message sync (680 unindexed)',
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] No conversations marked as indexed, forcing full sync',
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting convos sync (76 unindexed)');
+  });
+
+  test('does NOT force sync when some documents already indexed and below threshold', async () => {
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 630,
+      totalDocuments: 680,
+      isComplete: false,
+    });
+
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 70,
+      totalDocuments: 76,
+      isComplete: false,
+    });
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(Message.syncWithMeili).not.toHaveBeenCalled();
+    expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
+    expect(mockLogger.info).not.toHaveBeenCalledWith(
+      '[indexSync] No messages marked as indexed, forcing full sync',
+    );
+    expect(mockLogger.info).not.toHaveBeenCalledWith(
+      '[indexSync] No conversations marked as indexed, forcing full sync',
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] 50 messages unindexed (below threshold: 1000, skipping)',
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] 6 convos unindexed (below threshold: 1000, skipping)',
+    );
+  });
 });

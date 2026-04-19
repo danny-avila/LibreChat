@@ -200,6 +200,39 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  test('should return correct tokens for gpt-5.3 matches', () => {
+    expect(getModelMaxTokens('gpt-5.3')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5.3']);
+    expect(getModelMaxTokens('gpt-5.3-codex')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5.3']);
+    expect(getModelMaxTokens('openai/gpt-5.3')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.3'],
+    );
+    expect(getModelMaxTokens('gpt-5.3-2025-03-01')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.3'],
+    );
+    expect(getModelMaxTokens('gpt-5.3-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.3'],
+    );
+  });
+
+  test('should return correct tokens for gpt-5.4 matches', () => {
+    expect(getModelMaxTokens('gpt-5.4')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5.4']);
+    expect(getModelMaxTokens('gpt-5.4-thinking')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.4'],
+    );
+    expect(getModelMaxTokens('openai/gpt-5.4')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.4'],
+    );
+  });
+
+  test('should return correct tokens for gpt-5.4-pro matches', () => {
+    expect(getModelMaxTokens('gpt-5.4-pro')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.4-pro'],
+    );
+    expect(getModelMaxTokens('openai/gpt-5.4-pro')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.4-pro'],
+    );
+  });
+
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
@@ -235,16 +268,6 @@ describe('getModelMaxTokens', () => {
 
       expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toEqual(expectedTokens);
     });
-  });
-
-  // Tests for Google models
-  test('should return correct tokens for exact match - Google models', () => {
-    expect(getModelMaxTokens('text-bison-32k', EModelEndpoint.google)).toBe(
-      maxTokensMap[EModelEndpoint.google]['text-bison-32k'],
-    );
-    expect(getModelMaxTokens('codechat-bison-32k', EModelEndpoint.google)).toBe(
-      maxTokensMap[EModelEndpoint.google]['codechat-bison-32k'],
-    );
   });
 
   test('should return undefined for no match - Google models', () => {
@@ -302,12 +325,6 @@ describe('getModelMaxTokens', () => {
     );
     expect(getModelMaxTokens('gemini-pro', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini'],
-    );
-    expect(getModelMaxTokens('code-', EModelEndpoint.google)).toBe(
-      maxTokensMap[EModelEndpoint.google]['code-'],
-    );
-    expect(getModelMaxTokens('chat-', EModelEndpoint.google)).toBe(
-      maxTokensMap[EModelEndpoint.google]['chat-'],
     );
   });
 
@@ -492,7 +509,19 @@ describe('getModelMaxTokens', () => {
 
   test('should return correct max output tokens for GPT-5 models', () => {
     const { getModelMaxOutputTokens } = require('@librechat/api');
-    ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5-pro'].forEach((model) => {
+    const gpt5Models = [
+      'gpt-5',
+      'gpt-5.1',
+      'gpt-5.2',
+      'gpt-5.3',
+      'gpt-5.4',
+      'gpt-5.4-pro',
+      'gpt-5-mini',
+      'gpt-5-nano',
+      'gpt-5-pro',
+      'gpt-5.2-pro',
+    ];
+    for (const model of gpt5Models) {
       expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
       expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
         maxOutputTokensMap[EModelEndpoint.openAI][model],
@@ -500,7 +529,7 @@ describe('getModelMaxTokens', () => {
       expect(getModelMaxOutputTokens(model, EModelEndpoint.azureOpenAI)).toBe(
         maxOutputTokensMap[EModelEndpoint.azureOpenAI][model],
       );
-    });
+    }
   });
 
   test('should return correct max output tokens for GPT-OSS models', () => {
@@ -514,6 +543,184 @@ describe('getModelMaxTokens', () => {
         maxOutputTokensMap[EModelEndpoint.azureOpenAI][model],
       );
     });
+  });
+});
+
+describe('findMatchingPattern - longest match wins', () => {
+  test('should prefer longer matching key over shorter cross-provider pattern', () => {
+    const result = findMatchingPattern(
+      'gpt-5.2-chat-2025-12-11',
+      maxTokensMap[EModelEndpoint.openAI],
+    );
+    expect(result).toBe('gpt-5.2');
+  });
+
+  test('should match gpt-5.2 tokens for date-suffixed chat variant', () => {
+    expect(getModelMaxTokens('gpt-5.2-chat-2025-12-11')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.2'],
+    );
+  });
+
+  test('should match gpt-5.2-pro over shorter patterns', () => {
+    expect(getModelMaxTokens('gpt-5.2-pro-chat-2025-12-11')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.2-pro'],
+    );
+  });
+
+  test('should match gpt-5-mini over gpt-5 for mini variants', () => {
+    expect(getModelMaxTokens('gpt-5-mini-chat-2025-01-01')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5-mini'],
+    );
+  });
+
+  test('should prefer gpt-4-1106 over gpt-4 for versioned model names', () => {
+    const result = findMatchingPattern('gpt-4-1106-preview', maxTokensMap[EModelEndpoint.openAI]);
+    expect(result).toBe('gpt-4-1106');
+  });
+
+  test('should prefer gpt-4-32k-0613 over gpt-4-32k for exact versioned names', () => {
+    const result = findMatchingPattern('gpt-4-32k-0613', maxTokensMap[EModelEndpoint.openAI]);
+    expect(result).toBe('gpt-4-32k-0613');
+  });
+
+  test('should prefer claude-3-5-sonnet over claude-3', () => {
+    const result = findMatchingPattern(
+      'claude-3-5-sonnet-20241022',
+      maxTokensMap[EModelEndpoint.anthropic],
+    );
+    expect(result).toBe('claude-3-5-sonnet');
+  });
+
+  test('should prefer gemini-2.0-flash-lite over gemini-2.0-flash', () => {
+    const result = findMatchingPattern(
+      'gemini-2.0-flash-lite-preview',
+      maxTokensMap[EModelEndpoint.google],
+    );
+    expect(result).toBe('gemini-2.0-flash-lite');
+  });
+});
+
+describe('findMatchingPattern - bestLength selection', () => {
+  test('should return the longest matching key when multiple keys match', () => {
+    const tokensMap = { short: 100, 'short-med': 200, 'short-med-long': 300 };
+    expect(findMatchingPattern('short-med-long-extra', tokensMap)).toBe('short-med-long');
+  });
+
+  test('should return the longest match regardless of key insertion order', () => {
+    const tokensMap = { 'a-b-c': 300, a: 100, 'a-b': 200 };
+    expect(findMatchingPattern('a-b-c-d', tokensMap)).toBe('a-b-c');
+  });
+
+  test('should return null when no key matches', () => {
+    const tokensMap = { alpha: 100, beta: 200 };
+    expect(findMatchingPattern('gamma-delta', tokensMap)).toBeNull();
+  });
+
+  test('should return the single matching key when only one matches', () => {
+    const tokensMap = { alpha: 100, beta: 200, gamma: 300 };
+    expect(findMatchingPattern('beta-extended', tokensMap)).toBe('beta');
+  });
+
+  test('should match case-insensitively against model name', () => {
+    const tokensMap = { 'gpt-5': 400000 };
+    expect(findMatchingPattern('GPT-5-turbo', tokensMap)).toBe('gpt-5');
+  });
+
+  test('should select the longest key among overlapping substring matches', () => {
+    const tokensMap = { 'gpt-': 100, 'gpt-5': 200, 'gpt-5.2': 300, 'gpt-5.2-pro': 400 };
+    expect(findMatchingPattern('gpt-5.2-pro-2025-01-01', tokensMap)).toBe('gpt-5.2-pro');
+    expect(findMatchingPattern('gpt-5.2-chat-2025-01-01', tokensMap)).toBe('gpt-5.2');
+    expect(findMatchingPattern('gpt-5.1-preview', tokensMap)).toBe('gpt-5');
+    expect(findMatchingPattern('gpt-unknown', tokensMap)).toBe('gpt-');
+  });
+
+  test('should not be confused by a short key that appears later in the model name', () => {
+    const tokensMap = { 'model-v2': 200, v2: 100 };
+    expect(findMatchingPattern('model-v2-extended', tokensMap)).toBe('model-v2');
+  });
+
+  test('should handle exact-length match as the best match', () => {
+    const tokensMap = { 'exact-model': 500, exact: 100 };
+    expect(findMatchingPattern('exact-model', tokensMap)).toBe('exact-model');
+  });
+
+  test('should return null for empty model name', () => {
+    expect(findMatchingPattern('', { 'gpt-5': 400000 })).toBeNull();
+  });
+
+  test('should prefer last-defined key on same-length ties', () => {
+    const tokensMap = { 'aa-bb': 100, 'cc-dd': 200 };
+    // model name contains both 5-char keys; last-defined wins in reverse iteration
+    expect(findMatchingPattern('aa-bb-cc-dd', tokensMap)).toBe('cc-dd');
+  });
+
+  test('longest match beats short cross-provider pattern even when both present', () => {
+    const tokensMap = { 'gpt-5.2': 400000, 'chat-': 8187 };
+    expect(findMatchingPattern('gpt-5.2-chat-2025-12-11', tokensMap)).toBe('gpt-5.2');
+  });
+
+  test('should match case-insensitively against keys', () => {
+    const tokensMap = { 'GPT-5': 400000 };
+    expect(findMatchingPattern('gpt-5-turbo', tokensMap)).toBe('GPT-5');
+  });
+});
+
+describe('findMatchingPattern - iteration performance', () => {
+  let includesSpy;
+
+  beforeEach(() => {
+    includesSpy = jest.spyOn(String.prototype, 'includes');
+  });
+
+  afterEach(() => {
+    includesSpy.mockRestore();
+  });
+
+  test('exact match early-exits with minimal includes() checks', () => {
+    const openAIMap = maxTokensMap[EModelEndpoint.openAI];
+    const keys = Object.keys(openAIMap);
+    const lastKey = keys[keys.length - 1];
+    includesSpy.mockClear();
+    const result = findMatchingPattern(lastKey, openAIMap);
+    const exactCalls = includesSpy.mock.calls.length;
+
+    expect(result).toBe(lastKey);
+    expect(exactCalls).toBe(1);
+  });
+
+  test('bestLength check skips includes() for shorter keys after a long match', () => {
+    const openAIMap = maxTokensMap[EModelEndpoint.openAI];
+    includesSpy.mockClear();
+    findMatchingPattern('gpt-3.5-turbo-0301-test', openAIMap);
+    const longKeyCalls = includesSpy.mock.calls.length;
+
+    includesSpy.mockClear();
+    findMatchingPattern('gpt-5.3-chat-latest', openAIMap);
+    const shortKeyCalls = includesSpy.mock.calls.length;
+
+    // gpt-3.5-turbo-0301 (20 chars) matches early, then bestLength prunes most keys
+    // gpt-5.3 (7 chars) is short, so fewer keys are pruned by the length check
+    expect(longKeyCalls).toBeLessThan(shortKeyCalls);
+  });
+
+  test('last-defined keys are checked first in reverse iteration', () => {
+    const tokensMap = { first: 100, second: 200, third: 300 };
+    includesSpy.mockClear();
+    const result = findMatchingPattern('third', tokensMap);
+    const calls = includesSpy.mock.calls.length;
+
+    // 'third' is last key, found on first reverse check, exact match exits immediately
+    expect(result).toBe('third');
+    expect(calls).toBe(1);
+  });
+});
+
+describe('deprecated PaLM2/Codey model removal', () => {
+  test('deprecated PaLM2/Codey models no longer have token entries', () => {
+    expect(getModelMaxTokens('text-bison-32k', EModelEndpoint.google)).toBeUndefined();
+    expect(getModelMaxTokens('codechat-bison-32k', EModelEndpoint.google)).toBeUndefined();
+    expect(getModelMaxTokens('code-bison', EModelEndpoint.google)).toBeUndefined();
+    expect(getModelMaxTokens('chat-bison', EModelEndpoint.google)).toBeUndefined();
   });
 });
 
@@ -612,21 +819,22 @@ describe('matchModelName', () => {
     expect(matchModelName('gpt-5-pro-2025-01-30-0130')).toBe('gpt-5-pro');
   });
 
-  // Tests for Google models
-  it('should return the exact model name if it exists in maxTokensMap - Google models', () => {
-    expect(matchModelName('text-bison-32k', EModelEndpoint.google)).toBe('text-bison-32k');
-    expect(matchModelName('codechat-bison-32k', EModelEndpoint.google)).toBe('codechat-bison-32k');
+  it('should return the closest matching key for gpt-5.3 matches', () => {
+    expect(matchModelName('openai/gpt-5.3')).toBe('gpt-5.3');
+    expect(matchModelName('gpt-5.3-codex')).toBe('gpt-5.3');
+    expect(matchModelName('gpt-5.3-2025-03-01')).toBe('gpt-5.3');
+  });
+
+  it('should return the closest matching key for gpt-5.4 matches', () => {
+    expect(matchModelName('openai/gpt-5.4')).toBe('gpt-5.4');
+    expect(matchModelName('gpt-5.4-thinking')).toBe('gpt-5.4');
+    expect(matchModelName('gpt-5.4-pro')).toBe('gpt-5.4-pro');
   });
 
   it('should return the input model name if no match is found - Google models', () => {
     expect(matchModelName('unknown-google-model', EModelEndpoint.google)).toBe(
       'unknown-google-model',
     );
-  });
-
-  it('should return the closest matching key for partial matches - Google models', () => {
-    expect(matchModelName('code-', EModelEndpoint.google)).toBe('code-');
-    expect(matchModelName('chat-', EModelEndpoint.google)).toBe('chat-');
   });
 });
 
@@ -1169,6 +1377,37 @@ describe('Claude Model Tests', () => {
     });
   });
 
+  it('should return correct context length for Claude Opus 4.7 (1M)', () => {
+    expect(getModelMaxTokens('claude-opus-4-7', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-7'],
+    );
+    expect(getModelMaxTokens('claude-opus-4-7')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-7'],
+    );
+  });
+
+  it('should return correct max output tokens for Claude Opus 4.7 (128K)', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+    expect(getModelMaxOutputTokens('claude-opus-4-7', EModelEndpoint.anthropic)).toBe(
+      maxOutputTokensMap[EModelEndpoint.anthropic]['claude-opus-4-7'],
+    );
+  });
+
+  it('should match model names correctly for Claude Opus 4.7', () => {
+    const modelVariations = [
+      'claude-opus-4-7',
+      'claude-opus-4-7-20260401',
+      'claude-opus-4-7-latest',
+      'anthropic/claude-opus-4-7',
+      'claude-opus-4-7/anthropic',
+      'claude-opus-4-7-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-opus-4-7');
+    });
+  });
+
   it('should return correct context length for Claude Sonnet 4.6 (1M)', () => {
     expect(getModelMaxTokens('claude-sonnet-4-6', EModelEndpoint.anthropic)).toBe(
       maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
@@ -1602,6 +1841,60 @@ describe('GLM Model Tests (Zhipu AI)', () => {
       expect(matchModelName('zai-org/GLM-4.6')).toBe('glm-4.6');
       expect(matchModelName('zai-org/GLM-4.5V')).toBe('glm-4.5v');
       expect(matchModelName('zai-org/GLM-4-32B-0414')).toBe('glm-4-32b');
+    });
+  });
+});
+
+describe('Mistral Model Tests', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for mistral-large-3 (256k context)', () => {
+      expect(getModelMaxTokens('mistral-large-3', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large-3'],
+      );
+    });
+
+    test('should match mistral-large-3 for suffixed variants', () => {
+      expect(getModelMaxTokens('mistral-large-3-instruct', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large-3'],
+      );
+    });
+
+    test('should not match mistral-large-3 for generic mistral-large', () => {
+      expect(getModelMaxTokens('mistral-large', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large'],
+      );
+      expect(getModelMaxTokens('mistral-large-latest', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large'],
+      );
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match mistral-large-3 exactly', () => {
+      expect(matchModelName('mistral-large-3', EModelEndpoint.custom)).toBe('mistral-large-3');
+    });
+
+    test('should match mistral-large-3 for prefixed/suffixed variants', () => {
+      expect(matchModelName('mistral/mistral-large-3', EModelEndpoint.custom)).toBe(
+        'mistral-large-3',
+      );
+      expect(matchModelName('mistral-large-3-instruct', EModelEndpoint.custom)).toBe(
+        'mistral-large-3',
+      );
+    });
+
+    test('should match generic mistral-large for non-3 variants', () => {
+      expect(matchModelName('mistral-large-latest', EModelEndpoint.custom)).toBe('mistral-large');
+    });
+  });
+
+  describe('findMatchingPattern', () => {
+    test('should prefer mistral-large-3 over mistral-large for mistral-large-3 variants', () => {
+      const result = findMatchingPattern(
+        'mistral-large-3-instruct',
+        maxTokensMap[EModelEndpoint.custom],
+      );
+      expect(result).toBe('mistral-large-3');
     });
   });
 });

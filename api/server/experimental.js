@@ -14,23 +14,26 @@ const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
+  apiNotFound,
   ErrorController,
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
+  preAuthTenantMiddleware,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
-const { updateInterfacePermissions } = require('~/models/interface');
+const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
+const { getRoleByName, updateAccessPermissions, seedDatabase } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
+const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
-const { seedDatabase } = require('~/models');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -221,7 +224,7 @@ if (cluster.isMaster) {
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
     await performStartupChecks(appConfig);
-    await updateInterfacePermissions(appConfig);
+    await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
 
     /** Load index.html for SPA serving */
     const indexPath = path.join(appConfig.paths.dist, 'index.html');
@@ -297,6 +300,7 @@ if (cluster.isMaster) {
     /** Routes */
     app.use('/oauth', routes.oauth);
     app.use('/api/auth', routes.auth);
+    app.use('/api/admin', routes.adminAuth);
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);
     app.use('/api/api-keys', routes.apiKeys);
@@ -311,8 +315,7 @@ if (cluster.isMaster) {
     app.use('/api/balance', routes.balance);
     app.use('/api/balance-admin', routes.balanceAdmin);
     app.use('/api/models', routes.models);
-    app.use('/api/plugins', routes.plugins);
-    app.use('/api/config', routes.config);
+    app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
     app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
@@ -325,8 +328,8 @@ if (cluster.isMaster) {
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);
 
-    /** Error handler */
-    app.use(ErrorController);
+    /** 404 for unmatched API routes */
+    app.use('/api', apiNotFound);
 
     /** SPA fallback - serve index.html for all unmatched routes */
     app.use((req, res) => {
@@ -343,6 +346,9 @@ if (cluster.isMaster) {
       res.type('html');
       res.send(updatedIndexHtml);
     });
+
+    /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
+    app.use(ErrorController);
 
     /** Start listening on shared port (cluster will distribute connections) */
     app.listen(port, host, async (err) => {

@@ -64,10 +64,10 @@ export default function useMentions({
   });
 
   const agentsMap = useAgentsMapContext();
-  const { data: presets } = useGetPresetsQuery();
-  const { data: modelsConfig } = useGetModelsQuery();
-  const { data: startupConfig } = useGetStartupConfig();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { data: presets, isLoading: isLoadingPresets } = useGetPresetsQuery();
+  const { data: modelsConfig, isLoading: isLoadingModels } = useGetModelsQuery();
+  const { data: startupConfig, isLoading: isLoadingStartup } = useGetStartupConfig();
+  const { data: endpointsConfig, isLoading: isLoadingEndpoints } = useGetEndpointsQuery();
   const { data: endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
@@ -82,10 +82,11 @@ export default function useMentions({
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig?.interface],
   );
-  const { data: agentsList = null } = useListAgentsQuery(
+  const agentQueryEnabled = hasAgentAccess && interfaceConfig.modelSelect === true;
+  const { data: agentsList = null, isLoading: isLoadingAgents } = useListAgentsQuery(
     { requiredPermission: PermissionBits.VIEW },
     {
-      enabled: hasAgentAccess && interfaceConfig.modelSelect === true,
+      enabled: agentQueryEnabled,
       select: (res) => {
         const { data } = res;
         return data.map(({ id, name, avatar }) => ({
@@ -252,9 +253,17 @@ export default function useMentions({
     interfaceConfig.modelSelect,
   ]);
 
+  const isLoading =
+    isLoadingPresets ||
+    isLoadingModels ||
+    isLoadingStartup ||
+    isLoadingEndpoints ||
+    (agentQueryEnabled && isLoadingAgents);
+
   return {
     options,
     presets,
+    isLoading,
     modelSpecs,
     agentsList,
     modelsConfig,

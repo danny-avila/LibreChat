@@ -1,8 +1,8 @@
+import { escapeRegExp } from '@librechat/data-schemas';
 import { SystemCategories } from 'librechat-data-provider';
 import type { IPromptGroupDocument as IPromptGroup } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { PromptGroupsListResponse } from '~/types';
-import { escapeRegExp } from '~/utils/common';
 
 /**
  * Formats prompt groups for the paginated /groups endpoint response
@@ -81,22 +81,12 @@ export function markPublicPromptGroups(
 /**
  * Builds filter object for prompt group queries
  */
-export function buildPromptGroupFilter({
-  name,
-  category,
-  ...otherFilters
-}: {
-  name?: string;
-  category?: string;
-  [key: string]: string | number | boolean | RegExp | undefined;
-}): {
+export function buildPromptGroupFilter({ name, category }: { name?: string; category?: string }): {
   filter: Record<string, string | number | boolean | RegExp | undefined>;
   searchShared: boolean;
   searchSharedOnly: boolean;
 } {
-  const filter: Record<string, string | number | boolean | RegExp | undefined> = {
-    ...otherFilters,
-  };
+  const filter: Record<string, string | number | boolean | RegExp | undefined> = {};
   let searchShared = true;
   let searchSharedOnly = false;
 
@@ -120,28 +110,47 @@ export function buildPromptGroupFilter({
 }
 
 /**
- * Filters accessible IDs based on shared/public prompts logic
+ * Filters accessible IDs based on shared/public prompts logic.
+ *
+ * @param ownedPromptGroupIds - IDs of prompt groups authored by the current user.
+ *   Required for correct MY_PROMPTS and SHARED_PROMPTS filtering. When omitted the
+ *   function falls back to the legacy behaviour (public-only filtering).
  */
 export async function filterAccessibleIdsBySharedLogic({
   accessibleIds,
   searchShared,
   searchSharedOnly,
   publicPromptGroupIds,
+  ownedPromptGroupIds,
 }: {
   accessibleIds: Types.ObjectId[];
   searchShared: boolean;
   searchSharedOnly: boolean;
   publicPromptGroupIds?: Types.ObjectId[];
+  ownedPromptGroupIds?: Types.ObjectId[];
 }): Promise<Types.ObjectId[]> {
-  const publicIdStrings = new Set((publicPromptGroupIds || []).map((id) => id.toString()));
+  const ownedIdStrings = new Set((ownedPromptGroupIds || []).map((id) => id.toString()));
 
   if (!searchShared) {
-    // For MY_PROMPTS - exclude public prompts to show only user's own prompts
+    // MY_PROMPTS — only prompt groups the user authored
+    if (ownedPromptGroupIds != null) {
+      return accessibleIds.filter((id) => ownedIdStrings.has(id.toString()));
+    }
+    // Legacy fallback: exclude public IDs (imprecise but backwards-compatible)
+    const publicIdStrings = new Set((publicPromptGroupIds || []).map((id) => id.toString()));
     return accessibleIds.filter((id) => !publicIdStrings.has(id.toString()));
   }
 
   if (searchSharedOnly) {
-    // Handle SHARED_PROMPTS filter - only return public prompts that user has access to
+    // SHARED_PROMPTS — all prompts the user can access that they did NOT author
+    // Combine accessible + public, deduplicate, then exclude owned
+    const allAccessible = [...accessibleIds, ...(publicPromptGroupIds || [])];
+    const uniqueMap = new Map(allAccessible.map((id) => [id.toString(), id]));
+
+    if (ownedPromptGroupIds != null) {
+      return [...uniqueMap.values()].filter((id) => !ownedIdStrings.has(id.toString()));
+    }
+    // Legacy fallback
     if (!publicPromptGroupIds?.length) {
       return [];
     }
@@ -149,5 +158,8 @@ export async function filterAccessibleIdsBySharedLogic({
     return publicPromptGroupIds.filter((id) => accessibleIdStrings.has(id.toString()));
   }
 
-  return [...accessibleIds, ...(publicPromptGroupIds || [])];
+  // ALL — return everything accessible + public (deduplicated)
+  const allAccessible = [...accessibleIds, ...(publicPromptGroupIds || [])];
+  const uniqueMap = new Map(allAccessible.map((id) => [id.toString(), id]));
+  return [...uniqueMap.values()];
 }

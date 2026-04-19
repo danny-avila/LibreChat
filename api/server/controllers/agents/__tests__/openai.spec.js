@@ -3,6 +3,7 @@
  * Tests that recordCollectedUsage is called correctly for token spending
  */
 
+const mockProcessStream = jest.fn().mockResolvedValue(undefined);
 const mockSpendTokens = jest.fn().mockResolvedValue({});
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue({});
 const mockRecordCollectedUsage = jest
@@ -35,7 +36,7 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   writeSSE: jest.fn(),
   createRun: jest.fn().mockResolvedValue({
-    processStream: jest.fn().mockResolvedValue(undefined),
+    processStream: mockProcessStream,
   }),
   createChunk: jest.fn().mockReturnValue({}),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
@@ -68,6 +69,7 @@ jest.mock('@librechat/api', () => ({
     toolCalls: new Map(),
     usage: { promptTokens: 100, completionTokens: 50, reasoningTokens: 0 },
   }),
+  resolveRecursionLimit: jest.fn().mockReturnValue(50),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
   isChatCompletionValidationFailure: jest.fn().mockReturnValue(false),
 }));
@@ -77,33 +79,25 @@ jest.mock('~/server/services/ToolService', () => ({
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/spendTokens', () => ({
-  spendTokens: mockSpendTokens,
-  spendStructuredTokens: mockSpendStructuredTokens,
-}));
+const mockGetMultiplier = jest.fn().mockReturnValue(1);
+const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
 
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+  buildSummarizationHandlers: jest.fn().mockReturnValue({}),
+  markSummarizationUsage: jest.fn().mockImplementation((usage) => usage),
+  agentLogHandlerObj: { handle: jest.fn() },
 }));
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/Conversation', () => ({
-  getConvoFiles: jest.fn().mockResolvedValue([]),
-}));
-
-jest.mock('~/models/Agent', () => ({
-  getAgent: jest.fn().mockResolvedValue({
-    id: 'agent-123',
-    provider: 'openAI',
-    model_parameters: { model: 'gpt-4' },
-  }),
-  getAgents: jest.fn().mockResolvedValue([]),
-}));
+const mockUpdateBalance = jest.fn().mockResolvedValue({});
+const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('~/models', () => ({
+  getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn(),
@@ -112,6 +106,14 @@ jest.mock('~/models', () => ({
   getUserCodeFiles: jest.fn(),
   getToolFilesByIds: jest.fn(),
   getCodeGeneratedFiles: jest.fn(),
+  updateBalance: mockUpdateBalance,
+  bulkInsertTransactions: mockBulkInsertTransactions,
+  spendTokens: mockSpendTokens,
+  spendStructuredTokens: mockSpendStructuredTokens,
+  getMultiplier: mockGetMultiplier,
+  getCacheMultiplier: mockGetCacheMultiplier,
+  getConvoFiles: jest.fn().mockResolvedValue([]),
+  getConvo: jest.fn().mockResolvedValue(null),
 }));
 
 describe('OpenAIChatCompletionController', () => {
@@ -149,13 +151,92 @@ describe('OpenAIChatCompletionController', () => {
     };
   });
 
+  describe('conversation ownership validation', () => {
+    it('should skip ownership check when conversation_id is not provided', async () => {
+      const { getConvo } = require('~/models');
+      await OpenAIChatCompletionController(req, res);
+      expect(getConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when conversation_id is not a string', async () => {
+      const { validateRequest } = require('@librechat/api');
+      validateRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', messages: [], stream: false, conversation_id: { $gt: '' } },
+      });
+
+      await OpenAIChatCompletionController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('should return 404 when conversation is not owned by user', async () => {
+      const { validateRequest } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: false,
+          conversation_id: 'convo-abc',
+        },
+      });
+      getConvo.mockResolvedValueOnce(null);
+
+      await OpenAIChatCompletionController(req, res);
+      expect(getConvo).toHaveBeenCalledWith('user-123', 'convo-abc');
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('should proceed when conversation is owned by user', async () => {
+      const { validateRequest } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: false,
+          conversation_id: 'convo-abc',
+        },
+      });
+      getConvo.mockResolvedValueOnce({ conversationId: 'convo-abc', user: 'user-123' });
+
+      await OpenAIChatCompletionController(req, res);
+      expect(getConvo).toHaveBeenCalledWith('user-123', 'convo-abc');
+      expect(res.status).not.toHaveBeenCalledWith(404);
+    });
+
+    it('should return 500 when getConvo throws a DB error', async () => {
+      const { validateRequest } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: false,
+          conversation_id: 'convo-abc',
+        },
+      });
+      getConvo.mockRejectedValueOnce(new Error('DB connection failed'));
+
+      await OpenAIChatCompletionController(req, res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
   describe('token usage recording', () => {
     it('should call recordCollectedUsage after successful non-streaming completion', async () => {
       await OpenAIChatCompletionController(req, res);
 
       expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
-        { spendTokens: mockSpendTokens, spendStructuredTokens: mockSpendStructuredTokens },
+        {
+          spendTokens: mockSpendTokens,
+          spendStructuredTokens: mockSpendStructuredTokens,
+          pricing: { getMultiplier: mockGetMultiplier, getCacheMultiplier: mockGetCacheMultiplier },
+          bulkWriteOps: {
+            insertMany: mockBulkInsertTransactions,
+            updateBalance: mockUpdateBalance,
+          },
+        },
         expect.objectContaining({
           user: 'user-123',
           conversationId: expect.any(String),
@@ -182,12 +263,18 @@ describe('OpenAIChatCompletionController', () => {
       );
     });
 
-    it('should pass spendTokens and spendStructuredTokens as dependencies', async () => {
+    it('should pass spendTokens, spendStructuredTokens, pricing, and bulkWriteOps as dependencies', async () => {
       await OpenAIChatCompletionController(req, res);
 
       const [deps] = mockRecordCollectedUsage.mock.calls[0];
       expect(deps).toHaveProperty('spendTokens', mockSpendTokens);
       expect(deps).toHaveProperty('spendStructuredTokens', mockSpendStructuredTokens);
+      expect(deps).toHaveProperty('pricing');
+      expect(deps.pricing).toHaveProperty('getMultiplier', mockGetMultiplier);
+      expect(deps.pricing).toHaveProperty('getCacheMultiplier', mockGetCacheMultiplier);
+      expect(deps).toHaveProperty('bulkWriteOps');
+      expect(deps.bulkWriteOps).toHaveProperty('insertMany', mockBulkInsertTransactions);
+      expect(deps.bulkWriteOps).toHaveProperty('updateBalance', mockUpdateBalance);
     });
 
     it('should include model from primaryConfig in recordCollectedUsage params', async () => {
@@ -199,6 +286,38 @@ describe('OpenAIChatCompletionController', () => {
           model: 'gpt-4',
         }),
       );
+    });
+  });
+
+  describe('recursionLimit resolution', () => {
+    it('should pass resolveRecursionLimit result to processStream config', async () => {
+      const { resolveRecursionLimit } = require('@librechat/api');
+      resolveRecursionLimit.mockReturnValueOnce(75);
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockProcessStream).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ recursionLimit: 75 }),
+        expect.anything(),
+      );
+    });
+
+    it('should call resolveRecursionLimit with agentsEConfig and agent', async () => {
+      const { resolveRecursionLimit } = require('@librechat/api');
+      const { getAgent } = require('~/models');
+      const mockAgent = { id: 'agent-123', name: 'Test', recursion_limit: 200 };
+      getAgent.mockResolvedValueOnce(mockAgent);
+
+      req.config = {
+        endpoints: {
+          agents: { recursionLimit: 100, maxRecursionLimit: 150, allowedProviders: [] },
+        },
+      };
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(resolveRecursionLimit).toHaveBeenCalledWith(req.config.endpoints.agents, mockAgent);
     });
   });
 });

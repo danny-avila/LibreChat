@@ -1,11 +1,32 @@
 import react from '@vitejs/plugin-react';
-// @ts-ignore
 import path from 'path';
-import type { Plugin } from 'vite';
 import { defineConfig } from 'vite';
+import { createRequire } from 'module';
+import { VitePWA } from 'vite-plugin-pwa';
 import { compression } from 'vite-plugin-compression2';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
-import { VitePWA } from 'vite-plugin-pwa';
+import type { Plugin } from 'vite';
+
+const require = createRequire(import.meta.url);
+
+/**
+ * vite-plugin-node-polyfills uses @rollup/plugin-inject to replace bare globals (e.g. `process`)
+ * with imports like `import process from 'vite-plugin-node-polyfills/shims/process'`. When the
+ * consuming module (e.g. recoil) is hoisted to the monorepo root, Vite 7's ESM resolver walks up
+ * from there and never finds the shims (installed only in client/node_modules). This map resolves
+ * the shim specifiers to absolute paths via CJS require.resolve anchored to the client directory.
+ */
+const NODE_POLYFILL_SHIMS: Record<string, string> = {
+  'vite-plugin-node-polyfills/shims/process': require.resolve(
+    'vite-plugin-node-polyfills/shims/process',
+  ),
+  'vite-plugin-node-polyfills/shims/buffer': require.resolve(
+    'vite-plugin-node-polyfills/shims/buffer',
+  ),
+  'vite-plugin-node-polyfills/shims/global': require.resolve(
+    'vite-plugin-node-polyfills/shims/global',
+  ),
+};
 
 // https://vitejs.dev/config/
 const backendPort = process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT) || 3080;
@@ -23,9 +44,10 @@ const permissionsAPIURL =
 export default defineConfig(({ command }) => ({
   base: '',
   server: {
-    allowedHosts: process.env.VITE_ALLOWED_HOSTS && process.env.VITE_ALLOWED_HOSTS.split(',') || [],
+    allowedHosts:
+      (process.env.VITE_ALLOWED_HOSTS && process.env.VITE_ALLOWED_HOSTS.split(',')) || [],
     host: process.env.HOST || 'localhost',
-    port: process.env.PORT && Number(process.env.PORT) || 3090,
+    port: (process.env.PORT && Number(process.env.PORT)) || 3090,
     strictPort: false,
     proxy: {
       '/api': {
@@ -57,6 +79,12 @@ export default defineConfig(({ command }) => ({
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [
     react(),
+    {
+      name: 'node-polyfills-shims-resolver',
+      resolveId(id) {
+        return NODE_POLYFILL_SHIMS[id] ?? null;
+      },
+    },
     nodePolyfills(),
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
@@ -166,7 +194,12 @@ export default defineConfig(({ command }) => ({
             if (normalizedId.includes('@dicebear')) {
               return 'avatars';
             }
-            if (normalizedId.includes('react-dnd') || normalizedId.includes('react-flip-toolkit')) {
+            if (
+              normalizedId.includes('react-dnd') ||
+              normalizedId.includes('dnd-core') ||
+              normalizedId.includes('react-flip-toolkit') ||
+              normalizedId.includes('flip-toolkit')
+            ) {
               return 'react-interactions';
             }
             if (normalizedId.includes('react-hook-form')) {
@@ -242,7 +275,10 @@ export default defineConfig(({ command }) => ({
             if (normalizedId.includes('framer-motion')) {
               return 'framer-motion';
             }
-            if (normalizedId.includes('node_modules/highlight.js')) {
+            if (
+              normalizedId.includes('node_modules/highlight.js') ||
+              normalizedId.includes('node_modules/lowlight')
+            ) {
               return 'markdown_highlight';
             }
             if (normalizedId.includes('katex') || normalizedId.includes('node_modules/katex')) {
@@ -256,6 +292,10 @@ export default defineConfig(({ command }) => ({
             }
             if (normalizedId.includes('@headlessui')) {
               return 'headlessui';
+            }
+
+            if (normalizedId.includes('@icons-pack/react-simple-icons/icons/')) {
+              return;
             }
 
             // Everything else falls into a generic vendor chunk.

@@ -1,8 +1,7 @@
 import toolCallSchema, { IToolCallData } from '~/schema/toolCall';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 
-/**
- * Creates or returns the ToolCall model using the provided mongoose instance and schema
- */
 export function createToolCallModel(mongoose: typeof import('mongoose')) {
+  applyTenantIsolation(toolCallSchema);
   return mongoose.models.ToolCall || mongoose.model<IToolCallData>('ToolCall', toolCallSchema);
 }

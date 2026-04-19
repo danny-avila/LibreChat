@@ -1,4 +1,6 @@
 export * from './app';
+/* Admin */
+export * from './admin';
 export * from './cdn';
 /* Auth */
 export * from './auth';
@@ -12,9 +14,13 @@ export * from './mcp/oauth';
 export * from './mcp/auth';
 export * from './mcp/zod';
 export * from './mcp/errors';
+export * from './mcp/cache';
+export * from './mcp/tools';
 /* Utilities */
 export * from './mcp/utils';
 export * from './utils';
+export { default as Tokenizer, countTokens } from './utils/tokenizer';
+export type { EncodingName } from './utils/tokenizer';
 export * from './db/utils';
 /* OAuth */
 export * from './oauth';
@@ -35,6 +41,8 @@ export * from './prompts';
 export * from './endpoints';
 /* Files */
 export * from './files';
+/* Storage */
+export * from './storage';
 /* Tools */
 export * from './tools';
 /* web search */
@@ -43,6 +51,8 @@ export * from './web';
 export * from './cache';
 /* Stream */
 export * from './stream';
+/* Diagnostics */
+export { memoryDiagnostics } from './utils/memory';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';

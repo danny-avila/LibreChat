@@ -6,6 +6,7 @@ import {
   EModelEndpoint,
   PermissionTypes,
   getEndpointField,
+  getConfigDefaults,
 } from 'librechat-data-provider';
 import type {
   TEndpointsConfig,
@@ -20,6 +21,8 @@ import { mapEndpoints, getIconKey } from '~/utils';
 import { useHasAccess } from '~/hooks';
 import { icons } from './Icons';
 
+const defaultInterface = getConfigDefaults().interface;
+
 export const useEndpoints = ({
   agents,
   assistantsMap,
@@ -33,7 +36,7 @@ export const useEndpoints = ({
 }) => {
   const modelsQuery = useGetModelsQuery();
   const { data: endpoints = [] } = useGetEndpointsQuery({ select: mapEndpoints });
-  const interfaceConfig = startupConfig?.interface ?? {};
+  const interfaceConfig = startupConfig?.interface ?? defaultInterface;
   const includedEndpoints = useMemo(
     () => new Set(startupConfig?.modelSpecs?.addedEndpoints ?? []),
     [startupConfig?.modelSpecs?.addedEndpoints],

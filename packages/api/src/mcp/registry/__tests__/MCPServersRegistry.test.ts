@@ -1,4 +1,4 @@
-import * as t from '~/mcp/types';
+import type * as t from '~/mcp/types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 
@@ -112,8 +112,8 @@ describe('MCPServersRegistry', () => {
       const userConfigBefore = await registry.getServerConfig('user_server');
       const allConfigsBefore = await registry.getAllServerConfigs();
 
-      expect(appConfigBefore).toEqual(testParsedConfig);
-      expect(userConfigBefore).toEqual(testParsedConfig);
+      expect(appConfigBefore).toEqual(expect.objectContaining(testParsedConfig));
+      expect(userConfigBefore).toEqual(expect.objectContaining(testParsedConfig));
       expect(Object.keys(allConfigsBefore)).toHaveLength(2);
 
       // Reset everything
@@ -193,6 +193,22 @@ describe('MCPServersRegistry', () => {
     });
   });
 
+  describe('reinspectServer', () => {
+    it('should throw when called on a healthy (non-stub) server', async () => {
+      await registry.addServer('healthy_server', testParsedConfig, 'CACHE');
+
+      await expect(registry.reinspectServer('healthy_server', 'CACHE')).rejects.toThrow(
+        'is not in a failed state',
+      );
+    });
+
+    it('should throw when the server does not exist', async () => {
+      await expect(registry.reinspectServer('ghost_server', 'CACHE')).rejects.toThrow(
+        'not found in CACHE',
+      );
+    });
+  });
+
   describe('Read-through cache', () => {
     describe('getServerConfig', () => {
       it('should cache repeated calls for the same server', async () => {
@@ -234,22 +250,18 @@ describe('MCPServersRegistry', () => {
       });
 
       it('should use different cache keys for different userIds', async () => {
-        // Spy on the cache repository get method
+        await registry['cacheConfigsRepo'].add('test_server', testParsedConfig);
         const cacheRepoGetSpy = jest.spyOn(registry['cacheConfigsRepo'], 'get');
 
-        // First call without userId
         await registry.getServerConfig('test_server');
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1);
 
-        // Call with userId - should be a different cache key, so hits repository again
         await registry.getServerConfig('test_server', 'user123');
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2);
 
-        // Repeat call with same userId - should hit read-through cache
         await registry.getServerConfig('test_server', 'user123');
-        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2); // Still 2
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2);
 
-        // Call with different userId - should hit repository
         await registry.getServerConfig('test_server', 'user456');
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(3);
       });

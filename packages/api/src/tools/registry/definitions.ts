@@ -3,6 +3,8 @@ import {
   CalculatorToolDefinition,
   CodeExecutionToolDefinition,
 } from '@librechat/agents';
+import { geminiToolkit } from '~/tools/toolkits/gemini';
+import { oaiToolkit } from '~/tools/toolkits/oai';
 
 /** Extended JSON Schema type that includes standard validation keywords */
 export type ExtendedJsonSchema = {
@@ -574,56 +576,25 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     responseFormat: 'content_and_artifact',
   },
   image_gen_oai: {
-    name: 'image_gen_oai',
-    description: `Generates high-quality, original images based solely on text, not using any uploaded reference images.
-
-When to use \`image_gen_oai\`:
-- To create entirely new images from detailed text descriptions that do NOT reference any image files.
-
-When NOT to use \`image_gen_oai\`:
-- If the user has uploaded any images and requests modifications, enhancements, or remixing based on those uploads → use \`image_edit_oai\` instead.
-
-Generated image IDs will be returned in the response, so you can refer to them in future requests made to \`image_edit_oai\`.`,
-    schema: imageGenOaiSchema,
+    name: oaiToolkit.image_gen_oai.name,
+    description: oaiToolkit.image_gen_oai.description,
+    schema: oaiToolkit.image_gen_oai.schema,
     toolType: 'builtin',
-    responseFormat: 'content_and_artifact',
+    responseFormat: oaiToolkit.image_gen_oai.responseFormat,
   },
   image_edit_oai: {
-    name: 'image_edit_oai',
-    description: `Generates high-quality, original images based on text and one or more uploaded/referenced images.
-
-When to use \`image_edit_oai\`:
-- The user wants to modify, extend, or remix one **or more** uploaded images, either:
-- Previously generated, or in the current request (both to be included in the \`image_ids\` array).
-- Always when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
-- Any current or existing images are to be used as visual guides.
-- If there are any files in the current request, they are more likely than not expected as references for image edit requests.
-
-When NOT to use \`image_edit_oai\`:
-- Brand-new generations that do not rely on an existing image → use \`image_gen_oai\` instead.
-
-Both generated and referenced image IDs will be returned in the response, so you can refer to them in future requests made to \`image_edit_oai\`.`,
-    schema: imageEditOaiSchema,
+    name: oaiToolkit.image_edit_oai.name,
+    description: oaiToolkit.image_edit_oai.description,
+    schema: oaiToolkit.image_edit_oai.schema,
     toolType: 'builtin',
-    responseFormat: 'content_and_artifact',
+    responseFormat: oaiToolkit.image_edit_oai.responseFormat,
   },
   gemini_image_gen: {
-    name: 'gemini_image_gen',
-    description: `Generates high-quality, original images based on text prompts, with optional image context.
-
-When to use \`gemini_image_gen\`:
-- To create entirely new images from detailed text descriptions
-- To generate images using existing images as context or inspiration
-- When the user requests image generation, creation, or asks to "generate an image"
-- When the user asks to "edit", "modify", "change", or "swap" elements in an image (generates new image with changes)
-
-When NOT to use \`gemini_image_gen\`:
-- For uploading or saving existing images without modification
-
-Generated image IDs will be returned in the response, so you can refer to them in future requests.`,
-    schema: geminiImageGenSchema,
+    name: geminiToolkit.gemini_image_gen.name,
+    description: geminiToolkit.gemini_image_gen.description,
+    schema: geminiToolkit.gemini_image_gen.schema,
     toolType: 'builtin',
-    responseFormat: 'content_and_artifact',
+    responseFormat: geminiToolkit.gemini_image_gen.responseFormat,
   },
   openrouter_image_gen: {
     name: 'openrouter_image_gen',

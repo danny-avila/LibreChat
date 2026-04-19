@@ -7,6 +7,8 @@ export default {
     '\\.dev\\.ts$',
     '\\.helper\\.ts$',
     '\\.helper\\.d\\.ts$',
+    '/__tests__/helpers/',
+    '\\.manual\\.spec\\.[jt]sx?$',
   ],
   coverageReporters: ['text', 'cobertura'],
   testResultsProcessor: 'jest-junit',
@@ -33,6 +35,7 @@ export default {
   //     lines: 57,
   //   },
   // },
+  maxWorkers: '50%',
   restoreMocks: true,
   testTimeout: 15000,
 };

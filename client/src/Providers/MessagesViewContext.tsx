@@ -18,7 +18,8 @@ interface MessagesViewContextValue {
 
   /** Message state management */
   index: ReturnType<typeof useChatContext>['index'];
-  latestMessage: ReturnType<typeof useChatContext>['latestMessage'];
+  latestMessageId: ReturnType<typeof useChatContext>['latestMessageId'];
+  latestMessageDepth: ReturnType<typeof useChatContext>['latestMessageDepth'];
   setLatestMessage: ReturnType<typeof useChatContext>['setLatestMessage'];
   getMessages: ReturnType<typeof useChatContext>['getMessages'];
   setMessages: ReturnType<typeof useChatContext>['setMessages'];
@@ -39,7 +40,8 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
     regenerate,
     isSubmitting,
     conversation,
-    latestMessage,
+    latestMessageId,
+    latestMessageDepth,
     setAbortScroll,
     handleContinue,
     setLatestMessage,
@@ -83,10 +85,11 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
   const messageState = useMemo(
     () => ({
       index,
-      latestMessage,
+      latestMessageId,
+      latestMessageDepth,
       setLatestMessage,
     }),
-    [index, latestMessage, setLatestMessage],
+    [index, latestMessageId, latestMessageDepth, setLatestMessage],
   );
 
   /** Combine all values into final context value */
@@ -137,11 +140,60 @@ export function useMessagesOperations() {
   );
 }
 
+type OptionalMessagesOps = Pick<
+  MessagesViewContextValue,
+  'ask' | 'regenerate' | 'handleContinue' | 'getMessages' | 'setMessages'
+>;
+
+const NOOP_OPS: OptionalMessagesOps = {
+  ask: () => {},
+  regenerate: () => {},
+  handleContinue: () => {},
+  getMessages: () => undefined,
+  setMessages: () => {},
+};
+
+/**
+ * Hook for components that need message operations but may render outside MessagesViewProvider
+ * (e.g. the /search route). Returns no-op stubs when the provider is absent — UI actions will
+ * be silently discarded rather than crashing. Callers must use optional chaining on
+ * `getMessages()` results, as it returns `undefined` outside the provider.
+ */
+export function useOptionalMessagesOperations(): OptionalMessagesOps {
+  const context = useContext(MessagesViewContext);
+  const ask = context?.ask;
+  const regenerate = context?.regenerate;
+  const handleContinue = context?.handleContinue;
+  const getMessages = context?.getMessages;
+  const setMessages = context?.setMessages;
+  return useMemo(
+    () => ({
+      ask: ask ?? NOOP_OPS.ask,
+      regenerate: regenerate ?? NOOP_OPS.regenerate,
+      handleContinue: handleContinue ?? NOOP_OPS.handleContinue,
+      getMessages: getMessages ?? NOOP_OPS.getMessages,
+      setMessages: setMessages ?? NOOP_OPS.setMessages,
+    }),
+    [ask, regenerate, handleContinue, getMessages, setMessages],
+  );
+}
+
+/**
+ * Hook for components that need conversation data but may render outside MessagesViewProvider
+ * (e.g. the /search route). Returns `undefined` for both fields when the provider is absent.
+ */
+export function useOptionalMessagesConversation() {
+  const context = useContext(MessagesViewContext);
+  const conversation = context?.conversation;
+  const conversationId = context?.conversationId;
+  return useMemo(() => ({ conversation, conversationId }), [conversation, conversationId]);
+}
+
 /** Hook for components that only need message state */
 export function useMessagesState() {
-  const { index, latestMessage, setLatestMessage } = useMessagesViewContext();
+  const { index, latestMessageId, latestMessageDepth, setLatestMessage } = useMessagesViewContext();
   return useMemo(
-    () => ({ index, latestMessage, setLatestMessage }),
-    [index, latestMessage, setLatestMessage],
+    () => ({ index, latestMessageId, latestMessageDepth, setLatestMessage }),
+    [index, latestMessageId, latestMessageDepth, setLatestMessage],
   );
 }

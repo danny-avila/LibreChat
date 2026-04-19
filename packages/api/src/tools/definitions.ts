@@ -5,13 +5,14 @@
  * @module packages/api/src/tools/definitions
  */
 
-import { Constants, actionDelimiter } from 'librechat-data-provider';
+import { Constants, isActionTool } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { ToolDefinition } from './classification';
 import { resolveJsonSchemaRefs, normalizeJsonSchema } from '~/mcp/zod';
 import { buildToolClassification } from './classification';
 import { getToolDefinition } from './registry/definitions';
+import { toolkitExpansion } from './toolkits/mapping';
 
 export interface MCPServerTool {
   function?: {
@@ -98,7 +99,7 @@ export async function loadToolDefinitions(
   const mcpAllPattern = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
 
   for (const toolName of tools) {
-    if (toolName.includes(actionDelimiter)) {
+    if (isActionTool(toolName)) {
       actionToolNames.push(toolName);
       continue;
     }
@@ -116,6 +117,20 @@ export async function loadToolDefinitions(
         description: registryDef.description,
         parameters: registryDef.schema as JsonSchemaType | undefined,
       });
+
+      const extraTools = toolkitExpansion[toolName as keyof typeof toolkitExpansion];
+      if (extraTools) {
+        for (const extra of extraTools) {
+          const extraDef = getToolDefinition(extra);
+          if (extraDef) {
+            builtInToolDefs.push({
+              name: extra,
+              description: extraDef.description,
+              parameters: extraDef.schema as JsonSchemaType | undefined,
+            });
+          }
+        }
+      }
       continue;
     }
 

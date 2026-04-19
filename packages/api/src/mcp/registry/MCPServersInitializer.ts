@@ -1,11 +1,10 @@
-import { registryStatusCache as statusCache } from './cache/RegistryStatusCache';
-import { isLeader } from '~/cluster';
-import { withTimeout } from '~/utils';
 import { logger } from '@librechat/data-schemas';
-import { ParsedServerConfig } from '~/mcp/types';
-import { sanitizeUrlForLogging } from '~/mcp/utils';
 import type * as t from '~/mcp/types';
+import { registryStatusCache as statusCache } from './cache/RegistryStatusCache';
 import { MCPServersRegistry } from './MCPServersRegistry';
+import { sanitizeUrlForLogging } from '~/mcp/utils';
+import { withTimeout } from '~/utils';
+import { isLeader } from '~/cluster';
 
 const MCP_INIT_TIMEOUT_MS =
   process.env.MCP_INIT_TIMEOUT_MS != null ? parseInt(process.env.MCP_INIT_TIMEOUT_MS) : 30_000;
@@ -80,11 +79,22 @@ export class MCPServersInitializer {
       MCPServersInitializer.logParsedConfig(serverName, result.config);
     } catch (error) {
       logger.error(`${MCPServersInitializer.prefix(serverName)} Failed to initialize:`, error);
+      try {
+        await MCPServersRegistry.getInstance().addServerStub(serverName, rawConfig, 'CACHE');
+        logger.info(
+          `${MCPServersInitializer.prefix(serverName)} Stored stub config for recovery via reinitialize`,
+        );
+      } catch (stubError) {
+        logger.error(
+          `${MCPServersInitializer.prefix(serverName)} Failed to store stub config:`,
+          stubError,
+        );
+      }
     }
   }
 
   // Logs server configuration summary after initialization
-  private static logParsedConfig(serverName: string, config: ParsedServerConfig): void {
+  private static logParsedConfig(serverName: string, config: t.ParsedServerConfig): void {
     const prefix = MCPServersInitializer.prefix(serverName);
     logger.info(`${prefix} -------------------------------------------------┐`);
     logger.info(`${prefix} URL: ${config.url ? sanitizeUrlForLogging(config.url) : 'N/A'}`);

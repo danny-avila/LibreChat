@@ -16,7 +16,7 @@
     "name": "Google",
     "pluginKey": "google",
     "description": "Use Google Search to find information about the weather, news, sports, and more.",
-    "icon": "https://i.imgur.com/SMmVkNB.png",
+    "icon": "assets/google-search.svg",
     "authConfig": [
       {
         "authField": "GOOGLE_CSE_ID",
@@ -61,7 +61,7 @@
     "name": "DALL-E-3",
     "pluginKey": "dalle",
     "description": "[DALL-E-3] Create realistic images and art from a description in natural language",
-    "icon": "https://i.imgur.com/u2TzXzH.png",
+    "icon": "assets/openai.svg",
     "authConfig": [
       {
         "authField": "DALLE3_API_KEY||DALLE_API_KEY",
@@ -74,7 +74,7 @@
     "name": "Tavily Search",
     "pluginKey": "tavily_search_results_json",
     "description": "Tavily Search is a robust search API tailored for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
-    "icon": "https://tavily.com/favicon.ico",
+    "icon": "assets/tavily.svg",
     "authConfig": [
       {
         "authField": "TAVILY_API_KEY",
@@ -87,14 +87,14 @@
     "name": "Calculator",
     "pluginKey": "calculator",
     "description": "Perform simple and complex mathematical calculations.",
-    "icon": "https://i.imgur.com/RHsSG5h.png",
+    "icon": "assets/calculator.svg",
     "authConfig": []
   },
   {
     "name": "Stable Diffusion",
     "pluginKey": "stable-diffusion",
     "description": "Generate photo-realistic images given any text input.",
-    "icon": "https://i.imgur.com/Yr466dp.png",
+    "icon": "assets/stability-ai.svg",
     "authConfig": [
       {
         "authField": "SD_WEBUI_URL",
@@ -107,7 +107,7 @@
     "name": "Azure AI Search",
     "pluginKey": "azure-ai-search",
     "description": "Use Azure AI Search to find information",
-    "icon": "https://i.imgur.com/E7crPze.png",
+    "icon": "assets/azure-ai-search.svg",
     "authConfig": [
       {
         "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
@@ -143,7 +143,7 @@
     "name": "Flux",
     "pluginKey": "flux",
     "description": "Generate images using text with the Flux API.",
-    "icon": "https://blackforestlabs.ai/wp-content/uploads/2024/07/bfl_logo_retraced_blk.png",
+    "icon": "assets/bfl-ai.svg",
     "isAuthRequired": "true",
     "authConfig": [
       {
@@ -156,14 +156,14 @@
   {
     "name": "Gemini Image Tools",
     "pluginKey": "gemini_image_gen",
-    "toolkit": true,
     "description": "Generate high-quality images using Google's Gemini Image Models. Supports Gemini API or Vertex AI.",
     "icon": "assets/gemini_image_gen.svg",
     "authConfig": [
       {
-        "authField": "GEMINI_API_KEY||GOOGLE_KEY||GEMINI_VERTEX_ENABLED",
-        "label": "Gemini API Key (Optional if Vertex AI is configured)",
-        "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank if using Vertex AI with service account."
+        "authField": "GEMINI_API_KEY||GOOGLE_KEY||GOOGLE_SERVICE_KEY_FILE",
+        "label": "Gemini API Key (optional)",
+        "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank to use Vertex AI with a service account (GOOGLE_SERVICE_KEY_FILE or api/data/auth.json).",
+        "optional": true
       }
     ]
   },

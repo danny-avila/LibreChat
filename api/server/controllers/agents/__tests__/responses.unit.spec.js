@@ -101,37 +101,33 @@ jest.mock('~/server/services/ToolService', () => ({
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/spendTokens', () => ({
-  spendTokens: mockSpendTokens,
-  spendStructuredTokens: mockSpendStructuredTokens,
-}));
+const mockGetMultiplier = jest.fn().mockReturnValue(1);
+const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
 
-jest.mock('~/server/controllers/agents/callbacks', () => ({
-  createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-  createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-}));
+jest.mock('~/server/controllers/agents/callbacks', () => {
+  const noop = { handle: jest.fn() };
+  return {
+    createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+    createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+    markSummarizationUsage: jest.fn().mockImplementation((usage) => usage),
+    agentLogHandlerObj: noop,
+    buildSummarizationHandlers: jest.fn().mockReturnValue({
+      on_summarize_start: noop,
+      on_summarize_delta: noop,
+      on_summarize_complete: noop,
+    }),
+  };
+});
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/Conversation', () => ({
-  getConvoFiles: jest.fn().mockResolvedValue([]),
-  saveConvo: jest.fn().mockResolvedValue({}),
-  getConvo: jest.fn().mockResolvedValue(null),
-}));
-
-jest.mock('~/models/Agent', () => ({
-  getAgent: jest.fn().mockResolvedValue({
-    id: 'agent-123',
-    name: 'Test Agent',
-    provider: 'anthropic',
-    model_parameters: { model: 'claude-3' },
-  }),
-  getAgents: jest.fn().mockResolvedValue([]),
-}));
+const mockUpdateBalance = jest.fn().mockResolvedValue({});
+const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('~/models', () => ({
+  getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),
@@ -141,6 +137,15 @@ jest.mock('~/models', () => ({
   getUserCodeFiles: jest.fn(),
   getToolFilesByIds: jest.fn(),
   getCodeGeneratedFiles: jest.fn(),
+  updateBalance: mockUpdateBalance,
+  bulkInsertTransactions: mockBulkInsertTransactions,
+  spendTokens: mockSpendTokens,
+  spendStructuredTokens: mockSpendStructuredTokens,
+  getMultiplier: mockGetMultiplier,
+  getCacheMultiplier: mockGetCacheMultiplier,
+  getConvoFiles: jest.fn().mockResolvedValue([]),
+  saveConvo: jest.fn().mockResolvedValue({}),
+  getConvo: jest.fn().mockResolvedValue(null),
 }));
 
 describe('createResponse controller', () => {
@@ -178,13 +183,117 @@ describe('createResponse controller', () => {
     };
   });
 
+  describe('conversation ownership validation', () => {
+    it('should skip ownership check when previous_response_id is not provided', async () => {
+      const { getConvo } = require('~/models');
+      await createResponse(req, res);
+      expect(getConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when previous_response_id is not a string', async () => {
+      const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: { $gt: '' },
+        },
+      });
+
+      await createResponse(req, res);
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'previous_response_id must be a string',
+        'invalid_request',
+      );
+    });
+
+    it('should return 404 when conversation is not owned by user', async () => {
+      const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_abc',
+        },
+      });
+      getConvo.mockResolvedValueOnce(null);
+
+      await createResponse(req, res);
+      expect(getConvo).toHaveBeenCalledWith('user-123', 'resp_abc');
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        404,
+        'Conversation not found',
+        'not_found',
+      );
+    });
+
+    it('should proceed when conversation is owned by user', async () => {
+      const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_abc',
+        },
+      });
+      getConvo.mockResolvedValueOnce({ conversationId: 'resp_abc', user: 'user-123' });
+
+      await createResponse(req, res);
+      expect(getConvo).toHaveBeenCalledWith('user-123', 'resp_abc');
+      expect(sendResponsesErrorResponse).not.toHaveBeenCalledWith(
+        res,
+        404,
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    it('should return 500 when getConvo throws a DB error', async () => {
+      const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_abc',
+        },
+      });
+      getConvo.mockRejectedValueOnce(new Error('DB connection failed'));
+
+      await createResponse(req, res);
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        500,
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+  });
+
   describe('token usage recording - non-streaming', () => {
     it('should call recordCollectedUsage after successful non-streaming completion', async () => {
       await createResponse(req, res);
 
       expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
-        { spendTokens: mockSpendTokens, spendStructuredTokens: mockSpendStructuredTokens },
+        {
+          spendTokens: mockSpendTokens,
+          spendStructuredTokens: mockSpendStructuredTokens,
+          pricing: { getMultiplier: mockGetMultiplier, getCacheMultiplier: mockGetCacheMultiplier },
+          bulkWriteOps: {
+            insertMany: mockBulkInsertTransactions,
+            updateBalance: mockUpdateBalance,
+          },
+        },
         expect.objectContaining({
           user: 'user-123',
           conversationId: expect.any(String),
@@ -209,12 +318,18 @@ describe('createResponse controller', () => {
       );
     });
 
-    it('should pass spendTokens and spendStructuredTokens as dependencies', async () => {
+    it('should pass spendTokens, spendStructuredTokens, pricing, and bulkWriteOps as dependencies', async () => {
       await createResponse(req, res);
 
       const [deps] = mockRecordCollectedUsage.mock.calls[0];
       expect(deps).toHaveProperty('spendTokens', mockSpendTokens);
       expect(deps).toHaveProperty('spendStructuredTokens', mockSpendStructuredTokens);
+      expect(deps).toHaveProperty('pricing');
+      expect(deps.pricing).toHaveProperty('getMultiplier', mockGetMultiplier);
+      expect(deps.pricing).toHaveProperty('getCacheMultiplier', mockGetCacheMultiplier);
+      expect(deps).toHaveProperty('bulkWriteOps');
+      expect(deps.bulkWriteOps).toHaveProperty('insertMany', mockBulkInsertTransactions);
+      expect(deps.bulkWriteOps).toHaveProperty('updateBalance', mockUpdateBalance);
     });
 
     it('should include model from primaryConfig in recordCollectedUsage params', async () => {
@@ -244,7 +359,15 @@ describe('createResponse controller', () => {
 
       expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
-        { spendTokens: mockSpendTokens, spendStructuredTokens: mockSpendStructuredTokens },
+        {
+          spendTokens: mockSpendTokens,
+          spendStructuredTokens: mockSpendStructuredTokens,
+          pricing: { getMultiplier: mockGetMultiplier, getCacheMultiplier: mockGetCacheMultiplier },
+          bulkWriteOps: {
+            insertMany: mockBulkInsertTransactions,
+            updateBalance: mockUpdateBalance,
+          },
+        },
         expect.objectContaining({
           user: 'user-123',
           context: 'message',
@@ -257,28 +380,7 @@ describe('createResponse controller', () => {
     it('should collect usage from on_chat_model_end events', async () => {
       const api = require('@librechat/api');
 
-      let capturedOnChatModelEnd;
-      api.createAggregatorEventHandlers.mockImplementation(() => {
-        return {
-          on_message_delta: { handle: jest.fn() },
-          on_reasoning_delta: { handle: jest.fn() },
-          on_run_step: { handle: jest.fn() },
-          on_run_step_delta: { handle: jest.fn() },
-          on_chat_model_end: {
-            handle: jest.fn((event, data) => {
-              if (capturedOnChatModelEnd) {
-                capturedOnChatModelEnd(event, data);
-              }
-            }),
-          },
-        };
-      });
-
       api.createRun.mockImplementation(async ({ customHandlers }) => {
-        capturedOnChatModelEnd = (event, data) => {
-          customHandlers.on_chat_model_end.handle(event, data);
-        };
-
         return {
           processStream: jest.fn().mockImplementation(async () => {
             customHandlers.on_chat_model_end.handle('on_chat_model_end', {
@@ -295,7 +397,6 @@ describe('createResponse controller', () => {
       });
 
       await createResponse(req, res);
-
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
         expect.any(Object),
         expect.objectContaining({
