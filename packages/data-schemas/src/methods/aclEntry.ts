@@ -35,8 +35,11 @@ const MAX_PERM_BITS = Object.values(PermissionBits)
  */
 if (MAX_PERM_BITS === 0) {
   throw new Error(
-    'MAX_PERM_BITS is 0 — the shape of `PermissionBits` has changed. Update ' +
-      '`permissionBitSupersets` before continuing.',
+    'MAX_PERM_BITS is 0 — `PermissionBits` did not yield any numeric members. ' +
+      'This typically means the enum was refactored to a `const` object, a ' +
+      'string enum, or an all-string shape; rewrite the MAX_PERM_BITS ' +
+      'computation above to extract the numeric bits from the new shape, or ' +
+      'update `permissionBitSupersets` to take an explicit bit-width parameter.',
   );
 }
 

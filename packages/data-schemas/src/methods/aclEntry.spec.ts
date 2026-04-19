@@ -1561,7 +1561,7 @@ describe('AclEntry Model Tests', () => {
       const result = permissionBitSupersets(
         PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
       );
-      expect([...result]).toEqual([15]);
+      expect([...result].sort((a, b) => a - b)).toEqual([15]);
     });
 
     test('every returned value is a bitwise superset of requiredBits', () => {
