@@ -34,18 +34,43 @@ self.addEventListener('push', function (event) {
 
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
+
+  // Get the target URL from the notification data
+  const urlToOpen = event.notification.data.url;
+  console.log('[PUSH-DEBUG] Clicked notification, target URL:', urlToOpen);
+
   event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
-      const url = event.notification.data.url;
-      for (const client of clientList) {
-        if (client.url === url && 'focus' in client) {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // 1. Try to find a window that is already open at the EXACT URL
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        if (client.url === urlToOpen && 'focus' in client) {
+          console.log('[PUSH-DEBUG] Found exact tab match, focusing');
           return client.focus();
         }
       }
-      if (clients.openWindow) {
-        return clients.openWindow(url);
+
+      // 2. If no exact match, try to find ANY window of the same app and navigate it
+      if (windowClients.length > 0) {
+        console.log('[PUSH-DEBUG] No exact match, focusing first app tab');
+        const client = windowClients[0];
+        if ('focus' in client) {
+          return client.focus().then((c) => {
+            if (c && 'navigate' in c) {
+              return c.navigate(urlToOpen);
+            }
+          });
+        }
       }
-    }),
+
+      // 3. If no window open at all, open a new one
+      console.log('[PUSH-DEBUG] No existing tabs found, opening new window');
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen).catch((err) => {
+          console.error('[PUSH-DEBUG] Failed to open new window:', err);
+        });
+      }
+    })
   );
 });
 
