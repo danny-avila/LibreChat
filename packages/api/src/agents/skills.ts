@@ -316,6 +316,13 @@ export interface ResolveManualSkillsParams {
     name: string;
     body: string;
     author: Types.ObjectId | string;
+    /**
+     * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
+     * Surfaced on `ResolvedManualSkill` so future runtime enforcement can
+     * union it into the agent's effective tool set for the turn without
+     * re-fetching the document. Populated by the DB method when available.
+     */
+    allowedTools?: string[];
   } | null>;
   /** ACL-accessible skill IDs for this user (already scoped by `scopeSkillIds`). */
   accessibleSkillIds: Types.ObjectId[];
@@ -330,6 +337,13 @@ export interface ResolveManualSkillsParams {
 export interface ResolvedManualSkill {
   name: string;
   body: string;
+  /**
+   * Skill-declared tool allowlist passed through from the skill doc. Present
+   * only when the skill author declared `allowed-tools` in frontmatter.
+   * Currently populated but not consumed — future runtime enforcement will
+   * union these into the agent's effective tool set for the turn.
+   */
+  allowedTools?: string[];
 }
 
 /**
@@ -414,7 +428,11 @@ export async function resolveManualSkills(
           logger.warn(`[resolveManualSkills] Skill "${name}" is inactive for this user — skipping`);
           return null;
         }
-        return { name: skill.name, body: skill.body };
+        const resolved: ResolvedManualSkill = { name: skill.name, body: skill.body };
+        if (skill.allowedTools !== undefined) {
+          resolved.allowedTools = skill.allowedTools;
+        }
+        return resolved;
       } catch (err) {
         logger.warn(
           `[resolveManualSkills] Failed to resolve skill "${name}":`,

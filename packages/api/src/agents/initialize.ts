@@ -201,6 +201,12 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     name: string;
     body: string;
     author: import('mongoose').Types.ObjectId;
+    /**
+     * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
+     * Surfaced so the resolver can carry it onto `ResolvedManualSkill` for
+     * future runtime enforcement without a second round-trip.
+     */
+    allowedTools?: string[];
   } | null>;
 }
 
