@@ -4,8 +4,6 @@
 
 .message-render {
   scroll-margin-top: 4rem;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 200px;
 }
 
 /* Custom Variables */
