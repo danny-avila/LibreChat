@@ -436,6 +436,10 @@ export default function SubagentCall({
         <OGDialogContent
           className={cn(
             'max-h-[85vh] overflow-hidden',
+            /** Tighter inter-row gap than the dialog default (`gap-4`)
+             *  — title + description + scroll area read as one block
+             *  rather than three separated panels. */
+            'gap-2',
             /** Responsive width: narrow on phones, scales up to ~80rem on
              *  widescreens. Viewport-relative max keeps margin on the
              *  edges while still using real estate on laptops / large
