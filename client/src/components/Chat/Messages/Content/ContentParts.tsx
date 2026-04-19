@@ -10,8 +10,8 @@ import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
 import { EditTextPart, EmptyText } from './Parts';
+import PendingSkillCall from './Parts/PendingSkillCall';
 import MemoryArtifacts from './MemoryArtifacts';
-import SkillCall from './Parts/SkillCall';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
@@ -127,17 +127,22 @@ const ContentParts = memo(function ContentParts({
   /**
    * Interim skill cards — rendered in a separate slot ABOVE the Parts
    * iteration based purely on the `manualSkills` message field. `content`
-   * is never read here, so backend deltas / optimistic emissions can't
-   * race the pending cards off the screen mid-stream.
+   * is only read to determine the "Running → Ran" visual transition
+   * (`hasRealContent`), never to gate visibility, so backend deltas /
+   * optimistic emissions can't race the pending cards off the screen.
    *
    * Lifecycle:
-   *  - `createdHandler` copies `submission.manualSkills` onto the
-   *    assistant placeholder → cards appear immediately on submit.
+   *  - `useChatFunctions` seeds `manualSkills` on the assistant placeholder
+   *    at construction → cards appear immediately on submit, with the
+   *    shimmering "Running X" state (no content yet).
    *  - Through the stream, `useStepHandler` spreads the response on every
-   *    update so `manualSkills` rides along untouched.
+   *    update so `manualSkills` rides along; once the first real content
+   *    part lands, `hasRealContent` flips true and the cards switch to
+   *    the static "Ran X" state — matching what users see for
+   *    model-invoked skills as they finish priming.
    *  - At finalize, `finalHandler` replaces the message with the server
-   *    response (no `manualSkills` field) → cards disappear and the
-   *    server's real `skill` tool_call part in `content` takes over.
+   *    response (no `manualSkills` field) → interim cards disappear and
+   *    the real `skill` tool_call part in `content` takes over.
    *
    * Skipped on the user side (they get `ManualSkillPills` on the user
    * bubble) and when no skills were invoked on this turn.
@@ -148,15 +153,32 @@ const ContentParts = memo(function ContentParts({
   );
   const hasPendingSkills = pendingSkills.length > 0;
 
+  /**
+   * True once the assistant has started streaming something meaningful —
+   * any non-text part, OR a text part with non-empty content. Drives the
+   * "Running X → Ran X" transition on pending cards. An empty-text
+   * placeholder (some endpoints seed one in `initialResponse.content` on
+   * assistant-side) does NOT count as real content, to avoid flipping
+   * the transition before the model has actually produced anything.
+   */
+  const hasRealContent = useMemo(
+    () =>
+      (content ?? []).some((part) => {
+        if (part == null) {
+          return false;
+        }
+        if (part.type !== ContentTypes.TEXT) {
+          return true;
+        }
+        const text = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+        return text.length > 0;
+      }),
+    [content],
+  );
+
   const renderPendingSkills = () =>
     pendingSkills.map((name) => (
-      <SkillCall
-        key={`pending-skill-${name}`}
-        args={JSON.stringify({ skillName: name })}
-        output=""
-        initialProgress={0.1}
-        isSubmitting={effectiveIsSubmitting}
-      />
+      <PendingSkillCall key={`pending-skill-${name}`} skillName={name} loaded={hasRealContent} />
     ));
 
   const renderPart = useCallback(

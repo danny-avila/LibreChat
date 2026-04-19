@@ -347,26 +347,20 @@ export default function useEventHandlers({
       queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
       queryClient.invalidateQueries([QueryKeys.mcpTools]);
       const { messages, userMessage, isRegenerate = false, isTemporary = false } = submission;
+      /**
+       * The spread carries `manualSkills` through from
+       * `submission.initialResponse` — `useChatFunctions` seeds the field
+       * there at construction so the assistant placeholder already has it
+       * by the time this handler fires. Subsequent `useStepHandler`
+       * spreads and `updateContent` spreads preserve it, and
+       * `finalHandler`'s server-backed `responseMessage` replacement
+       * drops it, which is the right behavior: by finalize the real
+       * `skill` tool_call is in `content` and takes over rendering.
+       */
       const initialResponse = {
         ...submission.initialResponse,
         parentMessageId: userMessage.messageId,
         messageId: userMessage.messageId + '_',
-        /**
-         * Seed the assistant placeholder with the turn's manual skill
-         * invocations so `ContentParts` can synthesize pending `skill`
-         * tool_call parts and let the existing `SkillCall` renderer show
-         * the pulsing "Running X" card mid-stream. The field rides through
-         * subsequent message mutations via spread (`useStepHandler`
-         * response creation, `updateContent` result spreads), and
-         * `finalHandler`'s server-backed `responseMessage` replacement
-         * drops it — which is the right behavior: by finalize the real
-         * `skill` tool_call is in `content`, the synthesizer detects it
-         * and steps aside, and the field is no longer needed.
-         */
-        manualSkills:
-          submission.manualSkills && submission.manualSkills.length > 0
-            ? submission.manualSkills
-            : undefined,
       };
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);

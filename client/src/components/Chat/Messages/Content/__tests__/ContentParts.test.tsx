@@ -28,10 +28,10 @@ jest.mock('../MemoryArtifacts', () => ({
   default: () => <div data-testid="memory-artifacts" />,
 }));
 
-jest.mock('../Parts/SkillCall', () => ({
+jest.mock('../Parts/PendingSkillCall', () => ({
   __esModule: true,
-  default: ({ args, initialProgress }: { args: string; initialProgress: number }) => (
-    <div data-testid="skill-call" data-args={args} data-progress={initialProgress} />
+  default: ({ skillName, loaded }: { skillName: string; loaded: boolean }) => (
+    <div data-testid="pending-skill-call" data-skill={skillName} data-loaded={String(loaded)} />
   ),
 }));
 
@@ -70,29 +70,33 @@ const baseProps = {
 };
 
 describe('ContentParts — interim skill cards', () => {
-  it('renders a SkillCall per manual skill on assistant messages', () => {
+  it('renders a PendingSkillCall per manual skill on assistant messages', () => {
     render(<ContentParts {...baseProps} manualSkills={['brand-guidelines', 'pptx']} />);
-    const cards = screen.getAllByTestId('skill-call');
+    const cards = screen.getAllByTestId('pending-skill-call');
     expect(cards).toHaveLength(2);
-    expect(cards[0]).toHaveAttribute(
-      'data-args',
-      JSON.stringify({ skillName: 'brand-guidelines' }),
-    );
-    expect(cards[1]).toHaveAttribute('data-args', JSON.stringify({ skillName: 'pptx' }));
+    expect(cards[0]).toHaveAttribute('data-skill', 'brand-guidelines');
+    expect(cards[1]).toHaveAttribute('data-skill', 'pptx');
   });
 
-  it('renders SkillCall with progress < 1 (pending/running state)', () => {
+  it('starts pending skill cards in the not-loaded state (no real content yet)', () => {
     render(<ContentParts {...baseProps} manualSkills={['pptx']} />);
-    const card = screen.getByTestId('skill-call');
-    expect(Number(card.getAttribute('data-progress'))).toBeLessThan(1);
+    expect(screen.getByTestId('pending-skill-call')).toHaveAttribute('data-loaded', 'false');
+  });
+
+  it('flips pending cards to loaded once any real content part arrives', () => {
+    const content: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'streamed' } as unknown as TMessageContentParts,
+    ];
+    render(<ContentParts {...baseProps} content={content} manualSkills={['pptx']} />);
+    expect(screen.getByTestId('pending-skill-call')).toHaveAttribute('data-loaded', 'true');
   });
 
   it('does NOT render skill cards on user messages', () => {
     render(<ContentParts {...baseProps} isCreatedByUser manualSkills={['pptx']} />);
-    expect(screen.queryByTestId('skill-call')).toBeNull();
+    expect(screen.queryByTestId('pending-skill-call')).toBeNull();
   });
 
-  it('renders nothing (no crash) when manualSkills is empty and content is undefined', () => {
+  it('renders nothing when manualSkills is empty and content is undefined', () => {
     const { container } = render(
       <ContentParts {...baseProps} content={undefined} manualSkills={[]} />,
     );
@@ -101,7 +105,7 @@ describe('ContentParts — interim skill cards', () => {
 
   it('renders pending skill cards even when content is undefined', () => {
     render(<ContentParts {...baseProps} content={undefined} manualSkills={['pptx']} />);
-    expect(screen.getAllByTestId('skill-call')).toHaveLength(1);
+    expect(screen.getAllByTestId('pending-skill-call')).toHaveLength(1);
   });
 
   it('renders pending skill cards above parallel content', () => {
@@ -113,13 +117,10 @@ describe('ContentParts — interim skill cards', () => {
       } as unknown as TMessageContentParts,
     ];
     render(<ContentParts {...baseProps} content={parallelContent} manualSkills={['pptx']} />);
-    const skillCard = screen.getByTestId('skill-call');
+    const skillCard = screen.getByTestId('pending-skill-call');
     const parallelRenderer = screen.getByTestId('parallel-renderer');
     expect(skillCard).toBeTruthy();
     expect(parallelRenderer).toBeTruthy();
-    // DOCUMENT_POSITION_FOLLOWING: skillCard precedes parallelRenderer in DOM order.
-    // Ordering matters: interim cards anchor to the top of the message (matching where
-    // the backend's real prime parts land at finalize via `contentParts.unshift`).
     expect(skillCard.compareDocumentPosition(parallelRenderer)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
@@ -130,7 +131,7 @@ describe('ContentParts — interim skill cards', () => {
       { type: ContentTypes.TEXT, text: 'streamed' } as unknown as TMessageContentParts,
     ];
     render(<ContentParts {...baseProps} content={sequentialContent} manualSkills={['pptx']} />);
-    const skillCard = screen.getByTestId('skill-call');
+    const skillCard = screen.getByTestId('pending-skill-call');
     const textPart = screen.getByTestId(`real-part-${ContentTypes.TEXT}`);
     expect(skillCard).toBeTruthy();
     expect(textPart).toBeTruthy();
