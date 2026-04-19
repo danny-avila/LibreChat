@@ -53,6 +53,9 @@ export default function useWebPush() {
           userVisibleOnly: true,
           applicationServerKey
         });
+        
+        console.log('[PUSH-DEBUG] Current Subscription Endpoint (last 15 chars):', subscription.endpoint.slice(-15));
+        console.log('[PUSH-DEBUG] Full Subscription object:', JSON.stringify(subscription));
 
         // Send to backend 
         await fetch('/api/push/subscribe', {
@@ -65,6 +68,20 @@ export default function useWebPush() {
         });
 
         console.log('Web push subscribed successfully');
+        
+        // Fetch server-side debug info to verify configuration
+        try {
+          const debugRes = await fetch('/api/push/debug');
+          const lastPushRes = await fetch('/api/webhooks/debug-last');
+          if (debugRes.ok && lastPushRes.ok) {
+            const debugInfo = await debugRes.json();
+            const lastPushInfo = await lastPushRes.json();
+            console.log('[SERVER-DEBUG] VAPID Config:', debugInfo);
+            console.log('[SERVER-DEBUG] Last Push Result:', lastPushInfo);
+          }
+        } catch (e) {
+          console.warn('[SERVER-DEBUG] Failed to fetch server debug info', e);
+        }
       } catch (err) {
         console.error('Failed to setup push notifications:', err);
       }

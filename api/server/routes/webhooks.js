@@ -7,6 +7,19 @@ const router = express.Router();
 
 let vapidKeysSet = false;
 
+// Global to store the result of the last push for debugging without VM access
+let lastPushResult = {
+  timestamp: null,
+  userId: null,
+  endpoint: null,
+  statusCode: null,
+  error: null,
+};
+
+router.get('/debug-last', (req, res) => {
+  res.status(200).json(lastPushResult);
+});
+
 // Middleware to configure Web-Push keys on the first request if they change or just once
 function configureWebPush() {
   if (vapidKeysSet) return true;
@@ -96,13 +109,34 @@ router.post('/notifications', async (req, res) => {
         const payload = JSON.stringify({
           title: 'Your answer is ready!',
           body: `Your question "${displayQuestion}" was recently answered.`,
-          icon: '/assets/favicon.ico',
+          icon: '/assets/annam-logo.png',
           url: `${clientDomain}/c/${conversationId}`,
         });
 
-        await webpush.sendNotification(sub, payload);
+        logger.info(`[PUSH-DEBUG] Attempting send to endpoint (last 15 chars): ${sub.endpoint.slice(-15)}`);
+        const pushResponse = await webpush.sendNotification(sub, payload);
+        
+        lastPushResult = {
+          timestamp: new Date().toISOString(),
+          userId,
+          endpoint: sub.endpoint.slice(-15),
+          statusCode: pushResponse.statusCode,
+          error: null,
+        };
+
+        logger.info('Push sent successfully', {
+          statusCode: pushResponse.statusCode,
+          endpoint: sub.endpoint.slice(-15),
+        });
         successCount++;
       } catch (err) {
+        lastPushResult = {
+          timestamp: new Date().toISOString(),
+          userId,
+          endpoint: sub.endpoint ? sub.endpoint.slice(-15) : 'unknown',
+          statusCode: err.statusCode || 500,
+          error: err.message,
+        };
         failureCount++;
 
         if (err.statusCode === 410 || err.statusCode === 404) {
