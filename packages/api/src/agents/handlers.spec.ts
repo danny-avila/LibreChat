@@ -246,5 +246,61 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('success');
       expect(result.content).toContain('normal-skill');
     });
+
+    it('rejects read_file tool calls for disableModelInvocation skills (file ACL parity)', async () => {
+      /* The `read_file` handler shares `accessibleSkillIds` with the skill
+         tool. Without the disableModelInvocation gate there too, a model
+         that learned a hidden skill's name (stale catalog, hallucination)
+         could read its SKILL.md body or bundled files via `read_file`,
+         defeating the contract. */
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'pii-redactor',
+        body: 'restricted body',
+        fileCount: 0,
+        disableModelInvocation: true,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({ loadedTools: [] })),
+        getSkillByName,
+        getSkillFileByPath: jest.fn(),
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_read_1',
+          name: Constants.READ_FILE,
+          args: { file_path: 'pii-redactor/SKILL.md' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('cannot be invoked by the model');
+      expect(result.errorMessage).toContain('pii-redactor');
+    });
+
+    it('lets read_file calls through for normal skills (regression: gate is not over-broad)', async () => {
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'normal-skill',
+        body: '# Body',
+        fileCount: 0,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({ loadedTools: [] })),
+        getSkillByName,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_read_2',
+          name: Constants.READ_FILE,
+          args: { file_path: 'normal-skill/SKILL.md' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('Body');
+    });
   });
 });

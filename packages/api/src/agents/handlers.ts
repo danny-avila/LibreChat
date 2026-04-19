@@ -184,6 +184,24 @@ async function handleReadFileCall(
     };
   }
 
+  /**
+   * `disable-model-invocation: true` skills are off-limits for any model
+   * tool, not just the `skill` tool. Without this gate, a model that
+   * learned a disabled skill's name (stale catalog, hallucination) could
+   * still read its `SKILL.md` body or bundled files via `read_file`,
+   * defeating the contract. The skill stays in `accessibleSkillIds` only
+   * so handlers can fetch the doc and emit this explicit rejection
+   * instead of a misleading generic "not found".
+   */
+  if (skill.disableModelInvocation === true) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${skillName}" cannot be invoked by the model`,
+    };
+  }
+
   // SKILL.md special case: read from skill.body directly
   if (relativePath === 'SKILL.md') {
     if (!skill.body) {
