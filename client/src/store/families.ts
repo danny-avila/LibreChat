@@ -307,13 +307,12 @@ const showSkillsPopoverFamily = atomFamily<boolean, string | number | null>({
 
 /**
  * Per-conversation queue of skill names the user invoked manually via the
- * `$` popover for the next submission. Acts as the structured channel
- * paired with the cosmetic `$skill-name ` text inserted into the textarea.
- *
- * Phase 1: only the writer (SkillsCommand) is wired; the submit pipeline
- * does not yet read or clear this atom. The follow-up PR will read this
- * at `ask()` time, attach to the payload, and reset to `[]`. Until then
- * the backend continues to receive only the textual `$name` reference.
+ * `$` popover for the next submission. Structured channel that the submit
+ * pipeline (`useChatFunctions.ask`) drains and pins onto the user message's
+ * `manualSkills` field (also echoed at the top of the payload for the
+ * runtime resolver), then resets to `[]`. Compose-time chips above the
+ * textarea read this atom directly so users see (and can dismiss) their
+ * current selection before hitting send.
  */
 const pendingManualSkillsByConvoId = atomFamily<string[], string>({
   key: 'pendingManualSkillsByConvoId',

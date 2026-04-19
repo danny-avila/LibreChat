@@ -44,6 +44,8 @@ export interface IMessage extends Document {
     encoding?: string;
   };
   attachments?: unknown[];
+  /** Skills the user invoked manually via the `$` popover on this turn. UI-only metadata for `ManualSkillPills`. */
+  manualSkills?: string[];
   expiredAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;

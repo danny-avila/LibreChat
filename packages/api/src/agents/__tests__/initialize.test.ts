@@ -422,3 +422,158 @@ describe('initializeAgent — maxContextTokens', () => {
     expect(result.maxContextTokens).toBe(1024);
   });
 });
+
+describe('initializeAgent — manual skill priming (Phase 3)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  /**
+   * Minimal listSkillsByAccess that satisfies `injectSkillCatalog` so the
+   * manualSkills resolver branch runs. Returns an empty page — we don't care
+   * about the catalog here, only that `accessibleSkillIds` is non-empty so
+   * the manual-invocation block gets reached.
+   */
+  const emptyListSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'] = async () => ({
+    skills: [],
+    has_more: false,
+    after: null,
+  });
+
+  it('attaches resolved manual skill primes to the initialized agent', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    /**
+     * Ownership-based active-state default only kicks in when
+     * `skill.author.toString() === userId`. The default mock user id is a
+     * literal string, not an ObjectId, so align the skill author with it so
+     * `resolveSkillActive` treats the skill as owned and active.
+     */
+    const ownerAuthor = {
+      toString: () => req.user?.id,
+    } as unknown as import('mongoose').Types.ObjectId;
+
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'brand-guidelines',
+      body: '# Brand guidelines\nUse blue.',
+      author: ownerAuthor,
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['brand-guidelines'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(result.manualSkillPrimes).toEqual([
+      { name: 'brand-guidelines', body: '# Brand guidelines\nUse blue.' },
+    ]);
+    expect(getSkillByName).toHaveBeenCalledWith('brand-guidelines', [skillId]);
+  });
+
+  it('leaves manualSkillPrimes undefined when no manualSkills are provided', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess },
+    );
+
+    expect(result.manualSkillPrimes).toBeUndefined();
+  });
+
+  it('returns empty array when every manual skill is unresolvable (no primes, no throw)', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest
+      .fn()
+      .mockResolvedValue(null);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['does-not-exist'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(result.manualSkillPrimes).toEqual([]);
+  });
+
+  it('skips resolution entirely when accessibleSkillIds is empty (user has no skill access)', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [],
+        manualSkills: ['anything'],
+      },
+      { ...db, getSkillByName },
+    );
+
+    expect(result.manualSkillPrimes).toBeUndefined();
+    expect(getSkillByName).not.toHaveBeenCalled();
+  });
+
+  it('silently no-ops when getSkillByName is not provided in db methods', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['foo'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess },
+    );
+
+    expect(result.manualSkillPrimes).toBeUndefined();
+  });
+});

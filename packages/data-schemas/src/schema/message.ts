@@ -122,6 +122,14 @@ const messageSchema: Schema<IMessage> = new Schema(
       default: undefined,
     },
     attachments: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+    /**
+     * Skill names the user invoked manually via the `$` popover on this turn.
+     * UI metadata only — `ManualSkillPills` on the frontend renders these on
+     * the user message bubble so the selection persists through reload and
+     * shows in history. Runtime skill resolution lives separately on the
+     * request body, not on the message itself.
+     */
+    manualSkills: { type: [String], default: undefined },
     /*
     attachments: {
       type: [

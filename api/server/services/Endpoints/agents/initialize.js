@@ -6,6 +6,7 @@ const {
   initializeAgent,
   primeInvokedSkills,
   validateAgentModel,
+  extractManualSkills,
   GenerationJobManager,
   getCustomEndpointConfig,
   discoverConnectedAgents,
@@ -233,6 +234,15 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const conversationId = req.body.conversationId;
   /** @type {string | undefined} */
   const parentMessageId = req.body.parentMessageId;
+  /**
+   * Skill names the user invoked via the `$` popover for this turn. Only flows
+   * to the primary agent — handoff agents are follow-up turns that don't see
+   * the user's per-submission `$` selections. `extractManualSkills` also
+   * drops non-string / empty elements so a crafted payload can't reach the
+   * `getSkillByName` DB query with nonsense values.
+   * @type {string[] | undefined}
+   */
+  const manualSkills = extractManualSkills(req.body);
 
   const primaryConfig = await initializeAgent(
     {
@@ -253,6 +263,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
       skillStates,
       defaultActiveOnShare,
+      manualSkills,
     },
     {
       getFiles: db.getFiles,
@@ -266,6 +277,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
       listSkillsByAccess: db.listSkillsByAccess,
+      getSkillByName: db.getSkillByName,
     },
   );
 
@@ -319,6 +331,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
         listSkillsByAccess: db.listSkillsByAccess,
+        getSkillByName: db.getSkillByName,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
