@@ -89,6 +89,27 @@ export function mapEndpoints(endpointsConfig: t.TEndpointsConfig) {
   );
 }
 
+/** Moves the last-used endpoint (from localStorage) to the front if it appears in the list. */
+export function applyEndpointRecency<T extends EModelEndpoint | string>(endpoints: T[]): T[] {
+  try {
+    const raw = localStorage.getItem(`${LocalStorageKeys.LAST_CONVO_SETUP}_0`);
+    const recent = raw ? (JSON.parse(raw)?.endpoint as string | undefined) : undefined;
+    if (!recent) {
+      return endpoints;
+    }
+    const i = endpoints.indexOf(recent as T);
+    if (i <= 0) {
+      return endpoints;
+    }
+    const out = endpoints.slice();
+    const [hit] = out.splice(i, 1);
+    out.unshift(hit);
+    return out;
+  } catch {
+    return endpoints;
+  }
+}
+
 const firstLocalConvoKey = LocalStorageKeys.LAST_CONVO_SETUP + '_0';
 
 /**
