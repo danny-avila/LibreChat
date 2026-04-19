@@ -205,18 +205,18 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
    * Returns the full document (including `body`) so manual invocation can
    * prime SKILL.md without a second DB round-trip.
    *
-   * `options.preferInvocable` (Phase 6): when true, the lookup prefers the
-   * newest doc that is BOTH `userInvocable !== false` AND
-   * `disableModelInvocation !== true`. Falls back to the newest match if
-   * no clean-invocable doc exists for the name. Use to keep manual-prime
-   * resolution and runtime ACL resolution consistent when same-name
-   * duplicates exist (a newer disabled doc would otherwise shadow an
-   * older invocable doc the user / catalog targeted).
+   * `preferUserInvocable` (manual paths): on a same-name collision,
+   * prefer the newest doc with `userInvocable !== false`.
+   * `preferModelInvocable` (model paths — `skill` / `read_file`): on a
+   * same-name collision, prefer the newest doc with
+   * `disableModelInvocation !== true`. Both fall back to the newest match
+   * so the explicit-rejection error paths still fire when only the
+   * non-preferred variant exists.
    */
   getSkillByName?: (
     name: string,
     accessibleIds: import('mongoose').Types.ObjectId[],
-    options?: { preferInvocable?: boolean },
+    options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
   ) => Promise<{
     _id: import('mongoose').Types.ObjectId;
     name: string;

@@ -712,24 +712,35 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     accessibleIds: Types.ObjectId[],
     options?: {
       /**
-       * When true, prefer the newest doc with `userInvocable !== false` AND
-       * `disableModelInvocation !== true` (after frontmatter backfill). If
-       * no such "clean invocable" doc exists for the name, fall back to the
-       * newest matching doc — handlers like `handleSkillToolCall` rely on
-       * the fallback to fire their explicit-rejection error path. Defaults
-       * to false (newest match unconditionally — original behavior).
-       *
-       * Use this when name collisions could otherwise let a newer model-
-       * disabled or non-user-invocable duplicate shadow the cataloged /
-       * popover-visible skill the user / model actually targeted.
+       * Manual paths (`$` popover, always-apply once Phase 5 lands) set
+       * this so a same-name newer `userInvocable: false` duplicate can't
+       * shadow the older user-invocable doc the popover surfaced.
+       * Disable-model-invocation status is irrelevant here — manually-
+       * primed disabled skills are explicitly supported (iter 4).
        */
-      preferInvocable?: boolean;
+      preferUserInvocable?: boolean;
+      /**
+       * Model paths (`skill` / `read_file` tool handlers) set this so a
+       * same-name newer `disable-model-invocation: true` duplicate can't
+       * shadow the cataloged model-invocable doc. User-invocability is
+       * irrelevant here — `userInvocable: false` skills are model-only
+       * and remain valid model-invocation targets.
+       *
+       * Both flags fall back to the newest match when no preferred doc
+       * exists, so handlers can still fire their explicit-rejection
+       * error paths (e.g. "cannot be invoked by the model" in the
+       * disabled-only case).
+       */
+      preferModelInvocable?: boolean;
     },
   ): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
-    /* Single-doc fast path when caller doesn't care about duplicates —
-       preserves the previous performance characteristics. */
-    if (!options?.preferInvocable) {
+    const preferUserInvocable = options?.preferUserInvocable === true;
+    const preferModelInvocable = options?.preferModelInvocable === true;
+    /* Single-doc fast path when no preference is requested — preserves
+       the previous performance characteristics for callers that just
+       want "newest match". */
+    if (!preferUserInvocable && !preferModelInvocable) {
       const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } })
         .sort({ updatedAt: -1 })
         .lean();
@@ -738,8 +749,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       );
     }
     /* Multi-doc path: fetch all matching docs (typically 1, rarely 2+
-       across same-name duplicates) and pick the one that's both
-       user-invocable and model-invocable; fall back to newest. */
+       across same-name duplicates) and pick the first satisfying the
+       caller's preference; fall back to newest. */
     const docs = (await Skill.find({ name, _id: { $in: accessibleIds } })
       .sort({ updatedAt: -1 })
       .lean()) as unknown as Array<ISkill & { _id: Types.ObjectId }>;
@@ -749,10 +760,16 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     for (const doc of docs) {
       backfillDerivedFromFrontmatter(doc);
     }
-    const cleanInvocable = docs.find(
-      (d) => d.userInvocable !== false && d.disableModelInvocation !== true,
-    );
-    return cleanInvocable ?? docs[0];
+    const preferred = docs.find((d) => {
+      if (preferUserInvocable && d.userInvocable === false) {
+        return false;
+      }
+      if (preferModelInvocable && d.disableModelInvocation === true) {
+        return false;
+      }
+      return true;
+    });
+    return preferred ?? docs[0];
   }
 
   async function listSkillsByAccess(

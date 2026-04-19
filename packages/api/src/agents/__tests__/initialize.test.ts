@@ -479,10 +479,11 @@ describe('initializeAgent — manual skill priming (Phase 3)', () => {
     expect(result.manualSkillPrimes).toEqual([
       { name: 'brand-guidelines', body: '# Brand guidelines\nUse blue.' },
     ]);
-    /* `preferInvocable` keeps name-collision lookups consistent with the
-       catalog/popover (Phase 6 iter 6). */
+    /* `preferUserInvocable` keeps name-collision lookups consistent with
+       the popover for manual paths — model-only (`userInvocable: false`)
+       duplicates can't shadow the user-invocable doc the user picked. */
     expect(getSkillByName).toHaveBeenCalledWith('brand-guidelines', [skillId], {
-      preferInvocable: true,
+      preferUserInvocable: true,
     });
   });
 

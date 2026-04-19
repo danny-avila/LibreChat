@@ -839,19 +839,26 @@ describe('resolveManualSkills', () => {
     expect(result).toEqual([{ name: 'open', body: 'body of open' }]);
   });
 
-  it('passes preferInvocable: true to getSkillByName so name-collision duplicates resolve to the user-invocable doc', async () => {
+  it('passes preferUserInvocable to getSkillByName so name-collision picks the user-invocable doc, but does NOT pass preferModelInvocable (manual primes for disabled skills are supported)', async () => {
     /* Same-name collision scenario: the popover surfaced the older
-       invocable doc; the resolver must look it up with preferInvocable
-       so a newer disabled / non-user-invocable duplicate doesn't
-       silently shadow the user's selection. */
+       user-invocable doc; the resolver must look it up with
+       preferUserInvocable so a newer model-only (`userInvocable: false`)
+       duplicate doesn't silently shadow the user's selection. We
+       deliberately do NOT pass preferModelInvocable — manually invoking
+       a `disable-model-invocation: true` skill is the supported path
+       (iter 4), and adding the model-invocable filter would skip those
+       docs and break manual invocation of disabled skills. */
     const invocableDoc = mkSkill('collide', userOid, 'invocable body');
     const getSkillByName = jest.fn(
-      async (_name: string, _ids: Types.ObjectId[], options?: { preferInvocable?: boolean }) => {
-        /* Return the invocable doc only when called with preferInvocable.
-           Without the flag, this fake would return null (simulating the
-           newer disabled duplicate scenario where the lookup picks
-           something else and the resolver can't see the invocable doc). */
-        return options?.preferInvocable ? invocableDoc : null;
+      async (
+        _name: string,
+        _ids: Types.ObjectId[],
+        options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
+      ) => {
+        /* Return the invocable doc only when called with preferUserInvocable.
+           Without the flag, this fake returns null (simulating the
+           newer non-user-invocable duplicate scenario). */
+        return options?.preferUserInvocable ? invocableDoc : null;
       },
     );
     const result = await resolveManualSkills({
@@ -862,8 +869,12 @@ describe('resolveManualSkills', () => {
     });
     expect(result).toEqual([{ name: 'collide', body: 'invocable body' }]);
     expect(getSkillByName).toHaveBeenCalledWith('collide', [invocableDoc._id], {
-      preferInvocable: true,
+      preferUserInvocable: true,
     });
+    /* Crucial: no preferModelInvocable — would skip disabled skills and
+       break the iter 4 manual-prime exception for disabled skills. */
+    const callOptions = getSkillByName.mock.calls[0][2];
+    expect(callOptions).not.toHaveProperty('preferModelInvocable', true);
   });
 
   it('treats userInvocable: true (or absent) as user-invocable', async () => {

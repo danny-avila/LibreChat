@@ -247,12 +247,15 @@ describe('createToolExecuteHandler', () => {
       expect(result.content).toContain('normal-skill');
     });
 
-    it('skill tool calls getSkillByName with preferInvocable to avoid same-name duplicate shadowing', async () => {
-      /* The skill tool should resolve to the cataloged invocable doc when
-         a same-name disabled duplicate exists — passing preferInvocable
-         keeps the resolution consistent with the catalog. Falls back to
-         the newest match when only a disabled doc exists, so the
-         model-invocation gate can still fire its explicit error. */
+    it('skill tool calls getSkillByName with preferModelInvocable (and NOT preferUserInvocable, so model-only skills still resolve)', async () => {
+      /* The skill tool should resolve to the cataloged model-invocable doc
+         when a same-name disabled duplicate exists — passing
+         preferModelInvocable keeps the resolution consistent with the
+         catalog. We do NOT pass preferUserInvocable: model-only skills
+         (`userInvocable: false`) are valid model-invocation targets, and
+         filtering them out would let an older user-invocable duplicate
+         shadow the cataloged model-only skill. Falls back to newest when
+         only a disabled doc exists so the gate fires its explicit error. */
       const getSkillByName = jest.fn(async () => ({
         _id: 'skill-id' as unknown as never,
         name: 'maybe-disabled',
@@ -270,11 +273,13 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(getSkillByName).toHaveBeenCalledWith('maybe-disabled', expect.any(Array), {
-        preferInvocable: true,
+        preferModelInvocable: true,
       });
+      const callOptions = getSkillByName.mock.calls[0][2];
+      expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
     });
 
-    it('read_file calls getSkillByName with preferInvocable for the same consistency reason', async () => {
+    it('read_file calls getSkillByName with preferModelInvocable for the same reason', async () => {
       const getSkillByName = jest.fn(async () => ({
         _id: 'skill-id' as unknown as never,
         name: 'maybe-disabled-read',
@@ -295,8 +300,10 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(getSkillByName).toHaveBeenCalledWith('maybe-disabled-read', expect.any(Array), {
-        preferInvocable: true,
+        preferModelInvocable: true,
       });
+      const callOptions = getSkillByName.mock.calls[0][2];
+      expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
     });
 
     it('rejects read_file tool calls for disableModelInvocation skills (file ACL parity)', async () => {

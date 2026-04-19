@@ -386,14 +386,15 @@ export interface ResolveManualSkillsParams {
   names: string[];
   /** DB lookup: name → skill doc, constrained to ACL-accessible IDs.
    *
-   * Resolver always passes `options.preferInvocable: true` so a same-name
-   * newer disabled / non-user-invocable duplicate can't shadow the older
-   * doc the user actually picked from the popover.
+   * Resolver always passes `options.preferUserInvocable: true` so a
+   * same-name newer `userInvocable: false` (model-only) duplicate can't
+   * shadow the older user-invocable doc the popover surfaced. Disable-
+   * model-invocation status is irrelevant for the manual path.
    */
   getSkillByName: (
     name: string,
     accessibleIds: Types.ObjectId[],
-    options?: { preferInvocable?: boolean },
+    options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
   ) => Promise<{
     _id: Types.ObjectId;
     name: string;
@@ -498,14 +499,19 @@ export async function resolveManualSkills(
   const resolved = await Promise.all(
     boundedNames.map(async (name) => {
       try {
-        /* `preferInvocable` lets the lookup return the older user-invocable
-           variant when a newer same-name duplicate has `userInvocable:
-           false` or `disable-model-invocation: true`. Without this, a
-           newer disabled / non-invocable duplicate would shadow the
-           popover-visible skill the user picked, and the manual
-           invocation would silently no-op (or pick a body that doesn't
-           match what the model later resolves at file-read time). */
-        const skill = await getSkillByName(name, accessibleSkillIds, { preferInvocable: true });
+        /* `preferUserInvocable` lets the lookup return the older
+           user-invocable variant when a newer same-name duplicate has
+           `userInvocable: false` (model-only). Without this, the
+           popover-visible skill the user picked would silently no-op
+           because `getSkillByName`'s `updatedAt desc` tiebreak returns
+           the model-only newer doc and the resolver skips it on the
+           userInvocable check below. We deliberately do NOT also pass
+           `preferModelInvocable` — manually invoking a `disable-model-
+           invocation: true` skill is the supported path (iter 4) and
+           the model-only filter would interfere with that. */
+        const skill = await getSkillByName(name, accessibleSkillIds, {
+          preferUserInvocable: true,
+        });
         if (!skill) {
           logger.warn(`[resolveManualSkills] Skill "${name}" not found or not accessible`);
           return null;

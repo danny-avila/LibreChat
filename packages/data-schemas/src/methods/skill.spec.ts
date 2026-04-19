@@ -638,59 +638,134 @@ describe('Skill CRUD methods', () => {
     expect(result.skills[0].userInvocable).toBe(false);
   });
 
-  it('preferInvocable returns the user-invocable + model-invocable doc when same-name duplicates exist', async () => {
-    /* Same-name collision: older invocable doc, newer disabled doc.
-       Default lookup returns the newer (disabled) one — that's the bug.
-       preferInvocable should return the older invocable one so manual
-       prime resolution + runtime ACL stay consistent with the catalog. */
-    const olderInvocable = await Skill.create({
-      name: 'collision-skill',
-      description: 'Older invocable variant of the colliding name.',
-      body: 'invocable body',
+  it('preferModelInvocable picks the model-invocable doc on same-name collision (does NOT filter on userInvocable)', async () => {
+    /* Same-name collision scenario the model paths must handle: an older
+       user-invocable variant and a newer model-only variant
+       (`userInvocable: false`) — both are model-invocable. The model
+       path uses preferModelInvocable, which deliberately does NOT
+       filter on userInvocable; otherwise the older doc would shadow the
+       cataloged model-only doc the model targeted. */
+    const olderUserInvocable = await Skill.create({
+      name: 'model-collision',
+      description: 'Older user-invocable variant of the colliding name.',
+      body: 'user-invocable body',
       frontmatter: {},
       author: owner._id,
       authorName: owner.name ?? 'Skill Owner',
       version: 1,
       source: 'inline',
       fileCount: 0,
+      userInvocable: true,
     });
-    /* Sleep so updatedAt differs deterministically. */
     await new Promise((r) => setTimeout(r, 5));
-    const newerDisabled = await Skill.create({
-      name: 'collision-skill',
-      description: 'Newer model-disabled variant of the colliding name.',
-      body: 'disabled body',
+    const newerModelOnly = await Skill.create({
+      name: 'model-collision',
+      description: 'Newer model-only variant of the colliding name.',
+      body: 'model-only body',
       frontmatter: {},
       author: other._id,
       authorName: other.name ?? 'Other',
       version: 1,
       source: 'inline',
       fileCount: 0,
-      disableModelInvocation: true,
+      userInvocable: false,
     });
 
     const accessibleIds = [
-      olderInvocable._id as mongoose.Types.ObjectId,
-      newerDisabled._id as mongoose.Types.ObjectId,
+      olderUserInvocable._id as mongoose.Types.ObjectId,
+      newerModelOnly._id as mongoose.Types.ObjectId,
     ];
 
-    /* Default behavior: newest wins → disabled doc returned. */
-    const defaultLookup = await methods.getSkillByName('collision-skill', accessibleIds);
-    expect(defaultLookup?._id.toString()).toBe(newerDisabled._id.toString());
-
-    /* preferInvocable: clean invocable wins → older doc returned. */
-    const preferred = await methods.getSkillByName('collision-skill', accessibleIds, {
-      preferInvocable: true,
+    /* preferModelInvocable: both are model-invocable (neither has
+       disableModelInvocation: true), so newest wins → model-only doc. */
+    const modelLookup = await methods.getSkillByName('model-collision', accessibleIds, {
+      preferModelInvocable: true,
     });
-    expect(preferred?._id.toString()).toBe(olderInvocable._id.toString());
+    expect(modelLookup?._id.toString()).toBe(newerModelOnly._id.toString());
   });
 
-  it('preferInvocable falls back to newest match when no clean-invocable doc exists', async () => {
-    /* Sole-disabled-name case: only a `disableModelInvocation: true` doc
-       exists for the name. preferInvocable must still return it so
-       handleSkillToolCall can fire the explicit-rejection error path. */
+  it('preferUserInvocable picks the user-invocable doc on same-name collision (does NOT filter on disableModelInvocation)', async () => {
+    /* Manual path scenario: older user-invocable variant + newer
+       model-only variant. The popover surfaced the older doc; the
+       resolver must look it up with preferUserInvocable so the
+       newer model-only doc doesn't shadow the user's selection. */
+    const olderUserInvocable = await Skill.create({
+      name: 'user-collision',
+      description: 'Older user-invocable variant.',
+      body: 'user-invocable body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      userInvocable: true,
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    const newerModelOnly = await Skill.create({
+      name: 'user-collision',
+      description: 'Newer model-only variant.',
+      body: 'model-only body',
+      frontmatter: {},
+      author: other._id,
+      authorName: other.name ?? 'Other',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      userInvocable: false,
+    });
+
+    const accessibleIds = [
+      olderUserInvocable._id as mongoose.Types.ObjectId,
+      newerModelOnly._id as mongoose.Types.ObjectId,
+    ];
+
+    /* Default behavior: newest wins → model-only doc returned. */
+    const defaultLookup = await methods.getSkillByName('user-collision', accessibleIds);
+    expect(defaultLookup?._id.toString()).toBe(newerModelOnly._id.toString());
+
+    /* preferUserInvocable: user-invocable doc wins → older doc returned.
+       Disabled-model status is irrelevant here. */
+    const preferred = await methods.getSkillByName('user-collision', accessibleIds, {
+      preferUserInvocable: true,
+    });
+    expect(preferred?._id.toString()).toBe(olderUserInvocable._id.toString());
+  });
+
+  it('preferUserInvocable still returns disabled docs (manual prime of disabled is supported)', async () => {
+    /* Manual path with a disabled-but-user-invocable skill: the user
+       can still pick it from the popover; resolveManualSkills uses
+       preferUserInvocable, which doesn't filter on
+       disableModelInvocation. */
+    const disabled = await Skill.create({
+      name: 'disabled-user-invocable',
+      description: 'User-invocable but model-disabled.',
+      body: 'body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      userInvocable: true,
+      disableModelInvocation: true,
+    });
+
+    const result = await methods.getSkillByName(
+      'disabled-user-invocable',
+      [disabled._id as mongoose.Types.ObjectId],
+      { preferUserInvocable: true },
+    );
+    expect(result?._id.toString()).toBe(disabled._id.toString());
+    expect(result?.disableModelInvocation).toBe(true);
+  });
+
+  it('preferred lookups fall back to the newest match when no preferred doc exists', async () => {
+    /* Sole-disabled name: only a disable-model-invocation doc exists.
+       preferModelInvocable must still return it so handleSkillToolCall
+       can fire the explicit-rejection error path. */
     const disabledOnly = await Skill.create({
-      name: 'sole-disabled',
+      name: 'sole-disabled-fallback',
       description: 'Only a model-disabled variant of this name exists.',
       body: 'disabled body',
       frontmatter: {},
@@ -703,9 +778,9 @@ describe('Skill CRUD methods', () => {
     });
 
     const result = await methods.getSkillByName(
-      'sole-disabled',
+      'sole-disabled-fallback',
       [disabledOnly._id as mongoose.Types.ObjectId],
-      { preferInvocable: true },
+      { preferModelInvocable: true },
     );
     expect(result?._id.toString()).toBe(disabledOnly._id.toString());
     expect(result?.disableModelInvocation).toBe(true);
