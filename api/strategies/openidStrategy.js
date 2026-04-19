@@ -772,9 +772,19 @@ const setupOpenIdAdmin = (openidConfig) => {
 };
 
 /**
+ * Sleep for the specified number of milliseconds.
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
  * Sets up the OpenID strategy for authentication.
  * This function configures the OpenID client, handles proxy settings,
  * and defines the OpenID strategy for Passport.js.
+ *
+ * Retries the OIDC discovery call on failure with exponential backoff to handle
+ * transient network errors or IdP unavailability during startup.
  *
  * @async
  * @function setupOpenId
@@ -782,39 +792,77 @@ const setupOpenIdAdmin = (openidConfig) => {
  * @throws {Error} If an error occurs during the setup process.
  */
 async function setupOpenId() {
+  const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
+
+  /** @type {ClientMetadata} */
+  const clientMetadata = {
+    client_id: process.env.OPENID_CLIENT_ID,
+    client_secret: process.env.OPENID_CLIENT_SECRET,
+  };
+
+  if (shouldGenerateNonce) {
+    clientMetadata.response_types = ['code'];
+    clientMetadata.grant_types = ['authorization_code'];
+    clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+  }
+
+  const envRetries = process.env.OPENID_DISCOVERY_RETRIES;
+  const maxRetries = envRetries === undefined || envRetries === ''
+    ? 3
+    : Math.max(0, parseInt(envRetries, 10) || 0);
+
+  // Validate issuer URL before retrying — invalid URLs are configuration errors, not transient failures
+  let issuerUrl;
   try {
-    const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
+    issuerUrl = new URL(process.env.OPENID_ISSUER);
+  } catch (err) {
+    logger.error('[openidStrategy] Invalid OPENID_ISSUER URL:', err.message);
+    return null;
+  }
 
-    /** @type {ClientMetadata} */
-    const clientMetadata = {
-      client_id: process.env.OPENID_CLIENT_ID,
-      client_secret: process.env.OPENID_CLIENT_SECRET,
-    };
-
-    if (shouldGenerateNonce) {
-      clientMetadata.response_types = ['code'];
-      clientMetadata.grant_types = ['authorization_code'];
-      clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      /** @type {Configuration} */
+      openidConfig = await client.discovery(
+        issuerUrl,
+        process.env.OPENID_CLIENT_ID,
+        clientMetadata,
+        undefined,
+        {
+          [client.customFetch]: customFetch,
+        },
+      );
+      break;
+    } catch (err) {
+      if (attempt < maxRetries) {
+        const delay = 2000 * Math.pow(2, attempt);
+        logger.warn(
+          `[openidStrategy] Discovery failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms: ${err.message || err}`,
+        );
+        await sleep(delay);
+      } else {
+        logger.error(
+          `[openidStrategy] Discovery failed after ${maxRetries + 1} attempts`,
+          err,
+        );
+        return null;
+      }
     }
+  }
 
-    /** @type {Configuration} */
-    openidConfig = await client.discovery(
-      new URL(process.env.OPENID_ISSUER),
-      process.env.OPENID_CLIENT_ID,
-      clientMetadata,
-      undefined,
-      {
-        [client.customFetch]: customFetch,
-      },
-    );
+  if (!openidConfig) {
+    logger.error('[openidStrategy] Discovery produced no configuration');
+    return null;
+  }
 
-    logger.info(`[openidStrategy] OpenID authentication configuration`, {
-      generateNonce: shouldGenerateNonce,
-      reason: shouldGenerateNonce
-        ? 'OPENID_GENERATE_NONCE=true - Will generate nonce and use explicit metadata for federated providers'
-        : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
-    });
+  logger.info(`[openidStrategy] OpenID authentication configuration`, {
+    generateNonce: shouldGenerateNonce,
+    reason: shouldGenerateNonce
+      ? 'OPENID_GENERATE_NONCE=true - Will generate nonce and use explicit metadata for federated providers'
+      : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
+  });
 
+  try {
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
@@ -829,7 +877,7 @@ async function setupOpenId() {
     setupOpenIdAdmin(openidConfig);
     return openidConfig;
   } catch (err) {
-    logger.error('[openidStrategy]', err);
+    logger.error('[openidStrategy] Strategy registration failed', err);
     return null;
   }
 }
