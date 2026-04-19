@@ -183,15 +183,21 @@ async function handleReadFileCall(
   }
 
   const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  /* `preferModelInvocable` keeps name-collision resolution aligned with
-     the catalog: a newer `disable-model-invocation: true` duplicate
-     can't shadow the cataloged invocable doc the model actually
-     targeted. We don't filter by `userInvocable` here — model-only
-     skills (`userInvocable: false`) are valid model-invocation targets.
-     Falls back to the newest match so the disabled-only case still
-     resolves and the model-invocation gate below fires its explicit
-     error. */
-  const skill = await getSkillByName(skillName, accessibleIds, { preferModelInvocable: true });
+  const manualSkillNames = (mergedConfigurable?.manualSkillNames as string[] | undefined) ?? [];
+  const isManuallyPrimedThisTurn = manualSkillNames.includes(skillName);
+  /* Lookup mirrors how the prime was resolved so reads come from the
+     same doc on same-name collisions:
+     - Manually primed this turn → `preferUserInvocable` (matches what
+       `resolveManualSkills` picked; otherwise a newer model-only doc
+       would shadow the user-invocable doc whose body got primed).
+     - Autonomous model probe → `preferModelInvocable` (matches what the
+       model saw in the catalog; falls back to newest so the disabled-
+       only case still resolves and the gate below fires its explicit
+       rejection error). */
+  const lookupOptions = isManuallyPrimedThisTurn
+    ? { preferUserInvocable: true }
+    : { preferModelInvocable: true };
+  const skill = await getSkillByName(skillName, accessibleIds, lookupOptions);
   if (!skill) {
     return {
       toolCallId: tc.id,
@@ -215,8 +221,6 @@ async function handleReadFileCall(
    * yet in this exception list — that's a known limitation tracked for
    * a follow-up. Same-turn manual invocation is the load-bearing path.
    */
-  const manualSkillNames = (mergedConfigurable?.manualSkillNames as string[] | undefined) ?? [];
-  const isManuallyPrimedThisTurn = manualSkillNames.includes(skillName);
   if (skill.disableModelInvocation === true && !isManuallyPrimedThisTurn) {
     return {
       toolCallId: tc.id,

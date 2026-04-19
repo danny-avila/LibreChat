@@ -726,6 +726,67 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'execute_code', 'read_file']);
   });
 
+  it('retries loadTools without extras when the union call returns undefined (production loaders swallow errors)', async () => {
+    /* Production loaders (`createToolLoader` in `initialize.js`,
+       `openai.js`, `responses.js`) wrap `loadAgentTools` in try/catch
+       and return `undefined` on failure. Without explicit handling we'd
+       fall through to the empty fallback and silently drop the agent's
+       baseline tools. This test pins the retry-on-undefined behavior. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    let call = 0;
+    loadTools.mockImplementation(async ({ tools }: { tools: string[] }) => {
+      call += 1;
+      if (call === 1) {
+        return undefined; // simulate swallowed error in createToolLoader
+      }
+      return {
+        tools: [],
+        toolContextMap: {},
+        userMCPAuthMap: undefined,
+        toolRegistry: undefined,
+        toolDefinitions: tools.map((name) => ({ name, description: '', parameters: {} })),
+        hasDeferredTools: false,
+        actionsEnabled: undefined,
+      };
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'silent-fail-skill',
+      ['mcp__broken__tool'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['silent-fail-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Two calls: union first (returned undefined → silent fail), then
+       base-only retry (succeeded). Agent's web_search survives. */
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__broken__tool']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toContain('web_search');
+    expect(definedNames).not.toContain('mcp__broken__tool');
+  });
+
   it('retries loadTools without extras when the union call throws (agent tools must still load)', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['web_search'];

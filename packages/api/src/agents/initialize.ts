@@ -440,13 +440,21 @@ export async function initializeAgent(
     extraAllowedToolNames.length > 0 ? [...baseToolNames, ...extraAllowedToolNames] : baseToolNames;
 
   /**
-   * `loadTools` can throw on MCP connection failure, plugin registry
-   * errors, etc. If a skill-contributed `allowed-tools` entry is the
-   * culprit, we shouldn't crash the entire turn — the agent's own tools
-   * are the load-bearing surface. Retry without the extras and continue
-   * (the dropped-tools debug log below picks up which extras vanished).
-   * If the retry-without-extras still throws, the agent's own tools are
-   * the problem — propagate.
+   * `loadTools` failures take two forms:
+   *   1. The wrapper throws — rare; only when something around the
+   *      try/catch in `createToolLoader` itself fails.
+   *   2. The wrapper returns `undefined` — the typical CJS path: every
+   *      production loader (`createToolLoader` in `initialize.js`,
+   *      `openai.js`, `responses.js`) catches `loadAgentTools` errors and
+   *      returns `undefined`. Without explicit handling, the empty
+   *      fallback object below would silently drop the agent's baseline
+   *      tools for the turn (not just the skill-added extras).
+   *
+   * If a skill-contributed `allowed-tools` entry is the culprit, retry
+   * with just `agent.tools` so the agent's own tools still load (the
+   * dropped-tools debug log below picks up which extras vanished). If
+   * the retry-without-extras also fails, propagate / fall through with
+   * the empty fallback — the agent's own tools are the problem.
    */
   const callLoadTools = async (tools: string[]) =>
     loadTools?.({
@@ -461,18 +469,29 @@ export async function initializeAgent(
     });
 
   let loadToolsResult;
+  const initialFailedSilently = (result: unknown) =>
+    result == null && extraAllowedToolNames.length > 0;
   try {
     loadToolsResult = await callLoadTools(requestedToolNames);
   } catch (err) {
     if (extraAllowedToolNames.length > 0) {
       logger.warn(
-        `[allowedTools] loadTools failed with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,
+        `[allowedTools] loadTools threw with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,
         err instanceof Error ? err.message : err,
       );
       loadToolsResult = await callLoadTools(baseToolNames);
     } else {
       throw err;
     }
+  }
+  if (initialFailedSilently(loadToolsResult)) {
+    /* Production loaders swallow errors and return undefined. Treat that
+       the same as a throw when extras were requested — the agent's own
+       tools must still load. */
+    logger.warn(
+      `[allowedTools] loadTools returned no result with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them.`,
+    );
+    loadToolsResult = await callLoadTools(baseToolNames);
   }
 
   const {

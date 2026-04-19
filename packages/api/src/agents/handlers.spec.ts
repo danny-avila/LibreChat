@@ -281,7 +281,7 @@ describe('createToolExecuteHandler', () => {
       expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
     });
 
-    it('read_file calls getSkillByName with preferModelInvocable for the same reason', async () => {
+    it('read_file uses preferModelInvocable for AUTONOMOUS probes (skill not in manualSkillNames)', async () => {
       const getSkillByName = jest.fn(async () => ({
         _id: 'skill-id' as unknown as never,
         name: 'maybe-disabled-read',
@@ -308,6 +308,44 @@ describe('createToolExecuteHandler', () => {
         | { preferUserInvocable?: boolean }
         | undefined;
       expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
+    });
+
+    it("read_file uses preferUserInvocable when the skill is in this turn's manualSkillNames (alignment with manual prime)", async () => {
+      /* Same-name collision corner: the resolver primed the older
+         user-invocable doc; if read_file uses preferModelInvocable, it
+         could pick a different newer model-only doc and read files from
+         the WRONG skill. When the skill is in manualSkillNames, switch
+         the lookup to preferUserInvocable to mirror what
+         `resolveManualSkills` did. */
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'manually-primed',
+        body: '# Body',
+        fileCount: 0,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: { manualSkillNames: ['manually-primed'] },
+        })),
+        getSkillByName,
+      });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_read_6',
+          name: Constants.READ_FILE,
+          args: { file_path: 'manually-primed/references/foo.md' },
+        },
+      ]);
+
+      expect(getSkillByName).toHaveBeenCalledWith('manually-primed', expect.any(Array), {
+        preferUserInvocable: true,
+      });
+      const callOptions = (getSkillByName.mock.calls[0] as unknown[])[2] as
+        | { preferModelInvocable?: boolean }
+        | undefined;
+      expect(callOptions).not.toHaveProperty('preferModelInvocable', true);
     });
 
     it('rejects read_file tool calls for disableModelInvocation skills (file ACL parity)', async () => {
