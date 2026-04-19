@@ -9,3 +9,5 @@ export { default as useMultipleKeys } from './useMultipleKeys';
 export { default as useSpeechToText } from './useSpeechToText';
 export { default as useTextToSpeech } from './useTextToSpeech';
 export { default as useGetAudioSettings } from './useGetAudioSettings';
+// CUSTOM - Added permissions check
+export { default as useRequiresPermission } from './useRequiresPermission';

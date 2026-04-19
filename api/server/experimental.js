@@ -313,6 +313,7 @@ if (cluster.isMaster) {
     app.use('/api/categories', routes.categories);
     app.use('/api/endpoints', routes.endpoints);
     app.use('/api/balance', routes.balance);
+    app.use('/api/balance-admin', routes.balanceAdmin);
     app.use('/api/models', routes.models);
     app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);

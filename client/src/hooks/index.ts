@@ -39,3 +39,4 @@ export { default as useGenerationsByLatest } from './useGenerationsByLatest';
 export { default as useLocalizedConfig } from './useLocalizedConfig';
 export { default as useResourcePermissions } from './useResourcePermissions';
 export { useRoleSelector } from './useRoleSelector';
+export { default as useBranding } from './useBranding';

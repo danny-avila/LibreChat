@@ -157,6 +157,39 @@ router.get('/', async function (req, res) {
     const payload = {
       ...sharedPayload,
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
+      discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
+      facebookLoginEnabled:
+        !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
+      githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
+      googleLoginEnabled: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
+      appleLoginEnabled:
+        !!process.env.APPLE_CLIENT_ID &&
+        !!process.env.APPLE_TEAM_ID &&
+        !!process.env.APPLE_KEY_ID &&
+        !!process.env.APPLE_PRIVATE_KEY_PATH,
+      openidLoginEnabled: isOpenIdEnabled,
+      permissionsAPIURL: process.env.PERMISSIONS_API_URL,
+      openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
+      openidImageUrl: process.env.OPENID_IMAGE_URL,
+      openidAutoRedirect: isEnabled(process.env.OPENID_AUTO_REDIRECT),
+      samlLoginEnabled: !isOpenIdEnabled && isSamlEnabled,
+      samlLabel: process.env.SAML_BUTTON_LABEL,
+      samlImageUrl: process.env.SAML_IMAGE_URL,
+      serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
+      emailLoginEnabled,
+      registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
+      socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
+      emailEnabled:
+        (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
+        !!process.env.EMAIL_USERNAME &&
+        !!process.env.EMAIL_PASSWORD &&
+        !!process.env.EMAIL_FROM,
+      passwordResetEnabled,
+      showBirthdayIcon:
+        isBirthday() ||
+        isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
+        process.env.SHOW_BIRTHDAY_ICON === '',
+      helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
       modelSpecs: appConfig?.modelSpecs,

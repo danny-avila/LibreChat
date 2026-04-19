@@ -12,6 +12,7 @@ import { ModelSpecItem } from './ModelSpecItem';
 import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import { FilteredEndpoints } from './FilteredEndpoints';
 
 interface EndpointItemProps {
   endpoint: Endpoint;
@@ -247,11 +248,15 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
 }
 
 export function renderEndpoints(mappedEndpoints: Endpoint[]) {
-  return mappedEndpoints.map((endpoint, index) => (
-    <EndpointItem
-      endpoint={endpoint}
-      endpointIndex={index}
-      key={`endpoint-${endpoint.value}-${index}`}
-    />
-  ));
+  // ORIGINAL CODE - WITHOUT PERMISSION CHECK
+  // return mappedEndpoints.map((endpoint, index) => (
+  //   <EndpointItem
+  //     endpoint={endpoint}
+  //     endpointIndex={index}
+  //     key={`endpoint-${endpoint.value}-${index}`}
+  //   />
+  // ));
+
+  // CUSTOM - Use FilteredEndpoints for permission-based filtering
+  return <FilteredEndpoints endpoints={mappedEndpoints} />;
 }

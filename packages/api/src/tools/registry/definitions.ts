@@ -354,6 +354,153 @@ export const fileSearchSchema: ExtendedJsonSchema = {
   required: ['query'],
 };
 
+/** OpenAI Image Generation tool JSON schema */
+export const imageGenOaiSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      maxLength: 32000,
+      description: `Describe the image you want in detail. 
+      Be highly specific—break your idea into layers: 
+      (1) main concept and subject,
+      (2) composition and position,
+      (3) lighting and mood,
+      (4) style, medium, or camera details,
+      (5) important features (age, expression, clothing, etc.),
+      (6) background.
+      Use positive, descriptive language and specify what should be included, not what to avoid. 
+      List number and characteristics of people/objects, and mention style/technical requirements (e.g., "DSLR photo, 85mm lens, golden hour").
+      Do not reference any uploaded images—use for new image creation from text only.`,
+    },
+    background: {
+      type: 'string',
+      enum: ['transparent', 'opaque', 'auto'],
+      description:
+        'Sets transparency for the background. Must be one of transparent, opaque or auto (default). When transparent, the output format should be png or webp.',
+    },
+    quality: {
+      type: 'string',
+      enum: ['auto', 'high', 'medium', 'low'],
+      description: 'The quality of the image. One of auto (default), high, medium, or low.',
+    },
+    size: {
+      type: 'string',
+      enum: ['auto', '1024x1024', '1536x1024', '1024x1536'],
+      description:
+        'The size of the generated image. One of 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait), or auto (default).',
+    },
+  },
+  required: ['prompt'],
+};
+
+/** OpenAI Image Edit tool JSON schema */
+export const imageEditOaiSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    image_ids: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1,
+      description: `IDs (image ID strings) of previously generated or uploaded images that should guide the edit.
+
+Guidelines:
+- If the user's request depends on any prior image(s), copy their image IDs into the \`image_ids\` array (in the same order the user refers to them).  
+- Never invent or hallucinate IDs; only use IDs that are still visible in the conversation context.
+- If no earlier image is relevant, omit the field entirely.`,
+    },
+    prompt: {
+      type: 'string',
+      maxLength: 32000,
+      description: `Describe the changes, enhancements, or new ideas to apply to the uploaded image(s).
+      Be highly specific—break your request into layers: 
+      (1) main concept or transformation,
+      (2) specific edits/replacements or composition guidance,
+      (3) desired style, mood, or technique,
+      (4) features/items to keep, change, or add (such as objects, people, clothing, lighting, etc.).
+      Use positive, descriptive language and clarify what should be included or changed, not what to avoid.
+      Always base this prompt on the most recently uploaded reference images.`,
+    },
+    quality: {
+      type: 'string',
+      enum: ['auto', 'high', 'medium', 'low'],
+      description:
+        'The quality of the image. One of auto (default), high, medium, or low. High/medium/low only supported for gpt-image-1.',
+    },
+    size: {
+      type: 'string',
+      enum: ['auto', '1024x1024', '1536x1024', '1024x1536', '256x256', '512x512'],
+      description:
+        'The size of the generated images. For gpt-image-1: auto (default), 1024x1024, 1536x1024, 1024x1536. For dall-e-2: 256x256, 512x512, 1024x1024.',
+    },
+  },
+  required: ['image_ids', 'prompt'],
+};
+
+/** Gemini Image Generation tool JSON schema */
+export const geminiImageGenSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      maxLength: 32000,
+      description:
+        'A detailed text description of the desired image, up to 32000 characters. For "editing" requests, describe the changes you want to make to the referenced image. Be specific about composition, style, lighting, and subject matter.',
+    },
+    image_ids: {
+      type: 'array',
+      items: { type: 'string' },
+      description: `Optional array of image IDs to use as visual context for generation.
+
+Guidelines:
+- For "editing" requests: ALWAYS include the image ID being "edited"
+- For new generation with context: Include any relevant reference image IDs
+- If the user's request references any prior images, include their image IDs in this array
+- These images will be used as visual context/inspiration for the new generation
+- Never invent or hallucinate IDs; only use IDs that are visible in the conversation
+- If no images are relevant, omit this field entirely`,
+    },
+    aspectRatio: {
+      type: 'string',
+      enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
+      description:
+        'The aspect ratio of the generated image. Use 16:9 or 3:2 for landscape, 9:16 or 2:3 for portrait, 21:9 for ultra-wide/cinematic, 1:1 for square. Defaults to 1:1 if not specified.',
+    },
+    imageSize: {
+      type: 'string',
+      enum: ['1K', '2K', '4K'],
+      description:
+        'The resolution of the generated image. Use 1K for standard, 2K for high, 4K for maximum quality. Defaults to 1K if not specified.',
+    },
+  },
+  required: ['prompt'],
+};
+
+/** OpenRouter Image Generation tool JSON schema */
+export const openrouterImageGenSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      minLength: 1,
+      description:
+        'Detailed text description of the image to generate. Should be 3-6 sentences, focusing on visual elements, lighting, composition, mood, and style.',
+    },
+    model: {
+      type: 'string',
+      description:
+        'The image generation model to use. Any OpenRouter-compatible image generation model can be used. Defaults to GPT-5 Image for best quality. Examples: openai/gpt-5-image, openai/gpt-5-image-mini, bytedance-seed/seedream-4.5, google/gemini-3-pro-image-preview, google/gemini-2.5-flash-image.',
+    },
+    aspect_ratio: {
+      type: 'string',
+      enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
+      description:
+        'Aspect ratio for the generated image. Only supported for Gemini models. Use 16:9 for landscape, 9:16 for portrait, 1:1 for square.',
+    },
+  },
+  required: ['prompt'],
+};
+
 /** Tool definitions registry - maps tool names to their definitions */
 export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   google: {
@@ -448,6 +595,23 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     schema: geminiToolkit.gemini_image_gen.schema,
     toolType: 'builtin',
     responseFormat: geminiToolkit.gemini_image_gen.responseFormat,
+  },
+  openrouter_image_gen: {
+    name: 'openrouter_image_gen',
+    description: `Generate high-quality images from text descriptions using OpenRouter-supported models.
+
+Supported models include:
+- openai/gpt-5-image: Best for high-quality, detailed images (default)
+- openai/gpt-5-image-mini: Fast and efficient image generation
+- bytedance-seed/seedream-4.5: High-quality generation by ByteDance
+- google/gemini-3-pro-image-preview: Advanced image generation with aspect ratio control
+- google/gemini-2.5-flash-image: Fast generation with aspect ratio control
+
+Always enhance basic prompts into detailed descriptions (3-6 sentences minimum).
+For Gemini models, you can specify aspect ratios like "16:9" for wide images or "9:16" for portraits.`,
+    schema: openrouterImageGenSchema,
+    toolType: 'builtin',
+    responseFormat: 'content_and_artifact',
   },
 };
 

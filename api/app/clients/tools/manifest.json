@@ -166,5 +166,18 @@
         "optional": true
       }
     ]
+  },
+  {
+    "name": "OpenRouter Image Generation",
+    "pluginKey": "openrouter_image_gen",
+    "description": "Generate images using text with OpenRouter's image generation models.",
+    "icon": "https://openrouter.ai/favicon.ico",
+    "authConfig": [
+      {
+        "authField": "OPENROUTER_KEY",
+        "label": "OpenRouter API Key",
+        "description": "Your OpenRouter API key. Get one at <a href=\"https://openrouter.ai/keys\" target=\"_blank\">https://openrouter.ai/keys</a>"
+      }
+    ]
   }
 ]

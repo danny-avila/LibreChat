@@ -29,10 +29,17 @@ const NODE_POLYFILL_SHIMS: Record<string, string> = {
 };
 
 // https://vitejs.dev/config/
-const backendPort = (process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT)) || 3080;
-const backendURL = process.env.HOST
-  ? `http://${process.env.HOST}:${backendPort}`
-  : `http://localhost:${backendPort}`;
+const backendPort = process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT) || 3080;
+const backendURL = process.env.HOST ? `http://${process.env.HOST}:${backendPort}` : `http://localhost:${backendPort}`;
+// ===================================================
+// CUSTOM - Permissions API URL configuration
+// Can be overridden with PERMISSIONS_API_URL environment variable
+// Default: https://dev.areebgpt.arm.areeb.me
+// Removes trailing slash if present
+const permissionsAPIURL =
+  (process.env.PERMISSIONS_API_URL || 'https://dev.areebgpt.arm.areeb.me').replace(/\/$/, '');
+// ===================================================
+
 
 export default defineConfig(({ command }) => ({
   base: '',
@@ -51,8 +58,22 @@ export default defineConfig(({ command }) => ({
         target: backendURL,
         changeOrigin: true,
       },
+      // ===================================================
+      // CUSTOM - Proxy for external permissions API
+      // Frontend calls: /external-permissions-api/permissions/{email}
+      // Proxied to: {permissionsAPIURL}/api/v1/user/permissions/{email}
+      // Example: /external-permissions-api/permissions/hatem@gmail.com
+      //   → https://dev.areebgpt.arm.areeb.me/api/v1/user/permissions/hatem@gmail.com
+      '/external-permissions-api': {
+        target: permissionsAPIURL,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/external-permissions-api/, '/api/v1/user'),
+      },
+      // ===================================================
+
     },
   },
+  
   // Set the directory where environment variables are loaded from and restrict prefixes
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],

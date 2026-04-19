@@ -37,6 +37,7 @@ const {
   TavilySearchResults,
   createGeminiImageTool,
   createOpenAIImageTools,
+  OpenRouterImageGen,
 } = require('../');
 const { createMCPTool, createMCPTools, resolveConfigServers } = require('~/server/services/MCP');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -182,6 +183,7 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
+    openrouter_image_gen: OpenRouterImageGen,
   };
 
   const customConstructors = {
@@ -250,6 +252,7 @@ const loadTools = async ({
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
     gemini_image_gen: imageGenOptions,
+    openrouter_image_gen: imageGenOptions,
   };
 
   /** @type {Record<string, string>} */
@@ -472,10 +475,10 @@ const loadTools = async ({
           config.type === 'all'
             ? await createMCPTools(mcpParams)
             : await createMCPTool({
-                ...mcpParams,
-                availableTools,
-                toolKey: config.toolKey,
-              });
+              ...mcpParams,
+              availableTools,
+              toolKey: config.toolKey,
+            });
 
         if (Array.isArray(mcpTool)) {
           loadedTools.push(...mcpTool);
