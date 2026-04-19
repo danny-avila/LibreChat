@@ -324,10 +324,17 @@ describe('ACL $bitsAllSet vs $in parity (issue #12729)', () => {
   });
 
   describe('performance (wall-clock, median over 20 runs)', () => {
-    /** These tests don't assert on absolute timings (CI variance) — they log
-     *  numbers so reviewers can verify no gross regression and, if curious,
-     *  see the `$in` path is typically at least as fast as `$bitsAllSet`
-     *  because `$in` is indexable while `$bitsAllSet` is not. */
+    /**
+     * These tests don't assert on absolute timings (CI variance) — they log
+     * numbers so reviewers can verify no gross regression and, if curious,
+     * see the `$in` path is typically at least as fast as `$bitsAllSet`
+     * because `$in` is indexable while `$bitsAllSet` is not.
+     *
+     * The `expect` guard is `Math.max(legacyMs * 5, 50)` — a multiplicative
+     * ceiling of 5× with an absolute floor of 50ms. The earlier
+     * `legacyMs * 3 + 50` form was dominated by the `+ 50` additive term at
+     * sub-ms latencies and would have let a 50× regression pass silently.
+     */
     test('findAccessibleResources: $bitsAllSet vs $in', async () => {
       await seedVariedPermissions(userId, grantedById, FIXTURE_SIZE);
       const requiredBits = PermissionBits.VIEW | PermissionBits.EDIT;
@@ -355,15 +362,6 @@ describe('ACL $bitsAllSet vs $in parity (issue #12729)', () => {
         `[perf] findAccessibleResources — legacy $bitsAllSet: ${legacyMs.toFixed(2)}ms, ` +
           `current $in: ${currentMs.toFixed(2)}ms (median of ${PERF_ITERATIONS} runs, ${FIXTURE_SIZE} entries)`,
       );
-      /** Sanity check: the new path should not be dramatically slower. A 3x
-       *  multiplier catches catastrophic regressions (e.g. missing index use)
-       *  without flaking on normal CI variance. */
-      /**
-       * Multiplicative-dominant guard: tolerate up to 5× regression or 50ms
-       * absolute, whichever is larger. The `legacyMs * 3 + 50` form we had
-       * previously was dominated by the additive term at sub-ms latencies and
-       * would have let a 50× regression pass silently.
-       */
       expect(currentMs).toBeLessThan(Math.max(legacyMs * 5, 50));
     });
 
@@ -402,12 +400,6 @@ describe('ACL $bitsAllSet vs $in parity (issue #12729)', () => {
         `[perf] findPublicResourceIds — legacy $bitsAllSet: ${legacyMs.toFixed(2)}ms, ` +
           `current $in: ${currentMs.toFixed(2)}ms (median of ${PERF_ITERATIONS} runs, ${FIXTURE_SIZE} entries)`,
       );
-      /**
-       * Multiplicative-dominant guard: tolerate up to 5× regression or 50ms
-       * absolute, whichever is larger. The `legacyMs * 3 + 50` form we had
-       * previously was dominated by the additive term at sub-ms latencies and
-       * would have let a 50× regression pass silently.
-       */
       expect(currentMs).toBeLessThan(Math.max(legacyMs * 5, 50));
     });
   });
