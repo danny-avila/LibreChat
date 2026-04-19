@@ -184,11 +184,21 @@ export async function injectSkillCatalog(
     resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare });
 
   const activeSkills: SkillSummary[] = [];
+  /**
+   * Catalog cap counts only model-visible (non-`disable-model-invocation`)
+   * skills. Counting against the merged active set would let a tenant
+   * with many disabled skills near the top of the cursor exhaust the
+   * 100-slot quota before any invocable skills got scanned — the catalog
+   * could end up empty even though invocable skills exist further down
+   * the paginated results. Tracking the visible count separately also
+   * keeps `MAX_CATALOG_PAGES` honest as a true scan-budget ceiling.
+   */
+  let visibleCount = 0;
   let cursor: string | null = null;
   let pages = 0;
   let reachedEnd = false;
 
-  while (activeSkills.length < SKILL_CATALOG_LIMIT && pages < MAX_CATALOG_PAGES) {
+  while (visibleCount < SKILL_CATALOG_LIMIT && pages < MAX_CATALOG_PAGES) {
     const page = await listSkillsByAccess({
       accessibleIds: accessibleSkillIds,
       limit: CATALOG_PAGE_SIZE,
@@ -196,7 +206,7 @@ export async function injectSkillCatalog(
     });
 
     for (const skill of page.skills) {
-      if (activeSkills.length >= SKILL_CATALOG_LIMIT) {
+      if (visibleCount >= SKILL_CATALOG_LIMIT) {
         break;
       }
       /**
@@ -210,6 +220,9 @@ export async function injectSkillCatalog(
        */
       if (isActive(skill)) {
         activeSkills.push(skill);
+        if (skill.disableModelInvocation !== true) {
+          visibleCount += 1;
+        }
       }
     }
 
@@ -225,7 +238,7 @@ export async function injectSkillCatalog(
     return { toolDefinitions: inputDefs, skillCount: 0, activeSkillIds: [] };
   }
 
-  if (!reachedEnd && activeSkills.length < SKILL_CATALOG_LIMIT) {
+  if (!reachedEnd && visibleCount < SKILL_CATALOG_LIMIT) {
     logger.warn(
       `[injectSkillCatalog] Scanned ${MAX_CATALOG_PAGES} pages without filling the ${SKILL_CATALOG_LIMIT}-skill catalog. Some active skills may be excluded.`,
     );
@@ -239,11 +252,34 @@ export async function injectSkillCatalog(
    */
   const catalogVisibleSkills = activeSkills.filter((s) => s.disableModelInvocation !== true);
 
+  /**
+   * Resolve same-name collisions in the runtime ACL set: when an invocable
+   * skill and a `disable-model-invocation: true` skill share a name,
+   * `getSkillByName` would pick whichever is newer (it sorts by
+   * `updatedAt` desc) — and if the disabled one is newer, EVERY model
+   * call to that name would fail with "cannot be invoked by the model"
+   * even though the cataloged invocable skill exists. Drop the disabled
+   * doc(s) from `activeSkillIds` whenever an invocable doc with the same
+   * name is also in scope. When ONLY a disabled doc exists for a name,
+   * keep it so the explicit-rejection error path still fires.
+   *
+   * Note: we never drop two invocable docs that share a name — the
+   * existing duplicate-name warn log below covers that ambiguity, and
+   * `getSkillByName` picks the newest (deterministic).
+   */
+  const invocableNames = new Set<string>();
+  for (const s of catalogVisibleSkills) {
+    invocableNames.add(s.name);
+  }
+  const executableSkills = activeSkills.filter(
+    (s) => s.disableModelInvocation !== true || !invocableNames.has(s.name),
+  );
+
   if (catalogVisibleSkills.length === 0) {
     return {
       toolDefinitions: inputDefs,
       skillCount: 0,
-      activeSkillIds: activeSkills.map((s) => s._id),
+      activeSkillIds: executableSkills.map((s) => s._id),
     };
   }
 
@@ -307,7 +343,7 @@ export async function injectSkillCatalog(
   return {
     toolDefinitions,
     skillCount: catalogVisibleSkills.length,
-    activeSkillIds: activeSkills.map((s) => s._id),
+    activeSkillIds: executableSkills.map((s) => s._id),
   };
 }
 

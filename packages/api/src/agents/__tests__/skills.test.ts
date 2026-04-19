@@ -597,6 +597,62 @@ describe('injectSkillCatalog', () => {
     );
   });
 
+  it('catalog quota counts only model-visible skills (disabled rows do not consume slots)', async () => {
+    /* Build 3 disabled skills + 1 invocable skill on a single page. With a
+       hypothetical cap of 100 the disabled rows shouldn't crowd out the
+       invocable one — but the bug we're guarding against is the cap getting
+       consumed by disabled rows so the invocable one never lands in the
+       catalog. Verify the invocable skill makes it in regardless of how
+       many disabled rows precede it. */
+    const disabled = (i: number): PageSkill => ({
+      ...makeSkill(`disabled-${i}`, userObjectId),
+      disableModelInvocation: true,
+    });
+    const visible = makeSkill('visible-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[disabled(1), disabled(2), disabled(3), visible]]);
+    const agent = makeAgent();
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
+    expect(result.skillCount).toBe(1);
+    expect(agent.additional_instructions).toContain('visible-skill');
+    /* All four are accessible at runtime — disabled ones for the explicit
+       rejection error, the visible one for normal execution. */
+    expect(result.activeSkillIds).toHaveLength(4);
+  });
+
+  it('drops disabled docs from activeSkillIds when an invocable doc with the same name is in scope', async () => {
+    /* Same-name collision: invocable + disabled. Without dedup, getSkillByName
+       (sort by updatedAt desc) might pick the disabled doc and every model
+       call to that name would fail with "cannot be invoked". The invocable
+       doc must win the runtime ACL slot. */
+    const invocable = makeSkill('shared-name', userObjectId);
+    const disabledDup: PageSkill = {
+      ...makeSkill('shared-name', userObjectId),
+      disableModelInvocation: true,
+    };
+    const listSkillsByAccess = buildPager([[invocable, disabledDup]]);
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess }));
+    expect(result.activeSkillIds.map((id) => id.toString())).toEqual([invocable._id.toString()]);
+    expect(result.skillCount).toBe(1);
+  });
+
+  it('keeps the disabled doc in activeSkillIds when no invocable doc with the same name exists', async () => {
+    /* Sole-disabled-name case: the disabled doc must stay so a hallucinated
+       model invocation fires the explicit error path. */
+    const onlyDisabled: PageSkill = {
+      ...makeSkill('disabled-only', userObjectId),
+      disableModelInvocation: true,
+    };
+    const otherInvocable = makeSkill('other-name', userObjectId);
+    const listSkillsByAccess = buildPager([[onlyDisabled, otherInvocable]]);
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess }));
+    expect(result.activeSkillIds.map((id) => id.toString()).sort()).toEqual(
+      [onlyDisabled._id.toString(), otherInvocable._id.toString()].sort(),
+    );
+    /* Only otherInvocable counts toward the catalog — the disabled one stays
+       runtime-resolvable for explicit error, but not in the model's prompt. */
+    expect(result.skillCount).toBe(1);
+  });
+
   it('skips catalog inject + tool registration when every active skill is model-disabled', async () => {
     /* Edge case: only `disable-model-invocation` skills accessible. The
        model can never reach them, so registering the skill tool would
