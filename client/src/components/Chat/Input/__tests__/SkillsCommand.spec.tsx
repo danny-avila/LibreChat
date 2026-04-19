@@ -190,7 +190,7 @@ describe('SkillsCommand', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('selecting a skill pushes to pendingManualSkillsByConvoId, flips ephemeralAgent.skills, inserts $name into textarea, and closes the popover', async () => {
+  it('selecting a skill pushes to pendingManualSkillsByConvoId, flips ephemeralAgent.skills, strips the $ trigger from the textarea, and closes the popover', async () => {
     const user = userEvent.setup();
     const textAreaRef = makeTextarea('$');
     render(<SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />);
@@ -200,8 +200,8 @@ describe('SkillsCommand', () => {
       await user.click(skillButton);
     });
 
-    /* Structured channel: the skill name is pushed into the per-convo atom,
-       which is the contract the follow-up PR depends on. */
+    /* Structured channel: the skill name is pushed into the per-convo atom
+       and drained by `useChatFunctions.ask` on submission. */
     expect(mockSetPendingManualSkills).toHaveBeenCalledTimes(1);
     const updater = mockSetPendingManualSkills.mock.calls[0][0] as (prev: string[]) => string[];
     expect(updater([])).toEqual(['brand-guidelines']);
@@ -216,8 +216,11 @@ describe('SkillsCommand', () => {
     expect(agentUpdater(null)).toEqual({ skills: true });
     expect(agentUpdater({ skills: true })).toEqual({ skills: true });
 
-    /* Cosmetic textarea insertion remains in place for user feedback. */
-    expect(textAreaRef.current?.value).toBe('$brand-guidelines ');
+    /* Textarea is cleared of the `$` trigger but no `$skill-name ` cue is
+       inserted — visual confirmation is the `ManualSkillPills` row that
+       renders on the submitted user message, and injecting text would
+       mislead users into thinking free-form `$name` invocation works. */
+    expect(textAreaRef.current?.value).toBe('');
 
     /* Popover dismisses on selection. */
     expect(mockSetShowSkillsPopover).toHaveBeenCalledWith(false);

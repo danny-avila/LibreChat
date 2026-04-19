@@ -214,30 +214,18 @@ function SkillsCommandContent({
         return { ...(prev || {}), skills: true };
       });
 
-      /* Structured channel for manual skill invocations. The follow-up PR
-         will read this in the submit pipeline and prime the corresponding
-         SKILL.md as a meta user message before the LLM turn, mirroring
-         Claude Code's `/skill` deterministic injection. The textual
-         `$skill-name ` insertion below remains as user-visible confirmation
-         and is treated as cosmetic by that future pipeline. */
+      /* Structured channel for manual skill invocations. The submit
+         pipeline reads this and primes SKILL.md as a meta user message
+         before the LLM turn — no textarea-level marker is needed, and
+         injecting `$skill-name ` as text would mislead users into thinking
+         free-form text invocation is supported. Visual confirmation after
+         submit comes from `ManualSkillPills` on the user message bubble
+         until the live skill-card stream takes over. */
       setPendingManualSkills((prev) =>
         prev.includes(mention.value) ? prev : [...prev, mention.value],
       );
 
-      const textarea = textAreaRef.current;
-      if (textarea) {
-        const insertion = `$${mention.value} `;
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-          HTMLTextAreaElement.prototype,
-          'value',
-        )?.set;
-        if (nativeInputValueSetter) {
-          nativeInputValueSetter.call(textarea, insertion);
-          textarea.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        textarea.focus();
-        textarea.setSelectionRange(insertion.length, insertion.length);
-      }
+      textAreaRef.current?.focus();
     },
     [
       setSearchValue,

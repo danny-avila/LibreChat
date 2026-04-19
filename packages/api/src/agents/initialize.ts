@@ -30,7 +30,8 @@ import {
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
-import { injectSkillCatalog } from './skills';
+import { injectSkillCatalog, resolveManualSkills } from './skills';
+import type { ResolvedManualSkill } from './skills';
 import { primeResources } from './resources';
 import type { TFilterFilesByAgentAccess } from './resources';
 
@@ -71,6 +72,13 @@ export type InitializedAgent = Agent & {
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
   /** Number of skills in the catalog (used to determine if SkillTool should be registered) */
   skillCount?: number;
+  /**
+   * Skills the user manually invoked for this turn via the `$` popover, resolved
+   * to their SKILL.md bodies. The AgentClient injects these as meta user
+   * messages right before the latest user message in the LLM's formatted
+   * message array — deterministic priming without a tool roundtrip.
+   */
+  manualSkillPrimes?: ResolvedManualSkill[];
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -127,6 +135,13 @@ export interface InitializeAgentParams {
   skillStates?: Record<string, boolean>;
   /** Admin-configured default for shared skills (`true` = shared skills auto-activate). */
   defaultActiveOnShare?: boolean;
+  /**
+   * Skill names the user invoked manually for this turn via the `$` popover.
+   * Resolved here (ACL + active-state filtered) and attached to the returned
+   * InitializedAgent as `manualSkillPrimes` for the AgentClient to inject as
+   * meta user messages before the LLM call.
+   */
+  manualSkills?: string[];
 }
 
 /**
@@ -173,6 +188,20 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     has_more?: boolean;
     after?: string | null;
   }>;
+  /**
+   * Load a single skill by name, constrained to an ACL-accessible ID set.
+   * Returns the full document (including `body`) so manual invocation can
+   * prime SKILL.md without a second DB round-trip.
+   */
+  getSkillByName?: (
+    name: string,
+    accessibleIds: import('mongoose').Types.ObjectId[],
+  ) => Promise<{
+    _id: import('mongoose').Types.ObjectId;
+    name: string;
+    body: string;
+    author: import('mongoose').Types.ObjectId;
+  } | null>;
 }
 
 /**
@@ -454,6 +483,7 @@ export async function initializeAgent(
    * LLM (or a direct-invocation path) names one.
    */
   let executableSkillIds = params.accessibleSkillIds;
+  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
   const { accessibleSkillIds } = params;
   if (accessibleSkillIds && accessibleSkillIds.length > 0) {
     const skillResult = await injectSkillCatalog({
@@ -471,6 +501,25 @@ export async function initializeAgent(
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;
     executableSkillIds = skillResult.activeSkillIds;
+
+    /**
+     * Resolve manually-invoked skills against the same ACL set used for the
+     * catalog. We use `accessibleSkillIds` (not `activeSkillIds`) because the
+     * catalog is capped at a token budget — a skill that fell outside that cap
+     * can still be authorized for direct manual invocation. The active-state
+     * filter is re-applied inside `resolveManualSkills` so deactivated skills
+     * never leak through this path either.
+     */
+    if (params.manualSkills?.length && db.getSkillByName) {
+      manualSkillPrimes = await resolveManualSkills({
+        names: params.manualSkills,
+        getSkillByName: db.getSkillByName,
+        accessibleSkillIds,
+        userId: req.user?.id,
+        skillStates: params.skillStates,
+        defaultActiveOnShare: params.defaultActiveOnShare,
+      });
+    }
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;
@@ -506,6 +555,7 @@ export async function initializeAgent(
     baseContextTokens,
     skillCount,
     accessibleSkillIds: executableSkillIds,
+    manualSkillPrimes,
     attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
