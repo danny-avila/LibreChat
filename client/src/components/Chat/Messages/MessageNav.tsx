@@ -1,6 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
+import { ContentTypes } from 'librechat-data-provider';
 import { HoverCard, HoverCardTrigger, HoverCardPortal, HoverCardContent } from '@librechat/client';
+import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import { useGetMessagesByConvoId } from '~/data-provider';
+import { useMessagesConversation } from '~/Providers';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 type MessageEntry = {
@@ -9,34 +14,63 @@ type MessageEntry = {
   preview: string;
 };
 
-function getMessageEntries(root: ParentNode = document): MessageEntry[] {
+function extractPreviewFromContent(content?: TMessageContentParts[]): string {
+  if (!content) {
+    return '';
+  }
+  for (const part of content) {
+    if (part.type === ContentTypes.TEXT) {
+      const textField = part[ContentTypes.TEXT];
+      if (typeof textField === 'string' && textField.trim()) {
+        return textField;
+      }
+      if (textField && typeof textField === 'object' && 'value' in textField) {
+        const value = (textField as { value?: string }).value;
+        if (value?.trim()) {
+          return value;
+        }
+      }
+    }
+  }
+  return '';
+}
+
+function buildEntry(id: string, msg: TMessage): MessageEntry {
+  const raw = msg.text?.trim() ? msg.text : extractPreviewFromContent(msg.content);
+  const trimmed = raw.trim();
+  return {
+    id,
+    isUser: !!msg.isCreatedByUser,
+    preview: trimmed.slice(0, 80) + (trimmed.length > 80 ? '...' : ''),
+  };
+}
+
+function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry {
+  const isUser = node.querySelector('.user-turn') != null;
+  const trimmed = (node.textContent ?? '').trim();
+  return {
+    id,
+    isUser,
+    preview: trimmed.slice(0, 80) + (trimmed.length > 80 ? '...' : ''),
+  };
+}
+
+function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>): MessageEntry[] {
   const nodes = root.querySelectorAll<HTMLElement>('.message-render');
   const entries: MessageEntry[] = [];
-
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
     const id = node.id;
     if (!id) {
       continue;
     }
-
-    const isUser = node.querySelector('.user-turn') != null;
-    const turnEl = isUser ? node.querySelector('.user-turn') : node.querySelector('.agent-turn');
-    const contentEl = isUser
-      ? (turnEl?.querySelector('.flex.flex-col.gap-1') ?? turnEl)
-      : (node.querySelector('.markdown') ?? turnEl);
-
-    const rawText = contentEl?.textContent ?? '';
-    const preview = rawText.trim().slice(0, 80) + (rawText.trim().length > 80 ? '...' : '');
-
-    entries.push({ id, isUser, preview });
+    const msg = messagesById.get(id);
+    entries.push(msg ? buildEntry(id, msg) : buildFallbackEntry(node, id));
   }
-
   return entries;
 }
 
-const SCROLL_MARGIN = 16;
-const AT_TOP_THRESHOLD = 20;
+const JUMP_EPS = 4;
 
 function scrollToMessageStart(id: string) {
   const el = document.getElementById(id);
@@ -46,22 +80,23 @@ function scrollToMessageStart(id: string) {
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function isMessageAtTop(id: string): boolean {
-  const el = document.getElementById(id);
+function readScrollMargin(el: HTMLElement | null): number {
   if (!el) {
-    return true;
+    return 0;
   }
-  const container = el.closest('.scrollbar-gutter-stable');
-  if (!container) {
-    return true;
-  }
-  const distanceFromTop = el.getBoundingClientRect().top - container.getBoundingClientRect().top;
-  return (
-    distanceFromTop >= -AT_TOP_THRESHOLD && distanceFromTop <= SCROLL_MARGIN + AT_TOP_THRESHOLD
-  );
+  const value = parseFloat(getComputedStyle(el).scrollMarginTop);
+  return Number.isFinite(value) ? value : 0;
 }
 
-function MessageIndicator({ entry, isActive }: { entry: MessageEntry; isActive: boolean }) {
+const MessageIndicator = memo(function MessageIndicator({
+  entry,
+  isActive,
+  label,
+}: {
+  entry: MessageEntry;
+  isActive: boolean;
+  label: string;
+}) {
   return (
     <HoverCard openDelay={150}>
       <HoverCardTrigger asChild>
@@ -69,7 +104,8 @@ function MessageIndicator({ entry, isActive }: { entry: MessageEntry; isActive: 
           type="button"
           onClick={() => scrollToMessageStart(entry.id)}
           className={cn('flex h-[5px] items-center justify-center', entry.isUser ? 'w-4' : 'w-6')}
-          aria-label={`Go to ${entry.isUser ? 'user' : 'assistant'} message: ${entry.preview.slice(0, 30)}`}
+          aria-label={label}
+          data-msg-id={entry.id}
         >
           <span
             className={cn(
@@ -88,30 +124,36 @@ function MessageIndicator({ entry, isActive }: { entry: MessageEntry; isActive: 
       </HoverCardPortal>
     </HoverCard>
   );
-}
+});
 
 export default function MessageNav({
   scrollableRef,
 }: {
   scrollableRef: React.RefObject<HTMLDivElement>;
 }) {
-  const [entries, setEntries] = useState<MessageEntry[]>([]);
-  const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const lastKnownIndexRef = useRef(0);
-
-  const firstActiveIndex = useMemo(() => {
-    for (let i = 0; i < entries.length; i++) {
-      if (activeIds.has(entries[i].id)) {
-        lastKnownIndexRef.current = i;
-        return i;
+  const localize = useLocalize();
+  const { conversationId } = useMessagesConversation();
+  const { data: messages } = useGetMessagesByConvoId(conversationId ?? '', {
+    enabled: !!conversationId,
+  });
+  const messagesById = useMemo(() => {
+    const map = new Map<string, TMessage>();
+    if (messages) {
+      for (let i = 0; i < messages.length; i++) {
+        const m = messages[i];
+        if (m.messageId) {
+          map.set(m.messageId, m);
+        }
       }
     }
-    if (entries.length > 0) {
-      return Math.min(lastKnownIndexRef.current, entries.length - 1);
-    }
-    return -1;
-  }, [entries, activeIds]);
+    return map;
+  }, [messages]);
+  const [entries, setEntries] = useState<MessageEntry[]>([]);
+  const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
+  const [canGoUp, setCanGoUp] = useState(false);
+  const [canGoDown, setCanGoDown] = useState(false);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
 
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleSetRef = useRef(new Set<string>());
@@ -122,7 +164,7 @@ export default function MessageNav({
     }
     refreshTimerRef.current = setTimeout(() => {
       const root = scrollableRef.current ?? document;
-      const next = getMessageEntries(root);
+      const next = getMessageEntries(root, messagesById);
       setEntries((prev) => {
         if (
           prev.length === next.length &&
@@ -133,7 +175,7 @@ export default function MessageNav({
         return next;
       });
     }, 200);
-  }, [scrollableRef]);
+  }, [scrollableRef, messagesById]);
 
   useEffect(() => {
     refreshEntries();
@@ -143,8 +185,32 @@ export default function MessageNav({
       return;
     }
 
-    const mutationObserver = new MutationObserver(() => {
-      refreshEntries();
+    const mutationObserver = new MutationObserver((mutations) => {
+      for (let i = 0; i < mutations.length; i++) {
+        const m = mutations[i];
+        if (m.addedNodes.length || m.removedNodes.length) {
+          for (let j = 0; j < m.addedNodes.length; j++) {
+            const n = m.addedNodes[j] as HTMLElement;
+            if (
+              n.nodeType === 1 &&
+              (n.classList?.contains('message-render') || n.querySelector?.('.message-render'))
+            ) {
+              refreshEntries();
+              return;
+            }
+          }
+          for (let j = 0; j < m.removedNodes.length; j++) {
+            const n = m.removedNodes[j] as HTMLElement;
+            if (
+              n.nodeType === 1 &&
+              (n.classList?.contains('message-render') || n.querySelector?.('.message-render'))
+            ) {
+              refreshEntries();
+              return;
+            }
+          }
+        }
+      }
     });
 
     mutationObserver.observe(container, { childList: true, subtree: true });
@@ -156,6 +222,99 @@ export default function MessageNav({
       }
     };
   }, [scrollableRef, refreshEntries]);
+
+  useEffect(() => {
+    const container = scrollableRef.current;
+    if (!container || entries.length === 0) {
+      setCanGoUp(false);
+      setCanGoDown(false);
+      return;
+    }
+
+    const offsetsTop: number[] = new Array(entries.length);
+    const offsetsBottom: number[] = new Array(entries.length);
+    for (let i = 0; i < entries.length; i++) {
+      const el = document.getElementById(entries[i].id);
+      offsetsTop[i] = el ? el.offsetTop : Number.POSITIVE_INFINITY;
+      offsetsBottom[i] = el ? el.offsetTop + el.offsetHeight : Number.POSITIVE_INFINITY;
+    }
+
+    const firstEl = document.getElementById(entries[0].id);
+    const scrollMargin = readScrollMargin(firstEl);
+
+    let frameId: number | null = null;
+
+    const tick = () => {
+      frameId = null;
+
+      const scrollTop = container.scrollTop;
+      let nextCanUp = false;
+      let nextCanDown = false;
+      for (let i = 0; i < offsetsTop.length; i++) {
+        const snap = offsetsTop[i] - scrollMargin;
+        if (snap < scrollTop - JUMP_EPS) {
+          nextCanUp = true;
+        } else if (snap > scrollTop + JUMP_EPS) {
+          nextCanDown = true;
+          break;
+        }
+      }
+      setCanGoUp((prev) => (prev === nextCanUp ? prev : nextCanUp));
+      setCanGoDown((prev) => (prev === nextCanDown ? prev : nextCanDown));
+
+      const col = columnRef.current;
+      if (!col) {
+        return;
+      }
+      const viewBottom = scrollTop + container.clientHeight;
+      let first = -1;
+      let last = -1;
+      for (let i = 0; i < offsetsTop.length; i++) {
+        if (offsetsBottom[i] <= scrollTop) {
+          continue;
+        }
+        if (offsetsTop[i] >= viewBottom) {
+          break;
+        }
+        if (first === -1) {
+          first = i;
+        }
+        last = i;
+      }
+      if (first === -1) {
+        return;
+      }
+      const firstInd = col.querySelector<HTMLElement>(
+        `[data-msg-id="${CSS.escape(entries[first].id)}"]`,
+      );
+      const lastInd = col.querySelector<HTMLElement>(
+        `[data-msg-id="${CSS.escape(entries[last].id)}"]`,
+      );
+      if (!firstInd || !lastInd) {
+        return;
+      }
+      const mid = (firstInd.offsetTop + lastInd.offsetTop + lastInd.offsetHeight) / 2;
+      const target = mid - col.clientHeight / 2;
+      col.scrollTop = Math.max(0, Math.min(target, col.scrollHeight - col.clientHeight));
+    };
+
+    const onScroll = () => {
+      if (frameId != null) {
+        return;
+      }
+      frameId = requestAnimationFrame(tick);
+    };
+
+    tick();
+    container.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => {
+      container.removeEventListener('scroll', onScroll);
+      if (frameId != null) {
+        cancelAnimationFrame(frameId);
+      }
+    };
+  }, [entries, scrollableRef]);
 
   useEffect(() => {
     const root = scrollableRef.current;
@@ -173,6 +332,12 @@ export default function MessageNav({
       }
     }
 
+    let pendingFrame: number | null = null;
+    const flush = () => {
+      pendingFrame = null;
+      setActiveIds(new Set(visibleSet));
+    };
+
     const observer = new IntersectionObserver(
       (intersections) => {
         for (const entry of intersections) {
@@ -183,9 +348,11 @@ export default function MessageNav({
             visibleSet.delete(id);
           }
         }
-        setActiveIds(new Set(visibleSet));
+        if (pendingFrame == null) {
+          pendingFrame = requestAnimationFrame(flush);
+        }
       },
-      { root, threshold: 0.01 },
+      { root, threshold: 0 },
     );
 
     observerRef.current = observer;
@@ -197,58 +364,89 @@ export default function MessageNav({
       }
     }
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (pendingFrame != null) {
+        cancelAnimationFrame(pendingFrame);
+      }
+    };
   }, [entries, scrollableRef]);
 
   const jumpToPrevious = useCallback(() => {
-    if (firstActiveIndex < 0) {
+    const container = scrollableRef.current;
+    if (!container || entries.length === 0) {
       return;
     }
-    const currentId = entries[firstActiveIndex].id;
-    if (!isMessageAtTop(currentId) && firstActiveIndex > 0) {
-      scrollToMessageStart(currentId);
-      return;
+    const scrollTop = container.scrollTop;
+    const firstEl = document.getElementById(entries[0].id);
+    const scrollMargin = readScrollMargin(firstEl);
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const el = document.getElementById(entries[i].id);
+      if (!el) {
+        continue;
+      }
+      if (el.offsetTop - scrollMargin < scrollTop - JUMP_EPS) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
     }
-    if (firstActiveIndex <= 0) {
-      scrollToMessageStart(entries[0].id);
-      return;
-    }
-    scrollToMessageStart(entries[firstActiveIndex - 1].id);
-  }, [firstActiveIndex, entries]);
+    container.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [entries, scrollableRef]);
 
   const jumpToNext = useCallback(() => {
-    if (firstActiveIndex < 0 || firstActiveIndex >= entries.length - 1) {
+    const container = scrollableRef.current;
+    if (!container || entries.length === 0) {
       return;
     }
-    scrollToMessageStart(entries[firstActiveIndex + 1].id);
-  }, [firstActiveIndex, entries]);
+    const scrollTop = container.scrollTop;
+    const firstEl = document.getElementById(entries[0].id);
+    const scrollMargin = readScrollMargin(firstEl);
+    for (let i = 0; i < entries.length; i++) {
+      const el = document.getElementById(entries[i].id);
+      if (!el) {
+        continue;
+      }
+      if (el.offsetTop - scrollMargin > scrollTop + JUMP_EPS) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+    }
+  }, [entries, scrollableRef]);
 
   if (entries.length < 3) {
     return null;
   }
 
-  const canGoUp =
-    firstActiveIndex > 0 || (firstActiveIndex === 0 && !isMessageAtTop(entries[0].id));
-  const canGoDown = firstActiveIndex >= 0 && firstActiveIndex < entries.length - 1;
-
   return (
     <nav
-      aria-label="Message navigation"
-      className="group/nav absolute right-2 top-1/2 z-40 hidden -translate-y-1/2 flex-col items-center gap-1.5 rounded-full px-1 py-2 opacity-30 transition-opacity duration-300 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/5 md:flex"
+      aria-label={localize('com_ui_message_nav')}
+      className="group/nav absolute right-2 top-1/2 z-40 hidden max-h-[min(24rem,calc(100%-2rem))] -translate-y-1/2 flex-col items-center gap-1.5 rounded-full px-1 py-2 opacity-30 transition-opacity duration-300 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/5 md:flex"
     >
       <button
         type="button"
         onClick={jumpToPrevious}
         disabled={!canGoUp}
         className="rounded-md p-0.5 text-text-tertiary transition-colors group-hover/nav:text-text-secondary group-hover/nav:hover:text-text-primary group-hover/nav:disabled:opacity-30"
-        aria-label="Navigate to previous message"
+        aria-label={localize('com_ui_message_nav_previous')}
       >
         <ChevronUp className="h-4 w-4" />
       </button>
 
-      <div className="flex flex-col items-center gap-1.5">
+      <div
+        ref={columnRef}
+        className="flex min-h-0 flex-col items-center gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
         {entries.map((entry) => (
-          <MessageIndicator key={entry.id} entry={entry} isActive={activeIds.has(entry.id)} />
+          <MessageIndicator
+            key={entry.id}
+            entry={entry}
+            isActive={activeIds.has(entry.id)}
+            label={localize(
+              entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
+              { 0: entry.preview.slice(0, 30) },
+            )}
+          />
         ))}
       </div>
 
@@ -257,7 +455,7 @@ export default function MessageNav({
         onClick={jumpToNext}
         disabled={!canGoDown}
         className="rounded-md p-0.5 text-text-tertiary transition-colors group-hover/nav:text-text-secondary group-hover/nav:hover:text-text-primary group-hover/nav:disabled:opacity-30"
-        aria-label="Navigate to next message"
+        aria-label={localize('com_ui_message_nav_next')}
       >
         <ChevronDown className="h-4 w-4" />
       </button>

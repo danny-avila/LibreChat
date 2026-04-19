@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 .message-render {
-  scroll-margin-top: 1rem;
+  scroll-margin-top: 4rem;
 }
 
 /* Custom Variables */
