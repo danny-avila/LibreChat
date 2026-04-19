@@ -8,7 +8,17 @@ import type {
   Model,
 } from 'mongoose';
 import type { AclEntry, IAclEntry } from '~/types';
+import { MAX_PERM_BITS } from '~/common/permissions';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+
+/**
+ * Empty frozen array shared by every rejection path. Returning a single
+ * instance keeps the hot path allocation-free and freezes a known-safe value
+ * so it can never mutate into a "match everything" list.
+ */
+const EMPTY_SUPERSETS: readonly number[] = Object.freeze([]);
+
+const supersetCache = new Map<number, readonly number[]>();
 
 /**
  * Enumerates every `permBits` value (in the range `[0, MAX_PERM_BITS]`) whose
@@ -23,35 +33,28 @@ import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
  * schema enforces this with a `max` validator; if the `PermissionBits` enum
  * grows, `MAX_PERM_BITS` auto-expands from the new enum values.
  *
+ * **Cache safety:** callers sometimes forward user input directly (e.g.
+ * `req.query.requiredPermission` is parsed and passed through without a range
+ * check). To prevent the process-global cache from growing unboundedly from
+ * attacker-supplied integers, any `requiredBits` outside `[0, MAX_PERM_BITS]`
+ * or with bits set above the max returns a shared frozen empty array and is
+ * NOT added to the cache. An empty `$in` list correctly matches zero rows,
+ * which is the right behavior for a request asking for bits the system does
+ * not recognize.
+ *
  * For the current 4-bit `PermissionBits` enum the worst case is `required = 0`
  * which expands to 16 values; the best case (all bits required) expands to 1.
  * Results are memoized per `requiredBits` so the expansion runs at most once
  * per distinct mask over the process lifetime.
  */
-const MAX_PERM_BITS = Object.values(PermissionBits)
-  .filter((v): v is number => typeof v === 'number')
-  .reduce((acc, v) => acc | v, 0);
-
-/**
- * Guard against silent breakage if `PermissionBits` is ever refactored to a
- * `const` object or string enum — either would make `Object.values(...)` stop
- * returning the numeric members, producing `MAX_PERM_BITS === 0` and causing
- * `permissionBitSupersets` to return `[0]` for every input, which would deny
- * every permission check.
- */
-if (MAX_PERM_BITS === 0) {
-  throw new Error(
-    'MAX_PERM_BITS is 0 — `PermissionBits` did not yield any numeric members. ' +
-      'This typically means the enum was refactored to a `const` object, a ' +
-      'string enum, or an all-string shape; rewrite the MAX_PERM_BITS ' +
-      'computation above to extract the numeric bits from the new shape, or ' +
-      'update `permissionBitSupersets` to take an explicit bit-width parameter.',
-  );
-}
-
-const supersetCache = new Map<number, readonly number[]>();
-
 export function permissionBitSupersets(requiredBits: number): readonly number[] {
+  if (
+    !Number.isInteger(requiredBits) ||
+    requiredBits < 0 ||
+    (requiredBits & ~MAX_PERM_BITS) !== 0
+  ) {
+    return EMPTY_SUPERSETS;
+  }
   const cached = supersetCache.get(requiredBits);
   if (cached !== undefined) {
     return cached;
