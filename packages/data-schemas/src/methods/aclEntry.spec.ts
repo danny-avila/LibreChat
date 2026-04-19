@@ -1615,4 +1615,76 @@ describe('AclEntry Model Tests', () => {
       }).toThrow(TypeError);
     });
   });
+
+  /**
+   * These tests enforce the invariant that `permBits` stays within the
+   * `[0, MAX_PERM_BITS]` range that `permissionBitSupersets` enumerates. Rows
+   * with out-of-range bits would be silently excluded from the `$in` filter
+   * (false permission denials), so the schema rejects them at write time.
+   * See the second review pass on issue #12729.
+   */
+  describe('permBits schema bounds', () => {
+    const MAX_PERM_BITS =
+      PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+
+    test('accepts permBits at the upper bound (all enum bits set)', async () => {
+      const resource = new mongoose.Types.ObjectId();
+      await expect(
+        AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          principalModel: PrincipalModel.USER,
+          resourceType: ResourceType.AGENT,
+          resourceId: resource,
+          permBits: MAX_PERM_BITS,
+          grantedBy: grantedById,
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    test('rejects permBits above MAX_PERM_BITS', async () => {
+      const resource = new mongoose.Types.ObjectId();
+      await expect(
+        AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          principalModel: PrincipalModel.USER,
+          resourceType: ResourceType.AGENT,
+          resourceId: resource,
+          permBits: MAX_PERM_BITS + 1,
+          grantedBy: grantedById,
+        }),
+      ).rejects.toThrow(mongoose.Error.ValidationError);
+    });
+
+    test('rejects negative permBits', async () => {
+      const resource = new mongoose.Types.ObjectId();
+      await expect(
+        AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          principalModel: PrincipalModel.USER,
+          resourceType: ResourceType.AGENT,
+          resourceId: resource,
+          permBits: -1,
+          grantedBy: grantedById,
+        }),
+      ).rejects.toThrow(mongoose.Error.ValidationError);
+    });
+
+    test('rejects non-integer permBits', async () => {
+      const resource = new mongoose.Types.ObjectId();
+      await expect(
+        AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          principalModel: PrincipalModel.USER,
+          resourceType: ResourceType.AGENT,
+          resourceId: resource,
+          permBits: 1.5,
+          grantedBy: grantedById,
+        }),
+      ).rejects.toThrow(mongoose.Error.ValidationError);
+    });
+  });
 });

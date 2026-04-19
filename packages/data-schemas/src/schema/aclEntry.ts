@@ -1,6 +1,23 @@
 import { Schema } from 'mongoose';
-import { PrincipalType, PrincipalModel, ResourceType } from 'librechat-data-provider';
+import {
+  PrincipalType,
+  PrincipalModel,
+  ResourceType,
+  PermissionBits,
+} from 'librechat-data-provider';
 import type { IAclEntry } from '~/types';
+
+/**
+ * Upper bound for `permBits` — the OR of every numeric member of
+ * `PermissionBits`. The schema rejects writes above this bound because the
+ * `permissionBitSupersets` helper (used by every ACL read path) enumerates
+ * `$in` candidates only within `[0, MAX_PERM_BITS]`. Allowing a row with bits
+ * above MAX_PERM_BITS would produce silent false-negatives on read, since
+ * those values can never be in the `$in` list. See issue #12729.
+ */
+const MAX_PERM_BITS = Object.values(PermissionBits)
+  .filter((v): v is number => typeof v === 'number')
+  .reduce((acc, v) => acc | v, 0);
 
 const aclEntrySchema = new Schema<IAclEntry>(
   {
@@ -37,6 +54,12 @@ const aclEntrySchema = new Schema<IAclEntry>(
     permBits: {
       type: Number,
       default: 1,
+      min: 0,
+      max: MAX_PERM_BITS,
+      validate: {
+        validator: Number.isInteger,
+        message: '`permBits` must be an integer',
+      },
     },
     roleId: {
       type: Schema.Types.ObjectId,

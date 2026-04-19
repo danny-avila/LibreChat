@@ -17,6 +17,12 @@ import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
  * `$bitsAllSet` query operator, which is not supported by Azure Cosmos DB for
  * MongoDB (see issue #12729).
  *
+ * **Invariant:** stored `permBits` values must lie in `[0, MAX_PERM_BITS]`.
+ * Values with higher-order bits set would never appear in the emitted `$in`
+ * list and would silently produce false permission denials. The aclEntry
+ * schema enforces this with a `max` validator; if the `PermissionBits` enum
+ * grows, `MAX_PERM_BITS` auto-expands from the new enum values.
+ *
  * For the current 4-bit `PermissionBits` enum the worst case is `required = 0`
  * which expands to 16 values; the best case (all bits required) expands to 1.
  * Results are memoized per `requiredBits` so the expansion runs at most once
