@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { NavLink } from '~/common';
 import SidePanelNav from '~/components/SidePanel/Nav';
+import { useBranding } from '~/hooks';
 import ExpandedPanel from './ExpandedPanel';
 import { cn } from '~/utils';
 
@@ -19,6 +20,7 @@ function Sidebar({
   onResizeStart: (e: React.MouseEvent) => void;
   onResizeKeyboard: (direction: 'shrink' | 'grow') => void;
 }) {
+  const branding = useBranding();
   return (
     <>
       <div className="flex h-full w-full overflow-hidden">
@@ -36,6 +38,17 @@ function Sidebar({
           style={{ transition: expanded ? 'opacity 200ms ease 80ms' : 'opacity 150ms ease' }}
           aria-hidden={!expanded}
         >
+          <div className="flex items-center gap-2 px-4 pb-1 pt-3">
+            <img src={branding.logoPath} alt={branding.logoAlt} className="h-8 w-8 rounded-lg" />
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-text-primary">{branding.appName}</span>
+              {branding.appSubtitle && (
+                <span className="text-[9px] font-medium uppercase tracking-wider text-text-secondary">
+                  {branding.appSubtitle}
+                </span>
+              )}
+            </div>
+          </div>
           <SidePanelNav links={links} />
         </nav>
       </div>
