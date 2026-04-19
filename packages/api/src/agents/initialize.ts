@@ -30,8 +30,9 @@ import {
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
-import { injectSkillCatalog, resolveManualSkills } from './skills';
+import { injectSkillCatalog, resolveManualSkills, unionPrimeAllowedTools } from './skills';
 import type { ResolvedManualSkill } from './skills';
+import { logger } from '@librechat/data-schemas';
 import { primeResources } from './resources';
 import type { TFilterFilesByAgentAccess } from './resources';
 
@@ -184,6 +185,17 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
       name: string;
       description: string;
       author: import('mongoose').Types.ObjectId;
+      /**
+       * When `true`, the skill is excluded from the catalog injected into
+       * the agent's additional_instructions and the model cannot invoke it
+       * via the `skill` tool. Manual `$` invocation is unaffected.
+       */
+      disableModelInvocation?: boolean;
+      /**
+       * When `false`, the skill is hidden from the `$` popover and rejected
+       * by the manual-invocation resolver. Defaults to `true`.
+       */
+      userInvocable?: boolean;
     }>;
     has_more?: boolean;
     after?: string | null;
@@ -207,6 +219,19 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
      * future runtime enforcement without a second round-trip.
      */
     allowedTools?: string[];
+    /**
+     * Set when the skill was authored with `disable-model-invocation: true`.
+     * The skill tool handler short-circuits on this so a model that names
+     * such a skill (e.g. via hallucination or stale catalog) gets a clear
+     * rejection instead of silently executing.
+     */
+    disableModelInvocation?: boolean;
+    /**
+     * Set when the skill was authored with `user-invocable: false`. The
+     * manual-invocation resolver skips with a warn log so an API-direct
+     * caller can't bypass the popover-side filter.
+     */
+    userInvocable?: boolean;
   } | null>;
 }
 
@@ -525,6 +550,86 @@ export async function initializeAgent(
         skillStates: params.skillStates,
         defaultActiveOnShare: params.defaultActiveOnShare,
       });
+    }
+
+    /**
+     * Union skill-declared `allowed-tools` into the agent's effective tool
+     * set for this turn. Authoritative baseline is `agent.tools`; primes
+     * only ADD to the surface, never remove or replace.
+     *
+     * Loading happens via the same `loadTools` callback used for the
+     * agent's own tools, so MCP / plugin / built-in resolution stays
+     * unified — there is intentionally no separate code path for
+     * skill-contributed tools.
+     *
+     * Tolerant of unknown tool names: anything `loadTools` cannot resolve
+     * is silently dropped with a debug log so cross-ecosystem skills
+     * authored against tools LibreChat hasn't implemented yet (Claude
+     * Code's `edit_file`, etc.) import without breaking. As LibreChat
+     * adds new tools to its registry, those skills light up automatically
+     * with no skill-side migration.
+     *
+     * Phase 5's always-apply primes will pass through this same helper
+     * (combined `[...manualPrimes, ...alwaysApplyPrimes]`) once the
+     * resolver exists.
+     */
+    if (manualSkillPrimes && manualSkillPrimes.length > 0 && loadTools) {
+      const { extraToolNames, perSkillExtras } = unionPrimeAllowedTools({
+        primes: manualSkillPrimes,
+        agentToolNames: agent.tools ?? [],
+      });
+      if (extraToolNames.length > 0) {
+        const extraResult = await loadTools({
+          req,
+          res,
+          provider,
+          agentId: agent.id,
+          tools: extraToolNames,
+          model: agent.model,
+          tool_options: agent.tool_options,
+          tool_resources,
+        });
+        const loadedDefs = extraResult?.toolDefinitions ?? [];
+        const loadedNames = new Set(loadedDefs.map((d) => d.name));
+        const droppedNames = extraToolNames.filter((n) => !loadedNames.has(n));
+        if (droppedNames.length > 0) {
+          /**
+           * Per-skill attribution helps operators debug which skill asked
+           * for the missing tool. Falls back to a flat list if the per-
+           * skill map is empty (shouldn't happen but cheap to defend).
+           */
+          const sources: string[] = [];
+          for (const [skillName, names] of perSkillExtras) {
+            const droppedFromSkill = names.filter((n) => !loadedNames.has(n));
+            if (droppedFromSkill.length > 0) {
+              sources.push(`"${skillName}" → [${droppedFromSkill.join(', ')}]`);
+            }
+          }
+          logger.debug(
+            `[allowedTools] Dropped unrecognized tool names: ${
+              sources.length > 0 ? sources.join('; ') : droppedNames.join(', ')
+            }`,
+          );
+        }
+        if (loadedDefs.length > 0) {
+          const existingDefNames = new Set(toolDefinitions?.map((d) => d.name) ?? []);
+          const merged = [...(toolDefinitions ?? [])];
+          for (const def of loadedDefs) {
+            if (!existingDefNames.has(def.name)) {
+              merged.push(def);
+              existingDefNames.add(def.name);
+            }
+          }
+          toolDefinitions = merged;
+          if (toolRegistry && extraResult?.toolRegistry) {
+            for (const [name, def] of extraResult.toolRegistry) {
+              if (!toolRegistry.has(name)) {
+                toolRegistry.set(name, def);
+              }
+            }
+          }
+        }
+      }
     }
   }
 

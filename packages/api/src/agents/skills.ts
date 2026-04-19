@@ -196,6 +196,16 @@ export async function injectSkillCatalog(
       if (activeSkills.length >= SKILL_CATALOG_LIMIT) {
         break;
       }
+      /**
+       * `disable-model-invocation: true` skills cost zero context tokens
+       * when not in use — they're filtered out before catalog formatting
+       * so the model never sees them in its system prompt and can't name
+       * them via the `skill` tool. Manual `$` invocation paths bypass this
+       * filter; they're gated separately in `resolveManualSkills`.
+       */
+      if (skill.disableModelInvocation === true) {
+        continue;
+      }
       if (isActive(skill)) {
         activeSkills.push(skill);
       }
@@ -323,6 +333,12 @@ export interface ResolveManualSkillsParams {
      * re-fetching the document. Populated by the DB method when available.
      */
     allowedTools?: string[];
+    /**
+     * When `false`, the skill author opted out of manual invocation. The
+     * resolver skips with a warn log rather than priming SKILL.md.
+     * Defaults to `true` when omitted.
+     */
+    userInvocable?: boolean;
   } | null>;
   /** ACL-accessible skill IDs for this user (already scoped by `scopeSkillIds`). */
   accessibleSkillIds: Types.ObjectId[];
@@ -416,6 +432,19 @@ export async function resolveManualSkills(
         }
         if (!skill.body) {
           logger.warn(`[resolveManualSkills] Skill "${name}" has empty body — skipping`);
+          return null;
+        }
+        /**
+         * `user-invocable: false` skills are model-only by author intent;
+         * the popover already hides them on the UI side, but an API-direct
+         * caller could still name one in `manualSkills`. Defense-in-depth:
+         * skip with a warn log so the contract holds at the runtime
+         * boundary too. Silent skip (not error) matches the established
+         * "not found / inactive / empty body" pattern — a single misfiring
+         * skill must never block the user's actual message from going out.
+         */
+        if (skill.userInvocable === false) {
+          logger.warn(`[resolveManualSkills] Skill "${name}" is not user-invocable — skipping`);
           return null;
         }
         const active = resolveSkillActive({
@@ -591,6 +620,93 @@ export function buildSkillPrimeContentParts(
       },
     };
   });
+}
+
+export interface SkillPrimeWithTools {
+  /** Skill name — used for log attribution only. */
+  name: string;
+  /** Author-declared `allowed-tools` from frontmatter, if any. */
+  allowedTools?: string[];
+}
+
+export interface UnionPrimeAllowedToolsParams {
+  /**
+   * Resolved skill primes (manual + always-apply once Phase 5 lands) that
+   * may carry an `allowedTools` allowlist. Order is irrelevant — the union
+   * is set-based — but stable iteration helps debug logs read consistently.
+   */
+  primes: SkillPrimeWithTools[];
+  /** Tool names already configured on the agent. Skipped when computing extras. */
+  agentToolNames: string[];
+}
+
+export interface UnionPrimeAllowedToolsResult {
+  /**
+   * Tool names contributed by skill primes that aren't already on the
+   * agent. Caller is responsible for actually loading these and merging
+   * the resulting tool definitions into the agent's effective set; the
+   * helper itself stays pure so it can be unit-tested in isolation and
+   * reused for the always-apply path.
+   */
+  extraToolNames: string[];
+  /**
+   * Per-skill breakdown of which tool names that skill contributed to the
+   * final union. Useful for the debug log when the runtime drops names
+   * that the registry doesn't recognize — operators can see which skill
+   * asked for the missing tool.
+   */
+  perSkillExtras: Map<string, string[]>;
+}
+
+/**
+ * Computes the union of `allowed-tools` declared by a turn's resolved skill
+ * primes, minus tools already configured on the agent. The agent-provided
+ * tools are the authoritative baseline; allowed-tools only ever ADDS to
+ * the surface, never replaces or removes.
+ *
+ * Tolerant of unknown tool names: validation against the runtime registry
+ * happens at the caller (in `initialize.ts`) so we can support skills
+ * authored against tools LibreChat hasn't implemented yet — the registry
+ * intersection silently drops them with a debug log, but the import path
+ * never rejects them.
+ *
+ * Pure function; returns set-style data so callers can dedupe across
+ * concurrent always-apply + manual paths without re-implementing the
+ * fold themselves.
+ */
+export function unionPrimeAllowedTools(
+  params: UnionPrimeAllowedToolsParams,
+): UnionPrimeAllowedToolsResult {
+  const { primes, agentToolNames } = params;
+  const onAgent = new Set(agentToolNames);
+  const extras = new Set<string>();
+  const perSkill = new Map<string, string[]>();
+
+  for (const prime of primes) {
+    const requested = prime.allowedTools;
+    if (!requested || requested.length === 0) {
+      continue;
+    }
+    const contributed: string[] = [];
+    for (const name of requested) {
+      if (typeof name !== 'string' || name.length === 0) {
+        continue;
+      }
+      if (onAgent.has(name) || extras.has(name)) {
+        continue;
+      }
+      extras.add(name);
+      contributed.push(name);
+    }
+    if (contributed.length > 0) {
+      perSkill.set(prime.name, contributed);
+    }
+  }
+
+  return {
+    extraToolNames: Array.from(extras),
+    perSkillExtras: perSkill,
+  };
 }
 
 /**

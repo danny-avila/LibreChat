@@ -38,6 +38,7 @@ import {
   extractManualSkills,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
+  unionPrimeAllowedTools,
   MAX_MANUAL_SKILLS,
 } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
@@ -47,6 +48,8 @@ type PageSkill = {
   name: string;
   description: string;
   author: Types.ObjectId;
+  disableModelInvocation?: boolean;
+  userInvocable?: boolean;
 };
 
 describe('extractInvokedSkillsFromPayload', () => {
@@ -570,6 +573,36 @@ describe('injectSkillCatalog', () => {
     expect(result.skillCount).toBe(0);
     expect(result.activeSkillIds).toEqual([]);
   });
+
+  it('excludes skills with disableModelInvocation=true from the catalog', async () => {
+    const open = makeSkill('open-skill', userObjectId);
+    const modelHidden: PageSkill = {
+      ...makeSkill('hidden-skill', userObjectId),
+      disableModelInvocation: true,
+    };
+    const listSkillsByAccess = buildPager([[open, modelHidden]]);
+    const agent = makeAgent();
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
+    /* Only the open skill counts toward catalog injection — the model-hidden
+       one costs zero context tokens and is unreachable via the `skill` tool. */
+    expect(result.skillCount).toBe(1);
+    expect(result.activeSkillIds.map((id) => id.toString())).toEqual([open._id.toString()]);
+    expect(agent.additional_instructions).toContain('open-skill');
+    expect(agent.additional_instructions).not.toContain('hidden-skill');
+  });
+
+  it('disableModelInvocation filter wins even when isActive would have included the skill', async () => {
+    /* Owned skill defaults to active; without the disableModelInvocation
+       short-circuit, this would land in the catalog. */
+    const ownedHidden: PageSkill = {
+      ...makeSkill('owned-hidden', userObjectId),
+      disableModelInvocation: true,
+    };
+    const listSkillsByAccess = buildPager([[ownedHidden]]);
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess }));
+    expect(result.skillCount).toBe(0);
+    expect(result.activeSkillIds).toEqual([]);
+  });
 });
 
 describe('buildSkillPrimeMessage', () => {
@@ -605,6 +638,7 @@ describe('resolveManualSkills', () => {
     body: string;
     author: Types.ObjectId;
     allowedTools?: string[];
+    userInvocable?: boolean;
   };
 
   const buildGetSkillByName =
@@ -698,6 +732,36 @@ describe('resolveManualSkills', () => {
       userId,
     });
     expect(result).toEqual([{ name: 'real', body: 'body of real' }]);
+  });
+
+  it('silently skips skills with userInvocable: false, preserving the rest of the batch', async () => {
+    const open = mkSkill('open', userOid);
+    const modelOnly: SkillDoc = { ...mkSkill('model-only', userOid), userInvocable: false };
+    const result = await resolveManualSkills({
+      names: ['open', 'model-only'],
+      getSkillByName: buildGetSkillByName({ open, 'model-only': modelOnly }),
+      accessibleSkillIds: [open._id, modelOnly._id],
+      userId,
+    });
+    /* Defense-in-depth: even if a popover-bypassing API caller names a
+       userInvocable:false skill, the resolver drops it with a warn log
+       rather than priming SKILL.md. The rest of the batch survives. */
+    expect(result).toEqual([{ name: 'open', body: 'body of open' }]);
+  });
+
+  it('treats userInvocable: true (or absent) as user-invocable', async () => {
+    const explicit: SkillDoc = { ...mkSkill('explicit', userOid), userInvocable: true };
+    const implicit = mkSkill('implicit', userOid);
+    const result = await resolveManualSkills({
+      names: ['explicit', 'implicit'],
+      getSkillByName: buildGetSkillByName({ explicit, implicit }),
+      accessibleSkillIds: [explicit._id, implicit._id],
+      userId,
+    });
+    expect(result).toEqual([
+      { name: 'explicit', body: 'body of explicit' },
+      { name: 'implicit', body: 'body of implicit' },
+    ]);
   });
 
   it('dedupes repeated names, preserving first occurrence order', async () => {
@@ -1081,5 +1145,79 @@ describe('buildSkillPrimeContentParts', () => {
       startOffset: 5,
     });
     expect(first[0].tool_call.id).not.toBe(second[0].tool_call.id);
+  });
+});
+
+describe('unionPrimeAllowedTools', () => {
+  it('returns no extras when no primes carry allowedTools', () => {
+    const result = unionPrimeAllowedTools({
+      primes: [{ name: 'a' }, { name: 'b', allowedTools: [] }],
+      agentToolNames: ['web_search'],
+    });
+    expect(result.extraToolNames).toEqual([]);
+    expect(result.perSkillExtras.size).toBe(0);
+  });
+
+  it('skips tools already configured on the agent (agent baseline wins)', () => {
+    const result = unionPrimeAllowedTools({
+      primes: [{ name: 'skill-a', allowedTools: ['web_search', 'execute_code'] }],
+      agentToolNames: ['web_search'],
+    });
+    /* web_search is already on the agent — only execute_code is "extra". */
+    expect(result.extraToolNames).toEqual(['execute_code']);
+    expect(result.perSkillExtras.get('skill-a')).toEqual(['execute_code']);
+  });
+
+  it('dedupes across skills (same tool requested by two primes counts once)', () => {
+    const result = unionPrimeAllowedTools({
+      primes: [
+        { name: 'skill-a', allowedTools: ['execute_code', 'read_file'] },
+        { name: 'skill-b', allowedTools: ['execute_code', 'web_search'] },
+      ],
+      agentToolNames: [],
+    });
+    expect(result.extraToolNames.sort()).toEqual(['execute_code', 'read_file', 'web_search']);
+    /* Per-skill attribution credits the FIRST skill that contributed
+       a tool name — keeps debug logs stable instead of duplicating. */
+    expect(result.perSkillExtras.get('skill-a')).toEqual(['execute_code', 'read_file']);
+    expect(result.perSkillExtras.get('skill-b')).toEqual(['web_search']);
+  });
+
+  it('filters out empty / non-string entries (defensive — frontmatter parser should already)', () => {
+    const result = unionPrimeAllowedTools({
+      primes: [
+        {
+          name: 'skill-a',
+          allowedTools: ['execute_code', '', 42 as unknown as string, 'web_search'],
+        },
+      ],
+      agentToolNames: [],
+    });
+    expect(result.extraToolNames).toEqual(['execute_code', 'web_search']);
+  });
+
+  it('omits skills with no contribution from the per-skill map', () => {
+    const result = unionPrimeAllowedTools({
+      primes: [
+        { name: 'skill-on-agent', allowedTools: ['web_search'] },
+        { name: 'skill-extra', allowedTools: ['execute_code'] },
+      ],
+      agentToolNames: ['web_search'],
+    });
+    expect(result.extraToolNames).toEqual(['execute_code']);
+    expect(result.perSkillExtras.get('skill-on-agent')).toBeUndefined();
+    expect(result.perSkillExtras.get('skill-extra')).toEqual(['execute_code']);
+  });
+
+  it('preserves first-occurrence order across skills (deterministic for log readability)', () => {
+    const result = unionPrimeAllowedTools({
+      primes: [
+        { name: 'a', allowedTools: ['z-tool'] },
+        { name: 'b', allowedTools: ['m-tool', 'a-tool'] },
+        { name: 'c', allowedTools: ['z-tool', 'b-tool'] },
+      ],
+      agentToolNames: [],
+    });
+    expect(result.extraToolNames).toEqual(['z-tool', 'm-tool', 'a-tool', 'b-tool']);
   });
 });

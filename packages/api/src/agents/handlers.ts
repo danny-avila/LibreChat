@@ -58,6 +58,13 @@ export interface ToolExecuteOptions {
     name: string;
     _id: Types.ObjectId;
     fileCount: number;
+    /**
+     * Set when the skill author opted out of model invocation. The handler
+     * rejects the call and returns an instructive error so the model knows
+     * it can't reach the skill via the `skill` tool — manual `$` invocation
+     * is still allowed and goes through `resolveManualSkills` instead.
+     */
+    disableModelInvocation?: boolean;
   } | null>;
   /** Lists files bundled with a skill (for code env priming) */
   listSkillFiles?: (skillId: Types.ObjectId | string) => Promise<SkillFileRecord[]>;
@@ -430,6 +437,23 @@ async function handleSkillToolCall(
       status: 'error',
       content: '',
       errorMessage: `Skill "${args.skillName}" not found or not accessible`,
+    };
+  }
+
+  /**
+   * `disable-model-invocation: true` skills are excluded from the catalog
+   * the model sees, but a model that learned the name elsewhere (stale
+   * cache, hallucinated guess) could still try to invoke it. Reject
+   * explicitly so the error message tells the model exactly why and it
+   * doesn't loop retrying. Manual `$` invocation goes through
+   * `resolveManualSkills`, which is unaffected by this flag.
+   */
+  if (skill.disableModelInvocation === true) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${args.skillName}" cannot be invoked by the model`,
     };
   }
 

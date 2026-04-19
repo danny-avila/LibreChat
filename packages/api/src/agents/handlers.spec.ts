@@ -175,4 +175,76 @@ describe('createToolExecuteHandler', () => {
       expect(capturedConfigs[0]._injected_files).toBeUndefined();
     });
   });
+
+  describe('skill tool model-invocation gate', () => {
+    function createSkillHandler(getSkillByName: ToolExecuteOptions['getSkillByName']) {
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+      }));
+      return createToolExecuteHandler({ loadTools, getSkillByName });
+    }
+
+    it('rejects with a clear error when the named skill has disableModelInvocation=true', async () => {
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'pii-redactor',
+        body: 'restricted body',
+        fileCount: 0,
+        disableModelInvocation: true,
+      }));
+      const handler = createSkillHandler(getSkillByName);
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_skill_1',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'pii-redactor' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('cannot be invoked by the model');
+      expect(result.errorMessage).toContain('pii-redactor');
+    });
+
+    it('returns the regular not-accessible error when the skill itself is missing (gate runs after lookup)', async () => {
+      const getSkillByName = jest.fn(async () => null);
+      const handler = createSkillHandler(getSkillByName);
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_skill_2',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'ghost' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      /* Distinct error message — operators can tell "not in catalog" apart
+         from "exists but model-blocked". */
+      expect(result.errorMessage).toContain('not found or not accessible');
+      expect(result.errorMessage).not.toContain('cannot be invoked');
+    });
+
+    it('lets through skills without disableModelInvocation set (default behavior)', async () => {
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'normal-skill',
+        body: 'body',
+        fileCount: 0,
+      }));
+      const handler = createSkillHandler(getSkillByName);
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_skill_3',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'normal-skill' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('normal-skill');
+    });
+  });
 });
