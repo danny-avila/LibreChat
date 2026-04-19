@@ -1,4 +1,5 @@
 self.addEventListener('push', function (event) {
+  console.log('🔥 PUSH RECEIVED IN PROD');
   let data = {};
   if (event.data) {
     try {
