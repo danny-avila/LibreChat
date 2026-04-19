@@ -136,10 +136,13 @@ export interface InjectSkillCatalogResult {
   toolDefinitions: LCTool[] | undefined;
   skillCount: number;
   /**
-   * IDs of skills that passed the active-state filter and appear in the
-   * injected catalog. Runtime tool execution must authorize against this set,
-   * not the full `accessibleSkillIds`, so deactivated skills cannot be
-   * invoked by name even if the LLM hallucinates them.
+   * IDs of skills the runtime is authorized to resolve via `getSkillByName`.
+   * Includes `disable-model-invocation: true` skills even though they're
+   * absent from the catalog text — the skill-tool handler needs to be able
+   * to fetch the doc to fire the explicit "cannot be invoked by the model"
+   * rejection (instead of a generic "not found"). Per-user deactivated
+   * skills are still excluded — explicit user opt-out shouldn't be
+   * resolvable.
    */
   activeSkillIds: Types.ObjectId[];
 }
@@ -197,15 +200,14 @@ export async function injectSkillCatalog(
         break;
       }
       /**
-       * `disable-model-invocation: true` skills cost zero context tokens
-       * when not in use — they're filtered out before catalog formatting
-       * so the model never sees them in its system prompt and can't name
-       * them via the `skill` tool. Manual `$` invocation paths bypass this
-       * filter; they're gated separately in `resolveManualSkills`.
+       * Active set keeps `disable-model-invocation` skills so the runtime
+       * can still resolve them by name and the skill-tool handler can fire
+       * its explicit "cannot be invoked by the model" rejection (instead
+       * of a misleading "not found"). Catalog text formatting filters
+       * them back out below — they cost zero context tokens. Per-user
+       * deactivation (`isActive` false) is still a hard exclusion: the
+       * user explicitly opted out, so we honor it everywhere.
        */
-      if (skill.disableModelInvocation === true) {
-        continue;
-      }
       if (isActive(skill)) {
         activeSkills.push(skill);
       }
@@ -229,9 +231,26 @@ export async function injectSkillCatalog(
     );
   }
 
-  // Warn on duplicate names — model may invoke the wrong skill
+  /**
+   * Catalog text and tool registration are gated on the *visible* subset.
+   * If every active skill is `disable-model-invocation: true`, the model
+   * can't reach any of them anyway — registering the skill tool would
+   * burn context tokens for nothing.
+   */
+  const catalogVisibleSkills = activeSkills.filter((s) => s.disableModelInvocation !== true);
+
+  if (catalogVisibleSkills.length === 0) {
+    return {
+      toolDefinitions: inputDefs,
+      skillCount: 0,
+      activeSkillIds: activeSkills.map((s) => s._id),
+    };
+  }
+
+  // Warn on duplicate names within the catalog-visible set — those are the
+  // ones the model can actually invoke ambiguously.
   const nameCount = new Map<string, number>();
-  for (const s of activeSkills) {
+  for (const s of catalogVisibleSkills) {
     nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
   }
   for (const [dupName, count] of nameCount) {
@@ -243,7 +262,7 @@ export async function injectSkillCatalog(
   }
 
   const catalog = formatSkillCatalog(
-    activeSkills.map((s) => ({ name: s.name, description: s.description })),
+    catalogVisibleSkills.map((s) => ({ name: s.name, description: s.description })),
     { contextWindowTokens: contextWindowTokens || 200_000 },
   );
 
@@ -287,7 +306,7 @@ export async function injectSkillCatalog(
 
   return {
     toolDefinitions,
-    skillCount: activeSkills.length,
+    skillCount: catalogVisibleSkills.length,
     activeSkillIds: activeSkills.map((s) => s._id),
   };
 }
@@ -430,10 +449,6 @@ export async function resolveManualSkills(
           logger.warn(`[resolveManualSkills] Skill "${name}" not found or not accessible`);
           return null;
         }
-        if (!skill.body) {
-          logger.warn(`[resolveManualSkills] Skill "${name}" has empty body — skipping`);
-          return null;
-        }
         /**
          * `user-invocable: false` skills are model-only by author intent;
          * the popover already hides them on the UI side, but an API-direct
@@ -442,9 +457,18 @@ export async function resolveManualSkills(
          * boundary too. Silent skip (not error) matches the established
          * "not found / inactive / empty body" pattern — a single misfiring
          * skill must never block the user's actual message from going out.
+         *
+         * Checked before the body check because `userInvocable` is an
+         * authoritative author decision, while empty body could be a
+         * transient state — surfacing the more specific cause helps
+         * operators triage faster.
          */
         if (skill.userInvocable === false) {
           logger.warn(`[resolveManualSkills] Skill "${name}" is not user-invocable — skipping`);
+          return null;
+        }
+        if (!skill.body) {
+          logger.warn(`[resolveManualSkills] Skill "${name}" has empty body — skipping`);
           return null;
         }
         const active = resolveSkillActive({

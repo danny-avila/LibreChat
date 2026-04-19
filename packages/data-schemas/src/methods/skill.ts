@@ -469,21 +469,21 @@ export function deriveStructuredFrontmatterFields(
   if (!frontmatter || typeof frontmatter !== 'object') {
     return {};
   }
-  const out: {
+  const derived: {
     disableModelInvocation?: boolean;
     userInvocable?: boolean;
     allowedTools?: string[];
   } = {};
-  const dmi = frontmatter['disable-model-invocation'];
-  if (typeof dmi === 'boolean') {
-    out.disableModelInvocation = dmi;
+  const disableModelInvocationRaw = frontmatter['disable-model-invocation'];
+  if (typeof disableModelInvocationRaw === 'boolean') {
+    derived.disableModelInvocation = disableModelInvocationRaw;
   }
-  const ui = frontmatter['user-invocable'];
-  if (typeof ui === 'boolean') {
-    out.userInvocable = ui;
+  const userInvocableRaw = frontmatter['user-invocable'];
+  if (typeof userInvocableRaw === 'boolean') {
+    derived.userInvocable = userInvocableRaw;
   }
-  const at = frontmatter['allowed-tools'];
-  if (typeof at === 'string') {
+  const allowedToolsRaw = frontmatter['allowed-tools'];
+  if (typeof allowedToolsRaw === 'string') {
     /**
      * YAML scalars like `allowed-tools: web_search` are parsed as a single
      * string. Wrap into a one-element array; we deliberately do NOT split
@@ -491,15 +491,15 @@ export function deriveStructuredFrontmatterFields(
      * trying to "be helpful" by splitting `"web_search, file_search"`
      * would silently invent semantics the spec doesn't promise.
      */
-    if (at.length > 0) {
-      out.allowedTools = [at];
+    if (allowedToolsRaw.length > 0) {
+      derived.allowedTools = [allowedToolsRaw];
     }
-  } else if (Array.isArray(at)) {
-    out.allowedTools = at.filter(
+  } else if (Array.isArray(allowedToolsRaw)) {
+    derived.allowedTools = allowedToolsRaw.filter(
       (entry): entry is string => typeof entry === 'string' && entry.length > 0,
     );
   }
-  return out;
+  return derived;
 }
 
 export type UpsertSkillFileInput = {

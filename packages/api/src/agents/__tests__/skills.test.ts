@@ -574,7 +574,7 @@ describe('injectSkillCatalog', () => {
     expect(result.activeSkillIds).toEqual([]);
   });
 
-  it('excludes skills with disableModelInvocation=true from the catalog', async () => {
+  it('excludes disableModelInvocation=true skills from catalog text but keeps them resolvable', async () => {
     const open = makeSkill('open-skill', userObjectId);
     const modelHidden: PageSkill = {
       ...makeSkill('hidden-skill', userObjectId),
@@ -583,17 +583,27 @@ describe('injectSkillCatalog', () => {
     const listSkillsByAccess = buildPager([[open, modelHidden]]);
     const agent = makeAgent();
     const result = await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
-    /* Only the open skill counts toward catalog injection — the model-hidden
-       one costs zero context tokens and is unreachable via the `skill` tool. */
+    /* Catalog text only mentions the open skill — the disabled one costs
+       zero context tokens. */
     expect(result.skillCount).toBe(1);
-    expect(result.activeSkillIds.map((id) => id.toString())).toEqual([open._id.toString()]);
     expect(agent.additional_instructions).toContain('open-skill');
     expect(agent.additional_instructions).not.toContain('hidden-skill');
+    /* But activeSkillIds keeps both — the runtime needs to resolve a
+       hallucinated/stale call to the disabled skill so handleSkillToolCall
+       can fire its explicit "cannot be invoked by the model" rejection
+       instead of a misleading generic "not found". */
+    expect(result.activeSkillIds.map((id) => id.toString()).sort()).toEqual(
+      [open._id.toString(), modelHidden._id.toString()].sort(),
+    );
   });
 
-  it('disableModelInvocation filter wins even when isActive would have included the skill', async () => {
-    /* Owned skill defaults to active; without the disableModelInvocation
-       short-circuit, this would land in the catalog. */
+  it('skips catalog inject + tool registration when every active skill is model-disabled', async () => {
+    /* Edge case: only `disable-model-invocation` skills accessible. The
+       model can never reach them, so registering the skill tool would
+       waste context tokens. activeSkillIds still surfaces them so a
+       parallel manual-invocation path could in theory resolve them — the
+       userInvocable filter in resolveManualSkills is what actually gates
+       that. */
     const ownedHidden: PageSkill = {
       ...makeSkill('owned-hidden', userObjectId),
       disableModelInvocation: true,
@@ -601,7 +611,8 @@ describe('injectSkillCatalog', () => {
     const listSkillsByAccess = buildPager([[ownedHidden]]);
     const result = await injectSkillCatalog(baseParams({ listSkillsByAccess }));
     expect(result.skillCount).toBe(0);
-    expect(result.activeSkillIds).toEqual([]);
+    expect(result.toolDefinitions).toBeUndefined();
+    expect(result.activeSkillIds.map((id) => id.toString())).toEqual([ownedHidden._id.toString()]);
   });
 });
 

@@ -1,4 +1,5 @@
 import { Providers } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import {
   Constants,
   ErrorTypes,
@@ -31,9 +32,8 @@ import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { injectSkillCatalog, resolveManualSkills, unionPrimeAllowedTools } from './skills';
-import type { ResolvedManualSkill } from './skills';
-import { logger } from '@librechat/data-schemas';
 import { primeResources } from './resources';
+import type { ResolvedManualSkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
 
 /**
@@ -385,6 +385,87 @@ export async function initializeAgent(
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
   });
 
+  /**
+   * Pre-resolve manually-invoked skill primes so their `allowed-tools` can
+   * be unioned into the agent's effective tool set BEFORE `loadTools` runs.
+   * Single load is correctness-critical: a second `loadTools` pass would
+   * compute its own `userMCPAuthMap` / `toolContextMap` / OAuth flow state
+   * that the InitializedAgent never sees, so an MCP tool added via
+   * `allowed-tools` would be visible to the model but fail at execution
+   * time without its per-user auth context.
+   *
+   * Resolution uses `params.accessibleSkillIds` (not the active-filtered
+   * subset that `injectSkillCatalog` will produce later) — see
+   * `resolveManualSkills` doc for why a skill outside the catalog cap can
+   * still be authorizable for direct manual invocation.
+   */
+  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
+  let extraAllowedToolNames: string[] = [];
+  let perSkillExtras: Map<string, string[]> = new Map();
+  if (
+    params.manualSkills?.length &&
+    db.getSkillByName &&
+    params.accessibleSkillIds &&
+    params.accessibleSkillIds.length > 0
+  ) {
+    manualSkillPrimes = await resolveManualSkills({
+      names: params.manualSkills,
+      getSkillByName: db.getSkillByName,
+      accessibleSkillIds: params.accessibleSkillIds,
+      userId: req.user?.id,
+      skillStates: params.skillStates,
+      defaultActiveOnShare: params.defaultActiveOnShare,
+    });
+    if (manualSkillPrimes.length > 0) {
+      const union = unionPrimeAllowedTools({
+        primes: manualSkillPrimes,
+        agentToolNames: agent.tools ?? [],
+      });
+      extraAllowedToolNames = union.extraToolNames;
+      perSkillExtras = union.perSkillExtras;
+    }
+  }
+
+  const baseToolNames = agent.tools ?? [];
+  const requestedToolNames =
+    extraAllowedToolNames.length > 0 ? [...baseToolNames, ...extraAllowedToolNames] : baseToolNames;
+
+  /**
+   * `loadTools` can throw on MCP connection failure, plugin registry
+   * errors, etc. If a skill-contributed `allowed-tools` entry is the
+   * culprit, we shouldn't crash the entire turn — the agent's own tools
+   * are the load-bearing surface. Retry without the extras and continue
+   * (the dropped-tools debug log below picks up which extras vanished).
+   * If the retry-without-extras still throws, the agent's own tools are
+   * the problem — propagate.
+   */
+  const callLoadTools = async (tools: string[]) =>
+    loadTools?.({
+      req,
+      res,
+      provider,
+      agentId: agent.id,
+      tools,
+      model: agent.model,
+      tool_options: agent.tool_options,
+      tool_resources,
+    });
+
+  let loadToolsResult;
+  try {
+    loadToolsResult = await callLoadTools(requestedToolNames);
+  } catch (err) {
+    if (extraAllowedToolNames.length > 0) {
+      logger.warn(
+        `[allowedTools] loadTools failed with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,
+        err instanceof Error ? err.message : err,
+      );
+      loadToolsResult = await callLoadTools(baseToolNames);
+    } else {
+      throw err;
+    }
+  }
+
   const {
     toolRegistry,
     toolContextMap,
@@ -393,16 +474,7 @@ export async function initializeAgent(
     hasDeferredTools,
     actionsEnabled,
     tools: structuredTools,
-  } = (await loadTools?.({
-    req,
-    res,
-    provider,
-    agentId: agent.id,
-    tools: agent.tools ?? [],
-    model: agent.model,
-    tool_options: agent.tool_options,
-    tool_resources,
-  })) ?? {
+  } = loadToolsResult ?? {
     tools: [],
     toolContextMap: {},
     userMCPAuthMap: undefined,
@@ -413,6 +485,33 @@ export async function initializeAgent(
   };
 
   let toolDefinitions = loadedToolDefinitions;
+
+  /**
+   * Tolerant filter: anything `loadTools` couldn't resolve (capability
+   * disabled, plugin missing, name unknown to the registry) is silently
+   * dropped with an attributed debug log. Cross-ecosystem skills authored
+   * against tools LibreChat hasn't shipped yet (Claude Code's `edit_file`,
+   * etc.) import without breaking — they light up automatically once
+   * support lands. Skips when there were no extras to begin with.
+   */
+  if (extraAllowedToolNames.length > 0) {
+    const loadedNames = new Set((toolDefinitions ?? []).map((d) => d.name));
+    const dropped = extraAllowedToolNames.filter((n) => !loadedNames.has(n));
+    if (dropped.length > 0) {
+      const sources: string[] = [];
+      for (const [skillName, names] of perSkillExtras) {
+        const droppedFromSkill = names.filter((n) => !loadedNames.has(n));
+        if (droppedFromSkill.length > 0) {
+          sources.push(`"${skillName}" → [${droppedFromSkill.join(', ')}]`);
+        }
+      }
+      logger.debug(
+        `[allowedTools] Dropped unrecognized tool names: ${
+          sources.length > 0 ? sources.join('; ') : dropped.join(', ')
+        }`,
+      );
+    }
+  }
 
   const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
     provider,
@@ -514,7 +613,6 @@ export async function initializeAgent(
    * LLM (or a direct-invocation path) names one.
    */
   let executableSkillIds = params.accessibleSkillIds;
-  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
   const { accessibleSkillIds } = params;
   if (accessibleSkillIds && accessibleSkillIds.length > 0) {
     const skillResult = await injectSkillCatalog({
@@ -532,105 +630,6 @@ export async function initializeAgent(
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;
     executableSkillIds = skillResult.activeSkillIds;
-
-    /**
-     * Resolve manually-invoked skills against the same ACL set used for the
-     * catalog. We use `accessibleSkillIds` (not `activeSkillIds`) because the
-     * catalog is capped at a token budget — a skill that fell outside that cap
-     * can still be authorized for direct manual invocation. The active-state
-     * filter is re-applied inside `resolveManualSkills` so deactivated skills
-     * never leak through this path either.
-     */
-    if (params.manualSkills?.length && db.getSkillByName) {
-      manualSkillPrimes = await resolveManualSkills({
-        names: params.manualSkills,
-        getSkillByName: db.getSkillByName,
-        accessibleSkillIds,
-        userId: req.user?.id,
-        skillStates: params.skillStates,
-        defaultActiveOnShare: params.defaultActiveOnShare,
-      });
-    }
-
-    /**
-     * Union skill-declared `allowed-tools` into the agent's effective tool
-     * set for this turn. Authoritative baseline is `agent.tools`; primes
-     * only ADD to the surface, never remove or replace.
-     *
-     * Loading happens via the same `loadTools` callback used for the
-     * agent's own tools, so MCP / plugin / built-in resolution stays
-     * unified — there is intentionally no separate code path for
-     * skill-contributed tools.
-     *
-     * Tolerant of unknown tool names: anything `loadTools` cannot resolve
-     * is silently dropped with a debug log so cross-ecosystem skills
-     * authored against tools LibreChat hasn't implemented yet (Claude
-     * Code's `edit_file`, etc.) import without breaking. As LibreChat
-     * adds new tools to its registry, those skills light up automatically
-     * with no skill-side migration.
-     *
-     * Phase 5's always-apply primes will pass through this same helper
-     * (combined `[...manualPrimes, ...alwaysApplyPrimes]`) once the
-     * resolver exists.
-     */
-    if (manualSkillPrimes && manualSkillPrimes.length > 0 && loadTools) {
-      const { extraToolNames, perSkillExtras } = unionPrimeAllowedTools({
-        primes: manualSkillPrimes,
-        agentToolNames: agent.tools ?? [],
-      });
-      if (extraToolNames.length > 0) {
-        const extraResult = await loadTools({
-          req,
-          res,
-          provider,
-          agentId: agent.id,
-          tools: extraToolNames,
-          model: agent.model,
-          tool_options: agent.tool_options,
-          tool_resources,
-        });
-        const loadedDefs = extraResult?.toolDefinitions ?? [];
-        const loadedNames = new Set(loadedDefs.map((d) => d.name));
-        const droppedNames = extraToolNames.filter((n) => !loadedNames.has(n));
-        if (droppedNames.length > 0) {
-          /**
-           * Per-skill attribution helps operators debug which skill asked
-           * for the missing tool. Falls back to a flat list if the per-
-           * skill map is empty (shouldn't happen but cheap to defend).
-           */
-          const sources: string[] = [];
-          for (const [skillName, names] of perSkillExtras) {
-            const droppedFromSkill = names.filter((n) => !loadedNames.has(n));
-            if (droppedFromSkill.length > 0) {
-              sources.push(`"${skillName}" → [${droppedFromSkill.join(', ')}]`);
-            }
-          }
-          logger.debug(
-            `[allowedTools] Dropped unrecognized tool names: ${
-              sources.length > 0 ? sources.join('; ') : droppedNames.join(', ')
-            }`,
-          );
-        }
-        if (loadedDefs.length > 0) {
-          const existingDefNames = new Set(toolDefinitions?.map((d) => d.name) ?? []);
-          const merged = [...(toolDefinitions ?? [])];
-          for (const def of loadedDefs) {
-            if (!existingDefNames.has(def.name)) {
-              merged.push(def);
-              existingDefNames.add(def.name);
-            }
-          }
-          toolDefinitions = merged;
-          if (toolRegistry && extraResult?.toolRegistry) {
-            for (const [name, def] of extraResult.toolRegistry) {
-              if (!toolRegistry.has(name)) {
-                toolRegistry.set(name, def);
-              }
-            }
-          }
-        }
-      }
-    }
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;

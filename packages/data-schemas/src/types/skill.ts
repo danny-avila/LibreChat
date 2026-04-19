@@ -50,11 +50,17 @@ export interface ISkill {
   userInvocable?: boolean;
   /**
    * Skill-declared tool allowlist (mirrors the `allowed-tools` frontmatter
-   * field). When the skill is invoked, these tools are unioned into the
+   * field). When the skill is invoked **manually** (via `$` popover, or
+   * always-apply once Phase 5 lands), these tools are unioned into the
    * agent's effective tool set for the turn. Tolerant of unknown names —
    * the runtime intersects against the loaded tool registry and silently
    * drops anything missing, so cross-ecosystem skills authored against
    * unimplemented tools import without breaking.
+   *
+   * Note: model-invoked skills (via the `skill` tool mid-turn) do NOT
+   * trigger tool union at execution time — adding tools after the graph
+   * has started would require a rebuild. Agents that need a tool when
+   * the model picks a skill should add it to `agent.tools` directly.
    */
   allowedTools?: string[];
   category?: string;
