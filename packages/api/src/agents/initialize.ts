@@ -31,7 +31,15 @@ import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
-import type { TFilterFilesByAgentAccess } from './resources';
+import type { ProvisionState } from './resources';
+import type {
+  TFileUpdate,
+  TFilterFilesByAgentAccess,
+  TProvisionToCodeEnv,
+  TProvisionToVectorDB,
+  TCheckSessionsAlive,
+  TLoadCodeApiKey,
+} from './resources';
 
 /**
  * Fraction of context budget reserved as headroom when no explicit maxContextTokens is set.
@@ -66,6 +74,10 @@ export type InitializedAgent = Agent & {
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
+  /** Warnings from lazy file provisioning (e.g., failed uploads) */
+  provisionWarnings?: string[];
+  /** State for deferred file provisioning — actual uploads happen at tool invocation time */
+  provisionState?: ProvisionState;
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -145,6 +157,16 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     parentMessageId?: string;
     files?: Array<{ file_id: string }>;
   }> | null>;
+  /** Optional: provision a file to the code execution environment */
+  provisionToCodeEnv?: TProvisionToCodeEnv;
+  /** Optional: provision a file to the vector DB for file_search */
+  provisionToVectorDB?: TProvisionToVectorDB;
+  /** Optional: batch-check code env file liveness */
+  checkSessionsAlive?: TCheckSessionsAlive;
+  /** Optional: load CODE_API_KEY once per request */
+  loadCodeApiKey?: TLoadCodeApiKey;
+  /** Optional: persist file metadata updates after provisioning */
+  updateFile?: (data: TFileUpdate) => Promise<unknown>;
 }
 
 /**
@@ -207,6 +229,14 @@ export async function initializeAgent(
   const provider = agent.provider;
   agent.endpoint = provider;
 
+  /** Build the set of tool resources the agent has enabled */
+  const toolResourceSet = new Set<EToolResources>();
+  for (const tool of agent.tools ?? []) {
+    if (EToolResources[tool as keyof typeof EToolResources]) {
+      toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
+    }
+  }
+
   /**
    * Load conversation files for ALL agents, not just the initial agent.
    * This enables handoff agents to access files that were uploaded earlier
@@ -215,12 +245,6 @@ export async function initializeAgent(
    */
   if (conversationId != null && resendFiles) {
     const fileIds = (await db.getConvoFiles(conversationId)) ?? [];
-    const toolResourceSet = new Set<EToolResources>();
-    for (const tool of agent.tools ?? []) {
-      if (EToolResources[tool as keyof typeof EToolResources]) {
-        toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
-      }
-    }
 
     const toolFiles = (await db.getToolFilesByIds(fileIds, toolResourceSet)) as IMongoFile[];
 
@@ -284,7 +308,12 @@ export async function initializeAgent(
     });
   }
 
-  const { attachments: primedAttachments, tool_resources } = await primeResources({
+  const {
+    attachments: primedAttachments,
+    tool_resources,
+    provisionState,
+    warnings: provisionWarnings,
+  } = await primeResources({
     req: req as never,
     getFiles: db.getFiles as never,
     filterFiles: db.filterFilesByAgentAccess,
@@ -295,6 +324,9 @@ export async function initializeAgent(
       : undefined,
     tool_resources: agent.tool_resources,
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
+    enabledToolResources: toolResourceSet,
+    checkSessionsAlive: db.checkSessionsAlive,
+    loadCodeApiKey: db.loadCodeApiKey,
   });
 
   const {
@@ -452,6 +484,9 @@ export async function initializeAgent(
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
     maxToolResultChars: maxToolResultCharsResolved,
+    provisionState,
+    provisionWarnings:
+      provisionWarnings != null && provisionWarnings.length > 0 ? provisionWarnings : undefined,
     maxContextTokens:
       maxContextTokens != null && maxContextTokens > 0
         ? maxContextTokens
