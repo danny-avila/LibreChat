@@ -5,6 +5,7 @@ import {
   PermissionBits,
   AccessRoleIds,
 } from 'librechat-data-provider';
+import { permissionBitSupersets } from '@librechat/data-schemas';
 import type { PipelineStage, AnyBulkWriteOperation } from 'mongoose';
 
 export interface Principal {
@@ -48,10 +49,9 @@ export async function enrichRemoteAgentPrincipals(
       : resourceId;
 
   /**
-   * Filter `permBits` application-side (not via `$bitsAllSet`) for compatibility
-   * with MongoDB forks (e.g. Azure Cosmos DB for MongoDB) that do not implement
-   * the `$bitsAllSet` query operator. Entry count is bounded by ACL entries on a
-   * single agent, so the extra documents fetched are negligible.
+   * Filter `permBits` with `$in: permissionBitSupersets(SHARE)` instead of
+   * `$bitsAllSet` for Cosmos DB for MongoDB compatibility. `$in` is indexable
+   * and, for the current 4-bit permission set, expands to at most 8 values.
    */
   const agentOwnerEntries = await deps.aggregateAclEntries([
     {
@@ -59,6 +59,7 @@ export async function enrichRemoteAgentPrincipals(
         resourceType: ResourceType.AGENT,
         resourceId: resourceObjectId,
         principalType: PrincipalType.USER,
+        permBits: { $in: permissionBitSupersets(PermissionBits.SHARE) },
       },
     },
     {
@@ -72,7 +73,6 @@ export async function enrichRemoteAgentPrincipals(
     {
       $project: {
         principalId: 1,
-        permBits: 1,
         userInfo: { $arrayElemAt: ['$userInfo', 0] },
       },
     },
@@ -82,10 +82,6 @@ export async function enrichRemoteAgentPrincipals(
   const entriesToBackfill: Types.ObjectId[] = [];
 
   for (const entry of agentOwnerEntries) {
-    const permBits = entry.permBits as number;
-    if ((permBits & PermissionBits.SHARE) !== PermissionBits.SHARE) {
-      continue;
-    }
     if (!entry.userInfo) {
       continue;
     }
