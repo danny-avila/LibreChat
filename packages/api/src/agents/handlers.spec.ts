@@ -275,7 +275,9 @@ describe('createToolExecuteHandler', () => {
       expect(getSkillByName).toHaveBeenCalledWith('maybe-disabled', expect.any(Array), {
         preferModelInvocable: true,
       });
-      const callOptions = getSkillByName.mock.calls[0][2];
+      const callOptions = (getSkillByName.mock.calls[0] as unknown[])[2] as
+        | { preferUserInvocable?: boolean }
+        | undefined;
       expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
     });
 
@@ -302,7 +304,9 @@ describe('createToolExecuteHandler', () => {
       expect(getSkillByName).toHaveBeenCalledWith('maybe-disabled-read', expect.any(Array), {
         preferModelInvocable: true,
       });
-      const callOptions = getSkillByName.mock.calls[0][2];
+      const callOptions = (getSkillByName.mock.calls[0] as unknown[])[2] as
+        | { preferUserInvocable?: boolean }
+        | undefined;
       expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
     });
 
