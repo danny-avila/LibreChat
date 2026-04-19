@@ -92,11 +92,12 @@ router.post('/notifications', async (req, res) => {
     // 🚀 Send push notifications
     for (const sub of user.pushSubscriptions) {
       try {
+        const clientDomain = process.env.DOMAIN_CLIENT || 'https://chat.annam.ai';
         const payload = JSON.stringify({
           title: 'Your answer is ready!',
           body: `Your question "${displayQuestion}" was recently answered.`,
           icon: '/assets/favicon.ico',
-          url: `https://chat.annam.ai/c/${conversationId}`,
+          url: `${clientDomain}/c/${conversationId}`,
         });
 
         await webpush.sendNotification(sub, payload);
