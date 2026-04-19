@@ -12,6 +12,20 @@ router.get('/key', (req, res) => {
   res.status(200).json({ key: publicVapidKey });
 });
 
+router.get('/debug', (req, res) => {
+  const publicVapidKey = process.env.VAPID_PUBLIC_KEY;
+  const vapidEmail = process.env.VAPID_EMAIL;
+  
+  res.status(200).json({
+    vapidPublicKeyConfigured: !!publicVapidKey,
+    vapidPublicKeyPreview: publicVapidKey ? `${publicVapidKey.slice(0, 5)}...${publicVapidKey.slice(-5)}` : null,
+    vapidPublicKeyLength: publicVapidKey ? publicVapidKey.length : 0,
+    vapidEmailConfigured: !!vapidEmail,
+    vapidEmailPreview: vapidEmail ? `${vapidEmail.slice(0, 5)}...` : null,
+    env: process.env.NODE_ENV,
+  });
+});
+
 router.post('/subscribe', requireJwtAuth, async (req, res) => {
   try {
     const subscription = req.body
