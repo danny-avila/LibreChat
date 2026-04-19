@@ -604,6 +604,7 @@ describe('resolveManualSkills', () => {
     name: string;
     body: string;
     author: Types.ObjectId;
+    allowedTools?: string[];
   };
 
   const buildGetSkillByName =
@@ -647,6 +648,45 @@ describe('resolveManualSkills', () => {
       userId,
     });
     expect(result).toEqual([{ name: 'my-skill', body: 'MY SKILL BODY' }]);
+  });
+
+  it('passes allowedTools through when the skill doc carries the field', async () => {
+    const owned: SkillDoc = {
+      ...mkSkill('with-tools', userOid, 'body'),
+      allowedTools: ['execute_code', 'read_file'],
+    };
+    const result = await resolveManualSkills({
+      names: ['with-tools'],
+      getSkillByName: buildGetSkillByName({ 'with-tools': owned }),
+      accessibleSkillIds: [owned._id],
+      userId,
+    });
+    expect(result).toEqual([
+      { name: 'with-tools', body: 'body', allowedTools: ['execute_code', 'read_file'] },
+    ]);
+  });
+
+  it('omits allowedTools when the skill doc does not declare it', async () => {
+    const owned = mkSkill('no-tools', userOid, 'body');
+    const [resolved] = await resolveManualSkills({
+      names: ['no-tools'],
+      getSkillByName: buildGetSkillByName({ 'no-tools': owned }),
+      accessibleSkillIds: [owned._id],
+      userId,
+    });
+    expect(resolved).toEqual({ name: 'no-tools', body: 'body' });
+    expect(resolved).not.toHaveProperty('allowedTools');
+  });
+
+  it('preserves an empty allowedTools array (distinguishes "declared none" from "undeclared")', async () => {
+    const owned: SkillDoc = { ...mkSkill('empty-tools', userOid, 'body'), allowedTools: [] };
+    const [resolved] = await resolveManualSkills({
+      names: ['empty-tools'],
+      getSkillByName: buildGetSkillByName({ 'empty-tools': owned }),
+      accessibleSkillIds: [owned._id],
+      userId,
+    });
+    expect(resolved).toEqual({ name: 'empty-tools', body: 'body', allowedTools: [] });
   });
 
   it('silently skips names with no backing skill (typo / ACL miss) without failing the batch', async () => {
