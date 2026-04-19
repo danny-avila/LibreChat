@@ -1,4 +1,5 @@
-self.addEventListener('push', function (event) {
+/*self.addEventListener('push', function (event) {
+  console.log('🔥 PUSH RECEIVED IN PROD');
   let data = {};
   if (event.data) {
     try {
@@ -16,14 +17,14 @@ self.addEventListener('push', function (event) {
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
-});
-/*self.addEventListener('push', function (event) {
+});*/
+self.addEventListener('push', function (event) {
   event.waitUntil(
     self.registration.showNotification('🔥 WORKING', {
       body: 'If you see this, push is fine',
     })
   );
-});*/
+});
 
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
