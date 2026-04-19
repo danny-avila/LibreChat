@@ -548,9 +548,12 @@ export interface BuildSkillPrimeContentPartsParams {
  * and re-priming keeps the LLM's view consistent with what the user sees
  * (and matches how model-invoked skills behave — there is no separate
  * "one-shot vs. conversation-scoped" mode). To opt out of a sticky skill,
- * users would need to start a new conversation or regenerate without
- * the pick; a future "one-shot manual prime" mode would need a distinct
- * marker on the synthetic tool_call so the history scanner could skip it.
+ * users need to start a new conversation or edit the originating user
+ * message to remove the pills and resubmit — regenerate alone preserves
+ * the picks (`useChatFunctions.regenerate` forwards them via
+ * `overrideManualSkills`). A future "one-shot manual prime" mode would
+ * need a distinct marker on the synthetic tool_call so the history
+ * scanner could skip it.
  */
 export function buildSkillPrimeContentParts(
   primes: ResolvedManualSkill[],

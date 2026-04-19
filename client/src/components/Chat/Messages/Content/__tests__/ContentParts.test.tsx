@@ -104,7 +104,7 @@ describe('ContentParts — interim skill cards', () => {
     expect(screen.getAllByTestId('skill-call')).toHaveLength(1);
   });
 
-  it('renders pending skill cards alongside parallel content', () => {
+  it('renders pending skill cards above parallel content', () => {
     const parallelContent: TMessageContentParts[] = [
       {
         type: ContentTypes.TEXT,
@@ -113,15 +113,27 @@ describe('ContentParts — interim skill cards', () => {
       } as unknown as TMessageContentParts,
     ];
     render(<ContentParts {...baseProps} content={parallelContent} manualSkills={['pptx']} />);
-    expect(screen.getByTestId('skill-call')).toBeTruthy();
-    expect(screen.getByTestId('parallel-renderer')).toBeTruthy();
+    const skillCard = screen.getByTestId('skill-call');
+    const parallelRenderer = screen.getByTestId('parallel-renderer');
+    expect(skillCard).toBeTruthy();
+    expect(parallelRenderer).toBeTruthy();
+    // DOCUMENT_POSITION_FOLLOWING: skillCard precedes parallelRenderer in DOM order.
+    // Ordering matters: interim cards anchor to the top of the message (matching where
+    // the backend's real prime parts land at finalize via `contentParts.unshift`).
+    expect(skillCard.compareDocumentPosition(parallelRenderer)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
-  it('renders pending skill cards alongside sequential content', () => {
+  it('renders pending skill cards above sequential content', () => {
     const sequentialContent: TMessageContentParts[] = [
       { type: ContentTypes.TEXT, text: 'streamed' } as unknown as TMessageContentParts,
     ];
     render(<ContentParts {...baseProps} content={sequentialContent} manualSkills={['pptx']} />);
-    expect(screen.getByTestId('skill-call')).toBeTruthy();
+    const skillCard = screen.getByTestId('skill-call');
+    const textPart = screen.getByTestId(`real-part-${ContentTypes.TEXT}`);
+    expect(skillCard).toBeTruthy();
+    expect(textPart).toBeTruthy();
+    expect(skillCard.compareDocumentPosition(textPart)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });

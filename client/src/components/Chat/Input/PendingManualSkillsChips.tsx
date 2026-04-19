@@ -1,6 +1,6 @@
 import { memo, useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { ScrollText, X } from 'lucide-react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
