@@ -1,4 +1,6 @@
+import { memo } from 'react';
 import { ScrollText } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 
 /**
  * Compact pill row rendered on a submitted user message, one chip per skill
@@ -10,13 +12,19 @@ import { ScrollText } from 'lucide-react';
  * reading from the message pass `skills={message.manualSkills}` and pills
  * survive page reloads / history renders.
  */
-export default function ManualSkillPills({ skills }: { skills?: string[] }) {
+function ManualSkillPills({ skills }: { skills?: string[] }) {
+  const localize = useLocalize();
+
   if (!skills || skills.length === 0) {
     return null;
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5 py-0.5" role="list" aria-label="Manually invoked skills">
+    <div
+      className="flex flex-wrap gap-1.5 py-0.5"
+      role="list"
+      aria-label={localize('com_ui_skills_manual_invoked')}
+    >
       {skills.map((name) => (
         <span
           key={name}
@@ -30,3 +38,5 @@ export default function ManualSkillPills({ skills }: { skills?: string[] }) {
     </div>
   );
 }
+
+export default memo(ManualSkillPills);

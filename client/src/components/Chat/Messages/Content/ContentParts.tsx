@@ -142,26 +142,22 @@ const ContentParts = memo(function ContentParts({
    * Skipped on the user side (they get `ManualSkillPills` on the user
    * bubble) and when no skills were invoked on this turn.
    */
-  const hasPendingSkills = !isCreatedByUser && manualSkills != null && manualSkills.length > 0;
+  const pendingSkills = useMemo(
+    () => (!isCreatedByUser && manualSkills != null ? manualSkills : []),
+    [isCreatedByUser, manualSkills],
+  );
+  const hasPendingSkills = pendingSkills.length > 0;
 
-  const renderPendingSkills = () => {
-    if (isCreatedByUser || !manualSkills || manualSkills.length === 0) {
-      return null;
-    }
-    return (
-      <>
-        {manualSkills.map((name) => (
-          <SkillCall
-            key={`pending-skill-${name}`}
-            args={JSON.stringify({ skillName: name })}
-            output=""
-            initialProgress={0.1}
-            isSubmitting={effectiveIsSubmitting}
-          />
-        ))}
-      </>
-    );
-  };
+  const renderPendingSkills = () =>
+    pendingSkills.map((name) => (
+      <SkillCall
+        key={`pending-skill-${name}`}
+        args={JSON.stringify({ skillName: name })}
+        output=""
+        initialProgress={0.1}
+        isSubmitting={effectiveIsSubmitting}
+      />
+    ));
 
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {

@@ -1,5 +1,11 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key: string, params?: Record<string, unknown>) =>
+    `${key}:${params?.[0] ?? ''}`,
+}));
+
 import ManualSkillPills from '../ManualSkillPills';
 
 describe('ManualSkillPills', () => {
@@ -19,5 +25,10 @@ describe('ManualSkillPills', () => {
     expect(items).toHaveLength(2);
     expect(items[0]).toHaveTextContent('brand-guidelines');
     expect(items[1]).toHaveTextContent('pptx');
+  });
+
+  it('localizes the list aria-label', () => {
+    render(<ManualSkillPills skills={['pptx']} />);
+    expect(screen.getByRole('list')).toHaveAttribute('aria-label', 'com_ui_skills_manual_invoked:');
   });
 });

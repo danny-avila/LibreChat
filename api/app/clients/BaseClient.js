@@ -497,8 +497,9 @@ class BaseClient {
        * frontend `ManualSkillPills` component can render them in history
        * after reload. UI-only metadata — the runtime skill resolution
        * pipeline reads the top-level `req.body.manualSkills` separately.
-       * Schema-validated at the Mongoose layer so string[] is enforced
-       * without a second filter here.
+       * Filter is defense-in-depth on top of Mongoose schema validation:
+       * keeps the DB row free of empty/non-string entries even if a
+       * crafted payload slips past schema checks upstream.
        */
       const rawManualSkills = this.options.req?.body?.manualSkills;
       if (Array.isArray(rawManualSkills) && rawManualSkills.length > 0) {

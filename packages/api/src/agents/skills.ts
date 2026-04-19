@@ -26,6 +26,14 @@ const CATALOG_PAGE_SIZE = 100;
 export const MAX_MANUAL_SKILLS = 10;
 
 /**
+ * Hard ceiling on individual skill name length. Real skill names are
+ * short slugs (e.g. `pptx`, `brand-guidelines`); anything beyond this is
+ * a crafted payload. Filtered out before the DB round-trip so pathological
+ * strings can't reach `getSkillByName` / Mongo's query planner.
+ */
+export const MAX_SKILL_NAME_LENGTH = 200;
+
+/**
  * Marker tagged onto every skill-primed message (as `additional_kwargs.source`
  * on a LangChain `HumanMessage`, or as `source` on the `InjectedMessage` that
  * `handleSkillToolCall` emits). Downstream filtering/telemetry keys off this,
@@ -527,6 +535,22 @@ export interface BuildSkillPrimeContentPartsParams {
  * `this.contentParts` after `runAgents` returns so the cards persist on
  * the response message and appear ahead of the model's content — matching
  * the semantic that priming ran before the LLM turn.
+ *
+ * ──────────────────────────────────────────────────────────────────────
+ * Intentional: sticky re-priming across turns.
+ * ──────────────────────────────────────────────────────────────────────
+ * Shape parity with model-invoked tool_calls means `extractInvokedSkills
+ * FromPayload` (packages/api/src/agents/run.ts) treats these as ordinary
+ * skill invocations when scanning history, so `primeInvokedSkills` re-
+ * prepares the files + body on every subsequent turn for the rest of
+ * the conversation. This is deliberate: the skill-card UX on the assistant
+ * message is the user's persistent visual cue that the skill is active,
+ * and re-priming keeps the LLM's view consistent with what the user sees
+ * (and matches how model-invoked skills behave — there is no separate
+ * "one-shot vs. conversation-scoped" mode). To opt out of a sticky skill,
+ * users would need to start a new conversation or regenerate without
+ * the pick; a future "one-shot manual prime" mode would need a distinct
+ * marker on the synthetic tool_call so the history scanner could skip it.
  */
 export function buildSkillPrimeContentParts(
   primes: ResolvedManualSkill[],
@@ -551,10 +575,11 @@ export function buildSkillPrimeContentParts(
 /**
  * Safely pulls `manualSkills` from an untyped request body.
  *
- * Accepts only string[] in practice: filters out non-string elements and
- * empty strings so a crafted payload (numbers, objects, nulls) can't reach
- * `getSkillByName` and waste DB round-trips, matching the TypeScript
- * contract (`manualSkills?: string[]` on TPayload). Returns `undefined` for
+ * Accepts only string[] in practice: filters out non-string elements,
+ * empty strings, and pathologically long names so a crafted payload
+ * (numbers, objects, nulls, giga-strings) can't reach `getSkillByName`
+ * and waste DB round-trips, matching the TypeScript contract
+ * (`manualSkills?: string[]` on TPayload). Returns `undefined` for
  * missing / non-array inputs OR for arrays that contain no valid strings —
  * callers treat undefined as "no manual invocation this turn."
  */
@@ -567,7 +592,8 @@ export function extractManualSkills(body: unknown): string[] | undefined {
     return undefined;
   }
   const filtered = raw.filter(
-    (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+    (entry): entry is string =>
+      typeof entry === 'string' && entry.length > 0 && entry.length <= MAX_SKILL_NAME_LENGTH,
   );
   return filtered.length > 0 ? filtered : undefined;
 }

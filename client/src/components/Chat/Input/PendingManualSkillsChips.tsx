@@ -1,6 +1,7 @@
 import { memo, useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { ScrollText, X } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 /**
@@ -14,6 +15,7 @@ import store from '~/store';
  * disappear once the message is sent.
  */
 function PendingManualSkillsChips({ conversationId }: { conversationId: string }) {
+  const localize = useLocalize();
   const skills = useRecoilValue(store.pendingManualSkillsByConvoId(conversationId));
   const setSkills = useSetRecoilState(store.pendingManualSkillsByConvoId(conversationId));
 
@@ -32,7 +34,7 @@ function PendingManualSkillsChips({ conversationId }: { conversationId: string }
     <div
       className="flex flex-wrap gap-1.5 px-2 pt-2"
       role="list"
-      aria-label="Skills queued for next submission"
+      aria-label={localize('com_ui_skills_queued')}
     >
       {skills.map((name) => (
         <span
@@ -44,7 +46,7 @@ function PendingManualSkillsChips({ conversationId }: { conversationId: string }
           <span className="max-w-[12rem] truncate">{name}</span>
           <button
             type="button"
-            aria-label={`Remove ${name}`}
+            aria-label={localize('com_ui_remove_skill_var', { 0: name })}
             onClick={() => remove(name)}
             className="-mr-0.5 ml-0.5 rounded-full p-0.5 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary"
           >

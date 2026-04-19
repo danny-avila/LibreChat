@@ -2,6 +2,12 @@ import React from 'react';
 import { RecoilRoot, MutableSnapshot } from 'recoil';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key: string, params?: Record<string, unknown>) =>
+    `${key}:${params?.[0] ?? ''}`,
+}));
+
 import PendingManualSkillsChips from '../PendingManualSkillsChips';
 import store from '~/store';
 
@@ -35,7 +41,9 @@ describe('PendingManualSkillsChips', () => {
   it('removes the chip when its × button is clicked', async () => {
     const user = userEvent.setup();
     renderWithSkills(['brand-guidelines', 'pptx']);
-    const removeBrand = screen.getByRole('button', { name: 'Remove brand-guidelines' });
+    const removeBrand = screen.getByRole('button', {
+      name: 'com_ui_remove_skill_var:brand-guidelines',
+    });
     await user.click(removeBrand);
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(1);
@@ -45,7 +53,7 @@ describe('PendingManualSkillsChips', () => {
   it('clears the list when every chip is dismissed', async () => {
     const user = userEvent.setup();
     const { container } = renderWithSkills(['a']);
-    await user.click(screen.getByRole('button', { name: 'Remove a' }));
+    await user.click(screen.getByRole('button', { name: 'com_ui_remove_skill_var:a' }));
     expect(container.firstChild).toBeNull();
   });
 });
