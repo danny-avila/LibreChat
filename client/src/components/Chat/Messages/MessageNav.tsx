@@ -72,12 +72,44 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
 
 const JUMP_EPS = 4;
 
+const SCROLL_DURATION = 400;
+
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
+
 function scrollToMessageStart(id: string) {
   const el = document.getElementById(id);
   if (!el) {
     return;
   }
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const container = el.closest<HTMLElement>('.scrollbar-gutter-stable');
+  if (!container) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  const scrollMargin = readScrollMargin(el);
+  const startScroll = container.scrollTop;
+  const start = performance.now();
+
+  const step = (now: number) => {
+    const progress = Math.min(1, (now - start) / SCROLL_DURATION);
+    const current = document.getElementById(id);
+    if (!current) {
+      return;
+    }
+    const cRect = container.getBoundingClientRect();
+    const elRect = current.getBoundingClientRect();
+    const targetScroll = container.scrollTop + (elRect.top - cRect.top) - scrollMargin;
+    const max = container.scrollHeight - container.clientHeight;
+    const clamped = Math.max(0, Math.min(targetScroll, max));
+    container.scrollTop = startScroll + (clamped - startScroll) * easeOutCubic(progress);
+    if (progress < 1) {
+      requestAnimationFrame(step);
+    }
+  };
+
+  requestAnimationFrame(step);
 }
 
 function readScrollMargin(el: HTMLElement | null): number {
@@ -284,12 +316,8 @@ export default function MessageNav({
       if (first === -1) {
         return;
       }
-      const firstInd = col.querySelector<HTMLElement>(
-        `[data-msg-id="${CSS.escape(entries[first].id)}"]`,
-      );
-      const lastInd = col.querySelector<HTMLElement>(
-        `[data-msg-id="${CSS.escape(entries[last].id)}"]`,
-      );
+      const firstInd = col.children[first] as HTMLElement | undefined;
+      const lastInd = col.children[last] as HTMLElement | undefined;
       if (!firstInd || !lastInd) {
         return;
       }
@@ -335,7 +363,21 @@ export default function MessageNav({
     let pendingFrame: number | null = null;
     const flush = () => {
       pendingFrame = null;
-      setActiveIds(new Set(visibleSet));
+      setActiveIds((prev) => {
+        if (prev.size === visibleSet.size) {
+          let same = true;
+          for (const id of visibleSet) {
+            if (!prev.has(id)) {
+              same = false;
+              break;
+            }
+          }
+          if (same) {
+            return prev;
+          }
+        }
+        return new Set(visibleSet);
+      });
     };
 
     const observer = new IntersectionObserver(
@@ -386,7 +428,7 @@ export default function MessageNav({
         continue;
       }
       if (el.offsetTop - scrollMargin < scrollTop - JUMP_EPS) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        scrollToMessageStart(entries[i].id);
         return;
       }
     }
@@ -407,7 +449,7 @@ export default function MessageNav({
         continue;
       }
       if (el.offsetTop - scrollMargin > scrollTop + JUMP_EPS) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        scrollToMessageStart(entries[i].id);
         return;
       }
     }
