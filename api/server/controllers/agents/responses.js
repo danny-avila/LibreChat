@@ -509,7 +509,13 @@ const createResponse = async (req, res) => {
             tool_resources: primaryConfig.tool_resources,
             actionsEnabled: primaryConfig.actionsEnabled,
           });
-          return enrichWithSkillConfigurable(result, req, primaryConfig.accessibleSkillIds);
+          return enrichWithSkillConfigurable(
+            result,
+            req,
+            primaryConfig.accessibleSkillIds,
+            undefined,
+            primaryConfig.manualSkillPrimes?.map((p) => p.name),
+          );
         },
         toolEndCallback,
         ...getSkillToolDeps(),
@@ -676,7 +682,13 @@ const createResponse = async (req, res) => {
             tool_resources: primaryConfig.tool_resources,
             actionsEnabled: primaryConfig.actionsEnabled,
           });
-          return enrichWithSkillConfigurable(result, req, primaryConfig.accessibleSkillIds);
+          return enrichWithSkillConfigurable(
+            result,
+            req,
+            primaryConfig.accessibleSkillIds,
+            undefined,
+            primaryConfig.manualSkillPrimes?.map((p) => p.name),
+          );
         },
         toolEndCallback,
         ...getSkillToolDeps(),

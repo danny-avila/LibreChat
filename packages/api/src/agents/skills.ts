@@ -275,14 +275,6 @@ export async function injectSkillCatalog(
     (s) => s.disableModelInvocation !== true || !invocableNames.has(s.name),
   );
 
-  if (catalogVisibleSkills.length === 0) {
-    return {
-      toolDefinitions: inputDefs,
-      skillCount: 0,
-      activeSkillIds: executableSkills.map((s) => s._id),
-    };
-  }
-
   // Warn on duplicate names within the catalog-visible set — those are the
   // ones the model can actually invoke ambiguously.
   const nameCount = new Map<string, number>();
@@ -297,15 +289,26 @@ export async function injectSkillCatalog(
     }
   }
 
-  const catalog = formatSkillCatalog(
-    catalogVisibleSkills.map((s) => ({ name: s.name, description: s.description })),
-    { contextWindowTokens: contextWindowTokens || 200_000 },
-  );
-
-  if (catalog) {
-    agent.additional_instructions = agent.additional_instructions
-      ? `${agent.additional_instructions}\n\n${catalog}`
-      : catalog;
+  /**
+   * Catalog text is gated on the visible subset — `disable-model-invocation`
+   * skills cost zero context tokens. When no visible skills exist, the
+   * model gets no catalog and the `skill` tool is omitted from the
+   * registry (registering it would burn description tokens for a tool
+   * the model has no targets for). `read_file` and `bash_tool` are still
+   * registered though: manually-primed disabled skills can have their
+   * SKILL.md body in context referring to `references/*` and `scripts/*`,
+   * and those reads would otherwise be impossible.
+   */
+  if (catalogVisibleSkills.length > 0) {
+    const catalog = formatSkillCatalog(
+      catalogVisibleSkills.map((s) => ({ name: s.name, description: s.description })),
+      { contextWindowTokens: contextWindowTokens || 200_000 },
+    );
+    if (catalog) {
+      agent.additional_instructions = agent.additional_instructions
+        ? `${agent.additional_instructions}\n\n${catalog}`
+        : catalog;
+    }
   }
 
   const skillToolDef: LCTool = {
@@ -327,8 +330,17 @@ export async function injectSkillCatalog(
     parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
   };
 
-  // Always register skill + read_file; only register bash_tool when code env is available
-  const defs: LCTool[] = [skillToolDef, readFileDef];
+  /**
+   * `skill` tool is conditional on having anything for the model to invoke;
+   * `read_file` is always registered when any active skill is in scope
+   * (manually-primed disabled skills still need it); `bash_tool` follows
+   * code-env availability as before.
+   */
+  const defs: LCTool[] = [];
+  if (catalogVisibleSkills.length > 0) {
+    defs.push(skillToolDef);
+  }
+  defs.push(readFileDef);
   if (codeEnvAvailable) {
     defs.push(bashToolDef);
   }

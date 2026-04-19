@@ -653,22 +653,45 @@ describe('injectSkillCatalog', () => {
     expect(result.skillCount).toBe(1);
   });
 
-  it('skips catalog inject + tool registration when every active skill is model-disabled', async () => {
+  it('omits catalog text + skill tool when every active skill is model-disabled, but keeps read_file', async () => {
     /* Edge case: only `disable-model-invocation` skills accessible. The
-       model can never reach them, so registering the skill tool would
-       waste context tokens. activeSkillIds still surfaces them so a
-       parallel manual-invocation path could in theory resolve them — the
-       userInvocable filter in resolveManualSkills is what actually gates
-       that. */
+       model can't see any catalog and the `skill` tool isn't registered
+       (no targets to invoke) — but `read_file` MUST stay registered.
+       Manually-primed disabled skills still get their SKILL.md body in
+       context, and the body may reference `references/*` files that
+       require read_file to load. */
     const ownedHidden: PageSkill = {
       ...makeSkill('owned-hidden', userObjectId),
       disableModelInvocation: true,
     };
     const listSkillsByAccess = buildPager([[ownedHidden]]);
-    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess }));
+    const agent = makeAgent();
+    const result = await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
     expect(result.skillCount).toBe(0);
-    expect(result.toolDefinitions).toBeUndefined();
+    expect(agent.additional_instructions).toBeUndefined();
+    /* read_file is registered; the `skill` tool is NOT (would burn tokens
+       advertising a tool with no model-reachable targets). */
+    const definedNames = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(definedNames).toContain('read_file');
+    expect(definedNames).not.toContain('skill');
     expect(result.activeSkillIds.map((id) => id.toString())).toEqual([ownedHidden._id.toString()]);
+  });
+
+  it('registers bash_tool alongside read_file when codeEnvAvailable, even with no catalog', async () => {
+    /* Same edge case as above but with code env on — manually-primed
+       skills can use bash_tool too. */
+    const ownedHidden: PageSkill = {
+      ...makeSkill('owned-hidden-code', userObjectId),
+      disableModelInvocation: true,
+    };
+    const listSkillsByAccess = buildPager([[ownedHidden]]);
+    const result = await injectSkillCatalog(
+      baseParams({ listSkillsByAccess, codeEnvAvailable: true }),
+    );
+    const definedNames = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(definedNames).toContain('read_file');
+    expect(definedNames).toContain('bash_tool');
+    expect(definedNames).not.toContain('skill');
   });
 });
 
