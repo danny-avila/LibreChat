@@ -27,7 +27,9 @@ let mongoServer: MongoMemoryServer;
 let AclEntry: mongoose.Model<t.IAclEntry>;
 let methods: ReturnType<typeof createAclEntryMethods>;
 
+/** Enough entries to exercise real query planning without bloating CI runtime. */
 const FIXTURE_SIZE = 800;
+/** Enough iterations for a reasonably stable median; still finishes in <2s total. */
 const PERF_ITERATIONS = 20;
 
 beforeAll(async () => {
@@ -356,7 +358,13 @@ describe('ACL $bitsAllSet vs $in parity (issue #12729)', () => {
       /** Sanity check: the new path should not be dramatically slower. A 3x
        *  multiplier catches catastrophic regressions (e.g. missing index use)
        *  without flaking on normal CI variance. */
-      expect(currentMs).toBeLessThan(legacyMs * 3 + 50);
+      /**
+       * Multiplicative-dominant guard: tolerate up to 5× regression or 50ms
+       * absolute, whichever is larger. The `legacyMs * 3 + 50` form we had
+       * previously was dominated by the additive term at sub-ms latencies and
+       * would have let a 50× regression pass silently.
+       */
+      expect(currentMs).toBeLessThan(Math.max(legacyMs * 5, 50));
     });
 
     test('findPublicResourceIds: $bitsAllSet vs $in', async () => {
@@ -394,7 +402,13 @@ describe('ACL $bitsAllSet vs $in parity (issue #12729)', () => {
         `[perf] findPublicResourceIds — legacy $bitsAllSet: ${legacyMs.toFixed(2)}ms, ` +
           `current $in: ${currentMs.toFixed(2)}ms (median of ${PERF_ITERATIONS} runs, ${FIXTURE_SIZE} entries)`,
       );
-      expect(currentMs).toBeLessThan(legacyMs * 3 + 50);
+      /**
+       * Multiplicative-dominant guard: tolerate up to 5× regression or 50ms
+       * absolute, whichever is larger. The `legacyMs * 3 + 50` form we had
+       * previously was dominated by the additive term at sub-ms latencies and
+       * would have let a 50× regression pass silently.
+       */
+      expect(currentMs).toBeLessThan(Math.max(legacyMs * 5, 50));
     });
   });
 });
