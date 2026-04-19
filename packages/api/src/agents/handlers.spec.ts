@@ -281,7 +281,7 @@ describe('createToolExecuteHandler', () => {
       expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
     });
 
-    it('read_file uses preferModelInvocable for AUTONOMOUS probes (skill not in manualSkillNames)', async () => {
+    it('read_file uses preferModelInvocable for AUTONOMOUS probes (skill not in manualSkillPrimedIdsByName)', async () => {
       const getSkillByName = jest.fn(async () => ({
         _id: 'skill-id' as unknown as never,
         name: 'maybe-disabled-read',
@@ -310,15 +310,15 @@ describe('createToolExecuteHandler', () => {
       expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
     });
 
-    it("read_file uses preferUserInvocable when the skill is in this turn's manualSkillNames (alignment with manual prime)", async () => {
-      /* Same-name collision corner: the resolver primed the older
-         user-invocable doc; if read_file uses preferModelInvocable, it
-         could pick a different newer model-only doc and read files from
-         the WRONG skill. When the skill is in manualSkillNames, switch
-         the lookup to preferUserInvocable to mirror what
-         `resolveManualSkills` did. */
+    it("read_file pins lookup to the primed skill's _id when manually invoked this turn (no shadowing on collision)", async () => {
+      /* Same-name collision corner: the resolver primed a specific doc
+         (its `_id` is in `manualSkillPrimedIdsByName`). If read_file used
+         the full ACL set + a `prefer*` flag, a same-name duplicate could
+         shadow the resolver's pick and the model would read files from
+         the WRONG skill. The handler now constrains accessibleIds to
+         the primed `_id`, so the lookup returns the EXACT same doc. */
       const getSkillByName = jest.fn(async () => ({
-        _id: 'skill-id' as unknown as never,
+        _id: 'primed-skill-id' as unknown as never,
         name: 'manually-primed',
         body: '# Body',
         fileCount: 0,
@@ -326,7 +326,9 @@ describe('createToolExecuteHandler', () => {
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
           loadedTools: [],
-          configurable: { manualSkillNames: ['manually-primed'] },
+          configurable: {
+            manualSkillPrimedIdsByName: { 'manually-primed': 'primed-skill-id' },
+          },
         })),
         getSkillByName,
       });
@@ -339,13 +341,10 @@ describe('createToolExecuteHandler', () => {
         },
       ]);
 
-      expect(getSkillByName).toHaveBeenCalledWith('manually-primed', expect.any(Array), {
-        preferUserInvocable: true,
-      });
-      const callOptions = (getSkillByName.mock.calls[0] as unknown[])[2] as
-        | { preferModelInvocable?: boolean }
-        | undefined;
-      expect(callOptions).not.toHaveProperty('preferModelInvocable', true);
+      /* Lookup is pinned to the primed _id (single-element array) and
+         carries no preference flags — the constrained accessibleIds set
+         already disambiguates which doc to return. */
+      expect(getSkillByName).toHaveBeenCalledWith('manually-primed', ['primed-skill-id'], {});
     });
 
     it('rejects read_file tool calls for disableModelInvocation skills (file ACL parity)', async () => {
@@ -410,9 +409,9 @@ describe('createToolExecuteHandler', () => {
          were also blocked here, any skill referencing `references/foo.md`
          in its body would be non-functional under manual invocation. The
          autonomous-block contract is preserved because the bypass is
-         scoped to the per-turn `manualSkillNames` allowlist. */
+         scoped to the per-turn `manualSkillPrimedIdsByName` allowlist. */
       const getSkillByName = jest.fn(async () => ({
-        _id: 'skill-id' as unknown as never,
+        _id: 'manual-skill-id' as unknown as never,
         name: 'manual-only-skill',
         body: '# Use references/docs.md for details',
         fileCount: 0,
@@ -421,7 +420,9 @@ describe('createToolExecuteHandler', () => {
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
           loadedTools: [],
-          configurable: { manualSkillNames: ['manual-only-skill'] },
+          configurable: {
+            manualSkillPrimedIdsByName: { 'manual-only-skill': 'manual-skill-id' },
+          },
         })),
         getSkillByName,
       });
@@ -440,11 +441,11 @@ describe('createToolExecuteHandler', () => {
 
     it('still blocks read_file for a disabled skill the user did NOT manually prime this turn', async () => {
       /* Defense-in-depth: the manual-prime exception is scoped to the
-         specific skill names in `manualSkillNames`. A model trying to
-         read a different disabled skill (one the user never manually
+         specific names in `manualSkillPrimedIdsByName`. A model trying
+         to read a different disabled skill (one the user never manually
          invoked) is still rejected. */
       const getSkillByName = jest.fn(async () => ({
-        _id: 'skill-id' as unknown as never,
+        _id: 'other-id' as unknown as never,
         name: 'other-disabled-skill',
         body: 'restricted',
         fileCount: 0,
@@ -453,7 +454,9 @@ describe('createToolExecuteHandler', () => {
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
           loadedTools: [],
-          configurable: { manualSkillNames: ['something-else'] },
+          configurable: {
+            manualSkillPrimedIdsByName: { 'something-else': 'something-else-id' },
+          },
         })),
         getSkillByName,
       });

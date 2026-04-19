@@ -183,21 +183,26 @@ async function handleReadFileCall(
   }
 
   const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  const manualSkillNames = (mergedConfigurable?.manualSkillNames as string[] | undefined) ?? [];
-  const isManuallyPrimedThisTurn = manualSkillNames.includes(skillName);
-  /* Lookup mirrors how the prime was resolved so reads come from the
-     same doc on same-name collisions:
-     - Manually primed this turn → `preferUserInvocable` (matches what
-       `resolveManualSkills` picked; otherwise a newer model-only doc
-       would shadow the user-invocable doc whose body got primed).
-     - Autonomous model probe → `preferModelInvocable` (matches what the
-       model saw in the catalog; falls back to newest so the disabled-
-       only case still resolves and the gate below fires its explicit
-       rejection error). */
-  const lookupOptions = isManuallyPrimedThisTurn
-    ? { preferUserInvocable: true }
-    : { preferModelInvocable: true };
-  const skill = await getSkillByName(skillName, accessibleIds, lookupOptions);
+  const manualSkillPrimedIdsByName =
+    (mergedConfigurable?.manualSkillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  const primedIdString = manualSkillPrimedIdsByName[skillName];
+  const isManuallyPrimedThisTurn = primedIdString != null;
+  /* On a manually-primed lookup, pin the accessible set to ONLY the
+     primed `_id`. This guarantees the doc whose body got primed is the
+     SAME doc whose files we read, even when same-name duplicates exist
+     and `activeSkillIds` had to drop some via the disable-model
+     dedup. The hex-string id is fine here — mongoose auto-casts strings
+     to ObjectId values in `$in` queries on ObjectId fields.
+     For autonomous probes we keep the full ACL set + `preferModelInvocable`
+     so the lookup matches the catalog the model saw (and falls back to
+     newest so the disabled-only case still fires the explicit rejection
+     gate below). */
+  const lookupAccessibleIds = isManuallyPrimedThisTurn
+    ? ([primedIdString] as unknown as Types.ObjectId[])
+    : accessibleIds;
+  const lookupOptions: { preferUserInvocable?: boolean; preferModelInvocable?: boolean } =
+    isManuallyPrimedThisTurn ? {} : { preferModelInvocable: true };
+  const skill = await getSkillByName(skillName, lookupAccessibleIds, lookupOptions);
   if (!skill) {
     return {
       toolCallId: tc.id,

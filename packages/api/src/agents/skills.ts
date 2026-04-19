@@ -425,6 +425,14 @@ export interface ResolveManualSkillsParams {
 }
 
 export interface ResolvedManualSkill {
+  /**
+   * `_id` of the exact doc that was primed. Plumbed to the runtime so the
+   * `read_file` handler can constrain its name lookup to this id and avoid
+   * resolving to a different same-name doc on collisions (which would
+   * cause the model's reads to hit files from a different skill than the
+   * body it sees).
+   */
+  _id: Types.ObjectId;
   name: string;
   body: string;
   /**
@@ -548,7 +556,11 @@ export async function resolveManualSkills(
           logger.warn(`[resolveManualSkills] Skill "${name}" is inactive for this user — skipping`);
           return null;
         }
-        const resolved: ResolvedManualSkill = { name: skill.name, body: skill.body };
+        const resolved: ResolvedManualSkill = {
+          _id: skill._id,
+          name: skill.name,
+          body: skill.body,
+        };
         if (skill.allowedTools !== undefined) {
           resolved.allowedTools = skill.allowedTools;
         }
@@ -571,8 +583,13 @@ export interface InjectManualSkillPrimesParams {
   initialMessages: BaseMessage[];
   /** Per-index token count map returned by `formatAgentMessages`. */
   indexTokenCountMap: Record<number, number> | undefined;
-  /** Resolved skill primes to splice in. */
-  manualSkillPrimes: ResolvedManualSkill[];
+  /**
+   * Resolved skill primes to splice in. Only `name` and `body` are used
+   * to construct the meta `HumanMessage`; widening the type to `Pick<...>`
+   * lets tests pass minimal `{ name, body }` literals without inventing
+   * `_id`s. The resolver always returns full primes in production.
+   */
+  manualSkillPrimes: Pick<ResolvedManualSkill, 'name' | 'body'>[];
 }
 
 export interface InjectManualSkillPrimesResult {
@@ -694,7 +711,13 @@ export interface BuildSkillPrimeContentPartsParams {
  * scanner could skip it.
  */
 export function buildSkillPrimeContentParts(
-  primes: ResolvedManualSkill[],
+  /**
+   * Only `name` is read here; widening the param type to `Pick<...>` lets
+   * callers (and tests) pass either the full `ResolvedManualSkill` or a
+   * minimal `{ name, body }` literal without needing to invent a
+   * placeholder `_id`. The resolver always returns full primes.
+   */
+  primes: Pick<ResolvedManualSkill, 'name' | 'body'>[],
   { runId, startOffset = 0 }: BuildSkillPrimeContentPartsParams,
 ): SkillPrimeContentPart[] {
   return primes.map((prime, i) => {

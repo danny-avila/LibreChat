@@ -771,7 +771,7 @@ describe('resolveManualSkills', () => {
       accessibleSkillIds: [owned._id],
       userId,
     });
-    expect(result).toEqual([{ name: 'my-skill', body: 'MY SKILL BODY' }]);
+    expect(result).toEqual([{ _id: owned._id, name: 'my-skill', body: 'MY SKILL BODY' }]);
   });
 
   it('passes allowedTools through when the skill doc carries the field', async () => {
@@ -786,7 +786,12 @@ describe('resolveManualSkills', () => {
       userId,
     });
     expect(result).toEqual([
-      { name: 'with-tools', body: 'body', allowedTools: ['execute_code', 'read_file'] },
+      {
+        _id: owned._id,
+        name: 'with-tools',
+        body: 'body',
+        allowedTools: ['execute_code', 'read_file'],
+      },
     ]);
   });
 
@@ -798,7 +803,7 @@ describe('resolveManualSkills', () => {
       accessibleSkillIds: [owned._id],
       userId,
     });
-    expect(resolved).toEqual({ name: 'no-tools', body: 'body' });
+    expect(resolved).toEqual({ _id: owned._id, name: 'no-tools', body: 'body' });
     expect(resolved).not.toHaveProperty('allowedTools');
   });
 
@@ -810,7 +815,12 @@ describe('resolveManualSkills', () => {
       accessibleSkillIds: [owned._id],
       userId,
     });
-    expect(resolved).toEqual({ name: 'empty-tools', body: 'body', allowedTools: [] });
+    expect(resolved).toEqual({
+      _id: owned._id,
+      name: 'empty-tools',
+      body: 'body',
+      allowedTools: [],
+    });
   });
 
   it('silently skips names with no backing skill (typo / ACL miss) without failing the batch', async () => {
@@ -821,7 +831,7 @@ describe('resolveManualSkills', () => {
       accessibleSkillIds: [real._id],
       userId,
     });
-    expect(result).toEqual([{ name: 'real', body: 'body of real' }]);
+    expect(result).toEqual([{ _id: real._id, name: 'real', body: 'body of real' }]);
   });
 
   it('silently skips skills with userInvocable: false, preserving the rest of the batch', async () => {
@@ -836,7 +846,7 @@ describe('resolveManualSkills', () => {
     /* Defense-in-depth: even if a popover-bypassing API caller names a
        userInvocable:false skill, the resolver drops it with a warn log
        rather than priming SKILL.md. The rest of the batch survives. */
-    expect(result).toEqual([{ name: 'open', body: 'body of open' }]);
+    expect(result).toEqual([{ _id: open._id, name: 'open', body: 'body of open' }]);
   });
 
   it('passes preferUserInvocable to getSkillByName so name-collision picks the user-invocable doc, but does NOT pass preferModelInvocable (manual primes for disabled skills are supported)', async () => {
@@ -867,7 +877,7 @@ describe('resolveManualSkills', () => {
       accessibleSkillIds: [invocableDoc._id],
       userId,
     });
-    expect(result).toEqual([{ name: 'collide', body: 'invocable body' }]);
+    expect(result).toEqual([{ _id: invocableDoc._id, name: 'collide', body: 'invocable body' }]);
     expect(getSkillByName).toHaveBeenCalledWith('collide', [invocableDoc._id], {
       preferUserInvocable: true,
     });
@@ -887,8 +897,8 @@ describe('resolveManualSkills', () => {
       userId,
     });
     expect(result).toEqual([
-      { name: 'explicit', body: 'body of explicit' },
-      { name: 'implicit', body: 'body of implicit' },
+      { _id: explicit._id, name: 'explicit', body: 'body of explicit' },
+      { _id: implicit._id, name: 'implicit', body: 'body of implicit' },
     ]);
   });
 
@@ -925,7 +935,7 @@ describe('resolveManualSkills', () => {
       userId,
       defaultActiveOnShare: true,
     });
-    expect(result).toEqual([{ name: 'shared', body: 'shared-body' }]);
+    expect(result).toEqual([{ _id: shared._id, name: 'shared', body: 'shared-body' }]);
   });
 
   it('drops explicitly-deactivated skills (skillStates override wins over ownership default)', async () => {
@@ -950,7 +960,7 @@ describe('resolveManualSkills', () => {
       defaultActiveOnShare: false,
       skillStates: { [shared._id.toString()]: true },
     });
-    expect(result).toEqual([{ name: 'shared-on', body: 'on-body' }]);
+    expect(result).toEqual([{ _id: shared._id, name: 'shared-on', body: 'on-body' }]);
   });
 
   it('skips skills with empty bodies (priming nothing adds no value)', async () => {
@@ -978,7 +988,7 @@ describe('resolveManualSkills', () => {
       accessibleSkillIds: [good._id],
       userId,
     });
-    expect(result).toEqual([{ name: 'good', body: 'good-body' }]);
+    expect(result).toEqual([{ _id: good._id, name: 'good', body: 'good-body' }]);
   });
 
   it('truncates manual skill lists above MAX_MANUAL_SKILLS to bound concurrent DB lookups', async () => {

@@ -514,7 +514,11 @@ const createResponse = async (req, res) => {
             req,
             primaryConfig.accessibleSkillIds,
             undefined,
-            primaryConfig.manualSkillPrimes?.map((p) => p.name),
+            primaryConfig.manualSkillPrimes?.length
+              ? Object.fromEntries(
+                  primaryConfig.manualSkillPrimes.map((p) => [p.name, p._id.toString()]),
+                )
+              : undefined,
           );
         },
         toolEndCallback,
@@ -687,7 +691,11 @@ const createResponse = async (req, res) => {
             req,
             primaryConfig.accessibleSkillIds,
             undefined,
-            primaryConfig.manualSkillPrimes?.map((p) => p.name),
+            primaryConfig.manualSkillPrimes?.length
+              ? Object.fromEntries(
+                  primaryConfig.manualSkillPrimes.map((p) => [p.name, p._id.toString()]),
+                )
+              : undefined,
           );
         },
         toolEndCallback,

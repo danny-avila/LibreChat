@@ -477,7 +477,7 @@ describe('initializeAgent — manual skill priming (Phase 3)', () => {
     );
 
     expect(result.manualSkillPrimes).toEqual([
-      { name: 'brand-guidelines', body: '# Brand guidelines\nUse blue.' },
+      { _id: skillId, name: 'brand-guidelines', body: '# Brand guidelines\nUse blue.' },
     ]);
     /* `preferUserInvocable` keeps name-collision lookups consistent with
        the popover for manual paths — model-only (`userInvocable: false`)
