@@ -48,12 +48,6 @@ export default function AdvancedPanel() {
       </div>
       <div className="flex flex-col gap-4 px-2 pb-2">
         <MaxAgentSteps />
-        <Controller
-          name="edges"
-          control={control}
-          defaultValue={[]}
-          render={({ field }) => <AgentHandoffs field={field} currentAgentId={currentAgentId} />}
-        />
         {subagentsEnabled && (
           <Controller
             name="subagents"
@@ -61,6 +55,12 @@ export default function AdvancedPanel() {
             render={({ field }) => <AgentSubagents field={field} currentAgentId={currentAgentId} />}
           />
         )}
+        <Controller
+          name="edges"
+          control={control}
+          defaultValue={[]}
+          render={({ field }) => <AgentHandoffs field={field} currentAgentId={currentAgentId} />}
+        />
         {chainEnabled && (
           <Controller
             name="agent_ids"
