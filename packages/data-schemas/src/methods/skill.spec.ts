@@ -638,6 +638,79 @@ describe('Skill CRUD methods', () => {
     expect(result.skills[0].userInvocable).toBe(false);
   });
 
+  it('preferInvocable returns the user-invocable + model-invocable doc when same-name duplicates exist', async () => {
+    /* Same-name collision: older invocable doc, newer disabled doc.
+       Default lookup returns the newer (disabled) one — that's the bug.
+       preferInvocable should return the older invocable one so manual
+       prime resolution + runtime ACL stay consistent with the catalog. */
+    const olderInvocable = await Skill.create({
+      name: 'collision-skill',
+      description: 'Older invocable variant of the colliding name.',
+      body: 'invocable body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    /* Sleep so updatedAt differs deterministically. */
+    await new Promise((r) => setTimeout(r, 5));
+    const newerDisabled = await Skill.create({
+      name: 'collision-skill',
+      description: 'Newer model-disabled variant of the colliding name.',
+      body: 'disabled body',
+      frontmatter: {},
+      author: other._id,
+      authorName: other.name ?? 'Other',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      disableModelInvocation: true,
+    });
+
+    const accessibleIds = [
+      olderInvocable._id as mongoose.Types.ObjectId,
+      newerDisabled._id as mongoose.Types.ObjectId,
+    ];
+
+    /* Default behavior: newest wins → disabled doc returned. */
+    const defaultLookup = await methods.getSkillByName('collision-skill', accessibleIds);
+    expect(defaultLookup?._id.toString()).toBe(newerDisabled._id.toString());
+
+    /* preferInvocable: clean invocable wins → older doc returned. */
+    const preferred = await methods.getSkillByName('collision-skill', accessibleIds, {
+      preferInvocable: true,
+    });
+    expect(preferred?._id.toString()).toBe(olderInvocable._id.toString());
+  });
+
+  it('preferInvocable falls back to newest match when no clean-invocable doc exists', async () => {
+    /* Sole-disabled-name case: only a `disableModelInvocation: true` doc
+       exists for the name. preferInvocable must still return it so
+       handleSkillToolCall can fire the explicit-rejection error path. */
+    const disabledOnly = await Skill.create({
+      name: 'sole-disabled',
+      description: 'Only a model-disabled variant of this name exists.',
+      body: 'disabled body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      disableModelInvocation: true,
+    });
+
+    const result = await methods.getSkillByName(
+      'sole-disabled',
+      [disabledOnly._id as mongoose.Types.ObjectId],
+      { preferInvocable: true },
+    );
+    expect(result?._id.toString()).toBe(disabledOnly._id.toString());
+    expect(result?.disableModelInvocation).toBe(true);
+  });
+
   it('does not overwrite explicit columns with frontmatter values (column wins)', async () => {
     /* If both column and frontmatter are set (e.g. an admin edited the
        column directly via the API but the frontmatter still says

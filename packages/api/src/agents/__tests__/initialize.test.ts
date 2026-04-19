@@ -479,7 +479,11 @@ describe('initializeAgent — manual skill priming (Phase 3)', () => {
     expect(result.manualSkillPrimes).toEqual([
       { name: 'brand-guidelines', body: '# Brand guidelines\nUse blue.' },
     ]);
-    expect(getSkillByName).toHaveBeenCalledWith('brand-guidelines', [skillId]);
+    /* `preferInvocable` keeps name-collision lookups consistent with the
+       catalog/popover (Phase 6 iter 6). */
+    expect(getSkillByName).toHaveBeenCalledWith('brand-guidelines', [skillId], {
+      preferInvocable: true,
+    });
   });
 
   it('leaves manualSkillPrimes undefined when no manualSkills are provided', async () => {

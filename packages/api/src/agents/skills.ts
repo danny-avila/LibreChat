@@ -384,10 +384,16 @@ export function buildSkillPrimeMessage(skill: { name: string; body: string }): I
 export interface ResolveManualSkillsParams {
   /** Skill names the user invoked (via `$` popover or `always-apply`). */
   names: string[];
-  /** DB lookup: name → skill doc, constrained to ACL-accessible IDs. */
+  /** DB lookup: name → skill doc, constrained to ACL-accessible IDs.
+   *
+   * Resolver always passes `options.preferInvocable: true` so a same-name
+   * newer disabled / non-user-invocable duplicate can't shadow the older
+   * doc the user actually picked from the popover.
+   */
   getSkillByName: (
     name: string,
     accessibleIds: Types.ObjectId[],
+    options?: { preferInvocable?: boolean },
   ) => Promise<{
     _id: Types.ObjectId;
     name: string;
@@ -492,7 +498,14 @@ export async function resolveManualSkills(
   const resolved = await Promise.all(
     boundedNames.map(async (name) => {
       try {
-        const skill = await getSkillByName(name, accessibleSkillIds);
+        /* `preferInvocable` lets the lookup return the older user-invocable
+           variant when a newer same-name duplicate has `userInvocable:
+           false` or `disable-model-invocation: true`. Without this, a
+           newer disabled / non-invocable duplicate would shadow the
+           popover-visible skill the user picked, and the manual
+           invocation would silently no-op (or pick a body that doesn't
+           match what the model later resolves at file-read time). */
+        const skill = await getSkillByName(name, accessibleSkillIds, { preferInvocable: true });
         if (!skill) {
           logger.warn(`[resolveManualSkills] Skill "${name}" not found or not accessible`);
           return null;

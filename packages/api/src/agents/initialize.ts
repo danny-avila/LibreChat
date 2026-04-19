@@ -204,10 +204,19 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
    * Load a single skill by name, constrained to an ACL-accessible ID set.
    * Returns the full document (including `body`) so manual invocation can
    * prime SKILL.md without a second DB round-trip.
+   *
+   * `options.preferInvocable` (Phase 6): when true, the lookup prefers the
+   * newest doc that is BOTH `userInvocable !== false` AND
+   * `disableModelInvocation !== true`. Falls back to the newest match if
+   * no clean-invocable doc exists for the name. Use to keep manual-prime
+   * resolution and runtime ACL resolution consistent when same-name
+   * duplicates exist (a newer disabled doc would otherwise shadow an
+   * older invocable doc the user / catalog targeted).
    */
   getSkillByName?: (
     name: string,
     accessibleIds: import('mongoose').Types.ObjectId[],
+    options?: { preferInvocable?: boolean },
   ) => Promise<{
     _id: import('mongoose').Types.ObjectId;
     name: string;

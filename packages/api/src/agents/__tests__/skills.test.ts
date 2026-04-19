@@ -839,6 +839,33 @@ describe('resolveManualSkills', () => {
     expect(result).toEqual([{ name: 'open', body: 'body of open' }]);
   });
 
+  it('passes preferInvocable: true to getSkillByName so name-collision duplicates resolve to the user-invocable doc', async () => {
+    /* Same-name collision scenario: the popover surfaced the older
+       invocable doc; the resolver must look it up with preferInvocable
+       so a newer disabled / non-user-invocable duplicate doesn't
+       silently shadow the user's selection. */
+    const invocableDoc = mkSkill('collide', userOid, 'invocable body');
+    const getSkillByName = jest.fn(
+      async (_name: string, _ids: Types.ObjectId[], options?: { preferInvocable?: boolean }) => {
+        /* Return the invocable doc only when called with preferInvocable.
+           Without the flag, this fake would return null (simulating the
+           newer disabled duplicate scenario where the lookup picks
+           something else and the resolver can't see the invocable doc). */
+        return options?.preferInvocable ? invocableDoc : null;
+      },
+    );
+    const result = await resolveManualSkills({
+      names: ['collide'],
+      getSkillByName,
+      accessibleSkillIds: [invocableDoc._id],
+      userId,
+    });
+    expect(result).toEqual([{ name: 'collide', body: 'invocable body' }]);
+    expect(getSkillByName).toHaveBeenCalledWith('collide', [invocableDoc._id], {
+      preferInvocable: true,
+    });
+  });
+
   it('treats userInvocable: true (or absent) as user-invocable', async () => {
     const explicit: SkillDoc = { ...mkSkill('explicit', userOid), userInvocable: true };
     const implicit = mkSkill('implicit', userOid);

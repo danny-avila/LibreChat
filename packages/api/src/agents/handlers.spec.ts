@@ -247,6 +247,58 @@ describe('createToolExecuteHandler', () => {
       expect(result.content).toContain('normal-skill');
     });
 
+    it('skill tool calls getSkillByName with preferInvocable to avoid same-name duplicate shadowing', async () => {
+      /* The skill tool should resolve to the cataloged invocable doc when
+         a same-name disabled duplicate exists — passing preferInvocable
+         keeps the resolution consistent with the catalog. Falls back to
+         the newest match when only a disabled doc exists, so the
+         model-invocation gate can still fire its explicit error. */
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'maybe-disabled',
+        body: 'body',
+        fileCount: 0,
+      }));
+      const handler = createSkillHandler(getSkillByName);
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_skill_4',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'maybe-disabled' },
+        },
+      ]);
+
+      expect(getSkillByName).toHaveBeenCalledWith('maybe-disabled', expect.any(Array), {
+        preferInvocable: true,
+      });
+    });
+
+    it('read_file calls getSkillByName with preferInvocable for the same consistency reason', async () => {
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'maybe-disabled-read',
+        body: '# Body',
+        fileCount: 0,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({ loadedTools: [] })),
+        getSkillByName,
+      });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_read_5',
+          name: Constants.READ_FILE,
+          args: { file_path: 'maybe-disabled-read/SKILL.md' },
+        },
+      ]);
+
+      expect(getSkillByName).toHaveBeenCalledWith('maybe-disabled-read', expect.any(Array), {
+        preferInvocable: true,
+      });
+    });
+
     it('rejects read_file tool calls for disableModelInvocation skills (file ACL parity)', async () => {
       /* The `read_file` handler shares `accessibleSkillIds` with the skill
          tool. Without the disableModelInvocation gate there too, a model

@@ -49,10 +49,18 @@ export interface ToolExecuteOptions {
   }>;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
-  /** Loads a skill by name with ACL constraint (returns full body for injection) */
+  /**
+   * Loads a skill by name with ACL constraint (returns full body for injection).
+   *
+   * `options.preferInvocable` (Phase 6): when true, prefer the newest doc
+   * that's both user-invocable and model-invocable; fall back to newest
+   * match. Avoids a same-name newer-disabled duplicate shadowing the
+   * cataloged invocable skill the model actually targeted.
+   */
   getSkillByName?: (
     name: string,
     accessibleIds: Types.ObjectId[],
+    options?: { preferInvocable?: boolean },
   ) => Promise<{
     body: string;
     name: string;
@@ -174,7 +182,13 @@ async function handleReadFileCall(
   }
 
   const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  const skill = await getSkillByName(skillName, accessibleIds);
+  /* `preferInvocable` keeps name-collision resolution consistent with the
+     catalog/popover. Without it, a newer disabled or non-user-invocable
+     duplicate would shadow the cataloged invocable skill — the model
+     would read files from a different doc than the body it sees. Falls
+     back to the newest match so the disabled-only case still resolves
+     and the model-invocation gate below can fire its explicit error. */
+  const skill = await getSkillByName(skillName, accessibleIds, { preferInvocable: true });
   if (!skill) {
     return {
       toolCallId: tc.id,
@@ -454,7 +468,12 @@ async function handleSkillToolCall(
   }
 
   const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  const skill = await getSkillByName(args.skillName, accessibleIds);
+  /* `preferInvocable` keeps name-collision resolution aligned with the
+     catalog: the model called the cataloged invocable skill, so the
+     handler resolves to the same doc. Falls back to the newest match
+     so the model-invocation gate below can still fire its explicit
+     error when only a disabled doc exists for the name. */
+  const skill = await getSkillByName(args.skillName, accessibleIds, { preferInvocable: true });
 
   if (!skill) {
     return {

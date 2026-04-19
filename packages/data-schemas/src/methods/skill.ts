@@ -710,17 +710,49 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
   async function getSkillByName(
     name: string,
     accessibleIds: Types.ObjectId[],
+    options?: {
+      /**
+       * When true, prefer the newest doc with `userInvocable !== false` AND
+       * `disableModelInvocation !== true` (after frontmatter backfill). If
+       * no such "clean invocable" doc exists for the name, fall back to the
+       * newest matching doc — handlers like `handleSkillToolCall` rely on
+       * the fallback to fire their explicit-rejection error path. Defaults
+       * to false (newest match unconditionally — original behavior).
+       *
+       * Use this when name collisions could otherwise let a newer model-
+       * disabled or non-user-invocable duplicate shadow the cataloged /
+       * popover-visible skill the user / model actually targeted.
+       */
+      preferInvocable?: boolean;
+    },
   ): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
-    // sort by updatedAt desc for deterministic result when multiple skills share a name
-    const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } })
+    /* Single-doc fast path when caller doesn't care about duplicates —
+       preserves the previous performance characteristics. */
+    if (!options?.preferInvocable) {
+      const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } })
+        .sort({ updatedAt: -1 })
+        .lean();
+      return backfillDerivedFromFrontmatter(
+        (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null,
+      );
+    }
+    /* Multi-doc path: fetch all matching docs (typically 1, rarely 2+
+       across same-name duplicates) and pick the one that's both
+       user-invocable and model-invocable; fall back to newest. */
+    const docs = (await Skill.find({ name, _id: { $in: accessibleIds } })
       .sort({ updatedAt: -1 })
-      .lean();
-    /* Read-time fallback: legacy skills authored before the structured
-       columns existed still need the runtime gates to fire. */
-    return backfillDerivedFromFrontmatter(
-      (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null,
+      .lean()) as unknown as Array<ISkill & { _id: Types.ObjectId }>;
+    if (docs.length === 0) {
+      return null;
+    }
+    for (const doc of docs) {
+      backfillDerivedFromFrontmatter(doc);
+    }
+    const cleanInvocable = docs.find(
+      (d) => d.userInvocable !== false && d.disableModelInvocation !== true,
     );
+    return cleanInvocable ?? docs[0];
   }
 
   async function listSkillsByAccess(
