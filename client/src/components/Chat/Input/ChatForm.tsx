@@ -89,15 +89,6 @@ const ChatForm = memo(function ChatForm({
 
   const { requiresKey } = useRequiresKey();
   const methods = useChatFormContext();
-  const {
-    files,
-    setFiles,
-    conversation,
-    isSubmitting,
-    filesLoading,
-    newConversation,
-    handleStopGenerating,
-  } = useChatContext();
   const { requiresPermission } = useRequiresPermission();
   const {
     generateConversation,
