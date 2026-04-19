@@ -7,7 +7,7 @@ import {
 } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
-import { createAclEntryMethods } from './aclEntry';
+import { createAclEntryMethods, permissionBitSupersets } from './aclEntry';
 import aclEntrySchema from '~/schema/aclEntry';
 
 let mongoServer: MongoMemoryServer;
@@ -1539,6 +1539,80 @@ describe('AclEntry Model Tests', () => {
         const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
         expect(result).toEqual([]);
       });
+    });
+  });
+
+  /**
+   * Focused unit tests for the `permissionBitSupersets` helper. The helper is
+   * the single point of correctness for every ACL read path (every query uses
+   * `permBits: { $in: permissionBitSupersets(X) }`), so it warrants direct
+   * coverage independent of the higher-level parity and behavior specs.
+   */
+  describe('permissionBitSupersets', () => {
+    test('requiredBits=0 matches every permBits value in [0, 15]', () => {
+      const result = permissionBitSupersets(0);
+      expect(result).toHaveLength(16);
+      expect([...result].sort((a, b) => a - b)).toEqual([
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+      ]);
+    });
+
+    test('requiredBits=15 (all four bits) matches only [15]', () => {
+      const result = permissionBitSupersets(
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+      );
+      expect([...result]).toEqual([15]);
+    });
+
+    test('every returned value is a bitwise superset of requiredBits', () => {
+      for (const required of [
+        PermissionBits.VIEW,
+        PermissionBits.EDIT,
+        PermissionBits.DELETE,
+        PermissionBits.SHARE,
+        PermissionBits.VIEW | PermissionBits.EDIT,
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+      ]) {
+        const result = permissionBitSupersets(required);
+        for (const v of result) {
+          expect((v & required) === required).toBe(true);
+        }
+      }
+    });
+
+    test('returns exactly the values satisfying $bitsAllSet semantics', () => {
+      /**
+       * Parity check against the literal definition: for every required mask,
+       * the returned set must equal the set of all v in [0,15] whose bits
+       * include `required`.
+       */
+      for (let required = 0; required <= 15; required++) {
+        const expected: number[] = [];
+        for (let v = 0; v <= 15; v++) {
+          if ((v & required) === required) {
+            expected.push(v);
+          }
+        }
+        expect([...permissionBitSupersets(required)].sort((a, b) => a - b)).toEqual(expected);
+      }
+    });
+
+    test('memoizes: repeat calls return the same frozen reference', () => {
+      const first = permissionBitSupersets(PermissionBits.SHARE);
+      const second = permissionBitSupersets(PermissionBits.SHARE);
+      expect(second).toBe(first);
+      expect(Object.isFrozen(first)).toBe(true);
+    });
+
+    test('frozen result throws on mutation attempts in strict mode', () => {
+      const result = permissionBitSupersets(PermissionBits.VIEW);
+      /**
+       * `Object.freeze` in strict mode (TypeScript compiles to strict) causes
+       * mutation attempts to throw rather than silently corrupt the cache.
+       */
+      expect(() => {
+        (result as number[]).push(99);
+      }).toThrow(TypeError);
     });
   });
 });
