@@ -14,7 +14,6 @@ import React from 'react';
 import { act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/react';
-import { InvocationMode } from 'librechat-data-provider';
 import type { TSkillSummary } from 'librechat-data-provider';
 
 const CONVO_ID = 'convo-1';
@@ -412,7 +411,7 @@ describe('filterSkillsForPopover', () => {
   const inactive = () => false;
   const s1 = makeSkill({ _id: '1', name: 'a' });
   const s2 = makeSkill({ _id: '2', name: 'b' });
-  const s3 = makeSkill({ _id: '3', name: 'c', invocationMode: InvocationMode.auto });
+  const s3 = makeSkill({ _id: '3', name: 'c', userInvocable: false });
 
   it('passes everything through when agentSkillIds is undefined', () => {
     const out = filterSkillsForPopover([s1, s2], { agentSkillIds: undefined, isActive: active });
@@ -440,7 +439,7 @@ describe('filterSkillsForPopover', () => {
     expect(out.map((s) => s._id)).toEqual(['2']);
   });
 
-  it('excludes auto-only skills via isUserInvocable', () => {
+  it('excludes skills with userInvocable: false via isUserInvocable', () => {
     const out = filterSkillsForPopover([s1, s3], { agentSkillIds: null, isActive: active });
     expect(out.map((s) => s._id)).toEqual(['1']);
   });
@@ -456,8 +455,8 @@ describe('filterSkillsForPopover', () => {
       agentSkillIds: ['1', '2', '3'],
       isActive,
     });
-    /* s1 passes (active, manual-by-default, scoped), s2 drops (inactive),
-       s3 drops (auto-only invocation mode). */
+    /* s1 passes (active, user-invocable by default, scoped), s2 drops (inactive),
+       s3 drops (userInvocable: false). */
     expect(out.map((s) => s._id)).toEqual(['1']);
   });
 
