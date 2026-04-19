@@ -26,6 +26,7 @@ import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
 import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
+import PendingManualSkillsChips from './PendingManualSkillsChips';
 import SkillsCommand from './SkillsCommand';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
@@ -272,6 +273,7 @@ const ChatForm = memo(function ChatForm({
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
+            <PendingManualSkillsChips conversationId={conversationId} />
             {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}

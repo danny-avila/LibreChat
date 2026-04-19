@@ -28,6 +28,9 @@ const {
   filterMalformedContentParts,
   countFormattedMessageTokens,
   hydrateMissingIndexTokenCounts,
+  injectManualSkillPrimes,
+  isSkillPrimeMessage,
+  buildSkillPrimeContentParts,
 } = require('@librechat/api');
 const {
   Callback,
@@ -603,18 +606,27 @@ class AgentClient extends BaseClient {
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
 
-      let messagesToProcess = [...messages];
-      if (messages.length > messageWindowSize) {
-        for (let i = messages.length - messageWindowSize; i >= 0; i--) {
-          const potentialWindow = messages.slice(i, i + messageWindowSize);
+      /**
+       * Strip skill-primed meta messages before memory extraction. The primes
+       * sit next to the latest user message and carry large SKILL.md bodies,
+       * so letting them into the window would crowd out real chat turns and
+       * pollute extracted memories with synthetic instruction content the
+       * user never typed.
+       */
+      const chatMessages = messages.filter((m) => !isSkillPrimeMessage(m));
+
+      let messagesToProcess = [...chatMessages];
+      if (chatMessages.length > messageWindowSize) {
+        for (let i = chatMessages.length - messageWindowSize; i >= 0; i--) {
+          const potentialWindow = chatMessages.slice(i, i + messageWindowSize);
           if (potentialWindow[0]?.role === 'user') {
             messagesToProcess = [...potentialWindow];
             break;
           }
         }
 
-        if (messagesToProcess.length === messages.length) {
-          messagesToProcess = [...messages.slice(-messageWindowSize)];
+        if (messagesToProcess.length === chatMessages.length) {
+          messagesToProcess = [...chatMessages.slice(-messageWindowSize)];
         }
       }
 
@@ -759,6 +771,32 @@ class AgentClient extends BaseClient {
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
         );
       }
+
+      /**
+       * Phase 3 manual skill priming — injected by user via `$` popover.
+       *
+       * Splice + index-shift logic lives in `injectManualSkillPrimes`
+       * (packages/api/src/agents/skills.ts) so the delicate position math
+       * can be unit-tested in TS without standing up AgentClient. Runs for
+       * both single-agent and multi-agent runs; how primes interact with
+       * handoff / added-convo agents' per-agent state is an agents-SDK
+       * concern, not this layer's to gate.
+       */
+      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
+      if (manualSkillPrimes && manualSkillPrimes.length > 0) {
+        const primeResult = injectManualSkillPrimes({
+          initialMessages,
+          indexTokenCountMap,
+          manualSkillPrimes,
+        });
+        indexTokenCountMap = primeResult.indexTokenCountMap;
+        if (primeResult.inserted > 0) {
+          logger.debug(
+            `[AgentClient] Primed ${primeResult.inserted} manual skill(s) at message index ${primeResult.insertIdx}: ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
+          );
+        }
+      }
+
       if (indexTokenCountMap && isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
         const entries = Object.entries(indexTokenCountMap);
         const perMsg = entries.map(([idx, count]) => {
@@ -875,6 +913,31 @@ class AgentClient extends BaseClient {
 
       const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
+
+      /**
+       * Surface a completed `skill` tool_call content part per manually-
+       * invoked skill so the existing `SkillCall` frontend renderer shows
+       * a "Skill X loaded" card on the assistant response. Applied after
+       * the graph finishes to avoid clashing with the aggregator's own
+       * per-step content indexing. Prepended (not appended) so cards sit
+       * above the model's output — priming ran before the turn, the
+       * reply follows.
+       *
+       * Live streaming display of cards is handled on the user side via
+       * `ManualSkillPills` reading the message's `manualSkills` field;
+       * no separate SSE emit is needed here, and trying to stream a
+       * mid-run tool_call at index 0 collided with the LLM's first text
+       * content, while emitting at a sparse offset pushed the card below
+       * the reply on finalize. Post-run unshift keeps the final
+       * responseMessage.content in the right order.
+       */
+      const primedSkills = this.options.agent?.manualSkillPrimes;
+      if (primedSkills && primedSkills.length > 0) {
+        const primeParts = buildSkillPrimeContentParts(primedSkills, {
+          runId: this.responseMessageId ?? 'manual-skill',
+        });
+        this.contentParts.unshift(...primeParts);
+      }
 
       /** @deprecated Agent Chain */
       if (hideSequentialOutputs) {
