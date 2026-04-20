@@ -317,8 +317,10 @@ describe('createToolExecuteHandler', () => {
          shadow the resolver's pick and the model would read files from
          the WRONG skill. The handler now constrains accessibleIds to
          the primed `_id`, so the lookup returns the EXACT same doc. */
+      const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
+      const primedHex = '507f1f77bcf86cd799439011';
       const getSkillByName = jest.fn(async () => ({
-        _id: 'primed-skill-id' as unknown as never,
+        _id: new Types.ObjectId(primedHex) as unknown as never,
         name: 'manually-primed',
         body: '# Body',
         fileCount: 0,
@@ -327,7 +329,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
-            manualSkillPrimedIdsByName: { 'manually-primed': 'primed-skill-id' },
+            manualSkillPrimedIdsByName: { 'manually-primed': primedHex },
           },
         })),
         getSkillByName,
@@ -344,7 +346,19 @@ describe('createToolExecuteHandler', () => {
       /* Lookup is pinned to the primed _id (single-element array) and
          carries no preference flags — the constrained accessibleIds set
          already disambiguates which doc to return. */
-      expect(getSkillByName).toHaveBeenCalledWith('manually-primed', ['primed-skill-id'], {});
+      expect(getSkillByName).toHaveBeenCalledTimes(1);
+      const [calledName, calledIds, calledOpts] = getSkillByName.mock.calls[0] as unknown as [
+        string,
+        Array<{ toString(): string }>,
+        object,
+      ];
+      expect(calledName).toBe('manually-primed');
+      expect(calledOpts).toEqual({});
+      expect(calledIds).toHaveLength(1);
+      /* Constructed `ObjectId` with the primed hex — `.toString()`
+         produces the same hex back. Compare via the canonical form to
+         avoid coupling to the runtime ObjectId class. */
+      expect(calledIds[0].toString()).toBe(primedHex);
     });
 
     it('rejects read_file tool calls for disableModelInvocation skills (file ACL parity)', async () => {
@@ -411,7 +425,7 @@ describe('createToolExecuteHandler', () => {
          autonomous-block contract is preserved because the bypass is
          scoped to the per-turn `manualSkillPrimedIdsByName` allowlist. */
       const getSkillByName = jest.fn(async () => ({
-        _id: 'manual-skill-id' as unknown as never,
+        _id: '507f1f77bcf86cd799439020' as unknown as never,
         name: 'manual-only-skill',
         body: '# Use references/docs.md for details',
         fileCount: 0,
@@ -421,7 +435,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
-            manualSkillPrimedIdsByName: { 'manual-only-skill': 'manual-skill-id' },
+            manualSkillPrimedIdsByName: { 'manual-only-skill': '507f1f77bcf86cd799439020' },
           },
         })),
         getSkillByName,
@@ -455,7 +469,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
-            manualSkillPrimedIdsByName: { 'something-else': 'something-else-id' },
+            manualSkillPrimedIdsByName: { 'something-else': '507f1f77bcf86cd799439030' },
           },
         })),
         getSkillByName,

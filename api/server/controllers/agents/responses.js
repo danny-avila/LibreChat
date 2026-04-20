@@ -51,6 +51,7 @@ const { findAccessibleResources } = require('~/server/services/PermissionService
 const {
   getSkillToolDeps,
   enrichWithSkillConfigurable,
+  buildManualSkillPrimedIdsByName,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const db = require('~/models');
 
@@ -514,11 +515,7 @@ const createResponse = async (req, res) => {
             req,
             primaryConfig.accessibleSkillIds,
             undefined,
-            primaryConfig.manualSkillPrimes?.length
-              ? Object.fromEntries(
-                  primaryConfig.manualSkillPrimes.map((p) => [p.name, p._id.toString()]),
-                )
-              : undefined,
+            buildManualSkillPrimedIdsByName(primaryConfig.manualSkillPrimes),
           );
         },
         toolEndCallback,
@@ -691,11 +688,7 @@ const createResponse = async (req, res) => {
             req,
             primaryConfig.accessibleSkillIds,
             undefined,
-            primaryConfig.manualSkillPrimes?.length
-              ? Object.fromEntries(
-                  primaryConfig.manualSkillPrimes.map((p) => [p.name, p._id.toString()]),
-                )
-              : undefined,
+            buildManualSkillPrimedIdsByName(primaryConfig.manualSkillPrimes),
           );
         },
         toolEndCallback,

@@ -844,6 +844,50 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
 
+  it('falls through to empty toolDefinitions when BOTH the union and base-only loadTools calls return undefined', async () => {
+    /* Worst-case silent-failure path: production loaders catch errors
+       and return undefined. If the agent's own tools fail to load AND
+       the retry without extras also fails, we have nothing to give the
+       LLM. The current behavior is to fall through to the `?? {}`
+       fallback rather than throw — pinning that contract here so the
+       turn doesn't crash hard but the agent simply has no tools. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    /* Both calls (with extras + without extras) silently return undefined. */
+    loadTools.mockResolvedValue(undefined);
+
+    const getSkillByName = buildGetSkillByName(
+      'broken-skill',
+      ['some-tool'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['broken-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Two attempts (initial + retry), both undefined → empty fallback.
+       The agent gets no tool definitions for the turn but does NOT
+       crash; downstream code handles the empty case. */
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(result.toolDefinitions).toEqual([]);
+  });
+
   it('propagates the error when loadTools fails AND there are no skill-added extras to drop', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['web_search'];

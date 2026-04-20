@@ -9,7 +9,7 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
-import type { Types } from 'mongoose';
+import { Types } from 'mongoose';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { ServerRequest } from '~/types';
 import { primeSkillFiles } from './skillFiles';
@@ -190,15 +190,16 @@ async function handleReadFileCall(
   /* On a manually-primed lookup, pin the accessible set to ONLY the
      primed `_id`. This guarantees the doc whose body got primed is the
      SAME doc whose files we read, even when same-name duplicates exist
-     and `activeSkillIds` had to drop some via the disable-model
-     dedup. The hex-string id is fine here — mongoose auto-casts strings
-     to ObjectId values in `$in` queries on ObjectId fields.
+     and `activeSkillIds` had to drop some via the disable-model dedup.
      For autonomous probes we keep the full ACL set + `preferModelInvocable`
      so the lookup matches the catalog the model saw (and falls back to
      newest so the disabled-only case still fires the explicit rejection
-     gate below). */
+     gate below). Constructing a real `ObjectId` (rather than relying on
+     mongoose's string auto-cast in `$in` queries) keeps the value
+     correct for any future consumer that compares with `.equals()` or
+     `===`. */
   const lookupAccessibleIds = isManuallyPrimedThisTurn
-    ? ([primedIdString] as unknown as Types.ObjectId[])
+    ? [new Types.ObjectId(primedIdString)]
     : accessibleIds;
   const lookupOptions: { preferUserInvocable?: boolean; preferModelInvocable?: boolean } =
     isManuallyPrimedThisTurn ? {} : { preferModelInvocable: true };

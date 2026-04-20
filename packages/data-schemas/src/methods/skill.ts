@@ -510,9 +510,11 @@ export function deriveStructuredFrontmatterFields(
  * `skill.disableModelInvocation === true`, `skill.allowedTools`) behave
  * the same way they would for a freshly-created skill.
  *
- * Pure: takes a lean skill object, mutates its undefined fields in place,
- * returns the same reference. No DB writes — when the skill is next
- * updated, `updateSkill` re-derives and persists the columns naturally.
+ * Side-effect-free w.r.t. the DB (no writes), but mutates its argument
+ * in place and returns the same reference. Callers passing a `lean()`
+ * doc this is fine — the doc is a fresh JS object owned by the caller.
+ * When the skill is next updated, `updateSkill` re-derives and persists
+ * the columns naturally, so this fallback gradually becomes a no-op.
  *
  * Skills with the columns already populated short-circuit to no-op.
  */
@@ -798,7 +800,13 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       /* `frontmatter` is included so `backfillDerivedFromFrontmatter` can
          restore the runtime fields for skills authored before Phase 6
          landed the columns. Body is still excluded — the size win was
-         body, not frontmatter (which is bounded by the validator). */
+         body, not frontmatter (which is bounded by the validator).
+         TODO(post-backfill): once a write migration backfills all
+         pre-Phase-6 skills' columns from frontmatter (or after a
+         deployment window long enough that any active skill has been
+         re-saved), drop `frontmatter` from this projection. ~2KB/skill
+         × 100/page is wasted bandwidth on every list call once backfill
+         is no longer needed. */
       .select(
         'name displayTitle description category author authorName version source sourceMetadata fileCount tenantId disableModelInvocation userInvocable allowedTools frontmatter createdAt updatedAt',
       )

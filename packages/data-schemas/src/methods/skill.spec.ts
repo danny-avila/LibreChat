@@ -657,7 +657,6 @@ describe('Skill CRUD methods', () => {
       fileCount: 0,
       userInvocable: true,
     });
-    await new Promise((r) => setTimeout(r, 5));
     const newerModelOnly = await Skill.create({
       name: 'model-collision',
       description: 'Newer model-only variant of the colliding name.',
@@ -670,6 +669,13 @@ describe('Skill CRUD methods', () => {
       fileCount: 0,
       userInvocable: false,
     });
+    /* Set updatedAt explicitly so the "older / newer" assertion is
+       deterministic across CI runners — relying on wall-clock spacing
+       between two `Skill.create` calls would race on a fast machine. */
+    await Skill.collection.updateOne(
+      { _id: olderUserInvocable._id },
+      { $set: { updatedAt: new Date(Date.now() - 1000) } },
+    );
 
     const accessibleIds = [
       olderUserInvocable._id as mongoose.Types.ObjectId,
@@ -701,7 +707,6 @@ describe('Skill CRUD methods', () => {
       fileCount: 0,
       userInvocable: true,
     });
-    await new Promise((r) => setTimeout(r, 5));
     const newerModelOnly = await Skill.create({
       name: 'user-collision',
       description: 'Newer model-only variant.',
@@ -714,6 +719,11 @@ describe('Skill CRUD methods', () => {
       fileCount: 0,
       userInvocable: false,
     });
+    /* Deterministic ordering — see the model-collision test above. */
+    await Skill.collection.updateOne(
+      { _id: olderUserInvocable._id },
+      { $set: { updatedAt: new Date(Date.now() - 1000) } },
+    );
 
     const accessibleIds = [
       olderUserInvocable._id as mongoose.Types.ObjectId,

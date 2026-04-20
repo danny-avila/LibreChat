@@ -29,7 +29,11 @@ const {
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { getSkillToolDeps, enrichWithSkillConfigurable } = require('./skillDeps');
+const {
+  getSkillToolDeps,
+  enrichWithSkillConfigurable,
+  buildManualSkillPrimedIdsByName,
+} = require('./skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -294,15 +298,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   logger.debug(
     `[initializeClient] Storing tool context for ${primaryConfig.id}: ${primaryConfig.toolDefinitions?.length ?? 0} tools, registry size: ${primaryConfig.toolRegistry?.size ?? '0'}`,
   );
-  /** @type {Record<string, string> | undefined}
-   *  Maps each manually-primed skill name to the `_id` of the exact doc
+  /** Maps each manually-primed skill name to the `_id` of the exact doc
    *  that was primed. Plumbed to `enrichWithSkillConfigurable` so the
    *  read_file handler can pin same-name collision lookups to the
-   *  resolver's chosen doc (otherwise a newer same-name duplicate could
-   *  shadow the prime, causing body/file mismatch within the turn). */
-  const manualSkillPrimedIdsByName = primaryConfig.manualSkillPrimes?.length
-    ? Object.fromEntries(primaryConfig.manualSkillPrimes.map((p) => [p.name, p._id.toString()]))
-    : undefined;
+   *  resolver's chosen doc. */
+  const manualSkillPrimedIdsByName = buildManualSkillPrimedIdsByName(
+    primaryConfig.manualSkillPrimes,
+  );
   agentToolContexts.set(primaryConfig.id, {
     agent: primaryAgent,
     toolRegistry: primaryConfig.toolRegistry,
