@@ -151,26 +151,46 @@ describe('edges utilities', () => {
       expect(result).toHaveLength(0);
     });
 
-    it('should filter edges whose `from` is an array containing a skipped id', () => {
+    it('strips skipped co-sources from multi-source edges instead of dropping the whole edge', () => {
+      // The SDK adds one `builder.addEdge(source, dest)` per source, so
+      // `agent_a -> agent_d` is a valid route even when `agent_b` can't
+      // be loaded. Keep the edge with the surviving sources.
       const edgesWithArrayFrom: GraphEdge[] = [
         { from: ['agent_a', 'agent_b'], to: 'agent_d', edgeType: 'handoff' },
         { from: 'agent_a', to: 'agent_d', edgeType: 'handoff' },
       ];
       const skipped = new Set(['agent_b']);
       const result = filterOrphanedEdges(edgesWithArrayFrom, skipped);
-      expect(result).toHaveLength(1);
-      expect(result[0].from).toBe('agent_a');
+      expect(result).toHaveLength(2);
+      expect(result[0].from).toEqual(['agent_a']);
+      expect(result[0].to).toBe('agent_d');
+      expect(result[1].from).toBe('agent_a');
     });
 
-    it('should handle array to values', () => {
+    it('strips skipped co-destinations from multi-destination edges', () => {
       const edgesWithArray: GraphEdge[] = [
         { from: 'agent_a', to: ['agent_b', 'agent_c'], edgeType: 'handoff' },
         { from: 'agent_a', to: ['agent_d'], edgeType: 'handoff' },
       ];
       const skipped = new Set(['agent_b']);
       const result = filterOrphanedEdges(edgesWithArray, skipped);
-      expect(result).toHaveLength(1);
-      expect(result[0].to).toEqual(['agent_d']);
+      // First edge: `['agent_b','agent_c']` → `['agent_c']` — kept.
+      // Second edge: unchanged.
+      expect(result).toHaveLength(2);
+      expect(result[0].to).toEqual(['agent_c']);
+      expect(result[1].to).toEqual(['agent_d']);
+    });
+
+    it('drops multi-member edges only when every member on a side is skipped', () => {
+      const edgesSide: GraphEdge[] = [
+        // All sources skipped → drop.
+        { from: ['agent_b', 'agent_c'], to: 'agent_a', edgeType: 'handoff' },
+        // All destinations skipped → drop.
+        { from: 'agent_a', to: ['agent_b', 'agent_c'], edgeType: 'handoff' },
+      ];
+      const skipped = new Set(['agent_b', 'agent_c']);
+      const result = filterOrphanedEdges(edgesSide, skipped);
+      expect(result).toHaveLength(0);
     });
 
     it('should return original edges array when edges is null/undefined', () => {

@@ -311,6 +311,49 @@ describe('discoverConnectedAgents', () => {
     expect(result.agentConfigs.size).toBe(0);
   });
 
+  it('preserves valid routes when one co-source of a multi-source edge is skipped', async () => {
+    // Primary A has edge `{ from: ['A','B'], to: 'C' }`, but B lacks
+    // VIEW permission. The SDK treats each source independently, so the
+    // `A -> C` route is still valid. Discovery must strip B from the
+    // edge's sources rather than dropping the whole edge.
+    const edges: GraphEdge[] = [{ from: ['A', 'B'], to: 'C', edgeType: 'handoff' }];
+    const primaryConfig = makeConfig('A', edges);
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      C: makeAgent('C', []),
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    // Only B is forbidden.
+    const checkPermission = jest.fn(
+      async ({ resourceId }: { resourceId: unknown }) => resourceId !== 'mongo-B',
+    );
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(result.skippedAgentIds.has('B')).toBe(true);
+    expect(result.agentConfigs.has('C')).toBe(true);
+    expect(result.agentConfigs.has('B')).toBe(false);
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges[0].from).toEqual(['A']);
+    expect(result.edges[0].to).toBe('C');
+  });
+
   it('advances through a multi-source edge on ANY reachable source (SDK OR semantics)', async () => {
     // Primary A has a single edge `{from: ['A','B'], to: 'C'}`. B loads
     // successfully but has no incoming path from A. The agents SDK adds

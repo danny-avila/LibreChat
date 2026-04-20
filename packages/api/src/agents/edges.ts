@@ -30,21 +30,80 @@ export function getEdgeParticipants(edge: GraphEdge): string[] {
 }
 
 /**
- * Filters out edges that reference non-existent (orphaned) agents on
- * either endpoint. Any edge whose `from` OR `to` references a skipped
- * agent id is dropped — leaving a source-side orphan in place would
- * still fail graph compilation with `Found edge ending at unknown node`
- * because `agents` no longer contains the source.
+ * Drops skipped agent ids from an edge endpoint.
+ *
+ * Scalars: returns the value unchanged, or `null` if the skipped set
+ * contains it (the edge has lost its only endpoint on that side and
+ * must be dropped by the caller).
+ *
+ * Arrays: returns a new array with skipped ids removed; if every id was
+ * skipped, returns `null`. A single-element result stays an array — the
+ * SDK normalizes both shapes internally, so preserving array-ness is
+ * simpler than switching representation.
+ *
+ * Returns the original reference when nothing changed, so callers can
+ * cheaply detect and skip a re-spread.
+ */
+function sanitizeEndpoint(
+  value: string | string[],
+  skippedAgentIds: Set<string>,
+): string | string[] | null {
+  if (Array.isArray(value)) {
+    const kept: string[] = [];
+    let removed = false;
+    for (const id of value) {
+      if (typeof id === 'string' && skippedAgentIds.has(id)) {
+        removed = true;
+        continue;
+      }
+      kept.push(id);
+    }
+    if (kept.length === 0) {
+      return null;
+    }
+    return removed ? kept : value;
+  }
+  if (typeof value === 'string' && skippedAgentIds.has(value)) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Drops orphaned agents from edge endpoints, returning only the edges
+ * that still have at least one valid source and one valid destination.
+ *
+ * For multi-source / multi-destination edges, orphaned ids are stripped
+ * from the array rather than dropping the whole edge: `{ from: ['A','B'],
+ * to: 'C' }` with B skipped becomes `{ from: ['A'], to: 'C' }`. This
+ * matches the agents SDK's `MultiAgentGraph.createWorkflow`, which adds
+ * one LangGraph edge per source/destination pair (`builder.addEdge(src,
+ * dest)`), so losing one co-source (or one co-destination) doesn't
+ * invalidate the routes through the remaining members.
+ *
+ * An edge is dropped only when it has no surviving source OR no
+ * surviving destination — the SDK's per-source `addEdge` can't run if
+ * either side is empty, and any orphaned id left in place would still
+ * trigger `Found edge ending at unknown node` at compile time.
  */
 export function filterOrphanedEdges(edges: GraphEdge[], skippedAgentIds: Set<string>): GraphEdge[] {
   if (!edges || skippedAgentIds.size === 0) {
     return edges;
   }
-  const referencesSkipped = (value: string | string[]): boolean => {
-    const ids = Array.isArray(value) ? value : [value];
-    return ids.some((id) => typeof id === 'string' && skippedAgentIds.has(id));
-  };
-  return edges.filter((edge) => !referencesSkipped(edge.from) && !referencesSkipped(edge.to));
+  const result: GraphEdge[] = [];
+  for (const edge of edges) {
+    const from = sanitizeEndpoint(edge.from, skippedAgentIds);
+    const to = sanitizeEndpoint(edge.to, skippedAgentIds);
+    if (from === null || to === null) {
+      continue;
+    }
+    if (from === edge.from && to === edge.to) {
+      result.push(edge);
+    } else {
+      result.push({ ...edge, from, to });
+    }
+  }
+  return result;
 }
 
 /** Collects all unique agent IDs referenced across an array of edges. */
