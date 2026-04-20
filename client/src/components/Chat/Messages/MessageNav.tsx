@@ -496,8 +496,10 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       return;
     }
     const scrollTop = container.scrollTop;
-    const firstEl = document.getElementById(entries[0].id);
-    const scrollMargin = scrollMarginRef.current || readScrollMargin(firstEl);
+    const scrollMargin =
+      scrollMarginRef.current !== 0
+        ? scrollMarginRef.current
+        : readScrollMargin(document.getElementById(entries[0].id));
     for (let i = entries.length - 1; i >= 0; i--) {
       const el = document.getElementById(entries[i].id);
       if (!el) {
@@ -517,8 +519,10 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       return;
     }
     const scrollTop = container.scrollTop;
-    const firstEl = document.getElementById(entries[0].id);
-    const scrollMargin = scrollMarginRef.current || readScrollMargin(firstEl);
+    const scrollMargin =
+      scrollMarginRef.current !== 0
+        ? scrollMarginRef.current
+        : readScrollMargin(document.getElementById(entries[0].id));
     for (let i = 0; i < entries.length; i++) {
       const el = document.getElementById(entries[i].id);
       if (!el) {

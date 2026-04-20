@@ -22,7 +22,7 @@ function MessagesViewContent({
   const { screenshotTargetRef } = useScreenshot();
   const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
-  const scrollToBottomRef = useRef<HTMLButtonElement>(null);
+  const scrollToBottomRef = useRef<HTMLDivElement>(null);
 
   const {
     conversation,
