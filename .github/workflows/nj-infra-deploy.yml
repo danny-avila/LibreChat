@@ -40,7 +40,6 @@ jobs:
           ACM_CERTIFICATE_ID: ${{ secrets.ACM_CERTIFICATE_ID }}
           DEPLOY_KITCHENSINK: ${{ github.event.inputs.deploy_kitchensink }}
           LIBRECHAT_ACM_CERTIFICATE_ID: ${{ secrets.LIBRECHAT_ACM_CERTIFICATE_ID }}
-          INPUT_CDK_VERSION: '2.229.0' # Matches what's in package.json to avoid version mismatch issues
 
   cdk-deploy:
     runs-on: ubuntu-latest
@@ -71,4 +70,3 @@ jobs:
           ACM_CERTIFICATE_ID: ${{ secrets.ACM_CERTIFICATE_ID }}
           DEPLOY_KITCHENSINK: ${{ github.event.inputs.deploy_kitchensink }}
           LIBRECHAT_ACM_CERTIFICATE_ID: ${{ secrets.LIBRECHAT_ACM_CERTIFICATE_ID }}
-          INPUT_CDK_VERSION: '2.229.1' # Matches what's in package.json to avoid version mismatch issues
