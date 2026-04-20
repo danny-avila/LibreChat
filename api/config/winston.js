@@ -117,22 +117,15 @@ const consoleFormat = winston.format.combine(
   // redactErrors(),
   winston.format.printf((info) => {
     const base = `${info.timestamp} ${info.level}: ${info.message}`;
-    const isError = info.level.includes('error');
-    const isWarn = info.level.includes('warn');
+    const isErrorOrWarn = info.level.includes('error') || info.level.includes('warn');
 
-    let line = base;
-    if (isError || isWarn) {
+    if (isErrorOrWarn) {
       const metaTrailer = formatConsoleMeta(info);
-      if (metaTrailer) {
-        line = `${base} ${metaTrailer}`;
-      }
-    }
-
-    if (isError || isWarn) {
+      const line = metaTrailer ? `${base} ${metaTrailer}` : base;
       return redactMessage(line);
     }
 
-    return line;
+    return base;
   }),
 );
 

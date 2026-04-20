@@ -105,6 +105,59 @@ describe('formatConsoleMeta', () => {
     expect(meta).toContain('[Circular]');
   });
 
+  it('falls back to per-field serialization when a value toJSON throws', () => {
+    const meta = formatConsoleMeta({
+      level: 'error',
+      message: 'crash',
+      timestamp: 'ts',
+      provider: 'azure',
+      model: 'gpt-5.4-mini',
+      broken: {
+        toJSON() {
+          throw new Error('nope');
+        },
+      },
+    });
+
+    expect(meta).toContain('"provider":"azure"');
+    expect(meta).toContain('"model":"gpt-5.4-mini"');
+    expect(meta).toContain('[Unserializable]');
+  });
+
+  it('redacts sensitive strings nested inside metadata objects', () => {
+    const meta = formatConsoleMeta({
+      level: 'error',
+      message: 'nested leak',
+      timestamp: 'ts',
+      config: {
+        headers: {
+          authorization: 'Bearer eyJhbGciOi.nestedTokenValue',
+        },
+        query: 'https://example.com/?key=AIzaNested',
+      },
+      openaiKey: 'sk-outerKey123',
+    });
+
+    expect(meta).not.toContain('eyJhbGciOi.nestedTokenValue');
+    expect(meta).not.toContain('AIzaNested');
+    expect(meta).not.toContain('sk-outerKey123');
+    expect(meta).toContain('Bearer [REDACTED]');
+    expect(meta).toContain('key=[REDACTED]');
+    expect(meta).toContain('sk-[REDACTED]');
+  });
+
+  it('redacts the Azure-style mixed-case Api-Key header', () => {
+    const meta = formatConsoleMeta({
+      level: 'error',
+      message: 'azure call',
+      timestamp: 'ts',
+      headers: 'Api-Key: 0123456789abcdef',
+    });
+
+    expect(meta).not.toContain('0123456789abcdef');
+    expect(meta).toContain('Api-Key: [REDACTED]');
+  });
+
   it('redacts sensitive patterns inside string metadata values', () => {
     const meta = formatConsoleMeta({
       level: 'error',

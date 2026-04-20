@@ -13,9 +13,11 @@ const sensitiveKeys = [
   // being mis-redacted.
   /\b(sk-)[a-zA-Z0-9_-]+/g,
   /\b(Bearer )[^\s"']+/g, // Header: Bearer token pattern
-  /\b(api-key:? )[^\s"']+/g, // Header: API key pattern
+  /\b(api-key:? )[^\s"']+/gi, // Header: API key pattern (case-insensitive; covers `Api-Key:`, `API-KEY:`)
   /\b(key=)[^\s"'&]+/g, // URL query param: sensitive key pattern (Google)
 ];
+
+const NUMERIC_KEY_RE = /^\d+$/;
 
 /**
  * Redacts sensitive information from a console message and trims it to a specified length if provided.
@@ -95,8 +97,14 @@ const condenseArray = (item) => {
 const RESERVED_LOG_KEYS = new Set(['level', 'message', 'timestamp', 'splat']);
 
 /**
- * Extracts user-supplied metadata from a winston info object, filtering out
- * reserved keys, internal underscore-prefixed keys, and non-serializable values.
+ * Extracts user-supplied metadata from a winston info object. Filters out:
+ * - Reserved winston keys (`level`, `message`, `timestamp`, `splat`).
+ * - Numeric-string keys (`"0"`, `"1"`, ...) that `format.splat()` can
+ *   synthesize when a primitive is passed as an extra log argument.
+ * - Values that are undefined, null, empty strings, functions, or symbols.
+ *
+ * Underscore-prefixed keys are intentionally preserved so legitimate
+ * fields like MongoDB `_id` survive.
  *
  * @param {Record<string, unknown>} source - The object to extract metadata from.
  * @returns {Record<string, unknown> | undefined} - The extracted metadata, or undefined if empty.
@@ -110,16 +118,7 @@ function extractMetaObject(source) {
     if (RESERVED_LOG_KEYS.has(key)) {
       continue;
     }
-    /*
-     * Skip numeric-index-like keys. When a caller passes a primitive as
-     * the second argument to `logger.warn/error`, `format.splat()` can
-     * leave character-index keys ("0", "1", ...) on `info`. Those are
-     * synthetic splat artifacts, not real metadata.
-     *
-     * Note: we intentionally do NOT filter keys starting with `_`, since
-     * legitimate fields like MongoDB `_id` use that prefix.
-     */
-    if (/^\d+$/.test(key)) {
+    if (NUMERIC_KEY_RE.test(key)) {
       continue;
     }
     const value = source[key];
@@ -199,11 +198,16 @@ function formatConsoleMeta(info) {
 }
 
 /**
- * Formats log messages for debugging purposes.
- * - Truncates long strings within log messages.
- * - Condenses arrays by truncating long strings and objects as strings within array items.
- * - Redacts sensitive information from log messages if the log level is 'error'.
- * - Converts log information object to a formatted string.
+ * Formats log messages for file and debug-console transports. Three paths:
+ * - `warn` / `error`: append a compact single-line JSON metadata trailer
+ *   (via `formatConsoleMeta`) and pass the full line through `redactMessage`
+ *   so sensitive patterns are scrubbed.
+ * - `debug`: perform the detailed multi-line object traversal of
+ *   `SPLAT_SYMBOL[0]`, with long-string truncation and array condensation.
+ *   Redaction on this path is not applied here (debug-file consumers
+ *   historically accept raw detail).
+ * - Other levels: return the truncated `"<timestamp> <level>: <message>"`
+ *   line with no metadata.
  *
  * @param {Object} options - The options for formatting log messages.
  * @param {string} options.level - The log level.
