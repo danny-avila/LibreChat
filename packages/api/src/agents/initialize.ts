@@ -484,6 +484,34 @@ export async function initializeAgent(
     alwaysApplySkillPrimes = alwaysApplyPrimesResult;
 
     /**
+     * Cross-list dedup: when a user `$`-invokes a skill that is also
+     * marked `always-apply`, the always-apply copy is dropped here so
+     * the same SKILL.md body isn't primed twice in the same turn.
+     * Manual wins because it sits closer to the user message and
+     * carries explicit intent. Done at the initializer (not just at
+     * splice time in `injectSkillPrimes`) so persisted user-bubble
+     * `alwaysAppliedSkills` pills reflect the post-dedup set and the
+     * tool-union step below doesn't bill allowed-tools to the dropped
+     * always-apply entry.
+     */
+    if (
+      alwaysApplySkillPrimes &&
+      alwaysApplySkillPrimes.length > 0 &&
+      manualSkillPrimes &&
+      manualSkillPrimes.length > 0
+    ) {
+      const manualNames = new Set(manualSkillPrimes.map((p) => p.name));
+      const deduped = alwaysApplySkillPrimes.filter((p) => !manualNames.has(p.name));
+      const removed = alwaysApplySkillPrimes.length - deduped.length;
+      if (removed > 0) {
+        logger.info(
+          `[initializeAgent] Dropped ${removed} always-apply prime(s) already present in the manual list; same-named skills prime only once per turn.`,
+        );
+        alwaysApplySkillPrimes = deduped;
+      }
+    }
+
+    /**
      * Enforce the combined `MAX_PRIMED_SKILLS_PER_TURN` ceiling up-front
      * so persisted user-bubble `alwaysAppliedSkills` pills stay in sync
      * with what actually gets primed. `injectSkillPrimes` re-applies the

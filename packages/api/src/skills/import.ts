@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 import JSZip from 'jszip';
 import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
+import { logger, stripYamlTrailingComment } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
 import type {
@@ -33,23 +33,13 @@ function unquoteYaml(value: string): string {
 }
 
 /**
- * Strip a trailing YAML inline comment from an unquoted scalar.
- * YAML treats ` # ...` (space before hash) as a comment; `#` without a
- * preceding space is part of the value. A scalar that's entirely a
- * comment (`# nothing here`) collapses to empty so callers can treat
- * it as "no value". Applied only to boolean tokens here since those are
- * single-word and comment-safe; free-form scalars like descriptions
- * might legitimately contain `#`.
+ * Parse a YAML scalar as a strict boolean. Returns `undefined` when the
+ * value is neither `true` nor `false`. Callers should pre-strip inline
+ * comments with `stripYamlTrailingComment` when needed; this helper only
+ * normalizes case / whitespace so the call site stays one-purpose.
  */
-function stripYamlTrailingComment(value: string): string {
-  if (value.trimStart().startsWith('#')) return '';
-  const match = value.match(/^(.*?)\s+#.*$/);
-  return match ? match[1] : value;
-}
-
-/** Parse a YAML scalar as a strict boolean. Returns `undefined` when neither. */
 function parseBooleanScalar(value: string): boolean | undefined {
-  const lowered = stripYamlTrailingComment(value).trim().toLowerCase();
+  const lowered = value.trim().toLowerCase();
   if (lowered === 'true') {
     return true;
   }

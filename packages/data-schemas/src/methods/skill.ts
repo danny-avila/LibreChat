@@ -17,6 +17,7 @@ import type {
 } from '~/types/skill';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { stripYamlTrailingComment } from '~/utils/yaml';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -654,21 +655,6 @@ export type CreateSkillResult = {
   warnings: ValidationIssue[];
 };
 
-/**
- * Strip a trailing YAML inline comment from an already-unquoted scalar.
- * YAML treats ` # ...` (space before hash) as a comment; `#` without a
- * preceding space is part of the value (e.g. `hashtag#foo`). A scalar
- * that's entirely a comment (`# nothing yet`) collapses to empty so
- * callers can treat it as "no value". Applied narrowly — only to
- * boolean fields where the token is a single word — to avoid
- * accidentally truncating free-form strings like descriptions.
- */
-function stripYamlTrailingComment(value: string): string {
-  if (value.trimStart().startsWith('#')) return '';
-  const match = value.match(/^(.*?)\s+#.*$/);
-  return match ? match[1] : value;
-}
-
 type BodyAlwaysApplyResult =
   | { status: 'absent' }
   | { status: 'valid'; value: boolean }
@@ -1024,24 +1010,24 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     const rows = await Skill.find(filter)
       .sort({ updatedAt: -1, _id: 1 })
       .limit(limit + 1)
-      /* `frontmatter` is included so `backfillDerivedFromFrontmatter` can
-         restore the runtime fields for skills authored before Phase 6
-         landed the columns. Body is still excluded — the size win was
-         body, not frontmatter (which is bounded by the validator).
-         TODO(post-backfill): once a write migration backfills all
-         pre-Phase-6 skills' columns from frontmatter (or after a
-         deployment window long enough that any active skill has been
-         re-saved), drop `frontmatter` from this projection. ~2KB/skill
-         × 100/page is wasted bandwidth on every list call once backfill
-         is no longer needed. */
+      /* `frontmatter` is deliberately NOT projected: the structured
+         columns (disableModelInvocation / userInvocable / allowedTools /
+         alwaysApply) are always populated by `createSkill` / `updateSkill`
+         going forward, and the branch this code ships on never shipped
+         to main — so no legacy rows exist that would need a frontmatter
+         read-time backfill on summaries. Skipping it saves ~2KB/skill ×
+         100/page of wire traffic. `backfillDerivedFromFrontmatter` is
+         still called below as defensive code; it short-circuits when
+         `frontmatter` is undefined. */
       .select(
         'name displayTitle description category author authorName version source sourceMetadata fileCount alwaysApply tenantId disableModelInvocation userInvocable allowedTools createdAt updatedAt',
       )
       .lean();
 
-    /* Read-time fallback: pre-Phase-6 skills with `user-invocable` /
-       `disable-model-invocation` only in frontmatter (no derived column)
-       must still be filtered correctly by the catalog and the popover. */
+    /* Defensive read-time fallback. With `frontmatter` excluded from the
+       projection, the helper short-circuits immediately; kept in the loop
+       so a future projection change (or legacy rows appearing via a
+       migration) continues to get runtime-column restoration for free. */
     for (const row of rows) {
       backfillDerivedFromFrontmatter(row as unknown as ISkill);
     }

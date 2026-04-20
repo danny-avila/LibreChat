@@ -66,6 +66,12 @@ export const SKILL_MESSAGE_SOURCE = 'skill';
  * (pill variants) and accessible to downstream filtering / telemetry.
  */
 export const SKILL_TRIGGER_MANUAL = 'manual';
+/**
+ * Reserved for the model-invoked path (runtime catalog → tool-call
+ * resolution). Declared here so the `SkillTrigger` union and the pill
+ * UI already speak in terms of three sources rather than growing a
+ * fourth value later.
+ */
 export const SKILL_TRIGGER_MODEL = 'model';
 export const SKILL_TRIGGER_ALWAYS_APPLY = 'always-apply';
 
@@ -841,6 +847,12 @@ export interface InjectManualSkillPrimesResult {
  *
  * Callers are responsible for scoping (e.g. single-agent runs only — see
  * `AgentClient.chatCompletion`). This helper is agent-agnostic.
+ *
+ * @deprecated Use {@link injectSkillPrimes} instead. That function accepts
+ * both manual and always-apply primes, applies cross-list dedup, and
+ * enforces the combined `MAX_PRIMED_SKILLS_PER_TURN` ceiling. Retained here
+ * for backward compatibility with external consumers of
+ * `@librechat/api` that import the manual-only splicer directly.
  */
 export function injectManualSkillPrimes(
   params: InjectManualSkillPrimesParams,
@@ -906,6 +918,12 @@ export interface InjectSkillPrimesResult {
   inserted: number;
   insertIdx: number;
   alwaysApplyDropped: number;
+  /**
+   * Count of always-apply primes dropped because the same skill name already
+   * appears in the manual list — dedup prevents the same SKILL.md body from
+   * being spliced in twice in one turn.
+   */
+  alwaysApplyDedupedFromManual: number;
 }
 
 /**
@@ -918,9 +936,15 @@ export interface InjectSkillPrimesResult {
  * sitting further back. Shifts `indexTokenCountMap` for the combined
  * splice.
  *
+ * Cross-list dedup: if a user `$`-invokes a skill that is also marked
+ * `always-apply`, the always-apply copy is dropped so the SKILL.md body
+ * is primed only once. Manual wins (drops the always-apply side) because
+ * manual primes sit closer to the user message and carry explicit intent.
+ *
  * Enforces a combined ceiling (`maxPrimesPerTurn`, default
  * `MAX_PRIMED_SKILLS_PER_TURN`) by truncating always-apply first so
- * manual is never silently dropped.
+ * manual is never silently dropped. Dedup runs before the cap so the
+ * cap reflects the real prime count, not the pre-dedup total.
  */
 export function injectSkillPrimes(params: InjectSkillPrimesParams): InjectSkillPrimesResult {
   const {
@@ -932,6 +956,19 @@ export function injectSkillPrimes(params: InjectSkillPrimesParams): InjectSkillP
   let { indexTokenCountMap } = params;
 
   let alwaysApply = alwaysApplySkillPrimes;
+  let alwaysApplyDedupedFromManual = 0;
+  if (alwaysApply.length > 0 && manualSkillPrimes.length > 0) {
+    const manualNames = new Set(manualSkillPrimes.map((p) => p.name));
+    const deduped = alwaysApply.filter((p) => !manualNames.has(p.name));
+    alwaysApplyDedupedFromManual = alwaysApply.length - deduped.length;
+    if (alwaysApplyDedupedFromManual > 0) {
+      logger.info(
+        `[injectSkillPrimes] Dropped ${alwaysApplyDedupedFromManual} always-apply prime(s) already present in the manual list; same-named skills are primed only once per turn.`,
+      );
+      alwaysApply = deduped;
+    }
+  }
+
   let alwaysApplyDropped = 0;
   const total = manualSkillPrimes.length + alwaysApply.length;
   if (total > maxPrimesPerTurn) {
@@ -951,6 +988,7 @@ export function injectSkillPrimes(params: InjectSkillPrimesParams): InjectSkillP
       inserted: 0,
       insertIdx: -1,
       alwaysApplyDropped,
+      alwaysApplyDedupedFromManual,
     };
   }
 
@@ -988,6 +1026,7 @@ export function injectSkillPrimes(params: InjectSkillPrimesParams): InjectSkillP
     inserted: numPrimes,
     insertIdx,
     alwaysApplyDropped,
+    alwaysApplyDedupedFromManual,
   };
 }
 

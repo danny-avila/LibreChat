@@ -1734,4 +1734,53 @@ describe('injectSkillPrimes', () => {
     // insertIdx = 1, numPrimes = 2 → entry at idx 1 moves to idx 3
     expect(result.indexTokenCountMap).toEqual({ 0: 3, 3: 5 });
   });
+
+  it('drops an always-apply prime whose name is already in the manual list (no double-prime)', () => {
+    const messages = [new HumanMessage('user')];
+    const result = injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes: [manual('legal', 'manual-body')],
+      alwaysApplySkillPrimes: [always('legal', 'always-body')],
+    });
+    // Only the manual variant survives; same SKILL.md body never lands twice.
+    expect(result.inserted).toBe(1);
+    expect(result.alwaysApplyDedupedFromManual).toBe(1);
+    expect(messages).toHaveLength(2);
+    expect((messages[0] as HumanMessage).content).toBe('manual-body');
+    expect((messages[0] as HumanMessage).additional_kwargs.trigger).toBe('manual');
+  });
+
+  it('dedups only the overlapping name and keeps disjoint always-apply primes', () => {
+    const messages = [new HumanMessage('user')];
+    const result = injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes: [manual('shared', 'shared-manual')],
+      alwaysApplySkillPrimes: [always('shared', 'shared-always'), always('distinct', 'dist-body')],
+    });
+    expect(result.inserted).toBe(2);
+    expect(result.alwaysApplyDedupedFromManual).toBe(1);
+    // Order: always-apply first (distinct), then manual (shared), then user.
+    const contents = messages.map((m) => (m as HumanMessage).content);
+    expect(contents).toEqual(['dist-body', 'shared-manual', 'user']);
+  });
+
+  it('dedups before applying the combined cap so the cap reflects real primes', () => {
+    const messages = [new HumanMessage('user')];
+    const manualSkillPrimes = [manual('shared', 'mb')];
+    // Two always-apply entries, one of which overlaps manual. After dedup:
+    // manual(1) + always-apply(1) = 2, well under the cap — no warn-level drop.
+    const alwaysApplySkillPrimes = [always('shared', 'ab'), always('ambient', 'amb-body')];
+    const result = injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes,
+      alwaysApplySkillPrimes,
+      maxPrimesPerTurn: 3,
+    });
+    expect(result.alwaysApplyDedupedFromManual).toBe(1);
+    expect(result.alwaysApplyDropped).toBe(0);
+    expect(result.inserted).toBe(2);
+  });
 });
