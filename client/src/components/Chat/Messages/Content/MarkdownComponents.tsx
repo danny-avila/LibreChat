@@ -172,6 +172,37 @@ export const p: React.ElementType = memo(({ children }: TParagraphProps) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
+const getNodeText = (children: React.ReactNode): string => {
+  return React.Children.toArray(children)
+    .map((child) => {
+      if (typeof child === 'string' || typeof child === 'number') {
+        return String(child);
+      }
+
+      if (React.isValidElement<{ children?: React.ReactNode }>(child)) {
+        return getNodeText(child.props.children);
+      }
+
+      return '';
+    })
+    .join('');
+};
+
+type TBlockquoteProps = {
+  children: React.ReactNode;
+};
+
+export const blockquote: React.ElementType = memo(({ children }: TBlockquoteProps) => {
+  const text = getNodeText(children);
+  const isImportantNotice = text.includes('Important Notice') && text.includes('Testing Version');
+
+  return (
+    <blockquote className={isImportantNotice ? 'important-notice' : undefined}>
+      {children}
+    </blockquote>
+  );
+});
+
 type TImageProps = {
   src?: string;
   alt?: string;

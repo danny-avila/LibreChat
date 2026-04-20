@@ -1822,6 +1822,24 @@ html {
 .dark .markdown blockquote {
   border-color: var(--gray-600);
 }
+.markdown blockquote.important-notice {
+  background-color: rgba(220, 38, 38, 0.06);
+  border: 2px solid #dc2626;
+  border-radius: 8px;
+  line-height: inherit;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+}
+.dark .markdown blockquote.important-notice {
+  background-color: rgba(248, 113, 113, 0.1);
+  border-color: #f87171;
+}
+.markdown blockquote.important-notice p {
+  margin-bottom: 0.5rem;
+}
+.markdown blockquote.important-notice p:last-child {
+  margin-bottom: 0;
+}
 .markdown table {
   --tw-border-spacing-x: 0px;
   --tw-border-spacing-y: 0px;
