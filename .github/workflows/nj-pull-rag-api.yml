@@ -1,0 +1,40 @@
+name: Pull & Push RAG API Image (NJ)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pull-and-push:
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+    steps:
+      - name: Pull RAG API image from LibreChat registry
+        run: |
+          docker pull registry.librechat.ai/danny-avila/librechat-rag-api-dev:latest
+
+      - name: Log in to ECR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          username: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          password: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Tag and push to ECR
+        run: |
+          docker tag registry.librechat.ai/danny-avila/librechat-rag-api-dev:latest \
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/rag-api:latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/rag-api:latest
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Redeploy RAG API service
+        uses: apideck-libraries/ecs-restart-service@v1
+        with:
+          service: EcsStack-RagApiService
+          cluster: ai-assistant-cluster

@@ -19,6 +19,10 @@ export class DatabaseStack extends cdk.Stack {
     public readonly redisEndpoint: string;
     public readonly redisPort: string;
     public readonly redisSecurityGroup: ec2.ISecurityGroup;
+    public readonly rdsEndpoint?: string;
+    public readonly rdsPort?: string;
+    public readonly rdsSecurityGroup?: ec2.ISecurityGroup;
+    public readonly rdsSecret?: secrets.ISecret;
 
     constructor(scope: Construct, id: string, props: DatabaseStackProps) {
         super(scope, id, props);
@@ -34,6 +38,15 @@ export class DatabaseStack extends cdk.Stack {
         // DocumentDB only in prod
         if (isProd) {
             this.CreateDocumentDBInstance(vpc);
+        }
+
+        // RDS PostgreSQL only in dev
+        if (!isProd) {
+            const rds = this.CreateRDSPostgres(vpc);
+            this.rdsEndpoint = rds.endpoint;
+            this.rdsPort = rds.port;
+            this.rdsSecurityGroup = rds.securityGroup;
+            this.rdsSecret = rds.secret;
         }
 
         // Redis in both dev and prod
@@ -83,6 +96,53 @@ export class DatabaseStack extends cdk.Stack {
             exportName: `${this.stackName}:DocDbSecurityGroupId`,
         });
 
+    }
+
+    private CreateRDSPostgres(vpc: ec2.IVpc): { endpoint: string; port: string; securityGroup: ec2.ISecurityGroup; secret: secrets.ISecret } {
+        const RDS_PORT = 5432;
+        const rdsSecurityGroup = new ec2.SecurityGroup(this, "RdsSg", { vpc });
+        rdsSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(RDS_PORT));
+
+        const dbInstance = new rds.DatabaseInstance(this, "RagApiRDS", {
+            engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }),
+            instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+            vpc,
+            vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+            securityGroups: [rdsSecurityGroup],
+            databaseName: "rag_api",
+            credentials: rds.Credentials.fromGeneratedSecret("rag_api_user"),
+            allocatedStorage: 20,
+            maxAllocatedStorage: 100,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            deletionProtection: false,
+        });
+
+        new cdk.CfnOutput(this, "RDSEndpointExport", {
+            value: dbInstance.dbInstanceEndpointAddress,
+        });
+
+        new cdk.CfnOutput(this, "RDSPortExport", {
+            value: dbInstance.dbInstanceEndpointPort,
+        });
+
+        new cdk.CfnOutput(this, "RDSSecurityGroupIdExport", {
+            value: rdsSecurityGroup.securityGroupId,
+        });
+
+        if (!dbInstance.secret) {
+            throw new Error("Expected RDS secret to be created");
+        }
+
+        new cdk.CfnOutput(this, "RDSSecretArnExport", {
+            value: dbInstance.secret.secretArn,
+        });
+
+        return {
+            endpoint: dbInstance.dbInstanceEndpointAddress,
+            port: dbInstance.dbInstanceEndpointPort,
+            securityGroup: rdsSecurityGroup,
+            secret: dbInstance.secret,
+        };
     }
 
     private CreateElastiCacheRedis(vpc: ec2.IVpc): { endpoint: string; port: string; securityGroup: ec2.ISecurityGroup } {

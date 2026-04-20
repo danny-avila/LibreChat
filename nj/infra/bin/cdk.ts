@@ -88,11 +88,14 @@ const ecsStack = new EcsStack(app, "EcsStack", {
   env: env,
   envVars: envVars,
   mongoImage: `${env.account}.dkr.ecr.${env.region}.amazonaws.com/newjersey/mongo:latest`,
-  postgresImage: `${env.account}.dkr.ecr.${env.region}.amazonaws.com/newjersey/pgvector:0.8.0-pg15-trixie`,
   certificateArn: `arn:aws:acm:${env.region}:${env.account}:certificate/${process.env.ACM_CERTIFICATE_ID}`,
   redisEndpoint: databaseStack.redisEndpoint,
   redisPort: databaseStack.redisPort,
   redisSecurityGroup: databaseStack.redisSecurityGroup,
+  rdsEndpoint: databaseStack.rdsEndpoint,
+  rdsPort: databaseStack.rdsPort,
+  rdsSecurityGroup: databaseStack.rdsSecurityGroup,
+  rdsSecret: databaseStack.rdsSecret,
 });
 
 const cognitoStack = new CognitoStack(app, "CognitoStack", {

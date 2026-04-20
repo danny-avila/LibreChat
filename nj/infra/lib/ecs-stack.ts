@@ -20,11 +20,14 @@ export type EnvVars = {
 export interface EcsServicesProps extends cdk.StackProps {
   envVars: EnvVars,
   mongoImage: string;
-  postgresImage: string;
   certificateArn: string;
   redisEndpoint: string;
   redisPort: string;
   redisSecurityGroup: ec2.ISecurityGroup;
+  rdsEndpoint?: string;
+  rdsPort?: string;
+  rdsSecurityGroup?: ec2.ISecurityGroup;
+  rdsSecret?: secrets.ISecret;
 }
 
 export class EcsStack extends cdk.Stack {
@@ -124,6 +127,12 @@ export class EcsStack extends cdk.Stack {
         resources: [this.s3Bucket.bucketArn, `${this.s3Bucket.bucketArn}/*`]
       })]
     }))
+    commonExecRole.attachInlinePolicy( new iam.Policy(this, 'bedrockPolicy', {
+      statements: [new iam.PolicyStatement({
+        actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+        resources: [`arn:aws:bedrock:${this.region}::foundation-model/*`]
+      })]
+    }))
     if (isProd) {
       commonExecRole.addManagedPolicy(
         iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonRDSFullAccess")
@@ -169,10 +178,19 @@ export class EcsStack extends cdk.Stack {
       REDIS_USE_ALTERNATIVE_DNS_LOOKUP: "true",
 
       ...(!isProd ? { MONGO_URI: "mongodb://mongodb.internal:27017/LibreChat" } : {}),
+      ...(!isProd && props.rdsEndpoint && props.rdsPort ? {
+        POSTGRES_HOST: props.rdsEndpoint,
+        POSTGRES_PORT: props.rdsPort,
+      } : {}),
     };
 
     const envSecrets: Record<string, ecs.Secret> = {
       ...(isProd ? { MONGO_URI: ecs.Secret.fromSecretsManager(docdbSecret, "uri") } : {}),
+      ...(!isProd && props.rdsSecret ? {
+        POSTGRES_USER: ecs.Secret.fromSecretsManager(props.rdsSecret, "username"),
+        POSTGRES_PASSWORD: ecs.Secret.fromSecretsManager(props.rdsSecret, "password"),
+        POSTGRES_DB: ecs.Secret.fromSecretsManager(props.rdsSecret, "dbname"),
+      } : {}),
     };
 
     librechatTaskDef.addContainer("librechat", {
@@ -271,61 +289,73 @@ export class EcsStack extends cdk.Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
-    const pgFs = new efs.FileSystem(this, "PgFs", {
-      vpc,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      encrypted: true,
-    });
+    mongoService.connections.allowFrom(librechatService.service, ec2.Port.tcp(27017), "App to MongoDB");
+    mongoFs.connections.allowDefaultPortFrom(mongoService);
 
-    const pgTaskDef = new ecs.FargateTaskDefinition(this, "VectorDbTaskDef", {
-      cpu: 256,
+    // Create RAG API service
+    const ragApiService = this.CreateRagApiService(props, commonExecRole, cluster);
+
+    // Allow RAG API to connect to RDS
+    if (props.rdsSecurityGroup && props.rdsPort) {
+      ragApiService.connections.allowTo(props.rdsSecurityGroup, ec2.Port.tcp(parseInt(props.rdsPort)), "RAG API to RDS");
+    }
+
+    // Allow LibreChat to connect to RAG API
+    ragApiService.connections.allowFrom(librechatService.service, ec2.Port.tcp(8000), "LibreChat to RAG API");
+
+    // Allow LibreChat to connect to RDS
+    if (props.rdsSecurityGroup && props.rdsPort) {
+      librechatService.service.connections.allowTo(props.rdsSecurityGroup, ec2.Port.tcp(parseInt(props.rdsPort)), "LibreChat to RDS");
+    }
+
+    new cdk.CfnOutput(this, "MongoImageUri", { value: props.mongoImage });
+    new cdk.CfnOutput(this, "RagApiImageUri", { value: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/rag-api:latest" });
+  }
+
+  private CreateRagApiService(props: EcsServicesProps, commonExecRole: iam.Role, cluster: ecs.Cluster): ecs.FargateService {
+    const ragApiTaskDef = new ecs.FargateTaskDefinition(this, "RagApiTaskDef", {
+      cpu: 512,
       memoryLimitMiB: 1024,
       executionRole: commonExecRole,
+      taskRole: commonExecRole,
     });
 
-    pgTaskDef.addVolume({
-      name: "pgData",
-      efsVolumeConfiguration: {
-        fileSystemId: pgFs.fileSystemId,
-        transitEncryption: "ENABLED",
-      },
+    const environment: Record<string, string> = {
+      RAG_PORT: "8000",
+      MEILI_HOST: "http://meilisearch.internal:7700",
+      EMBEDDINGS_PROVIDER: "bedrock",
+      EMBEDDINGS_MODEL: "amazon.titan-embed-text-v1",
+    };
+
+    const envSecrets: Record<string, ecs.Secret> = {};
+
+    // Add RDS connection details if available
+    if (props.rdsEndpoint && props.rdsPort && props.rdsSecret) {
+      environment.DB_HOST = props.rdsEndpoint;
+      environment.DB_PORT = props.rdsPort;
+      envSecrets.DB_USER = ecs.Secret.fromSecretsManager(props.rdsSecret, "username");
+      envSecrets.DB_PASSWORD = ecs.Secret.fromSecretsManager(props.rdsSecret, "password");
+      envSecrets.DB_NAME = ecs.Secret.fromSecretsManager(props.rdsSecret, "dbname");
+    }
+
+    ragApiTaskDef.addContainer("rag_api", {
+      image: ecs.ContainerImage.fromRegistry("152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/rag-api:latest"),
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: "rag-api" }),
+      environment: environment,
+      secrets: envSecrets,
+      portMappings: [{ containerPort: 8000 }],
     });
 
-    const pgContainer = pgTaskDef.addContainer("vectordb", {
-      image: ecs.ContainerImage.fromRegistry(props.postgresImage),
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: "vectordb" }),
-      environment: {
-        POSTGRES_DB: "mydatabase",
-        POSTGRES_USER: "myuser",
-        POSTGRES_PASSWORD: "mypassword",
-      },
-      portMappings: [{ containerPort: 5432 }],
-    });
-    pgContainer.addMountPoints({
-      sourceVolume: "pgData",
-      containerPath: "/var/lib/postgresql/data",
-      readOnly: false,
-    });
-
-    const pgSg = new ec2.SecurityGroup(this, "PgSg", { vpc });
-    const vectordbService = new ecs.FargateService(this, "VectorDbService", {
+    const ragApiService = new ecs.FargateService(this, "RagApiService", {
       cluster,
-      taskDefinition: pgTaskDef,
+      taskDefinition: ragApiTaskDef,
       desiredCount: 1,
       enableExecuteCommand: true,
-      cloudMapOptions: { name: "vectordb" },
-      securityGroups: [pgSg],
+      cloudMapOptions: { name: "rag_api" },
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
-    mongoService.connections.allowFrom(librechatService.service, ec2.Port.tcp(27017), "App to MongoDB");
-    vectordbService.connections.allowFrom(librechatService.service, ec2.Port.tcp(5432), "App to Postgres");
-
-    mongoFs.connections.allowDefaultPortFrom(mongoService);
-    pgFs.connections.allowDefaultPortFrom(vectordbService);
-
-    new cdk.CfnOutput(this, "MongoImageUri", { value: props.mongoImage });
-    new cdk.CfnOutput(this, "PostgresImageUri", { value: props.postgresImage });
+    return ragApiService;
   }
 
   private CreateFileS3Bucket(){
