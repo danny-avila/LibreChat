@@ -2,7 +2,6 @@ import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ScrollText } from 'lucide-react';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
-import { InvocationMode } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
@@ -22,16 +21,13 @@ const skillIcon = <ScrollText className="icon-md text-cyan-500" />;
 
 /**
  * Determines whether a skill should appear in the `$` command popover.
- * `manual` and `both` are user-invocable. `auto` is model-only and hidden.
- * Skills without an explicit mode (undefined) default to visible for
- * backward compatibility until the backend persists `invocationMode`.
+ * Reads the persisted `userInvocable` field (mirrors the `user-invocable`
+ * frontmatter). Defaults to visible when the field is absent so older
+ * skills authored before Phase 6 stay user-invocable without a migration;
+ * only an explicit `false` hides them.
  */
 export function isUserInvocable(skill: TSkillSummary): boolean {
-  const mode = skill.invocationMode;
-  if (mode == null || mode === InvocationMode.both) {
-    return true;
-  }
-  return mode === InvocationMode.manual;
+  return skill.userInvocable !== false;
 }
 
 /**
