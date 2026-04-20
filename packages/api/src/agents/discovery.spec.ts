@@ -441,6 +441,54 @@ describe('discoverConnectedAgents', () => {
     expect(result.edges).toHaveLength(3);
   });
 
+  it('does not promote a downstream orphan to a parallel start when its only upstream is skipped', async () => {
+    // Primary A has `[A -> B, X -> Y]`. X is skipped (no VIEW), Y loads.
+    // Y had an incoming edge pre-filter (`X -> Y`), so it's a downstream
+    // agent — not a legitimate parallel starting node. When X is
+    // skipped, Y becomes a stranded orphan and must be pruned; the
+    // weaker "not pre-filter reachable from primary" rule would have
+    // incorrectly treated Y as an intentional parallel start.
+    const edges: GraphEdge[] = [
+      { from: 'A', to: 'B', edgeType: 'handoff' },
+      { from: 'X', to: 'Y', edgeType: 'direct' },
+    ];
+    const primaryConfig = makeConfig('A', edges);
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      X: makeAgent('X', []),
+      Y: makeAgent('Y', []),
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    // X is forbidden — should be skipped.
+    const checkPermission = jest.fn(
+      async ({ resourceId }: { resourceId: unknown }) => resourceId !== 'mongo-X',
+    );
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(result.skippedAgentIds.has('X')).toBe(true);
+    expect(result.agentConfigs.has('B')).toBe(true);
+    expect(result.agentConfigs.has('Y')).toBe(false);
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges[0].to).toBe('B');
+  });
+
   it('preserves user-defined parallel-start branches disconnected from the primary', async () => {
     // Primary A has edges `[A -> B, X -> Y]`. The `X -> Y` branch is
     // intentionally disconnected from A — `MultiAgentGraph.analyzeGraph`

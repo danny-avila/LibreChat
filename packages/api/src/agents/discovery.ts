@@ -317,18 +317,24 @@ export async function discoverConnectedAgents(
    *    `no-incoming-edge` agents as start nodes, so these run in
    *    parallel with the primary by design. These must be preserved.
    *
-   * Both cases produce the same post-filter topology (a component
-   * disconnected from the primary), but pre-filter they look different:
-   * accidental orphans WERE reachable from the primary before
-   * `filterOrphanedEdges` ran; intentional parallel starts were never
-   * reachable. Use that signal:
+   * Distinguish the two by asking: did the agent have any incoming edge
+   * in the user's original (pre-filter) graph? If yes, it was wired as
+   * a downstream step, and losing that wiring post-filter makes it an
+   * accidental orphan — prune. If no, the user declared it a start
+   * node; seed it so the SDK's `analyzeGraph` behavior of running
+   * incoming-less agents in parallel is preserved.
    *
-   *   - Seed post-filter reachability with the primary AND every agent
-   *     in `agentConfigs` that was NOT reachable from the primary via
-   *     the pre-filter edges. That treats intentional parallel starts
-   *     as roots.
-   *   - Agents that WERE pre-filter reachable but aren't any more have
-   *     lost their connecting edge — they're pruned.
+   * "No incoming edge pre-filter" is stricter than "not reachable from
+   * primary pre-filter": a downstream agent like Y in `X -> Y` where X
+   * is skipped was never reachable from the primary pre-filter either,
+   * but it's still an orphan (its upstream X would have routed to it).
+   * The incoming-edge test catches that case correctly.
+   *
+   *   - Post-filter reachability is seeded with the primary AND every
+   *     agent in `agentConfigs` that had no pre-filter incoming edge
+   *     (legitimate parallel start).
+   *   - Agents whose pre-filter incoming edges got filtered out lose
+   *     reachability and get pruned.
    *   - Surviving edges are filtered to the post-filter reachable set
    *     so no stale edge references a pruned agent.
    *   - Agents referenced as an endpoint in a surviving edge are always
@@ -365,11 +371,28 @@ export async function discoverConnectedAgents(
     return result;
   };
 
-  const preFilterReachable = expandReachable(new Set([primaryConfig.id]), preFilterEdges);
+  // A legitimate parallel-start agent is one that has NO incoming edge
+  // in the pre-filter graph — the user declared it as a starting node.
+  // "Not reachable from primary pre-filter" is too permissive: a
+  // downstream agent whose only upstream got skipped (`X -> Y` with X
+  // skipped but Y loaded) would qualify under that weaker rule and be
+  // promoted to a parallel root even though it's actually a stranded
+  // orphan. Using "no incoming edge in pre-filter" tightens the criterion
+  // to match the SDK's `analyzeGraph` definition of a start node applied
+  // to the user's ORIGINAL graph topology, before any orphan filtering.
+  const hadIncomingEdgePreFilter = new Set<string>();
+  for (const edge of preFilterEdges) {
+    const dests = Array.isArray(edge.to) ? edge.to : [edge.to];
+    for (const dest of dests) {
+      if (typeof dest === 'string') {
+        hadIncomingEdgePreFilter.add(dest);
+      }
+    }
+  }
 
   const postFilterSeeds = new Set<string>([primaryConfig.id]);
   for (const agentId of agentConfigs.keys()) {
-    if (!preFilterReachable.has(agentId)) {
+    if (!hadIncomingEdgePreFilter.has(agentId)) {
       postFilterSeeds.add(agentId);
     }
   }
