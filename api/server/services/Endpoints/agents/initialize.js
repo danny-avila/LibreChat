@@ -328,12 +328,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     });
   }
 
-  // Ensure edges is an array when we have multiple agents (multi-agent mode)
-  // MultiAgentGraph.categorizeEdges requires edges to be iterable
-  if (agentConfigs.size > 0 && !edges) {
-    edges = [];
-  }
-
+  // `discoverConnectedAgents` always returns a concrete array, so no
+  // further normalization is needed before handing this to `createRun`.
   primaryConfig.edges = edges;
 
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];

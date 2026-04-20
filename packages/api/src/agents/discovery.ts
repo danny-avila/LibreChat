@@ -229,8 +229,11 @@ export async function discoverConnectedAgents(
 
     if (userMCPAuthMap != null) {
       Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
-    } else {
-      userMCPAuthMap = config.userMCPAuthMap;
+    } else if (config.userMCPAuthMap) {
+      // Clone so subsequent sub-agent merges don't mutate the first
+      // sub-agent's own `config.userMCPAuthMap` in place — symmetric with
+      // the shallow clone applied to the primary's map above.
+      userMCPAuthMap = { ...config.userMCPAuthMap };
     }
 
     agentConfigs.set(agentId, config);

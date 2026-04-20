@@ -366,6 +366,62 @@ describe('discoverConnectedAgents', () => {
     expect(result.edges).toHaveLength(0);
   });
 
+  it('does not mutate a sub-agent userMCPAuthMap when merging later sub-agents', async () => {
+    // Primary has no MCP auth; first sub-agent (B) seeds `userMCPAuthMap`,
+    // and the second sub-agent (C) merges into it. Make sure B's own
+    // `config.userMCPAuthMap` object is not mutated by C's merge.
+    const bAuth = { serverB: { token: 'b' } };
+    const cAuth = { serverC: { token: 'c' } };
+    const primaryConfig = makeConfig('A', [
+      { from: 'A', to: 'B', edgeType: 'handoff' },
+      { from: 'A', to: 'C', edgeType: 'handoff' },
+    ]);
+    primaryConfig.userMCPAuthMap = undefined;
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      C: makeAgent('C', []),
+    };
+    const authById: Record<string, Record<string, Record<string, string>>> = {
+      B: bAuth,
+      C: cAuth,
+    };
+
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    const checkPermission = jest.fn().mockResolvedValue(true);
+    mockInitializeAgent.mockImplementation(async ({ agent }: { agent: Agent }) => {
+      const cfg = makeConfig(agent.id);
+      cfg.userMCPAuthMap = authById[agent.id];
+      return cfg;
+    });
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    // B's own map must not have picked up C's entry.
+    expect(bAuth).toEqual({ serverB: { token: 'b' } });
+    expect(cAuth).toEqual({ serverC: { token: 'c' } });
+    // The returned merged map should still contain both.
+    expect(result.userMCPAuthMap).toEqual({
+      serverB: { token: 'b' },
+      serverC: { token: 'c' },
+    });
+  });
+
   it('does not mutate the caller-supplied primaryConfig.userMCPAuthMap', async () => {
     const primaryAuth = { serverA: { token: 'primary' } };
     const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
