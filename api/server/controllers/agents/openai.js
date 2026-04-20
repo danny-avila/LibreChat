@@ -48,6 +48,7 @@ const {
 const {
   getSkillToolDeps,
   enrichWithSkillConfigurable,
+  buildManualSkillPrimedIdsByName,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logViolation } = require('~/cache');
@@ -426,7 +427,13 @@ const OpenAIChatCompletionController = async (req, res) => {
           tool_resources: ctx.tool_resources,
           actionsEnabled: ctx.actionsEnabled,
         });
-        return enrichWithSkillConfigurable(result, req, primaryConfig.accessibleSkillIds);
+        return enrichWithSkillConfigurable(
+          result,
+          req,
+          primaryConfig.accessibleSkillIds,
+          undefined,
+          buildManualSkillPrimedIdsByName(primaryConfig.manualSkillPrimes),
+        );
       },
       toolEndCallback,
       ...getSkillToolDeps(),
