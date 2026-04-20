@@ -311,14 +311,18 @@ describe('discoverConnectedAgents', () => {
     expect(result.agentConfigs.size).toBe(0);
   });
 
-  it('requires all sources to be reachable before advancing through a multi-source edge', async () => {
-    // Primary A has a single fan-in edge `{from: ['A','B'], to: 'C'}`.
-    // B loads successfully but has no incoming path from A, so the edge
-    // cannot legitimately fire. C must NOT be marked reachable (and thus
-    // must NOT end up in `agentConfigs`) — otherwise `createRun` sees
-    // `[primaryConfig, C]`, flips into multi-agent mode, and runs C as an
-    // unintended root because no edge connects A to C on its own.
-    const edges: GraphEdge[] = [{ from: ['A', 'B'], to: 'C', edgeType: 'direct' }];
+  it('advances through a multi-source edge on ANY reachable source (SDK OR semantics)', async () => {
+    // Primary A has a single edge `{from: ['A','B'], to: 'C'}`. B loads
+    // successfully but has no incoming path from A. The agents SDK adds
+    // one LangGraph edge per `from` source (see
+    // `agents/src/graphs/MultiAgentGraph.ts`), so `A -> C` is a real
+    // routing regardless of B's reachability. Discovery must preserve it:
+    // - C reachable via A
+    // - edge kept (A source reachable, C dest reachable)
+    // - B kept in agentConfigs because it's still referenced by the
+    //   surviving edge; otherwise the SDK's `validateEdgeAgents`
+    //   safety-net rejects the graph for a missing `from` endpoint.
+    const edges: GraphEdge[] = [{ from: ['A', 'B'], to: 'C', edgeType: 'handoff' }];
     const primaryConfig = makeConfig('A', edges);
 
     const agentMap: Record<string, Agent> = {
@@ -345,11 +349,11 @@ describe('discoverConnectedAgents', () => {
       },
     );
 
-    // Neither B nor C is reachable from A through the surviving edge set
-    // (the fan-in edge requires B, which has no incoming path).
-    expect(result.agentConfigs.has('B')).toBe(false);
-    expect(result.agentConfigs.has('C')).toBe(false);
-    expect(result.edges).toHaveLength(0);
+    expect(result.agentConfigs.has('B')).toBe(true);
+    expect(result.agentConfigs.has('C')).toBe(true);
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges[0].from).toEqual(['A', 'B']);
+    expect(result.edges[0].to).toBe('C');
   });
 
   it('advances through a multi-source edge once all sources are reachable', async () => {

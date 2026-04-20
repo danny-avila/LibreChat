@@ -293,52 +293,47 @@ export async function discoverConnectedAgents(
   const filteredEdges = filterOrphanedEdges(Array.from(edgeMap.values()), skippedAgentIds);
 
   /**
-   * Compute the set of agent ids reachable from the primary through
-   * surviving edges, then prune both `agentConfigs` AND the edge list to
-   * that set. Two independent failure modes are in play here:
+   * Keep discovery's reachability model aligned with the agents SDK's
+   * runtime semantics. `MultiAgentGraph.createWorkflow` adds one
+   * LangGraph edge per `from` source (see
+   * `src/graphs/MultiAgentGraph.ts`), so a multi-source edge
+   * `{ from: ['A', 'B'], to: 'C' }` is really `A -> C` OR `B -> C` —
+   * either source firing routes to `C`. The reachability pass therefore
+   * advances through an edge whenever ANY of its sources is already
+   * reachable.
    *
-   * 1. BFS eagerly initializes sub-agents discovered via the primary's
-   *    edge scan. If an intermediate hop gets skipped (missing / no
-   *    access), its neighbors can still be loaded — those neighbors
-   *    become disconnected once the skipped hop's edges are removed.
+   * The edge filter then keeps an edge when it has at least one reachable
+   * source AND all of its destinations are reachable (a destination not
+   * present in `agentConfigs` would still trigger the
+   * `Found edge ending at unknown node` crash this PR fixes).
    *
-   * 2. `filterOrphanedEdges` only drops edges whose endpoints are in
-   *    `skippedAgentIds`. Edges between two non-skipped but
-   *    unreachable-from-primary agents (e.g. a `C -> D` tail left over
-   *    after `A -> B -> C -> D` loses its B-adjacent edges) survive
-   *    filtering but still reference agents that are about to be pruned
-   *    from `agentConfigs`. Those edges would otherwise flow into
-   *    `createRun`, flip it into multi-agent mode (edges.length > 0)
-   *    with `agents.length === 1`, and trigger the exact
-   *    `Found edge ending at unknown node` crash this PR fixes.
-   *
-   * Do both prunes together so the returned shape is self-consistent:
-   * every agent id referenced by an edge is guaranteed to be either
-   * `primaryConfig.id` or a key of `agentConfigs`.
+   * Finally, prune `agentConfigs`: keep anything reachable from the
+   * primary OR referenced on any endpoint of a surviving edge. The
+   * second clause covers co-sources in multi-source edges that have no
+   * incoming path of their own — e.g. B in `{ from: ['A', 'B'], to: 'C' }`
+   * when nothing reaches B. The SDK's per-source `addEdge` still
+   * requires B to be present as a node, and my companion
+   * `validateEdgeAgents` safety-net fails loudly if it isn't. Keeping B
+   * in `agentConfigs` cedes that decision to the SDK runtime, which
+   * handles the standalone starting-node case gracefully; it does not
+   * re-introduce the `createRun` crash this PR exists to prevent,
+   * because the edge is no longer orphaned with respect to its agents.
    */
-  const edgeEndpointIsReachable = (
-    value: string | string[],
-    reachableSet: Set<string>,
-  ): boolean => {
+  const anyReachable = (value: string | string[], reachableSet: Set<string>): boolean => {
+    const ids = Array.isArray(value) ? value : [value];
+    return ids.some((id) => typeof id === 'string' && reachableSet.has(id));
+  };
+  const allReachable = (value: string | string[], reachableSet: Set<string>): boolean => {
     const ids = Array.isArray(value) ? value : [value];
     return ids.every((id) => typeof id !== 'string' || reachableSet.has(id));
   };
 
-  // Fixed-point reachability: an edge only advances reachability when ALL
-  // of its `from` endpoints are already reachable. Matches the edge-filter
-  // semantics below and handles multi-source / fan-in edges correctly:
-  // `{ from: ['A', 'B'], to: 'C' }` can only fire when both A and B reach
-  // it, so C shouldn't be marked reachable just because A is in the source
-  // list. The previous `sources.includes(current)` BFS over-approximated
-  // reachability for fan-in edges and left C in `agentConfigs` while the
-  // edge itself got dropped — `createRun` then saw `agents.length > 1`
-  // with a disconnected C and ran it as an unintended parallel root.
   const reachable = new Set<string>([primaryConfig.id]);
   let changed = true;
   while (changed) {
     changed = false;
     for (const edge of filteredEdges) {
-      if (!edgeEndpointIsReachable(edge.from, reachable)) {
+      if (!anyReachable(edge.from, reachable)) {
         continue;
       }
       const dests = Array.isArray(edge.to) ? edge.to : [edge.to];
@@ -351,16 +346,28 @@ export async function discoverConnectedAgents(
     }
   }
 
-  for (const agentId of [...agentConfigs.keys()]) {
-    if (!reachable.has(agentId)) {
-      agentConfigs.delete(agentId);
+  const edges = filteredEdges.filter(
+    (edge) => anyReachable(edge.from, reachable) && allReachable(edge.to, reachable),
+  );
+
+  const referencedByEdge = new Set<string>();
+  for (const edge of edges) {
+    const endpoints = [
+      ...(Array.isArray(edge.from) ? edge.from : [edge.from]),
+      ...(Array.isArray(edge.to) ? edge.to : [edge.to]),
+    ];
+    for (const id of endpoints) {
+      if (typeof id === 'string') {
+        referencedByEdge.add(id);
+      }
     }
   }
 
-  const edges = filteredEdges.filter(
-    (edge) =>
-      edgeEndpointIsReachable(edge.from, reachable) && edgeEndpointIsReachable(edge.to, reachable),
-  );
+  for (const agentId of [...agentConfigs.keys()]) {
+    if (!reachable.has(agentId) && !referencedByEdge.has(agentId)) {
+      agentConfigs.delete(agentId);
+    }
+  }
 
   return {
     agentConfigs,
