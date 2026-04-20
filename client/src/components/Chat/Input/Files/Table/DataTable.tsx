@@ -94,6 +94,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2 py-2 sm:gap-4 sm:py-4">
+        {/* NJ: Disallow file deletion
         <Button
           variant="outline"
           onClick={() => {
@@ -114,6 +115,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           )}
           {!isSmallScreen && <span className="ml-2">{localize('com_ui_delete')}</span>}
         </Button>
+        */}
         <FilterInput
           inputId="files-filter"
           label={localize('com_files_filter')}
