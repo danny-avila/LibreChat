@@ -32,20 +32,71 @@ function unquoteYaml(value: string): string {
   return value;
 }
 
-/** YAML frontmatter parser — extracts name + description from SKILL.md. */
-function parseFrontmatter(raw: string): { name: string; description: string } {
+/**
+ * Strip a trailing YAML inline comment from an unquoted scalar.
+ * YAML treats ` # ...` (space before hash) as a comment; `#` without a
+ * preceding space is part of the value. A scalar that's entirely a
+ * comment (`# nothing here`) collapses to empty so callers can treat
+ * it as "no value". Applied only to boolean tokens here since those are
+ * single-word and comment-safe; free-form scalars like descriptions
+ * might legitimately contain `#`.
+ */
+function stripYamlTrailingComment(value: string): string {
+  if (value.trimStart().startsWith('#')) return '';
+  const match = value.match(/^(.*?)\s+#.*$/);
+  return match ? match[1] : value;
+}
+
+/** Parse a YAML scalar as a strict boolean. Returns `undefined` when neither. */
+function parseBooleanScalar(value: string): boolean | undefined {
+  const lowered = stripYamlTrailingComment(value).trim().toLowerCase();
+  if (lowered === 'true') {
+    return true;
+  }
+  if (lowered === 'false') {
+    return false;
+  }
+  return undefined;
+}
+
+/**
+ * YAML frontmatter parser — extracts the first-class fields LibreChat
+ * persists as columns (`name`, `description`, `alwaysApply`) out of a
+ * SKILL.md file. Intentionally narrow: the full frontmatter validator in
+ * `packages/data-schemas/src/methods/skill.ts` covers the wire contract;
+ * this parser only needs to hand `createSkill` the columns it populates.
+ *
+ * When a known boolean field (currently just `always-apply`) is present
+ * with a value that isn't recognizable as `true`/`false`, the parser
+ * records it on `invalidBooleans[]` so the import handler can surface
+ * a 400 instead of silently dropping the flag. Without this signal,
+ * authoring mistakes like `always-apply: yes` would be lossy-converted
+ * to "not always-applied" and the user would never learn their
+ * frontmatter was malformed.
+ *
+ * Exported for unit testing only — prefer `createImportHandler` at runtime.
+ */
+export function parseFrontmatter(raw: string): {
+  name: string;
+  description: string;
+  alwaysApply?: boolean;
+  /** Keys that carried non-boolean values for fields that must be boolean. */
+  invalidBooleans: string[];
+} {
   const trimmed = raw.trim();
   if (!trimmed.startsWith('---')) {
-    return { name: '', description: '' };
+    return { name: '', description: '', invalidBooleans: [] };
   }
   const after = trimmed.slice(3);
   const closingIdx = after.indexOf('\n---');
   if (closingIdx === -1) {
-    return { name: '', description: '' };
+    return { name: '', description: '', invalidBooleans: [] };
   }
   const block = after.slice(0, closingIdx);
   let name = '';
   let description = '';
+  let alwaysApply: boolean | undefined;
+  const invalidBooleans: string[] = [];
   for (const line of block.split('\n')) {
     const colon = line.indexOf(':');
     if (colon === -1) {
@@ -57,9 +108,26 @@ function parseFrontmatter(raw: string): { name: string; description: string } {
       name = value;
     } else if (key === 'description') {
       description = value;
+    } else if (key === 'always-apply') {
+      // The outer `value` was already run through `unquoteYaml`, which
+      // only handles whole-line quoting. For `always-apply: "true" # note`
+      // the quote check misses (line doesn't end with a quote), so strip
+      // the comment first and then unquote the remainder.
+      const stripped = stripYamlTrailingComment(value).trim();
+      if (stripped === '') {
+        // Empty value or comment-only (`always-apply: # TBD`) — treat as
+        // absent so mid-edit placeholder states don't reject the save.
+        continue;
+      }
+      const parsed = parseBooleanScalar(unquoteYaml(stripped));
+      if (parsed === undefined) {
+        invalidBooleans.push(key);
+      } else {
+        alwaysApply = parsed;
+      }
     }
   }
-  return { name, description };
+  return { name, description, alwaysApply, invalidBooleans };
 }
 
 /** Validates a relative path is safe (no traversal, no absolute paths). */
@@ -220,7 +288,17 @@ async function handleMarkdown(
 ) {
   const content = file.buffer.toString('utf-8');
 
-  const { name, description } = parseFrontmatter(content);
+  const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(content);
+  if (invalidBooleans.length > 0) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      issues: invalidBooleans.map((key) => ({
+        field: `frontmatter.${key}`,
+        code: 'INVALID_TYPE',
+        message: `"${key}" must be a boolean (true or false)`,
+      })),
+    });
+  }
   const inferredName =
     name ||
     file.originalname
@@ -242,6 +320,7 @@ async function handleMarkdown(
     body: content,
     author: authorId,
     authorName,
+    alwaysApply,
     tenantId,
   });
 
@@ -317,7 +396,17 @@ async function handleZip(
     return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
   }
 
-  const { name, description } = parseFrontmatter(skillMdContent);
+  const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(skillMdContent);
+  if (invalidBooleans.length > 0) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      issues: invalidBooleans.map((key) => ({
+        field: `frontmatter.${key}`,
+        code: 'INVALID_TYPE',
+        message: `"${key}" must be a boolean (true or false)`,
+      })),
+    });
+  }
   const inferredName =
     name ||
     file.originalname
@@ -339,6 +428,7 @@ async function handleZip(
     body: skillMdContent,
     author: authorId,
     authorName,
+    alwaysApply,
     tenantId,
   });
 

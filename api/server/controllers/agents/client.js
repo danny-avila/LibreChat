@@ -28,7 +28,7 @@ const {
   filterMalformedContentParts,
   countFormattedMessageTokens,
   hydrateMissingIndexTokenCounts,
-  injectManualSkillPrimes,
+  injectSkillPrimes,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
 } = require('@librechat/api');
@@ -773,26 +773,41 @@ class AgentClient extends BaseClient {
       }
 
       /**
-       * Phase 3 manual skill priming — injected by user via `$` popover.
+       * Skill priming — both manual ($ popover) and always-apply (frontmatter).
        *
-       * Splice + index-shift logic lives in `injectManualSkillPrimes`
+       * Splice + index-shift logic lives in `injectSkillPrimes`
        * (packages/api/src/agents/skills.ts) so the delicate position math
-       * can be unit-tested in TS without standing up AgentClient. Runs for
-       * both single-agent and multi-agent runs; how primes interact with
-       * handoff / added-convo agents' per-agent state is an agents-SDK
-       * concern, not this layer's to gate.
+       * can be unit-tested in TS without standing up AgentClient. The
+       * resolver enforces a combined ceiling (manual-first, always-apply
+       * truncated first when over cap) before reaching here; the splice
+       * re-applies the cap as defense-in-depth. Runs for both single-
+       * agent and multi-agent runs; how primes interact with handoff /
+       * added-convo agents' per-agent state is an agents-SDK concern,
+       * not this layer's to gate.
        */
       const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      if (manualSkillPrimes && manualSkillPrimes.length > 0) {
-        const primeResult = injectManualSkillPrimes({
+      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      if (
+        (manualSkillPrimes && manualSkillPrimes.length > 0) ||
+        (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
+      ) {
+        const primeResult = injectSkillPrimes({
           initialMessages,
           indexTokenCountMap,
           manualSkillPrimes,
+          alwaysApplySkillPrimes,
         });
         indexTokenCountMap = primeResult.indexTokenCountMap;
         if (primeResult.inserted > 0) {
+          const manualNames = (manualSkillPrimes ?? []).map((p) => p.name);
+          const alwaysApplyNames = (alwaysApplySkillPrimes ?? []).map((p) => p.name);
           logger.debug(
-            `[AgentClient] Primed ${primeResult.inserted} manual skill(s) at message index ${primeResult.insertIdx}: ${manualSkillPrimes.map((p) => p.name).join(', ')}`,
+            `[AgentClient] Primed ${primeResult.inserted} skill(s) at message index ${primeResult.insertIdx} — manual: [${manualNames.join(', ')}], always-apply: [${alwaysApplyNames.join(', ')}]`,
+          );
+        }
+        if (primeResult.alwaysApplyDropped > 0) {
+          logger.warn(
+            `[AgentClient] Dropped ${primeResult.alwaysApplyDropped} always-apply prime(s) to stay within MAX_PRIMED_SKILLS_PER_TURN.`,
           );
         }
       }
@@ -914,28 +929,40 @@ class AgentClient extends BaseClient {
       await runAgents(initialMessages);
 
       /**
-       * Surface a completed `skill` tool_call content part per manually-
-       * invoked skill so the existing `SkillCall` frontend renderer shows
+       * Surface a completed `skill` tool_call content part per *manually*-
+       * primed skill so the existing `SkillCall` frontend renderer shows
        * a "Skill X loaded" card on the assistant response. Applied after
        * the graph finishes to avoid clashing with the aggregator's own
        * per-step content indexing. Prepended (not appended) so cards sit
        * above the model's output — priming ran before the turn, the
        * reply follows.
        *
-       * Live streaming display of cards is handled on the user side via
-       * `ManualSkillPills` reading the message's `manualSkills` field;
-       * no separate SSE emit is needed here, and trying to stream a
-       * mid-run tool_call at index 0 collided with the LLM's first text
-       * content, while emitting at a sparse offset pushed the card below
-       * the reply on finalize. Post-run unshift keeps the final
+       * Always-apply primes intentionally do NOT emit assistant-side
+       * cards. `extractInvokedSkillsFromPayload` scans history for
+       * `skill` tool_calls and feeds `primeInvokedSkills`, which is
+       * Phase 3's sticky-re-prime path — that's the right behavior for
+       * manual (user picked `$skill` once; re-prime on every subsequent
+       * turn from history). For always-apply, `resolveAlwaysApplySkills`
+       * already re-primes every turn from fresh DB state, so persisting
+       * the card would cause the skill body to get primed twice per
+       * turn starting on turn 2. The user-facing acknowledgement for
+       * always-apply lives on the user bubble as the pinned
+       * `ManualSkillPills` row (`message.alwaysAppliedSkills`), which
+       * is the durable signal the user wants: "this skill auto-primes".
+       *
+       * Live streaming display of manual user-bubble pills is handled
+       * by `ManualSkillPills` reading `message.manualSkills`. No
+       * separate SSE emit is needed here; trying to stream a mid-run
+       * tool_call at index 0 collided with the LLM's first text
+       * content, while emitting at a sparse offset pushed the card
+       * below the reply on finalize. Post-run unshift keeps the final
        * responseMessage.content in the right order.
        */
-      const primedSkills = this.options.agent?.manualSkillPrimes;
-      if (primedSkills && primedSkills.length > 0) {
-        const primeParts = buildSkillPrimeContentParts(primedSkills, {
-          runId: this.responseMessageId ?? 'manual-skill',
-        });
-        this.contentParts.unshift(...primeParts);
+      const manualPrimed = this.options.agent?.manualSkillPrimes ?? [];
+      if (manualPrimed.length > 0) {
+        const runId = this.responseMessageId ?? 'skill-prime';
+        const manualParts = buildSkillPrimeContentParts(manualPrimed, { runId });
+        this.contentParts.unshift(...manualParts);
       }
 
       /** @deprecated Agent Chain */

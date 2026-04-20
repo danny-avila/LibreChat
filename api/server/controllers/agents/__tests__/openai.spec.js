@@ -57,6 +57,13 @@ jest.mock('@librechat/api', () => ({
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
   extractManualSkills: jest.fn().mockReturnValue(undefined),
+  injectSkillPrimes: jest.fn().mockReturnValue({
+    initialMessages: [],
+    indexTokenCountMap: {},
+    inserted: 0,
+    insertIdx: -1,
+    alwaysApplyDropped: 0,
+  }),
   buildNonStreamingResponse: jest.fn().mockReturnValue({ id: 'resp-123' }),
   createOpenAIStreamTracker: jest.fn().mockReturnValue({
     addText: jest.fn(),

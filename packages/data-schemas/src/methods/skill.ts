@@ -196,6 +196,35 @@ export function validateSkillDisplayTitle(displayTitle: unknown): ValidationIssu
 }
 
 /**
+ * Validate the top-level `alwaysApply` column input. Mirrors the boolean
+ * check on `frontmatter['always-apply']` so a loosely-typed API caller
+ * sending `{"alwaysApply": "false"}` (string) gets a clean 400 at the
+ * validation boundary instead of relying on Mongoose casting quirks to
+ * coerce the value.
+ *
+ * `undefined` is the only pass-through value (meaning "don't touch this
+ * field"). `null` is rejected: PATCH forwards any non-`undefined` value
+ * straight into `$set`, so a `null` payload would persist `null` in a
+ * boolean column, leaving the skill in a state that is neither "on" nor
+ * "off" while `listAlwaysApplySkills` only matches `true`.
+ */
+export function validateAlwaysApply(alwaysApply: unknown): ValidationIssue[] {
+  if (alwaysApply === undefined) {
+    return [];
+  }
+  if (typeof alwaysApply !== 'boolean') {
+    return [
+      {
+        field: 'alwaysApply',
+        code: 'INVALID_TYPE',
+        message: 'alwaysApply must be a boolean',
+      },
+    ];
+  }
+  return [];
+}
+
+/**
  * Known fields allowed inside a skill's YAML frontmatter. Anything else is
  * rejected in strict mode. The list is derived from Anthropic's Agent Skills
  * spec plus the fields LibreChat needs to pass through (`name`/`description`
@@ -211,6 +240,7 @@ const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'argument-hint',
   'user-invocable',
   'disable-model-invocation',
+  'always-apply',
   'model',
   'effort',
   'context',
@@ -237,6 +267,7 @@ const FRONTMATTER_KIND: Record<string, FrontmatterKind | FrontmatterKind[]> = {
   'argument-hint': 'string',
   'user-invocable': 'boolean',
   'disable-model-invocation': 'boolean',
+  'always-apply': 'boolean',
   model: 'string',
   effort: ['string', 'number'],
   context: 'string',
@@ -437,6 +468,12 @@ export type CreateSkillInput = {
   authorName: string;
   source?: 'inline' | 'github' | 'notion';
   sourceMetadata?: Record<string, unknown>;
+  /**
+   * When `true`, the skill is auto-primed into every turn. Callers pass this
+   * through alongside `frontmatter` so the boolean lands on both the indexed
+   * first-class column (queryable) and the raw frontmatter bag (inspectable).
+   */
+  alwaysApply?: boolean;
   tenantId?: string;
 };
 
@@ -447,6 +484,7 @@ export type UpdateSkillInput = {
   body?: string;
   frontmatter?: Record<string, unknown>;
   category?: string;
+  alwaysApply?: boolean;
 };
 
 /**
@@ -575,6 +613,33 @@ export type ListSkillsByAccessResult = {
   after: string | null;
 };
 
+export type ListAlwaysApplySkillsParams = {
+  accessibleIds: Types.ObjectId[];
+  /** Max rows to return per page. The caller paginates to fill an active-state budget. */
+  limit: number;
+  /** Opaque cursor from a prior page. `null` / absent = first page. */
+  cursor?: string | null;
+};
+
+export type ListAlwaysApplySkillsResult = {
+  /**
+   * Rows for `alwaysApply: true` skills within `accessibleIds` on this page.
+   * Returns `body` eagerly — callers prime the full SKILL.md on every turn,
+   * so round-tripping through `getSkillById` per skill would double DB ops.
+   */
+  skills: Array<{
+    _id: Types.ObjectId;
+    name: string;
+    body: string;
+    author: Types.ObjectId;
+    allowedTools?: string[];
+  }>;
+  /** `true` when another page exists beyond this one. */
+  has_more: boolean;
+  /** Cursor for the next page, or `null` when `has_more` is `false`. */
+  after: string | null;
+};
+
 export type UpdateSkillResult =
   | {
       status: 'updated';
@@ -588,6 +653,160 @@ export type CreateSkillResult = {
   skill: ISkill & { _id: Types.ObjectId };
   warnings: ValidationIssue[];
 };
+
+/**
+ * Strip a trailing YAML inline comment from an already-unquoted scalar.
+ * YAML treats ` # ...` (space before hash) as a comment; `#` without a
+ * preceding space is part of the value (e.g. `hashtag#foo`). A scalar
+ * that's entirely a comment (`# nothing yet`) collapses to empty so
+ * callers can treat it as "no value". Applied narrowly — only to
+ * boolean fields where the token is a single word — to avoid
+ * accidentally truncating free-form strings like descriptions.
+ */
+function stripYamlTrailingComment(value: string): string {
+  if (value.trimStart().startsWith('#')) return '';
+  const match = value.match(/^(.*?)\s+#.*$/);
+  return match ? match[1] : value;
+}
+
+type BodyAlwaysApplyResult =
+  | { status: 'absent' }
+  | { status: 'valid'; value: boolean }
+  | { status: 'invalid' };
+
+/**
+ * Extractor for the `always-apply` flag sitting inside a SKILL.md body's
+ * YAML frontmatter block. The REST edit flow lets users rewrite the full
+ * SKILL.md text via `update.body` without a structured `frontmatter`
+ * object, so this is the only signal we have for "user flipped
+ * `always-apply:` inline in their editor".
+ *
+ * Returns a discriminated union so callers can tell:
+ *  - `absent` — no `always-apply:` key (leave column alone; could be
+ *    "user removed the flag" or "user hasn't written it yet" — both
+ *    resolve to no-op). An empty value (`always-apply:` with nothing
+ *    after the colon) is also treated as absent to allow mid-edit
+ *    placeholder states without rejecting a save.
+ *  - `valid` — parsed cleanly as `true` / `false` (case-insensitive,
+ *    quote-tolerant, YAML inline-comment-tolerant).
+ *  - `invalid` — key is present with a non-empty value that isn't a
+ *    recognizable boolean (e.g. `tru`, `yes`, `1`). Validation rejects
+ *    this rather than silently ignoring so `always-apply: tru` typos
+ *    surface as 400s instead of drifting the column from what the
+ *    saved SKILL.md text says.
+ */
+function extractAlwaysApplyFromBody(body: string | undefined): BodyAlwaysApplyResult {
+  if (typeof body !== 'string' || body.length === 0) {
+    return { status: 'absent' };
+  }
+  const trimmed = body.trim();
+  if (!trimmed.startsWith('---')) {
+    return { status: 'absent' };
+  }
+  const after = trimmed.slice(3);
+  const closingIdx = after.indexOf('\n---');
+  if (closingIdx === -1) {
+    return { status: 'absent' };
+  }
+  const block = after.slice(0, closingIdx);
+  for (const line of block.split('\n')) {
+    const colon = line.indexOf(':');
+    if (colon === -1) {
+      continue;
+    }
+    const key = line.slice(0, colon).trim().toLowerCase();
+    if (key !== 'always-apply') {
+      continue;
+    }
+    // Strip the YAML inline comment BEFORE unquoting — a line like
+    // `always-apply: "true" # note` has both, and if we only handled
+    // whole-line quoting first, the quoted branch wouldn't match and
+    // the comment-strip would leave `"true"` which parses as invalid.
+    let value = stripYamlTrailingComment(line.slice(colon + 1).trim()).trim();
+    if (value === '') {
+      return { status: 'absent' };
+    }
+    if (
+      value.length >= 2 &&
+      ((value[0] === '"' && value[value.length - 1] === '"') ||
+        (value[0] === "'" && value[value.length - 1] === "'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    value = value.trim();
+    if (value === '') {
+      return { status: 'absent' };
+    }
+    const lowered = value.toLowerCase();
+    if (lowered === 'true') return { status: 'valid', value: true };
+    if (lowered === 'false') return { status: 'valid', value: false };
+    return { status: 'invalid' };
+  }
+  return { status: 'absent' };
+}
+
+/**
+ * Resolve the effective `alwaysApply` boolean for a create/update call.
+ *
+ * The indexed `alwaysApply` column is the source of truth for auto-priming
+ * queries; it can also be carried inline inside the SKILL.md `body` or in
+ * the structured `frontmatter` bag. All three surfaces must stay in sync
+ * or a skill edit that flips `always-apply:` in the body would leave the
+ * column stale and the UI / auto-priming query would use the old value.
+ *
+ * Precedence:
+ *  1. An explicit top-level `alwaysApply` wins (caller overrides).
+ *  2. Otherwise, derive from `frontmatter['always-apply']` when it is
+ *     a strict boolean.
+ *  3. Otherwise, parse `always-apply:` out of the SKILL.md body
+ *     frontmatter block (covers the UI edit flow that sends only
+ *     `body` without a structured `frontmatter` object).
+ *  4. Otherwise, return `fallback` (typically `false` on create, or the
+ *     current column value on update so an update that doesn't touch
+ *     any of the three sources leaves the column alone).
+ */
+function resolveAlwaysApplyFromInput(
+  explicit: boolean | undefined,
+  frontmatter: Record<string, unknown> | undefined,
+  body: string | undefined,
+  fallback: boolean,
+): boolean {
+  if (typeof explicit === 'boolean') {
+    return explicit;
+  }
+  const fromFrontmatter = frontmatter?.['always-apply'];
+  if (typeof fromFrontmatter === 'boolean') {
+    return fromFrontmatter;
+  }
+  const fromBody = extractAlwaysApplyFromBody(body);
+  if (fromBody.status === 'valid') {
+    return fromBody.value;
+  }
+  return fallback;
+}
+
+/**
+ * Validate the `always-apply` value that would be derived from the
+ * SKILL.md body's inline frontmatter. Only reports an issue when the
+ * key is present with an unparseable value — absent / valid / empty
+ * all pass silently so mid-edit saves that haven't touched the flag
+ * yet don't get rejected. Wired into both `createSkill` and
+ * `updateSkill` so a body PATCH carrying `always-apply: tru` (typo)
+ * surfaces as 400 instead of drifting the indexed column.
+ */
+export function validateAlwaysApplyInBody(body: string | undefined): ValidationIssue[] {
+  const result = extractAlwaysApplyFromBody(body);
+  if (result.status === 'invalid') {
+    return [
+      {
+        field: 'body.frontmatter.always-apply',
+        code: 'INVALID_TYPE',
+        message: '"always-apply" in SKILL.md frontmatter must be a boolean (true or false)',
+      },
+    ];
+  }
+  return [];
+}
 
 export function createSkillMethods(mongoose: typeof import('mongoose'), deps: SkillDeps) {
   const { ObjectId } = mongoose.Types;
@@ -647,6 +866,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       ...validateSkillBody(data.body),
       ...validateSkillDisplayTitle(data.displayTitle),
       ...validateSkillFrontmatter(data.frontmatter),
+      ...validateAlwaysApply(data.alwaysApply),
+      ...validateAlwaysApplyInBody(data.body),
     ];
     const { errors, warnings } = partitionIssues(issues);
     if (errors.length > 0) {
@@ -689,6 +910,12 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       source: data.source ?? 'inline',
       sourceMetadata: data.sourceMetadata,
       fileCount: 0,
+      alwaysApply: resolveAlwaysApplyFromInput(
+        data.alwaysApply,
+        data.frontmatter,
+        data.body,
+        false,
+      ),
       tenantId: data.tenantId,
       ...derived,
     });
@@ -808,7 +1035,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
          × 100/page is wasted bandwidth on every list call once backfill
          is no longer needed. */
       .select(
-        'name displayTitle description category author authorName version source sourceMetadata fileCount tenantId disableModelInvocation userInvocable allowedTools frontmatter createdAt updatedAt',
+        'name displayTitle description category author authorName version source sourceMetadata fileCount alwaysApply tenantId disableModelInvocation userInvocable allowedTools createdAt updatedAt',
       )
       .lean();
 
@@ -837,6 +1064,74 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     };
   }
 
+  async function listAlwaysApplySkills(
+    params: ListAlwaysApplySkillsParams,
+  ): Promise<ListAlwaysApplySkillsResult> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    if (!params.accessibleIds.length) {
+      return { skills: [], has_more: false, after: null };
+    }
+    const limit = Math.min(Math.max(1, params.limit || 20), 100);
+
+    const baseFilter: FilterQuery<ISkillDocument> = {
+      _id: { $in: params.accessibleIds },
+      alwaysApply: true,
+    };
+    const cursor = decodeCursor(params.cursor);
+
+    let filter: FilterQuery<ISkillDocument> = baseFilter;
+    if (cursor) {
+      const cursorCondition: FilterQuery<ISkillDocument> = {
+        $or: [
+          { updatedAt: { $lt: cursor.updatedAt } },
+          { updatedAt: cursor.updatedAt, _id: { $gt: cursor._id } },
+        ],
+      };
+      filter = { $and: [baseFilter, cursorCondition] };
+    }
+
+    const rows = await Skill.find(filter)
+      .sort({ updatedAt: -1, _id: 1 })
+      .limit(limit + 1)
+      .select('name body author updatedAt allowedTools')
+      .lean();
+
+    const has_more = rows.length > limit;
+    const sliced = has_more ? rows.slice(0, limit) : rows;
+    const last = sliced[sliced.length - 1];
+    const after =
+      has_more && last
+        ? encodeCursor({
+            updatedAt: last.updatedAt as Date,
+            _id: last._id as Types.ObjectId,
+          })
+        : null;
+
+    /**
+     * `allowedTools` is projected alongside `name`/`body`/`author` so the
+     * always-apply prime pipeline (post-Phase 6) can union skill-declared
+     * tool allowlists into the agent's effective tool set for the turn —
+     * same symmetry as the manual-prime path, which reads the column off
+     * `getSkillByName`. Older rows predating the column show up with
+     * `allowedTools === undefined` (the backfill helper runs on those at
+     * read time elsewhere; per-turn priming is fine with undefined).
+     */
+    const skills = sliced.map((row) => {
+      const result: ListAlwaysApplySkillsResult['skills'][number] = {
+        _id: row._id as Types.ObjectId,
+        name: row.name,
+        body: row.body ?? '',
+        author: row.author as Types.ObjectId,
+      };
+      if (row.allowedTools !== undefined) {
+        result.allowedTools = row.allowedTools;
+      }
+      return result;
+    });
+
+    return { skills, has_more, after };
+  }
+
   async function updateSkill(params: {
     id: string;
     expectedVersion: number;
@@ -856,6 +1151,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       issues.push(...validateSkillDisplayTitle(update.displayTitle));
     if (update.frontmatter !== undefined)
       issues.push(...validateSkillFrontmatter(update.frontmatter));
+    if (update.alwaysApply !== undefined) issues.push(...validateAlwaysApply(update.alwaysApply));
+    if (update.body !== undefined) issues.push(...validateAlwaysApplyInBody(update.body));
     const { errors, warnings } = partitionIssues(issues);
     if (errors.length > 0) {
       const error = new Error('Skill validation failed');
@@ -889,6 +1186,43 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       }
     }
     if (update.category !== undefined) setPayload.category = update.category;
+    /**
+     * Keep the indexed `alwaysApply` column in sync with whatever the update
+     * is carrying: an explicit top-level `alwaysApply` always wins; a
+     * structured `frontmatter` with `always-apply: true/false` is next; and
+     * a `body` update is scanned last for an inline `always-apply:` line
+     * inside the SKILL.md frontmatter block. The body path is load-bearing
+     * for the REST edit flow — the current UI sends `body` without a
+     * parallel `frontmatter` object, so inline edits to `always-apply:`
+     * would otherwise leave the column stale and auto-priming / pin
+     * badges would keep using the old value.
+     *
+     * Important: the gates key off the *presence of an always-apply value*
+     * at each level, not the presence of the parent field. An API caller
+     * that sends both `body` and an unrelated `frontmatter` bag (e.g.
+     * editing category + rewriting SKILL.md in one PATCH) still gets the
+     * body-inline flag respected because `frontmatter['always-apply']`
+     * is absent in that payload.
+     */
+    let derivedAlwaysApply: boolean | undefined;
+    if (update.alwaysApply !== undefined) {
+      derivedAlwaysApply = update.alwaysApply;
+    }
+    if (derivedAlwaysApply === undefined && update.frontmatter !== undefined) {
+      const fromFrontmatter = update.frontmatter['always-apply'];
+      if (typeof fromFrontmatter === 'boolean') {
+        derivedAlwaysApply = fromFrontmatter;
+      }
+    }
+    if (derivedAlwaysApply === undefined && update.body !== undefined) {
+      const fromBody = extractAlwaysApplyFromBody(update.body);
+      if (fromBody.status === 'valid') {
+        derivedAlwaysApply = fromBody.value;
+      }
+    }
+    if (derivedAlwaysApply !== undefined) {
+      setPayload.alwaysApply = derivedAlwaysApply;
+    }
 
     const updateOps: Record<string, unknown> = {
       $set: setPayload,
@@ -1120,6 +1454,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     getSkillById,
     getSkillByName,
     listSkillsByAccess,
+    listAlwaysApplySkills,
     updateSkill,
     deleteSkill,
     deleteUserSkills,

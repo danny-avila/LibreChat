@@ -19,7 +19,7 @@ const {
   recordCollectedUsage,
   getTransactionsConfig,
   extractManualSkills,
-  injectManualSkillPrimes,
+  injectSkillPrimes,
   createToolExecuteHandler,
   // Responses API
   writeDone,
@@ -414,6 +414,7 @@ const createResponse = async (req, res) => {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         listSkillsByAccess: db.listSkillsByAccess,
+        listAlwaysApplySkills: db.listAlwaysApplySkills,
         getSkillByName: db.getSkillByName,
       },
     );
@@ -444,17 +445,23 @@ const createResponse = async (req, res) => {
     let indexTokenCountMap = formatted.indexTokenCountMap;
 
     /**
-     * Inject manual skill primes so the model sees SKILL.md bodies for this
-     * turn — parity with AgentClient's chat path. The Responses API uses its
-     * own response-builder shape, so LibreChat-style card SSE events don't
-     * apply; only the message-context part carries over.
+     * Inject manual + always-apply skill primes so the model sees SKILL.md
+     * bodies for this turn — parity with AgentClient's chat path. The
+     * Responses API uses its own response-builder shape, so LibreChat-
+     * style card SSE events don't apply; only the message-context part
+     * carries over.
      */
     const manualSkillPrimes = primaryConfig.manualSkillPrimes;
-    if (manualSkillPrimes && manualSkillPrimes.length > 0) {
-      const primeResult = injectManualSkillPrimes({
+    const alwaysApplySkillPrimes = primaryConfig.alwaysApplySkillPrimes;
+    if (
+      (manualSkillPrimes && manualSkillPrimes.length > 0) ||
+      (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
+    ) {
+      const primeResult = injectSkillPrimes({
         initialMessages: formattedMessages,
         indexTokenCountMap,
         manualSkillPrimes,
+        alwaysApplySkillPrimes,
       });
       indexTokenCountMap = primeResult.indexTokenCountMap;
     }

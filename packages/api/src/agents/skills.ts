@@ -26,6 +26,23 @@ const CATALOG_PAGE_SIZE = 100;
 export const MAX_MANUAL_SKILLS = 10;
 
 /**
+ * Hard ceiling on `always-apply` skills primed per turn. Larger than
+ * `MAX_MANUAL_SKILLS` because these are admin / author curated (not
+ * per-request user input), so the defensive-payload concern is weaker —
+ * but still bounded so a pathological team config can't push dozens of
+ * skill bodies into every turn.
+ */
+export const MAX_ALWAYS_APPLY_SKILLS = 20;
+
+/**
+ * Combined hard ceiling applied in `injectSkillPrimes`. When the total
+ * (manual + always-apply) exceeds this, always-apply gets truncated
+ * first — manual invocation is explicit user intent and should never
+ * be silently dropped.
+ */
+export const MAX_PRIMED_SKILLS_PER_TURN = 30;
+
+/**
  * Hard ceiling on individual skill name length. Real skill names are
  * short slugs (e.g. `pptx`, `brand-guidelines`); anything beyond this is
  * a crafted payload. Filtered out before the DB round-trip so pathological
@@ -41,6 +58,21 @@ export const MAX_SKILL_NAME_LENGTH = 200;
  * place rather than repeated inline.
  */
 export const SKILL_MESSAGE_SOURCE = 'skill';
+
+/**
+ * Discriminator tag on a skill prime message that records *why* the skill
+ * was primed into the turn. Stored on `additional_kwargs.trigger` of the
+ * `HumanMessage` produced by `injectSkillPrimes`; surfaced on UI
+ * (pill variants) and accessible to downstream filtering / telemetry.
+ */
+export const SKILL_TRIGGER_MANUAL = 'manual';
+export const SKILL_TRIGGER_MODEL = 'model';
+export const SKILL_TRIGGER_ALWAYS_APPLY = 'always-apply';
+
+export type SkillTrigger =
+  | typeof SKILL_TRIGGER_MANUAL
+  | typeof SKILL_TRIGGER_MODEL
+  | typeof SKILL_TRIGGER_ALWAYS_APPLY;
 
 /**
  * Predicate that identifies a LangChain message as one we spliced in via
@@ -445,6 +477,20 @@ export interface ResolvedManualSkill {
 }
 
 /**
+ * Result of resolving an `always-apply` skill into prime-ready form.
+ * Intentionally identical in shape to `ResolvedManualSkill` — both feed
+ * the same prime-injection pipeline and the same `unionPrimeAllowedTools`
+ * helper. The distinction lives on `additional_kwargs.trigger` of the
+ * spliced `HumanMessage`, not on this resolver output.
+ */
+export interface ResolvedAlwaysApplySkill {
+  _id: Types.ObjectId;
+  name: string;
+  body: string;
+  allowedTools?: string[];
+}
+
+/**
  * Resolves user-provided skill names to `{ name, body }` pairs ready for
  * priming. Filters out:
  *  - names not backed by an accessible skill (ACL miss or typo),
@@ -578,6 +624,182 @@ export async function resolveManualSkills(
   return resolved.filter((r): r is ResolvedManualSkill => r !== null);
 }
 
+export interface ResolveAlwaysApplySkillsParams {
+  /**
+   * Paginated DB lookup for accessible skills with `alwaysApply: true`,
+   * eagerly loaded with `body` and optional `allowedTools`. Scoped to
+   * `accessibleIds` (post-`scopeSkillIds`). The resolver pages until the
+   * active-state budget is filled so inactive early rows cannot starve
+   * the prime catalog.
+   */
+  listAlwaysApplySkills: (params: {
+    accessibleIds: Types.ObjectId[];
+    limit: number;
+    cursor?: string | null;
+  }) => Promise<{
+    skills: Array<{
+      _id: Types.ObjectId;
+      name: string;
+      body: string;
+      author: Types.ObjectId | string;
+      allowedTools?: string[];
+    }>;
+    has_more?: boolean;
+    after?: string | null;
+  }>;
+  /** ACL-accessible skill IDs for this user (already scoped by `scopeSkillIds`). */
+  accessibleSkillIds: Types.ObjectId[];
+  /** Current user ID — required for ownership-based active-state defaults. */
+  userId?: string;
+  /** Per-user skill active/inactive overrides. */
+  skillStates?: Record<string, boolean>;
+  /** Admin-configured default for shared skills. */
+  defaultActiveOnShare?: boolean;
+  /** Override cap on the number of always-apply primes to resolve. Defaults to `MAX_ALWAYS_APPLY_SKILLS`. */
+  maxAlwaysApplySkills?: number;
+}
+
+/**
+ * Page size used by `resolveAlwaysApplySkills` when paginating the DB
+ * listing. Sized comfortably above `MAX_ALWAYS_APPLY_SKILLS` so a single
+ * page is enough in the overwhelmingly common case, but the resolver
+ * still pages when the catalog is dominated by rows that are inactive
+ * for this user.
+ */
+const ALWAYS_APPLY_PAGE_SIZE = 50;
+
+/**
+ * Max pages scanned when filling the active always-apply budget. Bounds
+ * worst-case DB load for pathological configs (tens of thousands of
+ * shared-inactive always-apply skills) without silently truncating the
+ * active budget when the first page happens to land on inactive rows.
+ */
+const MAX_ALWAYS_APPLY_PAGES = 10;
+
+/**
+ * Resolves accessible skills with `alwaysApply: true` into prime-ready
+ * form. Mirrors `resolveManualSkills`' contract on purpose so the two feed
+ * the same `injectSkillPrimes` + `unionPrimeAllowedTools` pipeline.
+ *
+ * Paginates the DB listing until the active budget is filled (or we hit
+ * `MAX_ALWAYS_APPLY_PAGES`). Applying the budget pre-filter would silently
+ * starve the prime catalog whenever early-sorted rows happen to be
+ * inactive for this user (e.g. shared skills with
+ * `defaultActiveOnShare: false`, or explicit `skillStates` overrides).
+ *
+ * Name-level dedup across pages — the schema's uniqueness index is
+ * `(name, author, tenantId)`, so two authors in the same tenant can
+ * ship skills with the same `name` shared with a third user. First
+ * occurrence wins (DB sort is `updatedAt` desc, so freshest definition).
+ */
+export async function resolveAlwaysApplySkills(
+  params: ResolveAlwaysApplySkillsParams,
+): Promise<ResolvedAlwaysApplySkill[]> {
+  const {
+    listAlwaysApplySkills,
+    accessibleSkillIds,
+    userId,
+    skillStates,
+    defaultActiveOnShare,
+    maxAlwaysApplySkills = MAX_ALWAYS_APPLY_SKILLS,
+  } = params;
+
+  if (accessibleSkillIds.length === 0 || maxAlwaysApplySkills <= 0) {
+    return [];
+  }
+
+  const resolved: ResolvedAlwaysApplySkill[] = [];
+  const seenNames = new Set<string>();
+  let cursor: string | null = null;
+  let pages = 0;
+  let reachedEnd = false;
+  let inactiveSkipped = 0;
+  let duplicateNameSkipped = 0;
+
+  while (resolved.length < maxAlwaysApplySkills && pages < MAX_ALWAYS_APPLY_PAGES) {
+    let page: Awaited<ReturnType<typeof listAlwaysApplySkills>>;
+    try {
+      page = await listAlwaysApplySkills({
+        accessibleIds: accessibleSkillIds,
+        limit: ALWAYS_APPLY_PAGE_SIZE,
+        cursor,
+      });
+    } catch (err) {
+      logger.warn(
+        '[resolveAlwaysApplySkills] listAlwaysApplySkills failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return resolved;
+    }
+
+    for (const skill of page.skills) {
+      if (resolved.length >= maxAlwaysApplySkills) {
+        break;
+      }
+      if (!skill.body) {
+        logger.warn(`[resolveAlwaysApplySkills] Skill "${skill.name}" has empty body — skipping`);
+        continue;
+      }
+      const active = resolveSkillActive({
+        skill: { _id: skill._id, author: skill.author },
+        skillStates,
+        userId,
+        defaultActiveOnShare,
+      });
+      if (!active) {
+        /**
+         * Intentionally no per-skill log: `defaultActiveOnShare: false`
+         * makes inactive-for-user rows an *expected* outcome on every
+         * turn, and with pagination (up to MAX_ALWAYS_APPLY_PAGES × page
+         * size rows) logging each one floods the telemetry and buries
+         * real issues. Aggregated count surfaces once below when non-zero.
+         */
+        inactiveSkipped += 1;
+        continue;
+      }
+      if (seenNames.has(skill.name)) {
+        duplicateNameSkipped += 1;
+        continue;
+      }
+      seenNames.add(skill.name);
+      const prime: ResolvedAlwaysApplySkill = {
+        _id: skill._id,
+        name: skill.name,
+        body: skill.body,
+      };
+      if (skill.allowedTools !== undefined) {
+        prime.allowedTools = skill.allowedTools;
+      }
+      resolved.push(prime);
+    }
+
+    if (!page.has_more || !page.after) {
+      reachedEnd = true;
+      break;
+    }
+    cursor = page.after;
+    pages += 1;
+  }
+
+  if (inactiveSkipped > 0) {
+    logger.debug(
+      `[resolveAlwaysApplySkills] Skipped ${inactiveSkipped} always-apply skill(s) inactive for this user.`,
+    );
+  }
+  if (duplicateNameSkipped > 0) {
+    logger.warn(
+      `[resolveAlwaysApplySkills] Skipped ${duplicateNameSkipped} duplicate-named always-apply skill(s); kept the most-recently-updated copy of each name.`,
+    );
+  }
+  if (!reachedEnd && resolved.length < maxAlwaysApplySkills) {
+    logger.warn(
+      `[resolveAlwaysApplySkills] Scanned ${MAX_ALWAYS_APPLY_PAGES} page(s) without filling the ${maxAlwaysApplySkills}-prime budget. Some active always-apply skills may be excluded.`,
+    );
+  }
+
+  return resolved;
+}
+
 export interface InjectManualSkillPrimesParams {
   /** Formatted LangChain messages produced by `formatAgentMessages`. Mutated in place. */
   initialMessages: BaseMessage[];
@@ -646,12 +868,127 @@ export function injectManualSkillPrimes(
     (p) =>
       new HumanMessage({
         content: p.body,
-        additional_kwargs: { isMeta: true, source: SKILL_MESSAGE_SOURCE, skillName: p.name },
+        additional_kwargs: {
+          isMeta: true,
+          source: SKILL_MESSAGE_SOURCE,
+          trigger: SKILL_TRIGGER_MANUAL,
+          skillName: p.name,
+        },
       }),
   );
   initialMessages.splice(insertIdx, 0, ...primeMessages);
 
   return { initialMessages, indexTokenCountMap, inserted: numPrimes, insertIdx };
+}
+
+export interface InjectSkillPrimesParams {
+  /** Formatted LangChain messages produced by `formatAgentMessages`. Mutated in place. */
+  initialMessages: BaseMessage[];
+  /** Per-index token count map returned by `formatAgentMessages`. */
+  indexTokenCountMap: Record<number, number> | undefined;
+  /** Resolved manual-invocation primes ($-popover). */
+  manualSkillPrimes?: Pick<ResolvedManualSkill, 'name' | 'body'>[];
+  /** Resolved `always-apply` primes (frontmatter-driven, auto-applied every turn). */
+  alwaysApplySkillPrimes?: Pick<ResolvedAlwaysApplySkill, 'name' | 'body'>[];
+  /**
+   * Combined ceiling on primes per turn. Defaults to
+   * `MAX_PRIMED_SKILLS_PER_TURN`. When the sum of `manualSkillPrimes` +
+   * `alwaysApplySkillPrimes` exceeds the cap, always-apply primes are
+   * truncated first — manual invocation is explicit user intent and must
+   * never be silently dropped.
+   */
+  maxPrimesPerTurn?: number;
+}
+
+export interface InjectSkillPrimesResult {
+  initialMessages: BaseMessage[];
+  indexTokenCountMap: Record<number, number> | undefined;
+  inserted: number;
+  insertIdx: number;
+  alwaysApplyDropped: number;
+}
+
+/**
+ * Splices manual + always-apply skill prime messages into a formatted
+ * message array just before the latest user message. Ordering: always-apply
+ * primes first (further from the user message, ambient context), then
+ * manual primes (closer to the user message, explicit user intent). More
+ * recent context gets more attention in most LLMs, so we want explicit `$`
+ * picks landing closest to the latest user turn and ambient priming
+ * sitting further back. Shifts `indexTokenCountMap` for the combined
+ * splice.
+ *
+ * Enforces a combined ceiling (`maxPrimesPerTurn`, default
+ * `MAX_PRIMED_SKILLS_PER_TURN`) by truncating always-apply first so
+ * manual is never silently dropped.
+ */
+export function injectSkillPrimes(params: InjectSkillPrimesParams): InjectSkillPrimesResult {
+  const {
+    initialMessages,
+    manualSkillPrimes = [],
+    alwaysApplySkillPrimes = [],
+    maxPrimesPerTurn = MAX_PRIMED_SKILLS_PER_TURN,
+  } = params;
+  let { indexTokenCountMap } = params;
+
+  let alwaysApply = alwaysApplySkillPrimes;
+  let alwaysApplyDropped = 0;
+  const total = manualSkillPrimes.length + alwaysApply.length;
+  if (total > maxPrimesPerTurn) {
+    const budgetForAlwaysApply = Math.max(0, maxPrimesPerTurn - manualSkillPrimes.length);
+    alwaysApplyDropped = alwaysApply.length - budgetForAlwaysApply;
+    alwaysApply = alwaysApply.slice(0, budgetForAlwaysApply);
+    logger.warn(
+      `[injectSkillPrimes] Combined primes ${total} exceeds cap ${maxPrimesPerTurn}; dropping ${alwaysApplyDropped} always-apply prime(s) to preserve manual invocations.`,
+    );
+  }
+
+  const numPrimes = manualSkillPrimes.length + alwaysApply.length;
+  if (numPrimes === 0 || initialMessages.length === 0) {
+    return {
+      initialMessages,
+      indexTokenCountMap,
+      inserted: 0,
+      insertIdx: -1,
+      alwaysApplyDropped,
+    };
+  }
+
+  const insertIdx = initialMessages.length - 1;
+
+  if (indexTokenCountMap) {
+    const shifted: Record<number, number> = {};
+    for (const [idxStr, count] of Object.entries(indexTokenCountMap)) {
+      const idx = Number(idxStr);
+      shifted[idx >= insertIdx ? idx + numPrimes : idx] = count;
+    }
+    indexTokenCountMap = shifted;
+  }
+
+  const buildPrime = (p: { name: string; body: string }, trigger: SkillTrigger): HumanMessage =>
+    new HumanMessage({
+      content: p.body,
+      additional_kwargs: {
+        isMeta: true,
+        source: SKILL_MESSAGE_SOURCE,
+        trigger,
+        skillName: p.name,
+      },
+    });
+
+  const primeMessages: HumanMessage[] = [
+    ...alwaysApply.map((p) => buildPrime(p, SKILL_TRIGGER_ALWAYS_APPLY)),
+    ...manualSkillPrimes.map((p) => buildPrime(p, SKILL_TRIGGER_MANUAL)),
+  ];
+  initialMessages.splice(insertIdx, 0, ...primeMessages);
+
+  return {
+    initialMessages,
+    indexTokenCountMap,
+    inserted: numPrimes,
+    insertIdx,
+    alwaysApplyDropped,
+  };
 }
 
 export interface SkillPrimeContentPart {

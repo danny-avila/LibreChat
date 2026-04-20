@@ -291,6 +291,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
       listSkillsByAccess: db.listSkillsByAccess,
+      listAlwaysApplySkills: db.listAlwaysApplySkills,
       getSkillByName: db.getSkillByName,
     },
   );
@@ -389,6 +390,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
         listSkillsByAccess: db.listSkillsByAccess,
+        listAlwaysApplySkills: db.listAlwaysApplySkills,
         getSkillByName: db.getSkillByName,
       },
     );

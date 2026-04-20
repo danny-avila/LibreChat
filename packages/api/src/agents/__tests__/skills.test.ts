@@ -34,12 +34,16 @@ import {
   injectSkillCatalog,
   buildSkillPrimeMessage,
   resolveManualSkills,
+  resolveAlwaysApplySkills,
   injectManualSkillPrimes,
+  injectSkillPrimes,
   extractManualSkills,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
   unionPrimeAllowedTools,
   MAX_MANUAL_SKILLS,
+  MAX_ALWAYS_APPLY_SKILLS,
+  MAX_PRIMED_SKILLS_PER_TURN,
 } from '../skills';
 import { extractInvokedSkillsFromPayload } from '../run';
 
@@ -1116,6 +1120,7 @@ describe('injectManualSkillPrimes', () => {
     expect(primed.additional_kwargs).toEqual({
       isMeta: true,
       source: 'skill',
+      trigger: 'manual',
       skillName: 'brand',
     });
   });
@@ -1357,5 +1362,376 @@ describe('unionPrimeAllowedTools', () => {
       agentToolNames: [],
     });
     expect(result.extraToolNames).toEqual(['z-tool', 'm-tool', 'a-tool', 'b-tool']);
+  });
+});
+describe('resolveAlwaysApplySkills', () => {
+  const userId = new Types.ObjectId().toString();
+  const userOid = new Types.ObjectId(userId);
+  const otherAuthor = new Types.ObjectId();
+
+  type AlwaysApplyRow = {
+    _id: Types.ObjectId;
+    name: string;
+    body: string;
+    author: Types.ObjectId | string;
+    allowedTools?: string[];
+  };
+
+  const mkRow = (
+    name: string,
+    author: Types.ObjectId,
+    body = `body of ${name}`,
+  ): AlwaysApplyRow => ({
+    _id: new Types.ObjectId(),
+    name,
+    body,
+    author,
+  });
+
+  /** Single-page lister — emits every row on page 1, then signals `has_more: false`. */
+  const buildLister = (rows: AlwaysApplyRow[]) =>
+    jest.fn().mockResolvedValue({ skills: rows, has_more: false, after: null });
+
+  /**
+   * Multi-page lister driven by a cursor string. Each `page` is a
+   * slice of rows emitted on the matching cursor call, with `has_more`
+   * / `after` set automatically so the resolver advances through the
+   * pages in order.
+   */
+  const buildPagedLister = (pages: AlwaysApplyRow[][]) =>
+    jest.fn().mockImplementation(async (args: { cursor?: string | null }) => {
+      const idx = args.cursor ? Number(args.cursor) : 0;
+      const skills = pages[idx] ?? [];
+      const has_more = idx < pages.length - 1;
+      return { skills, has_more, after: has_more ? String(idx + 1) : null };
+    });
+
+  it('returns empty when accessibleSkillIds is empty', async () => {
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: buildLister([mkRow('foo', userOid)]),
+      accessibleSkillIds: [],
+      userId,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('resolves owned always-apply skills into the prime shape by default', async () => {
+    const row = mkRow('my-always', userOid, 'BODY');
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: buildLister([row]),
+      accessibleSkillIds: [row._id],
+      userId,
+    });
+    expect(result).toEqual([{ _id: row._id, name: 'my-always', body: 'BODY' }]);
+  });
+
+  it('passes allowedTools through when the row declares them', async () => {
+    const row: AlwaysApplyRow = {
+      ...mkRow('with-tools', userOid, 'body'),
+      allowedTools: ['execute_code'],
+    };
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: buildLister([row]),
+      accessibleSkillIds: [row._id],
+      userId,
+    });
+    expect(result).toEqual([
+      { _id: row._id, name: 'with-tools', body: 'body', allowedTools: ['execute_code'] },
+    ]);
+  });
+
+  it('filters shared always-apply skills when defaultActiveOnShare is false', async () => {
+    const shared = mkRow('shared', otherAuthor);
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: buildLister([shared]),
+      accessibleSkillIds: [shared._id],
+      userId,
+      defaultActiveOnShare: false,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('allows shared always-apply skills when defaultActiveOnShare is true', async () => {
+    const shared = mkRow('shared-on', otherAuthor, 'shared-body');
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: buildLister([shared]),
+      accessibleSkillIds: [shared._id],
+      userId,
+      defaultActiveOnShare: true,
+    });
+    expect(result).toEqual([{ _id: shared._id, name: 'shared-on', body: 'shared-body' }]);
+  });
+
+  it('honors explicit deactivation override even for owned skills', async () => {
+    const owned = mkRow('owned-off', userOid);
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: buildLister([owned]),
+      accessibleSkillIds: [owned._id],
+      userId,
+      skillStates: { [owned._id.toString()]: false },
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('skips rows with empty bodies (priming nothing adds no value)', async () => {
+    const empty = mkRow('empty', userOid, '');
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: buildLister([empty]),
+      accessibleSkillIds: [empty._id],
+      userId,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('issues a paginated fetch with a roomy page size (not the active budget as the DB cap)', async () => {
+    const row = mkRow('n1', userOid);
+    const lister = buildLister([row]);
+    await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: [row._id],
+      userId,
+    });
+    // Page size must be larger than MAX_ALWAYS_APPLY_SKILLS so a single
+    // page normally suffices; using the budget itself as the DB cap would
+    // starve the active-state filter when early rows are inactive.
+    const call = lister.mock.calls[0][0] as { limit: number };
+    expect(call.limit).toBeGreaterThan(MAX_ALWAYS_APPLY_SKILLS);
+  });
+
+  it('respects a caller-supplied maxAlwaysApplySkills cap on the number of active primes', async () => {
+    const rows = Array.from({ length: 8 }, (_, i) => mkRow(`n${i}`, userOid));
+    const lister = buildLister(rows);
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: rows.map((r) => r._id),
+      userId,
+      maxAlwaysApplySkills: 3,
+    });
+    expect(result).toHaveLength(3);
+    expect(result.map((r) => r.name)).toEqual(['n0', 'n1', 'n2']);
+  });
+
+  it('stops paginating once maxAlwaysApplySkills active primes are collected', async () => {
+    const page1 = Array.from({ length: 5 }, (_, i) => mkRow(`p1-${i}`, userOid));
+    const page2 = Array.from({ length: 5 }, (_, i) => mkRow(`p2-${i}`, userOid));
+    const lister = buildPagedLister([page1, page2]);
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: [...page1, ...page2].map((r) => r._id),
+      userId,
+      maxAlwaysApplySkills: 3,
+    });
+    expect(result).toHaveLength(3);
+    // Only needed the first page's first 3 rows — never asked for page 2.
+    expect(lister).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns [] when maxAlwaysApplySkills is 0 (no-op short-circuit before DB)', async () => {
+    const lister = buildLister([mkRow('n1', userOid)]);
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: [new Types.ObjectId()],
+      userId,
+      maxAlwaysApplySkills: 0,
+    });
+    expect(result).toEqual([]);
+    expect(lister).not.toHaveBeenCalled();
+  });
+
+  it('paginates across inactive-for-user rows to fill the active budget (no silent starvation)', async () => {
+    // Page 1 is all shared-inactive (defaultActiveOnShare: false).
+    const inactivePage = Array.from({ length: 5 }, (_, i) => mkRow(`shared-${i}`, otherAuthor));
+    // Page 2 has owned (always-active) rows that should backfill the budget.
+    const ownedPage = Array.from({ length: 3 }, (_, i) => mkRow(`owned-${i}`, userOid));
+    const lister = buildPagedLister([inactivePage, ownedPage]);
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: [...inactivePage, ...ownedPage].map((r) => r._id),
+      userId,
+      defaultActiveOnShare: false,
+      maxAlwaysApplySkills: 5,
+    });
+    expect(result.map((r) => r.name)).toEqual(['owned-0', 'owned-1', 'owned-2']);
+    expect(lister).toHaveBeenCalledTimes(2);
+  });
+
+  it('dedupes duplicate-named always-apply skills (keeps first/freshest by DB sort)', async () => {
+    // Same `name` but distinct `_id` — mimics two authors in the same
+    // tenant shipping skills with matching names that both ended up in
+    // the user's accessible set. DB sort puts the row returned first
+    // as the "fresher" one (updatedAt desc).
+    const fresh = mkRow('shared-name', userOid, 'FRESH BODY');
+    const stale = mkRow('shared-name', otherAuthor, 'STALE BODY');
+    const lister = buildLister([fresh, stale]);
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: [fresh._id, stale._id],
+      userId,
+      defaultActiveOnShare: true,
+    });
+    expect(result).toEqual([{ _id: fresh._id, name: 'shared-name', body: 'FRESH BODY' }]);
+  });
+
+  it('dedupes across page boundaries, not just within a single page', async () => {
+    const page1 = [mkRow('dup', userOid, 'FIRST')];
+    const page2 = [mkRow('dup', userOid, 'SECOND')];
+    const lister = buildPagedLister([page1, page2]);
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: [page1[0]._id, page2[0]._id],
+      userId,
+      maxAlwaysApplySkills: 5,
+    });
+    expect(result).toEqual([{ _id: page1[0]._id, name: 'dup', body: 'FIRST' }]);
+  });
+
+  it('stops after MAX_ALWAYS_APPLY_PAGES even when no active row is found', async () => {
+    const inactivePage = Array.from({ length: 20 }, (_, i) => mkRow(`shared-${i}`, otherAuthor));
+    // 12 inactive pages — loop must cap out at MAX_ALWAYS_APPLY_PAGES (10)
+    // rather than scanning indefinitely.
+    const pages = Array.from({ length: 12 }, () => inactivePage);
+    const lister = buildPagedLister(pages);
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: inactivePage.map((r) => r._id),
+      userId,
+      defaultActiveOnShare: false,
+    });
+    expect(result).toEqual([]);
+    expect(lister).toHaveBeenCalledTimes(10);
+  });
+
+  it('terminates early when has_more is false even below the active budget', async () => {
+    const page = [mkRow('solo', userOid)];
+    const lister = buildPagedLister([page]);
+    await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: [page[0]._id],
+      userId,
+    });
+    expect(lister).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows lister errors and returns [] so a DB blip does not block the turn', async () => {
+    const lister = jest.fn().mockRejectedValue(new Error('db down'));
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: lister,
+      accessibleSkillIds: [new Types.ObjectId()],
+      userId,
+    });
+    expect(result).toEqual([]);
+  });
+});
+
+describe('injectSkillPrimes', () => {
+  const manual = (name: string, body: string) => ({ name, body });
+  const always = (name: string, body: string) => ({ name, body });
+
+  it('splices both lists with always-apply first, manual last (closer to user msg)', () => {
+    const userMsg = new HumanMessage('what next?');
+    const messages = [userMsg];
+    const result = injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes: [manual('brand', 'brand-body')],
+      alwaysApplySkillPrimes: [always('legal', 'legal-body')],
+    });
+    expect(result.inserted).toBe(2);
+    expect(messages).toHaveLength(3);
+    expect(messages[0].content).toBe('legal-body');
+    expect(messages[1].content).toBe('brand-body');
+    expect(messages[2]).toBe(userMsg);
+  });
+
+  it('tags triggers distinctly on each primed HumanMessage', () => {
+    const messages = [new HumanMessage('hello')];
+    injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes: [manual('m', 'm-body')],
+      alwaysApplySkillPrimes: [always('a', 'a-body')],
+    });
+    const alwaysPrime = messages[0] as HumanMessage;
+    const manualPrime = messages[1] as HumanMessage;
+    expect(alwaysPrime.additional_kwargs.trigger).toBe('always-apply');
+    expect(manualPrime.additional_kwargs.trigger).toBe('manual');
+  });
+
+  it('is a no-op when both lists are empty/undefined', () => {
+    const messages = [new HumanMessage('hi')];
+    const map = { 0: 7 };
+    const result = injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: map,
+    });
+    expect(result.inserted).toBe(0);
+    expect(result.insertIdx).toBe(-1);
+    expect(messages).toHaveLength(1);
+    expect(result.indexTokenCountMap).toBe(map);
+  });
+
+  it('truncates always-apply first when combined total exceeds maxPrimesPerTurn', () => {
+    const messages = [new HumanMessage('user')];
+    const manualSkillPrimes = [manual('m1', 'm1'), manual('m2', 'm2')];
+    const alwaysApplySkillPrimes = [always('a1', 'a1'), always('a2', 'a2'), always('a3', 'a3')];
+    const result = injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes,
+      alwaysApplySkillPrimes,
+      maxPrimesPerTurn: 3, // total 5, cap 3 → 1 always-apply survives
+    });
+    expect(result.inserted).toBe(3);
+    expect(result.alwaysApplyDropped).toBe(2);
+    // Ordering: [a1, m1, m2, user]
+    expect(messages.map((m) => (m as HumanMessage).content)).toEqual(['a1', 'm1', 'm2', 'user']);
+  });
+
+  it('preserves all manual primes when the cap is below their count (budget clamped to 0)', () => {
+    const messages = [new HumanMessage('user')];
+    const manualSkillPrimes = Array.from({ length: 5 }, (_, i) => manual(`m${i}`, `m${i}`));
+    const alwaysApplySkillPrimes = [always('a1', 'a1'), always('a2', 'a2')];
+    const result = injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      manualSkillPrimes,
+      alwaysApplySkillPrimes,
+      maxPrimesPerTurn: 3,
+    });
+    // Manual (5) already exceeds cap (3); budget for always-apply is 0.
+    expect(result.alwaysApplyDropped).toBe(2);
+    // All 5 manual primes still land (cap defense is manual-preserving; upstream
+    // resolver is responsible for capping manual to MAX_MANUAL_SKILLS before here).
+    expect(result.inserted).toBe(5);
+    const contents = messages.map((m) => (m as HumanMessage).content);
+    expect(contents).toEqual(['m0', 'm1', 'm2', 'm3', 'm4', 'user']);
+  });
+
+  it('uses MAX_PRIMED_SKILLS_PER_TURN as the default combined cap', () => {
+    const messages = [new HumanMessage('user')];
+    // Land exactly 1 over the cap so we can observe the drop
+    const overCapCount = MAX_PRIMED_SKILLS_PER_TURN + 1;
+    const alwaysApplySkillPrimes = Array.from({ length: overCapCount }, (_, i) =>
+      always(`a${i}`, `a${i}`),
+    );
+    const result = injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: undefined,
+      alwaysApplySkillPrimes,
+    });
+    expect(result.alwaysApplyDropped).toBe(1);
+    expect(result.inserted).toBe(MAX_PRIMED_SKILLS_PER_TURN);
+  });
+
+  it('shifts indexTokenCountMap for combined splices', () => {
+    const messages = [new HumanMessage('user-0'), new HumanMessage('user-1')];
+    const result = injectSkillPrimes({
+      initialMessages: messages,
+      indexTokenCountMap: { 0: 3, 1: 5 },
+      manualSkillPrimes: [manual('m', 'm-body')],
+      alwaysApplySkillPrimes: [always('a', 'a-body')],
+    });
+    // insertIdx = 1, numPrimes = 2 → entry at idx 1 moves to idx 3
+    expect(result.indexTokenCountMap).toEqual({ 0: 3, 3: 5 });
   });
 });
