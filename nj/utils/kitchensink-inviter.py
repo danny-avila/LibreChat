@@ -23,27 +23,24 @@ def get_kitchensink_container(client, cluster_arn, service_name):
     raise ValueError("Librechat container not found")
 
 
-def create_users(client, cluster_arn, task_arn, email_list, default_password):
-    for email in email_list:
-        name = email[0:email.index("@")]
+def create_user(client, cluster_arn, task_arn, email, password):
+    name = email[0:email.index("@")]
 
-        command = f"npm run create-user -- {email} {name} {name} {default_password} --email-verified=true"
+    command = f"npm run create-user -- {email} {name} {name} {password} --email-verified=true"
 
-        client.execute_command(
-            cluster = cluster_arn,
-            container = "librechat",
-            task = task_arn,
-            command = command,
-            interactive = True
-        )
+    client.execute_command(
+        cluster = cluster_arn,
+        container = "librechat",
+        task = task_arn,
+        command = command,
+        interactive = True
+    )
 
 
-def _parse_emails(s):
-    emails = [e.strip() for e in s.split(',')]
-    for email in emails:
-        if not EMAIL_PATTERN.match(email):
-            raise argparse.ArgumentTypeError(f"Invalid email: {email}")
-    return emails
+def _validate_email(email):
+    if not EMAIL_PATTERN.match(email):
+        raise argparse.ArgumentTypeError(f"Invalid email: {email}")
+    return email
 
 
 def _get_account_id():
@@ -54,9 +51,9 @@ def _get_account_id():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("email_list", 
-                        type=_parse_emails,
-                        help="Comma-separated list of emails"
+    parser.add_argument("email",
+                        type=_validate_email,
+                        help="Email address for the user"
                         )
     args = parser.parse_args()
     session = boto3.session.Session()
@@ -64,15 +61,18 @@ def main():
 
     cluster_name = os.getenv("KITCHENSINK_CLUSTER_NAME")
     service_name = os.getenv("KITCHENSINK_SERVICE_NAME")
-    default_password = os.getenv("DEFAULT_PASSWORD")
+    password = os.getenv("USER_PASSWORD")
+
+    if not password:
+        raise ValueError("USER_PASSWORD environment variable is required")
 
     cluster_arn = f"arn:aws:ecs:{session.region_name}:{_get_account_id()}:cluster/{cluster_name}"
-    
+
     task_arn, container_arn = get_kitchensink_container(client, cluster_arn, service_name)
 
-    print(f"KitchenSink Container found, creating the following users: {args.email_list}")
+    print(f"KitchenSink Container found, creating user: {args.email}")
 
-    create_users(client, cluster_arn, task_arn, args.email_list, default_password)
+    create_user(client, cluster_arn, task_arn, args.email, password)
 
 
 if __name__ == "__main__": 

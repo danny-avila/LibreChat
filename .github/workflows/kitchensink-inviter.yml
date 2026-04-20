@@ -3,15 +3,19 @@ name: KitchenSink User Inviter
 on:
   workflow_dispatch:
     inputs:
-      email_list:
-        description: 'Comma-separated list of email addresses'
+      email:
+        description: 'single email'
+        required: true
+        type: string
+      password:
+        description: 'password'
         required: true
         type: string
 
 jobs:
   invite-users:
     runs-on: ubuntu-latest
-    environment: dev
+    environment: dev-deploy
 
     steps:
       - name: Checkout repository
@@ -36,5 +40,5 @@ jobs:
         env:
           KITCHENSINK_CLUSTER_NAME: ${{ secrets.KITCHENSINK_CLUSTER_NAME }}
           KITCHENSINK_SERVICE_NAME: ${{ secrets.KITCHENSINK_SERVICE_NAME }}
-          DEFAULT_PASSWORD: ${{ secrets.DEFAULT_PASSWORD }}
-        run: python nj/utils/kitchensink-inviter.py "${{ inputs.email_list }}"
+          USER_PASSWORD: ::add-mask::${{ inputs.password }}
+        run: python nj/utils/kitchensink-inviter.py "${{ inputs.email }}"
