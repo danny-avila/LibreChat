@@ -19,17 +19,15 @@ function extractPreviewFromContent(content?: TMessageContentParts[]): string {
     return '';
   }
   for (const part of content) {
-    if (part.type === ContentTypes.TEXT) {
-      const textField = part[ContentTypes.TEXT];
-      if (typeof textField === 'string' && textField.trim()) {
-        return textField;
-      }
-      if (textField && typeof textField === 'object' && 'value' in textField) {
-        const value = (textField as { value?: string }).value;
-        if (value?.trim()) {
-          return value;
-        }
-      }
+    if (part.type !== ContentTypes.TEXT) {
+      continue;
+    }
+    const textField = part.text;
+    if (typeof textField === 'string' && textField.trim()) {
+      return textField;
+    }
+    if (textField && typeof textField === 'object' && textField.value?.trim()) {
+      return textField.value;
     }
   }
   return '';
@@ -45,8 +43,10 @@ function buildEntry(id: string, msg: TMessage): MessageEntry {
   };
 }
 
+const USER_TURN_SELECTOR = '.user-turn';
+
 function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry {
-  const isUser = node.querySelector('.user-turn') != null;
+  const isUser = node.querySelector(USER_TURN_SELECTOR) != null;
   const trimmed = (node.textContent ?? '').trim();
   return {
     id,
@@ -85,46 +85,6 @@ function readScrollMargin(el: HTMLElement | null): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-let activeScrollToken = 0;
-
-function scrollToMessageStart(id: string) {
-  const el = document.getElementById(id);
-  if (!el) {
-    return;
-  }
-  const container = el.closest<HTMLElement>('.scrollbar-gutter-stable');
-  if (!container) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
-  }
-  const token = ++activeScrollToken;
-  const scrollMargin = readScrollMargin(el);
-  const startScroll = container.scrollTop;
-  const start = performance.now();
-
-  const step = (now: number) => {
-    if (token !== activeScrollToken) {
-      return;
-    }
-    const progress = Math.min(1, (now - start) / SCROLL_DURATION);
-    const current = document.getElementById(id);
-    if (!current) {
-      return;
-    }
-    const cRect = container.getBoundingClientRect();
-    const elRect = current.getBoundingClientRect();
-    const targetScroll = container.scrollTop + (elRect.top - cRect.top) - scrollMargin;
-    const max = container.scrollHeight - container.clientHeight;
-    const clamped = Math.max(0, Math.min(targetScroll, max));
-    container.scrollTop = startScroll + (clamped - startScroll) * easeOutCubic(progress);
-    if (progress < 1) {
-      requestAnimationFrame(step);
-    }
-  };
-
-  requestAnimationFrame(step);
-}
-
 const indicatorButtonClasses = cn(
   'flex h-[5px] items-center justify-center rounded-sm',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
@@ -134,17 +94,19 @@ const MessageIndicator = memo(function MessageIndicator({
   entry,
   isActive,
   label,
+  onSelect,
 }: {
   entry: MessageEntry;
   isActive: boolean;
   label: string;
+  onSelect: (id: string) => void;
 }) {
   return (
     <HoverCard openDelay={150}>
       <HoverCardTrigger asChild>
         <button
           type="button"
-          onClick={() => scrollToMessageStart(entry.id)}
+          onClick={() => onSelect(entry.id)}
           className={cn(indicatorButtonClasses, entry.isUser ? 'w-4' : 'w-6')}
           aria-label={label}
           aria-current={isActive ? 'true' : undefined}
@@ -206,6 +168,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const columnRef = useRef<HTMLDivElement>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleSetRef = useRef(new Set<string>());
+  const messagesByIdRef = useRef(messagesById);
+  const scrollTokenRef = useRef(0);
+  const scrollMarginRef = useRef(0);
+
+  useEffect(() => {
+    messagesByIdRef.current = messagesById;
+  }, [messagesById]);
 
   const refreshEntries = useCallback(() => {
     if (refreshTimerRef.current) {
@@ -213,7 +182,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
     refreshTimerRef.current = setTimeout(() => {
       const root = scrollableRef.current ?? document;
-      const next = getMessageEntries(root, messagesById);
+      const next = getMessageEntries(root, messagesByIdRef.current);
       setEntries((prev) => {
         if (
           prev.length === next.length &&
@@ -224,7 +193,49 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         return next;
       });
     }, 200);
-  }, [scrollableRef, messagesById]);
+  }, [scrollableRef]);
+
+  useEffect(() => {
+    refreshEntries();
+  }, [messagesById, refreshEntries]);
+
+  const scrollToStart = useCallback((id: string) => {
+    const el = document.getElementById(id);
+    if (!el) {
+      return;
+    }
+    const container = el.closest<HTMLElement>('.scrollbar-gutter-stable');
+    if (!container) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    const token = ++scrollTokenRef.current;
+    const scrollMargin = scrollMarginRef.current || readScrollMargin(el);
+    const startScroll = container.scrollTop;
+    const start = performance.now();
+
+    const step = (now: number) => {
+      if (token !== scrollTokenRef.current) {
+        return;
+      }
+      const progress = Math.min(1, (now - start) / SCROLL_DURATION);
+      const current = document.getElementById(id);
+      if (!current) {
+        return;
+      }
+      const cRect = container.getBoundingClientRect();
+      const elRect = current.getBoundingClientRect();
+      const targetScroll = container.scrollTop + (elRect.top - cRect.top) - scrollMargin;
+      const max = container.scrollHeight - container.clientHeight;
+      const clamped = Math.max(0, Math.min(targetScroll, max));
+      container.scrollTop = startScroll + (clamped - startScroll) * easeOutCubic(progress);
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      }
+    };
+
+    requestAnimationFrame(step);
+  }, []);
 
   useEffect(() => {
     refreshEntries();
@@ -306,6 +317,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
     const firstEl = document.getElementById(entries[0].id);
     const scrollMargin = readScrollMargin(firstEl);
+    scrollMarginRef.current = scrollMargin;
 
     let needsRecompute = false;
     let frameId: number | null = null;
@@ -485,19 +497,19 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
     const scrollTop = container.scrollTop;
     const firstEl = document.getElementById(entries[0].id);
-    const scrollMargin = readScrollMargin(firstEl);
+    const scrollMargin = scrollMarginRef.current || readScrollMargin(firstEl);
     for (let i = entries.length - 1; i >= 0; i--) {
       const el = document.getElementById(entries[i].id);
       if (!el) {
         continue;
       }
       if (el.offsetTop - scrollMargin < scrollTop - JUMP_EPS) {
-        scrollToMessageStart(entries[i].id);
+        scrollToStart(entries[i].id);
         return;
       }
     }
     container.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [entries, scrollableRef]);
+  }, [entries, scrollableRef, scrollToStart]);
 
   const jumpToNext = useCallback(() => {
     const container = scrollableRef.current;
@@ -506,18 +518,18 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
     const scrollTop = container.scrollTop;
     const firstEl = document.getElementById(entries[0].id);
-    const scrollMargin = readScrollMargin(firstEl);
+    const scrollMargin = scrollMarginRef.current || readScrollMargin(firstEl);
     for (let i = 0; i < entries.length; i++) {
       const el = document.getElementById(entries[i].id);
       if (!el) {
         continue;
       }
       if (el.offsetTop - scrollMargin > scrollTop + JUMP_EPS) {
-        scrollToMessageStart(entries[i].id);
+        scrollToStart(entries[i].id);
         return;
       }
     }
-  }, [entries, scrollableRef]);
+  }, [entries, scrollableRef, scrollToStart]);
 
   if (entries.length < 3) {
     return null;
@@ -554,6 +566,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
             key={entry.id}
             entry={entry}
             isActive={activeIds.has(entry.id)}
+            onSelect={scrollToStart}
             label={localize(
               entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
               { 0: entry.preview.slice(0, 30) },

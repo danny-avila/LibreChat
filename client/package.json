@@ -121,7 +121,7 @@
     "@babel/plugin-transform-runtime": "^7.22.15",
     "@babel/preset-env": "^7.22.15",
     "@babel/preset-react": "^7.22.15",
-    "@babel/preset-typescript": "^7.22.15",
+    "@babel/preset-typescript": "^7.28.5",
     "@happy-dom/jest-environment": "^20.8.9",
     "@tanstack/react-query-devtools": "^4.29.0",
     "@testing-library/dom": "^9.3.0",

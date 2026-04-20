@@ -1,6 +1,15 @@
 import React from 'react';
 import { render, act, fireEvent } from '@testing-library/react';
-import type { TMessage } from 'librechat-data-provider';
+
+type ReactNode = React.ReactNode;
+type RefObject<T> = React.RefObject<T>;
+
+type TestMessage = {
+  messageId: string;
+  conversationId?: string;
+  text?: string;
+  isCreatedByUser?: boolean;
+};
 
 const mockUseGetMessagesByConvoId = jest.fn();
 const mockUseMessagesConversation = jest.fn();
@@ -21,17 +30,11 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
-  HoverCard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  HoverCardTrigger: ({ children, asChild }: { children: React.ReactNode; asChild?: boolean }) =>
+  HoverCard: ({ children }: { children: ReactNode }) => <>{children}</>,
+  HoverCardTrigger: ({ children, asChild }: { children: ReactNode; asChild?: boolean }) =>
     asChild ? children : <div>{children}</div>,
-  HoverCardPortal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  HoverCardContent: ({
-    children,
-    className,
-  }: {
-    children: React.ReactNode;
-    className?: string;
-  }) => (
+  HoverCardPortal: ({ children }: { children: ReactNode }) => <>{children}</>,
+  HoverCardContent: ({ children, className }: { children: ReactNode; className?: string }) => (
     <div data-testid="hover-card-content" className={className}>
       {children}
     </div>
@@ -85,17 +88,20 @@ const originalIO = global.IntersectionObserver;
 
 import MessageNav from '../MessageNav';
 
-function buildMessage(overrides: Partial<TMessage> = {}): TMessage {
+function buildMessage(overrides: Partial<TestMessage> = {}): TestMessage {
   return {
     messageId: 'm',
     conversationId: 'test-convo',
     text: 'hello',
     isCreatedByUser: false,
     ...overrides,
-  } as TMessage;
+  };
 }
 
-function buildDom(messages: TMessage[]): { scrollable: HTMLDivElement; content: HTMLDivElement } {
+function buildDom(messages: TestMessage[]): {
+  scrollable: HTMLDivElement;
+  content: HTMLDivElement;
+} {
   const scrollable = document.createElement('div');
   scrollable.className = 'scrollbar-gutter-stable';
   Object.defineProperty(scrollable, 'clientHeight', { value: 600, configurable: true });
@@ -109,7 +115,7 @@ function buildDom(messages: TMessage[]): { scrollable: HTMLDivElement; content: 
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     const div = document.createElement('div');
-    div.id = m.messageId as string;
+    div.id = m.messageId;
     div.className = 'message-render';
     if (m.isCreatedByUser) {
       const turn = document.createElement('div');
@@ -128,10 +134,10 @@ function buildDom(messages: TMessage[]): { scrollable: HTMLDivElement; content: 
   return { scrollable, content };
 }
 
-function renderNav(messages: TMessage[]) {
+function renderNav(messages: TestMessage[]) {
   mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
   const { scrollable, content } = buildDom(messages);
-  const scrollableRef = { current: scrollable } as React.RefObject<HTMLDivElement>;
+  const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
   const result = render(<MessageNav scrollableRef={scrollableRef} />);
   act(() => {
     jest.advanceTimersByTime(250);
@@ -246,7 +252,7 @@ describe('MessageNav', () => {
         content.appendChild(div);
       }
       document.body.appendChild(scrollable);
-      const scrollableRef = { current: scrollable } as React.RefObject<HTMLDivElement>;
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
       const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
       act(() => {
         jest.advanceTimersByTime(250);
@@ -402,6 +408,72 @@ describe('MessageNav', () => {
         steps[0](performance.now());
         steps[steps.length - 1](performance.now());
       }).not.toThrow();
+
+      rafSpy.mockRestore();
+    });
+
+    it('keeps per-instance scroll tokens isolated across mounted MessageNav instances', () => {
+      const messagesA = [
+        buildMessage({ messageId: 'a1', text: 'one', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a2', text: 'two' }),
+        buildMessage({ messageId: 'a3', text: 'three', isCreatedByUser: true }),
+      ];
+      const messagesB = [
+        buildMessage({ messageId: 'b1', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b2', text: 'beta' }),
+        buildMessage({ messageId: 'b3', text: 'gamma', isCreatedByUser: true }),
+      ];
+
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messagesA });
+      const domA = buildDom(messagesA);
+      const { container: navA } = render(
+        <MessageNav scrollableRef={{ current: domA.scrollable } as RefObject<HTMLDivElement>} />,
+      );
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messagesB });
+      const domB = buildDom(messagesB);
+      const { container: navB } = render(
+        <MessageNav scrollableRef={{ current: domB.scrollable } as RefObject<HTMLDivElement>} />,
+      );
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const steps: Array<(ts: number) => void> = [];
+      const rafSpy = jest
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((cb: FrameRequestCallback) => {
+          steps.push(cb);
+          return steps.length;
+        });
+
+      const indA = navA.querySelectorAll('[data-msg-id]')[2] as HTMLButtonElement;
+      const indB = navB.querySelectorAll('[data-msg-id]')[2] as HTMLButtonElement;
+
+      act(() => {
+        fireEvent.click(indA);
+      });
+      act(() => {
+        fireEvent.click(indB);
+      });
+
+      expect(steps.length).toBeGreaterThanOrEqual(2);
+
+      let aScrollTouched = false;
+      Object.defineProperty(domA.scrollable, 'scrollTop', {
+        get: () => 0,
+        set: () => {
+          aScrollTouched = true;
+        },
+        configurable: true,
+      });
+      act(() => {
+        steps[0](performance.now());
+      });
+      expect(aScrollTouched).toBe(true);
 
       rafSpy.mockRestore();
     });
