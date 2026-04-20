@@ -89,6 +89,16 @@ type TestCustomEndpoint = Partial<TEndpoint> & {
 };
 
 /**
+ * Shape of summarization parameters used in tests. The LibreChat config
+ * schema restricts yaml `parameters` to primitive values, but the SDK
+ * passes any record through as-is — tests need the wider shape to exercise
+ * cross-endpoint `configuration` merging.
+ */
+type TestSummarizationParameters = Record<string, unknown> & {
+  configuration?: Record<string, unknown>;
+};
+
+/**
  * Minimal AppConfig fixture for testing. Only `endpoints` is read by
  * `resolveSummarizationProvider`; other required AppConfig fields are
  * filled with empty/default values so the shape matches without needing
@@ -676,20 +686,21 @@ describe('custom-endpoint provider resolution', () => {
         headers: { 'X-Required-Header': 'keep-me' },
       },
     ]);
+    const parameters: TestSummarizationParameters = {
+      configuration: { defaultQuery: { 'api-version': '2024-06-01' } },
+    };
     const agents = await callAndCapture({
       summarizationConfig: {
         provider: 'Ollama',
         model: 'llama3',
-        parameters: {
-          configuration: { defaultQuery: { 'api-version': '2024-06-01' } },
-        } as unknown as SummarizationConfig['parameters'],
+        parameters: parameters as SummarizationConfig['parameters'],
       },
       appConfig,
     });
 
     const config = agents[0].summarizationConfig as Record<string, unknown>;
-    const parameters = config.parameters as Record<string, unknown>;
-    const configuration = parameters.configuration as Record<string, unknown>;
+    const resolvedParameters = config.parameters as Record<string, unknown>;
+    const configuration = resolvedParameters.configuration as Record<string, unknown>;
     /** Endpoint defaults preserved... */
     expect(configuration.baseURL).toBe('http://localhost:11434/v1');
     expect((configuration.defaultHeaders as Record<string, string>)['X-Required-Header']).toBe(
@@ -697,6 +708,33 @@ describe('custom-endpoint provider resolution', () => {
     );
     /** ...alongside the user's additions. */
     expect(configuration.defaultQuery).toEqual({ 'api-version': '2024-06-01' });
+  });
+
+  it('user-supplied configuration.baseURL overrides resolved baseURL', async () => {
+    /**
+     * Deep-merge still lets user keys win on conflict — if a user explicitly
+     * sets `configuration.baseURL` in their summarization parameters, it
+     * must override the baseURL resolved from the endpoint config.
+     */
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const parameters: TestSummarizationParameters = {
+      configuration: { baseURL: 'https://user-override.example.com/v1' },
+    };
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: 'Ollama',
+        model: 'llama3',
+        parameters: parameters as SummarizationConfig['parameters'],
+      },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const resolvedParameters = config.parameters as Record<string, unknown>;
+    const configuration = resolvedParameters.configuration as Record<string, unknown>;
+    expect(configuration.baseURL).toBe('https://user-override.example.com/v1');
   });
 
   it('user-supplied summarization.parameters override endpoint defaults', async () => {
