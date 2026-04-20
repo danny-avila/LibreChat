@@ -14,7 +14,6 @@ const ENV_FILES_BUCKET_ARN = "arn:aws:s3:::nj-librechat-env-files";
 
 export interface KitchenSinkStackProps extends cdk.StackProps {
   listenerArn: string;
-  loadBalancer: elbv2.IApplicationLoadBalancer;
   certificateArn: string;
 }
 
@@ -31,7 +30,8 @@ export class KitchenSinkStack extends cdk.Stack {
     const execRole = this.createExecRole(fileBucket);
     const envBucket = s3.Bucket.fromBucketArn(this, "EnvFilesBucket", ENV_FILES_BUCKET_ARN);
 
-    const lbSecurityGroup = props.loadBalancer.connections.securityGroups[0];
+    const lbSecurityGroupId = cdk.Fn.importValue("EcsStack:LoadBalancerSecurityGroupId");
+    const lbSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, "ImportedLbSg", lbSecurityGroupId);
     const listener = elbv2.ApplicationListener.fromApplicationListenerAttributes(this, "ImportedListener", {
       listenerArn: props.listenerArn,
       securityGroup: lbSecurityGroup,

@@ -242,6 +242,10 @@ export class EcsStack extends cdk.Stack {
     librechatService.service.connections.allowTo(props.redisSecurityGroup, ec2.Port.tcp(EcsStack.REDIS_PORT), "LibreChat to Redis");
 
     new cdk.CfnOutput(this, "LibrechatImageUri", { value: librechatImage });
+    new cdk.CfnOutput(this, "LoadBalancerSecurityGroupId", {
+      value: librechatService.loadBalancer.connections.securityGroups[0].securityGroupId,
+      exportName: "EcsStack:LoadBalancerSecurityGroupId",
+    });
     return librechatService;
   };
 
