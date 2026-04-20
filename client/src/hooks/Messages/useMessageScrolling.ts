@@ -11,6 +11,7 @@ const debounceRate = 150;
 
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);
+  const autoScrollDuringGeneration = useRecoilValue(store.autoScrollDuringGeneration);
 
   const scrollableRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -80,7 +81,12 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return;
     }
 
-    if (isSubmitting && scrollToBottom && abortScroll !== true) {
+    if (
+      isSubmitting &&
+      scrollToBottom &&
+      abortScroll !== true &&
+      autoScrollDuringGeneration
+    ) {
       scrollToBottom();
     }
 
@@ -89,7 +95,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
         scrollToBottom && scrollToBottom.cancel();
       }
     };
-  }, [isSubmitting, messagesTree, scrollToBottom, abortScroll]);
+  }, [autoScrollDuringGeneration, isSubmitting, messagesTree, scrollToBottom, abortScroll]);
 
   useEffect(() => {
     if (!messagesEndRef.current || !scrollableRef.current) {

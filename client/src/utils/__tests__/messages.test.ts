@@ -1,6 +1,11 @@
 import type { TMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
-import { getMessageAriaLabel, getHeaderPrefixForScreenReader } from '../messages';
+import {
+  getMessageAriaLabel,
+  getHeaderPrefixForScreenReader,
+  scrollToEnd,
+  scrollToMessageStart,
+} from '../messages';
 
 const translations: Record<string, string> = {
   com_endpoint_message: 'Message',
@@ -78,5 +83,47 @@ describe('getHeaderPrefixForScreenReader', () => {
   it('omits number when depth is negative', () => {
     const msg = makeMessage({ isCreatedByUser: false, depth: -5 });
     expect(getHeaderPrefixForScreenReader(msg, localize)).toBe('Response: ');
+  });
+});
+
+describe('scroll helpers', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('scrollToEnd scrolls the end sentinel immediately', () => {
+    const element = document.createElement('div');
+    element.id = 'messages-end';
+    element.scrollIntoView = jest.fn();
+    document.body.appendChild(element);
+
+    scrollToEnd();
+
+    expect(element.scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant' });
+  });
+
+  it('scrollToMessageStart retries until the message is rendered', () => {
+    const callback = jest.fn();
+    const rafQueue: FrameRequestCallback[] = [];
+
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+      rafQueue.push(cb);
+      return rafQueue.length;
+    });
+
+    scrollToMessageStart('assistant-msg', callback);
+
+    const element = document.createElement('div');
+    element.id = 'assistant-msg';
+    element.scrollIntoView = jest.fn();
+    document.body.appendChild(element);
+
+    const nextFrame = rafQueue.shift();
+    expect(nextFrame).toBeDefined();
+
+    nextFrame?.(performance.now());
+
+    expect(element.scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant', block: 'start' });
+    expect(callback).toHaveBeenCalledTimes(1);
   });
 });

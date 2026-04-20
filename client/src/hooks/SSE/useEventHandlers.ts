@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -27,6 +27,7 @@ import {
   logger,
   setDraft,
   scrollToEnd,
+  scrollToMessageStart,
   getAllContentText,
   addConvoToAllQueries,
   updateConvoInAllQueries,
@@ -180,6 +181,7 @@ export default function useEventHandlers({
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
+  const autoScrollDuringGeneration = useRecoilValue(store.autoScrollDuringGeneration);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -414,9 +416,15 @@ export default function useEventHandlers({
         logger.log('latest_message', 'createdHandler: resetting latest message');
         resetLatestMessage();
       }
-      scrollToEnd(() => setAbortScroll(false));
+
+      if (autoScrollDuringGeneration) {
+        scrollToEnd(() => setAbortScroll(false));
+      } else {
+        scrollToMessageStart(initialResponse.messageId, () => setAbortScroll(false));
+      }
     },
     [
+      autoScrollDuringGeneration,
       setMessages,
       queryClient,
       setAbortScroll,

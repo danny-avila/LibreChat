@@ -151,14 +151,55 @@ export const getTextKey = (message?: TMessage | null, convoId?: string | null) =
   return `${(message.messageId as string | null) ?? ''}${TEXT_KEY_DIVIDER}${contentKey}${TEXT_KEY_DIVIDER}${message.conversationId ?? convoId}`;
 };
 
-export const scrollToEnd = (callback?: () => void) => {
-  const messagesEndElement = document.getElementById('messages-end');
-  if (messagesEndElement) {
-    messagesEndElement.scrollIntoView({ behavior: 'instant' });
-    if (callback) {
-      callback();
+const scrollToElement = ({
+  elementId,
+  scrollOptions,
+  callback,
+  attempts = 4,
+}: {
+  elementId: string;
+  scrollOptions: ScrollIntoViewOptions;
+  callback?: () => void;
+  attempts?: number;
+}) => {
+  let remainingAttempts = attempts;
+
+  const scroll = () => {
+    const element = document.getElementById(elementId);
+
+    if (element) {
+      element.scrollIntoView(scrollOptions);
+      callback?.();
+      return;
     }
-  }
+
+    if (remainingAttempts <= 0) {
+      callback?.();
+      return;
+    }
+
+    remainingAttempts -= 1;
+    requestAnimationFrame(scroll);
+  };
+
+  scroll();
+};
+
+export const scrollToEnd = (callback?: () => void) => {
+  scrollToElement({
+    elementId: 'messages-end',
+    scrollOptions: { behavior: 'instant' },
+    callback,
+    attempts: 0,
+  });
+};
+
+export const scrollToMessageStart = (messageId: string, callback?: () => void) => {
+  scrollToElement({
+    elementId: messageId,
+    scrollOptions: { behavior: 'instant', block: 'start' },
+    callback,
+  });
 };
 
 /**

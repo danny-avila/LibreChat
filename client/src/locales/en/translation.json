@@ -414,6 +414,7 @@
   "com_nav_audio_process_error": "Error processing audio: {{0}}",
   "com_nav_auto_expand_tools": "Auto-expand tool details",
   "com_nav_auto_scroll": "Auto-Scroll to latest message on chat open",
+  "com_nav_auto_scroll_generation": "Auto-scroll during generation",
   "com_nav_auto_send_prompts": "Send prompts on select",
   "com_nav_auto_send_prompts_desc": "Automatically submit prompt to chat when selected",
   "com_nav_auto_send_text": "Auto send text",
