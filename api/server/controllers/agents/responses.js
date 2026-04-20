@@ -2,7 +2,12 @@ const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
-const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  ResourceType,
+  PermissionBits,
+  hasPermissions,
+} = require('librechat-data-provider');
 const {
   createRun,
   buildToolSet,
@@ -13,6 +18,7 @@ const {
   getTransactionsConfig,
   createToolExecuteHandler,
   discoverConnectedAgents,
+  getRemoteAgentPermissions,
   // Responses API
   writeDone,
   buildResponse,
@@ -39,7 +45,10 @@ const {
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
-const { findAccessibleResources, checkPermission } = require('~/server/services/PermissionService');
+const {
+  findAccessibleResources,
+  getEffectivePermissions,
+} = require('~/server/services/PermissionService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { logViolation } = require('~/cache');
@@ -429,7 +438,20 @@ const createResponse = async (req, res) => {
         },
         {
           getAgent: db.getAgent,
-          checkPermission,
+          // Use `getRemoteAgentPermissions` so sub-agent authorization
+          // matches what the route's `createCheckRemoteAgentAccess`
+          // middleware does for the primary: AGENT owners with the SHARE
+          // bit are treated as remotely authorized even without an
+          // explicit REMOTE_AGENT grant.
+          checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
+            const permissions = await getRemoteAgentPermissions(
+              { getEffectivePermissions },
+              userId,
+              role,
+              resourceId,
+            );
+            return hasPermissions(permissions, requiredPermission);
+          },
           logViolation,
           db: dbMethods,
           onAgentInitialized: (agentId, handoffAgent, config) => {
