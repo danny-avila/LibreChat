@@ -1,5 +1,10 @@
 import { Run, Providers, Constants } from '@librechat/agents';
-import { KnownEndpoints, extractEnvVariable, providerEndpointMap } from 'librechat-data-provider';
+import {
+  KnownEndpoints,
+  extractEnvVariable,
+  providerEndpointMap,
+  normalizeEndpointName,
+} from 'librechat-data-provider';
 import type {
   SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
@@ -13,6 +18,7 @@ import type {
   IState,
   LCTool,
 } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import type { Agent, SummarizationConfig } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
@@ -191,24 +197,43 @@ function isNonEmptyString(value: unknown): value is string {
 
 const UNRESOLVED_ENV_VAR_PLACEHOLDER = /\$\{[^}]+\}/;
 
-/** True if the string still contains a `${VAR}` placeholder after env extraction. */
 function hasUnresolvedPlaceholder(value: string): boolean {
   return UNRESOLVED_ENV_VAR_PLACEHOLDER.test(value);
 }
 
-/**
- * Lightweight endpoint-name normalizer for comparing summarization-provider
- * strings against the agent's endpoint. Mirrors `normalizeEndpointName` in
- * `librechat-data-provider` (only Ollama is special-cased to be
- * case-insensitive), so an agent on `"Ollama"` and summarization on `"ollama"`
- * are treated as the same endpoint.
- */
-function normalizedEndpointName(name: string): string {
-  return name.toLowerCase() === 'ollama' ? 'ollama' : name;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Client-option overrides for summarization models targeting custom endpoints. */
-type SummarizationClientOverrides = Record<string, unknown>;
+/**
+ * Merges user-supplied summarization parameters on top of endpoint-resolved
+ * overrides. User params win for top-level keys; `configuration` is
+ * deep-merged so user additions (e.g. `defaultQuery`) don't wipe out the
+ * resolved `baseURL`/`defaultHeaders`/`fetchOptions`.
+ */
+function mergeParameters(
+  overrides: SummarizationClientOverrides,
+  userParams: SummarizationConfig['parameters'],
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...overrides, ...(userParams ?? {}) };
+  const userConfiguration = (userParams as Record<string, unknown> | undefined)?.configuration;
+  if (isPlainObject(overrides.configuration) && isPlainObject(userConfiguration)) {
+    merged.configuration = { ...overrides.configuration, ...userConfiguration };
+  }
+  return merged;
+}
+
+/**
+ * Mirrors `getOpenAIConfig`'s `llmConfig` shape (plus its `configOptions`
+ * assigned to `configuration`). Index signature covers fields that the
+ * helper emits dynamically per provider variant.
+ */
+interface SummarizationClientOverrides {
+  apiKey?: string;
+  streaming?: boolean;
+  configuration?: t.OpenAIConfiguration;
+  [key: string]: unknown;
+}
 
 /**
  * Resolves a summarization provider string (which may be a custom-endpoint name
@@ -320,7 +345,11 @@ function resolveSummarizationProvider(
       provider: overrideProvider,
       clientOverrides,
     };
-  } catch {
+  } catch (error) {
+    logger.warn(
+      `[resolveSummarizationProvider] failed to resolve "${rawProvider}"; falling back to raw provider`,
+      error,
+    );
     return { provider: rawProvider };
   }
 }
@@ -345,7 +374,7 @@ function shapeSummarizationConfig(
   const isSameEndpointAsAgent =
     agentEndpoint != null &&
     isNonEmptyString(rawProvider) &&
-    normalizedEndpointName(rawProvider) === normalizedEndpointName(agentEndpoint);
+    normalizeEndpointName(rawProvider) === normalizeEndpointName(agentEndpoint);
 
   const { provider, clientOverrides } = isSameEndpointAsAgent
     ? { provider: fallbackProvider, clientOverrides: undefined }
@@ -367,14 +396,13 @@ function shapeSummarizationConfig(
    * Order matters: `clientOverrides` supplies endpoint defaults (baseURL,
    * apiKey, headers, transforms), then explicit user `summarization.parameters`
    * are spread on top so settings like `streaming: false` still win over
-   * `getOpenAIConfig`'s defaults.
+   * `getOpenAIConfig`'s defaults. `configuration` is deep-merged so a user
+   * adding e.g. `configuration.defaultQuery` keeps the resolved `baseURL`
+   * and `defaultHeaders` rather than replacing the whole object.
    */
   const parameters =
     clientOverrides != null
-      ? {
-          ...clientOverrides,
-          ...(config?.parameters ?? {}),
-        }
+      ? mergeParameters(clientOverrides, config?.parameters)
       : config?.parameters;
 
   return {

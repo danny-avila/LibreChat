@@ -1,6 +1,6 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import type { SummarizationConfig } from 'librechat-data-provider';
-import { EModelEndpoint } from 'librechat-data-provider';
+import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, FileSources } from 'librechat-data-provider';
 import { createRun } from '~/agents/run';
 
 // Mock winston logger
@@ -82,14 +82,27 @@ async function callAndCapture(
 }
 
 /** Minimal AppConfig with a single custom endpoint for testing provider resolution. */
-function makeAppConfig(
-  customEndpoints: Array<{ name: string; baseURL: string; apiKey: string }>,
-): AppConfig {
+type TestCustomEndpoint = Partial<TEndpoint> & {
+  name: string;
+  baseURL: string;
+  apiKey: string;
+};
+
+/**
+ * Minimal AppConfig fixture for testing. Only `endpoints` is read by
+ * `resolveSummarizationProvider`; other required AppConfig fields are
+ * filled with empty/default values so the shape matches without needing
+ * `as unknown as AppConfig`.
+ */
+function makeAppConfig(customEndpoints: TestCustomEndpoint[]): AppConfig {
   return {
+    config: {},
+    fileStrategy: FileSources.local,
+    imageOutputType: 'png',
     endpoints: {
       [EModelEndpoint.custom]: customEndpoints,
     },
-  } as unknown as AppConfig;
+  };
 }
 
 beforeEach(() => {
@@ -413,22 +426,25 @@ describe('custom-endpoint provider resolution', () => {
 
   it('extracts ${ENV_VAR} references in custom endpoint credentials', async () => {
     process.env.TEST_OLLAMA_KEY = 'resolved-key-value';
-    const appConfig = makeAppConfig([
-      {
-        name: 'Ollama',
-        baseURL: 'http://localhost:11434/v1',
-        apiKey: '${TEST_OLLAMA_KEY}',
-      },
-    ]);
-    const agents = await callAndCapture({
-      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
-      appConfig,
-    });
+    try {
+      const appConfig = makeAppConfig([
+        {
+          name: 'Ollama',
+          baseURL: 'http://localhost:11434/v1',
+          apiKey: '${TEST_OLLAMA_KEY}',
+        },
+      ]);
+      const agents = await callAndCapture({
+        summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+        appConfig,
+      });
 
-    const config = agents[0].summarizationConfig as Record<string, unknown>;
-    const parameters = config.parameters as Record<string, unknown>;
-    expect(parameters.apiKey).toBe('resolved-key-value');
-    delete process.env.TEST_OLLAMA_KEY;
+      const config = agents[0].summarizationConfig as Record<string, unknown>;
+      const parameters = config.parameters as Record<string, unknown>;
+      expect(parameters.apiKey).toBe('resolved-key-value');
+    } finally {
+      delete process.env.TEST_OLLAMA_KEY;
+    }
   });
 
   it('keeps raw provider when apiKey is marked user_provided', async () => {
@@ -520,7 +536,7 @@ describe('custom-endpoint provider resolution', () => {
         baseURL: 'http://localhost:11434/v1',
         apiKey: 'ollama-key',
         headers: { 'X-Custom-Header': 'value-123' },
-      } as unknown as { name: string; baseURL: string; apiKey: string },
+      },
     ]);
     const agents = await callAndCapture({
       summarizationConfig: { provider: 'Ollama', model: 'llama3' },
@@ -546,7 +562,7 @@ describe('custom-endpoint provider resolution', () => {
         baseURL: 'http://localhost:11434/v1',
         apiKey: 'ollama-key',
         headers: { Authorization: 'Bearer ${TEST_PORTKEY_KEY}' },
-      } as unknown as { name: string; baseURL: string; apiKey: string },
+      },
     ]);
     await callAndCapture({
       summarizationConfig: { provider: 'Ollama', model: 'llama3' },
@@ -645,6 +661,42 @@ describe('custom-endpoint provider resolution', () => {
     expect((parameters.configuration as Record<string, unknown>).baseURL).toBe(
       'https://api.together.ai/v1',
     );
+  });
+
+  it('deep-merges user configuration with endpoint-resolved configuration', async () => {
+    /**
+     * User-supplied `parameters.configuration.defaultQuery` must merge with —
+     * not replace — the resolved `configuration` (baseURL, defaultHeaders).
+     */
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: 'ollama-key',
+        headers: { 'X-Required-Header': 'keep-me' },
+      },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: 'Ollama',
+        model: 'llama3',
+        parameters: {
+          configuration: { defaultQuery: { 'api-version': '2024-06-01' } },
+        } as unknown as SummarizationConfig['parameters'],
+      },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    const configuration = parameters.configuration as Record<string, unknown>;
+    /** Endpoint defaults preserved... */
+    expect(configuration.baseURL).toBe('http://localhost:11434/v1');
+    expect((configuration.defaultHeaders as Record<string, string>)['X-Required-Header']).toBe(
+      'keep-me',
+    );
+    /** ...alongside the user's additions. */
+    expect(configuration.defaultQuery).toEqual({ 'api-version': '2024-06-01' });
   });
 
   it('user-supplied summarization.parameters override endpoint defaults', async () => {

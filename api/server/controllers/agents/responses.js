@@ -41,17 +41,6 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const db = require('~/models');
 
-/** @type {import('@librechat/api').AppConfig | null} */
-let appConfig = null;
-
-/**
- * Set the app config for the controller
- * @param {import('@librechat/api').AppConfig} config
- */
-function setAppConfig(config) {
-  appConfig = config;
-}
-
 /**
  * Creates a tool loader function for the agent.
  * @param {AbortSignal} signal - The abort signal
@@ -333,7 +322,7 @@ const createResponse = async (req, res) => {
 
     // Build allowed providers set
     const allowedProviders = new Set(
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
+      req.config?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
     );
 
     // Create tool loader
@@ -941,5 +930,4 @@ module.exports = {
   createResponse,
   getResponse,
   listModels,
-  setAppConfig,
 };
