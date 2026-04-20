@@ -53,17 +53,6 @@ const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
-/** @type {import('@librechat/api').AppConfig | null} */
-let appConfig = null;
-
-/**
- * Set the app config for the controller
- * @param {import('@librechat/api').AppConfig} config
- */
-function setAppConfig(config) {
-  appConfig = config;
-}
-
 /**
  * Creates a tool loader function for the agent.
  * @param {AbortSignal} signal - The abort signal
@@ -345,7 +334,7 @@ const createResponse = async (req, res) => {
 
     // Build allowed providers set
     const allowedProviders = new Set(
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
+      req.config?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
     );
 
     // Create tool loader
@@ -599,6 +588,7 @@ const createResponse = async (req, res) => {
         initialSummary,
         runId: responseId,
         summarizationConfig,
+        appConfig: req.config,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -764,6 +754,7 @@ const createResponse = async (req, res) => {
         initialSummary,
         runId: responseId,
         summarizationConfig,
+        appConfig: req.config,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -1048,5 +1039,4 @@ module.exports = {
   createResponse,
   getResponse,
   listModels,
-  setAppConfig,
 };
