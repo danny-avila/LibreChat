@@ -1655,7 +1655,7 @@ describe('AclEntry Model Tests', () => {
         expect(permissionBitSupersets(MAX + PermissionBits.VIEW)).toBe(SHARED_EMPTY);
       });
 
-      test('does NOT cache rejected inputs', () => {
+      test('does NOT cache rejected inputs (reference identity)', () => {
         /**
          * Fire a burst of unique attacker-supplied integers and verify that
          * none of them can be retrieved from the cache via a legitimate call
@@ -1670,6 +1670,35 @@ describe('AclEntry Model Tests', () => {
         }
         for (let i = 0; i < 1000; i++) {
           expect(permissionBitSupersets(-(i + 1))).toBe(ref);
+        }
+      });
+
+      test('does NOT call `supersetCache.set` for rejected inputs (Map-write probe)', () => {
+        /**
+         * Stronger guarantee than reference identity alone: spy on
+         * `Map.prototype.set` and assert zero invocations during a burst of
+         * rejected inputs. This closes the hypothetical gap where a future
+         * regression like `supersetCache.set(requiredBits, EMPTY_SUPERSETS)`
+         * could pass the reference-identity check while still leaking memory
+         * one entry per attacker request.
+         *
+         * The spy is global (it intercepts every `Map.prototype.set` call),
+         * so we snapshot the call count before and after and assert the
+         * delta is zero. The body does no async work and no other Map
+         * writes, so any delta would come from `permissionBitSupersets`.
+         */
+        const setSpy = jest.spyOn(Map.prototype, 'set');
+        try {
+          const before = setSpy.mock.calls.length;
+          for (let i = 0; i < 500; i++) {
+            permissionBitSupersets(MAX + 1 + i);
+            permissionBitSupersets(-(i + 1));
+            permissionBitSupersets(i + 0.5);
+          }
+          const delta = setSpy.mock.calls.length - before;
+          expect(delta).toBe(0);
+        } finally {
+          setSpy.mockRestore();
         }
       });
 
