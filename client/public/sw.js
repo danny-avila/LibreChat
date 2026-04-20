@@ -1,3 +1,23 @@
+// =====================================================
+// LIFECYCLE: Ensure this SW activates IMMEDIATELY
+// Without these, an old/stale SW handles the first push
+// and the new SW sits in "waiting" state doing nothing.
+// =====================================================
+
+self.addEventListener('install', function (event) {
+  console.log('[SW] Installing — calling skipWaiting()');
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', function (event) {
+  console.log('[SW] Activating — calling clients.claim()');
+  event.waitUntil(self.clients.claim());
+});
+
+// =====================================================
+// PUSH: Handle incoming push notifications
+// =====================================================
+
 self.addEventListener('push', function (event) {
   console.log('🔥 PUSH RECEIVED');
   let data = {};
@@ -24,49 +44,59 @@ self.addEventListener('push', function (event) {
 
   event.waitUntil(self.registration.showNotification(title, options));
 });
-/*self.addEventListener('push', function (event) {
-  event.waitUntil(
-    self.registration.showNotification('🔥 WORKING', {
-      body: 'If you see this, push is fine',
-    })
-  );
-});*/
+
+// =====================================================
+// NOTIFICATION CLICK: Navigate to the target URL
+// =====================================================
 
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
 
-  // Get the target URL from the notification data
-  const urlToOpen = event.notification.data.url;
+  const urlToOpen = event.notification.data && event.notification.data.url
+    ? event.notification.data.url
+    : '/';
   console.log('[PUSH-DEBUG] Clicked notification, target URL:', urlToOpen);
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // 1. Try to find a window that is already open at the EXACT URL
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (windowClients) {
+      // 1. Try to find a window already at the exact URL
       for (let i = 0; i < windowClients.length; i++) {
-        const client = windowClients[i];
+        var client = windowClients[i];
         if (client.url === urlToOpen && 'focus' in client) {
           console.log('[PUSH-DEBUG] Found exact tab match, focusing');
           return client.focus();
         }
       }
 
-      // 2. If no exact match, try to find ANY window of the same app and navigate it
+      // 2. Try to navigate an existing window
       if (windowClients.length > 0) {
-        console.log('[PUSH-DEBUG] No exact match, focusing first app tab');
-        const client = windowClients[0];
-        if ('focus' in client) {
-          return client.focus().then((c) => {
-            if (c && 'navigate' in c) {
-              return c.navigate(urlToOpen);
-            }
-          });
-        }
+        console.log('[PUSH-DEBUG] Focusing existing tab and navigating');
+        var targetClient = windowClients[0];
+        return targetClient.focus().then(function (focusedClient) {
+          // navigate() only works if the SW controls the client.
+          // If it doesn't (e.g. first load before clients.claim propagates),
+          // fall back to postMessage so the app can navigate itself.
+          if (focusedClient && 'navigate' in focusedClient) {
+            return focusedClient.navigate(urlToOpen).catch(function (err) {
+              console.warn('[PUSH-DEBUG] navigate() failed, using postMessage fallback:', err);
+              focusedClient.postMessage({
+                type: 'NOTIFICATION_CLICK_NAVIGATE',
+                url: urlToOpen
+              });
+            });
+          } else if (focusedClient) {
+            focusedClient.postMessage({
+              type: 'NOTIFICATION_CLICK_NAVIGATE',
+              url: urlToOpen
+            });
+          }
+        });
       }
 
-      // 3. If no window open at all, open a new one
+      // 3. No window open — open a new one
       console.log('[PUSH-DEBUG] No existing tabs found, opening new window');
       if (clients.openWindow) {
-        return clients.openWindow(urlToOpen).catch((err) => {
+        return clients.openWindow(urlToOpen).catch(function (err) {
           console.error('[PUSH-DEBUG] Failed to open new window:', err);
         });
       }
@@ -74,21 +104,22 @@ self.addEventListener('notificationclick', function (event) {
   );
 });
 
+// =====================================================
+// SUBSCRIPTION CHANGE: Auto-renew if browser rotates keys
+// =====================================================
+
 self.addEventListener('pushsubscriptionchange', function (event) {
-  // Push manager auto-renews locally
   event.waitUntil(
     self.registration.pushManager.subscribe(event.oldSubscription.options)
       .then(function (newSubscription) {
         console.log('Push subscription renewed automatically:', newSubscription);
-        // Using fetch to resend it directly to backend if origin is same and uses cookies. 
-        // A robust app will also have the UI layer sync it on next load, which useWebPush does.
         return fetch('/api/push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newSubscription)
         });
-      }).catch((e) => {
-         console.error('Failed to auto-renew push subscription', e);
+      }).catch(function (e) {
+        console.error('Failed to auto-renew push subscription', e);
       })
   );
 });
