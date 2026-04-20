@@ -218,7 +218,7 @@ describe('summarizationConfig field passthrough', () => {
     const agents = await callAndCapture({
       summarizationConfig: {
         enabled: true,
-        trigger: { type: 'token_count', value: 8000 },
+        trigger: { type: 'token_ratio', value: 0.8 },
         provider: 'anthropic',
         model: 'claude-3-haiku',
         parameters: { temperature: 0.2 },
@@ -233,7 +233,7 @@ describe('summarizationConfig field passthrough', () => {
     // `enabled` is not forwarded to the agent-level config — it is resolved
     // into the separate `summarizationEnabled` boolean on the agent input.
     expect(agents[0].summarizationEnabled).toBe(true);
-    expect(config.trigger).toEqual({ type: 'token_count', value: 8000 });
+    expect(config.trigger).toEqual({ type: 'token_ratio', value: 0.8 });
     expect(config.provider).toBe('anthropic');
     expect(config.model).toBe('claude-3-haiku');
     expect(config.parameters).toEqual({ temperature: 0.2 });
@@ -253,6 +253,31 @@ describe('summarizationConfig field passthrough', () => {
     expect(agents[0].summarizationEnabled).toBe(true);
     expect(config.provider).toBe('openAI');
     expect(config.model).toBe('gpt-4o');
+  });
+
+  it('preserves `token_ratio` trigger with `value: 0` (documented, extreme-but-valid)', async () => {
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        enabled: true,
+        trigger: { type: 'token_ratio', value: 0 },
+      },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.trigger).toEqual({ type: 'token_ratio', value: 0 });
+  });
+
+  it.each([
+    ['remaining_tokens', 500],
+    ['messages_to_refine', 4],
+  ] as const)('passes %s trigger through unchanged', async (type, value) => {
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        enabled: true,
+        trigger: { type, value },
+      },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.trigger).toEqual({ type, value });
   });
 });
 
