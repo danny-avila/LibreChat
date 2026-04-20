@@ -441,6 +441,72 @@ describe('discoverConnectedAgents', () => {
     expect(result.edges).toHaveLength(3);
   });
 
+  it('strips unreachable co-sources from surviving multi-source edges (no stray parallel root)', async () => {
+    // Primary has `[A -> C, X -> B, [B,C] -> D]`. X is skipped, so
+    // `X -> B` is filtered and B loses its only upstream. The fan-in
+    // edge `[B,C] -> D` still has C as a reachable source, so it
+    // survives — but discovery must strip B from that edge's `from`
+    // list and prune B from `agentConfigs`. Leaving B behind would
+    // make it an incoming-less agent that `MultiAgentGraph.analyzeGraph`
+    // runs as an unintended parallel root.
+    const edges: GraphEdge[] = [
+      { from: 'A', to: 'C', edgeType: 'handoff' },
+      { from: 'X', to: 'B', edgeType: 'handoff' },
+      { from: ['B', 'C'], to: 'D', edgeType: 'direct' },
+    ];
+    const primaryConfig = makeConfig('A', edges);
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      C: makeAgent('C', []),
+      D: makeAgent('D', []),
+      X: makeAgent('X', []),
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    // X is forbidden; B, C, D pass.
+    const checkPermission = jest.fn(
+      async ({ resourceId }: { resourceId: unknown }) => resourceId !== 'mongo-X',
+    );
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(result.skippedAgentIds.has('X')).toBe(true);
+    expect(result.agentConfigs.has('B')).toBe(false);
+    expect(result.agentConfigs.has('C')).toBe(true);
+    expect(result.agentConfigs.has('D')).toBe(true);
+
+    // Every returned edge must reference only reachable agents — no B
+    // anywhere, not in a co-source slot and not as a node the SDK would
+    // need to register.
+    const endpoints = result.edges.flatMap((edge) =>
+      [edge.from, edge.to].flatMap((v) => (Array.isArray(v) ? v : [v])),
+    );
+    expect(endpoints).not.toContain('B');
+    // The fan-in edge survived (C is a reachable co-source) but now
+    // lists only C as the source.
+    const fanInEdge = result.edges.find((edge) => {
+      const to = Array.isArray(edge.to) ? edge.to : [edge.to];
+      return to.includes('D');
+    });
+    expect(fanInEdge).toBeDefined();
+    expect(fanInEdge!.from).toEqual(['C']);
+  });
+
   it('does not promote a downstream orphan to a parallel start when its only upstream is skipped', async () => {
     // Primary A has `[A -> B, X -> Y]`. X is skipped (no VIEW), Y loads.
     // Y had an incoming edge pre-filter (`X -> Y`), so it's a downstream

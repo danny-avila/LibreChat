@@ -399,25 +399,44 @@ export async function discoverConnectedAgents(
 
   const reachable = expandReachable(postFilterSeeds, filteredEdges);
 
-  const edges = filteredEdges.filter(
-    (edge) => anyReachable(edge.from, reachable) && allReachable(edge.to, reachable),
-  );
-
-  const referencedByEdge = new Set<string>();
-  for (const edge of edges) {
-    const endpoints = [
-      ...(Array.isArray(edge.from) ? edge.from : [edge.from]),
-      ...(Array.isArray(edge.to) ? edge.to : [edge.to]),
-    ];
-    for (const id of endpoints) {
-      if (typeof id === 'string') {
-        referencedByEdge.add(id);
-      }
+  /**
+   * Filter + sanitize edges:
+   * - Keep an edge if at least one `from` source is reachable AND every
+   *   `to` destination is reachable (a missing destination would still
+   *   crash `StateGraph.compile` with `Found edge ending at unknown
+   *   node`).
+   * - For kept edges with an array `from`, strip out unreachable
+   *   co-sources. The SDK's per-source `addEdge` fires independently
+   *   (each source becomes its own `addEdge(source, dest)` call), so
+   *   losing an unreachable co-source doesn't invalidate the routes
+   *   through the surviving ones. Leaving the dead co-source in the
+   *   array was propping up agents that `reachable` had already
+   *   excluded — in `MultiAgentGraph.analyzeGraph` they'd then show up
+   *   as incoming-less nodes and execute as unintended parallel roots.
+   *
+   * After sanitization every endpoint in every surviving edge is
+   * guaranteed to be in `reachable`, which lets the agent prune below
+   * collapse to a strict reachability check.
+   */
+  const edges: GraphEdge[] = [];
+  for (const edge of filteredEdges) {
+    if (!anyReachable(edge.from, reachable) || !allReachable(edge.to, reachable)) {
+      continue;
+    }
+    if (!Array.isArray(edge.from)) {
+      edges.push(edge);
+      continue;
+    }
+    const reachableSources = edge.from.filter((s) => typeof s !== 'string' || reachable.has(s));
+    if (reachableSources.length === edge.from.length) {
+      edges.push(edge);
+    } else {
+      edges.push({ ...edge, from: reachableSources });
     }
   }
 
   for (const agentId of [...agentConfigs.keys()]) {
-    if (!reachable.has(agentId) && !referencedByEdge.has(agentId)) {
+    if (!reachable.has(agentId)) {
       agentConfigs.delete(agentId);
     }
   }
