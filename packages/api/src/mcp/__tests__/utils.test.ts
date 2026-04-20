@@ -247,6 +247,17 @@ describe('redactServerSecrets', () => {
     expect((redacted as Record<string, unknown>).someNewSensitiveField).toBeUndefined();
     expect(redacted.title).toBe('Test');
   });
+
+  it('should preserve obo config', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      title: 'OBO Server',
+      obo: { scopes: 'api://client-id/.default' },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.obo).toEqual({ scopes: 'api://client-id/.default' });
+  });
 });
 
 describe('redactAllServerSecrets', () => {

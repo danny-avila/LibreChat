@@ -61,6 +61,10 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
     safe.oauth = safeOAuth;
   }
 
+  if (config.obo) {
+    safe.obo = config.obo;
+  }
+
   return Object.fromEntries(
     Object.entries(safe).filter(([, v]) => v !== undefined),
   ) as Partial<ParsedServerConfig>;
