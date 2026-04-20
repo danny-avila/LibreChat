@@ -71,12 +71,21 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
 }
 
 const JUMP_EPS = 4;
-
 const SCROLL_DURATION = 400;
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
 }
+
+function readScrollMargin(el: HTMLElement | null): number {
+  if (!el) {
+    return 0;
+  }
+  const value = parseFloat(getComputedStyle(el).scrollMarginTop);
+  return Number.isFinite(value) ? value : 0;
+}
+
+let activeScrollToken = 0;
 
 function scrollToMessageStart(id: string) {
   const el = document.getElementById(id);
@@ -88,11 +97,15 @@ function scrollToMessageStart(id: string) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
+  const token = ++activeScrollToken;
   const scrollMargin = readScrollMargin(el);
   const startScroll = container.scrollTop;
   const start = performance.now();
 
   const step = (now: number) => {
+    if (token !== activeScrollToken) {
+      return;
+    }
     const progress = Math.min(1, (now - start) / SCROLL_DURATION);
     const current = document.getElementById(id);
     if (!current) {
@@ -112,13 +125,10 @@ function scrollToMessageStart(id: string) {
   requestAnimationFrame(step);
 }
 
-function readScrollMargin(el: HTMLElement | null): number {
-  if (!el) {
-    return 0;
-  }
-  const value = parseFloat(getComputedStyle(el).scrollMarginTop);
-  return Number.isFinite(value) ? value : 0;
-}
+const indicatorButtonClasses = cn(
+  'flex h-[5px] items-center justify-center rounded-sm',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
+);
 
 const MessageIndicator = memo(function MessageIndicator({
   entry,
@@ -135,8 +145,9 @@ const MessageIndicator = memo(function MessageIndicator({
         <button
           type="button"
           onClick={() => scrollToMessageStart(entry.id)}
-          className={cn('flex h-[5px] items-center justify-center', entry.isUser ? 'w-4' : 'w-6')}
+          className={cn(indicatorButtonClasses, entry.isUser ? 'w-4' : 'w-6')}
           aria-label={label}
+          aria-current={isActive ? 'true' : undefined}
           data-msg-id={entry.id}
         >
           <span
@@ -158,11 +169,15 @@ const MessageIndicator = memo(function MessageIndicator({
   );
 });
 
-export default function MessageNav({
-  scrollableRef,
-}: {
-  scrollableRef: React.RefObject<HTMLDivElement>;
-}) {
+const chevronButtonClasses = cn(
+  'rounded-md p-0.5 text-text-tertiary transition-colors',
+  'group-hover/nav:text-text-secondary group-focus-within/nav:text-text-secondary',
+  'group-hover/nav:hover:text-text-primary',
+  'group-hover/nav:disabled:opacity-30 group-focus-within/nav:disabled:opacity-30',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
+);
+
+function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivElement> }) {
   const localize = useLocalize();
   const { conversationId } = useMessagesConversation();
   const { data: messages } = useGetMessagesByConvoId(conversationId ?? '', {
@@ -180,13 +195,15 @@ export default function MessageNav({
     }
     return map;
   }, [messages]);
+
   const [entries, setEntries] = useState<MessageEntry[]>([]);
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
   const [canGoUp, setCanGoUp] = useState(false);
   const [canGoDown, setCanGoDown] = useState(false);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const columnRef = useRef<HTMLDivElement>(null);
 
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const observedRef = useRef(new Map<string, HTMLElement>());
+  const columnRef = useRef<HTMLDivElement>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleSetRef = useRef(new Set<string>());
 
@@ -265,19 +282,35 @@ export default function MessageNav({
 
     const offsetsTop: number[] = new Array(entries.length);
     const offsetsBottom: number[] = new Array(entries.length);
-    for (let i = 0; i < entries.length; i++) {
-      const el = document.getElementById(entries[i].id);
-      offsetsTop[i] = el ? el.offsetTop : Number.POSITIVE_INFINITY;
-      offsetsBottom[i] = el ? el.offsetTop + el.offsetHeight : Number.POSITIVE_INFINITY;
-    }
+    const recomputeOffsets = () => {
+      for (let i = 0; i < entries.length; i++) {
+        const el = document.getElementById(entries[i].id);
+        offsetsTop[i] = el ? el.offsetTop : Number.POSITIVE_INFINITY;
+        offsetsBottom[i] = el ? el.offsetTop + el.offsetHeight : Number.POSITIVE_INFINITY;
+      }
+    };
+    recomputeOffsets();
 
     const firstEl = document.getElementById(entries[0].id);
     const scrollMargin = readScrollMargin(firstEl);
+
+    let needsRecompute = false;
+    const content = container.firstElementChild as HTMLElement | null;
+    const resizeObserver = new ResizeObserver(() => {
+      needsRecompute = true;
+    });
+    if (content) {
+      resizeObserver.observe(content);
+    }
 
     let frameId: number | null = null;
 
     const tick = () => {
       frameId = null;
+      if (needsRecompute) {
+        recomputeOffsets();
+        needsRecompute = false;
+      }
 
       const scrollTop = container.scrollTop;
       let nextCanUp = false;
@@ -341,26 +374,20 @@ export default function MessageNav({
       if (frameId != null) {
         cancelAnimationFrame(frameId);
       }
+      resizeObserver.disconnect();
     };
   }, [entries, scrollableRef]);
 
   useEffect(() => {
     const root = scrollableRef.current;
-    if (!root || entries.length === 0) {
+    if (!root) {
       return;
     }
 
-    observerRef.current?.disconnect();
-
     const visibleSet = visibleSetRef.current;
-    const entryIds = new Set(entries.map((e) => e.id));
-    for (const id of visibleSet) {
-      if (!entryIds.has(id)) {
-        visibleSet.delete(id);
-      }
-    }
-
+    const observed = observedRef.current;
     let pendingFrame: number | null = null;
+
     const flush = () => {
       pendingFrame = null;
       setActiveIds((prev) => {
@@ -396,23 +423,46 @@ export default function MessageNav({
       },
       { root, threshold: 0 },
     );
-
     observerRef.current = observer;
-
-    for (const msg of entries) {
-      const el = document.getElementById(msg.id);
-      if (el) {
-        observer.observe(el);
-      }
-    }
 
     return () => {
       observer.disconnect();
+      observerRef.current = null;
+      observed.clear();
+      visibleSet.clear();
       if (pendingFrame != null) {
         cancelAnimationFrame(pendingFrame);
       }
     };
-  }, [entries, scrollableRef]);
+  }, [scrollableRef]);
+
+  useEffect(() => {
+    const observer = observerRef.current;
+    if (!observer) {
+      return;
+    }
+    const observed = observedRef.current;
+    const visibleSet = visibleSetRef.current;
+    const newIds = new Set(entries.map((e) => e.id));
+
+    for (const [id, el] of observed) {
+      if (!newIds.has(id)) {
+        observer.unobserve(el);
+        observed.delete(id);
+        visibleSet.delete(id);
+      }
+    }
+
+    for (const entry of entries) {
+      if (!observed.has(entry.id)) {
+        const el = document.getElementById(entry.id);
+        if (el) {
+          observer.observe(el);
+          observed.set(entry.id, el);
+        }
+      }
+    }
+  }, [entries]);
 
   const jumpToPrevious = useCallback(() => {
     const container = scrollableRef.current;
@@ -462,13 +512,19 @@ export default function MessageNav({
   return (
     <nav
       aria-label={localize('com_ui_message_nav')}
-      className="group/nav absolute right-2 top-1/2 z-40 hidden max-h-[min(24rem,calc(100%-2rem))] -translate-y-1/2 flex-col items-center gap-1.5 rounded-full px-1 py-2 opacity-30 transition-opacity duration-300 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/5 md:flex"
+      className={cn(
+        'group/nav absolute right-2 top-1/2 z-40 hidden max-h-[min(24rem,calc(100%-2rem))]',
+        '-translate-y-1/2 flex-col items-center gap-1.5 rounded-full px-1 py-2 md:flex',
+        'opacity-30 transition-opacity duration-300',
+        'hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/5',
+        'focus-within:bg-black/5 focus-within:opacity-100 dark:focus-within:bg-white/5',
+      )}
     >
       <button
         type="button"
         onClick={jumpToPrevious}
         disabled={!canGoUp}
-        className="rounded-md p-0.5 text-text-tertiary transition-colors group-hover/nav:text-text-secondary group-hover/nav:hover:text-text-primary group-hover/nav:disabled:opacity-30"
+        className={chevronButtonClasses}
         aria-label={localize('com_ui_message_nav_previous')}
       >
         <ChevronUp className="h-4 w-4" />
@@ -496,7 +552,7 @@ export default function MessageNav({
         type="button"
         onClick={jumpToNext}
         disabled={!canGoDown}
-        className="rounded-md p-0.5 text-text-tertiary transition-colors group-hover/nav:text-text-secondary group-hover/nav:hover:text-text-primary group-hover/nav:disabled:opacity-30"
+        className={chevronButtonClasses}
         aria-label={localize('com_ui_message_nav_next')}
       >
         <ChevronDown className="h-4 w-4" />
@@ -504,3 +560,5 @@ export default function MessageNav({
     </nav>
   );
 }
+
+export default memo(MessageNav);

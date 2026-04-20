@@ -1381,6 +1381,7 @@
   "com_ui_saving": "Saving...",
   "com_ui_schema": "Schema",
   "com_ui_scope": "Scope",
+  "com_ui_scroll_to_bottom": "Scroll to bottom",
   "com_ui_search": "Search",
   "com_ui_search_above_to_add": "Search above to add users or groups",
   "com_ui_search_above_to_add_all": "Search above to add users, groups, or roles",

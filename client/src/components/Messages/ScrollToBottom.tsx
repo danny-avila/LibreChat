@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 import { cn } from '~/utils';
 
@@ -9,6 +10,7 @@ type Props = {
 };
 
 const ScrollToBottom = forwardRef<HTMLButtonElement, Props>(({ scrollHandler }, ref) => {
+  const localize = useLocalize();
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
 
   return (
@@ -21,8 +23,8 @@ const ScrollToBottom = forwardRef<HTMLButtonElement, Props>(({ scrollHandler }, 
       <button
         ref={ref}
         onClick={scrollHandler}
-        className="premium-scroll-button pointer-events-auto cursor-pointer"
-        aria-label="Scroll to bottom"
+        className="premium-scroll-button pointer-events-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
+        aria-label={localize('com_ui_scroll_to_bottom')}
       >
         <ChevronDown className="h-4 w-4 text-text-secondary" />
       </button>
