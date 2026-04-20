@@ -449,6 +449,99 @@ export type UpdateSkillInput = {
   category?: string;
 };
 
+/**
+ * Maps the runtime-enforced frontmatter fields onto their first-class
+ * column equivalents. Returns only the keys that were explicitly set on the
+ * frontmatter so callers can decide whether to write `undefined` (skip the
+ * `$set`) versus a concrete value.
+ *
+ * `allowed-tools` accepts string or string[] per the validator; both are
+ * normalized to an array. Empty strings are filtered out so a stray comma
+ * in YAML doesn't leak through as `''`.
+ */
+export function deriveStructuredFrontmatterFields(
+  frontmatter: Record<string, unknown> | undefined,
+): {
+  disableModelInvocation?: boolean;
+  userInvocable?: boolean;
+  allowedTools?: string[];
+} {
+  if (!frontmatter || typeof frontmatter !== 'object') {
+    return {};
+  }
+  const derived: {
+    disableModelInvocation?: boolean;
+    userInvocable?: boolean;
+    allowedTools?: string[];
+  } = {};
+  const disableModelInvocationRaw = frontmatter['disable-model-invocation'];
+  if (typeof disableModelInvocationRaw === 'boolean') {
+    derived.disableModelInvocation = disableModelInvocationRaw;
+  }
+  const userInvocableRaw = frontmatter['user-invocable'];
+  if (typeof userInvocableRaw === 'boolean') {
+    derived.userInvocable = userInvocableRaw;
+  }
+  const allowedToolsRaw = frontmatter['allowed-tools'];
+  if (typeof allowedToolsRaw === 'string') {
+    /**
+     * YAML scalars like `allowed-tools: web_search` are parsed as a single
+     * string. Wrap into a one-element array; we deliberately do NOT split
+     * on commas — the validator already accepts string-array form and
+     * trying to "be helpful" by splitting `"web_search, file_search"`
+     * would silently invent semantics the spec doesn't promise.
+     */
+    if (allowedToolsRaw.length > 0) {
+      derived.allowedTools = [allowedToolsRaw];
+    }
+  } else if (Array.isArray(allowedToolsRaw)) {
+    derived.allowedTools = allowedToolsRaw.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+    );
+  }
+  return derived;
+}
+
+/**
+ * Read-time fallback for skills authored before the structured columns
+ * existed: if the column is unset but the matching key is present in
+ * `frontmatter`, fill the column in on the returned object so downstream
+ * runtime checks (`skill.userInvocable === false`,
+ * `skill.disableModelInvocation === true`, `skill.allowedTools`) behave
+ * the same way they would for a freshly-created skill.
+ *
+ * Side-effect-free w.r.t. the DB (no writes), but mutates its argument
+ * in place and returns the same reference. Callers passing a `lean()`
+ * doc this is fine — the doc is a fresh JS object owned by the caller.
+ * When the skill is next updated, `updateSkill` re-derives and persists
+ * the columns naturally, so this fallback gradually becomes a no-op.
+ *
+ * Skills with the columns already populated short-circuit to no-op.
+ */
+export function backfillDerivedFromFrontmatter<
+  T extends {
+    frontmatter?: Record<string, unknown>;
+    disableModelInvocation?: boolean;
+    userInvocable?: boolean;
+    allowedTools?: string[];
+  },
+>(skill: T | null): T | null {
+  if (!skill || !skill.frontmatter) {
+    return skill;
+  }
+  const derived = deriveStructuredFrontmatterFields(skill.frontmatter);
+  if (skill.disableModelInvocation === undefined && derived.disableModelInvocation !== undefined) {
+    skill.disableModelInvocation = derived.disableModelInvocation;
+  }
+  if (skill.userInvocable === undefined && derived.userInvocable !== undefined) {
+    skill.userInvocable = derived.userInvocable;
+  }
+  if (skill.allowedTools === undefined && derived.allowedTools !== undefined) {
+    skill.allowedTools = derived.allowedTools;
+  }
+  return skill;
+}
+
 export type UpsertSkillFileInput = {
   skillId: Types.ObjectId | string;
   relativePath: string;
@@ -582,6 +675,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       throw error;
     }
 
+    const derived = deriveStructuredFrontmatterFields(data.frontmatter);
     const doc = await Skill.create({
       name: data.name,
       displayTitle: data.displayTitle,
@@ -596,6 +690,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       sourceMetadata: data.sourceMetadata,
       fileCount: 0,
       tenantId: data.tenantId,
+      ...derived,
     });
     return {
       skill: doc.toObject() as unknown as ISkill & { _id: Types.ObjectId },
@@ -617,13 +712,66 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
   async function getSkillByName(
     name: string,
     accessibleIds: Types.ObjectId[],
+    options?: {
+      /**
+       * Manual paths (`$` popover, always-apply once Phase 5 lands) set
+       * this so a same-name newer `userInvocable: false` duplicate can't
+       * shadow the older user-invocable doc the popover surfaced.
+       * Disable-model-invocation status is irrelevant here — manually-
+       * primed disabled skills are explicitly supported (iter 4).
+       */
+      preferUserInvocable?: boolean;
+      /**
+       * Model paths (`skill` / `read_file` tool handlers) set this so a
+       * same-name newer `disable-model-invocation: true` duplicate can't
+       * shadow the cataloged model-invocable doc. User-invocability is
+       * irrelevant here — `userInvocable: false` skills are model-only
+       * and remain valid model-invocation targets.
+       *
+       * Both flags fall back to the newest match when no preferred doc
+       * exists, so handlers can still fire their explicit-rejection
+       * error paths (e.g. "cannot be invoked by the model" in the
+       * disabled-only case).
+       */
+      preferModelInvocable?: boolean;
+    },
   ): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
-    // sort by updatedAt desc for deterministic result when multiple skills share a name
-    const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } })
+    const preferUserInvocable = options?.preferUserInvocable === true;
+    const preferModelInvocable = options?.preferModelInvocable === true;
+    /* Single-doc fast path when no preference is requested — preserves
+       the previous performance characteristics for callers that just
+       want "newest match". */
+    if (!preferUserInvocable && !preferModelInvocable) {
+      const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } })
+        .sort({ updatedAt: -1 })
+        .lean();
+      return backfillDerivedFromFrontmatter(
+        (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null,
+      );
+    }
+    /* Multi-doc path: fetch all matching docs (typically 1, rarely 2+
+       across same-name duplicates) and pick the first satisfying the
+       caller's preference; fall back to newest. */
+    const docs = (await Skill.find({ name, _id: { $in: accessibleIds } })
       .sort({ updatedAt: -1 })
-      .lean();
-    return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
+      .lean()) as unknown as Array<ISkill & { _id: Types.ObjectId }>;
+    if (docs.length === 0) {
+      return null;
+    }
+    for (const doc of docs) {
+      backfillDerivedFromFrontmatter(doc);
+    }
+    const preferred = docs.find((d) => {
+      if (preferUserInvocable && d.userInvocable === false) {
+        return false;
+      }
+      if (preferModelInvocable && d.disableModelInvocation === true) {
+        return false;
+      }
+      return true;
+    });
+    return preferred ?? docs[0];
   }
 
   async function listSkillsByAccess(
@@ -649,10 +797,27 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     const rows = await Skill.find(filter)
       .sort({ updatedAt: -1, _id: 1 })
       .limit(limit + 1)
+      /* `frontmatter` is included so `backfillDerivedFromFrontmatter` can
+         restore the runtime fields for skills authored before Phase 6
+         landed the columns. Body is still excluded — the size win was
+         body, not frontmatter (which is bounded by the validator).
+         TODO(post-backfill): once a write migration backfills all
+         pre-Phase-6 skills' columns from frontmatter (or after a
+         deployment window long enough that any active skill has been
+         re-saved), drop `frontmatter` from this projection. ~2KB/skill
+         × 100/page is wasted bandwidth on every list call once backfill
+         is no longer needed. */
       .select(
-        'name displayTitle description category author authorName version source sourceMetadata fileCount tenantId createdAt updatedAt',
+        'name displayTitle description category author authorName version source sourceMetadata fileCount tenantId disableModelInvocation userInvocable allowedTools frontmatter createdAt updatedAt',
       )
       .lean();
+
+    /* Read-time fallback: pre-Phase-6 skills with `user-invocable` /
+       `disable-model-invocation` only in frontmatter (no derived column)
+       must still be filtered correctly by the catalog and the popover. */
+    for (const row of rows) {
+      backfillDerivedFromFrontmatter(row as unknown as ISkill);
+    }
 
     const has_more = rows.length > limit;
     const sliced = has_more ? rows.slice(0, limit) : rows;
@@ -701,16 +866,40 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
 
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
     const setPayload: Record<string, unknown> = {};
+    const unsetPayload: Record<string, ''> = {};
     if (update.name !== undefined) setPayload.name = update.name;
     if (update.displayTitle !== undefined) setPayload.displayTitle = update.displayTitle;
     if (update.description !== undefined) setPayload.description = update.description;
     if (update.body !== undefined) setPayload.body = update.body;
-    if (update.frontmatter !== undefined) setPayload.frontmatter = update.frontmatter;
+    if (update.frontmatter !== undefined) {
+      setPayload.frontmatter = update.frontmatter;
+      /**
+       * Derived columns track frontmatter — when frontmatter changes, the
+       * derived view must follow. Fields the new frontmatter omits are
+       * unset (back to schema default) so removing `disable-model-invocation`
+       * from a SKILL.md re-enables model invocation on the next save.
+       */
+      const derived = deriveStructuredFrontmatterFields(update.frontmatter);
+      for (const key of ['disableModelInvocation', 'userInvocable', 'allowedTools'] as const) {
+        if (derived[key] !== undefined) {
+          setPayload[key] = derived[key];
+        } else {
+          unsetPayload[key] = '';
+        }
+      }
+    }
     if (update.category !== undefined) setPayload.category = update.category;
 
+    const updateOps: Record<string, unknown> = {
+      $set: setPayload,
+      $inc: { version: 1 },
+    };
+    if (Object.keys(unsetPayload).length > 0) {
+      updateOps.$unset = unsetPayload;
+    }
     const result = await Skill.findOneAndUpdate(
       { _id: new ObjectId(id), version: expectedVersion },
-      { $set: setPayload, $inc: { version: 1 } },
+      updateOps,
       { new: true },
     ).lean();
 

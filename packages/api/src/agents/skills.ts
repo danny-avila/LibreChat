@@ -136,10 +136,13 @@ export interface InjectSkillCatalogResult {
   toolDefinitions: LCTool[] | undefined;
   skillCount: number;
   /**
-   * IDs of skills that passed the active-state filter and appear in the
-   * injected catalog. Runtime tool execution must authorize against this set,
-   * not the full `accessibleSkillIds`, so deactivated skills cannot be
-   * invoked by name even if the LLM hallucinates them.
+   * IDs of skills the runtime is authorized to resolve via `getSkillByName`.
+   * Includes `disable-model-invocation: true` skills even though they're
+   * absent from the catalog text — the skill-tool handler needs to be able
+   * to fetch the doc to fire the explicit "cannot be invoked by the model"
+   * rejection (instead of a generic "not found"). Per-user deactivated
+   * skills are still excluded — explicit user opt-out shouldn't be
+   * resolvable.
    */
   activeSkillIds: Types.ObjectId[];
 }
@@ -181,11 +184,21 @@ export async function injectSkillCatalog(
     resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare });
 
   const activeSkills: SkillSummary[] = [];
+  /**
+   * Catalog cap counts only model-visible (non-`disable-model-invocation`)
+   * skills. Counting against the merged active set would let a tenant
+   * with many disabled skills near the top of the cursor exhaust the
+   * 100-slot quota before any invocable skills got scanned — the catalog
+   * could end up empty even though invocable skills exist further down
+   * the paginated results. Tracking the visible count separately also
+   * keeps `MAX_CATALOG_PAGES` honest as a true scan-budget ceiling.
+   */
+  let visibleCount = 0;
   let cursor: string | null = null;
   let pages = 0;
   let reachedEnd = false;
 
-  while (activeSkills.length < SKILL_CATALOG_LIMIT && pages < MAX_CATALOG_PAGES) {
+  while (visibleCount < SKILL_CATALOG_LIMIT && pages < MAX_CATALOG_PAGES) {
     const page = await listSkillsByAccess({
       accessibleIds: accessibleSkillIds,
       limit: CATALOG_PAGE_SIZE,
@@ -193,11 +206,23 @@ export async function injectSkillCatalog(
     });
 
     for (const skill of page.skills) {
-      if (activeSkills.length >= SKILL_CATALOG_LIMIT) {
+      if (visibleCount >= SKILL_CATALOG_LIMIT) {
         break;
       }
+      /**
+       * Active set keeps `disable-model-invocation` skills so the runtime
+       * can still resolve them by name and the skill-tool handler can fire
+       * its explicit "cannot be invoked by the model" rejection (instead
+       * of a misleading "not found"). Catalog text formatting filters
+       * them back out below — they cost zero context tokens. Per-user
+       * deactivation (`isActive` false) is still a hard exclusion: the
+       * user explicitly opted out, so we honor it everywhere.
+       */
       if (isActive(skill)) {
         activeSkills.push(skill);
+        if (skill.disableModelInvocation !== true) {
+          visibleCount += 1;
+        }
       }
     }
 
@@ -213,15 +238,47 @@ export async function injectSkillCatalog(
     return { toolDefinitions: inputDefs, skillCount: 0, activeSkillIds: [] };
   }
 
-  if (!reachedEnd && activeSkills.length < SKILL_CATALOG_LIMIT) {
+  if (!reachedEnd && visibleCount < SKILL_CATALOG_LIMIT) {
     logger.warn(
       `[injectSkillCatalog] Scanned ${MAX_CATALOG_PAGES} pages without filling the ${SKILL_CATALOG_LIMIT}-skill catalog. Some active skills may be excluded.`,
     );
   }
 
-  // Warn on duplicate names — model may invoke the wrong skill
+  /**
+   * Catalog text and tool registration are gated on the *visible* subset.
+   * If every active skill is `disable-model-invocation: true`, the model
+   * can't reach any of them anyway — registering the skill tool would
+   * burn context tokens for nothing.
+   */
+  const catalogVisibleSkills = activeSkills.filter((s) => s.disableModelInvocation !== true);
+
+  /**
+   * Resolve same-name collisions in the runtime ACL set: when an invocable
+   * skill and a `disable-model-invocation: true` skill share a name,
+   * `getSkillByName` would pick whichever is newer (it sorts by
+   * `updatedAt` desc) — and if the disabled one is newer, EVERY model
+   * call to that name would fail with "cannot be invoked by the model"
+   * even though the cataloged invocable skill exists. Drop the disabled
+   * doc(s) from `activeSkillIds` whenever an invocable doc with the same
+   * name is also in scope. When ONLY a disabled doc exists for a name,
+   * keep it so the explicit-rejection error path still fires.
+   *
+   * Note: we never drop two invocable docs that share a name — the
+   * existing duplicate-name warn log below covers that ambiguity, and
+   * `getSkillByName` picks the newest (deterministic).
+   */
+  const invocableNames = new Set<string>();
+  for (const s of catalogVisibleSkills) {
+    invocableNames.add(s.name);
+  }
+  const executableSkills = activeSkills.filter(
+    (s) => s.disableModelInvocation !== true || !invocableNames.has(s.name),
+  );
+
+  // Warn on duplicate names within the catalog-visible set — those are the
+  // ones the model can actually invoke ambiguously.
   const nameCount = new Map<string, number>();
-  for (const s of activeSkills) {
+  for (const s of catalogVisibleSkills) {
     nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
   }
   for (const [dupName, count] of nameCount) {
@@ -232,15 +289,26 @@ export async function injectSkillCatalog(
     }
   }
 
-  const catalog = formatSkillCatalog(
-    activeSkills.map((s) => ({ name: s.name, description: s.description })),
-    { contextWindowTokens: contextWindowTokens || 200_000 },
-  );
-
-  if (catalog) {
-    agent.additional_instructions = agent.additional_instructions
-      ? `${agent.additional_instructions}\n\n${catalog}`
-      : catalog;
+  /**
+   * Catalog text is gated on the visible subset — `disable-model-invocation`
+   * skills cost zero context tokens. When no visible skills exist, the
+   * model gets no catalog and the `skill` tool is omitted from the
+   * registry (registering it would burn description tokens for a tool
+   * the model has no targets for). `read_file` and `bash_tool` are still
+   * registered though: manually-primed disabled skills can have their
+   * SKILL.md body in context referring to `references/*` and `scripts/*`,
+   * and those reads would otherwise be impossible.
+   */
+  if (catalogVisibleSkills.length > 0) {
+    const catalog = formatSkillCatalog(
+      catalogVisibleSkills.map((s) => ({ name: s.name, description: s.description })),
+      { contextWindowTokens: contextWindowTokens || 200_000 },
+    );
+    if (catalog) {
+      agent.additional_instructions = agent.additional_instructions
+        ? `${agent.additional_instructions}\n\n${catalog}`
+        : catalog;
+    }
   }
 
   const skillToolDef: LCTool = {
@@ -262,8 +330,17 @@ export async function injectSkillCatalog(
     parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
   };
 
-  // Always register skill + read_file; only register bash_tool when code env is available
-  const defs: LCTool[] = [skillToolDef, readFileDef];
+  /**
+   * `skill` tool is conditional on having anything for the model to invoke;
+   * `read_file` is always registered when any active skill is in scope
+   * (manually-primed disabled skills still need it); `bash_tool` follows
+   * code-env availability as before.
+   */
+  const defs: LCTool[] = [];
+  if (catalogVisibleSkills.length > 0) {
+    defs.push(skillToolDef);
+  }
+  defs.push(readFileDef);
   if (codeEnvAvailable) {
     defs.push(bashToolDef);
   }
@@ -277,8 +354,8 @@ export async function injectSkillCatalog(
 
   return {
     toolDefinitions,
-    skillCount: activeSkills.length,
-    activeSkillIds: activeSkills.map((s) => s._id),
+    skillCount: catalogVisibleSkills.length,
+    activeSkillIds: executableSkills.map((s) => s._id),
   };
 }
 
@@ -307,10 +384,17 @@ export function buildSkillPrimeMessage(skill: { name: string; body: string }): I
 export interface ResolveManualSkillsParams {
   /** Skill names the user invoked (via `$` popover or `always-apply`). */
   names: string[];
-  /** DB lookup: name → skill doc, constrained to ACL-accessible IDs. */
+  /** DB lookup: name → skill doc, constrained to ACL-accessible IDs.
+   *
+   * Resolver always passes `options.preferUserInvocable: true` so a
+   * same-name newer `userInvocable: false` (model-only) duplicate can't
+   * shadow the older user-invocable doc the popover surfaced. Disable-
+   * model-invocation status is irrelevant for the manual path.
+   */
   getSkillByName: (
     name: string,
     accessibleIds: Types.ObjectId[],
+    options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
   ) => Promise<{
     _id: Types.ObjectId;
     name: string;
@@ -323,6 +407,12 @@ export interface ResolveManualSkillsParams {
      * re-fetching the document. Populated by the DB method when available.
      */
     allowedTools?: string[];
+    /**
+     * When `false`, the skill author opted out of manual invocation. The
+     * resolver skips with a warn log rather than priming SKILL.md.
+     * Defaults to `true` when omitted.
+     */
+    userInvocable?: boolean;
   } | null>;
   /** ACL-accessible skill IDs for this user (already scoped by `scopeSkillIds`). */
   accessibleSkillIds: Types.ObjectId[];
@@ -335,6 +425,14 @@ export interface ResolveManualSkillsParams {
 }
 
 export interface ResolvedManualSkill {
+  /**
+   * `_id` of the exact doc that was primed. Plumbed to the runtime so the
+   * `read_file` handler can constrain its name lookup to this id and avoid
+   * resolving to a different same-name doc on collisions (which would
+   * cause the model's reads to hit files from a different skill than the
+   * body it sees).
+   */
+  _id: Types.ObjectId;
   name: string;
   body: string;
   /**
@@ -409,9 +507,39 @@ export async function resolveManualSkills(
   const resolved = await Promise.all(
     boundedNames.map(async (name) => {
       try {
-        const skill = await getSkillByName(name, accessibleSkillIds);
+        /* `preferUserInvocable` lets the lookup return the older
+           user-invocable variant when a newer same-name duplicate has
+           `userInvocable: false` (model-only). Without this, the
+           popover-visible skill the user picked would silently no-op
+           because `getSkillByName`'s `updatedAt desc` tiebreak returns
+           the model-only newer doc and the resolver skips it on the
+           userInvocable check below. We deliberately do NOT also pass
+           `preferModelInvocable` — manually invoking a `disable-model-
+           invocation: true` skill is the supported path (iter 4) and
+           the model-only filter would interfere with that. */
+        const skill = await getSkillByName(name, accessibleSkillIds, {
+          preferUserInvocable: true,
+        });
         if (!skill) {
           logger.warn(`[resolveManualSkills] Skill "${name}" not found or not accessible`);
+          return null;
+        }
+        /**
+         * `user-invocable: false` skills are model-only by author intent;
+         * the popover already hides them on the UI side, but an API-direct
+         * caller could still name one in `manualSkills`. Defense-in-depth:
+         * skip with a warn log so the contract holds at the runtime
+         * boundary too. Silent skip (not error) matches the established
+         * "not found / inactive / empty body" pattern — a single misfiring
+         * skill must never block the user's actual message from going out.
+         *
+         * Checked before the body check because `userInvocable` is an
+         * authoritative author decision, while empty body could be a
+         * transient state — surfacing the more specific cause helps
+         * operators triage faster.
+         */
+        if (skill.userInvocable === false) {
+          logger.warn(`[resolveManualSkills] Skill "${name}" is not user-invocable — skipping`);
           return null;
         }
         if (!skill.body) {
@@ -428,7 +556,11 @@ export async function resolveManualSkills(
           logger.warn(`[resolveManualSkills] Skill "${name}" is inactive for this user — skipping`);
           return null;
         }
-        const resolved: ResolvedManualSkill = { name: skill.name, body: skill.body };
+        const resolved: ResolvedManualSkill = {
+          _id: skill._id,
+          name: skill.name,
+          body: skill.body,
+        };
         if (skill.allowedTools !== undefined) {
           resolved.allowedTools = skill.allowedTools;
         }
@@ -451,8 +583,13 @@ export interface InjectManualSkillPrimesParams {
   initialMessages: BaseMessage[];
   /** Per-index token count map returned by `formatAgentMessages`. */
   indexTokenCountMap: Record<number, number> | undefined;
-  /** Resolved skill primes to splice in. */
-  manualSkillPrimes: ResolvedManualSkill[];
+  /**
+   * Resolved skill primes to splice in. Only `name` and `body` are used
+   * to construct the meta `HumanMessage`; widening the type to `Pick<...>`
+   * lets tests pass minimal `{ name, body }` literals without inventing
+   * `_id`s. The resolver always returns full primes in production.
+   */
+  manualSkillPrimes: Pick<ResolvedManualSkill, 'name' | 'body'>[];
 }
 
 export interface InjectManualSkillPrimesResult {
@@ -574,7 +711,13 @@ export interface BuildSkillPrimeContentPartsParams {
  * scanner could skip it.
  */
 export function buildSkillPrimeContentParts(
-  primes: ResolvedManualSkill[],
+  /**
+   * Only `name` is read here; widening the param type to `Pick<...>` lets
+   * callers (and tests) pass either the full `ResolvedManualSkill` or a
+   * minimal `{ name, body }` literal without needing to invent a
+   * placeholder `_id`. The resolver always returns full primes.
+   */
+  primes: Pick<ResolvedManualSkill, 'name' | 'body'>[],
   { runId, startOffset = 0 }: BuildSkillPrimeContentPartsParams,
 ): SkillPrimeContentPart[] {
   return primes.map((prime, i) => {
@@ -591,6 +734,93 @@ export function buildSkillPrimeContentParts(
       },
     };
   });
+}
+
+export interface SkillPrimeWithTools {
+  /** Skill name — used for log attribution only. */
+  name: string;
+  /** Author-declared `allowed-tools` from frontmatter, if any. */
+  allowedTools?: string[];
+}
+
+export interface UnionPrimeAllowedToolsParams {
+  /**
+   * Resolved skill primes (manual + always-apply once Phase 5 lands) that
+   * may carry an `allowedTools` allowlist. Order is irrelevant — the union
+   * is set-based — but stable iteration helps debug logs read consistently.
+   */
+  primes: SkillPrimeWithTools[];
+  /** Tool names already configured on the agent. Skipped when computing extras. */
+  agentToolNames: string[];
+}
+
+export interface UnionPrimeAllowedToolsResult {
+  /**
+   * Tool names contributed by skill primes that aren't already on the
+   * agent. Caller is responsible for actually loading these and merging
+   * the resulting tool definitions into the agent's effective set; the
+   * helper itself stays pure so it can be unit-tested in isolation and
+   * reused for the always-apply path.
+   */
+  extraToolNames: string[];
+  /**
+   * Per-skill breakdown of which tool names that skill contributed to the
+   * final union. Useful for the debug log when the runtime drops names
+   * that the registry doesn't recognize — operators can see which skill
+   * asked for the missing tool.
+   */
+  perSkillExtras: Map<string, string[]>;
+}
+
+/**
+ * Computes the union of `allowed-tools` declared by a turn's resolved skill
+ * primes, minus tools already configured on the agent. The agent-provided
+ * tools are the authoritative baseline; allowed-tools only ever ADDS to
+ * the surface, never replaces or removes.
+ *
+ * Tolerant of unknown tool names: validation against the runtime registry
+ * happens at the caller (in `initialize.ts`) so we can support skills
+ * authored against tools LibreChat hasn't implemented yet — the registry
+ * intersection silently drops them with a debug log, but the import path
+ * never rejects them.
+ *
+ * Pure function; returns set-style data so callers can dedupe across
+ * concurrent always-apply + manual paths without re-implementing the
+ * fold themselves.
+ */
+export function unionPrimeAllowedTools(
+  params: UnionPrimeAllowedToolsParams,
+): UnionPrimeAllowedToolsResult {
+  const { primes, agentToolNames } = params;
+  const onAgent = new Set(agentToolNames);
+  const extras = new Set<string>();
+  const perSkill = new Map<string, string[]>();
+
+  for (const prime of primes) {
+    const requested = prime.allowedTools;
+    if (!requested || requested.length === 0) {
+      continue;
+    }
+    const contributed: string[] = [];
+    for (const name of requested) {
+      if (typeof name !== 'string' || name.length === 0) {
+        continue;
+      }
+      if (onAgent.has(name) || extras.has(name)) {
+        continue;
+      }
+      extras.add(name);
+      contributed.push(name);
+    }
+    if (contributed.length > 0) {
+      perSkill.set(prime.name, contributed);
+    }
+  }
+
+  return {
+    extraToolNames: Array.from(extras),
+    perSkillExtras: perSkill,
+  };
 }
 
 /**

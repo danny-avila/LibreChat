@@ -116,6 +116,49 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
       type: Schema.Types.Mixed,
       default: {},
     },
+    /**
+     * When `true`, the model cannot invoke this skill via the `skill` tool
+     * and the skill is excluded from the catalog injected into the agent's
+     * additional_instructions. Manual `$` invocation is unaffected. Mirrors
+     * the `disable-model-invocation` frontmatter field. Filtering currently
+     * happens application-side after `listSkillsByAccess` returns, so no
+     * index — add one if/when a query starts filtering by this column at
+     * the DB level.
+     */
+    disableModelInvocation: {
+      type: Boolean,
+      default: false,
+    },
+    /**
+     * When `false`, the skill is hidden from the `$` popover and rejected
+     * by the manual-invocation resolver. Defaults to `true` so existing
+     * skills remain user-invocable without a migration. Mirrors the
+     * `user-invocable` frontmatter field.
+     */
+    userInvocable: {
+      type: Boolean,
+      default: true,
+    },
+    /**
+     * Skill-declared tool allowlist forwarded verbatim from frontmatter.
+     * Surfaced on resolved skill primes so the agent's effective tool set
+     * for the turn can union these in alongside the agent-configured tools.
+     * `default: undefined` (not `[]`) preserves the distinction between
+     * "author declared no extras" and "author explicitly declared none".
+     *
+     * Phase 6 wires this in for **manually-primed** skills (Phase 5's
+     * always-apply primes will pass through the same union once that
+     * resolver lands). Model-invoked skills (via the `skill` tool
+     * mid-turn) do NOT trigger tool union at execution time — adding a
+     * tool partway through a turn would require a graph rebuild that
+     * isn't worth the complexity for v1. If the author wants the model
+     * to have access to extra tools when the model picks the skill, they
+     * should add those tools to the agent directly.
+     */
+    allowedTools: {
+      type: [String],
+      default: undefined,
+    },
     category: {
       type: String,
       default: '',

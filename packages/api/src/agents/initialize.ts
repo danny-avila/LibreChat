@@ -1,4 +1,5 @@
 import { Providers } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import {
   Constants,
   ErrorTypes,
@@ -30,9 +31,9 @@ import {
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
-import { injectSkillCatalog, resolveManualSkills } from './skills';
-import type { ResolvedManualSkill } from './skills';
+import { injectSkillCatalog, resolveManualSkills, unionPrimeAllowedTools } from './skills';
 import { primeResources } from './resources';
+import type { ResolvedManualSkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
 
 /**
@@ -184,6 +185,17 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
       name: string;
       description: string;
       author: import('mongoose').Types.ObjectId;
+      /**
+       * When `true`, the skill is excluded from the catalog injected into
+       * the agent's additional_instructions and the model cannot invoke it
+       * via the `skill` tool. Manual `$` invocation is unaffected.
+       */
+      disableModelInvocation?: boolean;
+      /**
+       * When `false`, the skill is hidden from the `$` popover and rejected
+       * by the manual-invocation resolver. Defaults to `true`.
+       */
+      userInvocable?: boolean;
     }>;
     has_more?: boolean;
     after?: string | null;
@@ -192,10 +204,19 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
    * Load a single skill by name, constrained to an ACL-accessible ID set.
    * Returns the full document (including `body`) so manual invocation can
    * prime SKILL.md without a second DB round-trip.
+   *
+   * `preferUserInvocable` (manual paths): on a same-name collision,
+   * prefer the newest doc with `userInvocable !== false`.
+   * `preferModelInvocable` (model paths — `skill` / `read_file`): on a
+   * same-name collision, prefer the newest doc with
+   * `disableModelInvocation !== true`. Both fall back to the newest match
+   * so the explicit-rejection error paths still fire when only the
+   * non-preferred variant exists.
    */
   getSkillByName?: (
     name: string,
     accessibleIds: import('mongoose').Types.ObjectId[],
+    options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
   ) => Promise<{
     _id: import('mongoose').Types.ObjectId;
     name: string;
@@ -207,6 +228,19 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
      * future runtime enforcement without a second round-trip.
      */
     allowedTools?: string[];
+    /**
+     * Set when the skill was authored with `disable-model-invocation: true`.
+     * The skill tool handler short-circuits on this so a model that names
+     * such a skill (e.g. via hallucination or stale catalog) gets a clear
+     * rejection instead of silently executing.
+     */
+    disableModelInvocation?: boolean;
+    /**
+     * Set when the skill was authored with `user-invocable: false`. The
+     * manual-invocation resolver skips with a warn log so an API-direct
+     * caller can't bypass the popover-side filter.
+     */
+    userInvocable?: boolean;
   } | null>;
 }
 
@@ -360,6 +394,106 @@ export async function initializeAgent(
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
   });
 
+  /**
+   * Pre-resolve manually-invoked skill primes so their `allowed-tools` can
+   * be unioned into the agent's effective tool set BEFORE `loadTools` runs.
+   * Single load is correctness-critical: a second `loadTools` pass would
+   * compute its own `userMCPAuthMap` / `toolContextMap` / OAuth flow state
+   * that the InitializedAgent never sees, so an MCP tool added via
+   * `allowed-tools` would be visible to the model but fail at execution
+   * time without its per-user auth context.
+   *
+   * Resolution uses `params.accessibleSkillIds` (not the active-filtered
+   * subset that `injectSkillCatalog` will produce later) — see
+   * `resolveManualSkills` doc for why a skill outside the catalog cap can
+   * still be authorizable for direct manual invocation.
+   */
+  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
+  let extraAllowedToolNames: string[] = [];
+  let perSkillExtras: Map<string, string[]> = new Map();
+  if (
+    params.manualSkills?.length &&
+    db.getSkillByName &&
+    params.accessibleSkillIds &&
+    params.accessibleSkillIds.length > 0
+  ) {
+    manualSkillPrimes = await resolveManualSkills({
+      names: params.manualSkills,
+      getSkillByName: db.getSkillByName,
+      accessibleSkillIds: params.accessibleSkillIds,
+      userId: req.user?.id,
+      skillStates: params.skillStates,
+      defaultActiveOnShare: params.defaultActiveOnShare,
+    });
+    if (manualSkillPrimes.length > 0) {
+      const union = unionPrimeAllowedTools({
+        primes: manualSkillPrimes,
+        agentToolNames: agent.tools ?? [],
+      });
+      extraAllowedToolNames = union.extraToolNames;
+      perSkillExtras = union.perSkillExtras;
+    }
+  }
+
+  const baseToolNames = agent.tools ?? [];
+  const requestedToolNames =
+    extraAllowedToolNames.length > 0 ? [...baseToolNames, ...extraAllowedToolNames] : baseToolNames;
+
+  /**
+   * `loadTools` failures take two forms:
+   *   1. The wrapper throws — rare; only when something around the
+   *      try/catch in `createToolLoader` itself fails.
+   *   2. The wrapper returns `undefined` — the typical CJS path: every
+   *      production loader (`createToolLoader` in `initialize.js`,
+   *      `openai.js`, `responses.js`) catches `loadAgentTools` errors and
+   *      returns `undefined`. Without explicit handling, the empty
+   *      fallback object below would silently drop the agent's baseline
+   *      tools for the turn (not just the skill-added extras).
+   *
+   * If a skill-contributed `allowed-tools` entry is the culprit, retry
+   * with just `agent.tools` so the agent's own tools still load (the
+   * dropped-tools debug log below picks up which extras vanished). If
+   * the retry-without-extras also fails, propagate / fall through with
+   * the empty fallback — the agent's own tools are the problem.
+   */
+  const callLoadTools = async (tools: string[]) =>
+    loadTools?.({
+      req,
+      res,
+      provider,
+      agentId: agent.id,
+      tools,
+      model: agent.model,
+      tool_options: agent.tool_options,
+      tool_resources,
+    });
+
+  let loadToolsResult;
+  const initialFailedSilently = (result: unknown) =>
+    result == null && extraAllowedToolNames.length > 0;
+  try {
+    loadToolsResult = await callLoadTools(requestedToolNames);
+  } catch (err) {
+    if (extraAllowedToolNames.length > 0) {
+      logger.warn(
+        `[allowedTools] loadTools threw with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,
+        err instanceof Error ? err.message : err,
+      );
+      loadToolsResult = await callLoadTools(baseToolNames);
+    } else {
+      throw err;
+    }
+  }
+  if (initialFailedSilently(loadToolsResult)) {
+    /* Production loaders swallow errors and return undefined. Treat that
+       the same as a throw when extras were requested — the agent's own
+       tools must still load. */
+    logger.warn(
+      `[allowedTools] loadTools returned no result with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them.`,
+    );
+    loadToolsResult = await callLoadTools(baseToolNames);
+  }
+
   const {
     toolRegistry,
     toolContextMap,
@@ -368,16 +502,7 @@ export async function initializeAgent(
     hasDeferredTools,
     actionsEnabled,
     tools: structuredTools,
-  } = (await loadTools?.({
-    req,
-    res,
-    provider,
-    agentId: agent.id,
-    tools: agent.tools ?? [],
-    model: agent.model,
-    tool_options: agent.tool_options,
-    tool_resources,
-  })) ?? {
+  } = loadToolsResult ?? {
     tools: [],
     toolContextMap: {},
     userMCPAuthMap: undefined,
@@ -388,6 +513,33 @@ export async function initializeAgent(
   };
 
   let toolDefinitions = loadedToolDefinitions;
+
+  /**
+   * Tolerant filter: anything `loadTools` couldn't resolve (capability
+   * disabled, plugin missing, name unknown to the registry) is silently
+   * dropped with an attributed debug log. Cross-ecosystem skills authored
+   * against tools LibreChat hasn't shipped yet (Claude Code's `edit_file`,
+   * etc.) import without breaking — they light up automatically once
+   * support lands. Skips when there were no extras to begin with.
+   */
+  if (extraAllowedToolNames.length > 0) {
+    const loadedNames = new Set((toolDefinitions ?? []).map((d) => d.name));
+    const dropped = extraAllowedToolNames.filter((n) => !loadedNames.has(n));
+    if (dropped.length > 0) {
+      const sources: string[] = [];
+      for (const [skillName, names] of perSkillExtras) {
+        const droppedFromSkill = names.filter((n) => !loadedNames.has(n));
+        if (droppedFromSkill.length > 0) {
+          sources.push(`"${skillName}" → [${droppedFromSkill.join(', ')}]`);
+        }
+      }
+      logger.debug(
+        `[allowedTools] Dropped unrecognized tool names: ${
+          sources.length > 0 ? sources.join('; ') : dropped.join(', ')
+        }`,
+      );
+    }
+  }
 
   const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
     provider,
@@ -489,7 +641,6 @@ export async function initializeAgent(
    * LLM (or a direct-invocation path) names one.
    */
   let executableSkillIds = params.accessibleSkillIds;
-  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
   const { accessibleSkillIds } = params;
   if (accessibleSkillIds && accessibleSkillIds.length > 0) {
     const skillResult = await injectSkillCatalog({
@@ -507,25 +658,6 @@ export async function initializeAgent(
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;
     executableSkillIds = skillResult.activeSkillIds;
-
-    /**
-     * Resolve manually-invoked skills against the same ACL set used for the
-     * catalog. We use `accessibleSkillIds` (not `activeSkillIds`) because the
-     * catalog is capped at a token budget — a skill that fell outside that cap
-     * can still be authorized for direct manual invocation. The active-state
-     * filter is re-applied inside `resolveManualSkills` so deactivated skills
-     * never leak through this path either.
-     */
-    if (params.manualSkills?.length && db.getSkillByName) {
-      manualSkillPrimes = await resolveManualSkills({
-        names: params.manualSkills,
-        getSkillByName: db.getSkillByName,
-        accessibleSkillIds,
-        userId: req.user?.id,
-        skillStates: params.skillStates,
-        defaultActiveOnShare: params.defaultActiveOnShare,
-      });
-    }
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;

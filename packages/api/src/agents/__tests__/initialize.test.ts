@@ -477,9 +477,14 @@ describe('initializeAgent — manual skill priming (Phase 3)', () => {
     );
 
     expect(result.manualSkillPrimes).toEqual([
-      { name: 'brand-guidelines', body: '# Brand guidelines\nUse blue.' },
+      { _id: skillId, name: 'brand-guidelines', body: '# Brand guidelines\nUse blue.' },
     ]);
-    expect(getSkillByName).toHaveBeenCalledWith('brand-guidelines', [skillId]);
+    /* `preferUserInvocable` keeps name-collision lookups consistent with
+       the popover for manual paths — model-only (`userInvocable: false`)
+       duplicates can't shadow the user-invocable doc the user picked. */
+    expect(getSkillByName).toHaveBeenCalledWith('brand-guidelines', [skillId], {
+      preferUserInvocable: true,
+    });
   });
 
   it('leaves manualSkillPrimes undefined when no manualSkills are provided', async () => {
@@ -575,5 +580,363 @@ describe('initializeAgent — manual skill priming (Phase 3)', () => {
     );
 
     expect(result.manualSkillPrimes).toBeUndefined();
+  });
+});
+
+describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  /**
+   * Same minimal pager used in the Phase 3 suite — the catalog isn't what
+   * we're exercising; we just need accessibleSkillIds to be non-empty so the
+   * resolver path runs.
+   */
+  const emptyListSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'] = async () => ({
+    skills: [],
+    has_more: false,
+    after: null,
+  });
+
+  /** Helper: build a getSkillByName that returns a single skill with allowedTools. */
+  const buildGetSkillByName = (
+    name: string,
+    allowedTools: string[] | undefined,
+    skillId: import('mongoose').Types.ObjectId,
+    userId: string,
+  ): InitializeAgentDbMethods['getSkillByName'] =>
+    jest.fn().mockResolvedValue({
+      _id: skillId,
+      name,
+      body: `body of ${name}`,
+      author: { toString: () => userId } as unknown as import('mongoose').Types.ObjectId,
+      ...(allowedTools !== undefined ? { allowedTools } : {}),
+    });
+
+  it('passes the union of agent.tools + allowed-tools to loadTools and merges resulting toolDefinitions', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    /* Mock loadTools to echo back what was requested as toolDefinitions —
+       lets the test assert both the input list and the output merge. */
+    loadTools.mockImplementation(async ({ tools }: { tools: string[] }) => ({
+      tools: [],
+      toolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: tools.map((name: string) => ({ name, description: '', parameters: {} })),
+      hasDeferredTools: false,
+      actionsEnabled: undefined,
+    }));
+
+    const getSkillByName = buildGetSkillByName(
+      'tool-skill',
+      ['execute_code', 'read_file'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['tool-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Single loadTools call with the union — agent.tools + extras, dedup
+       not needed because unionPrimeAllowedTools already excluded
+       agent-baseline names. Order: agent first, then extras. */
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'execute_code', 'read_file']);
+
+    /* All three tools should appear in the merged toolDefinitions. */
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toEqual(
+      expect.arrayContaining(['web_search', 'execute_code', 'read_file']),
+    );
+  });
+
+  it('does not call loadTools twice when the skill declares no allowed-tools', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const getSkillByName = buildGetSkillByName('plain', undefined, skillId, req.user!.id);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['plain'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search']);
+  });
+
+  it('skips extras already on the agent (agent baseline wins; no double-loading)', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search', 'execute_code'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const getSkillByName = buildGetSkillByName(
+      'overlap',
+      ['web_search', 'read_file'], // web_search overlaps; read_file is new
+      skillId,
+      req.user!.id,
+    );
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['overlap'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* web_search is on the agent — not duplicated; only read_file is "extra". */
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'execute_code', 'read_file']);
+  });
+
+  it('retries loadTools without extras when the union call returns undefined (production loaders swallow errors)', async () => {
+    /* Production loaders (`createToolLoader` in `initialize.js`,
+       `openai.js`, `responses.js`) wrap `loadAgentTools` in try/catch
+       and return `undefined` on failure. Without explicit handling we'd
+       fall through to the empty fallback and silently drop the agent's
+       baseline tools. This test pins the retry-on-undefined behavior. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    let call = 0;
+    loadTools.mockImplementation(async ({ tools }: { tools: string[] }) => {
+      call += 1;
+      if (call === 1) {
+        return undefined; // simulate swallowed error in createToolLoader
+      }
+      return {
+        tools: [],
+        toolContextMap: {},
+        userMCPAuthMap: undefined,
+        toolRegistry: undefined,
+        toolDefinitions: tools.map((name) => ({ name, description: '', parameters: {} })),
+        hasDeferredTools: false,
+        actionsEnabled: undefined,
+      };
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'silent-fail-skill',
+      ['mcp__broken__tool'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['silent-fail-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Two calls: union first (returned undefined → silent fail), then
+       base-only retry (succeeded). Agent's web_search survives. */
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__broken__tool']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toContain('web_search');
+    expect(definedNames).not.toContain('mcp__broken__tool');
+  });
+
+  it('retries loadTools without extras when the union call throws (agent tools must still load)', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    /* First call (with extras) fails; second call (without extras) succeeds. */
+    let call = 0;
+    loadTools.mockImplementation(async ({ tools }: { tools: string[] }) => {
+      call += 1;
+      if (call === 1) {
+        throw new Error('MCP connection failed for skill-added tool');
+      }
+      return {
+        tools: [],
+        toolContextMap: {},
+        userMCPAuthMap: undefined,
+        toolRegistry: undefined,
+        toolDefinitions: tools.map((name) => ({ name, description: '', parameters: {} })),
+        hasDeferredTools: false,
+        actionsEnabled: undefined,
+      };
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'bad-tool-skill',
+      ['mcp__broken__tool'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['bad-tool-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Two calls: union first (threw), then base-only retry (succeeded). */
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__broken__tool']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+
+    /* Agent's own tool survives; the broken extra is silently dropped. */
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toContain('web_search');
+    expect(definedNames).not.toContain('mcp__broken__tool');
+  });
+
+  it('falls through to empty toolDefinitions when BOTH the union and base-only loadTools calls return undefined', async () => {
+    /* Worst-case silent-failure path: production loaders catch errors
+       and return undefined. If the agent's own tools fail to load AND
+       the retry without extras also fails, we have nothing to give the
+       LLM. The current behavior is to fall through to the `?? {}`
+       fallback rather than throw — pinning that contract here so the
+       turn doesn't crash hard but the agent simply has no tools. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    /* Both calls (with extras + without extras) silently return undefined. */
+    loadTools.mockResolvedValue(undefined);
+
+    const getSkillByName = buildGetSkillByName(
+      'broken-skill',
+      ['some-tool'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['broken-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Two attempts (initial + retry), both undefined → empty fallback.
+       The agent gets no tool definitions for the turn but does NOT
+       crash; downstream code handles the empty case. */
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(result.toolDefinitions).toEqual([]);
+  });
+
+  it('propagates the error when loadTools fails AND there are no skill-added extras to drop', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    /* No skills, no extras — a thrown loadTools is the agent's own problem,
+       not ours to absorb. */
+    loadTools.mockRejectedValueOnce(new Error('agent tool registry corrupted'));
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: undefined,
+        },
+        db,
+      ),
+    ).rejects.toThrow('agent tool registry corrupted');
+    expect(loadTools).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not invoke loadTools twice when the agent has no tools and the skill adds none', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const getSkillByName = buildGetSkillByName('plain', [], skillId, req.user!.id);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['plain'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual([]);
   });
 });

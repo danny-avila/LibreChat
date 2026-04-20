@@ -5,6 +5,27 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { enrichWithSkillConfigurable } = require('@librechat/api');
 const db = require('~/models');
 
+/**
+ * Builds the `manualSkillPrimedIdsByName` map passed through to
+ * `enrichWithSkillConfigurable`. Centralized here so the four CJS call
+ * sites (`initialize.js`, `responses.js` x2, `openai.js`) share one
+ * source of truth — if `ResolvedManualSkill` ever renames `_id` or
+ * gains new identifying fields, only this helper changes.
+ *
+ * Returns `undefined` (not `{}`) when there are no primes, so the
+ * downstream `enrichWithSkillConfigurable` cleanly omits the field
+ * from `mergedConfigurable` rather than threading an empty object.
+ *
+ * @param {Array<{ name: string, _id: { toString(): string } }> | undefined} manualSkillPrimes
+ * @returns {Record<string, string> | undefined}
+ */
+function buildManualSkillPrimedIdsByName(manualSkillPrimes) {
+  if (!manualSkillPrimes?.length) {
+    return undefined;
+  }
+  return Object.fromEntries(manualSkillPrimes.map((p) => [p.name, p._id.toString()]));
+}
+
 /** Skill-related properties for ToolExecuteOptions (stable references, allocated once). */
 const skillToolDeps = {
   getSkillByName: db.getSkillByName,
@@ -28,16 +49,28 @@ function getSkillToolDeps() {
  * @param {object} req - The Express request object
  * @param {Array} accessibleSkillIds - Pre-computed accessible skill IDs
  * @param {string} [preResolvedCodeApiKey] - Pre-resolved code API key (skips redundant lookup)
+ * @param {Record<string, string>} [manualSkillPrimedIdsByName] - Map of name → skill id for skills manually invoked this turn via the `$` popover. Pins same-name collision lookups in `read_file`.
  * @returns {Promise<object>} Augmented result with skill configurable
  */
-function enrichConfigurable(result, req, accessibleSkillIds, preResolvedCodeApiKey) {
+function enrichConfigurable(
+  result,
+  req,
+  accessibleSkillIds,
+  preResolvedCodeApiKey,
+  manualSkillPrimedIdsByName,
+) {
   return enrichWithSkillConfigurable(
     result,
     req,
     accessibleSkillIds,
     loadAuthValues,
     preResolvedCodeApiKey,
+    manualSkillPrimedIdsByName,
   );
 }
 
-module.exports = { getSkillToolDeps, enrichWithSkillConfigurable: enrichConfigurable };
+module.exports = {
+  getSkillToolDeps,
+  enrichWithSkillConfigurable: enrichConfigurable,
+  buildManualSkillPrimedIdsByName,
+};

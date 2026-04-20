@@ -14,6 +14,7 @@ import {
   validateSkillFrontmatter,
   validateRelativePath,
   inferSkillFileCategory,
+  deriveStructuredFrontmatterFields,
 } from './skill';
 import { logger, createModels } from '..';
 import { createMethods } from './index';
@@ -276,6 +277,73 @@ describe('skill validation helpers', () => {
       ).toBe(true);
     });
   });
+
+  describe('deriveStructuredFrontmatterFields', () => {
+    it('returns empty object for missing or non-object frontmatter', () => {
+      expect(deriveStructuredFrontmatterFields(undefined)).toEqual({});
+      expect(deriveStructuredFrontmatterFields(null as unknown as Record<string, unknown>)).toEqual(
+        {},
+      );
+    });
+
+    it('extracts disable-model-invocation only when explicitly boolean', () => {
+      expect(deriveStructuredFrontmatterFields({ 'disable-model-invocation': true })).toEqual({
+        disableModelInvocation: true,
+      });
+      expect(deriveStructuredFrontmatterFields({ 'disable-model-invocation': false })).toEqual({
+        disableModelInvocation: false,
+      });
+      /* Non-boolean values are silently ignored — the validator already
+         rejects them upstream with INVALID_TYPE, so deriving here would
+         double-fire the failure. */
+      expect(deriveStructuredFrontmatterFields({ 'disable-model-invocation': 'yes' })).toEqual({});
+    });
+
+    it('extracts user-invocable only when explicitly boolean', () => {
+      expect(deriveStructuredFrontmatterFields({ 'user-invocable': true })).toEqual({
+        userInvocable: true,
+      });
+      expect(deriveStructuredFrontmatterFields({ 'user-invocable': false })).toEqual({
+        userInvocable: false,
+      });
+      /* Field absent → no override; downstream uses schema default of true. */
+      expect(deriveStructuredFrontmatterFields({})).toEqual({});
+    });
+
+    it('normalizes a string allowed-tools to a one-element array', () => {
+      expect(deriveStructuredFrontmatterFields({ 'allowed-tools': 'web_search' })).toEqual({
+        allowedTools: ['web_search'],
+      });
+      /* Empty string → not extracted; an explicit empty array is the
+         author's way to say "no extras". */
+      expect(deriveStructuredFrontmatterFields({ 'allowed-tools': '' })).toEqual({});
+    });
+
+    it('passes through array allowed-tools, dropping non-string entries', () => {
+      expect(
+        deriveStructuredFrontmatterFields({
+          'allowed-tools': ['execute_code', 'read_file', '', 42 as unknown as string, null],
+        }),
+      ).toEqual({ allowedTools: ['execute_code', 'read_file'] });
+      expect(deriveStructuredFrontmatterFields({ 'allowed-tools': [] })).toEqual({
+        allowedTools: [],
+      });
+    });
+
+    it('combines all three fields when present together', () => {
+      expect(
+        deriveStructuredFrontmatterFields({
+          'disable-model-invocation': true,
+          'user-invocable': false,
+          'allowed-tools': ['execute_code'],
+        }),
+      ).toEqual({
+        disableModelInvocation: true,
+        userInvocable: false,
+        allowedTools: ['execute_code'],
+      });
+    });
+  });
 });
 
 describe('Skill CRUD methods', () => {
@@ -424,6 +492,365 @@ describe('Skill CRUD methods', () => {
     });
     expect(page2.skills.length).toBe(1);
     expect(page2.has_more).toBe(false);
+  });
+
+  it('persists disableModelInvocation / userInvocable / allowedTools derived from frontmatter', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'frontmatter-derived',
+        frontmatter: {
+          name: 'frontmatter-derived',
+          description: 'A demo skill used in tests.',
+          'disable-model-invocation': true,
+          'user-invocable': false,
+          'allowed-tools': ['execute_code', 'read_file'],
+        },
+      }),
+    );
+    expect(skill.disableModelInvocation).toBe(true);
+    expect(skill.userInvocable).toBe(false);
+    expect(skill.allowedTools).toEqual(['execute_code', 'read_file']);
+
+    /* Re-fetch via getSkillById to confirm the columns survive the round-trip
+       (proving they're persisted, not just echoed in the create response). */
+    const reloaded = await methods.getSkillById(skill._id);
+    expect(reloaded?.disableModelInvocation).toBe(true);
+    expect(reloaded?.userInvocable).toBe(false);
+    expect(reloaded?.allowedTools).toEqual(['execute_code', 'read_file']);
+  });
+
+  it('defaults disableModelInvocation=false / userInvocable=true / allowedTools=undefined when frontmatter omits them', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'defaults' }));
+    expect(skill.disableModelInvocation).toBe(false);
+    expect(skill.userInvocable).toBe(true);
+    expect(skill.allowedTools).toBeUndefined();
+  });
+
+  it('updateSkill re-derives the structured columns when frontmatter changes', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'mutating',
+        frontmatter: {
+          name: 'mutating',
+          description: 'A demo skill used in tests.',
+          'disable-model-invocation': true,
+          'user-invocable': false,
+          'allowed-tools': ['execute_code'],
+        },
+      }),
+    );
+    expect(skill.disableModelInvocation).toBe(true);
+
+    const updated = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: 1,
+      update: {
+        frontmatter: {
+          name: 'mutating',
+          description: 'A demo skill used in tests.',
+          /* Drops disable-model-invocation, allowed-tools; flips user-invocable. */
+          'user-invocable': true,
+        },
+      },
+    });
+    expect(updated.status).toBe('updated');
+    if (updated.status !== 'updated') return;
+    /* Fields the new frontmatter omits are `$unset` so a re-fetch returns
+       undefined. Functionally equivalent to the schema default for all three:
+       runtime catalog filter checks `disableModelInvocation === true` (so
+       undefined passes through), `resolveManualSkills` checks
+       `userInvocable === false` (undefined passes through), and the tool-
+       union helper treats undefined `allowedTools` as "no extras". */
+    expect(updated.skill.disableModelInvocation).toBeUndefined();
+    expect(updated.skill.userInvocable).toBe(true);
+    expect(updated.skill.allowedTools).toBeUndefined();
+  });
+
+  it('backfills legacy skills from frontmatter when columns are unset (getSkillByName)', async () => {
+    /* Simulate a pre-Phase-6 skill: it has `user-invocable` /
+       `disable-model-invocation` / `allowed-tools` set in frontmatter
+       but the structured columns were never populated (no migration). */
+    const legacy = await Skill.create({
+      name: 'legacy-skill',
+      description: 'A legacy skill from before Phase 6.',
+      body: 'body',
+      frontmatter: {
+        name: 'legacy-skill',
+        description: 'A legacy skill from before Phase 6.',
+        'disable-model-invocation': true,
+        'user-invocable': false,
+        'allowed-tools': ['execute_code'],
+      },
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    /* Strip the columns to simulate pre-Phase-6 state — `Skill.create`
+       above would have run the new derive helper, so we explicitly unset
+       to recreate the legacy shape. */
+    await Skill.collection.updateOne(
+      { _id: legacy._id },
+      { $unset: { disableModelInvocation: '', userInvocable: '', allowedTools: '' } },
+    );
+
+    const fetched = await methods.getSkillByName('legacy-skill', [
+      legacy._id as mongoose.Types.ObjectId,
+    ]);
+    /* Backfill must populate the columns from frontmatter so runtime
+       gates fire correctly without a write migration. */
+    expect(fetched?.disableModelInvocation).toBe(true);
+    expect(fetched?.userInvocable).toBe(false);
+    expect(fetched?.allowedTools).toEqual(['execute_code']);
+  });
+
+  it('backfills legacy skills from frontmatter on listSkillsByAccess summaries', async () => {
+    /* Same legacy-shape simulation; the summary projection now includes
+       frontmatter so the backfill helper has data to read. */
+    const legacy = await Skill.create({
+      name: 'legacy-summary',
+      description: 'A legacy skill listed in summaries.',
+      body: 'body',
+      frontmatter: {
+        name: 'legacy-summary',
+        description: 'A legacy skill listed in summaries.',
+        'disable-model-invocation': true,
+        'user-invocable': false,
+      },
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    await Skill.collection.updateOne(
+      { _id: legacy._id },
+      { $unset: { disableModelInvocation: '', userInvocable: '' } },
+    );
+
+    const result = await methods.listSkillsByAccess({
+      accessibleIds: [legacy._id as mongoose.Types.ObjectId],
+      limit: 10,
+    });
+    expect(result.skills.length).toBe(1);
+    expect(result.skills[0].disableModelInvocation).toBe(true);
+    expect(result.skills[0].userInvocable).toBe(false);
+  });
+
+  it('preferModelInvocable picks the model-invocable doc on same-name collision (does NOT filter on userInvocable)', async () => {
+    /* Same-name collision scenario the model paths must handle: an older
+       user-invocable variant and a newer model-only variant
+       (`userInvocable: false`) — both are model-invocable. The model
+       path uses preferModelInvocable, which deliberately does NOT
+       filter on userInvocable; otherwise the older doc would shadow the
+       cataloged model-only doc the model targeted. */
+    const olderUserInvocable = await Skill.create({
+      name: 'model-collision',
+      description: 'Older user-invocable variant of the colliding name.',
+      body: 'user-invocable body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      userInvocable: true,
+    });
+    const newerModelOnly = await Skill.create({
+      name: 'model-collision',
+      description: 'Newer model-only variant of the colliding name.',
+      body: 'model-only body',
+      frontmatter: {},
+      author: other._id,
+      authorName: other.name ?? 'Other',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      userInvocable: false,
+    });
+    /* Set updatedAt explicitly so the "older / newer" assertion is
+       deterministic across CI runners — relying on wall-clock spacing
+       between two `Skill.create` calls would race on a fast machine. */
+    await Skill.collection.updateOne(
+      { _id: olderUserInvocable._id },
+      { $set: { updatedAt: new Date(Date.now() - 1000) } },
+    );
+
+    const accessibleIds = [
+      olderUserInvocable._id as mongoose.Types.ObjectId,
+      newerModelOnly._id as mongoose.Types.ObjectId,
+    ];
+
+    /* preferModelInvocable: both are model-invocable (neither has
+       disableModelInvocation: true), so newest wins → model-only doc. */
+    const modelLookup = await methods.getSkillByName('model-collision', accessibleIds, {
+      preferModelInvocable: true,
+    });
+    expect(modelLookup?._id.toString()).toBe(newerModelOnly._id.toString());
+  });
+
+  it('preferUserInvocable picks the user-invocable doc on same-name collision (does NOT filter on disableModelInvocation)', async () => {
+    /* Manual path scenario: older user-invocable variant + newer
+       model-only variant. The popover surfaced the older doc; the
+       resolver must look it up with preferUserInvocable so the
+       newer model-only doc doesn't shadow the user's selection. */
+    const olderUserInvocable = await Skill.create({
+      name: 'user-collision',
+      description: 'Older user-invocable variant.',
+      body: 'user-invocable body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      userInvocable: true,
+    });
+    const newerModelOnly = await Skill.create({
+      name: 'user-collision',
+      description: 'Newer model-only variant.',
+      body: 'model-only body',
+      frontmatter: {},
+      author: other._id,
+      authorName: other.name ?? 'Other',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      userInvocable: false,
+    });
+    /* Deterministic ordering — see the model-collision test above. */
+    await Skill.collection.updateOne(
+      { _id: olderUserInvocable._id },
+      { $set: { updatedAt: new Date(Date.now() - 1000) } },
+    );
+
+    const accessibleIds = [
+      olderUserInvocable._id as mongoose.Types.ObjectId,
+      newerModelOnly._id as mongoose.Types.ObjectId,
+    ];
+
+    /* Default behavior: newest wins → model-only doc returned. */
+    const defaultLookup = await methods.getSkillByName('user-collision', accessibleIds);
+    expect(defaultLookup?._id.toString()).toBe(newerModelOnly._id.toString());
+
+    /* preferUserInvocable: user-invocable doc wins → older doc returned.
+       Disabled-model status is irrelevant here. */
+    const preferred = await methods.getSkillByName('user-collision', accessibleIds, {
+      preferUserInvocable: true,
+    });
+    expect(preferred?._id.toString()).toBe(olderUserInvocable._id.toString());
+  });
+
+  it('preferUserInvocable still returns disabled docs (manual prime of disabled is supported)', async () => {
+    /* Manual path with a disabled-but-user-invocable skill: the user
+       can still pick it from the popover; resolveManualSkills uses
+       preferUserInvocable, which doesn't filter on
+       disableModelInvocation. */
+    const disabled = await Skill.create({
+      name: 'disabled-user-invocable',
+      description: 'User-invocable but model-disabled.',
+      body: 'body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      userInvocable: true,
+      disableModelInvocation: true,
+    });
+
+    const result = await methods.getSkillByName(
+      'disabled-user-invocable',
+      [disabled._id as mongoose.Types.ObjectId],
+      { preferUserInvocable: true },
+    );
+    expect(result?._id.toString()).toBe(disabled._id.toString());
+    expect(result?.disableModelInvocation).toBe(true);
+  });
+
+  it('preferred lookups fall back to the newest match when no preferred doc exists', async () => {
+    /* Sole-disabled name: only a disable-model-invocation doc exists.
+       preferModelInvocable must still return it so handleSkillToolCall
+       can fire the explicit-rejection error path. */
+    const disabledOnly = await Skill.create({
+      name: 'sole-disabled-fallback',
+      description: 'Only a model-disabled variant of this name exists.',
+      body: 'disabled body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      disableModelInvocation: true,
+    });
+
+    const result = await methods.getSkillByName(
+      'sole-disabled-fallback',
+      [disabledOnly._id as mongoose.Types.ObjectId],
+      { preferModelInvocable: true },
+    );
+    expect(result?._id.toString()).toBe(disabledOnly._id.toString());
+    expect(result?.disableModelInvocation).toBe(true);
+  });
+
+  it('does not overwrite explicit columns with frontmatter values (column wins)', async () => {
+    /* If both column and frontmatter are set (e.g. an admin edited the
+       column directly via the API but the frontmatter still says
+       otherwise), the column is authoritative — backfill only fills
+       undefined fields. */
+    const skill = await Skill.create({
+      name: 'column-wins',
+      description: 'A demo skill used in tests.',
+      body: 'body',
+      frontmatter: {
+        name: 'column-wins',
+        description: 'A demo skill used in tests.',
+        'disable-model-invocation': true,
+        'user-invocable': false,
+      },
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+      disableModelInvocation: false,
+      userInvocable: true,
+    });
+
+    const fetched = await methods.getSkillByName('column-wins', [
+      skill._id as mongoose.Types.ObjectId,
+    ]);
+    expect(fetched?.disableModelInvocation).toBe(false);
+    expect(fetched?.userInvocable).toBe(true);
+  });
+
+  it('listSkillsByAccess returns disableModelInvocation / userInvocable / allowedTools on summary rows', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'list-summary',
+        frontmatter: {
+          name: 'list-summary',
+          description: 'A demo skill used in tests.',
+          'disable-model-invocation': true,
+          'user-invocable': false,
+          'allowed-tools': ['web_search'],
+        },
+      }),
+    );
+    const result = await methods.listSkillsByAccess({
+      accessibleIds: [skill._id],
+      limit: 10,
+    });
+    expect(result.skills.length).toBe(1);
+    /* These are the fields injectSkillCatalog filters on; if they're
+       missing from the projection, the catalog can't enforce
+       disableModelInvocation. */
+    expect(result.skills[0].disableModelInvocation).toBe(true);
+    expect(result.skills[0].userInvocable).toBe(false);
+    expect(result.skills[0].allowedTools).toEqual(['web_search']);
   });
 
   it('listSkillsByAccess filters by category and search', async () => {

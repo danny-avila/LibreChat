@@ -104,11 +104,32 @@ export type TSkill = {
   frontmatter?: SkillFrontmatter;
   category?: string;
   /**
-   * UI-only phase 1. The backend doesn't persist `invocationMode` yet —
-   * forms default to `auto` and discard the value on save. Phase 2 will
-   * move this to a first-class column.
+   * @deprecated Replaced by the persisted `userInvocable` /
+   * `disableModelInvocation` pair derived from frontmatter. Retained
+   * temporarily so older form code that hasn't migrated still type-checks;
+   * the backend no longer reads or writes it.
    */
   invocationMode?: import('../types').InvocationMode;
+  /**
+   * Mirrors the `disable-model-invocation` frontmatter field. `true` means
+   * the model can no longer invoke this skill via the `skill` tool and the
+   * skill is excluded from the catalog injected into the system prompt.
+   * Manual `$` invocation is unaffected.
+   */
+  disableModelInvocation?: boolean;
+  /**
+   * Mirrors the `user-invocable` frontmatter field. `false` hides the skill
+   * from the `$` popover and rejects manual invocation. Defaults to `true`.
+   */
+  userInvocable?: boolean;
+  /**
+   * Skill-declared tool allowlist (mirrors the `allowed-tools` frontmatter
+   * field). When the skill is invoked, these tools are unioned into the
+   * agent's effective tool set for the turn. Tolerant of unknown names —
+   * the runtime intersects against the loaded tool registry, so skills
+   * referencing yet-to-be-implemented tools import without breaking.
+   */
+  allowedTools?: string[];
   author: string;
   authorName: string;
   version: number;

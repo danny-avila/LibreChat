@@ -693,10 +693,10 @@ export type TBalanceResponse = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Trigger mode controlling whether an agent auto-invokes a skill, requires
- * manual selection, or supports both. UI-only for phase 1 — the backend
- * `TSkill` shape doesn't have `invocationMode` yet. Forms default to `auto`
- * and the value is discarded on save until the backend lands support.
+ * @deprecated Superseded by the persisted `userInvocable` /
+ * `disableModelInvocation` pair derived from frontmatter. Retained for the
+ * transition window so older UI forms and tests still type-check; the
+ * backend no longer reads or writes it.
  */
 export enum InvocationMode {
   auto = 'auto',
