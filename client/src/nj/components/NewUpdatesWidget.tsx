@@ -9,7 +9,6 @@ import { newUpdatesWidgetDismissed } from '~/nj/store/landing';
 import { logEvent } from '~/nj/analytics/logEvent';
 import icons from '@uswds/uswds/img/sprite.svg';
 import { getUpdateWidgetContent } from '~/nj/content/parser/njContentRetrieval';
-import releaseNotes from '~/nj/content/release-notes.md?raw';
 import { createLinkTo } from '~/nj/utils/createLinkTo';
 import ReactMarkdown from 'react-markdown';
 import LinkRenderer from '~/nj/components/info/LinkRenderer';
@@ -79,6 +78,8 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
   };
 
   const content = getUpdateWidgetContent();
+  const link = createLinkTo(content.linkUrl);
+  const isExternal = typeof link === 'string';
 
   return (
     <motion.div
@@ -111,9 +112,12 @@ function ExpandedWidget({ onClose, onDismiss }: ExpandedWidgetProps) {
           {content.description}
         </ReactMarkdown>
         <Link
-          to={createLinkTo(content.linkUrl)}
+          to={link}
+          target={isExternal ? '_blank' : undefined}
+          rel={isExternal ? 'noreferrer' : undefined}
           onClick={handleLinkClick}
           className="inline-flex items-center gap-1 text-sm underline hover:decoration-2"
+          aria-label={isExternal ? `${content.linkText} (opens in new window)` : undefined}
         >
           {content.linkText}
         </Link>
