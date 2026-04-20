@@ -1,6 +1,17 @@
 # Release notes
 
 ---
+## April 21, 2026
+
+Features Released:
+
+* **A New AI Prompting Guide** — Our team created [this prompting guide](https://innovation.nj.gov/skills/ai-how-tos/prompts-and-context) to walk through how to use prompts and context to improve AI results. This covers how to think about AI tools, general prompt tips, concrete actions to improve the AI response quality and reduce hallucinations, a checklist to review AI outputs, and a troubleshooting guide. 
+
+Bugs & Improvements:
+
+* Feature Flags — We added the ability to easily turn features on/off for the team. This will help us build features that are more complex, test them, and release them when ready.
+
+Beyond this, we are working on a couple of big features that will be coming soon\!
 
 ## April 14, 2026
 
