@@ -441,6 +441,49 @@ describe('discoverConnectedAgents', () => {
     expect(result.edges).toHaveLength(3);
   });
 
+  it('preserves user-defined parallel-start branches disconnected from the primary', async () => {
+    // Primary A has edges `[A -> B, X -> Y]`. The `X -> Y` branch is
+    // intentionally disconnected from A — `MultiAgentGraph.analyzeGraph`
+    // treats X as a starting node (no incoming edges) and runs it in
+    // parallel with A. Discovery must keep this branch intact.
+    const edges: GraphEdge[] = [
+      { from: 'A', to: 'B', edgeType: 'handoff' },
+      { from: 'X', to: 'Y', edgeType: 'direct' },
+    ];
+    const primaryConfig = makeConfig('A', edges);
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      X: makeAgent('X', []),
+      Y: makeAgent('Y', []),
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    const checkPermission = jest.fn().mockResolvedValue(true);
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(result.agentConfigs.has('B')).toBe(true);
+    expect(result.agentConfigs.has('X')).toBe(true);
+    expect(result.agentConfigs.has('Y')).toBe(true);
+    expect(result.edges).toHaveLength(2);
+    expect(result.edges.map((e) => e.to).sort()).toEqual(['B', 'Y']);
+  });
+
   it('prunes surviving-but-unreachable edges from the return value (A->B->C->D, B skipped)', async () => {
     // All three edges are stored on the primary A. When B is skipped,
     // `filterOrphanedEdges` removes A->B (to=B) and B->C (from=B) — but

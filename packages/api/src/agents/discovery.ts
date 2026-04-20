@@ -290,34 +290,51 @@ export async function discoverConnectedAgents(
     collectEdges(chain as unknown as GraphEdge[]);
   }
 
-  const filteredEdges = filterOrphanedEdges(Array.from(edgeMap.values()), skippedAgentIds);
+  const preFilterEdges = Array.from(edgeMap.values());
+  const filteredEdges = filterOrphanedEdges(preFilterEdges, skippedAgentIds);
 
   /**
    * Keep discovery's reachability model aligned with the agents SDK's
    * runtime semantics. `MultiAgentGraph.createWorkflow` adds one
-   * LangGraph edge per `from` source (see
-   * `src/graphs/MultiAgentGraph.ts`), so a multi-source edge
+   * LangGraph edge per `from` source, so a multi-source edge
    * `{ from: ['A', 'B'], to: 'C' }` is really `A -> C` OR `B -> C` —
-   * either source firing routes to `C`. The reachability pass therefore
-   * advances through an edge whenever ANY of its sources is already
-   * reachable.
+   * either source firing routes to `C`. Reachability therefore advances
+   * through an edge whenever ANY of its sources is already reachable.
    *
-   * The edge filter then keeps an edge when it has at least one reachable
-   * source AND all of its destinations are reachable (a destination not
-   * present in `agentConfigs` would still trigger the
-   * `Found edge ending at unknown node` crash this PR fixes).
+   * Two semantics to reconcile when pruning after orphan-filter:
    *
-   * Finally, prune `agentConfigs`: keep anything reachable from the
-   * primary OR referenced on any endpoint of a surviving edge. The
-   * second clause covers co-sources in multi-source edges that have no
-   * incoming path of their own — e.g. B in `{ from: ['A', 'B'], to: 'C' }`
-   * when nothing reaches B. The SDK's per-source `addEdge` still
-   * requires B to be present as a node, and my companion
-   * `validateEdgeAgents` safety-net fails loudly if it isn't. Keeping B
-   * in `agentConfigs` cedes that decision to the SDK runtime, which
-   * handles the standalone starting-node case gracefully; it does not
-   * re-introduce the `createRun` crash this PR exists to prevent,
-   * because the edge is no longer orphaned with respect to its agents.
+   * 1. Accidental orphans — agents loaded via BFS from the primary's
+   *    edges that lost their only path when an intermediate agent was
+   *    skipped (e.g. `A -> B -> C` with B skipped leaves C stranded).
+   *    These should be pruned; leaving them flips `createRun` into
+   *    multi-agent mode with a disconnected C and the SDK runs C as an
+   *    unintended parallel root.
+   *
+   * 2. Intentional multi-start branches — agents referenced by edges the
+   *    user explicitly defined without wiring them to the primary
+   *    (e.g. `A -> B` plus `X -> Y` as two independent starting
+   *    branches). The SDK's `MultiAgentGraph.analyzeGraph` treats
+   *    `no-incoming-edge` agents as start nodes, so these run in
+   *    parallel with the primary by design. These must be preserved.
+   *
+   * Both cases produce the same post-filter topology (a component
+   * disconnected from the primary), but pre-filter they look different:
+   * accidental orphans WERE reachable from the primary before
+   * `filterOrphanedEdges` ran; intentional parallel starts were never
+   * reachable. Use that signal:
+   *
+   *   - Seed post-filter reachability with the primary AND every agent
+   *     in `agentConfigs` that was NOT reachable from the primary via
+   *     the pre-filter edges. That treats intentional parallel starts
+   *     as roots.
+   *   - Agents that WERE pre-filter reachable but aren't any more have
+   *     lost their connecting edge — they're pruned.
+   *   - Surviving edges are filtered to the post-filter reachable set
+   *     so no stale edge references a pruned agent.
+   *   - Agents referenced as an endpoint in a surviving edge are always
+   *     kept (a multi-source edge co-source like B in
+   *     `{ from: ['A','B'], to: 'C' }` where nothing reaches B still
+   *     needs B present for the SDK's per-source `addEdge` to compile).
    */
   const anyReachable = (value: string | string[], reachableSet: Set<string>): boolean => {
     const ids = Array.isArray(value) ? value : [value];
@@ -327,24 +344,37 @@ export async function discoverConnectedAgents(
     const ids = Array.isArray(value) ? value : [value];
     return ids.every((id) => typeof id !== 'string' || reachableSet.has(id));
   };
-
-  const reachable = new Set<string>([primaryConfig.id]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const edge of filteredEdges) {
-      if (!anyReachable(edge.from, reachable)) {
-        continue;
-      }
-      const dests = Array.isArray(edge.to) ? edge.to : [edge.to];
-      for (const dest of dests) {
-        if (typeof dest === 'string' && !reachable.has(dest)) {
-          reachable.add(dest);
-          changed = true;
+  const expandReachable = (seeds: Set<string>, edgeList: GraphEdge[]): Set<string> => {
+    const result = new Set<string>(seeds);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const edge of edgeList) {
+        if (!anyReachable(edge.from, result)) {
+          continue;
+        }
+        const dests = Array.isArray(edge.to) ? edge.to : [edge.to];
+        for (const dest of dests) {
+          if (typeof dest === 'string' && !result.has(dest)) {
+            result.add(dest);
+            changed = true;
+          }
         }
       }
     }
+    return result;
+  };
+
+  const preFilterReachable = expandReachable(new Set([primaryConfig.id]), preFilterEdges);
+
+  const postFilterSeeds = new Set<string>([primaryConfig.id]);
+  for (const agentId of agentConfigs.keys()) {
+    if (!preFilterReachable.has(agentId)) {
+      postFilterSeeds.add(agentId);
+    }
   }
+
+  const reachable = expandReachable(postFilterSeeds, filteredEdges);
 
   const edges = filteredEdges.filter(
     (edge) => anyReachable(edge.from, reachable) && allReachable(edge.to, reachable),
