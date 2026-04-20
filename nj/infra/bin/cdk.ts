@@ -119,7 +119,7 @@ if (process.env.DEPLOY_KITCHENSINK === "true") {
   const kitchenSinkStack = new KitchenSinkStack(app, "KitchenSinkStack", {
     env: env,
     listenerArn: ecsStack.listener.listenerArn,
-    loadBalancerSecurityGroupId: ecsStack.loadBalancer.connections.securityGroups[0].securityGroupId,
+    loadBalancer: ecsStack.loadBalancer,
     certificateArn: `arn:aws:acm:${env.region}:${env.account}:certificate/${process.env.LIBRECHAT_ACM_CERTIFICATE_ID}`,
   });
 
