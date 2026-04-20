@@ -29,7 +29,7 @@ export default function useWebPush() {
     async function setupPush() {
       try {
         isInitialized.current = true;
-        
+
         await navigator.serviceWorker.register('/sw.js');
         const registration = await navigator.serviceWorker.ready;
 
@@ -53,14 +53,14 @@ export default function useWebPush() {
           userVisibleOnly: true,
           applicationServerKey
         });
-        
+
         console.log('[PUSH-DEBUG] Current Subscription Endpoint (last 15 chars):', subscription.endpoint.slice(-15));
         console.log('[PUSH-DEBUG] Full Subscription object:', JSON.stringify(subscription));
 
         // Send to backend 
         await fetch('/api/push/subscribe', {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
@@ -68,7 +68,7 @@ export default function useWebPush() {
         });
 
         console.log('Web push subscribed successfully');
-        
+
         // Fetch server-side debug info to verify configuration
         try {
           const debugRes = await fetch('/api/push/debug');
@@ -92,6 +92,7 @@ export default function useWebPush() {
     // Listen for navigation messages from the service worker.
     // This is a fallback for when SW's navigate() fails (e.g. first notification
     // before the SW fully controls the page).
+    // added comment
     function handleSWMessage(event: MessageEvent) {
       if (event.data && event.data.type === 'NOTIFICATION_CLICK_NAVIGATE') {
         console.log('[PUSH-DEBUG] Received postMessage navigation to:', event.data.url);
