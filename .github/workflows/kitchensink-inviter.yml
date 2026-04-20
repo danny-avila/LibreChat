@@ -40,5 +40,5 @@ jobs:
         env:
           KITCHENSINK_CLUSTER_NAME: ${{ secrets.KITCHENSINK_CLUSTER_NAME }}
           KITCHENSINK_SERVICE_NAME: ${{ secrets.KITCHENSINK_SERVICE_NAME }}
-          USER_PASSWORD: ::add-mask::${{ inputs.password }}
+          USER_PASSWORD: ${{ inputs.password }}
         run: python nj/utils/kitchensink-inviter.py "${{ inputs.email }}"
