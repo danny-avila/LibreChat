@@ -88,5 +88,21 @@ export default function useWebPush() {
     }
 
     setupPush();
+
+    // Listen for navigation messages from the service worker.
+    // This is a fallback for when SW's navigate() fails (e.g. first notification
+    // before the SW fully controls the page).
+    function handleSWMessage(event: MessageEvent) {
+      if (event.data && event.data.type === 'NOTIFICATION_CLICK_NAVIGATE') {
+        console.log('[PUSH-DEBUG] Received postMessage navigation to:', event.data.url);
+        window.location.href = event.data.url;
+      }
+    }
+
+    navigator.serviceWorker.addEventListener('message', handleSWMessage);
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+    };
   }, [user, token]);
 }
