@@ -708,8 +708,7 @@ pre {
   height: 32px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid;
-  border-color: rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   background-color: #ffffff;
   z-index: 10;

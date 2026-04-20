@@ -2,8 +2,8 @@ import { forwardRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 import { cn } from '~/utils';
+import store from '~/store';
 
 type Props = {
   scrollHandler: React.MouseEventHandler<HTMLButtonElement>;

@@ -82,8 +82,8 @@ function MessagesViewContent({
           <CSSTransition
             in={showScrollButton && scrollButtonPreference}
             timeout={{
-              enter: 550,
-              exit: 700,
+              enter: 300,
+              exit: 250,
             }}
             classNames="scroll-animation"
             unmountOnExit={true}

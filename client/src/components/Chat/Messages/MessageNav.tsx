@@ -237,6 +237,14 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     const mutationObserver = new MutationObserver((mutations) => {
       for (let i = 0; i < mutations.length; i++) {
         const m = mutations[i];
+        if (m.type === 'attributes') {
+          const target = m.target as HTMLElement;
+          if (target.nodeType === 1 && target.classList?.contains('message-render')) {
+            refreshEntries();
+            return;
+          }
+          continue;
+        }
         if (m.addedNodes.length || m.removedNodes.length) {
           for (let j = 0; j < m.addedNodes.length; j++) {
             const n = m.addedNodes[j] as HTMLElement;
@@ -262,7 +270,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
     });
 
-    mutationObserver.observe(container, { childList: true, subtree: true });
+    mutationObserver.observe(container, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['id'],
+    });
 
     return () => {
       mutationObserver.disconnect();
@@ -295,14 +308,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     const scrollMargin = readScrollMargin(firstEl);
 
     let needsRecompute = false;
-    const content = container.firstElementChild as HTMLElement | null;
-    const resizeObserver = new ResizeObserver(() => {
-      needsRecompute = true;
-    });
-    if (content) {
-      resizeObserver.observe(content);
-    }
-
     let frameId: number | null = null;
 
     const tick = () => {
@@ -359,18 +364,26 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       col.scrollTop = Math.max(0, Math.min(target, col.scrollHeight - col.clientHeight));
     };
 
-    const onScroll = () => {
-      if (frameId != null) {
-        return;
+    const scheduleTick = () => {
+      if (frameId == null) {
+        frameId = requestAnimationFrame(tick);
       }
-      frameId = requestAnimationFrame(tick);
     };
 
+    const content = container.firstElementChild as HTMLElement | null;
+    const resizeObserver = new ResizeObserver(() => {
+      needsRecompute = true;
+      scheduleTick();
+    });
+    if (content) {
+      resizeObserver.observe(content);
+    }
+
     tick();
-    container.addEventListener('scroll', onScroll, { passive: true });
+    container.addEventListener('scroll', scheduleTick, { passive: true });
 
     return () => {
-      container.removeEventListener('scroll', onScroll);
+      container.removeEventListener('scroll', scheduleTick);
       if (frameId != null) {
         cancelAnimationFrame(frameId);
       }
@@ -443,23 +456,24 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
     const observed = observedRef.current;
     const visibleSet = visibleSetRef.current;
-    const newIds = new Set(entries.map((e) => e.id));
-
-    for (const [id, el] of observed) {
-      if (!newIds.has(id)) {
-        observer.unobserve(el);
-        observed.delete(id);
-        visibleSet.delete(id);
-      }
-    }
-
-    for (const entry of entries) {
+    const newIds = new Set<string>();
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      newIds.add(entry.id);
       if (!observed.has(entry.id)) {
         const el = document.getElementById(entry.id);
         if (el) {
           observer.observe(el);
           observed.set(entry.id, el);
         }
+      }
+    }
+
+    for (const [id, el] of observed) {
+      if (!newIds.has(id)) {
+        observer.unobserve(el);
+        observed.delete(id);
+        visibleSet.delete(id);
       }
     }
   }, [entries]);

@@ -27,12 +27,12 @@ jest.mock('@librechat/client', () => ({
   HoverCardPortal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   HoverCardContent: ({
     children,
-    ...rest
+    className,
   }: {
     children: React.ReactNode;
-    [key: string]: unknown;
+    className?: string;
   }) => (
-    <div data-testid="hover-card-content" {...(rest as Record<string, unknown>)}>
+    <div data-testid="hover-card-content" className={className}>
       {children}
     </div>
   ),
@@ -499,6 +499,32 @@ describe('MessageNav', () => {
   });
 
   describe('dom-driven refresh', () => {
+    it('refreshes entries when a .message-render id attribute changes (SSE lifecycle)', async () => {
+      const messages = [
+        buildMessage({ messageId: 'client-uuid', text: 'streaming', isCreatedByUser: false }),
+        buildMessage({ messageId: 'b', text: 'bravo', isCreatedByUser: true }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+      expect(container.querySelector('[data-msg-id="client-uuid"]')).not.toBeNull();
+
+      const streamingNode = document.getElementById('client-uuid') as HTMLElement;
+      await act(async () => {
+        streamingNode.id = 'server-id';
+        await Promise.resolve();
+      });
+      mockUseGetMessagesByConvoId.mockReturnValue({
+        data: [buildMessage({ messageId: 'server-id', text: 'streaming' }), ...messages.slice(1)],
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(250);
+        await Promise.resolve();
+      });
+
+      expect(container.querySelector('[data-msg-id="client-uuid"]')).toBeNull();
+      expect(container.querySelector('[data-msg-id="server-id"]')).not.toBeNull();
+    });
+
     it('refreshes entries when a .message-render is added via MutationObserver', async () => {
       const messages = [
         buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
