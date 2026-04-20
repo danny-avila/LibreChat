@@ -195,7 +195,7 @@ function shapeSummarizationConfig(
   const provider = config?.provider ?? fallbackProvider;
   const model = config?.model ?? fallbackModel;
   const trigger =
-    config?.trigger?.type && config?.trigger?.value
+    config?.trigger?.type && typeof config?.trigger?.value === 'number'
       ? { type: config.trigger.type, value: config.trigger.value }
       : undefined;
 

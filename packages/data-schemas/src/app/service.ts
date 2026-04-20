@@ -15,9 +15,27 @@ import { loadEndpoints } from './endpoints';
 import { loadOCRConfig } from './ocr';
 import logger from '~/config/winston';
 
-function loadSummarizationConfig(config: DeepPartial<TCustomConfig>): AppConfig['summarization'] {
+export function loadSummarizationConfig(
+  config: DeepPartial<TCustomConfig>,
+): AppConfig['summarization'] {
   const raw = config.summarization;
   if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+
+  if (
+    raw.trigger &&
+    typeof raw.trigger === 'object' &&
+    (raw.trigger as { type?: unknown }).type === 'token_count'
+  ) {
+    logger.warn(
+      "[AppService] `summarization.trigger.type: 'token_count'` is no longer supported. " +
+        "Use 'token_ratio' (0-1), 'remaining_tokens' (positive integer), or " +
+        "'messages_to_refine' (positive integer). Your `summarization` config will be " +
+        'ignored and summarization will fall back to self-summarize defaults (the ' +
+        "agent's own provider/model, fires on every pruning event) until this is " +
+        'corrected.',
+    );
     return undefined;
   }
 
