@@ -316,20 +316,36 @@ export async function discoverConnectedAgents(
    * every agent id referenced by an edge is guaranteed to be either
    * `primaryConfig.id` or a key of `agentConfigs`.
    */
+  const edgeEndpointIsReachable = (
+    value: string | string[],
+    reachableSet: Set<string>,
+  ): boolean => {
+    const ids = Array.isArray(value) ? value : [value];
+    return ids.every((id) => typeof id !== 'string' || reachableSet.has(id));
+  };
+
+  // Fixed-point reachability: an edge only advances reachability when ALL
+  // of its `from` endpoints are already reachable. Matches the edge-filter
+  // semantics below and handles multi-source / fan-in edges correctly:
+  // `{ from: ['A', 'B'], to: 'C' }` can only fire when both A and B reach
+  // it, so C shouldn't be marked reachable just because A is in the source
+  // list. The previous `sources.includes(current)` BFS over-approximated
+  // reachability for fan-in edges and left C in `agentConfigs` while the
+  // edge itself got dropped — `createRun` then saw `agents.length > 1`
+  // with a disconnected C and ran it as an unintended parallel root.
   const reachable = new Set<string>([primaryConfig.id]);
-  const frontier: string[] = [primaryConfig.id];
-  while (frontier.length > 0) {
-    const current = frontier.pop() as string;
+  let changed = true;
+  while (changed) {
+    changed = false;
     for (const edge of filteredEdges) {
-      const sources = Array.isArray(edge.from) ? edge.from : [edge.from];
-      if (!sources.includes(current)) {
+      if (!edgeEndpointIsReachable(edge.from, reachable)) {
         continue;
       }
       const dests = Array.isArray(edge.to) ? edge.to : [edge.to];
       for (const dest of dests) {
         if (typeof dest === 'string' && !reachable.has(dest)) {
           reachable.add(dest);
-          frontier.push(dest);
+          changed = true;
         }
       }
     }
@@ -341,12 +357,9 @@ export async function discoverConnectedAgents(
     }
   }
 
-  const edgeEndpointIsReachable = (value: string | string[]): boolean => {
-    const ids = Array.isArray(value) ? value : [value];
-    return ids.every((id) => typeof id !== 'string' || reachable.has(id));
-  };
   const edges = filteredEdges.filter(
-    (edge) => edgeEndpointIsReachable(edge.from) && edgeEndpointIsReachable(edge.to),
+    (edge) =>
+      edgeEndpointIsReachable(edge.from, reachable) && edgeEndpointIsReachable(edge.to, reachable),
   );
 
   return {

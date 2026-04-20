@@ -311,6 +311,89 @@ describe('discoverConnectedAgents', () => {
     expect(result.agentConfigs.size).toBe(0);
   });
 
+  it('requires all sources to be reachable before advancing through a multi-source edge', async () => {
+    // Primary A has a single fan-in edge `{from: ['A','B'], to: 'C'}`.
+    // B loads successfully but has no incoming path from A, so the edge
+    // cannot legitimately fire. C must NOT be marked reachable (and thus
+    // must NOT end up in `agentConfigs`) — otherwise `createRun` sees
+    // `[primaryConfig, C]`, flips into multi-agent mode, and runs C as an
+    // unintended root because no edge connects A to C on its own.
+    const edges: GraphEdge[] = [{ from: ['A', 'B'], to: 'C', edgeType: 'direct' }];
+    const primaryConfig = makeConfig('A', edges);
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      C: makeAgent('C', []),
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    const checkPermission = jest.fn().mockResolvedValue(true);
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    // Neither B nor C is reachable from A through the surviving edge set
+    // (the fan-in edge requires B, which has no incoming path).
+    expect(result.agentConfigs.has('B')).toBe(false);
+    expect(result.agentConfigs.has('C')).toBe(false);
+    expect(result.edges).toHaveLength(0);
+  });
+
+  it('advances through a multi-source edge once all sources are reachable', async () => {
+    // Two independent paths converge: `A -> B` and `A -> C` both reach
+    // the fan-in edge `['B','C'] -> D`. Once both B and C are reachable,
+    // D should become reachable in a subsequent fixed-point iteration.
+    const edges: GraphEdge[] = [
+      { from: 'A', to: 'B', edgeType: 'direct' },
+      { from: 'A', to: 'C', edgeType: 'direct' },
+      { from: ['B', 'C'], to: 'D', edgeType: 'direct' },
+    ];
+    const primaryConfig = makeConfig('A', edges);
+
+    const agentMap: Record<string, Agent> = {
+      B: makeAgent('B', []),
+      C: makeAgent('C', []),
+      D: makeAgent('D', []),
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agentMap[id] ?? null);
+    const checkPermission = jest.fn().mockResolvedValue(true);
+
+    const result = await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(result.agentConfigs.has('B')).toBe(true);
+    expect(result.agentConfigs.has('C')).toBe(true);
+    expect(result.agentConfigs.has('D')).toBe(true);
+    expect(result.edges).toHaveLength(3);
+  });
+
   it('prunes surviving-but-unreachable edges from the return value (A->B->C->D, B skipped)', async () => {
     // All three edges are stored on the primary A. When B is skipped,
     // `filterOrphanedEdges` removes A->B (to=B) and B->C (from=B) — but
