@@ -9,7 +9,7 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
-import type { Types } from 'mongoose';
+import { Types } from 'mongoose';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { ServerRequest } from '~/types';
 import { primeSkillFiles } from './skillFiles';
@@ -49,15 +49,31 @@ export interface ToolExecuteOptions {
   }>;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
-  /** Loads a skill by name with ACL constraint (returns full body for injection) */
+  /**
+   * Loads a skill by name with ACL constraint (returns full body for injection).
+   *
+   * `options.preferModelInvocable` (Phase 6): on a same-name collision,
+   * prefer the newest `disableModelInvocation !== true` doc. Avoids a
+   * newer disabled duplicate shadowing the cataloged model-invocable
+   * skill the model actually targeted; falls back to newest match so
+   * the explicit-rejection gate can still fire in the disabled-only case.
+   */
   getSkillByName?: (
     name: string,
     accessibleIds: Types.ObjectId[],
+    options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
   ) => Promise<{
     body: string;
     name: string;
     _id: Types.ObjectId;
     fileCount: number;
+    /**
+     * Set when the skill author opted out of model invocation. The handler
+     * rejects the call and returns an instructive error so the model knows
+     * it can't reach the skill via the `skill` tool — manual `$` invocation
+     * is still allowed and goes through `resolveManualSkills` instead.
+     */
+    disableModelInvocation?: boolean;
   } | null>;
   /** Lists files bundled with a skill (for code env priming) */
   listSkillFiles?: (skillId: Types.ObjectId | string) => Promise<SkillFileRecord[]>;
@@ -167,13 +183,56 @@ async function handleReadFileCall(
   }
 
   const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  const skill = await getSkillByName(skillName, accessibleIds);
+  const manualSkillPrimedIdsByName =
+    (mergedConfigurable?.manualSkillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  const primedIdString = manualSkillPrimedIdsByName[skillName];
+  const isManuallyPrimedThisTurn = primedIdString != null;
+  /* On a manually-primed lookup, pin the accessible set to ONLY the
+     primed `_id`. This guarantees the doc whose body got primed is the
+     SAME doc whose files we read, even when same-name duplicates exist
+     and `activeSkillIds` had to drop some via the disable-model dedup.
+     For autonomous probes we keep the full ACL set + `preferModelInvocable`
+     so the lookup matches the catalog the model saw (and falls back to
+     newest so the disabled-only case still fires the explicit rejection
+     gate below). Constructing a real `ObjectId` (rather than relying on
+     mongoose's string auto-cast in `$in` queries) keeps the value
+     correct for any future consumer that compares with `.equals()` or
+     `===`. */
+  const lookupAccessibleIds = isManuallyPrimedThisTurn
+    ? [new Types.ObjectId(primedIdString)]
+    : accessibleIds;
+  const lookupOptions: { preferUserInvocable?: boolean; preferModelInvocable?: boolean } =
+    isManuallyPrimedThisTurn ? {} : { preferModelInvocable: true };
+  const skill = await getSkillByName(skillName, lookupAccessibleIds, lookupOptions);
   if (!skill) {
     return {
       toolCallId: tc.id,
       status: 'error',
       content: '',
       errorMessage: `Skill "${skillName}" not found or not accessible`,
+    };
+  }
+
+  /**
+   * `disable-model-invocation: true` blocks AUTONOMOUS read_file probes:
+   * a model that learned a hidden skill's name (stale catalog, hallucination)
+   * shouldn't be able to read its SKILL.md body or bundled files. But when
+   * the user explicitly invoked the skill manually this turn, the body is
+   * already primed into context — and a manually-primed skill that depends
+   * on `references/foo.md` would be non-functional if read_file were
+   * blocked. Bypass the gate for manually-primed skill names so manual `$`
+   * invocation of disabled skills stays usable end-to-end.
+   *
+   * Sticky-primed skills (manually or model-invoked in prior turns) are not
+   * yet in this exception list — that's a known limitation tracked for
+   * a follow-up. Same-turn manual invocation is the load-bearing path.
+   */
+  if (skill.disableModelInvocation === true && !isManuallyPrimedThisTurn) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${skillName}" cannot be invoked by the model`,
     };
   }
 
@@ -422,7 +481,16 @@ async function handleSkillToolCall(
   }
 
   const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  const skill = await getSkillByName(args.skillName, accessibleIds);
+  /* `preferModelInvocable` keeps name-collision resolution aligned with
+     the catalog: a newer `disable-model-invocation: true` duplicate
+     can't shadow the cataloged invocable doc. Model-only
+     (`userInvocable: false`) skills are intentionally still resolvable
+     here — they're valid model-invocation targets. Falls back to the
+     newest match so the disabled-only case still resolves and the gate
+     below fires its explicit error. */
+  const skill = await getSkillByName(args.skillName, accessibleIds, {
+    preferModelInvocable: true,
+  });
 
   if (!skill) {
     return {
@@ -430,6 +498,23 @@ async function handleSkillToolCall(
       status: 'error',
       content: '',
       errorMessage: `Skill "${args.skillName}" not found or not accessible`,
+    };
+  }
+
+  /**
+   * `disable-model-invocation: true` skills are excluded from the catalog
+   * the model sees, but a model that learned the name elsewhere (stale
+   * cache, hallucinated guess) could still try to invoke it. Reject
+   * explicitly so the error message tells the model exactly why and it
+   * doesn't loop retrying. Manual `$` invocation goes through
+   * `resolveManualSkills`, which is unaffected by this flag.
+   */
+  if (skill.disableModelInvocation === true) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${args.skillName}" cannot be invoked by the model`,
     };
   }
 

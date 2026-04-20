@@ -42,6 +42,7 @@ const { findAccessibleResources } = require('~/server/services/PermissionService
 const {
   getSkillToolDeps,
   enrichWithSkillConfigurable,
+  buildManualSkillPrimedIdsByName,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const db = require('~/models');
 
@@ -326,7 +327,13 @@ const OpenAIChatCompletionController = async (req, res) => {
           tool_resources: primaryConfig.tool_resources,
           actionsEnabled: primaryConfig.actionsEnabled,
         });
-        return enrichWithSkillConfigurable(result, req, primaryConfig.accessibleSkillIds);
+        return enrichWithSkillConfigurable(
+          result,
+          req,
+          primaryConfig.accessibleSkillIds,
+          undefined,
+          buildManualSkillPrimedIdsByName(primaryConfig.manualSkillPrimes),
+        );
       },
       toolEndCallback,
       ...getSkillToolDeps(),
