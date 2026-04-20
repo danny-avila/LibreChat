@@ -1837,6 +1837,10 @@ html {
 .markdown blockquote.important-notice p {
   margin-bottom: 0.5rem;
 }
+.markdown blockquote.important-notice p:first-of-type::before,
+.markdown blockquote.important-notice p:last-of-type::after {
+  content: none;
+}
 .markdown blockquote.important-notice p:last-child {
   margin-bottom: 0;
 }
