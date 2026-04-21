@@ -93,17 +93,20 @@ export function parseFrontmatter(raw: string): {
       continue;
     }
     const key = line.slice(0, colon).trim().toLowerCase();
-    const value = unquoteYaml(line.slice(colon + 1).trim());
+    const rawValue = line.slice(colon + 1).trim();
     if (key === 'name') {
-      name = value;
+      name = unquoteYaml(rawValue);
     } else if (key === 'description') {
-      description = value;
+      description = unquoteYaml(rawValue);
     } else if (key === 'always-apply') {
-      // The outer `value` was already run through `unquoteYaml`, which
-      // only handles whole-line quoting. For `always-apply: "true" # note`
-      // the quote check misses (line doesn't end with a quote), so strip
-      // the comment first and then unquote the remainder.
-      const stripped = stripYamlTrailingComment(value).trim();
+      // Operate on the raw post-colon text (no outer `unquoteYaml`): a
+      // line like `always-apply: "true" # note` must have its comment
+      // stripped BEFORE unquoting. Running `unquoteYaml` on the whole
+      // line first would miss the quoted branch (the line doesn't end
+      // in a quote once the comment is attached), and unquoting twice
+      // would be fragile if `unquoteYaml` ever gains richer YAML-escape
+      // handling.
+      const stripped = stripYamlTrailingComment(rawValue).trim();
       if (stripped === '') {
         // Empty value or comment-only (`always-apply: # TBD`) — treat as
         // absent so mid-edit placeholder states don't reject the save.

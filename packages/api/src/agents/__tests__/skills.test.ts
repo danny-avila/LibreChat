@@ -1364,6 +1364,7 @@ describe('unionPrimeAllowedTools', () => {
     expect(result.extraToolNames).toEqual(['z-tool', 'm-tool', 'a-tool', 'b-tool']);
   });
 });
+
 describe('resolveAlwaysApplySkills', () => {
   const userId = new Types.ObjectId().toString();
   const userOid = new Types.ObjectId(userId);

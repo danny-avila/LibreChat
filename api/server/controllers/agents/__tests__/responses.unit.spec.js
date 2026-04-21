@@ -59,6 +59,7 @@ jest.mock('@librechat/api', () => ({
     inserted: 0,
     insertIdx: -1,
     alwaysApplyDropped: 0,
+    alwaysApplyDedupedFromManual: 0,
   }),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
   // Responses API

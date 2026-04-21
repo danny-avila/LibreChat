@@ -462,7 +462,16 @@ export interface ResolveManualSkillsParams {
   defaultActiveOnShare?: boolean;
 }
 
-export interface ResolvedManualSkill {
+/**
+ * Canonical shape of a skill resolved into prime-ready form. Both
+ * manual-invocation (`$` popover) and `always-apply` resolvers emit this
+ * shape so downstream pipeline stages (`injectSkillPrimes`,
+ * `unionPrimeAllowedTools`, `buildSkillPrimedIdsByName`) can treat either
+ * source uniformly. The per-prime distinction lives on
+ * `additional_kwargs.trigger` of the spliced `HumanMessage` (see
+ * `SkillTrigger`), not on this resolver output.
+ */
+export interface ResolvedSkillPrime {
   /**
    * `_id` of the exact doc that was primed. Plumbed to the runtime so the
    * `read_file` handler can constrain its name lookup to this id and avoid
@@ -483,18 +492,18 @@ export interface ResolvedManualSkill {
 }
 
 /**
- * Result of resolving an `always-apply` skill into prime-ready form.
- * Intentionally identical in shape to `ResolvedManualSkill` — both feed
- * the same prime-injection pipeline and the same `unionPrimeAllowedTools`
- * helper. The distinction lives on `additional_kwargs.trigger` of the
- * spliced `HumanMessage`, not on this resolver output.
+ * Back-compat alias for manual-invocation primes (`$` popover). Semantic
+ * aliases over `ResolvedSkillPrime` keep the per-source naming at call
+ * sites (so `manualPrimes: ResolvedManualSkill[]` stays readable) without
+ * maintaining parallel interfaces.
  */
-export interface ResolvedAlwaysApplySkill {
-  _id: Types.ObjectId;
-  name: string;
-  body: string;
-  allowedTools?: string[];
-}
+export type ResolvedManualSkill = ResolvedSkillPrime;
+
+/**
+ * Back-compat alias for always-apply primes (auto-applied every turn).
+ * See `ResolvedSkillPrime` for the canonical definition.
+ */
+export type ResolvedAlwaysApplySkill = ResolvedSkillPrime;
 
 /**
  * Resolves user-provided skill names to `{ name, body }` pairs ready for
