@@ -157,10 +157,31 @@ export class MCPOAuthHandler {
      * them, the probe would 401 for the wrong reason and never see the real challenge.
      */
     const hint = await probeResourceMetadataHint(serverUrl, fetchFn);
+    /**
+     * The hint URL is attacker-controlled (it comes from the MCP server's own 401
+     * challenge). Validate it through the same SSRF/allowedDomains gate used for the
+     * authorization server — otherwise a malicious server could redirect discovery at
+     * a private IP, the metadata service, or a host the admin never intended to reach.
+     * On validation failure, discard the hint and fall back to path-aware discovery.
+     */
+    let hintUrl: URL | undefined;
     if (hint?.resourceMetadataUrl) {
-      logger.debug(
-        `[MCPOAuth] Using resource_metadata URL from WWW-Authenticate: ${sanitizeUrlForLogging(hint.resourceMetadataUrl.toString())}`,
-      );
+      try {
+        await this.validateOAuthUrl(
+          hint.resourceMetadataUrl.toString(),
+          'resource_metadata',
+          allowedDomains,
+        );
+        hintUrl = hint.resourceMetadataUrl;
+        logger.debug(
+          `[MCPOAuth] Using resource_metadata URL from WWW-Authenticate: ${sanitizeUrlForLogging(hintUrl.toString())}`,
+        );
+      } catch (error) {
+        logger.warn(
+          `[MCPOAuth] Rejecting untrusted resource_metadata hint from ${sanitizeUrlForLogging(serverUrl)}; falling back to path-aware discovery`,
+          { error },
+        );
+      }
     }
 
     try {
@@ -169,7 +190,7 @@ export class MCPOAuthHandler {
       );
       resourceMetadata = await discoverOAuthProtectedResourceMetadata(
         serverUrl,
-        { resourceMetadataUrl: hint?.resourceMetadataUrl },
+        { resourceMetadataUrl: hintUrl },
         fetchFn,
       );
     } catch (error) {

@@ -1,8 +1,15 @@
+import { discoverOAuthProtectedResourceMetadata } from '@modelcontextprotocol/sdk/client/auth.js';
+import { isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { detectOAuthRequirement } from './detectOAuth';
 
 jest.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
   ...jest.requireActual('@modelcontextprotocol/sdk/client/auth.js'),
   discoverOAuthProtectedResourceMetadata: jest.fn(),
+}));
+
+jest.mock('~/auth', () => ({
+  isSSRFTarget: jest.fn(() => false),
+  resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
 /**
@@ -17,12 +24,14 @@ jest.mock('../mcpConfig', () => ({
   },
 }));
 
-import { discoverOAuthProtectedResourceMetadata } from '@modelcontextprotocol/sdk/client/auth.js';
-
 const mockDiscoverOAuthProtectedResourceMetadata =
   discoverOAuthProtectedResourceMetadata as jest.MockedFunction<
     typeof discoverOAuthProtectedResourceMetadata
   >;
+const mockIsSSRFTarget = isSSRFTarget as jest.MockedFunction<typeof isSSRFTarget>;
+const mockResolveHostnameSSRF = resolveHostnameSSRF as jest.MockedFunction<
+  typeof resolveHostnameSSRF
+>;
 
 describe('detectOAuthRequirement', () => {
   const originalFetch = global.fetch;
@@ -248,6 +257,68 @@ describe('detectOAuthRequirement', () => {
         'https://mcp.example.com/mcp',
         expect.objectContaining({ resourceMetadataUrl: new URL(metadataUrl) }),
       );
+    });
+  });
+
+  describe('SSRF hardening of the resource_metadata hint', () => {
+    // A malicious MCP server can advertise a `resource_metadata=` URL that points at a
+    // private IP, loopback, or cloud metadata service. Blindly handing that URL to the
+    // SDK would let the server weaponize detection as an SSRF vector, so we validate it
+    // first and silently fall back to path-aware discovery on rejection.
+
+    it('drops a hint URL whose hostname matches an SSRF target list entry', async () => {
+      const maliciousHint = 'http://169.254.169.254/latest/meta-data/';
+      mockFetch.mockResolvedValueOnce({
+        status: 401,
+        headers: new Headers({
+          'www-authenticate': `Bearer resource_metadata="${maliciousHint}"`,
+        }),
+      } as Response);
+
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === '169.254.169.254');
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: 'https://mcp.example.com',
+        authorization_servers: ['https://auth.example.com'],
+      });
+
+      const result = await detectOAuthRequirement('https://mcp.example.com');
+
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledWith(
+        'https://mcp.example.com',
+        expect.objectContaining({ resourceMetadataUrl: undefined }),
+      );
+      expect(result.requiresOAuth).toBe(true);
+      expect(result.method).toBe('protected-resource-metadata');
+    });
+
+    it('drops a hint URL whose hostname resolves to a private address', async () => {
+      const maliciousHint = 'https://internal.local/.well-known/oauth-protected-resource';
+      mockFetch.mockResolvedValueOnce({
+        status: 401,
+        headers: new Headers({
+          'www-authenticate': `Bearer resource_metadata="${maliciousHint}"`,
+        }),
+      } as Response);
+
+      mockResolveHostnameSSRF.mockImplementation(
+        async (hostname: string) => hostname === 'internal.local',
+      );
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('Resource server does not implement OAuth 2.0 Protected Resource Metadata.'),
+      );
+
+      const result = await detectOAuthRequirement('https://mcp.example.com');
+
+      // Hint dropped → SDK called with undefined → path-aware falls through → Bearer-only.
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledWith(
+        'https://mcp.example.com',
+        expect.objectContaining({ resourceMetadataUrl: undefined }),
+      );
+      expect(result.requiresOAuth).toBe(true);
+      expect(result.method).toBe('401-challenge-metadata');
+      expect(result.metadata).toBeNull();
     });
   });
 

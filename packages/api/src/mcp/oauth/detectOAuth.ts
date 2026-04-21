@@ -6,6 +6,7 @@
 // Manual testing ensures the OAuth detection still works against real MCP servers.
 
 import { discoverOAuthProtectedResourceMetadata } from '@modelcontextprotocol/sdk/client/auth.js';
+import { isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { probeResourceMetadataHint } from './resourceHint';
 import { mcpConfig } from '../mcpConfig';
 
@@ -34,7 +35,17 @@ export interface OAuthDetectionResult {
 export async function detectOAuthRequirement(serverUrl: string): Promise<OAuthDetectionResult> {
   const hint = await probeResourceMetadataHint(serverUrl);
 
-  const metadataResult = await checkProtectedResourceMetadata(serverUrl, hint?.resourceMetadataUrl);
+  /**
+   * The `resource_metadata` URL is attacker-controlled (it's echoed from the MCP
+   * server's own 401 challenge). Reject hints pointing at private/loopback/metadata
+   * addresses before the SDK fetches them, so a malicious server cannot weaponize
+   * detection as an SSRF vector against the LibreChat host or its internal network.
+   */
+  const safeHintUrl = hint?.resourceMetadataUrl
+    ? await validateHintUrl(hint.resourceMetadataUrl)
+    : undefined;
+
+  const metadataResult = await checkProtectedResourceMetadata(serverUrl, safeHintUrl);
   if (metadataResult) return metadataResult;
 
   if (hint?.bearerChallenge) {
@@ -100,6 +111,24 @@ async function checkProtectedResourceMetadata(
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * SSRF-guards an attacker-controlled `resource_metadata` hint before the SDK follows it.
+ * `detectOAuthRequirement` runs without admin-scoped `allowedDomains`, so the rejection
+ * policy here is stricter than the handler's: any private/loopback/metadata-service
+ * target is dropped, regardless of origin relative to the MCP server. On rejection the
+ * caller continues with path-aware discovery (safe, since it targets the server itself).
+ */
+async function validateHintUrl(hintUrl: URL): Promise<URL | undefined> {
+  try {
+    if (isSSRFTarget(hintUrl.hostname)) return undefined;
+    if (await resolveHostnameSSRF(hintUrl.hostname)) return undefined;
+    return hintUrl;
+  } catch {
+    // If validation itself fails (e.g. DNS lookup threw), be conservative and drop the hint.
+    return undefined;
   }
 }
 
