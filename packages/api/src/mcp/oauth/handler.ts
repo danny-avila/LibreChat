@@ -3,6 +3,10 @@ import { logger } from '@librechat/data-schemas';
 import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
+  checkResourceAllowed,
+  resourceUrlFromServerUrl,
+} from '@modelcontextprotocol/sdk/shared/auth-utils.js';
+import {
   registerClient,
   startAuthorization,
   exchangeAuthorization,
@@ -146,8 +150,25 @@ export class MCPOAuthHandler {
         `[MCPOAuth] Attempting to discover protected resource metadata from ${serverUrl}`,
       );
       resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchFn);
+    } catch (error) {
+      logger.debug('[MCPOAuth] Resource metadata discovery failed, continuing with server URL', {
+        error,
+      });
+    }
 
-      if (resourceMetadata?.authorization_servers?.length) {
+    if (resourceMetadata) {
+      /**
+       * RFC 9728 §3.3 / §7.3: the `resource` identifier in a Protected Resource Metadata
+       * document MUST match the URL the client used to fetch it. Without this check a
+       * malicious MCP server can impersonate a legitimate one by advertising the real
+       * server's resource URL plus the real server's authorization server, causing tokens
+       * minted for the real server to be sent to the attacker (GHSA-gvpj-vm2f-2m23).
+       * On mismatch, discard the entire document: `authorization_servers` and any other
+       * field on it are equally untrustworthy.
+       */
+      this.assertResourceBoundToServer(serverUrl, resourceMetadata);
+
+      if (resourceMetadata.authorization_servers?.length) {
         const discoveredAuthServer = resourceMetadata.authorization_servers[0];
         await this.validateOAuthUrl(discoveredAuthServer, 'authorization_server', allowedDomains);
         authServerUrl = new URL(discoveredAuthServer);
@@ -157,10 +178,6 @@ export class MCPOAuthHandler {
       } else {
         logger.debug(`[MCPOAuth] No authorization servers found in resource metadata`);
       }
-    } catch (error) {
-      logger.debug('[MCPOAuth] Resource metadata discovery failed, continuing with server URL', {
-        error,
-      });
     }
 
     // Discover OAuth metadata
@@ -586,25 +603,28 @@ export class MCPOAuthHandler {
         authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
-        if (resourceMetadata?.resource != null && resourceMetadata.resource) {
-          try {
-            const canonicalResource = new URL(resourceMetadata.resource).href;
-            authorizationUrl.searchParams.set('resource', canonicalResource);
-            logger.debug(
-              `[MCPOAuth] Added resource parameter to authorization URL: ${canonicalResource}`,
-            );
-          } catch (error) {
-            authorizationUrl.searchParams.set('resource', resourceMetadata.resource);
-            logger.error(
-              `[MCPOAuth] Invalid resource URL from metadata for ${serverName}: ` +
-                `'${resourceMetadata.resource}'. Using raw value as fallback.`,
-              error,
-            );
-          }
+        if (resourceMetadata?.resource) {
+          /**
+           * `resource` was already canonicalized and bound to `serverUrl` inside
+           * {@link discoverMetadata} via {@link assertResourceBoundToServer}, so `new URL`
+           * here cannot throw and the value is safe to echo back to the authorization server.
+           */
+          const canonicalResource = new URL(resourceMetadata.resource).href;
+          authorizationUrl.searchParams.set('resource', canonicalResource);
+          logger.debug(
+            `[MCPOAuth] Added resource parameter to authorization URL: ${canonicalResource}`,
+          );
         } else {
+          /**
+           * Reachable only when `discoverOAuthProtectedResourceMetadata` did not return a
+           * document (404 / network error / server does not implement RFC 9728). If a PRM
+           * document exists but is missing `resource`, {@link assertResourceBoundToServer}
+           * rejects it before this code runs, so this branch does not warn about a
+           * malformed document — it warns about the absence of one.
+           */
           logger.warn(
-            `[MCPOAuth] Resource metadata missing 'resource' property for ${serverName}. ` +
-              'This can cause issues with some Authorization Servers who expect a "resource" parameter.',
+            `[MCPOAuth] No protected resource metadata available for ${serverName}. ` +
+              'This can cause issues with some Authorization Servers that expect a "resource" parameter.',
           );
         }
       } catch (error) {
@@ -677,17 +697,19 @@ export class MCPOAuthHandler {
       }
 
       let resource: URL | undefined;
-      try {
-        if (metadata.resourceMetadata?.resource != null && metadata.resourceMetadata.resource) {
+      if (metadata.resourceMetadata) {
+        /**
+         * Defense-in-depth: re-assert the RFC 9728 §3.3 binding against the flow's stored
+         * server URL. Flow state has a 10-minute TTL, so a flow initiated under older
+         * (pre-fix) code could still be in-flight at upgrade time carrying unvalidated
+         * resource metadata. Re-validating here closes that window without requiring ops
+         * teams to flush flow state on deploy (GHSA-gvpj-vm2f-2m23).
+         */
+        this.assertResourceBoundToServer(metadata.serverUrl, metadata.resourceMetadata);
+        if (metadata.resourceMetadata.resource) {
           resource = new URL(metadata.resourceMetadata.resource);
           logger.debug(`[MCPOAuth] Resource URL for flow ${flowId}: ${resource.toString()}`);
         }
-      } catch (error) {
-        logger.warn(
-          `[MCPOAuth] Invalid resource URL format for flow ${flowId}: '${metadata.resourceMetadata!.resource}'. ` +
-            `Error: ${error instanceof Error ? error.message : 'Unknown error'}. Proceeding without resource parameter.`,
-        );
-        resource = undefined;
       }
 
       const tokens = await exchangeAuthorization(metadata.serverUrl, {
@@ -753,6 +775,48 @@ export class MCPOAuthHandler {
    */
   private static generateState(): string {
     return randomBytes(32).toString('base64url');
+  }
+
+  /**
+   * Enforces RFC 9728 §3.3 / §7.3: the `resource` identifier advertised by an OAuth
+   * Protected Resource Metadata document MUST match the URL the client used to fetch
+   * the document. A mismatch means the metadata is attacker-controlled (or the server
+   * is badly misconfigured); per the RFC the whole document MUST be discarded, and in
+   * practice we must fail the OAuth flow because `authorization_servers` on the same
+   * document is also untrustworthy and was the primary theft vector in
+   * GHSA-gvpj-vm2f-2m23.
+   *
+   * Uses the MCP SDK's own {@link checkResourceAllowed} so the semantics (same origin
+   * plus configured-path-prefix) match what the SDK enforces internally via
+   * {@link selectResourceURL}, a code path LibreChat does not go through.
+   */
+  private static assertResourceBoundToServer(
+    serverUrl: string,
+    resourceMetadata: OAuthProtectedResourceMetadata,
+  ): void {
+    if (!resourceMetadata.resource) {
+      throw new Error(
+        `[MCPOAuth] Protected Resource Metadata from ${sanitizeUrlForLogging(serverUrl)} is missing the required 'resource' identifier (RFC 9728 §2). Refusing OAuth flow.`,
+      );
+    }
+
+    let allowed = false;
+    try {
+      allowed = checkResourceAllowed({
+        requestedResource: resourceUrlFromServerUrl(serverUrl),
+        configuredResource: resourceMetadata.resource,
+      });
+    } catch (error) {
+      throw new Error(
+        `[MCPOAuth] Unable to validate Protected Resource Metadata 'resource' for ${sanitizeUrlForLogging(serverUrl)}: ${error instanceof Error ? error.message : String(error)}.`,
+      );
+    }
+
+    if (!allowed) {
+      throw new Error(
+        `[MCPOAuth] Protected Resource Metadata 'resource' (${sanitizeUrlForLogging(resourceMetadata.resource)}) does not match server URL (${sanitizeUrlForLogging(serverUrl)}). Refusing OAuth flow (RFC 9728 §3.3).`,
+      );
+    }
   }
 
   /**
