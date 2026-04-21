@@ -221,12 +221,15 @@ export class MCPConnectionFactory {
   /** Creates the base MCP connection with OAuth tokens */
   protected async createConnection(): Promise<MCPConnection> {
     const oauthTokens = this.useOAuth ? await this.getOAuthTokens() : null;
+    const requiresOAuth = (this.serverConfig as t.ParsedServerConfig).requiresOAuth === true;
 
-    /** True when OAuth is required but no stored tokens exist yet.
-     *  Some servers (e.g. BigQuery MCP) accept anonymous connections and never
-     *  return a 401 during initialize/tools/list, so we cannot rely on the server
-     *  to emit the oauthRequired event — we must trigger the flow proactively. */
-    const needsProactiveOAuth = this.useOAuth && !oauthTokens;
+    /** Only trigger proactive OAuth when the server explicitly requires it AND no stored
+     *  tokens exist. Some servers (e.g. BigQuery MCP) accept anonymous connections and
+     *  never return a 401 during initialize/tools/list, so we cannot rely on the server
+     *  to emit the oauthRequired event — we must trigger the flow proactively.
+     *  We gate on `requiresOAuth` (not just `useOAuth`) because user connections always
+     *  pass `useOAuth: true` even for servers that don't need OAuth. */
+    const needsProactiveOAuth = this.useOAuth && requiresOAuth && !oauthTokens;
 
     const connection = new MCPConnection({
       serverName: this.serverName,
@@ -243,15 +246,26 @@ export class MCPConnectionFactory {
 
     try {
       if (needsProactiveOAuth) {
+        const serverUrl = (this.serverConfig as t.ParsedServerConfig).url;
+        if (!serverUrl) {
+          throw new Error(`${this.logPrefix} OAuth required but server URL is missing from config`);
+        }
+
         logger.info(
           `${this.logPrefix} No stored tokens — proactively triggering OAuth flow before connecting`,
         );
-        const serverUrl =
-          (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url ?? '';
 
         await new Promise<void>((resolve, reject) => {
-          connection.once('oauthHandled', resolve);
-          connection.once('oauthFailed', (err: Error) => reject(err));
+          const handleSuccess = () => {
+            connection.off('oauthFailed', handleFailure);
+            resolve();
+          };
+          const handleFailure = (err: Error) => {
+            connection.off('oauthHandled', handleSuccess);
+            reject(err);
+          };
+          connection.once('oauthHandled', handleSuccess);
+          connection.once('oauthFailed', handleFailure);
           connection.emit('oauthRequired', {
             serverUrl,
             serverName: this.serverName,
@@ -259,8 +273,6 @@ export class MCPConnectionFactory {
           });
         });
 
-        // OAuth completed successfully — connection now has tokens set by handleOAuthEvents.
-        // Proceed to establish the actual MCP connection.
         await this.attemptToConnect(connection);
       } else {
         await this.attemptToConnect(connection);
