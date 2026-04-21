@@ -130,6 +130,14 @@ const messageSchema: Schema<IMessage> = new Schema(
      * request body, not on the message itself.
      */
     manualSkills: { type: [String], default: undefined },
+    /**
+     * Skill names auto-primed on this turn because their frontmatter declares
+     * `always-apply: true`. Persisted at turn time (not reconstructed on
+     * render) because `Skill.alwaysApply` is mutable — if an admin flips the
+     * flag off later, historical turns must still show the pinned badges on
+     * the user bubble to preserve the audit trail of what actually ran.
+     */
+    alwaysAppliedSkills: { type: [String], default: undefined },
     /*
     attachments: {
       type: [
