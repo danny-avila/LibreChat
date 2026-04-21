@@ -706,16 +706,20 @@ describe('injectSkillCatalog', () => {
        registry and skip re-adding. One copy of each reaches the LLM. */
     const owned = makeSkill('owned-skill', userObjectId);
     const listSkillsByAccess = buildPager([[owned]]);
-    const preRegistry = new Map() as unknown as NonNullable<
-      Parameters<typeof injectSkillCatalog>[0]['toolRegistry']
-    >;
-    const preBash = { name: 'bash_tool', description: 'pre', parameters: {} };
-    const preRead = {
+    type ToolRegistryArg = NonNullable<Parameters<typeof injectSkillCatalog>[0]['toolRegistry']>;
+    type ToolDef = Parameters<ToolRegistryArg['set']>[1];
+    const preBash: ToolDef = {
+      name: 'bash_tool',
+      description: 'pre',
+      parameters: { type: 'object', properties: {} },
+    };
+    const preRead: ToolDef = {
       name: 'read_file',
       description: 'pre',
-      parameters: {},
-      responseFormat: 'content' as const,
+      parameters: { type: 'object', properties: {} },
+      responseFormat: 'content',
     };
+    const preRegistry = new Map<string, ToolDef>() as unknown as ToolRegistryArg;
     preRegistry.set('bash_tool', preBash);
     preRegistry.set('read_file', preRead);
     const result = await injectSkillCatalog(
