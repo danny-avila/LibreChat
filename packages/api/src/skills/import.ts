@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 import JSZip from 'jszip';
 import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
+import { logger, stripYamlTrailingComment } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
 import type {
@@ -32,34 +32,95 @@ function unquoteYaml(value: string): string {
   return value;
 }
 
-/** YAML frontmatter parser — extracts name + description from SKILL.md. */
-function parseFrontmatter(raw: string): { name: string; description: string } {
+/**
+ * Parse a YAML scalar as a strict boolean. Returns `undefined` when the
+ * value is neither `true` nor `false`. Callers should pre-strip inline
+ * comments with `stripYamlTrailingComment` when needed; this helper only
+ * normalizes case / whitespace so the call site stays one-purpose.
+ */
+function parseBooleanScalar(value: string): boolean | undefined {
+  const lowered = value.trim().toLowerCase();
+  if (lowered === 'true') {
+    return true;
+  }
+  if (lowered === 'false') {
+    return false;
+  }
+  return undefined;
+}
+
+/**
+ * YAML frontmatter parser — extracts the first-class fields LibreChat
+ * persists as columns (`name`, `description`, `alwaysApply`) out of a
+ * SKILL.md file. Intentionally narrow: the full frontmatter validator in
+ * `packages/data-schemas/src/methods/skill.ts` covers the wire contract;
+ * this parser only needs to hand `createSkill` the columns it populates.
+ *
+ * When a known boolean field (currently just `always-apply`) is present
+ * with a value that isn't recognizable as `true`/`false`, the parser
+ * records it on `invalidBooleans[]` so the import handler can surface
+ * a 400 instead of silently dropping the flag. Without this signal,
+ * authoring mistakes like `always-apply: yes` would be lossy-converted
+ * to "not always-applied" and the user would never learn their
+ * frontmatter was malformed.
+ *
+ * Exported for unit testing only — prefer `createImportHandler` at runtime.
+ */
+export function parseFrontmatter(raw: string): {
+  name: string;
+  description: string;
+  alwaysApply?: boolean;
+  /** Keys that carried non-boolean values for fields that must be boolean. */
+  invalidBooleans: string[];
+} {
   const trimmed = raw.trim();
   if (!trimmed.startsWith('---')) {
-    return { name: '', description: '' };
+    return { name: '', description: '', invalidBooleans: [] };
   }
   const after = trimmed.slice(3);
   const closingIdx = after.indexOf('\n---');
   if (closingIdx === -1) {
-    return { name: '', description: '' };
+    return { name: '', description: '', invalidBooleans: [] };
   }
   const block = after.slice(0, closingIdx);
   let name = '';
   let description = '';
+  let alwaysApply: boolean | undefined;
+  const invalidBooleans: string[] = [];
   for (const line of block.split('\n')) {
     const colon = line.indexOf(':');
     if (colon === -1) {
       continue;
     }
     const key = line.slice(0, colon).trim().toLowerCase();
-    const value = unquoteYaml(line.slice(colon + 1).trim());
+    const rawValue = line.slice(colon + 1).trim();
     if (key === 'name') {
-      name = value;
+      name = unquoteYaml(rawValue);
     } else if (key === 'description') {
-      description = value;
+      description = unquoteYaml(rawValue);
+    } else if (key === 'always-apply') {
+      // Operate on the raw post-colon text (no outer `unquoteYaml`): a
+      // line like `always-apply: "true" # note` must have its comment
+      // stripped BEFORE unquoting. Running `unquoteYaml` on the whole
+      // line first would miss the quoted branch (the line doesn't end
+      // in a quote once the comment is attached), and unquoting twice
+      // would be fragile if `unquoteYaml` ever gains richer YAML-escape
+      // handling.
+      const stripped = stripYamlTrailingComment(rawValue).trim();
+      if (stripped === '') {
+        // Empty value or comment-only (`always-apply: # TBD`) — treat as
+        // absent so mid-edit placeholder states don't reject the save.
+        continue;
+      }
+      const parsed = parseBooleanScalar(unquoteYaml(stripped));
+      if (parsed === undefined) {
+        invalidBooleans.push(key);
+      } else {
+        alwaysApply = parsed;
+      }
     }
   }
-  return { name, description };
+  return { name, description, alwaysApply, invalidBooleans };
 }
 
 /** Validates a relative path is safe (no traversal, no absolute paths). */
@@ -220,7 +281,17 @@ async function handleMarkdown(
 ) {
   const content = file.buffer.toString('utf-8');
 
-  const { name, description } = parseFrontmatter(content);
+  const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(content);
+  if (invalidBooleans.length > 0) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      issues: invalidBooleans.map((key) => ({
+        field: `frontmatter.${key}`,
+        code: 'INVALID_TYPE',
+        message: `"${key}" must be a boolean (true or false)`,
+      })),
+    });
+  }
   const inferredName =
     name ||
     file.originalname
@@ -242,6 +313,7 @@ async function handleMarkdown(
     body: content,
     author: authorId,
     authorName,
+    alwaysApply,
     tenantId,
   });
 
@@ -317,7 +389,17 @@ async function handleZip(
     return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
   }
 
-  const { name, description } = parseFrontmatter(skillMdContent);
+  const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(skillMdContent);
+  if (invalidBooleans.length > 0) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      issues: invalidBooleans.map((key) => ({
+        field: `frontmatter.${key}`,
+        code: 'INVALID_TYPE',
+        message: `"${key}" must be a boolean (true or false)`,
+      })),
+    });
+  }
   const inferredName =
     name ||
     file.originalname
@@ -339,6 +421,7 @@ async function handleZip(
     body: skillMdContent,
     author: authorId,
     authorName,
+    alwaysApply,
     tenantId,
   });
 

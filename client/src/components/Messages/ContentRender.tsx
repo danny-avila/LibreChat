@@ -79,7 +79,8 @@ function areContentRenderPropsEqual(prev: ContentRenderProps, next: ContentRende
     prevMsg.iconURL === nextMsg.iconURL &&
     prevMsg.feedback?.rating === nextMsg.feedback?.rating &&
     (prevMsg.attachments?.length ?? 0) === (nextMsg.attachments?.length ?? 0) &&
-    (prevMsg.manualSkills?.length ?? 0) === (nextMsg.manualSkills?.length ?? 0)
+    (prevMsg.manualSkills?.length ?? 0) === (nextMsg.manualSkills?.length ?? 0) &&
+    (prevMsg.alwaysAppliedSkills?.length ?? 0) === (nextMsg.alwaysAppliedSkills?.length ?? 0)
   );
 }
 

@@ -183,26 +183,26 @@ async function handleReadFileCall(
   }
 
   const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  const manualSkillPrimedIdsByName =
-    (mergedConfigurable?.manualSkillPrimedIdsByName as Record<string, string> | undefined) ?? {};
-  const primedIdString = manualSkillPrimedIdsByName[skillName];
-  const isManuallyPrimedThisTurn = primedIdString != null;
-  /* On a manually-primed lookup, pin the accessible set to ONLY the
-     primed `_id`. This guarantees the doc whose body got primed is the
-     SAME doc whose files we read, even when same-name duplicates exist
-     and `activeSkillIds` had to drop some via the disable-model dedup.
-     For autonomous probes we keep the full ACL set + `preferModelInvocable`
-     so the lookup matches the catalog the model saw (and falls back to
-     newest so the disabled-only case still fires the explicit rejection
-     gate below). Constructing a real `ObjectId` (rather than relying on
-     mongoose's string auto-cast in `$in` queries) keeps the value
-     correct for any future consumer that compares with `.equals()` or
-     `===`. */
-  const lookupAccessibleIds = isManuallyPrimedThisTurn
+  const skillPrimedIdsByName =
+    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  const primedIdString = skillPrimedIdsByName[skillName];
+  const isPrimedThisTurn = primedIdString != null;
+  /* On a primed lookup (manual `$` OR always-apply), pin the accessible
+     set to ONLY the primed `_id`. This guarantees the doc whose body got
+     primed is the SAME doc whose files we read, even when same-name
+     duplicates exist and `activeSkillIds` had to drop some via the
+     disable-model dedup. For autonomous probes we keep the full ACL set
+     + `preferModelInvocable` so the lookup matches the catalog the model
+     saw (and falls back to newest so the disabled-only case still fires
+     the explicit rejection gate below). Constructing a real `ObjectId`
+     (rather than relying on mongoose's string auto-cast in `$in` queries)
+     keeps the value correct for any future consumer that compares with
+     `.equals()` or `===`. */
+  const lookupAccessibleIds = isPrimedThisTurn
     ? [new Types.ObjectId(primedIdString)]
     : accessibleIds;
   const lookupOptions: { preferUserInvocable?: boolean; preferModelInvocable?: boolean } =
-    isManuallyPrimedThisTurn ? {} : { preferModelInvocable: true };
+    isPrimedThisTurn ? {} : { preferModelInvocable: true };
   const skill = await getSkillByName(skillName, lookupAccessibleIds, lookupOptions);
   if (!skill) {
     return {
@@ -217,17 +217,17 @@ async function handleReadFileCall(
    * `disable-model-invocation: true` blocks AUTONOMOUS read_file probes:
    * a model that learned a hidden skill's name (stale catalog, hallucination)
    * shouldn't be able to read its SKILL.md body or bundled files. But when
-   * the user explicitly invoked the skill manually this turn, the body is
-   * already primed into context — and a manually-primed skill that depends
-   * on `references/foo.md` would be non-functional if read_file were
-   * blocked. Bypass the gate for manually-primed skill names so manual `$`
-   * invocation of disabled skills stays usable end-to-end.
+   * the skill was primed this turn (manual `$` invocation OR always-apply),
+   * the body is already in context — and a primed skill that depends on
+   * `references/foo.md` would be non-functional if read_file were blocked.
+   * Bypass the gate for primed names so this stays usable end-to-end for
+   * both prime sources.
    *
    * Sticky-primed skills (manually or model-invoked in prior turns) are not
    * yet in this exception list — that's a known limitation tracked for
-   * a follow-up. Same-turn manual invocation is the load-bearing path.
+   * a follow-up. Same-turn priming is the load-bearing path.
    */
-  if (skill.disableModelInvocation === true && !isManuallyPrimedThisTurn) {
+  if (skill.disableModelInvocation === true && !isPrimedThisTurn) {
     return {
       toolCallId: tc.id,
       status: 'error',

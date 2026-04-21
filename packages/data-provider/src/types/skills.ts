@@ -136,6 +136,12 @@ export type TSkill = {
   source: SkillSource;
   sourceMetadata?: SkillSourceMetadata;
   fileCount: number;
+  /**
+   * When `true`, the skill auto-primes into every turn — no user `$` picks
+   * or model discretion required. Surfaced on the list view so the UI can
+   * show a pin badge on rows that apply ambiently.
+   */
+  alwaysApply?: boolean;
   isPublic?: boolean;
   tenantId?: string;
   createdAt: string;
@@ -189,6 +195,8 @@ export type TCreateSkill = {
   body: string;
   frontmatter?: Partial<SkillFrontmatter>;
   category?: string;
+  /** When `true`, the skill auto-primes into every turn (mirrors `always-apply` frontmatter). */
+  alwaysApply?: boolean;
 };
 
 /** Partial payload for PATCH `/api/skills/:id` — all fields optional. */
@@ -199,6 +207,7 @@ export type TUpdateSkillPayload = {
   body?: string;
   frontmatter?: Partial<SkillFrontmatter>;
   category?: string;
+  alwaysApply?: boolean;
 };
 
 /** Variables passed into the update mutation: id + expectedVersion + partial payload. */

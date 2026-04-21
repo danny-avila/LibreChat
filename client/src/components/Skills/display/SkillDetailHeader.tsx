@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { Button, TooltipAnchor } from '@librechat/client';
-import { Pencil, User, Calendar, EarthIcon, Sparkles } from 'lucide-react';
+import { Pencil, Pin, User, Calendar, EarthIcon, Sparkles } from 'lucide-react';
 import { InvocationMode } from 'librechat-data-provider';
 import type { TSkill } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
@@ -44,6 +44,18 @@ const SkillDetailHeader = ({ skill, showActions = true }: SkillDetailHeaderProps
                 <EarthIcon
                   className="h-5 w-5 shrink-0 text-green-400"
                   aria-label={localize('com_ui_sr_public_skill')}
+                />
+              }
+            />
+          )}
+          {skill.alwaysApply === true && (
+            <TooltipAnchor
+              description={localize('com_ui_skills_always_apply_pin_title')}
+              side="top"
+              render={
+                <Pin
+                  className="h-5 w-5 shrink-0 text-cyan-500"
+                  aria-label={localize('com_ui_skills_always_apply_pin_title')}
                 />
               }
             />

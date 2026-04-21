@@ -1,10 +1,11 @@
 import { memo, useState, useMemo, useCallback } from 'react';
-import { ScrollText, ChevronDown, ChevronRight, Folder } from 'lucide-react';
+import { ScrollText, ChevronDown, ChevronRight, Folder, Pin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { FixedSizeTree } from 'react-vtree';
 import type { FixedSizeNodeData, TreeWalkerValue, TreeWalker } from 'react-vtree';
 import type { TSkill, TSkillFile } from 'librechat-data-provider';
 import { useListSkillFilesQuery } from '~/data-provider';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface SkillListItemProps {
@@ -261,6 +262,7 @@ function SkillListItem({
   onToggleExpand,
 }: SkillListItemProps) {
   const navigate = useNavigate();
+  const localize = useLocalize();
 
   // Fetch files for active skill (always, since cached fileCount may be stale)
   // or expanded skills. The response is small (metadata only, no content).
@@ -320,8 +322,14 @@ function SkillListItem({
           </span>
         </span>
 
-        <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className={cn('truncate', isActive && 'font-semibold')}>{skill.name}</span>
+          {skill.alwaysApply === true && (
+            <Pin
+              className="size-3 shrink-0 text-cyan-500"
+              aria-label={localize('com_ui_skills_always_apply_pin_title')}
+            />
+          )}
         </span>
 
         {hasFiles && (
