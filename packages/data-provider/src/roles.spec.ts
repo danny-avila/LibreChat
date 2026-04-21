@@ -130,4 +130,30 @@ describe('roleDefaults', () => {
       }
     });
   });
+
+  describe('SKILLS permission defaults', () => {
+    it('grants ADMIN all four skill permissions by default', () => {
+      const adminSkills = roleDefaults[SystemRoles.ADMIN].permissions[
+        PermissionTypes.SKILLS
+      ] as Record<string, boolean>;
+      expect(adminSkills).toEqual({
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      });
+    });
+
+    it('grants USER USE+CREATE but no sharing by default', () => {
+      const userSkills = roleDefaults[SystemRoles.USER].permissions[
+        PermissionTypes.SKILLS
+      ] as Record<string, boolean>;
+      expect(userSkills).toEqual({
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      });
+    });
+  });
 });
