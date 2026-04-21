@@ -138,8 +138,10 @@ type FarmerProfileForm = {
   usesAgriApps: string;
   highestEducatedPerson: string;
   numberOfSmartphones: number;
-  latitude?: number;
-  longitude?: number;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -222,8 +224,12 @@ const FarmerProfileModal = ({
         .filter(Boolean),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
-      latitude: data.latitude,
-      longitude: data.longitude,
+      location: data.location?.latitude && data.location?.longitude 
+        ? {
+            latitude: Number(data.location.latitude),
+            longitude: Number(data.location.longitude),
+          }
+        : undefined,
     };
     saveMutation.mutate(profile);
   };
@@ -251,8 +257,8 @@ const FarmerProfileModal = ({
         </OGDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
-          <input type="hidden" {...register('latitude')} />
-          <input type="hidden" {...register('longitude')} />
+          <input type="hidden" {...register('location.latitude')} />
+          <input type="hidden" {...register('location.longitude')} />
           
           {/* ── Notice — pinned above the scrollable area ── */}
           <p className="shrink-0 px-1 pb-3 text-sm font-medium text-red-500">
@@ -331,8 +337,8 @@ const FarmerProfileModal = ({
                       }
                       navigator.geolocation.getCurrentPosition(
                         (position) => {
-                          setValue('latitude', position.coords.latitude, { shouldValidate: true });
-                          setValue('longitude', position.coords.longitude, { shouldValidate: true });
+                          setValue('location.latitude', position.coords.latitude, { shouldValidate: true });
+                          setValue('location.longitude', position.coords.longitude, { shouldValidate: true });
                           setIsLocating(false);
                         },
                         (error) => {
@@ -346,7 +352,7 @@ const FarmerProfileModal = ({
                   >
                     {isLocating ? 'Locating...' : 'Get Location'}
                   </button>
-                  {watch('latitude') && watch('longitude') && (
+                  {watch('location.latitude') && watch('location.longitude') && (
                     <span className="text-sm font-medium text-green-600 dark:text-green-500">
                       ✓ Location Captured Succesfully
                     </span>
