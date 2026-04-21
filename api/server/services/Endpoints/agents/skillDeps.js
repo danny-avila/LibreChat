@@ -1,7 +1,6 @@
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
 const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { enrichWithSkillConfigurable } = require('@librechat/api');
 const db = require('~/models');
 
@@ -73,34 +72,8 @@ function getSkillToolDeps() {
   return skillToolDeps;
 }
 
-/**
- * Wraps the TS enrichWithSkillConfigurable with the CJS loadAuthValues dependency.
- * @param {object} result - The result from loadToolsForExecution
- * @param {object} req - The Express request object
- * @param {Array} accessibleSkillIds - Pre-computed accessible skill IDs
- * @param {string} [preResolvedCodeApiKey] - Pre-resolved code API key (skips redundant lookup)
- * @param {Record<string, string>} [skillPrimedIdsByName] - Map of name → skill id for skills primed this turn (manual `$`-popover invocation OR always-apply). Pins same-name collision lookups in `read_file` and relaxes the disable-model-invocation gate for the primed doc.
- * @returns {Promise<object>} Augmented result with skill configurable
- */
-function enrichConfigurable(
-  result,
-  req,
-  accessibleSkillIds,
-  preResolvedCodeApiKey,
-  skillPrimedIdsByName,
-) {
-  return enrichWithSkillConfigurable(
-    result,
-    req,
-    accessibleSkillIds,
-    loadAuthValues,
-    preResolvedCodeApiKey,
-    skillPrimedIdsByName,
-  );
-}
-
 module.exports = {
   getSkillToolDeps,
-  enrichWithSkillConfigurable: enrichConfigurable,
+  enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
 };
