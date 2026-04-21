@@ -913,6 +913,7 @@ export enum ScraperProviders {
 export enum RerankerTypes {
   JINA = 'jina',
   COHERE = 'cohere',
+  NONE = 'none',
 }
 
 export enum SafeSearchTypes {
