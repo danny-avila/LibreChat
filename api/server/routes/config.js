@@ -148,13 +148,17 @@ router.get('/', async function (req, res) {
       };
 
       const interfaceConfig = baseConfig?.interfaceConfig;
-      if (interfaceConfig?.privacyPolicy || interfaceConfig?.termsOfService) {
+      const buildInfoDisabled = interfaceConfig?.buildInfo === false;
+      if (interfaceConfig?.privacyPolicy || interfaceConfig?.termsOfService || buildInfoDisabled) {
         payload.interface = {};
         if (interfaceConfig.privacyPolicy) {
           payload.interface.privacyPolicy = interfaceConfig.privacyPolicy;
         }
         if (interfaceConfig.termsOfService) {
           payload.interface.termsOfService = interfaceConfig.termsOfService;
+        }
+        if (buildInfoDisabled) {
+          payload.interface.buildInfo = false;
         }
       }
 

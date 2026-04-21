@@ -442,5 +442,43 @@ describe('GET /api/config', () => {
 
       expect(response.body).not.toHaveProperty('buildInfo');
     });
+
+    it('propagates interface.buildInfo=false in unauthenticated response so clients can hide About tab', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { ...baseAppConfig.interfaceConfig, buildInfo: false },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toBeDefined();
+      expect(response.body.interface.buildInfo).toBe(false);
+    });
+
+    it('does not add interface.buildInfo=true to unauthenticated response (default stays implicit)', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { privacyPolicy: { externalUrl: 'https://x' }, buildInfo: true },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toBeDefined();
+      expect(response.body.interface).not.toHaveProperty('buildInfo');
+    });
+
+    it('includes interface block with only buildInfo=false when nothing else is set', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { buildInfo: false },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toEqual({ buildInfo: false });
+    });
   });
 });
