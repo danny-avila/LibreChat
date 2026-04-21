@@ -20,6 +20,13 @@ const publicSharedLinksEnabled =
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 
+/**
+ * Resolve build metadata eagerly at module load so the first `/api/config`
+ * request does not pay the cost of `execFileSync('git', ...)` on the hot path.
+ * The resolver caches its result after the first call.
+ */
+resolveBuildInfo();
+
 function isBirthday() {
   const today = new Date();
   return today.getMonth() === 1 && today.getDate() === 11;
