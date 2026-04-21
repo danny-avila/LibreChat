@@ -10,6 +10,11 @@ import terser from '@rollup/plugin-terser';
 const plugins = [
   peerDepsExternal(),
   resolve(),
+  // NOTE: `__LIBRECHAT_VERSION__` is only ever used inside a string literal
+  // (e.g. `VERSION = '__LIBRECHAT_VERSION__'` in `src/config.ts`), so substring
+  // replacement produces valid JS without needing `JSON.stringify`. Do not
+  // repurpose this token as a bare identifier without switching to a quoted
+  // replacement value.
   replace({
     preventAssignment: true,
     values: {

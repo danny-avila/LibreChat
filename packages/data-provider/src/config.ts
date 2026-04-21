@@ -1864,7 +1864,15 @@ export enum TTSProviders {
 
 /** Enum for app-wide constants */
 export enum Constants {
-  /** Key for the app's version. Replaced at build time by rollup from the root `package.json`. */
+  /**
+   * Key for the app's version. The placeholder `__LIBRECHAT_VERSION__` is
+   * swapped in by `@rollup/plugin-replace` during `npm run build:data-provider`
+   * using the value of the root `package.json`'s `version` field. Consumers
+   * always import this via the built dist bundle (see `main` field in
+   * `packages/data-provider/package.json`), so production and UI code get the
+   * substituted value. Only tests that import the TypeScript source directly
+   * would observe the raw placeholder.
+   */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.3.9',
