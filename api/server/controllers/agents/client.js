@@ -47,6 +47,7 @@ const {
   ContentTypes,
   EModelEndpoint,
   PermissionTypes,
+  AgentCapabilities,
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
@@ -489,6 +490,13 @@ class AgentClient extends BaseClient {
       return;
     }
 
+    /** Forward the same `execute_code` capability gate the chat flow uses —
+     *  memory agents are unlikely to list `execute_code`, but if one does,
+     *  Phase 8 relies on this flag to expand the string into
+     *  `bash_tool` + `read_file` (pre-Phase 8 the legacy `execute_code`
+     *  tool registered unconditionally; without this passthrough the
+     *  memory path would silently lose code-execution tooling). */
+    const memoryCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
     const agent = await initializeAgent(
       {
         req: this.options.req,
@@ -500,6 +508,7 @@ class AgentClient extends BaseClient {
             ? EModelEndpoint.agents
             : memoryConfig.agent?.provider,
         },
+        codeEnvAvailable: memoryCapabilities.has(AgentCapabilities.execute_code),
       },
       {
         getFiles: db.getFiles,

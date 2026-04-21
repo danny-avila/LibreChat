@@ -405,6 +405,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     parentMessageId,
     allowedProviders,
     primaryAgentId: primaryConfig.id,
+    codeEnvAvailable,
   });
 
   if (updatedMCPAuthMap) {
