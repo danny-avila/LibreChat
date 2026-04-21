@@ -68,9 +68,8 @@ const SearchableSelect = ({
         type="button"
         onClick={handleOpen}
         disabled={disabled}
-        className={`flex w-full items-center justify-between rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-sm text-left focus:outline-none focus:ring-1 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50 ${
-          value ? 'text-text-primary' : 'text-text-secondary'
-        }`}
+        className={`flex w-full items-center justify-between rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-sm text-left focus:outline-none focus:ring-1 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50 ${value ? 'text-text-primary' : 'text-text-secondary'
+          }`}
       >
         <span className="truncate">{value || placeholder}</span>
         <svg
@@ -92,7 +91,7 @@ const SearchableSelect = ({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search..."
-              className="w-full rounded border border-border-heavy bg-surface-secondary px-2 py-1.5 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-green-500"
+              className="w-full rounded border border-border-heavy bg-surface-secondary px-2 py-1.5 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-border-heavy"
             />
           </div>
           {/* Options */}
@@ -104,9 +103,8 @@ const SearchableSelect = ({
                 <li
                   key={opt}
                   onMouseDown={() => handleSelect(opt)}
-                  className={`cursor-pointer px-3 py-2 text-sm hover:bg-surface-active ${
-                    value === opt ? 'bg-green-50 text-green-700 font-medium dark:bg-green-900/20 dark:text-green-400' : 'text-text-primary'
-                  }`}
+                  className={`cursor-pointer px-3 py-2 text-sm hover:bg-surface-active ${value === opt ? 'bg-surface-active text-text-primary' : 'text-text-primary'
+                    }`}
                 >
                   {opt}
                 </li>
@@ -200,12 +198,23 @@ const FarmerProfileModal = ({
 
     const profile: IFarmerProfile = {
       ...data,
-      district: resolvedDistrict,
+      farmerName: data.farmerName?.trim().toLowerCase(),
+      villageName: data.villageName?.trim().toLowerCase(),
+      blockName: data.blockName?.trim().toLowerCase(),
+      district: resolvedDistrict?.trim().toLowerCase(),
+      state: data.state?.trim().toLowerCase(),
+      phoneNo: data.phoneNo?.trim().replace(/\s+/g, ''),
+      languagePreference: data.languagePreference?.trim().toLowerCase(),
+      primaryCrop: data.primaryCrop?.trim().toLowerCase(),
+      secondaryCrop: data.secondaryCrop?.trim().toLowerCase(),
+      highestEducatedPerson: data.highestEducatedPerson?.trim().toLowerCase(),
       age: Number(data.age),
       yearsOfExperience: Number(data.yearsOfExperience),
       numberOfSmartphones: Number(data.numberOfSmartphones),
       cropsCultivated: data.cropsCultivated
-        .split(',').map((c) => c.trim()).filter(Boolean),
+        .split(',')
+        .map((c) => c.trim().toLowerCase())
+        .filter(Boolean),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
     };
@@ -213,7 +222,7 @@ const FarmerProfileModal = ({
   };
 
   const inputClass =
-    'mt-1 block w-full rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-green-500';
+    'mt-1 block w-full rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-border-heavy';
   const errorClass = 'mt-1 text-xs text-red-500';
   const sectionClass = 'mb-6';
   const sectionTitleClass =
@@ -225,7 +234,7 @@ const FarmerProfileModal = ({
       <OGDialogContent
         showCloseButton={false}
         onInteractOutside={(e) => e.preventDefault()}
-       onEscapeKeyDown={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
         className="w-11/12 max-w-2xl sm:w-3/4 md:w-2/3 lg:w-1/2 max-h-[90vh] flex flex-col overflow-y-hidden"
       >
         <OGDialogHeader>
@@ -487,7 +496,6 @@ const FarmerProfileModal = ({
                       <input
                         type="radio"
                         value={val}
-                        className="accent-green-600"
                         {...register('awarenessOfKCC', { required: 'This field is required' })}
                       />
                       {val.charAt(0).toUpperCase() + val.slice(1)}
@@ -507,7 +515,6 @@ const FarmerProfileModal = ({
                       <input
                         type="radio"
                         value={val}
-                        className="accent-green-600"
                         {...register('usesAgriApps', { required: 'This field is required' })}
                       />
                       {val.charAt(0).toUpperCase() + val.slice(1)}
@@ -579,7 +586,7 @@ const FarmerProfileModal = ({
             <button
               type="submit"
               disabled={!isValid || saveMutation.isLoading}
-              className="inline-flex items-center justify-center rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-green-700 dark:hover:bg-green-800"
+              className="inline-flex items-center justify-center rounded-lg bg-surface-active px-6 py-2 text-sm font-medium text-text-primary hover:bg-surface-active-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saveMutation.isLoading ? 'Submitting...' : 'Submit'}
             </button>

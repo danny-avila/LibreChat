@@ -120,9 +120,27 @@ const acceptSecondTermsController = async (req, res) => {
 
 const saveFarmerProfileController = async (req, res) => {
   try {
+    const farmerProfile = req.body;
+    const normalizedProfile = {
+      ...farmerProfile,
+      farmerName: farmerProfile.farmerName?.trim().toLowerCase(),
+      villageName: farmerProfile.villageName?.trim().toLowerCase(),
+      blockName: farmerProfile.blockName?.trim().toLowerCase(),
+      district: farmerProfile.district?.trim().toLowerCase(),
+      state: farmerProfile.state?.trim().toLowerCase(),
+      phoneNo: farmerProfile.phoneNo?.trim().replace(/\s+/g, ''),
+      languagePreference: farmerProfile.languagePreference?.trim().toLowerCase(),
+      primaryCrop: farmerProfile.primaryCrop?.trim().toLowerCase(),
+      secondaryCrop: farmerProfile.secondaryCrop?.trim().toLowerCase(),
+      highestEducatedPerson: farmerProfile.highestEducatedPerson?.trim().toLowerCase(),
+      cropsCultivated: Array.isArray(farmerProfile.cropsCultivated)
+        ? farmerProfile.cropsCultivated.map((c) => c.trim().toLowerCase())
+        : farmerProfile.cropsCultivated,
+    };
+
     const user = await User.findByIdAndUpdate(
       req.user.id,
-      { farmerProfile: req.body },
+      { farmerProfile: normalizedProfile },
       { new: true },
     );
     if (!user) {
