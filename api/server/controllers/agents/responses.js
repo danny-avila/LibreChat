@@ -378,7 +378,6 @@ const createResponse = async (req, res) => {
       getSkillByName: db.getSkillByName,
     };
 
-    const appConfig = req.config;
     const enabledCapabilities = new Set(
       appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities,
     );
