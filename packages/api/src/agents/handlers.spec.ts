@@ -281,7 +281,7 @@ describe('createToolExecuteHandler', () => {
       expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
     });
 
-    it('read_file uses preferModelInvocable for AUTONOMOUS probes (skill not in manualSkillPrimedIdsByName)', async () => {
+    it('read_file uses preferModelInvocable for AUTONOMOUS probes (skill not in skillPrimedIdsByName)', async () => {
       const getSkillByName = jest.fn(async () => ({
         _id: 'skill-id' as unknown as never,
         name: 'maybe-disabled-read',
@@ -312,7 +312,7 @@ describe('createToolExecuteHandler', () => {
 
     it("read_file pins lookup to the primed skill's _id when manually invoked this turn (no shadowing on collision)", async () => {
       /* Same-name collision corner: the resolver primed a specific doc
-         (its `_id` is in `manualSkillPrimedIdsByName`). If read_file used
+         (its `_id` is in `skillPrimedIdsByName`). If read_file used
          the full ACL set + a `prefer*` flag, a same-name duplicate could
          shadow the resolver's pick and the model would read files from
          the WRONG skill. The handler now constrains accessibleIds to
@@ -329,7 +329,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
-            manualSkillPrimedIdsByName: { 'manually-primed': primedHex },
+            skillPrimedIdsByName: { 'manually-primed': primedHex },
           },
         })),
         getSkillByName,
@@ -423,7 +423,7 @@ describe('createToolExecuteHandler', () => {
          were also blocked here, any skill referencing `references/foo.md`
          in its body would be non-functional under manual invocation. The
          autonomous-block contract is preserved because the bypass is
-         scoped to the per-turn `manualSkillPrimedIdsByName` allowlist. */
+         scoped to the per-turn `skillPrimedIdsByName` allowlist. */
       const getSkillByName = jest.fn(async () => ({
         _id: '507f1f77bcf86cd799439020' as unknown as never,
         name: 'manual-only-skill',
@@ -435,7 +435,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
-            manualSkillPrimedIdsByName: { 'manual-only-skill': '507f1f77bcf86cd799439020' },
+            skillPrimedIdsByName: { 'manual-only-skill': '507f1f77bcf86cd799439020' },
           },
         })),
         getSkillByName,
@@ -455,7 +455,7 @@ describe('createToolExecuteHandler', () => {
 
     it('still blocks read_file for a disabled skill the user did NOT manually prime this turn', async () => {
       /* Defense-in-depth: the manual-prime exception is scoped to the
-         specific names in `manualSkillPrimedIdsByName`. A model trying
+         specific names in `skillPrimedIdsByName`. A model trying
          to read a different disabled skill (one the user never manually
          invoked) is still rejected. */
       const getSkillByName = jest.fn(async () => ({
@@ -469,7 +469,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
-            manualSkillPrimedIdsByName: { 'something-else': '507f1f77bcf86cd799439030' },
+            skillPrimedIdsByName: { 'something-else': '507f1f77bcf86cd799439030' },
           },
         })),
         getSkillByName,
@@ -485,6 +485,88 @@ describe('createToolExecuteHandler', () => {
 
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('cannot be invoked by the model');
+    });
+
+    it('relaxes the disable-model gate for always-apply primes the same way it does for manual', async () => {
+      /* Regression: always-apply skills landed in `skillPrimedIdsByName`
+         alongside manual primes, so a `disable-model-invocation: true`
+         skill that auto-primes via always-apply must be able to read
+         its own bundled files. Without this, a team's auto-primed
+         "model-only" skill (e.g. legal boilerplate) would silently
+         degrade the first time it referenced `references/foo.md`. */
+      const getSkillByName = jest.fn(async () => ({
+        _id: '507f1f77bcf86cd799439040' as unknown as never,
+        name: 'always-applied-legal',
+        body: '# Cite references/policy.md when advising',
+        fileCount: 0,
+        disableModelInvocation: true,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: {
+            /* Map includes the always-apply skill because `buildSkillPrimedIdsByName`
+               now combines both prime sources. */
+            skillPrimedIdsByName: {
+              'always-applied-legal': '507f1f77bcf86cd799439040',
+            },
+          },
+        })),
+        getSkillByName,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_read_always',
+          name: Constants.READ_FILE,
+          args: { file_path: 'always-applied-legal/SKILL.md' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('references/policy.md');
+    });
+
+    it('pins accessibleIds to the primed _id for an always-apply skill (no same-name shadowing)', async () => {
+      /* Same-name collision: two skills share a name, one got primed via
+         always-apply. read_file must resolve to the exact primed doc so
+         the body and file lookup stay consistent within a turn. */
+      const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
+      const primedHex = '507f1f77bcf86cd799439050';
+      const getSkillByName = jest.fn(async () => ({
+        _id: new Types.ObjectId(primedHex) as unknown as never,
+        name: 'collides',
+        body: '# primed body',
+        fileCount: 0,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: {
+            skillPrimedIdsByName: { collides: primedHex },
+          },
+        })),
+        getSkillByName,
+      });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_read_pin',
+          name: Constants.READ_FILE,
+          args: { file_path: 'collides/SKILL.md' },
+        },
+      ]);
+
+      const [, accessibleIdsArg, lookupOptions] = getSkillByName.mock.calls[0] as [
+        string,
+        Array<{ toString(): string }>,
+        Record<string, unknown>,
+      ];
+      expect(accessibleIdsArg).toHaveLength(1);
+      expect(accessibleIdsArg[0].toString()).toBe(primedHex);
+      // Primed lookups do NOT pass preferModelInvocable — the _id pin is
+      // authoritative.
+      expect(lookupOptions).toEqual({});
     });
   });
 });

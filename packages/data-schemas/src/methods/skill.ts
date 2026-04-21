@@ -1183,6 +1183,13 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
      * would otherwise leave the column stale and auto-priming / pin
      * badges would keep using the old value.
      *
+     * When a `body` is submitted with NO `always-apply:` line (e.g. the
+     * user removed the line from SKILL.md), that counts as a positive
+     * declaration of "not always-apply" — the column flips to `false`.
+     * Leaving it untouched would leave a skill that was once always-apply
+     * silently auto-priming even after its own SKILL.md no longer
+     * declares the flag.
+     *
      * Important: the gates key off the *presence of an always-apply value*
      * at each level, not the presence of the parent field. An API caller
      * that sends both `body` and an unrelated `frontmatter` bag (e.g.
@@ -1204,6 +1211,19 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       const fromBody = extractAlwaysApplyFromBody(update.body);
       if (fromBody.status === 'valid') {
         derivedAlwaysApply = fromBody.value;
+      } else if (fromBody.status === 'absent') {
+        /* An `absent` result means the user submitted a new body that
+           declares no `always-apply:` key (either the key was removed or
+           no frontmatter block was ever there). The body is the
+           authoritative source for this skill's declared state: editing
+           it to drop the flag intends to turn auto-priming off, so flip
+           the column to `false`. Without this, a skill that was once
+           `alwaysApply: true` would keep auto-priming after the user
+           removed the declaration from SKILL.md — a persistent,
+           invisible mismatch between the file and runtime behavior.
+           `invalid` is rejected upstream by `validateAlwaysApplyInBody`
+           so this branch only handles the legitimate absence case. */
+        derivedAlwaysApply = false;
       }
     }
     if (derivedAlwaysApply !== undefined) {

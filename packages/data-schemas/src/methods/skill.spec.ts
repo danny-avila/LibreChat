@@ -1128,6 +1128,65 @@ describe('Skill CRUD methods', () => {
       expect(result.skill.alwaysApply).toBe(true);
     }
   });
+
+  it('updateSkill flips alwaysApply to false when the body removes the `always-apply:` line', async () => {
+    /* Regression for the “durable mismatch” case: a previously-
+       always-apply skill whose SKILL.md body no longer declares the
+       flag must stop auto-priming. Without this, the column would
+       stick at `true` and the UI pin badge would persist even though
+       the file itself no longer opts in. */
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'body-remove', alwaysApply: true }),
+    );
+    const bodyWithoutKey = `---\nname: body-remove\ndescription: opting out by removing the line.\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: bodyWithoutKey },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(false);
+      expect(result.skill.body).toBe(bodyWithoutKey);
+    }
+  });
+
+  it('updateSkill flips alwaysApply to false when the body update carries no frontmatter block at all', async () => {
+    /* An author rewriting SKILL.md without any YAML frontmatter is an
+       implicit opt-out — there is no declaration anywhere, so the
+       column should reflect that. */
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'body-strip-fm', alwaysApply: true }),
+    );
+    const plainBody = `# Just the body now — no frontmatter.`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: plainBody },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(false);
+    }
+  });
+
+  it('updateSkill explicit alwaysApply still wins when body would otherwise flip it to false', async () => {
+    /* Higher-precedence sources still override: an API caller sending
+       both `alwaysApply: true` and a body without the key keeps the
+       column `true`, because explicit top-level is the authoritative
+       source for programmatic callers. */
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'explicit-trumps-body' }));
+    const bodyWithoutKey = `---\nname: explicit-trumps-body\ndescription: frontmatter block without the flag.\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { alwaysApply: true, body: bodyWithoutKey },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
 });
 
 describe('SkillFile methods', () => {
