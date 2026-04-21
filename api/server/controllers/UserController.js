@@ -81,6 +81,7 @@ const getTermsStatusController = async (req, res) => {
       termsAccepted: !!user.termsAccepted,
       secondTermsAccepted: !!user.secondTermsAccepted,
       farmerProfileCompleted: !!user.farmerProfile?.farmerName,
+      farmerLocationCompleted: !!(user.farmerProfile?.location?.latitude && user.farmerProfile?.location?.longitude),
     });
   } catch (error) {
     logger.error('Error fetching terms acceptance status:', error);

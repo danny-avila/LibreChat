@@ -19,13 +19,14 @@ import {
 } from '~/Providers';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
-import { TermsAndConditionsModal, ImportantNoticeModal, FarmerProfileModal } from '~/components/ui';
+import { TermsAndConditionsModal, ImportantNoticeModal, FarmerProfileModal, FarmerLocationModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const [showTestingNotice, setShowTestingNotice] = useState(false);
   const [showFarmerProfile, setShowFarmerProfile] = useState(false);
+  const [showFarmerLocation, setShowFarmerLocation] = useState(false);
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
@@ -63,6 +64,10 @@ export default function Root() {
     }
     if (!termsData.farmerProfileCompleted) {
       setShowFarmerProfile(true);
+      return;
+    }
+    if (!termsData.farmerLocationCompleted) {
+      setShowFarmerLocation(true);
     }
   }, [termsData]);
 
@@ -91,6 +96,10 @@ export default function Root() {
 
   const handleFarmerProfileComplete = () => {
     setShowFarmerProfile(false);
+  };
+
+  const handleFarmerLocationComplete = () => {
+    setShowFarmerLocation(false);
   };
 
   const handleDeclineFarmerProfile = () => {
@@ -152,6 +161,11 @@ export default function Root() {
             onOpenChange={setShowFarmerProfile}
             onComplete={handleFarmerProfileComplete}
             onDecline={handleDeclineFarmerProfile}
+          />
+          <FarmerLocationModal
+            open={showFarmerLocation}
+            onOpenChange={setShowFarmerLocation}
+            onComplete={handleFarmerLocationComplete}
           />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
