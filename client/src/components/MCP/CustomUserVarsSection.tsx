@@ -85,7 +85,17 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
         render={({ field }) => (
           <Input
             id={name}
-            type="text"
+            // Discourage browser password managers from autofilling these
+            // per-user credential fields. Matches the pattern used in
+            // `SidePanel/Builder/ActionsAuth.tsx` for the same reason.
+            // Critical because autofilled values are set via the DOM and
+            // do NOT fire React's synthetic onChange -- react-hook-form
+            // then sees an empty string and the user's typed credential
+            // is silently dropped on save.
+            type="new-password"
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-1p-ignore="true"
             /* autoFocus is generally disabled due to the fact that it can disorient users,
              * but in this case, the required field would logically be immediately navigated to anyways, and the component's
              * functionality emulates that of a new modal opening, where users would expect focus to be shifted to the new content */
