@@ -32,7 +32,7 @@ describe('probeResourceMetadataHint', () => {
       resourceMetadataUrl: new URL(hintUrl),
       scope: undefined,
       bearerChallenge: true,
-      authChallenge: true,
+      headAuthChallenge: true,
     });
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'HEAD' }));
@@ -52,6 +52,8 @@ describe('probeResourceMetadataHint', () => {
     const result = await probeResourceMetadataHint('https://example.com/mcp');
 
     expect(result?.resourceMetadataUrl?.toString()).toBe(hintUrl);
+    // POST's 401 must not set headAuthChallenge — HEAD was 405.
+    expect(result?.headAuthChallenge).toBe(false);
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[1][1]).toEqual(
       expect.objectContaining({
@@ -74,7 +76,7 @@ describe('probeResourceMetadataHint', () => {
       resourceMetadataUrl: undefined,
       scope: undefined,
       bearerChallenge: true,
-      authChallenge: true,
+      headAuthChallenge: true,
     });
   });
 
@@ -92,8 +94,28 @@ describe('probeResourceMetadataHint', () => {
       resourceMetadataUrl: undefined,
       scope: 'read write',
       bearerChallenge: true,
-      authChallenge: true,
+      headAuthChallenge: true,
     });
+  });
+
+  it('extracts resource_metadata from multi-scheme challenges where Bearer is not first', async () => {
+    // RFC 7235 allows multiple schemes in one header. The SDK's `extractWWWAuthenticateParams`
+    // only parses the leading token, so a header like `Basic realm="api", Bearer resource_metadata="..."`
+    // would drop the authoritative hint — hence the local regex fallback.
+    const hintUrl = 'https://example.com/.well-known/oauth-protected-resource';
+    mockFetch.mockResolvedValueOnce({
+      status: 401,
+      headers: new Headers({
+        'www-authenticate': `Basic realm="api", Bearer resource_metadata="${hintUrl}" scope="mcp.read"`,
+      }),
+    } as Response);
+
+    const result = await probeResourceMetadataHint('https://example.com/mcp');
+
+    expect(result?.resourceMetadataUrl?.toString()).toBe(hintUrl);
+    expect(result?.scope).toBe('mcp.read');
+    expect(result?.bearerChallenge).toBe(true);
+    expect(result?.headAuthChallenge).toBe(true);
   });
 
   it('returns a no-challenge result when both probes receive clean 200s', async () => {
@@ -105,7 +127,7 @@ describe('probeResourceMetadataHint', () => {
       resourceMetadataUrl: undefined,
       scope: undefined,
       bearerChallenge: false,
-      authChallenge: false,
+      headAuthChallenge: false,
     });
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
@@ -135,14 +157,14 @@ describe('probeResourceMetadataHint', () => {
       resourceMetadataUrl: undefined,
       scope: undefined,
       bearerChallenge: true,
-      authChallenge: true,
+      headAuthChallenge: true,
     });
     expect(customFetch).toHaveBeenCalledTimes(1);
     // Global fetch must not be touched when fetchFn is supplied.
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('surfaces authChallenge when a non-Bearer 401 is the only response', async () => {
+  it('surfaces headAuthChallenge when a non-Bearer 401 is the only response', async () => {
     // Basic-only 401 carries no OAuth hint, but callers still need to know a 401 was
     // seen so the MCP_OAUTH_ON_AUTH_ERROR fallback can fire without a duplicate HEAD.
     mockFetch.mockResolvedValueOnce({
@@ -160,12 +182,12 @@ describe('probeResourceMetadataHint', () => {
       resourceMetadataUrl: undefined,
       scope: undefined,
       bearerChallenge: false,
-      authChallenge: true,
+      headAuthChallenge: true,
     });
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
-  it('surfaces authChallenge when only a 403 is observed (no Bearer semantics)', async () => {
+  it('surfaces headAuthChallenge when only a 403 is observed on HEAD', async () => {
     mockFetch.mockResolvedValue({ status: 403, headers: new Headers() } as Response);
 
     const result = await probeResourceMetadataHint('https://example.com/mcp');
@@ -174,7 +196,25 @@ describe('probeResourceMetadataHint', () => {
       resourceMetadataUrl: undefined,
       scope: undefined,
       bearerChallenge: false,
-      authChallenge: true,
+      headAuthChallenge: true,
+    });
+  });
+
+  it('does not set headAuthChallenge when only POST returns 401/403 (WAF/CSRF case)', async () => {
+    // Classic WAF/CSRF posture: HEAD cleanly returns 200, but a body-less JSON POST
+    // trips a rule and gets 403. This is not an OAuth signal and must not flip the
+    // `MCP_OAUTH_ON_AUTH_ERROR` fallback, so `headAuthChallenge` stays false.
+    mockFetch
+      .mockResolvedValueOnce({ status: 200, headers: new Headers() } as Response)
+      .mockResolvedValueOnce({ status: 403, headers: new Headers() } as Response);
+
+    const result = await probeResourceMetadataHint('https://example.com/mcp');
+
+    expect(result).toEqual({
+      resourceMetadataUrl: undefined,
+      scope: undefined,
+      bearerChallenge: false,
+      headAuthChallenge: false,
     });
   });
 });

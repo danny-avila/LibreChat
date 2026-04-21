@@ -57,13 +57,15 @@ export async function detectOAuthRequirement(serverUrl: string): Promise<OAuthDe
   }
 
   /**
-   * `MCP_OAUTH_ON_AUTH_ERROR` fallback: honor a 401/403 already observed by the probe
-   * instead of issuing a duplicate HEAD. A `null` probe means every attempt threw
-   * (e.g. transient network error); retry once via HEAD so a blip doesn't flip
-   * detection to "no OAuth required" for a server that actually needs it.
+   * `MCP_OAUTH_ON_AUTH_ERROR` fallback: honor a 401/403 already observed by the HEAD
+   * probe instead of issuing a duplicate HEAD. POST-only 401/403 is intentionally
+   * excluded — WAF/CSRF rules commonly 403 a body-less JSON POST on endpoints that
+   * have nothing to do with OAuth, and those must not flip detection. A `null` probe
+   * means every attempt threw (transient network error); retry once via HEAD so a
+   * blip doesn't flip detection to "no OAuth required" for a server that needs it.
    */
   if (mcpConfig.OAUTH_ON_AUTH_ERROR) {
-    if (hint?.authChallenge) {
+    if (hint?.headAuthChallenge) {
       return {
         requiresOAuth: true,
         method: 'no-metadata-found',

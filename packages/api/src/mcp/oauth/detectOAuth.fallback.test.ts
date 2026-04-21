@@ -109,4 +109,19 @@ describe('detectOAuthRequirement — MCP_OAUTH_ON_AUTH_ERROR fallback', () => {
     // HEAD + POST from the probe, both 200 — fallback must not fire.
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
+
+  it('does not fire fallback when HEAD was 200 but POST returned 403 (WAF/CSRF)', async () => {
+    // A server that isn't OAuth-protected but 403s body-less POSTs for WAF/CSRF reasons
+    // must NOT be misclassified as OAuth-required. The fallback is scoped to HEAD status.
+    mockFetch
+      .mockResolvedValueOnce({ status: 200, headers: new Headers() } as Response)
+      .mockResolvedValueOnce({ status: 403, headers: new Headers() } as Response);
+
+    const result = await detectOAuthRequirement('https://mcp.example.com');
+
+    expect(result.requiresOAuth).toBe(false);
+    expect(result.method).toBe('no-metadata-found');
+    // Only the probe ran — no extra fallback HEAD fired.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });

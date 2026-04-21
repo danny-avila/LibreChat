@@ -10,11 +10,13 @@ export interface ResourceHintProbeResult {
   /** True when the server answered 401 with a `WWW-Authenticate: Bearer` challenge (with or without parameters). */
   bearerChallenge: boolean;
   /**
-   * True when the server returned 401 or 403 to any probe request. Lets callers decide
-   * whether the optional `MCP_OAUTH_ON_AUTH_ERROR` fallback applies without issuing a
-   * second HEAD request for the same endpoint.
+   * True when the *HEAD* probe specifically returned 401 or 403. Matches the semantics
+   * of the legacy `MCP_OAUTH_ON_AUTH_ERROR` HEAD-only fallback so the caller can skip a
+   * redundant HEAD. POST-only 401/403 is intentionally excluded — servers commonly 403
+   * a body-less JSON POST for WAF/CSRF reasons unrelated to OAuth, and those should not
+   * flip the fallback.
    */
-  authChallenge: boolean;
+  headAuthChallenge: boolean;
 }
 
 /**
@@ -49,22 +51,30 @@ export async function probeResourceMetadataHint(
   if (headResult?.resourceMetadataUrl || headResult?.bearerChallenge) return headResult;
 
   const postResult = await probeWithMethod(serverUrl, 'POST', fetchFn);
-  if (postResult?.resourceMetadataUrl || postResult?.bearerChallenge) return postResult;
+  if (postResult?.resourceMetadataUrl || postResult?.bearerChallenge) {
+    // Carry HEAD's auth-challenge observation forward if we got one — the fallback
+    // decision is HEAD-only, so POST must not overwrite it back to false.
+    return { ...postResult, headAuthChallenge: !!headResult?.headAuthChallenge };
+  }
 
-  // No Bearer / hint — collapse to a single result capturing whichever observation(s) we got.
   if (headResult && postResult) return mergeProbes(headResult, postResult);
   return headResult ?? postResult ?? null;
 }
 
 function mergeProbes(
-  a: ResourceHintProbeResult,
-  b: ResourceHintProbeResult,
+  head: ResourceHintProbeResult,
+  post: ResourceHintProbeResult,
 ): ResourceHintProbeResult {
   return {
-    resourceMetadataUrl: a.resourceMetadataUrl ?? b.resourceMetadataUrl,
-    scope: a.scope ?? b.scope,
-    bearerChallenge: a.bearerChallenge || b.bearerChallenge,
-    authChallenge: a.authChallenge || b.authChallenge,
+    resourceMetadataUrl: head.resourceMetadataUrl ?? post.resourceMetadataUrl,
+    scope: head.scope ?? post.scope,
+    bearerChallenge: head.bearerChallenge || post.bearerChallenge,
+    /**
+     * Only HEAD's observation feeds the fallback decision — POST-only 401/403 is too
+     * noisy a signal (WAF/CSRF rules routinely 403 a body-less JSON POST on endpoints
+     * that are not OAuth-protected at all).
+     */
+    headAuthChallenge: head.headAuthChallenge,
   };
 }
 
@@ -85,19 +95,45 @@ async function probeWithMethod(
     }
 
     const response = await fetchFn(serverUrl, fetchOptions);
-    const authChallenge = response.status === 401 || response.status === 403;
+    const headAuthChallenge =
+      method === 'HEAD' && (response.status === 401 || response.status === 403);
+
     if (response.status !== 401) {
-      return { bearerChallenge: false, authChallenge };
+      return { bearerChallenge: false, headAuthChallenge };
     }
 
     const wwwAuth = response.headers.get('www-authenticate');
-    if (!wwwAuth) return { bearerChallenge: false, authChallenge: true };
+    const bearerChallenge = !!wwwAuth && /bearer/i.test(wwwAuth);
 
-    const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
-    const bearerChallenge = /bearer/i.test(wwwAuth);
+    if (!wwwAuth) return { bearerChallenge: false, headAuthChallenge };
 
-    return { resourceMetadataUrl, scope, bearerChallenge, authChallenge: true };
+    /**
+     * The SDK's `extractWWWAuthenticateParams` checks only the *first* token of the
+     * header and returns `{}` for multi-scheme challenges like
+     * `Basic realm="api", Bearer resource_metadata="..."`. Fall back to our own regex
+     * across the whole header so those servers' authoritative hint isn't dropped.
+     */
+    const sdkParsed = extractWWWAuthenticateParams(response);
+    const resourceMetadataUrl = sdkParsed.resourceMetadataUrl ?? extractHintFromHeader(wwwAuth);
+    const scope = sdkParsed.scope ?? extractScopeFromHeader(wwwAuth);
+
+    return { resourceMetadataUrl, scope, bearerChallenge, headAuthChallenge };
   } catch {
     return null;
   }
+}
+
+function extractHintFromHeader(header: string): URL | undefined {
+  const match = /resource_metadata="([^"]+)"/.exec(header);
+  if (!match?.[1]) return undefined;
+  try {
+    return new URL(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
+function extractScopeFromHeader(header: string): string | undefined {
+  const match = /\bscope="([^"]+)"/.exec(header);
+  return match?.[1];
 }

@@ -2431,7 +2431,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       mockProbeResourceMetadataHint.mockResolvedValueOnce({
         resourceMetadataUrl: new URL(hintUrl),
         bearerChallenge: true,
-        authChallenge: true,
+        headAuthChallenge: true,
       });
 
       mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
@@ -2513,7 +2513,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       mockProbeResourceMetadataHint.mockResolvedValueOnce({
         resourceMetadataUrl: new URL(hintUrl),
         bearerChallenge: true,
-        authChallenge: true,
+        headAuthChallenge: true,
       });
 
       // Whatever the hint URL returns is what reaches the handler — stale path-aware
