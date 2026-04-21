@@ -1,7 +1,7 @@
 import { SystemRoles } from 'librechat-data-provider';
 import { AdminSettings } from '~/components/Skills/buttons';
-import { useAuthContext } from '~/hooks';
 import SkillsSidePanel from './SkillsSidePanel';
+import { useAuthContext } from '~/hooks';
 
 export default function SkillsAccordion() {
   const { user } = useAuthContext();
