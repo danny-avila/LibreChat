@@ -1,5 +1,5 @@
 const express = require('express');
-const { isEnabled, getBalanceConfig } = require('@librechat/api');
+const { isEnabled, getBalanceConfig, resolveBuildInfo } = require('@librechat/api');
 const { defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
@@ -100,6 +100,22 @@ function buildSharedPayload() {
   return payload;
 }
 
+function buildBuildInfoPayload(interfaceConfig) {
+  if (interfaceConfig?.buildInfo === false) {
+    return undefined;
+  }
+  const info = resolveBuildInfo();
+  if (!info.commit && !info.branch && !info.buildDate) {
+    return undefined;
+  }
+  return {
+    commit: info.commit,
+    commitShort: info.commitShort,
+    branch: info.branch,
+    buildDate: info.buildDate,
+  };
+}
+
 function buildWebSearchConfig(appConfig) {
   const ws = appConfig?.webSearch;
   if (!ws) {
@@ -142,6 +158,11 @@ router.get('/', async function (req, res) {
         }
       }
 
+      const unauthBuildInfo = buildBuildInfoPayload(interfaceConfig);
+      if (unauthBuildInfo) {
+        payload.buildInfo = unauthBuildInfo;
+      }
+
       return res.status(200).send(payload);
     }
 
@@ -175,6 +196,11 @@ router.get('/', async function (req, res) {
     const webSearch = buildWebSearchConfig(appConfig);
     if (webSearch) {
       payload.webSearch = webSearch;
+    }
+
+    const buildInfo = buildBuildInfoPayload(appConfig?.interfaceConfig);
+    if (buildInfo) {
+      payload.buildInfo = buildInfo;
     }
 
     if (!payload.allowAccountDeletion) {
