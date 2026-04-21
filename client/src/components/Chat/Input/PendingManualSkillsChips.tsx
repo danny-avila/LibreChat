@@ -8,7 +8,7 @@ import store from '~/store';
  * Chip row rendered above the textarea showing skills the user picked in
  * the `$` popover for the next submission. Each chip has an × button to
  * remove that skill before sending — primary purpose is new-chat UX where
- * there's no submitted user message yet to render `ManualSkillPills` on.
+ * there's no submitted user message yet to render `SkillPills` on.
  *
  * Reads + writes `pendingManualSkillsByConvoId` atom directly. The atom
  * gets drained in `useChatFunctions.ask` on submit, so chips naturally
