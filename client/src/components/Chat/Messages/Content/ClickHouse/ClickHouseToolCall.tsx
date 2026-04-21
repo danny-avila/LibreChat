@@ -27,6 +27,10 @@ import {
   getRowLabel,
 } from './helpers';
 import { ClickHouseCostView } from './CostView';
+import ChartView from './ChartView';
+import ChartConfigModal from './ChartConfigModal';
+import { autoDetectChart } from './chartDetect';
+import type { ChartConfig } from './types';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -673,7 +677,25 @@ export default function ClickHouseToolCall({
   const codeTheme = isDark(theme) ? 'dark' : 'light';
   const { query, params } = useMemo(() => parseInput(input), [input]);
   const parsed = useMemo(() => (output ? parseOutput(output) : null), [output]);
-  const autoTab = parsed ? 'result' : 'details';
+
+  // Chart state
+  const detectedChart = useMemo(
+    () => (parsed?.rows && parsed.rows.length > 1 ? autoDetectChart(parsed.rows) : null),
+    [parsed?.rows],
+  );
+  const [chartConfig, setChartConfig] = useState<ChartConfig | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const activeChart = chartConfig ?? detectedChart;
+
+  // Set detected chart on first parse
+  useEffect(() => {
+    if (detectedChart && !chartConfig) {
+      setChartConfig(null); // use detected as default via activeChart
+    }
+  }, [detectedChart, chartConfig]);
+
+  const hasChart = !!activeChart && !!parsed?.rows && parsed.rows.length > 1;
+  const autoTab = hasChart ? 'chart' : parsed ? 'result' : 'details';
   const [userTab, setUserTab] = useState<string | null>(null);
   const activeTab = userTab ?? autoTab;
 
@@ -686,6 +708,7 @@ export default function ClickHouseToolCall({
         <Tabs value={activeTab} onValueChange={setUserTab}>
           <Tabs.TriggersList className="[&]:justify-between">
             <div className="flex">
+              {hasChart && <Tabs.Trigger value="chart">Chart</Tabs.Trigger>}
               {query && <Tabs.Trigger value="query">{localize('com_ch_tab_query')}</Tabs.Trigger>}
               {parsed && <Tabs.Trigger value="result">{localize('com_ui_result')}</Tabs.Trigger>}
             </div>
@@ -716,6 +739,41 @@ export default function ClickHouseToolCall({
                   </div>
                 )}
                 <CodeDisplay language="sql">{query}</CodeDisplay>
+              </div>
+            </Tabs.Content>
+          )}
+
+          {hasChart && parsed?.rows && activeChart && (
+            <Tabs.Content value="chart" tabIndex={-1}>
+              <div className="pt-3">
+                <div className="mb-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfigModal((v) => !v)}
+                    className="rounded px-2 py-0.5 text-xs transition-colors hover:opacity-80"
+                    style={{
+                      color: 'var(--text-secondary)',
+                      border: `1px solid ${codeTheme === 'dark' ? '#3a3a3a' : '#e0e0e0'}`,
+                    }}
+                  >
+                    {showConfigModal ? 'Close' : '⚙ Edit chart'}
+                  </button>
+                </div>
+                {showConfigModal && (
+                  <div className="mb-3">
+                    <ChartConfigModal
+                      rows={parsed.rows}
+                      initial={activeChart}
+                      onApply={(config) => {
+                        setChartConfig(config);
+                        setShowConfigModal(false);
+                      }}
+                      onClose={() => setShowConfigModal(false)}
+                      codeTheme={codeTheme}
+                    />
+                  </div>
+                )}
+                <ChartView rows={parsed.rows} chartConfig={activeChart} codeTheme={codeTheme} />
               </div>
             </Tabs.Content>
           )}

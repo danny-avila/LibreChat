@@ -21,6 +21,17 @@ export interface CostData {
   costs: CostEntry[];
 }
 
+export type ChartType = 'bar' | 'hbar' | 'sbar' | 'shbar' | 'doughnut' | 'pie' | 'area' | 'line' | 'scatter';
+
+export const CHART_COLORS = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
+
+export interface ChartConfig {
+  chartType: ChartType;
+  xAxis: string;
+  yAxis: Array<{ color: string; column: string }>;
+  title?: string;
+}
+
 export interface ParsedOutput {
   error: boolean;
   errorMessage?: string;
@@ -28,6 +39,7 @@ export interface ParsedOutput {
   rows?: Record<string, unknown>[];
   keyValue?: Record<string, unknown>;
   costData?: CostData;
+  chartConfig?: ChartConfig;
   metrics?: QueryMetrics;
   raw: string;
 }
