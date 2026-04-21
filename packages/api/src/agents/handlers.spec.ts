@@ -557,11 +557,13 @@ describe('createToolExecuteHandler', () => {
         },
       ]);
 
-      const [, accessibleIdsArg, lookupOptions] = getSkillByName.mock.calls[0] as [
+      const firstCall = getSkillByName.mock.calls[0] as unknown as [
         string,
         Array<{ toString(): string }>,
         Record<string, unknown>,
       ];
+      const accessibleIdsArg = firstCall[1];
+      const lookupOptions = firstCall[2];
       expect(accessibleIdsArg).toHaveLength(1);
       expect(accessibleIdsArg[0].toString()).toBe(primedHex);
       // Primed lookups do NOT pass preferModelInvocable — the _id pin is
