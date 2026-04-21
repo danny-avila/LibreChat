@@ -5,6 +5,11 @@ jest.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
   discoverOAuthProtectedResourceMetadata: jest.fn(),
 }));
 
+jest.mock('~/auth', () => ({
+  isSSRFTarget: jest.fn(() => false),
+  resolveHostnameSSRF: jest.fn(async () => false),
+}));
+
 /**
  * Exercises the `MCP_OAUTH_ON_AUTH_ERROR=true` path in isolation — the main
  * `detectOAuth.test.ts` disables it to assert on precise detection outcomes, so
