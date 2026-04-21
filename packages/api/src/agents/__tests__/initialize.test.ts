@@ -940,3 +940,82 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(loadTools.mock.calls[0][0].tools).toEqual([]);
   });
 });
+
+describe('initializeAgent — execute_code capability expansion', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('expands execute_code into bash_tool + read_file when codeEnvAvailable=true', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).toContain('bash_tool');
+    expect(names).toContain('read_file');
+    /* The legacy `execute_code` tool def is no longer registered by this
+       path — the string stays in `agent.tools` as the capability trigger
+       but never appears in the tool definitions the LLM sees. */
+    expect(names).not.toContain('execute_code');
+  });
+
+  it('does not register bash_tool + read_file when codeEnvAvailable=false', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).not.toContain('bash_tool');
+    expect(names).not.toContain('read_file');
+  });
+
+  it('does not register bash_tool + read_file when agent does not request execute_code', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).not.toContain('bash_tool');
+    expect(names).not.toContain('read_file');
+  });
+});

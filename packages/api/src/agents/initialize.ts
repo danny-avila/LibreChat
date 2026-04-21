@@ -1,6 +1,7 @@
 import { Providers } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import {
+  Tools,
   Constants,
   ErrorTypes,
   EModelEndpoint,
@@ -38,6 +39,7 @@ import {
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
+import { registerCodeExecutionTools } from './tools';
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
@@ -737,6 +739,30 @@ export async function initializeAgent(
       artifacts: agent.artifacts as never,
     });
     agent.additional_instructions = artifactsPromptResult ?? undefined;
+  }
+
+  /**
+   * Unify code-execution tools around `bash_tool` + `read_file` when the
+   * agent explicitly lists `execute_code` in its tools and the capability
+   * is enabled for the run. The legacy `execute_code` tool (backed by
+   * `CodeExecutionToolDefinition` + per-user `CODE_API_KEY` + `primeCodeFiles`)
+   * is no longer registered; the string `execute_code` on the agent
+   * document stays as the capability-trigger marker but expands into the
+   * skill-flavored tool pair here.
+   *
+   * Done BEFORE `injectSkillCatalog` so that when both apply in the same
+   * run, the skill path's `registerCodeExecutionTools` call is a no-op
+   * via the registry `.has()` check — exactly one copy of each tool
+   * reaches the LLM.
+   */
+  const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
+  if (agentRequestsCodeExec && params.codeEnvAvailable === true) {
+    const codeExecResult = registerCodeExecutionTools({
+      toolRegistry,
+      toolDefinitions,
+      includeBash: true,
+    });
+    toolDefinitions = codeExecResult.toolDefinitions;
   }
 
   let skillCount = 0;
