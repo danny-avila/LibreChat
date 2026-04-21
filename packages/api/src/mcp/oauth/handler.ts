@@ -690,17 +690,19 @@ export class MCPOAuthHandler {
       }
 
       let resource: URL | undefined;
-      try {
-        if (metadata.resourceMetadata?.resource != null && metadata.resourceMetadata.resource) {
+      if (metadata.resourceMetadata) {
+        /**
+         * Defense-in-depth: re-assert the RFC 9728 §3.3 binding against the flow's stored
+         * server URL. Flow state has a 10-minute TTL, so a flow initiated under older
+         * (pre-fix) code could still be in-flight at upgrade time carrying unvalidated
+         * resource metadata. Re-validating here closes that window without requiring ops
+         * teams to flush flow state on deploy (GHSA-gvpj-vm2f-2m23).
+         */
+        this.assertResourceBoundToServer(metadata.serverUrl, metadata.resourceMetadata);
+        if (metadata.resourceMetadata.resource) {
           resource = new URL(metadata.resourceMetadata.resource);
           logger.debug(`[MCPOAuth] Resource URL for flow ${flowId}: ${resource.toString()}`);
         }
-      } catch (error) {
-        logger.warn(
-          `[MCPOAuth] Invalid resource URL format for flow ${flowId}: '${metadata.resourceMetadata!.resource}'. ` +
-            `Error: ${error instanceof Error ? error.message : 'Unknown error'}. Proceeding without resource parameter.`,
-        );
-        resource = undefined;
       }
 
       const tokens = await exchangeAuthorization(metadata.serverUrl, {

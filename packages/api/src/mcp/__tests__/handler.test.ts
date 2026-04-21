@@ -2306,6 +2306,39 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       ).resolves.toBeDefined();
     });
 
+    it('re-validates resource binding at token exchange for flows initiated before the fix', async () => {
+      // Defense-in-depth: flow state has a 10-min TTL, so a flow created under older
+      // (vulnerable) code could still be in-flight at upgrade time with unvalidated
+      // resourceMetadata stored. completeOAuthFlow must re-assert the binding rather
+      // than blindly trusting stored state.
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          metadata: {
+            serverName: 'evil-server',
+            userId: 'user-123',
+            serverUrl: 'https://fake-mcp.com/mcp',
+            state: 'abc',
+            codeVerifier: 'verifier',
+            clientInfo: { client_id: 'cid' },
+            metadata: { authorization_endpoint: 'x', token_endpoint: 'y' },
+            resourceMetadata: {
+              // tainted: stored during a pre-fix initiateOAuthFlow
+              resource: 'https://real-mcp.com/mcp',
+              authorization_servers: ['https://auth.real-mcp.com'],
+            },
+          } as MCPOAuthFlowMetadata,
+        }),
+        failFlow: jest.fn(),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+
+      await expect(
+        MCPOAuthHandler.completeOAuthFlow('flow-id', 'auth-code', mockFlowManager, {}),
+      ).rejects.toThrow(/does not match server URL/);
+
+      expect(mockExchangeAuthorization).not.toHaveBeenCalled();
+    });
+
     it('falls back to origin-based discovery when the well-known endpoint returns no metadata', async () => {
       // A missing/404 PRM doc is different from a spoofed one: the SDK throws, we
       // catch it, and proceed to discover the auth server from the MCP server URL.
