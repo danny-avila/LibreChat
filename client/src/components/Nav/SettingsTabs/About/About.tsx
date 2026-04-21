@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import copy from 'copy-to-clipboard';
 import { Check, Copy } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
@@ -49,6 +49,7 @@ function About() {
   const localize = useLocalize();
   const { data: startupConfig } = useGetStartupConfig();
   const [copied, setCopied] = useState(false);
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const buildInfo = startupConfig?.buildInfo;
   const version: string = Constants.VERSION;
@@ -58,10 +59,22 @@ function About() {
     [version, buildInfo],
   );
 
+  useEffect(
+    () => () => {
+      if (copyResetTimerRef.current) {
+        clearTimeout(copyResetTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const onCopy = useCallback(() => {
     copy(diagnosticsBlob, { format: 'text/plain' });
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
+    if (copyResetTimerRef.current) {
+      clearTimeout(copyResetTimerRef.current);
+    }
+    copyResetTimerRef.current = setTimeout(() => setCopied(false), 2000);
   }, [diagnosticsBlob]);
 
   return (
@@ -98,7 +111,6 @@ function About() {
           type="button"
           onClick={onCopy}
           className="inline-flex items-center justify-center gap-2 self-start rounded-md border border-border-light bg-surface-secondary px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
-          aria-live="polite"
         >
           {copied ? (
             <>
@@ -112,6 +124,9 @@ function About() {
             </>
           )}
         </button>
+        <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {copied ? localize('com_nav_about_diagnostics_copied') : ''}
+        </span>
       </section>
     </div>
   );
