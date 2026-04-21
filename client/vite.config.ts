@@ -36,6 +36,9 @@ const backendURL = process.env.HOST
 
 export default defineConfig(({ command }) => ({
   base: '',
+  optimizeDeps: {
+    include: ['recharts'],
+  },
   server: {
     allowedHosts:
       (process.env.VITE_ALLOWED_HOSTS && process.env.VITE_ALLOWED_HOSTS.split(',')) || [],
@@ -251,6 +254,11 @@ export default defineConfig(({ command }) => ({
             // out of vendor to avoid disrupting React's CJS interop in that chunk.
             if (normalizedId.includes('@clickhouse/click-ui')) {
               return 'click-ui';
+            }
+
+            // recharts + d3 deps in their own chunk to avoid circular dep issues
+            if (normalizedId.includes('recharts') || normalizedId.includes('d3-')) {
+              return 'recharts';
             }
 
             // Existing chunks
