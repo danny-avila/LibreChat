@@ -20,6 +20,8 @@ import MarkdownErrorBoundary from './MarkdownErrorBoundary';
 import { langSubset, preprocessLaTeX } from '~/utils';
 import { unicodeCitation } from '~/components/Web';
 import { code, a, p, img } from './MarkdownComponents';
+import { remarkBklCitation } from './remarkBklCitation';
+import BklCitation from './BklCitation';
 import store from '~/store';
 
 type TContentProps = {
@@ -60,6 +62,7 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
     artifactPlugin,
     [remarkMath, { singleDollarTextMath: false }],
     unicodeCitation,
+    remarkBklCitation,
     mcpUIResourcePlugin,
   ];
 
@@ -94,6 +97,7 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
                 'composite-citation': CompositeCitation,
                 'mcp-ui-resource': MCPUIResource,
                 'mcp-ui-carousel': MCPUIResourceCarousel,
+                'bkl-citation': BklCitation,
               } as {
                 [nodeType: string]: React.ElementType;
               }

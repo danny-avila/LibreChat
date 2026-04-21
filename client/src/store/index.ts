@@ -11,6 +11,7 @@ import prompts from './prompts';
 import lang from './language';
 import settings from './settings';
 import misc from './misc';
+import filters from './filters';
 import isTemporary from './temporary';
 export * from './agents';
 export * from './mcp';
@@ -30,5 +31,6 @@ export default {
   ...lang,
   ...settings,
   ...misc,
+  ...filters,
   ...isTemporary,
 };

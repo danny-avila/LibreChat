@@ -40,6 +40,7 @@ const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = pro
 const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1;
+const htmlExtension = '.html';
 
 /** Number of worker processes to spawn (simulating multiple pods) */
 const workers = Number(process.env.CLUSTER_WORKERS) || 4;
@@ -327,6 +328,21 @@ if (cluster.isMaster) {
 
     /** 404 for unmatched API routes */
     app.use('/api', apiNotFound);
+
+    app.use((req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        next();
+        return;
+      }
+
+      const extension = path.extname(req.path);
+      if (!extension || extension === htmlExtension) {
+        next();
+        return;
+      }
+
+      res.status(404).type('text').send('Not Found');
+    });
 
     /** SPA fallback - serve index.html for all unmatched routes */
     app.use((req, res) => {

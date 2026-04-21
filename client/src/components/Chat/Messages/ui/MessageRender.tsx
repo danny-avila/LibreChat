@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, memo } from 'react';
+import React, { useCallback, useEffect, useMemo, memo, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { type TMessage } from 'librechat-data-provider';
@@ -14,6 +14,86 @@ import { cn, getMessageAriaLabel } from '~/utils';
 import { fontSizeAtom } from '~/store/fontSize';
 import { MessageContext } from '~/Providers';
 import store from '~/store';
+
+function extractBklRidFromMessage(message?: TMessage): string | null {
+  if (!message) {
+    return null;
+  }
+
+  const RID_RE = /<!-- bkl_rid:([a-zA-Z0-9_-]+) -->/;
+
+  const fromText = message.text?.match(RID_RE)?.[1];
+  if (fromText) {
+    return fromText;
+  }
+
+  if (!Array.isArray(message.content)) {
+    return null;
+  }
+
+  for (const part of message.content) {
+    if (part?.type !== 'text') {
+      continue;
+    }
+    // Server/DB format: { text: { value: "..." } }
+    // Streaming delta format: { text: "..." }
+    const raw = (part as Record<string, unknown>).text;
+    const textValue = typeof raw === 'string' ? raw : (raw as { value?: string } | null)?.value;
+    if (!textValue) {
+      continue;
+    }
+    const fromContent = textValue.match(RID_RE)?.[1];
+    if (fromContent) {
+      return fromContent;
+    }
+  }
+
+  return null;
+}
+
+function formatMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
+type BklTiming = { startTime: number; firstTokenTime: number | null; endTime: number };
+
+function GenerationTimingText({ messageId }: { messageId: string }) {
+  const [timing, setTiming] = useState<BklTiming | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const t = (window as any).__bklTiming?.[messageId];
+      if (t && !cancelled) setTiming(t);
+    };
+    check();
+    const t1 = setTimeout(check, 500);
+    const t2 = setTimeout(check, 1500);
+    const t3 = setTimeout(check, 3000);
+    return () => {
+      cancelled = true;
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [messageId]);
+
+  if (!timing?.endTime) {
+    return null;
+  }
+
+  const total = timing.endTime - timing.startTime;
+  const ttft = timing.firstTokenTime != null ? timing.firstTokenTime - timing.startTime : null;
+
+  return (
+    <p className="mt-1 select-none font-mono text-[11px] text-text-tertiary opacity-70">
+      {ttft != null
+        ? `⏱ TTFT ${formatMs(ttft)} · 총 ${formatMs(total)}`
+        : `⏱ 총 ${formatMs(total)}`}
+    </p>
+  );
+}
 
 type MessageRenderProps = {
   message?: TMessage;
@@ -87,6 +167,16 @@ const MessageRender = memo(function MessageRender({
 
   const { hasParallelContent } = useContentMetadata(msg);
   const messageId = msg?.messageId ?? '';
+  const bklRid = useMemo(() => {
+    const rid = extractBklRidFromMessage(msg);
+    if (rid && messageId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const win = window as any;
+      win.__bklRids = win.__bklRids ?? {};
+      win.__bklRids[messageId] = rid;
+    }
+    return rid;
+  }, [msg, messageId]);
   const messageContextValue = useMemo(
     () => ({
       messageId,
@@ -124,6 +214,7 @@ const MessageRender = memo(function MessageRender({
   return (
     <div
       id={msg.messageId}
+      data-bkl-rid={bklRid ?? undefined}
       aria-label={getMessageAriaLabel(msg, localize)}
       className={cn(
         baseClasses.common,
@@ -170,6 +261,9 @@ const MessageRender = memo(function MessageRender({
               />
             </MessageContext.Provider>
           </div>
+          {!msg.isCreatedByUser && (
+            <GenerationTimingText messageId={msg.messageId} />
+          )}
           {hasNoChildren && effectiveIsSubmitting ? (
             <PlaceholderRow />
           ) : (

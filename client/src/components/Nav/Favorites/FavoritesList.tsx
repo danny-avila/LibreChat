@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useMemo, useEffect } from 'react';
-import { LayoutGrid } from 'lucide-react';
+import { LayoutGrid, FileSearch } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
@@ -156,6 +156,13 @@ export default function FavoritesList({
     }
   }, [navigate, isSmallScreen, toggleNav]);
 
+  const handleDocumentSearch = useCallback(() => {
+    navigate('/documents');
+    if (isSmallScreen && toggleNav) {
+      toggleNav();
+    }
+  }, [navigate, isSmallScreen, toggleNav]);
+
   const handleRemoveFocus = useCallback(() => {
     if (marketplaceRef.current) {
       marketplaceRef.current.focus();
@@ -265,15 +272,14 @@ export default function FavoritesList({
     return null;
   }
 
-  if (!isFavoritesLoading && safeFavorites.length === 0 && !showAgentMarketplace) {
-    return null;
-  }
+  // 문서 검색 항목은 항상 노출 — 즐겨찾기/마켓플레이스가 비어있어도 렌더
 
   if (isFavoritesLoading) {
     return (
       <div className="mb-2 flex flex-col pb-2">
         <div className="mt-1 flex flex-col gap-1">
           {showAgentMarketplace && <MarketplaceSkeleton />}
+          <MarketplaceSkeleton />
           <FavoriteItemSkeleton />
         </div>
       </div>
@@ -288,6 +294,8 @@ export default function FavoritesList({
           <>
             {/* Marketplace skeleton */}
             {showAgentMarketplace && <MarketplaceSkeleton />}
+            {/* Document search skeleton */}
+            <MarketplaceSkeleton />
             {/* Favorite items skeletons */}
             {safeFavorites.map((_, index) => (
               <FavoriteItemSkeleton key={`skeleton-${index}`} />
@@ -320,6 +328,28 @@ export default function FavoritesList({
                 </div>
               </div>
             )}
+            {/* Document Search button */}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={localize('com_nav_document_search')}
+              className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+              onClick={handleDocumentSearch}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleDocumentSearch();
+                }
+              }}
+              data-testid="nav-document-search-button"
+            >
+              <div className="flex flex-1 items-center truncate pr-6">
+                <div className="mr-2 h-5 w-5">
+                  <FileSearch className="h-5 w-5 text-text-primary" />
+                </div>
+                <span className="truncate">{localize('com_nav_document_search')}</span>
+              </div>
+            </div>
             {safeFavorites.map((fav, index) => {
               if (fav.agentId) {
                 const agent = combinedAgentsMap?.[fav.agentId];

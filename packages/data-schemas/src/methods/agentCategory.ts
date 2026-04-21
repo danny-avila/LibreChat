@@ -155,46 +155,40 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
 
     const defaultCategories = [
       {
-        value: 'general',
-        label: 'com_agents_category_general',
-        description: 'com_agents_category_general_description',
+        value: 'transactional',
+        label: 'com_agents_category_transactional',
+        description: 'com_agents_category_transactional_description',
         order: 0,
       },
       {
-        value: 'hr',
-        label: 'com_agents_category_hr',
-        description: 'com_agents_category_hr_description',
+        value: 'litigation',
+        label: 'com_agents_category_litigation',
+        description: 'com_agents_category_litigation_description',
         order: 1,
       },
       {
-        value: 'rd',
-        label: 'com_agents_category_rd',
-        description: 'com_agents_category_rd_description',
+        value: 'due_diligence',
+        label: 'com_agents_category_due_diligence',
+        description: 'com_agents_category_due_diligence_description',
         order: 2,
+      },
+      {
+        value: 'compliance',
+        label: 'com_agents_category_compliance',
+        description: 'com_agents_category_compliance_description',
+        order: 3,
       },
       {
         value: 'finance',
         label: 'com_agents_category_finance',
         description: 'com_agents_category_finance_description',
-        order: 3,
-      },
-      {
-        value: 'it',
-        label: 'com_agents_category_it',
-        description: 'com_agents_category_it_description',
         order: 4,
       },
       {
-        value: 'sales',
-        label: 'com_agents_category_sales',
-        description: 'com_agents_category_sales_description',
+        value: 'general',
+        label: 'com_agents_category_general',
+        description: 'com_agents_category_general_description',
         order: 5,
-      },
-      {
-        value: 'aftersales',
-        label: 'com_agents_category_aftersales',
-        description: 'com_agents_category_aftersales_description',
-        order: 6,
       },
     ];
 

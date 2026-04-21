@@ -2926,3 +2926,72 @@ html {
 .sharepoint-picker-bg {
   background-color: #f5f5f5;
 }
+
+/* --- BKL: react-day-picker theme override ----------------------------- */
+.rdp-bkl .rdp-root {
+  --rdp-accent-color: #2563eb;
+  --rdp-accent-background-color: rgba(37, 99, 235, 0.12);
+  --rdp-background-color: transparent;
+  --rdp-today-color: #2563eb;
+  --rdp-selected-border: 1.5px solid #2563eb;
+  --rdp-range_middle-background-color: rgba(37, 99, 235, 0.14);
+  --rdp-range_middle-color: inherit;
+  --rdp-range_start-color: #fff;
+  --rdp-range_start-background: #2563eb;
+  --rdp-range_end-color: #fff;
+  --rdp-range_end-background: #2563eb;
+  --rdp-day_button-width: 32px;
+  --rdp-day_button-height: 32px;
+  --rdp-day-height: 32px;
+  --rdp-day-width: 32px;
+  --rdp-day_button-border-radius: 6px;
+  --rdp-nav_button-height: 28px;
+  --rdp-nav_button-width: 28px;
+  --rdp-weekday-opacity: 0.6;
+  font-size: 13px;
+  color: inherit;
+  margin: 0;
+}
+
+.rdp-bkl .rdp-month_caption {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 2px;
+}
+
+.rdp-bkl .rdp-weekday {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.rdp-bkl .rdp-day_button {
+  font-size: 12.5px;
+}
+
+.rdp-bkl .rdp-day.rdp-outside .rdp-day_button {
+  opacity: 0.35;
+}
+
+.rdp-bkl .rdp-nav button {
+  color: inherit;
+  border-radius: 6px;
+}
+
+.rdp-bkl .rdp-nav button:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.rdp-bkl .rdp-day_button:hover:not([disabled]):not(.rdp-selected .rdp-day_button) {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.dark .rdp-bkl .rdp-root {
+  --rdp-accent-color: #60a5fa;
+  --rdp-accent-background-color: rgba(96, 165, 250, 0.18);
+  --rdp-today-color: #60a5fa;
+  --rdp-range_middle-background-color: rgba(96, 165, 250, 0.22);
+  --rdp-range_start-background: #3b82f6;
+  --rdp-range_end-background: #3b82f6;
+}

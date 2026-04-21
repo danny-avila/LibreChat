@@ -4,6 +4,7 @@ import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
+import GuidedRetryInput from './GuidedRetryInput';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
 import { cn } from '~/utils';
@@ -109,6 +110,31 @@ const HoverButton = memo(
 
 HoverButton.displayName = 'HoverButton';
 
+function extractBklRid(message: TMessage): string | null {
+  const RID_RE = /<!-- bkl_rid:([a-zA-Z0-9_-]+) -->/;
+  const fromText = message.text?.match(RID_RE)?.[1];
+  if (fromText) return fromText;
+  if (!Array.isArray(message.content)) return null;
+  for (const part of message.content) {
+    if (part?.type !== 'text') continue;
+    const raw = (part as Record<string, unknown>).text;
+    const textValue = typeof raw === 'string' ? raw : (raw as { value?: string } | null)?.value;
+    if (!textValue) continue;
+    const fromContent = textValue.match(RID_RE)?.[1];
+    if (fromContent) return fromContent;
+  }
+  return null;
+}
+
+const SearchRetryIcon = () => (
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8" />
+    <path d="m21 21-4.3-4.3" />
+    <path d="M11 8v6" />
+    <path d="M8 11h6" />
+  </svg>
+);
+
 const HoverButtons = ({
   index,
   isEditing,
@@ -125,7 +151,10 @@ const HoverButtons = ({
 }: THoverButtons) => {
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
+  const [showGuidedRetry, setShowGuidedRetry] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+
+  const bklRid = useMemo(() => extractBklRid(message), [message]);
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -185,89 +214,110 @@ const HoverButtons = ({
   const handleCopy = () => copyToClipboard(setIsCopied);
 
   return (
-    <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
-      {/* Text to Speech */}
-      {TextToSpeech && (
-        <MessageAudio
-          index={index}
+    <div className="relative">
+      <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
+        {/* Text to Speech */}
+        {TextToSpeech && (
+          <MessageAudio
+            index={index}
+            isLast={isLast}
+            messageId={message.messageId}
+            content={extractMessageContent(message)}
+            renderButton={(props) => (
+              <HoverButton
+                onClick={props.onClick}
+                title={props.title}
+                icon={props.icon}
+                isActive={props.isActive}
+                isLast={isLast}
+              />
+            )}
+          />
+        )}
+
+        {/* Copy Button */}
+        <HoverButton
+          onClick={handleCopy}
+          title={
+            isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
+          }
+          icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
           isLast={isLast}
-          messageId={message.messageId}
-          content={extractMessageContent(message)}
-          renderButton={(props) => (
-            <HoverButton
-              onClick={props.onClick}
-              title={props.title}
-              icon={props.icon}
-              isActive={props.isActive}
-              isLast={isLast}
-            />
+          className={cn(
+            'ml-0 flex items-center gap-1.5 text-xs',
+            isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
           )}
         />
-      )}
 
-      {/* Copy Button */}
-      <HoverButton
-        onClick={handleCopy}
-        title={
-          isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
-        }
-        icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
-        isLast={isLast}
-        className={cn(
-          'ml-0 flex items-center gap-1.5 text-xs',
-          isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
+        {/* Edit Button */}
+        {isEditableEndpoint && (
+          <HoverButton
+            id={`edit-${message.messageId}`}
+            onClick={onEdit}
+            title={localize('com_ui_edit')}
+            icon={<EditIcon size="19" />}
+            isActive={isEditing}
+            isVisible={!hideEditButton}
+            isDisabled={hideEditButton}
+            isLast={isLast}
+            className={isCreatedByUser ? '' : 'active'}
+          />
         )}
-      />
 
-      {/* Edit Button */}
-      {isEditableEndpoint && (
-        <HoverButton
-          id={`edit-${message.messageId}`}
-          onClick={onEdit}
-          title={localize('com_ui_edit')}
-          icon={<EditIcon size="19" />}
-          isActive={isEditing}
-          isVisible={!hideEditButton}
-          isDisabled={hideEditButton}
+        {/* Fork Button */}
+        <Fork
+          messageId={message.messageId}
+          conversationId={conversation.conversationId}
+          forkingSupported={forkingSupported}
+          latestMessageId={latestMessageId}
           isLast={isLast}
-          className={isCreatedByUser ? '' : 'active'}
         />
-      )}
 
-      {/* Fork Button */}
-      <Fork
-        messageId={message.messageId}
-        conversationId={conversation.conversationId}
-        forkingSupported={forkingSupported}
-        latestMessageId={latestMessageId}
-        isLast={isLast}
-      />
+        {/* Feedback Buttons */}
+        {!isCreatedByUser && handleFeedback != null && (
+          <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
+        )}
 
-      {/* Feedback Buttons */}
-      {!isCreatedByUser && handleFeedback != null && (
-        <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
-      )}
+        {/* Guided Retry Button (only for assistant messages with RAG results) */}
+        {!isCreatedByUser && bklRid && (
+          <HoverButton
+            onClick={() => setShowGuidedRetry((prev) => !prev)}
+            title="검색 보완하기"
+            icon={<SearchRetryIcon />}
+            isActive={showGuidedRetry}
+            isLast={isLast}
+            className={showGuidedRetry ? 'text-green-500' : ''}
+          />
+        )}
 
-      {/* Regenerate Button */}
-      {regenerateEnabled && (
-        <HoverButton
-          onClick={regenerate}
-          title={localize('com_ui_regenerate')}
-          icon={<RegenerateIcon size="19" />}
-          isLast={isLast}
-          className="active"
-        />
-      )}
+        {/* Regenerate Button */}
+        {regenerateEnabled && (
+          <HoverButton
+            onClick={regenerate}
+            title={localize('com_ui_regenerate')}
+            icon={<RegenerateIcon size="19" />}
+            isLast={isLast}
+            className="active"
+          />
+        )}
 
-      {/* Continue Button */}
-      {continueSupported && (
-        <HoverButton
-          onClick={(e) => e && handleContinue(e)}
-          title={localize('com_ui_continue')}
-          icon={<ContinueIcon className="w-19 h-19 -rotate-180" />}
-          isLast={isLast}
-          className="active"
-        />
+        {/* Continue Button */}
+        {continueSupported && (
+          <HoverButton
+            onClick={(e) => e && handleContinue(e)}
+            title={localize('com_ui_continue')}
+            icon={<ContinueIcon className="w-19 h-19 -rotate-180" />}
+            isLast={isLast}
+            className="active"
+          />
+        )}
+      </div>
+
+      {/* Guided Retry Input - rendered as dropdown below the button row */}
+      {showGuidedRetry && bklRid && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-[420px]">
+          <GuidedRetryInput bklRid={bklRid} onClose={() => setShowGuidedRetry(false)} />
+        </div>
       )}
     </div>
   );

@@ -14,6 +14,7 @@ import type { LucideIcon } from 'lucide-react';
 import CodeInterpreter from './CodeInterpreter';
 import { BadgeRowProvider } from '~/Providers';
 import ToolsDropdown from './ToolsDropdown';
+import FilterDropdown from './FilterDropdown';
 import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import ToolDialogs from './ToolDialogs';
@@ -329,6 +330,7 @@ function BadgeRow({
     >
       <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
         {showEphemeralBadges === true && <ToolsDropdown />}
+        {showEphemeralBadges === true && <FilterDropdown />}
         {tempBadges.map((badge, index) => (
           <React.Fragment key={badge.id}>
             {dragState.draggedBadge && dragState.insertIndex === index && ghostBadge && (

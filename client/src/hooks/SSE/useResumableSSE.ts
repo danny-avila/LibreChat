@@ -146,6 +146,9 @@ export default function useResumableSSE(
     (currentStreamId: string, currentSubmission: TSubmission, isResume = false) => {
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
+      const _timingStart = Date.now();
+      let _timingFirstToken: number | null = null;
+      let _bklRid: string | null = null;
 
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
@@ -176,6 +179,62 @@ export default function useResumableSSE(
               conversationId: data.conversation?.conversationId,
               hasResponseMessage: !!data.responseMessage,
             });
+            const _endTime = Date.now();
+            const _respMsgId: string | undefined = data.responseMessage?.messageId;
+            if (_respMsgId) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (window as any).__bklTiming = (window as any).__bklTiming ?? {};
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (window as any).__bklTiming[_respMsgId] = {
+                startTime: _timingStart,
+                firstTokenTime: _timingFirstToken,
+                endTime: _endTime,
+              };
+              console.log('[ResumableSSE] Timing saved', _respMsgId, (window as any).__bklTiming[_respMsgId]);
+
+              // Extract bkl_rid from full response text (delta detection unreliable)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const win = window as any;
+              win.__bklSources = win.__bklSources ?? {};
+              const pendingKey = `_pending_${currentStreamId}`;
+
+              if (!_bklRid) {
+                let fullText = data.responseMessage?.text ?? '';
+                if (!fullText && Array.isArray(data.responseMessage?.content)) {
+                  fullText = data.responseMessage.content
+                    .filter((p: { type: string }) => p.type === 'text')
+                    .map((p: { text: { value: string } }) => p.text?.value ?? '')
+                    .join('');
+                }
+                const ridFromFinal = fullText.match(/<!-- bkl_rid:([a-zA-Z0-9_-]+) -->/);
+                if (ridFromFinal) {
+                  _bklRid = ridFromFinal[1];
+                  console.log('[ResumableSSE] Detected bkl_rid from final text:', _bklRid);
+                } else {
+                  console.log('[ResumableSSE] No bkl_rid in final. text length:', fullText.length, 'keys:', Object.keys(data.responseMessage ?? {}));
+                }
+              }
+
+              // Always persist rid mapping so BklCitation can fetch on-demand
+              if (_bklRid && _respMsgId) {
+                win.__bklRids = win.__bklRids ?? {};
+                win.__bklRids[_respMsgId] = _bklRid;
+              }
+
+              if (win.__bklSources[pendingKey]) {
+                win.__bklSources[_respMsgId] = win.__bklSources[pendingKey];
+                delete win.__bklSources[pendingKey];
+                console.log('[ResumableSSE] Sources moved to messageId', _respMsgId);
+              } else if (_bklRid) {
+                fetch(`http://localhost:8000/v1/sources/${_bklRid}`)
+                  .then((r) => r.json())
+                  .then((srcData) => {
+                    win.__bklSources[_respMsgId] = srcData.sources ?? srcData;
+                    console.log('[ResumableSSE] Sources fetched for', _respMsgId, Object.keys(srcData));
+                  })
+                  .catch((err) => console.error('[ResumableSSE] Failed to fetch BKL sources:', err));
+              }
+            }
             clearDraft(currentSubmission.conversation?.conversationId);
             try {
               finalHandler(data, currentSubmission as EventSubmission);
@@ -313,9 +372,56 @@ export default function useResumableSSE(
           }
 
           if (data.type != null) {
+            if (data.type === 'request_id' && typeof data.request_id === 'string') {
+              _bklRid = data.request_id;
+              console.log('[ResumableSSE] Received request_id:', _bklRid);
+              return;
+            }
+
+            if (
+              data.type === 'sources_replace' &&
+              typeof data.request_id === 'string' &&
+              Array.isArray(data.sources)
+            ) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const win = window as any;
+              win.__bklSources = win.__bklSources ?? {};
+              win.__bklSourcesByRid = win.__bklSourcesByRid ?? {};
+              win.__bklSourcesByRid[data.request_id] = data.sources;
+
+              const pendingKey = `_pending_${currentStreamId}`;
+              win.__bklSources[pendingKey] = data.sources;
+              console.log('[ResumableSSE] Cached sources_replace for rid:', data.request_id);
+              return;
+            }
+
             const { text, index } = data;
+            if (_timingFirstToken === null && text) {
+              _timingFirstToken = Date.now();
+            }
             if (text != null && index !== textIndex) {
               textIndex = index;
+            }
+            // Detect bkl_rid embedded in streamed text and prefetch sources
+            if (text && !_bklRid) {
+              const ridMatch = (text as string).match(/<!-- bkl_rid:([a-zA-Z0-9_-]+) -->/);
+              if (ridMatch) {
+                _bklRid = ridMatch[1];
+                console.log('[ResumableSSE] Detected bkl_rid:', _bklRid);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const win = window as any;
+                win.__bklSources = win.__bklSources ?? {};
+                const pendingKey = `_pending_${currentStreamId}`;
+                fetch(`http://localhost:8000/v1/sources/${_bklRid}`)
+                  .then((r) => r.json())
+                  .then((srcData) => {
+                    win.__bklSources[pendingKey] = srcData.sources ?? srcData;
+                    console.log('[ResumableSSE] Sources prefetched', _bklRid, srcData);
+                  })
+                  .catch((err) =>
+                    console.error('[ResumableSSE] Failed to prefetch BKL sources:', err),
+                  );
+              }
             }
             contentHandler({ data, submission: currentSubmission as EventSubmission });
             return;
@@ -323,6 +429,9 @@ export default function useResumableSSE(
 
           if (data.message != null) {
             const text = data.text ?? data.response;
+            if (_timingFirstToken === null && text) {
+              _timingFirstToken = Date.now();
+            }
             const initialResponse = {
               ...(currentSubmission.initialResponse as TMessage),
               parentMessageId: data.parentMessageId,

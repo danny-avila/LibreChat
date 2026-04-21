@@ -45,7 +45,6 @@ export default function useSSE(
   runIndex = 0,
 ) {
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
-
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
@@ -102,6 +101,9 @@ export default function useSSE(
     let textIndex = null;
     clearStepMaps();
 
+    const streamTiming = { startTime: Date.now(), firstTokenTime: null as number | null };
+    let bklRequestId: string | null = null;
+
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -120,6 +122,40 @@ export default function useSSE(
       const data = JSON.parse(e.data);
 
       if (data.final != null) {
+        const endTime = Date.now();
+        const responseMessageId: string | undefined =
+          data.responseMessage?.messageId ?? (data.final as Record<string, unknown>)?.messageId as string | undefined;
+        if (responseMessageId) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).__bklTiming = (window as any).__bklTiming ?? {};
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).__bklTiming[responseMessageId] = {
+            startTime: streamTiming.startTime,
+            firstTokenTime: streamTiming.firstTokenTime,
+            endTime,
+          };
+
+          if (bklRequestId) {
+            // Keep request_id mapping by messageId for citation modal source lookup.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const win = window as any;
+            win.__bklRids = win.__bklRids ?? {};
+            win.__bklRids[responseMessageId] = bklRequestId;
+
+            fetch(`http://localhost:8000/v1/sources/${bklRequestId}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((srcData) => {
+                if (!srcData) {
+                  return;
+                }
+                win.__bklSources = win.__bklSources ?? {};
+                win.__bklSources[responseMessageId] = srcData.sources ?? srcData;
+              })
+              .catch((err) => {
+                console.error('[SSE] Failed to fetch BKL sources:', err);
+              });
+          }
+        }
         clearDraft(submission.conversation?.conversationId);
         try {
           finalHandler(data, submission as EventSubmission);
@@ -129,7 +165,6 @@ export default function useSSE(
           setShowStopButton(false);
         }
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-        console.log('final', data);
         return;
       } else if (data.created != null) {
         const runId = v4();
@@ -149,6 +184,23 @@ export default function useSSE(
         /* synchronize messages to Assistants API as well as with real DB ID's */
         syncHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.type != null) {
+        if (data.type === 'request_id' && typeof data.request_id === 'string') {
+          bklRequestId = data.request_id;
+          return;
+        }
+
+        if (
+          data.type === 'sources_replace' &&
+          typeof data.request_id === 'string' &&
+          Array.isArray(data.sources)
+        ) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const win = window as any;
+          win.__bklSourcesByRid = win.__bklSourcesByRid ?? {};
+          win.__bklSourcesByRid[data.request_id] = data.sources;
+          return;
+        }
+
         const { text, index } = data;
         if (text != null && index !== textIndex) {
           textIndex = index;
@@ -157,6 +209,10 @@ export default function useSSE(
         contentHandler({ data, submission: submission as EventSubmission });
       } else {
         const text = data.text ?? data.response;
+
+        if (streamTiming.firstTokenTime === null && text) {
+          streamTiming.firstTokenTime = Date.now();
+        }
 
         const initialResponse = {
           ...(submission.initialResponse as TMessage),

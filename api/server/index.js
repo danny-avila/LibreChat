@@ -34,6 +34,7 @@ const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const { seedDatabase } = require('~/models');
 const routes = require('./routes');
+const bklProxy = require('./routes/bklProxy');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -41,6 +42,7 @@ const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = pro
 const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
+const htmlExtension = '.html';
 
 const app = express();
 
@@ -134,6 +136,10 @@ const startServer = async () => {
   }
 
   app.use('/oauth', routes.oauth);
+
+  /* BKL FastAPI proxy (forwards /bkl/* -> BKL_API_BASE_URL/*) */
+  app.use('/bkl', bklProxy);
+
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
   app.use('/api/admin', routes.adminAuth);
@@ -166,6 +172,21 @@ const startServer = async () => {
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
+
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      next();
+      return;
+    }
+
+    const extension = path.extname(req.path);
+    if (!extension || extension === htmlExtension) {
+      next();
+      return;
+    }
+
+    res.status(404).type('text').send('Not Found');
+  });
 
   /** SPA fallback - serve index.html for all unmatched routes */
   app.use((req, res) => {

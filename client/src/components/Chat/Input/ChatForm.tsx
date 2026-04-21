@@ -130,6 +130,17 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ text: string }>).detail;
+      if (detail?.text) {
+        submitMessage({ text: detail.text });
+      }
+    };
+    window.addEventListener('bkl-guided-retry', handler);
+    return () => window.removeEventListener('bkl-guided-retry', handler);
+  }, [submitMessage]);
+
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
