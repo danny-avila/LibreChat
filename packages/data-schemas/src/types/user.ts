@@ -19,6 +19,8 @@ export interface IFarmerProfile {
   usesAgriApps?: boolean;
   highestEducatedPerson?: string;
   numberOfSmartphones?: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface IUser extends Document {

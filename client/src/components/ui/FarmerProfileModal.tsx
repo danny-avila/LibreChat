@@ -138,6 +138,8 @@ type FarmerProfileForm = {
   usesAgriApps: string;
   highestEducatedPerson: string;
   numberOfSmartphones: number;
+  latitude?: number;
+  longitude?: number;
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -153,6 +155,9 @@ const FarmerProfileModal = ({
   onComplete: () => void;
   onDecline: () => void;
 }) => {
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState('');
+
   const {
     register,
     handleSubmit,
@@ -217,6 +222,8 @@ const FarmerProfileModal = ({
         .filter(Boolean),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
+      latitude: data.latitude,
+      longitude: data.longitude,
     };
     saveMutation.mutate(profile);
   };
@@ -244,6 +251,9 @@ const FarmerProfileModal = ({
         </OGDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+          <input type="hidden" {...register('latitude')} />
+          <input type="hidden" {...register('longitude')} />
+          
           {/* ── Notice — pinned above the scrollable area ── */}
           <p className="shrink-0 px-1 pb-3 text-sm font-medium text-red-500">
             * Please fill in all the details below to complete your registration.
@@ -302,6 +312,48 @@ const FarmerProfileModal = ({
                     )}
                   />
                   {errors.gender && <p className={errorClass}>{errors.gender.message}</p>}
+                </div>
+              </div>
+
+              {/* ── Location ── */}
+              <div className={fieldClass}>
+                <Label>Current Location</Label>
+                <div className="mt-2 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsLocating(true);
+                      setLocationError('');
+                      if (!navigator.geolocation) {
+                        setLocationError('Geolocation is not supported by your browser');
+                        setIsLocating(false);
+                        return;
+                      }
+                      navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                          setValue('latitude', position.coords.latitude, { shouldValidate: true });
+                          setValue('longitude', position.coords.longitude, { shouldValidate: true });
+                          setIsLocating(false);
+                        },
+                        (error) => {
+                          setLocationError('Unable to retrieve your location');
+                          setIsLocating(false);
+                        }
+                      );
+                    }}
+                    disabled={isLocating}
+                    className="inline-flex items-center justify-center rounded-lg border border-border-heavy bg-surface-secondary px-4 py-2 text-sm font-medium text-text-primary hover:bg-surface-active disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isLocating ? 'Locating...' : 'Get Location'}
+                  </button>
+                  {watch('latitude') && watch('longitude') && (
+                    <span className="text-sm font-medium text-green-600 dark:text-green-500">
+                      ✓ Location Captured Succesfully
+                    </span>
+                  )}
+                  {locationError && (
+                    <span className="text-sm text-red-500">{locationError}</span>
+                  )}
                 </div>
               </div>
 
