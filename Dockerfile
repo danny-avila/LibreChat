@@ -19,6 +19,16 @@ ARG NODE_MAX_OLD_SPACE_SIZE=6144
 ARG NPM_CI_TIMEOUT_SECONDS=1500
 ARG NPM_CI_ATTEMPTS=2
 
+# Optional build metadata surfaced in Settings -> About for support triage.
+# When unset, the backend falls back to local git resolution (if .git is present),
+# and finally to empty values.
+ARG BUILD_COMMIT=
+ARG BUILD_BRANCH=
+ARG BUILD_DATE=
+ENV BUILD_COMMIT=${BUILD_COMMIT}
+ENV BUILD_BRANCH=${BUILD_BRANCH}
+ENV BUILD_DATE=${BUILD_DATE}
+
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 
