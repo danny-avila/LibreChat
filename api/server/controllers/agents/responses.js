@@ -474,6 +474,12 @@ const createResponse = async (req, res) => {
           // sub-agent must clear the same sharing boundary, not the looser
           // in-app AGENT one.
           resourceType: ResourceType.REMOTE_AGENT,
+          /** Forward the same capability flag the primary agent used so
+           *  handoff sub-agents with `agent.tools: ['execute_code']` get
+           *  `bash_tool` + `read_file` registered, matching pre-Phase 8
+           *  behavior where the legacy `execute_code` tool would have
+           *  appeared in their `toolDefinitions` unconditionally. */
+          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         },
         {
           getAgent: db.getAgent,

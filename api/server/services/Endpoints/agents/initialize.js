@@ -323,6 +323,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         scopeSkillIds(accessibleSkillIds, ephemeralSkillsToggle ? undefined : agent.skills),
       skillStates,
       defaultActiveOnShare,
+      codeEnvAvailable,
     },
     {
       getAgent: db.getAgent,
