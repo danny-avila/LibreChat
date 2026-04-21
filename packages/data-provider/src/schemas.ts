@@ -298,6 +298,10 @@ export const defaultAgentFormValues = {
    *  interacted with the skills UI) does not accidentally persist "explicit none"
    *  on first save — removeNullishValues strips the field server-side. */
   skills: undefined as string[] | undefined,
+  /** `undefined` = feature disabled by default (no subagent tool injected). */
+  subagents: undefined as
+    | { enabled?: boolean; allowSelf?: boolean; agent_ids?: string[] }
+    | undefined,
 };
 
 export const ImageVisionTool: FunctionTool = {
