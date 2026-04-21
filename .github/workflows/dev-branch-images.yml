@@ -9,6 +9,10 @@ on:
       - 'api/**'
       - 'client/**'
       - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Dockerfile'
+      - 'Dockerfile.multi'
 
 jobs:
   build:
