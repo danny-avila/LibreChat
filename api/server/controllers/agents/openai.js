@@ -414,6 +414,16 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
+    /* Stable for the turn: the capability set is the admin config, and
+       the prime lists are fixed once `initializeAgent` resolves. Hoisting
+       these out of `loadTools` avoids recomputing them on every tool
+       execution (and keeps the call-site lean). */
+    const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
+    const skillPrimedIdsByName = buildSkillPrimedIdsByName(
+      primaryConfig.manualSkillPrimes,
+      primaryConfig.alwaysApplySkillPrimes,
+    );
+
     const toolExecuteOptions = {
       loadTools: async (toolNames, agentId) => {
         const ctx = agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
@@ -432,11 +442,8 @@ const OpenAIChatCompletionController = async (req, res) => {
           result,
           req,
           primaryConfig.accessibleSkillIds,
-          enabledCapabilities.has(AgentCapabilities.execute_code),
-          buildSkillPrimedIdsByName(
-            primaryConfig.manualSkillPrimes,
-            primaryConfig.alwaysApplySkillPrimes,
-          ),
+          codeEnvAvailable,
+          skillPrimedIdsByName,
         );
       },
       toolEndCallback,

@@ -89,6 +89,52 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(deps.listSkillFiles).toHaveBeenCalledWith(SKILL_ID);
   });
 
+  it('actually calls batchUploadCodeEnvFiles with the env-sourced apiKey when files are returned', async () => {
+    process.env.LIBRECHAT_CODE_API_KEY = 'sk-from-env';
+    const fileRecords = [
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/brand-guidelines/references/style.md',
+        source: 's3',
+        bytes: 256,
+      },
+    ];
+    const listSkillFiles = jest.fn().mockResolvedValue(fileRecords);
+    const readable = {
+      on: jest.fn(),
+      pipe: jest.fn(),
+      read: jest.fn(),
+    } as unknown as NodeJS.ReadableStream;
+    const getStrategyFunctions = jest.fn().mockReturnValue({
+      getDownloadStream: jest.fn().mockResolvedValue(readable),
+    });
+    const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
+      session_id: 'session-42',
+      files: [{ fileId: 'file-1', filename: 'brand-guidelines/references/style.md' }],
+    });
+
+    const deps = makeDeps({
+      codeEnvAvailable: true,
+      listSkillFiles,
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+    });
+
+    await primeInvokedSkills(deps);
+
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(1);
+    const [uploadArgs] = batchUploadCodeEnvFiles.mock.calls[0];
+    expect(uploadArgs.apiKey).toBe('sk-from-env');
+    expect(uploadArgs.entity_id).toBe(SKILL_ID.toString());
+    /* One uploaded file per `fileRecords` entry plus the synthetic
+       SKILL.md that `primeSkillFiles` always prepends. */
+    expect(uploadArgs.files).toHaveLength(fileRecords.length + 1);
+    expect(uploadArgs.files.map((f: { filename: string }) => f.filename)).toEqual(
+      expect.arrayContaining(['brand-guidelines/SKILL.md', 'brand-guidelines/references/style.md']),
+    );
+  });
+
   it('returns {} early when no skills were invoked, regardless of capability', async () => {
     mockExtract.mockReturnValue(new Set());
     const deps = makeDeps({ codeEnvAvailable: true });
