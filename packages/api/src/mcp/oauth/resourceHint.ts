@@ -9,6 +9,12 @@ export interface ResourceHintProbeResult {
   scope?: string;
   /** True when the server answered 401 with a `WWW-Authenticate: Bearer` challenge (with or without parameters). */
   bearerChallenge: boolean;
+  /**
+   * True when the server returned 401 or 403 to any probe request. Lets callers decide
+   * whether the optional `MCP_OAUTH_ON_AUTH_ERROR` fallback applies without issuing a
+   * second HEAD request for the same endpoint.
+   */
+  authChallenge: boolean;
 }
 
 /**
@@ -26,13 +32,40 @@ export interface ResourceHintProbeResult {
  * gateway that requires a static API key to reach the MCP endpoint would otherwise 401
  * us for the wrong reason and never surface the real Bearer challenge.
  */
+/**
+ * Probe outcomes:
+ *  - `ResourceHintProbeResult`: at least one probe response was observed. `authChallenge`
+ *    reflects whether any method saw a 401/403; `bearerChallenge` / `resourceMetadataUrl`
+ *    describe what (if anything) was usable from the challenge.
+ *  - `null`: the probe threw on every attempt (e.g. DNS failure, timeout). Callers should
+ *    treat this as "status unknown" and decide whether to retry — the optional
+ *    `MCP_OAUTH_ON_AUTH_ERROR` fallback still issues its own request in this case.
+ */
 export async function probeResourceMetadataHint(
   serverUrl: string,
   fetchFn: FetchLike = fetch,
 ): Promise<ResourceHintProbeResult | null> {
   const headResult = await probeWithMethod(serverUrl, 'HEAD', fetchFn);
-  if (headResult) return headResult;
-  return probeWithMethod(serverUrl, 'POST', fetchFn);
+  if (headResult?.resourceMetadataUrl || headResult?.bearerChallenge) return headResult;
+
+  const postResult = await probeWithMethod(serverUrl, 'POST', fetchFn);
+  if (postResult?.resourceMetadataUrl || postResult?.bearerChallenge) return postResult;
+
+  // No Bearer / hint — collapse to a single result capturing whichever observation(s) we got.
+  if (headResult && postResult) return mergeProbes(headResult, postResult);
+  return headResult ?? postResult ?? null;
+}
+
+function mergeProbes(
+  a: ResourceHintProbeResult,
+  b: ResourceHintProbeResult,
+): ResourceHintProbeResult {
+  return {
+    resourceMetadataUrl: a.resourceMetadataUrl ?? b.resourceMetadataUrl,
+    scope: a.scope ?? b.scope,
+    bearerChallenge: a.bearerChallenge || b.bearerChallenge,
+    authChallenge: a.authChallenge || b.authChallenge,
+  };
 }
 
 async function probeWithMethod(
@@ -52,23 +85,18 @@ async function probeWithMethod(
     }
 
     const response = await fetchFn(serverUrl, fetchOptions);
-    if (response.status !== 401) return null;
+    const authChallenge = response.status === 401 || response.status === 403;
+    if (response.status !== 401) {
+      return { bearerChallenge: false, authChallenge };
+    }
 
     const wwwAuth = response.headers.get('www-authenticate');
-    if (!wwwAuth) return null;
+    if (!wwwAuth) return { bearerChallenge: false, authChallenge: true };
 
     const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
     const bearerChallenge = /bearer/i.test(wwwAuth);
 
-    /**
-     * Only treat a 401 as informative when it actually names Bearer auth or advertises a
-     * `resource_metadata` hint. A non-Bearer challenge (e.g. `WWW-Authenticate: Basic`)
-     * means the server does not speak OAuth on this method — let the caller retry with
-     * POST, which some MCP servers require before they'll surface their Bearer challenge.
-     */
-    if (!bearerChallenge && !resourceMetadataUrl) return null;
-
-    return { resourceMetadataUrl, scope, bearerChallenge };
+    return { resourceMetadataUrl, scope, bearerChallenge, authChallenge: true };
   } catch {
     return null;
   }

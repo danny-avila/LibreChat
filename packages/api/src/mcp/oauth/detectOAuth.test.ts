@@ -5,6 +5,18 @@ jest.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
   discoverOAuthProtectedResourceMetadata: jest.fn(),
 }));
 
+/**
+ * Disable the `MCP_OAUTH_ON_AUTH_ERROR` fallback by default so tests assert on the
+ * precise detection outcome without the "any 401/403 = OAuth" safety net rewriting
+ * the result. The fallback is exercised directly in its own describe block.
+ */
+jest.mock('../mcpConfig', () => ({
+  mcpConfig: {
+    OAUTH_ON_AUTH_ERROR: false,
+    OAUTH_DETECTION_TIMEOUT: 5000,
+  },
+}));
+
 import { discoverOAuthProtectedResourceMetadata } from '@modelcontextprotocol/sdk/client/auth.js';
 
 const mockDiscoverOAuthProtectedResourceMetadata =
