@@ -5,8 +5,6 @@ import { mcpConfig } from '../mcpConfig';
 export interface ResourceHintProbeResult {
   /** URL advertised via the `resource_metadata` parameter of a `WWW-Authenticate: Bearer` header, if any. */
   resourceMetadataUrl?: URL;
-  /** Scope advertised via the `scope` parameter of a `WWW-Authenticate: Bearer` header, if any. */
-  scope?: string;
   /** True when the server answered 401 with a `WWW-Authenticate: Bearer` challenge (with or without parameters). */
   bearerChallenge: boolean;
   /**
@@ -20,35 +18,36 @@ export interface ResourceHintProbeResult {
 }
 
 /**
- * Probes an MCP server for an OAuth 401 challenge and extracts RFC 6750 `WWW-Authenticate`
- * hints. Per RFC 9728 §5.1, clients SHOULD prefer the `resource_metadata` URL from the
- * challenge over path-aware well-known discovery; the value returned here is meant to be
+ * Probes an MCP server for an OAuth 401 challenge and extracts the RFC 6750
+ * `WWW-Authenticate` `resource_metadata` hint. Per RFC 9728 §5.1, clients SHOULD prefer
+ * that URL over path-aware well-known discovery; the value returned here is meant to be
  * threaded into `discoverOAuthProtectedResourceMetadata` as `opts.resourceMetadataUrl`.
  *
- * Tries `HEAD` first (cheap) then falls back to `POST` — some MCP servers only return 401
- * for methods that carry a body (e.g. StackOverflow's MCP). Returns `null` when no 401
- * challenge was observed or the probe itself failed.
+ * Tries HEAD first (cheap). POST still runs unless HEAD already delivered the hint —
+ * some servers surface their Bearer challenge parameters only on POST (e.g. StackOverflow),
+ * so a HEAD-Bearer-without-hint is not enough to short-circuit discovery.
  *
  * When `fetchFn` is supplied (for example, the OAuth-aware wrapper built by the handler)
- * it is used for both probes so that admin-configured `oauthHeaders` are attached — a
- * gateway that requires a static API key to reach the MCP endpoint would otherwise 401
- * us for the wrong reason and never surface the real Bearer challenge.
- */
-/**
- * Probe outcomes:
- *  - `ResourceHintProbeResult`: at least one probe response was observed. `authChallenge`
- *    reflects whether any method saw a 401/403; `bearerChallenge` / `resourceMetadataUrl`
- *    describe what (if anything) was usable from the challenge.
- *  - `null`: the probe threw on every attempt (e.g. DNS failure, timeout). Callers should
- *    treat this as "status unknown" and decide whether to retry — the optional
- *    `MCP_OAUTH_ON_AUTH_ERROR` fallback still issues its own request in this case.
+ * it is used for both probes so admin-configured `oauthHeaders` are attached — a gateway
+ * that requires a static API key to reach the MCP endpoint would otherwise 401 us for the
+ * wrong reason and never surface the real Bearer challenge.
+ *
+ * @returns A `ResourceHintProbeResult` when at least one probe response was observed, or
+ * `null` when every attempt threw (DNS failure, timeout, etc.). Callers should treat
+ * `null` as "status unknown" and can choose to retry.
  */
 export async function probeResourceMetadataHint(
   serverUrl: string,
   fetchFn: FetchLike = fetch,
 ): Promise<ResourceHintProbeResult | null> {
   const headResult = await probeWithMethod(serverUrl, 'HEAD', fetchFn);
-  if (headResult?.resourceMetadataUrl || headResult?.bearerChallenge) return headResult;
+  /**
+   * Only short-circuit when HEAD already produced the authoritative hint. A Bearer
+   * challenge without `resource_metadata` is not enough: some servers emit the
+   * `resource_metadata` parameter only on POST responses, and we'd miss it by
+   * bailing here.
+   */
+  if (headResult?.resourceMetadataUrl) return headResult;
 
   const postResult = await probeWithMethod(serverUrl, 'POST', fetchFn);
   if (postResult?.resourceMetadataUrl || postResult?.bearerChallenge) {
@@ -57,8 +56,16 @@ export async function probeResourceMetadataHint(
     return { ...postResult, headAuthChallenge: !!headResult?.headAuthChallenge };
   }
 
-  if (headResult && postResult) return mergeProbes(headResult, postResult);
-  return headResult ?? postResult ?? null;
+  /**
+   * Invariant for callers: a non-null return means the HEAD probe actually observed
+   * the server. If HEAD threw (DNS, timeout, reset), signal "unknown" with `null` so
+   * the `MCP_OAUTH_ON_AUTH_ERROR` fallback can still retry a fresh HEAD — otherwise a
+   * transient HEAD failure plus a normal POST 200 would silently skip the fallback
+   * and misclassify an OAuth-required server as open.
+   */
+  if (!headResult) return null;
+  if (postResult) return mergeProbes(headResult, postResult);
+  return headResult;
 }
 
 function mergeProbes(
@@ -67,7 +74,6 @@ function mergeProbes(
 ): ResourceHintProbeResult {
   return {
     resourceMetadataUrl: head.resourceMetadataUrl ?? post.resourceMetadataUrl,
-    scope: head.scope ?? post.scope,
     bearerChallenge: head.bearerChallenge || post.bearerChallenge,
     /**
      * Only HEAD's observation feeds the fallback decision — POST-only 401/403 is too
@@ -115,9 +121,8 @@ async function probeWithMethod(
      */
     const sdkParsed = extractWWWAuthenticateParams(response);
     const resourceMetadataUrl = sdkParsed.resourceMetadataUrl ?? extractHintFromHeader(wwwAuth);
-    const scope = sdkParsed.scope ?? extractScopeFromHeader(wwwAuth);
 
-    return { resourceMetadataUrl, scope, bearerChallenge, headAuthChallenge };
+    return { resourceMetadataUrl, bearerChallenge, headAuthChallenge };
   } catch {
     return null;
   }
@@ -131,9 +136,4 @@ function extractHintFromHeader(header: string): URL | undefined {
   } catch {
     return undefined;
   }
-}
-
-function extractScopeFromHeader(header: string): string | undefined {
-  const match = /\bscope="([^"]+)"/.exec(header);
-  return match?.[1];
 }

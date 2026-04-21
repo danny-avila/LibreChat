@@ -30,7 +30,6 @@ describe('probeResourceMetadataHint', () => {
 
     expect(result).toEqual({
       resourceMetadataUrl: new URL(hintUrl),
-      scope: undefined,
       bearerChallenge: true,
       headAuthChallenge: true,
     });
@@ -64,8 +63,32 @@ describe('probeResourceMetadataHint', () => {
     );
   });
 
-  it('marks bearerChallenge even when no resource_metadata is advertised', async () => {
-    mockFetch.mockResolvedValueOnce({
+  it('still probes POST when HEAD returned Bearer without a hint', async () => {
+    // HEAD 401 with Bearer-but-no-params means the server definitely speaks OAuth, but
+    // some implementations surface `resource_metadata` only on POST responses. Letting
+    // POST run ensures the authoritative hint isn't dropped just because HEAD was first.
+    const hintUrl = 'https://example.com/.well-known/oauth-protected-resource';
+    mockFetch
+      .mockResolvedValueOnce({
+        status: 401,
+        headers: new Headers({ 'www-authenticate': 'Bearer' }),
+      } as Response)
+      .mockResolvedValueOnce({
+        status: 401,
+        headers: new Headers({
+          'www-authenticate': `Bearer resource_metadata="${hintUrl}"`,
+        }),
+      } as Response);
+
+    const result = await probeResourceMetadataHint('https://example.com/mcp');
+
+    expect(result?.resourceMetadataUrl?.toString()).toBe(hintUrl);
+    expect(result?.headAuthChallenge).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks bearerChallenge even when no resource_metadata is advertised on either method', async () => {
+    mockFetch.mockResolvedValue({
       status: 401,
       headers: new Headers({ 'www-authenticate': 'Bearer realm="api"' }),
     } as Response);
@@ -74,28 +97,11 @@ describe('probeResourceMetadataHint', () => {
 
     expect(result).toEqual({
       resourceMetadataUrl: undefined,
-      scope: undefined,
       bearerChallenge: true,
       headAuthChallenge: true,
     });
-  });
-
-  it('extracts the scope parameter from the Bearer challenge', async () => {
-    mockFetch.mockResolvedValueOnce({
-      status: 401,
-      headers: new Headers({
-        'www-authenticate': 'Bearer realm="api" scope="read write"',
-      }),
-    } as Response);
-
-    const result = await probeResourceMetadataHint('https://example.com/mcp');
-
-    expect(result).toEqual({
-      resourceMetadataUrl: undefined,
-      scope: 'read write',
-      bearerChallenge: true,
-      headAuthChallenge: true,
-    });
+    // HEAD Bearer without hint → POST runs too.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it('extracts resource_metadata from multi-scheme challenges where Bearer is not first', async () => {
@@ -106,14 +112,13 @@ describe('probeResourceMetadataHint', () => {
     mockFetch.mockResolvedValueOnce({
       status: 401,
       headers: new Headers({
-        'www-authenticate': `Basic realm="api", Bearer resource_metadata="${hintUrl}" scope="mcp.read"`,
+        'www-authenticate': `Basic realm="api", Bearer resource_metadata="${hintUrl}"`,
       }),
     } as Response);
 
     const result = await probeResourceMetadataHint('https://example.com/mcp');
 
     expect(result?.resourceMetadataUrl?.toString()).toBe(hintUrl);
-    expect(result?.scope).toBe('mcp.read');
     expect(result?.bearerChallenge).toBe(true);
     expect(result?.headAuthChallenge).toBe(true);
   });
@@ -125,7 +130,6 @@ describe('probeResourceMetadataHint', () => {
 
     expect(result).toEqual({
       resourceMetadataUrl: undefined,
-      scope: undefined,
       bearerChallenge: false,
       headAuthChallenge: false,
     });
@@ -155,12 +159,11 @@ describe('probeResourceMetadataHint', () => {
 
     expect(result).toEqual({
       resourceMetadataUrl: undefined,
-      scope: undefined,
       bearerChallenge: true,
       headAuthChallenge: true,
     });
-    expect(customFetch).toHaveBeenCalledTimes(1);
-    // Global fetch must not be touched when fetchFn is supplied.
+    // HEAD + POST both via customFetch (Bearer-no-hint doesn't short-circuit).
+    expect(customFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -180,7 +183,6 @@ describe('probeResourceMetadataHint', () => {
 
     expect(result).toEqual({
       resourceMetadataUrl: undefined,
-      scope: undefined,
       bearerChallenge: false,
       headAuthChallenge: true,
     });
@@ -194,10 +196,23 @@ describe('probeResourceMetadataHint', () => {
 
     expect(result).toEqual({
       resourceMetadataUrl: undefined,
-      scope: undefined,
       bearerChallenge: false,
       headAuthChallenge: true,
     });
+  });
+
+  it('returns null when HEAD threw so callers can retry via the fallback', async () => {
+    // A transient HEAD failure followed by an uninformative POST used to leak a
+    // {bearerChallenge: false, headAuthChallenge: false} result, silently skipping the
+    // MCP_OAUTH_ON_AUTH_ERROR retry. Signal "unknown" via `null` instead.
+    mockFetch
+      .mockRejectedValueOnce(new Error('ETIMEDOUT'))
+      .mockResolvedValueOnce({ status: 200, headers: new Headers() } as Response);
+
+    const result = await probeResourceMetadataHint('https://example.com/mcp');
+
+    expect(result).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it('does not set headAuthChallenge when only POST returns 401/403 (WAF/CSRF case)', async () => {
@@ -212,7 +227,6 @@ describe('probeResourceMetadataHint', () => {
 
     expect(result).toEqual({
       resourceMetadataUrl: undefined,
-      scope: undefined,
       bearerChallenge: false,
       headAuthChallenge: false,
     });

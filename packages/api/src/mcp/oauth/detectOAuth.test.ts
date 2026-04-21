@@ -94,16 +94,44 @@ describe('detectOAuthRequirement', () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
-    it('does not try POST if HEAD returns 401', async () => {
+    it('short-circuits POST when HEAD already delivers the resource_metadata hint', async () => {
+      // Only `resource_metadata` on HEAD is strong enough to skip POST — Bearer-only
+      // still lets POST run in case the server surfaces its hint only on POST.
+      const hintUrl = 'https://example.com/.well-known/oauth-protected-resource';
       mockFetch.mockResolvedValueOnce({
         status: 401,
-        headers: new Headers({ 'www-authenticate': 'Bearer' }),
+        headers: new Headers({
+          'www-authenticate': `Bearer resource_metadata="${hintUrl}"`,
+        }),
       } as Response);
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: 'https://mcp.example.com',
+        authorization_servers: ['https://auth.example.com'],
+      });
 
       const result = await detectOAuthRequirement('https://mcp.example.com');
 
       expect(result.requiresOAuth).toBe(true);
       expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('probes POST even when HEAD returns Bearer without a hint', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          status: 401,
+          headers: new Headers({ 'www-authenticate': 'Bearer' }),
+        } as Response)
+        .mockResolvedValueOnce({
+          status: 401,
+          headers: new Headers({ 'www-authenticate': 'Bearer' }),
+        } as Response);
+
+      const result = await detectOAuthRequirement('https://mcp.example.com');
+
+      expect(result.requiresOAuth).toBe(true);
+      expect(result.method).toBe('401-challenge-metadata');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 

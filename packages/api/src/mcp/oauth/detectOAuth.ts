@@ -134,11 +134,9 @@ async function validateHintUrl(hintUrl: URL): Promise<URL | undefined> {
   }
 }
 
-// Fallback method: treats any auth error as OAuth requirement if configured
+// Fallback: only called when probing threw. Caller already gates on `OAUTH_ON_AUTH_ERROR`.
 async function checkAuthErrorFallback(serverUrl: string): Promise<OAuthDetectionResult | null> {
   try {
-    if (!mcpConfig.OAUTH_ON_AUTH_ERROR) return null;
-
     const response = await fetch(serverUrl, {
       method: 'HEAD',
       signal: AbortSignal.timeout(mcpConfig.OAUTH_DETECTION_TIMEOUT),
