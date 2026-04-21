@@ -5,7 +5,7 @@ import { Constants } from 'librechat-data-provider';
 import type { TStartupConfig } from 'librechat-data-provider';
 import About from './About';
 
-const mockCopy = jest.fn();
+const mockCopy = jest.fn<boolean, unknown[]>();
 jest.mock('copy-to-clipboard', () => ({
   __esModule: true,
   default: (...args: unknown[]) => mockCopy(...args),
@@ -29,6 +29,7 @@ const populatedBuildInfo: NonNullable<TStartupConfig['buildInfo']> = {
 
 beforeEach(() => {
   mockCopy.mockReset();
+  mockCopy.mockReturnValue(true);
   mockUseGetStartupConfig.mockReturnValue({ data: { buildInfo: populatedBuildInfo } });
 });
 
@@ -97,6 +98,22 @@ describe('About', () => {
       expect(blob).toContain('Commit: —');
       expect(blob).toContain('Branch: —');
       expect(blob).toContain('Build date: —');
+    });
+
+    it('does not flip to "Copied" when copy-to-clipboard reports failure', async () => {
+      mockCopy.mockReturnValue(false);
+      const user = userEvent.setup();
+      render(<About />);
+
+      await user.click(screen.getByRole('button', { name: /com_nav_about_diagnostics_copy/i }));
+
+      expect(
+        screen.getByRole('button', { name: /com_nav_about_diagnostics_copy/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /com_nav_about_diagnostics_copied/i }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole('status').textContent).toBe('');
     });
 
     it('toggles the button label to "Copied" after click and resets after the timer', async () => {

@@ -69,7 +69,10 @@ function About() {
   );
 
   const onCopy = useCallback(() => {
-    copy(diagnosticsBlob, { format: 'text/plain' });
+    const succeeded = copy(diagnosticsBlob, { format: 'text/plain' });
+    if (!succeeded) {
+      return;
+    }
     setCopied(true);
     if (copyResetTimerRef.current) {
       clearTimeout(copyResetTimerRef.current);
