@@ -104,6 +104,32 @@ describe('probeResourceMetadataHint', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it('ignores a malformed resource_metadata value without throwing', async () => {
+    // Defense: if the server advertises garbage in `resource_metadata=`, both the SDK
+    // parser and our regex fallback wrap `new URL()` in try/catch and yield `undefined`.
+    // Guard this behavior so a future refactor can't silently drop the safety net.
+    mockFetch.mockResolvedValueOnce({
+      status: 401,
+      headers: new Headers({
+        'www-authenticate': 'Bearer resource_metadata="not-a-url"',
+      }),
+    } as Response);
+    mockFetch.mockResolvedValueOnce({
+      status: 401,
+      headers: new Headers({
+        'www-authenticate': 'Bearer resource_metadata="not-a-url"',
+      }),
+    } as Response);
+
+    const result = await probeResourceMetadataHint('https://example.com/mcp');
+
+    expect(result).toEqual({
+      resourceMetadataUrl: undefined,
+      bearerChallenge: true,
+      headAuthChallenge: true,
+    });
+  });
+
   it('extracts resource_metadata from multi-scheme challenges where Bearer is not first', async () => {
     // RFC 7235 allows multiple schemes in one header. The SDK's `extractWWWAuthenticateParams`
     // only parses the leading token, so a header like `Basic realm="api", Bearer resource_metadata="..."`

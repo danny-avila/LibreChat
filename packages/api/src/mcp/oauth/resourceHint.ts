@@ -109,9 +109,9 @@ async function probeWithMethod(
     }
 
     const wwwAuth = response.headers.get('www-authenticate');
-    const bearerChallenge = !!wwwAuth && /bearer/i.test(wwwAuth);
-
     if (!wwwAuth) return { bearerChallenge: false, headAuthChallenge };
+
+    const bearerChallenge = /bearer/i.test(wwwAuth);
 
     /**
      * The SDK's `extractWWWAuthenticateParams` checks only the *first* token of the
