@@ -12,7 +12,9 @@ const {
   discoverConnectedAgents,
 } = require('@librechat/api');
 const {
+  ResourceType,
   EModelEndpoint,
+  PermissionBits,
   isAgentsEndpoint,
   getResponseSender,
   AgentCapabilities,
