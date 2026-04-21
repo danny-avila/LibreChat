@@ -33,7 +33,11 @@ function resolveIsVisionModel(req) {
     return false;
   }
   try {
-    return validateVisionModel({ model });
+    const extra = (process.env.VISION_MODEL_ALIASES || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return validateVisionModel({ model, additionalModels: extra });
   } catch (err) {
     logger.warn('[createContextHandlers] validateVisionModel threw, assuming no', err);
     return false;
