@@ -163,7 +163,7 @@ export default function NewUpdatesWidget() {
   }
 
   const handleDismiss = () => {
-    setDismissed(latestReleaseDate.toISOString);
+    setDismissed(latestReleaseDate.toISOString());
     setExpanded(false);
   };
 
