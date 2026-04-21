@@ -11,7 +11,7 @@ import { useLocalize } from '~/hooks';
  * Exported so message-render code can import and pass the appropriate
  * value without hardcoding string literals.
  */
-export type ManualSkillPillsSource = 'manual' | 'always-apply';
+export type SkillPillsSource = 'manual' | 'always-apply';
 
 /**
  * Compact pill row rendered on a submitted user message, one chip per skill
@@ -25,12 +25,12 @@ export type ManualSkillPillsSource = 'manual' | 'always-apply';
  * and pills survive page reloads / history renders. The `source` prop picks
  * the icon variant so both flavors render from the same component.
  */
-function ManualSkillPills({
+function SkillPills({
   skills,
   source = 'manual',
 }: {
   skills?: string[];
-  source?: ManualSkillPillsSource;
+  source?: SkillPillsSource;
 }) {
   const localize = useLocalize();
 
@@ -64,4 +64,4 @@ function ManualSkillPills({
   );
 }
 
-export default memo(ManualSkillPills);
+export default memo(SkillPills);

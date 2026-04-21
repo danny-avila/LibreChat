@@ -215,7 +215,7 @@ function SkillsCommandContent({
          before the LLM turn — no textarea-level marker is needed, and
          injecting `$skill-name ` as text would mislead users into thinking
          free-form text invocation is supported. Visual confirmation after
-         submit comes from `ManualSkillPills` on the user message bubble
+         submit comes from `SkillPills` on the user message bubble
          until the live skill-card stream takes over. */
       setPendingManualSkills((prev) =>
         prev.includes(mention.value) ? prev : [...prev, mention.value],
