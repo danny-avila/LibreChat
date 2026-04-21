@@ -280,6 +280,7 @@ function convertMessagesToOutputItems(messages) {
  * @param {import('express').Response} res
  */
 const createResponse = async (req, res) => {
+  const appConfig = req.config;
   const requestStartTime = Date.now();
 
   // Validate request
@@ -291,7 +292,7 @@ const createResponse = async (req, res) => {
   const request = validation.request;
   const agentId = request.model;
   const isStreaming = request.stream === true;
-  const summarizationConfig = req.config?.summarization;
+  const summarizationConfig = appConfig?.summarization;
 
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });
@@ -614,7 +615,7 @@ const createResponse = async (req, res) => {
             result,
             req,
             primaryConfig.accessibleSkillIds,
-            undefined,
+            enabledCapabilities.has(AgentCapabilities.execute_code),
             buildSkillPrimedIdsByName(
               primaryConfig.manualSkillPrimes,
               primaryConfig.alwaysApplySkillPrimes,
@@ -793,7 +794,7 @@ const createResponse = async (req, res) => {
             result,
             req,
             primaryConfig.accessibleSkillIds,
-            undefined,
+            enabledCapabilities.has(AgentCapabilities.execute_code),
             buildSkillPrimedIdsByName(
               primaryConfig.manualSkillPrimes,
               primaryConfig.alwaysApplySkillPrimes,

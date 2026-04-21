@@ -432,7 +432,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           result,
           req,
           primaryConfig.accessibleSkillIds,
-          undefined,
+          enabledCapabilities.has(AgentCapabilities.execute_code),
           buildSkillPrimedIdsByName(
             primaryConfig.manualSkillPrimes,
             primaryConfig.alwaysApplySkillPrimes,

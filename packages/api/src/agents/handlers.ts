@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
+import { EnvVar, GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type {
   LCTool,
   EventHandler,
@@ -530,15 +530,19 @@ async function handleSkillToolCall(
     | { session_id: string; files: Array<{ id: string; session_id: string; name: string }> }
     | undefined;
 
-  // Prime skill files to code env when the skill has bundled files
+  // Prime skill files to code env — only when the `execute_code` capability
+  // is enabled for this run. The flag is threaded via configurable upstream
+  // so this gate cannot be bypassed by a stray env var.
+  const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
   if (
+    codeEnvAvailable &&
     skill.fileCount > 0 &&
     req &&
     listSkillFiles &&
     getStrategyFunctions &&
     batchUploadCodeEnvFiles
   ) {
-    const codeApiKey = (mergedConfigurable?.codeApiKey as string) ?? '';
+    const codeApiKey = process.env[EnvVar.CODE_API_KEY] ?? '';
     if (codeApiKey) {
       try {
         const skillFiles = await listSkillFiles(skill._id);
