@@ -724,6 +724,18 @@ export async function initializeAgent(
       includeBash: true,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
+  } else if (agentRequestsCodeExec) {
+    /**
+     * Agent asked for `execute_code` but the runtime gate is off — surface a
+     * debug log so operators tracing "why isn't code interpreter working?"
+     * get a clear signal at the initialize layer. The event-driven tool
+     * loader (`loadToolDefinitionsWrapper`) doesn't log capability-disabled
+     * warnings for the definitions-only path, so without this, the tool
+     * silently vanishes from the LLM's definitions with no trace.
+     */
+    logger.debug(
+      `[initializeAgent] Agent "${agent.id}" requests execute_code but codeEnvAvailable=${String(params.codeEnvAvailable)}; skipping bash_tool + read_file registration.`,
+    );
   }
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */

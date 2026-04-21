@@ -40,12 +40,9 @@ const loadAddedAgent = (params) =>
  * @param {Map} params.agentConfigs - Map of agent configs to add to
  * @param {string} params.primaryAgentId - The primary agent ID
  * @param {Object|undefined} params.userMCPAuthMap - User MCP auth map to merge into
- * @param {boolean} [params.codeEnvAvailable] - Whether the `execute_code` capability
- *   is enabled for the run. Forwarded verbatim to the added agent's
- *   `initializeAgent` call so parallel-convo agents with
- *   `tools: ['execute_code']` get the same `bash_tool` + `read_file`
- *   expansion as the primary (pre-Phase 8 they picked up the legacy
- *   `execute_code` tool unconditionally; this passthrough restores parity).
+ * @param {boolean} [params.codeEnvAvailable] - `execute_code` capability flag;
+ *   forwarded verbatim to the added agent's `initializeAgent`. @see
+ *   InitializeAgentParams.codeEnvAvailable for full semantics.
  * @returns {Promise<{userMCPAuthMap: Object|undefined}>} The updated userMCPAuthMap
  */
 const processAddedConvo = async ({

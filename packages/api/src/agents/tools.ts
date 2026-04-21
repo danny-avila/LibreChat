@@ -118,6 +118,14 @@ export function registerCodeExecutionTools(
     registered.push(def.name);
   }
 
+  /**
+   * Skip the array spread on the common second-call no-op path (both tools
+   * already registered by the first caller in the same run). Returns the
+   * input array by reference; callers treat the return value as immutable.
+   */
+  if (newDefs.length === 0) {
+    return { toolDefinitions: toolDefinitions ?? [], registered };
+  }
   return {
     toolDefinitions: [...(toolDefinitions ?? []), ...newDefs],
     registered,
