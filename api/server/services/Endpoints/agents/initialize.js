@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { EnvVar, createContentAggregator } = require('@librechat/agents');
+const { createContentAggregator } = require('@librechat/agents');
 const {
   scopeSkillIds,
   loadSkillStates,
@@ -25,7 +25,6 @@ const {
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
   getSkillToolDeps,
@@ -121,6 +120,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  - the agent has stored skills (scoped by scopeSkillIds later). */
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
+  const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
 
   const accessibleSkillIds = skillsCapabilityEnabled
@@ -138,21 +138,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     getUserById: db.getUserById,
     accessibleSkillIds,
   });
-
-  // Resolve code API key once for the entire run (shared by primeInvokedSkills
-  // and enrichWithSkillConfigurable) to avoid redundant auth lookups.
-  let codeApiKey;
-  if (skillsCapabilityEnabled && enabledCapabilities.has(AgentCapabilities.execute_code)) {
-    try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      codeApiKey = authValues[EnvVar.CODE_API_KEY];
-    } catch {
-      // non-fatal — primeInvokedSkills and enrichWithSkillConfigurable will work without it
-    }
-  }
 
   /**
    * Agent context store - populated after initialization, accessed by callback via closure.
@@ -191,7 +176,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         result,
         req,
         ctx.accessibleSkillIds,
-        codeApiKey,
+        codeEnvAvailable,
         ctx.skillPrimedIdsByName,
       );
     },
@@ -272,7 +257,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         accessibleSkillIds,
         ephemeralSkillsToggle ? undefined : primaryAgent.skills,
       ),
-      codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+      codeEnvAvailable,
       skillStates,
       defaultActiveOnShare,
       manualSkills,
@@ -482,8 +467,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           req,
           payload,
           accessibleSkillIds,
-          codeApiKey,
-          loadAuthValues,
+          codeEnvAvailable,
           ...getSkillToolDeps(),
         })
     : undefined;

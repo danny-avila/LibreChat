@@ -571,4 +571,99 @@ describe('createToolExecuteHandler', () => {
       expect(lookupOptions).toEqual({});
     });
   });
+
+  describe('skill tool codeEnvAvailable gate (sandbox file priming)', () => {
+    const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
+    const SKILL_ID = new Types.ObjectId();
+
+    function makeSkillHandlerWithFiles(params: {
+      codeEnvAvailable: boolean;
+      listSkillFiles: jest.Mock;
+      batchUploadCodeEnvFiles?: jest.Mock;
+    }) {
+      const getSkillByName = jest.fn(async () => ({
+        _id: SKILL_ID as unknown as never,
+        name: 'brand-guidelines',
+        body: 'skill body',
+        fileCount: 2,
+      }));
+      /* `loadTools` injects `codeEnvAvailable` into the returned
+         `configurable`, which mirrors production flow through
+         `enrichWithSkillConfigurable`. `req` must be present for the
+         priming branch to enter (the handler guards on it). */
+      const req = { user: { id: 'user-1' } };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+        configurable: { codeEnvAvailable: params.codeEnvAvailable, req },
+      }));
+      return createToolExecuteHandler({
+        loadTools,
+        getSkillByName,
+        listSkillFiles: params.listSkillFiles as unknown as ToolExecuteOptions['listSkillFiles'],
+        batchUploadCodeEnvFiles: (params.batchUploadCodeEnvFiles ??
+          jest.fn()) as unknown as ToolExecuteOptions['batchUploadCodeEnvFiles'],
+        getStrategyFunctions: jest.fn() as unknown as ToolExecuteOptions['getStrategyFunctions'],
+      });
+    }
+
+    const ORIGINAL_KEY = process.env.LIBRECHAT_CODE_API_KEY;
+    afterEach(() => {
+      if (ORIGINAL_KEY === undefined) {
+        delete process.env.LIBRECHAT_CODE_API_KEY;
+      } else {
+        process.env.LIBRECHAT_CODE_API_KEY = ORIGINAL_KEY;
+      }
+    });
+
+    it('does NOT call listSkillFiles when codeEnvAvailable is false (even when env key is set)', async () => {
+      process.env.LIBRECHAT_CODE_API_KEY = 'present';
+      const listSkillFiles = jest.fn().mockResolvedValue([]);
+      const handler = makeSkillHandlerWithFiles({
+        codeEnvAvailable: false,
+        listSkillFiles,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_gate_off',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'brand-guidelines' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(listSkillFiles).not.toHaveBeenCalled();
+    });
+
+    it('calls listSkillFiles when codeEnvAvailable is true AND the env key is set', async () => {
+      process.env.LIBRECHAT_CODE_API_KEY = 'present';
+      const listSkillFiles = jest.fn().mockResolvedValue([]);
+      const handler = makeSkillHandlerWithFiles({
+        codeEnvAvailable: true,
+        listSkillFiles,
+      });
+
+      await invokeHandler(handler, [
+        { id: 'call_gate_on', name: Constants.SKILL_TOOL, args: { skillName: 'brand-guidelines' } },
+      ]);
+
+      expect(listSkillFiles).toHaveBeenCalledWith(SKILL_ID);
+    });
+
+    it('does NOT call listSkillFiles when codeEnvAvailable is true but env key is unset (admin misconfig)', async () => {
+      delete process.env.LIBRECHAT_CODE_API_KEY;
+      const listSkillFiles = jest.fn().mockResolvedValue([]);
+      const handler = makeSkillHandlerWithFiles({
+        codeEnvAvailable: true,
+        listSkillFiles,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_no_env', name: Constants.SKILL_TOOL, args: { skillName: 'brand-guidelines' } },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(listSkillFiles).not.toHaveBeenCalled();
+    });
+  });
 });
