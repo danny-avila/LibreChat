@@ -404,7 +404,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       userMCPAuthMap = config.userMCPAuthMap;
     }
 
-    /** Store handoff agent's tool context for ON_TOOL_EXECUTE callback */
+    /** Store handoff agent's tool context for ON_TOOL_EXECUTE callback.
+     *  Handoff agents get the same `skillPrimedIdsByName` plumbing as the
+     *  primary so `read_file` can pin same-name collisions to the exact
+     *  primed doc AND relax the `disable-model-invocation: true` gate for
+     *  skills whose body is already in this turn's context — matters for
+     *  handoff agents that have their own always-apply skills bound or
+     *  that the user `$`-invokes within the handoff flow. */
     agentToolContexts.set(agentId, {
       agent,
       toolRegistry: config.toolRegistry,
@@ -412,6 +418,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       tool_resources: config.tool_resources,
       actionsEnabled: config.actionsEnabled,
       accessibleSkillIds: config.accessibleSkillIds,
+      skillPrimedIdsByName: buildSkillPrimedIdsByName(
+        config.manualSkillPrimes,
+        config.alwaysApplySkillPrimes,
+      ),
     });
 
     agentConfigs.set(agentId, config);
