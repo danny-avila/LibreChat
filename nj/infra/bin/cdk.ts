@@ -29,6 +29,7 @@
  */
 
 import * as cdk from "aws-cdk-lib";
+import { ECS_PATTERNS_UNIQUE_TARGET_GROUP_ID } from 'aws-cdk-lib/cx-api';
 import { DatabaseStack } from "../lib/db-stack";
 import { EcsStack } from "../lib/ecs-stack";
 import { CognitoStack } from "../lib/cognito-stack";
@@ -36,7 +37,11 @@ import { MonitoringStack } from "../lib/monitoring-stack";
 import { KitchenSinkStack } from "../lib/kitchensink-stack";
 import {branding, assets} from "../lib/branding";
 
-const app = new cdk.App();
+const app = new cdk.App({
+  postCliContext: {
+    [ECS_PATTERNS_UNIQUE_TARGET_GROUP_ID]: true,
+  },
+});
 
 const env = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
