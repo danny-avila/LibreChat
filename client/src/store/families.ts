@@ -172,6 +172,17 @@ const conversationEndpointByIndex = selectorFamily<EModelEndpoint | null, string
       get(conversationByIndex(index))?.endpoint ?? null,
 });
 
+/** Returns `endpointType ?? endpoint`, matching the effective endpoint used for feature gating. */
+const effectiveEndpointByIndex = selectorFamily<EModelEndpoint | null, string | number>({
+  key: 'effectiveEndpointByIndex',
+  get:
+    (index: string | number) =>
+    ({ get }) => {
+      const convo = get(conversationByIndex(index));
+      return convo?.endpointType ?? convo?.endpoint ?? null;
+    },
+});
+
 const conversationModelByIndex = selectorFamily<string | null, string | number>({
   key: 'conversationModelByIndex',
   get:
@@ -466,6 +477,7 @@ export default {
   allConversationsSelector,
   conversationIdByIndex,
   conversationEndpointByIndex,
+  effectiveEndpointByIndex,
   conversationModelByIndex,
   conversationSpecByIndex,
   conversationAgentIdByIndex,

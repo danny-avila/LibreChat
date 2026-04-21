@@ -238,13 +238,15 @@ export default function OpenAIImageGen({
                 height={dimensions.height}
               />
             )}
-            <Image
-              altText={filename}
-              imagePath={filepath ?? ''}
-              width={Number(dimensions.width?.split('px')[0])}
-              height={Number(dimensions.height?.split('px')[0])}
-              args={parsedArgs}
-            />
+            {filepath && (
+              <Image
+                altText={filename}
+                imagePath={filepath}
+                width={Number(dimensions.width?.split('px')[0])}
+                height={Number(dimensions.height?.split('px')[0])}
+                args={parsedArgs}
+              />
+            )}
           </div>
         </div>
       )}

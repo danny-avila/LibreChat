@@ -1,8 +1,9 @@
 import { Providers } from '@librechat/agents';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent } from 'librechat-data-provider';
-import type { ServerRequest, InitializeResultBase } from '~/types';
+import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
+import { DEFAULT_MAX_CONTEXT_TOKENS } from '../initialize';
 
 // Mock logger
 jest.mock('winston', () => ({
@@ -55,22 +56,48 @@ jest.mock('../resources', () => ({
 
 import { initializeAgent } from '../initialize';
 
+const realUtils = jest.requireActual<typeof import('~/utils')>('~/utils');
+
 /**
  * Creates minimal mock objects for initializeAgent tests.
+ *
+ * @param overrides.overrideProvider - Simulates the value returned by `getProviderConfig`.
+ *   Defaults to `provider` (native endpoint where no remapping occurs). Set to a different
+ *   value (e.g. `Providers.OPENAI`) alongside a custom `provider` to simulate a custom
+ *   endpoint whose provider is resolved to a built-in.
+ * @param overrides.useRealTokenLookup - When true, `getModelMaxTokens` delegates to the real
+ *   implementation so tests exercise actual token-map resolution. Otherwise a controlled
+ *   `modelDefault` is returned.
  */
 function createMocks(overrides?: {
+  provider?: string;
+  overrideProvider?: string;
+  model?: string;
   maxContextTokens?: number;
   modelDefault?: number;
   maxOutputTokens?: number;
+  endpointTokenConfig?: EndpointTokenConfig;
+  useRealTokenLookup?: boolean;
 }) {
-  const { maxContextTokens, modelDefault = 200000, maxOutputTokens = 4096 } = overrides ?? {};
+  const {
+    provider = Providers.OPENAI,
+    overrideProvider,
+    model = 'test-model',
+    maxContextTokens,
+    modelDefault = 200000,
+    maxOutputTokens = 4096,
+    endpointTokenConfig,
+    useRealTokenLookup = false,
+  } = overrides ?? {};
+
+  const resolvedOverrideProvider = overrideProvider ?? provider;
 
   const agent = {
     id: 'agent-1',
-    model: 'test-model',
-    provider: Providers.OPENAI,
+    model,
+    provider,
     tools: [],
-    model_parameters: { model: 'test-model' },
+    model_parameters: { model },
   } as unknown as Agent;
 
   const req = {
@@ -81,39 +108,29 @@ function createMocks(overrides?: {
   const res = {} as unknown as import('express').Response;
 
   const mockGetOptions = jest.fn().mockResolvedValue({
-    llmConfig: {
-      model: 'test-model',
-      maxTokens: maxOutputTokens,
-    },
-    endpointTokenConfig: undefined,
+    llmConfig: { model, maxTokens: maxOutputTokens },
+    endpointTokenConfig,
   } satisfies InitializeResultBase);
 
   mockGetProviderConfig.mockReturnValue({
     getOptions: mockGetOptions,
-    overrideProvider: Providers.OPENAI,
+    overrideProvider: resolvedOverrideProvider,
   });
 
-  // extractLibreChatParams returns maxContextTokens when provided in model_parameters
   mockExtractLibreChatParams.mockReturnValue({
     resendFiles: false,
     maxContextTokens,
-    modelOptions: { model: 'test-model' },
+    modelOptions: { model },
   });
 
-  // getModelMaxTokens returns the model's default context window
-  mockGetModelMaxTokens.mockReturnValue(modelDefault);
+  if (useRealTokenLookup) {
+    mockGetModelMaxTokens.mockImplementation(realUtils.getModelMaxTokens);
+  } else {
+    mockGetModelMaxTokens.mockReturnValue(modelDefault);
+  }
 
-  // Implement real optionalChainWithEmptyCheck behavior
-  mockOptionalChainWithEmptyCheck.mockImplementation(
-    (...values: (string | number | undefined)[]) => {
-      for (const v of values) {
-        if (v !== undefined && v !== null && v !== '') {
-          return v;
-        }
-      }
-      return values[values.length - 1];
-    },
-  );
+  // Real implementation: treats 0 as a valid (non-empty) value — load-bearing for the maxContextTokens=0 test
+  mockOptionalChainWithEmptyCheck.mockImplementation(realUtils.optionalChainWithEmptyCheck);
 
   const loadTools = jest.fn().mockResolvedValue({
     tools: [],
@@ -135,6 +152,80 @@ function createMocks(overrides?: {
 
   return { agent, req, res, loadTools, db };
 }
+
+describe('initializeAgent — custom provider token lookup', () => {
+  const CUSTOM_PROVIDER = 'EduGPT';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('passes the resolved provider endpoint to getModelMaxTokens, not the custom name', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: CUSTOM_PROVIDER,
+      overrideProvider: Providers.OPENAI,
+      model: 'qwen3-235b-a22b',
+      useRealTokenLookup: true,
+    });
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([CUSTOM_PROVIDER]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    // providerEndpointMap["openAI"] = "openAI" (valid), not providerEndpointMap["EduGPT"] = undefined
+    expect(mockGetModelMaxTokens).toHaveBeenCalledWith(
+      'qwen3-235b-a22b',
+      EModelEndpoint.openAI,
+      undefined,
+    );
+  });
+
+  it('uses endpointTokenConfig from the custom endpoint for unrecognized models', async () => {
+    const customTokenConfig: EndpointTokenConfig = {
+      'my-custom-model-v1': { context: 65536, prompt: 1, completion: 1 },
+    };
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: CUSTOM_PROVIDER,
+      overrideProvider: Providers.OPENAI,
+      model: 'my-custom-model-v1',
+      endpointTokenConfig: customTokenConfig,
+      useRealTokenLookup: true,
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([CUSTOM_PROVIDER]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(mockGetModelMaxTokens).toHaveBeenCalledWith(
+      'my-custom-model-v1',
+      EModelEndpoint.openAI,
+      customTokenConfig,
+    );
+
+    // Pipeline check: verifies endpointTokenConfig.context flows through the full
+    // optionalChainWithEmptyCheck → Math.max formula. The toHaveBeenCalledWith
+    // assertion above catches the actual provider-resolution regression.
+    expect(result.maxContextTokens).toBe(Math.round((65536 - 4096) * 0.95));
+  });
+});
 
 describe('initializeAgent — maxContextTokens', () => {
   beforeEach(() => {
@@ -218,11 +309,8 @@ describe('initializeAgent — maxContextTokens', () => {
       db,
     );
 
-    // 0 is not used as-is; the formula kicks in.
-    // optionalChainWithEmptyCheck(0, 200000, 18000) returns 0 (not null/undefined),
-    // then Number(0) || 18000 = 18000 (the fallback default).
     expect(result.maxContextTokens).not.toBe(0);
-    const expected = Math.round((18000 - maxOutputTokens) * 0.95);
+    const expected = Math.round((DEFAULT_MAX_CONTEXT_TOKENS - maxOutputTokens) * 0.95);
     expect(result.maxContextTokens).toBe(expected);
   });
 

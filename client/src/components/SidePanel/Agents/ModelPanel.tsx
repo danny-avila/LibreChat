@@ -97,8 +97,8 @@ export default function ModelPanel({
   };
 
   return (
-    <div className="mb-1 flex h-full min-h-[50vh] w-full flex-col gap-2 text-sm">
-      <div className="model-panel relative flex flex-col items-center px-16 py-4 text-center">
+    <div className="mb-1 flex w-full flex-col gap-2 text-sm">
+      <div className="model-panel relative flex flex-col items-center px-16 pt-2 text-center">
         <div className="absolute left-0 top-4">
           <button
             type="button"

@@ -68,6 +68,8 @@ export type InitializedAgent = Agent & {
   maxToolResultChars?: number;
 };
 
+export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
+
 /**
  * Parameters for initializing an agent
  * Matches the CJS signature from api/server/services/Endpoints/agents/agent.js
@@ -354,10 +356,10 @@ export async function initializeAgent(
     maxContextTokens,
     getModelMaxTokens(
       tokensModel ?? '',
-      providerEndpointMap[provider as keyof typeof providerEndpointMap],
+      providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
       options.endpointTokenConfig,
     ),
-    18000,
+    DEFAULT_MAX_CONTEXT_TOKENS,
   );
 
   if (
@@ -414,7 +416,7 @@ export async function initializeAgent(
     agent.additional_instructions = artifactsPromptResult ?? undefined;
   }
 
-  const agentMaxContextNum = Number(agentMaxContextTokens) || 18000;
+  const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;
   const maxOutputTokensNum = Number(maxOutputTokens) || 0;
   const baseContextTokens = Math.max(0, agentMaxContextNum - maxOutputTokensNum);
 

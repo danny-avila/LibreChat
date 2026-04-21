@@ -8,7 +8,72 @@ import type {
   Model,
 } from 'mongoose';
 import type { AclEntry, IAclEntry } from '~/types';
+import { MAX_PERM_BITS } from '~/common/permissions';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+
+/**
+ * Empty frozen array shared by every rejection path. Returning a single
+ * instance keeps the hot path allocation-free and freezes a known-safe value
+ * so it can never mutate into a "match everything" list.
+ */
+const EMPTY_SUPERSETS: readonly number[] = Object.freeze([]);
+
+const supersetCache = new Map<number, readonly number[]>();
+
+/**
+ * Enumerates every `permBits` value (in the range `[0, MAX_PERM_BITS]`) whose
+ * set bits include all bits in `requiredBits`. Used with a `$in` filter to push
+ * permission-mask matching down to the database without relying on the
+ * `$bitsAllSet` query operator, which is not supported by Azure Cosmos DB for
+ * MongoDB (see issue #12729).
+ *
+ * **Invariant:** stored `permBits` values must lie in `[0, MAX_PERM_BITS]`.
+ * Values with higher-order bits set would never appear in the emitted `$in`
+ * list and would silently produce false permission denials. The aclEntry
+ * schema enforces this with a `max` validator; if the `PermissionBits` enum
+ * grows, `MAX_PERM_BITS` auto-expands from the new enum values.
+ *
+ * **Cache safety:** callers sometimes forward user input directly (e.g.
+ * `req.query.requiredPermission` is parsed and passed through without a range
+ * check). To prevent the process-global cache from growing unboundedly from
+ * attacker-supplied integers, any `requiredBits` outside `[0, MAX_PERM_BITS]`
+ * or with bits set above the max returns a shared frozen empty array and is
+ * NOT added to the cache. An empty `$in` list correctly matches zero rows,
+ * which is the right behavior for a request asking for bits the system does
+ * not recognize.
+ *
+ * For the current 4-bit `PermissionBits` enum the worst case is `required = 0`
+ * which expands to 16 values; the best case (all bits required) expands to 1.
+ * Results are memoized per `requiredBits` so the expansion runs at most once
+ * per distinct mask over the process lifetime.
+ */
+export function permissionBitSupersets(requiredBits: number): readonly number[] {
+  if (
+    !Number.isInteger(requiredBits) ||
+    requiredBits < 0 ||
+    (requiredBits & ~MAX_PERM_BITS) !== 0
+  ) {
+    return EMPTY_SUPERSETS;
+  }
+  const cached = supersetCache.get(requiredBits);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const supersets: number[] = [];
+  for (let v = 0; v <= MAX_PERM_BITS; v++) {
+    if ((v & requiredBits) === requiredBits) {
+      supersets.push(v);
+    }
+  }
+  /**
+   * Freeze the cached array so a future caller cannot mutate the shared cache
+   * entry. All current callers only forward this to Mongoose's `$in`, which
+   * does not mutate — freezing is cheap and prevents silent corruption.
+   */
+  const frozen = Object.freeze(supersets);
+  supersetCache.set(requiredBits, frozen);
+  return frozen;
+}
 
 export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -71,7 +136,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Check if a set of principals has a specific permission on a resource
+   * Check if a set of principals has a specific permission on a resource.
+   * See {@link permissionBitSupersets} for the Cosmos-compatible bit filter.
    * @param principalsList - List of principals, each containing { principalType, principalId }
    * @param resourceType - The type of resource
    * @param resourceId - The ID of the resource
@@ -94,8 +160,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       $or: principalsQuery,
       resourceType,
       resourceId,
-      permBits: { $bitsAllSet: permissionBit },
-    }).lean();
+      permBits: { $in: permissionBitSupersets(permissionBit) },
+    })
+      .select('_id')
+      .lean();
 
     return !!entry;
   }
@@ -330,7 +398,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Find all resources of a specific type that a set of principals has access to
+   * Find all resources of a specific type that a set of principals has access to.
+   * See {@link permissionBitSupersets} for the Cosmos-compatible bit filter.
    * @param principalsList - List of principals, each containing { principalType, principalId }
    * @param resourceType - The type of resource
    * @param requiredPermBit - Required permission bit (use PermissionBits enum)
@@ -347,13 +416,11 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
     }));
 
-    const entries = await AclEntry.find({
+    return await AclEntry.find({
       $or: principalsQuery,
       resourceType,
-      permBits: { $bitsAllSet: requiredPermBit },
+      permBits: { $in: permissionBitSupersets(requiredPermBit) },
     }).distinct('resourceId');
-
-    return entries;
   }
 
   /**
@@ -384,6 +451,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Finds all publicly accessible resource IDs for a given resource type.
+   * See {@link permissionBitSupersets} for the Cosmos-compatible bit filter.
    * @param resourceType - The type of resource
    * @param requiredPermissions - Required permission bits
    */
@@ -392,10 +460,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     requiredPermissions: number,
   ): Promise<Types.ObjectId[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    return AclEntry.find({
+    return await AclEntry.find({
       principalType: PrincipalType.PUBLIC,
       resourceType,
-      permBits: { $bitsAllSet: requiredPermissions },
+      permBits: { $in: permissionBitSupersets(requiredPermissions) },
     }).distinct('resourceId');
   }
 
@@ -411,6 +479,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   /**
    * Returns resource IDs solely owned by the given user (no other principals
    * hold DELETE on the same resource). Handles both single and array resource types.
+   * See {@link permissionBitSupersets} for the Cosmos-compatible bit filter.
    */
   async function getSoleOwnedResourceIds(
     userObjectId: Types.ObjectId,
@@ -418,12 +487,13 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   ): Promise<Types.ObjectId[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const types = Array.isArray(resourceTypes) ? resourceTypes : [resourceTypes];
+    const deleteSupersets = permissionBitSupersets(PermissionBits.DELETE);
 
     const ownedEntries = await AclEntry.find({
       principalType: PrincipalType.USER,
       principalId: userObjectId,
       resourceType: { $in: types },
-      permBits: { $bitsAllSet: PermissionBits.DELETE },
+      permBits: { $in: deleteSupersets },
     })
       .select('resourceId')
       .lean();
@@ -439,7 +509,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
         $match: {
           resourceType: { $in: types },
           resourceId: { $in: ownedIds },
-          permBits: { $bitsAllSet: PermissionBits.DELETE },
+          permBits: { $in: deleteSupersets },
           $or: [
             { principalId: { $ne: userObjectId } },
             { principalType: { $ne: PrincipalType.USER } },

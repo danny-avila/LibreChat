@@ -1,5 +1,4 @@
 import {
-  CacheKeys,
   ErrorTypes,
   envVarRegex,
   FetchTokenConfig,
@@ -13,7 +12,7 @@ import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
-import { standardCache } from '~/cache';
+import { tokenConfigCache } from '~/cache';
 
 const { PROXY } = process.env;
 
@@ -136,7 +135,7 @@ export async function initializeCustom({
 
   const userId = req.user?.id ?? '';
 
-  const cache = standardCache(CacheKeys.TOKEN_CONFIG);
+  const cache = tokenConfigCache();
   /** tokenConfig is an optional extended property on custom endpoints */
   const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
   const tokenKey =

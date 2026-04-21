@@ -1,7 +1,12 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
-const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  ResourceType,
+  PermissionBits,
+  hasPermissions,
+} = require('librechat-data-provider');
 const {
   writeSSE,
   createRun,
@@ -21,6 +26,8 @@ const {
   createOpenAIStreamTracker,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
+  discoverConnectedAgents,
+  getRemoteAgentPermissions,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -29,7 +36,12 @@ const {
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
-const { findAccessibleResources } = require('~/server/services/PermissionService');
+const {
+  findAccessibleResources,
+  getEffectivePermissions,
+} = require('~/server/services/PermissionService');
+const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { logViolation } = require('~/cache');
 const db = require('~/models');
 
 /**
@@ -207,6 +219,24 @@ const OpenAIChatCompletionController = async (req, res) => {
       model_parameters: agent.model_parameters ?? {},
     };
 
+    // `filterFilesByAgentAccess` is intentionally omitted: it calls
+    // `checkPermission` with `resourceType: AGENT`, but this route
+    // authorizes callers through `REMOTE_AGENT` (via
+    // `getRemoteAgentPermissions`), so including it would silently drop
+    // owner-attached context files for any remote user who has
+    // `REMOTE_AGENT_VIEWER` but not direct `AGENT_VIEW`.
+    const dbMethods = {
+      getConvoFiles: db.getConvoFiles,
+      getFiles: db.getFiles,
+      getUserKey: db.getUserKey,
+      getMessages: db.getMessages,
+      updateFilesUsage: db.updateFilesUsage,
+      getUserKeyValues: db.getUserKeyValues,
+      getUserCodeFiles: db.getUserCodeFiles,
+      getToolFilesByIds: db.getToolFilesByIds,
+      getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+    };
+
     const primaryConfig = await initializeAgent(
       {
         req,
@@ -220,18 +250,91 @@ const OpenAIChatCompletionController = async (req, res) => {
         allowedProviders,
         isInitialAgent: true,
       },
-      {
-        getConvoFiles: db.getConvoFiles,
-        getFiles: db.getFiles,
-        getUserKey: db.getUserKey,
-        getMessages: db.getMessages,
-        updateFilesUsage: db.updateFilesUsage,
-        getUserKeyValues: db.getUserKeyValues,
-        getUserCodeFiles: db.getUserCodeFiles,
-        getToolFilesByIds: db.getToolFilesByIds,
-        getCodeGeneratedFiles: db.getCodeGeneratedFiles,
-      },
+      dbMethods,
     );
+
+    /**
+     * Per-agent tool-execution context map, keyed by agentId.
+     * Needed so the ON_TOOL_EXECUTE callback routes each sub-agent's tool calls
+     * to the correct toolRegistry / userMCPAuthMap / tool_resources.
+     * @type {Map<string, {
+     *   agent: object,
+     *   toolRegistry?: import('@librechat/agents').LCToolRegistry,
+     *   userMCPAuthMap?: Record<string, Record<string, string>>,
+     *   tool_resources?: object,
+     *   actionsEnabled?: boolean,
+     * }>}
+     */
+    const agentToolContexts = new Map();
+    agentToolContexts.set(primaryConfig.id, {
+      agent,
+      toolRegistry: primaryConfig.toolRegistry,
+      userMCPAuthMap: primaryConfig.userMCPAuthMap,
+      tool_resources: primaryConfig.tool_resources,
+      actionsEnabled: primaryConfig.actionsEnabled,
+    });
+
+    // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
+    // primary has edges to follow — the common API case is single-agent.
+    let handoffAgentConfigs = new Map();
+    let discoveredEdges = [];
+    let discoveredMCPAuthMap;
+    if (primaryConfig.edges?.length) {
+      const modelsConfig = await getModelsConfig(req);
+      ({
+        agentConfigs: handoffAgentConfigs,
+        edges: discoveredEdges,
+        userMCPAuthMap: discoveredMCPAuthMap,
+      } = await discoverConnectedAgents(
+        {
+          req,
+          res,
+          primaryConfig,
+          endpointOption,
+          allowedProviders,
+          modelsConfig,
+          loadTools,
+          requestFiles: [],
+          conversationId,
+          parentMessageId,
+          // The route enforces REMOTE_AGENT on the primary; every discovered
+          // sub-agent must clear the same sharing boundary, not the looser
+          // in-app AGENT one.
+          resourceType: ResourceType.REMOTE_AGENT,
+        },
+        {
+          getAgent: db.getAgent,
+          // Use `getRemoteAgentPermissions` so sub-agent authorization
+          // matches what the route's `createCheckRemoteAgentAccess`
+          // middleware does for the primary: AGENT owners with the SHARE
+          // bit are treated as remotely authorized even without an
+          // explicit REMOTE_AGENT grant.
+          checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
+            const permissions = await getRemoteAgentPermissions(
+              { getEffectivePermissions },
+              userId,
+              role,
+              resourceId,
+            );
+            return hasPermissions(permissions, requiredPermission);
+          },
+          logViolation,
+          db: dbMethods,
+          onAgentInitialized: (agentId, handoffAgent, config) => {
+            agentToolContexts.set(agentId, {
+              agent: handoffAgent,
+              toolRegistry: config.toolRegistry,
+              userMCPAuthMap: config.userMCPAuthMap,
+              tool_resources: config.tool_resources,
+              actionsEnabled: config.actionsEnabled,
+            });
+          },
+          initializeAgent,
+        },
+      ));
+    }
+
+    primaryConfig.edges = discoveredEdges;
 
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
@@ -270,17 +373,18 @@ const OpenAIChatCompletionController = async (req, res) => {
     const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
     const toolExecuteOptions = {
-      loadTools: async (toolNames) => {
+      loadTools: async (toolNames, agentId) => {
+        const ctx = agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
         return loadToolsForExecution({
           req,
           res,
-          agent,
           toolNames,
+          agent: ctx.agent ?? agent,
           signal: abortController.signal,
-          toolRegistry: primaryConfig.toolRegistry,
-          userMCPAuthMap: primaryConfig.userMCPAuthMap,
-          tool_resources: primaryConfig.tool_resources,
-          actionsEnabled: primaryConfig.actionsEnabled,
+          toolRegistry: ctx.toolRegistry,
+          userMCPAuthMap: ctx.userMCPAuthMap,
+          tool_resources: ctx.tool_resources,
+          actionsEnabled: ctx.actionsEnabled,
         });
       },
       toolEndCallback,
@@ -467,16 +571,20 @@ const OpenAIChatCompletionController = async (req, res) => {
     // Create and run the agent
     const userId = req.user?.id ?? 'api-user';
 
-    // Extract userMCPAuthMap from primaryConfig (needed for MCP tool connections)
-    const userMCPAuthMap = primaryConfig.userMCPAuthMap;
+    // Extract merged userMCPAuthMap (needed for MCP tool connections across
+    // the primary and any discovered handoff sub-agents)
+    const userMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
+
+    const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
 
     const run = await createRun({
-      agents: [primaryConfig],
+      agents: runAgents,
       messages: formattedMessages,
       indexTokenCountMap,
       initialSummary,
       runId: responseId,
       summarizationConfig,
+      appConfig,
       signal: abortController.signal,
       customHandlers: handlers,
       requestBody: {
