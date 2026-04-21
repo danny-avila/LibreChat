@@ -615,9 +615,16 @@ export class MCPOAuthHandler {
             `[MCPOAuth] Added resource parameter to authorization URL: ${canonicalResource}`,
           );
         } else {
+          /**
+           * Reachable only when `discoverOAuthProtectedResourceMetadata` did not return a
+           * document (404 / network error / server does not implement RFC 9728). If a PRM
+           * document exists but is missing `resource`, {@link assertResourceBoundToServer}
+           * rejects it before this code runs, so this branch does not warn about a
+           * malformed document — it warns about the absence of one.
+           */
           logger.warn(
-            `[MCPOAuth] Resource metadata missing 'resource' property for ${serverName}. ` +
-              'This can cause issues with some Authorization Servers who expect a "resource" parameter.',
+            `[MCPOAuth] No protected resource metadata available for ${serverName}. ` +
+              'This can cause issues with some Authorization Servers that expect a "resource" parameter.',
           );
         }
       } catch (error) {

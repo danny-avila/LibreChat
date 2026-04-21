@@ -2192,6 +2192,31 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       expect(mockRegisterClient).not.toHaveBeenCalled();
     });
 
+    it('rejects metadata whose resource is not a parseable URL (error-wrapping path)', async () => {
+      // A malicious or broken server could return a `resource` that passes the
+      // zod schema but is not a valid URL. `resourceUrlFromServerUrl` /
+      // `checkResourceAllowed` call `new URL()` internally and will throw;
+      // `assertResourceBoundToServer` wraps that into a descriptive error rather
+      // than letting a raw `TypeError: Invalid URL` leak out.
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: 'not-a-url',
+        authorization_servers: ['https://auth.example.com'],
+      });
+
+      await expect(
+        MCPOAuthHandler.initiateOAuthFlow(
+          'test-server',
+          'https://example.com/mcp',
+          'user-123',
+          {},
+          undefined,
+        ),
+      ).rejects.toThrow(/Unable to validate Protected Resource Metadata 'resource'/);
+
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+      expect(mockStartAuthorization).not.toHaveBeenCalled();
+    });
+
     it('rejects metadata that is missing the required resource identifier', async () => {
       mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
         // RFC 9728 §2: `resource` is REQUIRED
@@ -2310,7 +2335,9 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       // Defense-in-depth: flow state has a 10-min TTL, so a flow created under older
       // (vulnerable) code could still be in-flight at upgrade time with unvalidated
       // resourceMetadata stored. completeOAuthFlow must re-assert the binding rather
-      // than blindly trusting stored state.
+      // than blindly trusting stored state — and must still run the normal failure
+      // bookkeeping (failFlow) so the flow manager doesn't leak a stuck PENDING entry.
+      const mockFailFlow = jest.fn();
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({
           status: 'PENDING',
@@ -2329,7 +2356,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
             },
           } as MCPOAuthFlowMetadata,
         }),
-        failFlow: jest.fn(),
+        failFlow: mockFailFlow,
       } as unknown as FlowStateManager<MCPOAuthTokens>;
 
       await expect(
@@ -2337,6 +2364,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       ).rejects.toThrow(/does not match server URL/);
 
       expect(mockExchangeAuthorization).not.toHaveBeenCalled();
+      expect(mockFailFlow).toHaveBeenCalledWith('flow-id', expect.any(String), expect.any(Error));
     });
 
     it('falls back to origin-based discovery when the well-known endpoint returns no metadata', async () => {
