@@ -91,7 +91,7 @@ registration:
 mcpServers:
   reviewer:
     type: streamable-http
-    url: http://100.100.108.44:9007/mcp
+    url: http://100.100.108.44:9015/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
    #  chatMenu: false
 
@@ -103,7 +103,7 @@ mcpServers:
    #  chatMenu: false
   pop:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9002/mcp
+    url: http://100.100.108.43:9013/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
@@ -127,7 +127,7 @@ mcpServers:
    #  chatMenu: false
   faq-videos:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9005/mcp
+    url: http://100.100.108.44:9012/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
