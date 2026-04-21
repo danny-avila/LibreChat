@@ -326,7 +326,6 @@ export class EcsStack extends cdk.Stack {
 
     const environment: Record<string, string> = {
       RAG_PORT: "8000",
-      MEILI_HOST: "http://meilisearch.internal:7700",
       EMBEDDINGS_PROVIDER: "bedrock",
       EMBEDDINGS_MODEL: "amazon.titan-embed-text-v1",
     };
@@ -337,9 +336,9 @@ export class EcsStack extends cdk.Stack {
     if (props.rdsEndpoint && props.rdsPort && props.rdsSecret) {
       environment.DB_HOST = props.rdsEndpoint;
       environment.DB_PORT = props.rdsPort;
-      envSecrets.DB_USER = ecs.Secret.fromSecretsManager(props.rdsSecret, "username");
-      envSecrets.DB_PASSWORD = ecs.Secret.fromSecretsManager(props.rdsSecret, "password");
-      envSecrets.DB_NAME = ecs.Secret.fromSecretsManager(props.rdsSecret, "dbname");
+      envSecrets.POSTGRES_USER = ecs.Secret.fromSecretsManager(props.rdsSecret, "username");
+      envSecrets.POSTGRES_PASSWORD = ecs.Secret.fromSecretsManager(props.rdsSecret, "password");
+      envSecrets.POSTGRES_DB = ecs.Secret.fromSecretsManager(props.rdsSecret, "dbname");
     }
 
     ragApiTaskDef.addContainer("rag_api", {
