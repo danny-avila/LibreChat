@@ -91,13 +91,13 @@ registration:
 mcpServers:
   reviewer:
     type: streamable-http
-    url: http://100.100.108.43:9007/mcp
+    url: http://100.100.108.44:9007/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
    #  chatMenu: false
 
   golden:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9006/mcp
+    url: http://100.100.108.44:9005/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
@@ -139,7 +139,7 @@ mcpServers:
 speech:
   stt:
     openai:
-      url: 'http://100.100.108.43:8000/v1/audio/transcriptions'
+      url: 'http://100.100.108.44:8000/v1/audio/transcriptions'
       apiKey: 'sk_t4ua3ce1_N4tW6DA6Mroro32ZW7UJkLHy'
       model: 'whisper-1'
   speechTab:
@@ -216,7 +216,7 @@ fileConfig:
 ocr:
    strategy: "mistral_ocr"
    apiKey: "no-key-required"
-   baseURL: "http://100.100.108.43:8029/v1"
+   baseURL: "http://100.100.108.44:8029/v1"
    mistralModel: "mistral-ocr-latest"
 
 
