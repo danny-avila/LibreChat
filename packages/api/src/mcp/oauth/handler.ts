@@ -30,6 +30,7 @@ import {
   inferClientAuthMethod,
 } from './methods';
 import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
+import { probeResourceMetadataHint } from './resourceHint';
 import { MCPTokenStorage } from './tokens';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
@@ -144,12 +145,29 @@ export class MCPOAuthHandler {
 
     const fetchFn = this.createOAuthFetch(oauthHeaders);
 
-    try {
-      // Try to discover resource metadata first
+    /**
+     * RFC 9728 §5.1: when the server's 401 `WWW-Authenticate` header advertises a
+     * `resource_metadata` URL, use that URL as the authoritative source. Path-aware
+     * `.well-known` discovery is a fallback for when the hint is absent — not the
+     * other way round — or a split deployment can serve stale/wrong metadata at the
+     * path-aware endpoint and strand the flow at a defunct authorization server.
+     */
+    const hint = await probeResourceMetadataHint(serverUrl);
+    if (hint?.resourceMetadataUrl) {
       logger.debug(
-        `[MCPOAuth] Attempting to discover protected resource metadata from ${serverUrl}`,
+        `[MCPOAuth] Using resource_metadata URL from WWW-Authenticate: ${sanitizeUrlForLogging(hint.resourceMetadataUrl.toString())}`,
       );
-      resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchFn);
+    }
+
+    try {
+      logger.debug(
+        `[MCPOAuth] Attempting to discover protected resource metadata from ${sanitizeUrlForLogging(serverUrl)}`,
+      );
+      resourceMetadata = await discoverOAuthProtectedResourceMetadata(
+        serverUrl,
+        { resourceMetadataUrl: hint?.resourceMetadataUrl },
+        fetchFn,
+      );
     } catch (error) {
       logger.debug('[MCPOAuth] Resource metadata discovery failed, continuing with server URL', {
         error,
