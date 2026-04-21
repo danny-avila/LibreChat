@@ -123,6 +123,15 @@ interface InitializeAgentParams {
   endpointOption?: Record<string, unknown>;
   allowedProviders: Set<string>;
   isInitialAgent?: boolean;
+  /**
+   * Whether the `execute_code` capability is enabled for the run.
+   * `initializeAgent` uses this to expand `agent.tools: ['execute_code']`
+   * into the `bash_tool` + `read_file` pair — if the caller's injected
+   * `initializeAgent` implementation consults this flag, agents configured
+   * for code execution will keep working post-Phase-8. Absent / `undefined`
+   * skips the expansion (same semantics as the in-repo controllers).
+   */
+  codeEnvAvailable?: boolean;
 }
 
 /**
@@ -400,6 +409,23 @@ export async function createAgentChatCompletion(
     // Build allowed providers set (empty = all allowed)
     const allowedProviders = new Set<string>();
 
+    /**
+     * Derive `codeEnvAvailable` from the caller-supplied `appConfig` so
+     * `agent.tools: ['execute_code']` still produces `bash_tool` +
+     * `read_file` in the initialized agent's `toolDefinitions` (Phase 8
+     * removed the legacy `execute_code` tool definition, so the
+     * capability flag is the sole gate). Falls back to `undefined` when
+     * the caller doesn't provide `appConfig` — matching the "explicit
+     * opt-in" semantics the in-repo controllers use.
+     */
+    const agentsConfig = (deps.appConfig?.endpoints as Record<string, unknown> | undefined)?.agents;
+    const codeEnvAvailable =
+      agentsConfig != null && typeof agentsConfig === 'object'
+        ? ((agentsConfig as { capabilities?: string[] }).capabilities ?? []).includes(
+            'execute_code',
+          )
+        : undefined;
+
     // Initialize the agent first to check for disableStreaming
     const initializedAgent = await deps.initializeAgent({
       req,
@@ -414,6 +440,7 @@ export async function createAgentChatCompletion(
       },
       allowedProviders,
       isInitialAgent: true,
+      codeEnvAvailable,
     });
 
     // Determine if streaming is enabled (check both request and agent config)
