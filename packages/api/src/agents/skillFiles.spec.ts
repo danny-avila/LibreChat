@@ -12,6 +12,7 @@ jest.mock('./run', () => ({
   extractInvokedSkillsFromPayload: (...args: unknown[]) => mockExtract(...args),
 }));
 
+import { Readable } from 'stream';
 import { Types } from 'mongoose';
 import { primeInvokedSkills } from './skillFiles';
 import type { PrimeInvokedSkillsDeps } from './skillFiles';
@@ -101,13 +102,12 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
       },
     ];
     const listSkillFiles = jest.fn().mockResolvedValue(fileRecords);
-    const readable = {
-      on: jest.fn(),
-      pipe: jest.fn(),
-      read: jest.fn(),
-    } as unknown as NodeJS.ReadableStream;
     const getStrategyFunctions = jest.fn().mockReturnValue({
-      getDownloadStream: jest.fn().mockResolvedValue(readable),
+      /* A real empty Readable — matches the production contract for
+         `getDownloadStream` and works even if `batchUploadCodeEnvFiles`
+         is later replaced with a partially-real implementation that
+         iterates the stream. */
+      getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from(''))),
     });
     const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
       session_id: 'session-42',

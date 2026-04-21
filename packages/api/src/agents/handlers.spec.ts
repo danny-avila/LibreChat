@@ -573,13 +573,16 @@ describe('createToolExecuteHandler', () => {
   });
 
   describe('skill tool codeEnvAvailable gate (sandbox file priming)', () => {
+    const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
+    const SKILL_ID = new Types.ObjectId();
+
     function makeSkillHandlerWithFiles(params: {
       codeEnvAvailable: boolean;
       listSkillFiles: jest.Mock;
       batchUploadCodeEnvFiles?: jest.Mock;
     }) {
       const getSkillByName = jest.fn(async () => ({
-        _id: 'skill-id' as unknown as never,
+        _id: SKILL_ID as unknown as never,
         name: 'brand-guidelines',
         body: 'skill body',
         fileCount: 2,
@@ -644,7 +647,7 @@ describe('createToolExecuteHandler', () => {
         { id: 'call_gate_on', name: Constants.SKILL_TOOL, args: { skillName: 'brand-guidelines' } },
       ]);
 
-      expect(listSkillFiles).toHaveBeenCalledWith('skill-id');
+      expect(listSkillFiles).toHaveBeenCalledWith(SKILL_ID);
     });
 
     it('does NOT call listSkillFiles when codeEnvAvailable is true but env key is unset (admin misconfig)', async () => {
