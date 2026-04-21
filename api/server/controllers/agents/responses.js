@@ -377,6 +377,7 @@ const createResponse = async (req, res) => {
       getSkillByName: db.getSkillByName,
     };
 
+    const appConfig = req.config;
     const enabledCapabilities = new Set(
       appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities,
     );
@@ -554,6 +555,16 @@ const createResponse = async (req, res) => {
         alwaysApplySkillPrimes,
       });
       indexTokenCountMap = primeResult.indexTokenCountMap;
+      /* Surface the cap-driven always-apply truncation at the controller
+         layer too — `injectSkillPrimes` already logs internally, but the
+         controller-level warn includes endpoint context so operators can
+         tell at a glance which path hit the cap. Mirrors AgentClient's
+         warn in `client.js`. */
+      if (primeResult.alwaysApplyDropped > 0) {
+        logger.warn(
+          `[Responses API] Dropped ${primeResult.alwaysApplyDropped} always-apply prime(s) to stay within MAX_PRIMED_SKILLS_PER_TURN.`,
+        );
+      }
     }
 
     // Create tracker for streaming or aggregator for non-streaming
