@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
+import {
+  Panel,
+  Text,
+  Separator,
+  Container,
+} from '@clickhouse/click-ui';
 import type { ChartType, ChartConfig } from './types';
 import { CHART_COLORS } from './types';
 import { getColumnNames, getNumericColumns } from './chartDetect';
+import { CH_BG_MUTED } from './types';
 
 interface ChartConfigModalProps {
   rows: Record<string, unknown>[];
@@ -61,95 +68,73 @@ export default function ChartConfigModal({
     });
   };
 
-  const bg = codeTheme === 'dark' ? '#282828' : '#f6f7fa';
-  const border = codeTheme === 'dark' ? '#3a3a3a' : '#e0e0e0';
-  const text = codeTheme === 'dark' ? '#ffffff' : '#1a1a1a';
-  const muted = codeTheme === 'dark' ? '#999' : '#666';
-
   return (
-    <div
-      style={{
-        background: bg,
-        border: `1px solid ${border}`,
-        borderRadius: 8,
-        padding: 16,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        color: text,
-        fontSize: 13,
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>Chart Configuration</span>
+    <Panel padding="md" radii="sm" hasBorder orientation="vertical" fillWidth>
+      <Container orientation="horizontal" padding="none" justifyContent="space-between" alignItems="center">
+        <Text size="md" weight="bold">Chart Configuration</Text>
         <button
           type="button"
           onClick={onClose}
-          style={{ background: 'none', border: 'none', color: muted, cursor: 'pointer', fontSize: 18 }}
+          className="rounded px-1.5 py-0.5 text-sm hover:opacity-70"
+          style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}
         >
           &times;
         </button>
-      </div>
+      </Container>
+
+      <Separator size="xs" />
 
       {/* Chart Type */}
-      <div>
-        <label style={{ display: 'block', marginBottom: 4, color: muted, fontSize: 11, fontWeight: 500 }}>
-          Chart Type
-        </label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+      <Container orientation="vertical" padding="none" gap="xs">
+        <Text size="xs" color="muted" weight="medium">Chart Type</Text>
+        <div className="flex flex-wrap gap-1">
           {CHART_TYPE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
               onClick={() => setChartType(opt.value)}
+              className="rounded-md px-2.5 py-1 text-xs transition-colors"
               style={{
-                padding: '4px 10px',
-                borderRadius: 4,
-                border: `1px solid ${chartType === opt.value ? '#3b82f6' : border}`,
-                background: chartType === opt.value ? (codeTheme === 'dark' ? '#1e3a5f' : '#dbeafe') : 'transparent',
-                color: text,
+                background: chartType === opt.value ? CH_BG_MUTED[codeTheme] : 'transparent',
+                border: chartType === opt.value
+                  ? '1px solid var(--text-secondary)'
+                  : '1px solid var(--separator-color, #e6e7e9)',
+                color: chartType === opt.value ? 'var(--text-primary)' : 'var(--text-secondary)',
                 cursor: 'pointer',
-                fontSize: 12,
+                fontWeight: chartType === opt.value ? 500 : 400,
               }}
             >
               {opt.label}
             </button>
           ))}
         </div>
-      </div>
+      </Container>
+
+      <Separator size="xs" />
 
       {/* X Axis */}
-      <div>
-        <label style={{ display: 'block', marginBottom: 4, color: muted, fontSize: 11, fontWeight: 500 }}>
-          X Axis (categories)
-        </label>
+      <Container orientation="vertical" padding="none" gap="xs">
+        <Text size="xs" color="muted" weight="medium">X Axis (categories)</Text>
         <select
           value={xAxis}
           onChange={(e) => setXAxis(e.target.value)}
+          className="w-full rounded-md px-2 py-1.5 text-xs"
           style={{
-            width: '100%',
-            padding: '6px 8px',
-            borderRadius: 4,
-            border: `1px solid ${border}`,
-            background: codeTheme === 'dark' ? '#1f1f1c' : '#ffffff',
-            color: text,
-            fontSize: 12,
+            background: CH_BG_MUTED[codeTheme],
+            border: '1px solid var(--separator-color, #e6e7e9)',
+            color: 'var(--text-primary)',
           }}
         >
           {allColumns.map((col) => (
-            <option key={col} value={col}>
-              {col}
-            </option>
+            <option key={col} value={col}>{col}</option>
           ))}
         </select>
-      </div>
+      </Container>
 
       {/* Y Axis */}
-      <div>
-        <label style={{ display: 'block', marginBottom: 4, color: muted, fontSize: 11, fontWeight: 500 }}>
-          Y Axis (values) — select numeric columns
-        </label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+      <Container orientation="vertical" padding="none" gap="xs">
+        <Text size="xs" color="muted" weight="medium">Y Axis (values)</Text>
+        <div className="flex flex-wrap gap-1">
           {allColumns
             .filter((col) => col !== xAxis)
             .map((col) => {
@@ -160,15 +145,16 @@ export default function ChartConfigModal({
                   key={col}
                   type="button"
                   onClick={() => toggleYCol(col)}
+                  className="rounded-md px-2.5 py-1 text-xs transition-colors"
                   style={{
-                    padding: '4px 10px',
-                    borderRadius: 4,
-                    border: `1px solid ${selected ? '#3b82f6' : border}`,
-                    background: selected ? (codeTheme === 'dark' ? '#1e3a5f' : '#dbeafe') : 'transparent',
-                    color: isNumeric ? text : muted,
+                    background: selected ? CH_BG_MUTED[codeTheme] : 'transparent',
+                    border: selected
+                      ? '1px solid var(--text-secondary)'
+                      : '1px solid var(--separator-color, #e6e7e9)',
+                    color: isNumeric ? 'var(--text-primary)' : 'var(--text-secondary)',
                     cursor: 'pointer',
-                    fontSize: 12,
                     opacity: isNumeric ? 1 : 0.5,
+                    fontWeight: selected ? 500 : 400,
                   }}
                 >
                   {col}
@@ -176,43 +162,38 @@ export default function ChartConfigModal({
               );
             })}
         </div>
-      </div>
+      </Container>
+
+      <Separator size="xs" />
 
       {/* Title */}
-      <div>
-        <label style={{ display: 'block', marginBottom: 4, color: muted, fontSize: 11, fontWeight: 500 }}>
-          Title (optional)
-        </label>
+      <Container orientation="vertical" padding="none" gap="xs">
+        <Text size="xs" color="muted" weight="medium">Title (optional)</Text>
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Chart title..."
+          className="w-full rounded-md px-2 py-1.5 text-xs"
           style={{
-            width: '100%',
-            padding: '6px 8px',
-            borderRadius: 4,
-            border: `1px solid ${border}`,
-            background: codeTheme === 'dark' ? '#1f1f1c' : '#ffffff',
-            color: text,
-            fontSize: 12,
+            background: CH_BG_MUTED[codeTheme],
+            border: '1px solid var(--separator-color, #e6e7e9)',
+            color: 'var(--text-primary)',
           }}
         />
-      </div>
+      </Container>
 
       {/* Actions */}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <Container orientation="horizontal" padding="none" gap="sm" justifyContent="end">
         <button
           type="button"
           onClick={onClose}
+          className="rounded-md px-3 py-1.5 text-xs transition-colors"
           style={{
-            padding: '6px 16px',
-            borderRadius: 4,
-            border: `1px solid ${border}`,
+            border: '1px solid var(--separator-color, #e6e7e9)',
             background: 'transparent',
-            color: muted,
+            color: 'var(--text-secondary)',
             cursor: 'pointer',
-            fontSize: 12,
           }}
         >
           Cancel
@@ -221,20 +202,17 @@ export default function ChartConfigModal({
           type="button"
           onClick={handleApply}
           disabled={!xAxis || yAxisCols.length === 0}
+          className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
           style={{
-            padding: '6px 16px',
-            borderRadius: 4,
             border: 'none',
-            background: !xAxis || yAxisCols.length === 0 ? '#555' : '#3b82f6',
-            color: '#ffffff',
+            background: !xAxis || yAxisCols.length === 0 ? 'var(--text-secondary)' : 'var(--text-primary)',
+            color: !xAxis || yAxisCols.length === 0 ? 'var(--text-secondary)' : CH_BG_MUTED[codeTheme],
             cursor: !xAxis || yAxisCols.length === 0 ? 'not-allowed' : 'pointer',
-            fontSize: 12,
-            fontWeight: 500,
           }}
         >
           Apply
         </button>
-      </div>
-    </div>
+      </Container>
+    </Panel>
   );
 }
