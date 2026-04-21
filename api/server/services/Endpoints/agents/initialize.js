@@ -321,6 +321,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     agentConfigs: discoveredConfigs,
     edges: discoveredEdges,
     userMCPAuthMap: discoveredMCPAuthMap,
+    skippedAgentIds: discoveredSkippedIds,
   } = await discoverConnectedAgents(
     {
       req,
@@ -442,6 +443,256 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   // `discoverConnectedAgents` always returns a concrete array, so no
   // further normalization is needed before handing this to `createRun`.
   primaryConfig.edges = edges;
+
+  // Subagents: load any explicit subagent configs. Subagents run in isolated
+  // context windows and are invoked via a dedicated spawn tool (not handoff
+  // edges). An agent that is only referenced as a subagent is dropped from
+  // `agentConfigs` so the LangGraph pipeline doesn't treat it as a
+  // parallel/handoff node, but it stays in `agentToolContexts` — the child's
+  // `ON_TOOL_EXECUTE` dispatches resolve tool execution context (agent,
+  // tool_resources, skill ACLs, ...) from that map, so removing it would leave
+  // action tools skipped and resource-scoped tools running without their
+  // configured resources.
+  const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+  /** Track skipped ids locally so repeated failures short-circuit within
+   *  the subagent loading loop. Seeded from the discovery helper's skip
+   *  list so agents that already failed handoff loading don't get retried. */
+  const skippedAgentIds = new Set(discoveredSkippedIds ?? []);
+
+  /** All agent ids referenced on any edge (source OR target). Used by
+   *  `loadSubagentsFor` to decide whether an agent that's only a subagent
+   *  can be safely dropped from `agentConfigs` — LangGraph doesn't treat
+   *  pure subagents as parallel/handoff nodes. */
+  const edgeAgentIds = new Set([primaryConfig.id]);
+  for (const edge of edges ?? []) {
+    const sources = Array.isArray(edge.from) ? edge.from : [edge.from];
+    const targets = Array.isArray(edge.to) ? edge.to : [edge.to];
+    for (const id of sources) {
+      if (typeof id === 'string') edgeAgentIds.add(id);
+    }
+    for (const id of targets) {
+      if (typeof id === 'string') edgeAgentIds.add(id);
+    }
+  }
+
+  /** Lazy per-id agent loader used for subagents that weren't reachable
+   *  via the handoff edge graph (so `discoverConnectedAgents` didn't
+   *  initialize them). Mirrors the helper's internal `processAgent`:
+   *  DB lookup + VIEW check + `initializeAgent`, then inserts into
+   *  `agentConfigs` and `agentToolContexts`. Returns `null` on any
+   *  failure so the caller can skip gracefully. */
+  const loadAgentById = async (agentId) => {
+    if (skippedAgentIds.has(agentId)) return null;
+    const existing = agentConfigs.get(agentId);
+    if (existing) return existing;
+
+    try {
+      const agent = await db.getAgent({ id: agentId });
+      if (!agent) {
+        skippedAgentIds.add(agentId);
+        return null;
+      }
+      const userId = req.user?.id;
+      if (!userId) {
+        skippedAgentIds.add(agentId);
+        return null;
+      }
+      const hasAccess = await checkPermission({
+        userId,
+        role: req.user?.role,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        requiredPermission: PermissionBits.VIEW,
+      });
+      if (!hasAccess) {
+        logger.warn(
+          `[processAgent] User ${userId} lacks VIEW access to subagent ${agentId}, skipping`,
+        );
+        skippedAgentIds.add(agentId);
+        return null;
+      }
+      const validation = await validateAgentModel({
+        req,
+        res,
+        agent,
+        modelsConfig,
+        logViolation,
+      });
+      if (!validation.isValid) {
+        logger.warn(
+          `[processAgent] Subagent ${agentId} failed model validation: ${validation.error?.message}`,
+        );
+        skippedAgentIds.add(agentId);
+        return null;
+      }
+      const config = await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles,
+          conversationId,
+          parentMessageId,
+          endpointOption: { ...endpointOption, endpoint: EModelEndpoint.agents },
+          allowedProviders,
+          accessibleSkillIds: scopeSkillIds(
+            accessibleSkillIds,
+            ephemeralSkillsToggle ? undefined : agent.skills,
+          ),
+          skillStates,
+          defaultActiveOnShare,
+        },
+        {
+          getAgent: db.getAgent,
+          checkPermission,
+          logViolation,
+          db: {
+            getFiles: db.getFiles,
+            getUserKey: db.getUserKey,
+            getMessages: db.getMessages,
+            getConvoFiles: db.getConvoFiles,
+            updateFilesUsage: db.updateFilesUsage,
+            getUserKeyValues: db.getUserKeyValues,
+            getUserCodeFiles: db.getUserCodeFiles,
+            getToolFilesByIds: db.getToolFilesByIds,
+            getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+            filterFilesByAgentAccess,
+            listSkillsByAccess: db.listSkillsByAccess,
+            listAlwaysApplySkills: db.listAlwaysApplySkills,
+            getSkillByName: db.getSkillByName,
+          },
+        },
+      );
+      agentConfigs.set(agentId, config);
+      agentToolContexts.set(agentId, {
+        agent,
+        toolRegistry: config.toolRegistry,
+        userMCPAuthMap: config.userMCPAuthMap,
+        tool_resources: config.tool_resources,
+        actionsEnabled: config.actionsEnabled,
+        accessibleSkillIds: config.accessibleSkillIds,
+        skillPrimedIdsByName: buildSkillPrimedIdsByName(
+          config.manualSkillPrimes,
+          config.alwaysApplySkillPrimes,
+        ),
+      });
+      return config;
+    } catch (err) {
+      logger.error(`[processAgent] Error processing subagent ${agentId}:`, err);
+      skippedAgentIds.add(agentId);
+      return null;
+    }
+  };
+
+  /** Collected during resolution; applied to `agentConfigs` only after
+   *  every config has had its subagents resolved. Eager pruning would
+   *  hide pure-subagent ids from the subsequent `loadSubagentsFor`
+   *  loop, which would leave *their* `subagentAgentConfigs` empty and
+   *  silently break nested delegation like A → B → C where B is only
+   *  a subagent of A. */
+  const pureSubagentIds = new Set();
+
+  /**
+   * Loads `subagentAgentConfigs` for a single agent config. Shared
+   * between the primary agent and handoff-target agents (and pure
+   * subagents, transitively) so an agent used via handoff or
+   * nested-subagent that has its own explicit `subagents.agent_ids`
+   * gets them honored at runtime. Self-spawn works regardless (no DB
+   * lookup needed). Pruning decisions are deferred to `pureSubagentIds`.
+   */
+  const loadSubagentsFor = async (config) => {
+    const sub = config.subagents;
+    if (!subagentsCapabilityEnabled || !sub?.enabled) {
+      config.subagentAgentConfigs = [];
+      return;
+    }
+
+    const explicitSubagentIds = Array.from(
+      new Set(
+        Array.isArray(sub.agent_ids)
+          ? sub.agent_ids.filter((id) => typeof id === 'string' && id && id !== config.id)
+          : [],
+      ),
+    );
+
+    /** @type {Array<Object>} */
+    const resolved = [];
+    for (const subagentId of explicitSubagentIds) {
+      if (skippedAgentIds.has(subagentId)) continue;
+
+      /** Cycle guard: a configuration like A ↔ B (B lists A as its
+       *  subagent) would otherwise trigger `loadAgentById` on the
+       *  primary — inserting a second config for the same primary id,
+       *  which downstream duplicates in the agent array. Reuse the
+       *  existing primary config when a subagent ref points back at it. */
+      if (subagentId === primaryConfig.id) {
+        resolved.push(primaryConfig);
+        continue;
+      }
+
+      const subagentConfig = await loadAgentById(subagentId);
+      if (!subagentConfig) continue;
+
+      resolved.push(subagentConfig);
+
+      if (!edgeAgentIds.has(subagentId)) {
+        pureSubagentIds.add(subagentId);
+      }
+    }
+
+    config.subagentAgentConfigs = resolved;
+  };
+
+  /** BFS across the primary's subagent tree so nested chains like
+   *  A → B → C get resolved before any pruning. Each config is
+   *  visited once. */
+  const visitedConfigIds = new Set();
+  const pending = [primaryConfig];
+  while (pending.length > 0) {
+    const cfg = pending.shift();
+    if (!cfg || visitedConfigIds.has(cfg.id)) continue;
+    visitedConfigIds.add(cfg.id);
+    await loadSubagentsFor(cfg);
+    for (const child of cfg.subagentAgentConfigs ?? []) {
+      if (child?.id && !visitedConfigIds.has(child.id)) {
+        pending.push(child);
+      }
+    }
+  }
+  /** Handoff targets still in the map that weren't visited via the
+   *  primary's subagent tree also need their subagents resolved. */
+  for (const [id, cfg] of agentConfigs.entries()) {
+    if (id === primaryConfig.id || visitedConfigIds.has(id)) continue;
+    visitedConfigIds.add(id);
+    await loadSubagentsFor(cfg);
+    for (const child of cfg.subagentAgentConfigs ?? []) {
+      if (child?.id && !visitedConfigIds.has(child.id)) {
+        visitedConfigIds.add(child.id);
+        await loadSubagentsFor(child);
+      }
+    }
+  }
+
+  /** Drop pure-subagent entries now that every reachable config has
+   *  had its subagents resolved. They stay in `agentToolContexts` so
+   *  their tools still execute with the right scoping. */
+  for (const id of pureSubagentIds) {
+    agentConfigs.delete(id);
+  }
+
+  primaryConfig.subagents = subagentsCapabilityEnabled ? primaryConfig.subagents : undefined;
+
+  /** If the capability is off at the endpoint level, strip `subagents`
+   *  on every loaded config — not just the primary — so handoff agents
+   *  with `subagents.enabled: true` persisted on their document don't
+   *  still expose self-spawn at runtime after an admin rollback. */
+  if (!subagentsCapabilityEnabled) {
+    for (const config of agentConfigs.values()) {
+      config.subagents = undefined;
+      config.subagentAgentConfigs = undefined;
+    }
+  }
 
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {

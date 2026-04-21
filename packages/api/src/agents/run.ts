@@ -13,13 +13,14 @@ import type {
   OpenAIClientOptions,
   StandardGraphConfig,
   LCToolRegistry,
+  SubagentConfig,
   AgentInputs,
   GenericTool,
   RunConfig,
   IState,
   LCTool,
 } from '@librechat/agents';
-import type { Agent, SummarizationConfig } from 'librechat-data-provider';
+import type { Agent, AgentSubagentsConfig, SummarizationConfig } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
@@ -245,6 +246,10 @@ type RunAgent = Omit<Agent, 'tools'> & {
    * Overrides the default computed from maxContextTokens.
    */
   maxToolResultChars?: number;
+  /** Initialized subagent configs (loaded by initialize.js from agent.subagents.agent_ids). */
+  subagentAgentConfigs?: RunAgent[];
+  /** Source subagent spawning configuration (enabled / allowSelf / agent_ids). */
+  subagents?: AgentSubagentsConfig;
 };
 
 function isNonEmptyString(value: unknown): value is string {
@@ -494,6 +499,54 @@ function computeEffectiveMaxContextTokens(
   return Math.min(maxContextTokens ?? ratioComputed, ratioComputed);
 }
 
+/** Identifier for the self-spawn subagent (reuses parent's AgentInputs in an isolated child graph). */
+const SELF_SUBAGENT_TYPE = 'self';
+
+/**
+ * Builds SubagentConfig entries for an agent: optional self-spawn plus any
+ * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
+ * array when subagents are disabled or no spawn targets are available.
+ */
+function buildSubagentConfigs(
+  agent: RunAgent,
+  agentInput: AgentInputs,
+  toInput: (child: RunAgent) => AgentInputs,
+): SubagentConfig[] {
+  if (!agent.subagents?.enabled) {
+    return [];
+  }
+
+  const configs: SubagentConfig[] = [];
+  const allowSelf = agent.subagents.allowSelf !== false;
+
+  if (allowSelf) {
+    const selfName = agentInput.name ?? agent.name ?? 'self';
+    configs.push({
+      self: true,
+      type: SELF_SUBAGENT_TYPE,
+      name: selfName,
+      description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
+    });
+  }
+
+  for (const child of agent.subagentAgentConfigs ?? []) {
+    if (!child?.id || child.id === agent.id) {
+      continue;
+    }
+    const childInputs = toInput(child);
+    configs.push({
+      type: child.id,
+      name: child.name ?? child.id,
+      description:
+        child.description ??
+        `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
+      agentInputs: childInputs,
+    });
+  }
+
+  return configs;
+}
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -565,8 +618,7 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const agentInputs: AgentInputs[] = [];
-  const buildAgentContext = (agent: RunAgent) => {
+  const buildAgentInput = (agent: RunAgent): AgentInputs => {
     const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
@@ -655,7 +707,7 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
-    const agentInput: AgentInputs = {
+    return {
       provider,
       reasoningKey,
       toolDefinitions,
@@ -674,11 +726,16 @@ export async function createRun({
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
-    agentInputs.push(agentInput);
   };
 
+  const agentInputs: AgentInputs[] = [];
   for (const agent of agents) {
-    buildAgentContext(agent);
+    const agentInput = buildAgentInput(agent);
+    const subagentConfigs = buildSubagentConfigs(agent, agentInput, buildAgentInput);
+    if (subagentConfigs.length > 0) {
+      agentInput.subagentConfigs = subagentConfigs;
+    }
+    agentInputs.push(agentInput);
   }
 
   const graphConfig: RunConfig['graphConfig'] = {
