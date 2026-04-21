@@ -1520,6 +1520,8 @@
   "com_ui_skills_allow_share": "Allow sharing Skills",
   "com_ui_skills_allow_share_public": "Allow sharing Skills publicly",
   "com_ui_skills_allow_use": "Allow using Skills",
+  "com_ui_skills_always_apply_invoked": "Auto-applied skills",
+  "com_ui_skills_always_apply_pin_title": "Always-applied skill (auto-primed on every turn)",
   "com_ui_skills_command_placeholder": "Select a Skill by name",
   "com_ui_skills_empty": "No skills yet",
   "com_ui_skills_load_error": "Failed to load skills",

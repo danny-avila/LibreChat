@@ -27,8 +27,43 @@ describe('ManualSkillPills', () => {
     expect(items[1]).toHaveTextContent('pptx');
   });
 
-  it('localizes the list aria-label', () => {
+  it('localizes the list aria-label (manual default)', () => {
     render(<ManualSkillPills skills={['pptx']} />);
     expect(screen.getByRole('list')).toHaveAttribute('aria-label', 'com_ui_skills_manual_invoked:');
+  });
+
+  it('tags each pill with data-skill-source="manual" by default', () => {
+    render(<ManualSkillPills skills={['brand']} />);
+    const items = screen.getAllByRole('listitem');
+    expect(items[0]).toHaveAttribute('data-skill-source', 'manual');
+  });
+
+  it('switches aria-label and data attribute for source="always-apply"', () => {
+    render(<ManualSkillPills skills={['legal']} source="always-apply" />);
+    expect(screen.getByRole('list')).toHaveAttribute(
+      'aria-label',
+      'com_ui_skills_always_apply_invoked:',
+    );
+    const items = screen.getAllByRole('listitem');
+    expect(items[0]).toHaveAttribute('data-skill-source', 'always-apply');
+  });
+
+  it('renders the pin-icon variant for always-apply (no ScrollText)', () => {
+    const { container: alwaysApply } = render(
+      <ManualSkillPills skills={['legal']} source="always-apply" />,
+    );
+    const { container: manual } = render(<ManualSkillPills skills={['brand']} />);
+    // lucide-react icons render as SVGs with distinguishing class names. We
+    // assert on class token presence rather than the full SVG markup so a
+    // lucide internal change to path data doesn't break this contract.
+    const alwaysApplySvg = alwaysApply.querySelector('svg');
+    const manualSvg = manual.querySelector('svg');
+    expect(alwaysApplySvg).toBeTruthy();
+    expect(manualSvg).toBeTruthy();
+    // Pin vs. ScrollText have distinct lucide class names; both carry the
+    // cyan-500 accent the component applies, but only one carries the
+    // lucide-pin class.
+    expect(alwaysApplySvg?.getAttribute('class')).toContain('lucide-pin');
+    expect(manualSvg?.getAttribute('class')).not.toContain('lucide-pin');
   });
 });
