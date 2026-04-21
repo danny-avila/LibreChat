@@ -698,6 +698,34 @@ export async function initializeAgent(
     agent.provider = options.provider;
   }
 
+  /**
+   * Unify code-execution tools around `bash_tool` + `read_file` when the
+   * agent explicitly lists `execute_code` in its tools and the capability
+   * is enabled for the run. The legacy `execute_code` tool (backed by
+   * `CodeExecutionToolDefinition` + per-user `CODE_API_KEY` + `primeCodeFiles`)
+   * is no longer registered; the string `execute_code` on the agent
+   * document stays as the capability-trigger marker but expands into the
+   * skill-flavored tool pair here.
+   *
+   * Done BEFORE the `hasAgentTools` / GOOGLE_TOOL_CONFLICT gate so
+   * execute-code-only agents on Google/Vertex still trip the conflict
+   * guard when provider-specific tools are also configured (pre-Phase 8
+   * the legacy `execute_code` def would have contributed to
+   * `toolDefinitions` for the same check; now bash_tool + read_file do).
+   * Also before `injectSkillCatalog` so the skill path's own
+   * `registerCodeExecutionTools` call becomes a no-op via the registry
+   * `.has()` dedupe — exactly one copy of each tool reaches the LLM.
+   */
+  const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
+  if (agentRequestsCodeExec && params.codeEnvAvailable === true) {
+    const codeExecResult = registerCodeExecutionTools({
+      toolRegistry,
+      toolDefinitions,
+      includeBash: true,
+    });
+    toolDefinitions = codeExecResult.toolDefinitions;
+  }
+
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
 
@@ -739,30 +767,6 @@ export async function initializeAgent(
       artifacts: agent.artifacts as never,
     });
     agent.additional_instructions = artifactsPromptResult ?? undefined;
-  }
-
-  /**
-   * Unify code-execution tools around `bash_tool` + `read_file` when the
-   * agent explicitly lists `execute_code` in its tools and the capability
-   * is enabled for the run. The legacy `execute_code` tool (backed by
-   * `CodeExecutionToolDefinition` + per-user `CODE_API_KEY` + `primeCodeFiles`)
-   * is no longer registered; the string `execute_code` on the agent
-   * document stays as the capability-trigger marker but expands into the
-   * skill-flavored tool pair here.
-   *
-   * Done BEFORE `injectSkillCatalog` so that when both apply in the same
-   * run, the skill path's `registerCodeExecutionTools` call is a no-op
-   * via the registry `.has()` check — exactly one copy of each tool
-   * reaches the LLM.
-   */
-  const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
-  if (agentRequestsCodeExec && params.codeEnvAvailable === true) {
-    const codeExecResult = registerCodeExecutionTools({
-      toolRegistry,
-      toolDefinitions,
-      includeBash: true,
-    });
-    toolDefinitions = codeExecResult.toolDefinitions;
   }
 
   let skillCount = 0;

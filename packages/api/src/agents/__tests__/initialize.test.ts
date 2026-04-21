@@ -1018,4 +1018,46 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(names).not.toContain('bash_tool');
     expect(names).not.toContain('read_file');
   });
+
+  it('trips GOOGLE_TOOL_CONFLICT on Google/Vertex when execute_code expands alongside provider tools', async () => {
+    /* Pre-Phase 8, an `execute_code`-only agent on Google/Vertex with
+       `options.tools` populated would throw GOOGLE_TOOL_CONFLICT because
+       `CodeExecutionToolDefinition` populated `toolDefinitions` and
+       `hasAgentTools` was true. After dropping that registry entry, the
+       check is now gated on the runtime-expanded `bash_tool` + `read_file`
+       pair — so the expansion MUST happen before `hasAgentTools` is
+       computed or the guard silently goes away for this scenario. */
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      overrideProvider: Providers.GOOGLE,
+    });
+    agent.tools = ['execute_code'];
+
+    /* Surface an options.tools array from the provider config — this is
+       the `google_search` / `url_context` built-in LLM tooling that
+       Google/Vertex exposes via provider options. */
+    mockGetProviderConfig.mockReturnValue({
+      getOptions: jest.fn().mockResolvedValue({
+        llmConfig: { model: 'test-model', maxTokens: 4096 },
+        tools: [{ google_search: {} }],
+      } satisfies InitializeResultBase),
+      overrideProvider: Providers.GOOGLE,
+    });
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+        },
+        db,
+      ),
+    ).rejects.toThrow(/google_tool_conflict/);
+  });
 });
