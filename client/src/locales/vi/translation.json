@@ -258,6 +258,7 @@
   "com_nav_not_supported": "Không được hỗ trợ",
   "com_nav_open_sidebar": "Mở thanh bên",
   "com_nav_plugin_auth_error": "Đã xảy ra lỗi khi xác thực plugin này. Vui lòng thử lại.",
+  "com_nav_auto_scroll_generation": "Tự động cuộn trong khi tạo",
   "com_nav_search_placeholder": "Tìm kiếm tin nhắn",
   "com_nav_send_message": "Gửi tin nhắn",
   "com_nav_setting_chat": "Trò chuyện",

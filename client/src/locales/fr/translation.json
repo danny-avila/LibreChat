@@ -530,6 +530,7 @@
   "com_nav_profile_picture": "Photo de profil",
   "com_nav_save_badges_state": "Sauvegarder l'état des badges",
   "com_nav_save_drafts": "Enregistrer les brouillons localement",
+  "com_nav_auto_scroll_generation": "Défilement automatique pendant la génération",
   "com_nav_scroll_button": "Bouton de défilement jusqu'à la fin",
   "com_nav_search_placeholder": "Rechercher des messages",
   "com_nav_send_message": "Envoyer un message",

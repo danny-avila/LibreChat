@@ -562,6 +562,7 @@
   "com_nav_profile_picture": "プロフィール画像",
   "com_nav_save_badges_state": "バッジの状態を保存する",
   "com_nav_save_drafts": "ローカルにドラフトを保存する",
+  "com_nav_auto_scroll_generation": "生成中の自動スクロール",
   "com_nav_scroll_button": "終了ボタンまでスクロール",
   "com_nav_search_placeholder": "メッセージ検索",
   "com_nav_send_message": "メッセージを送信する",

@@ -10,6 +10,7 @@
   "com_agents_all_description": "Prebrskajte vse agente v skupni rabi v vseh kategorijah",
   "com_agents_avatar_upload_error": "Nalaganje avatarja agenta ni uspelo",
   "com_assistants_allow_sites_you_trust": "Dovolite samo spletna mesta, ki jim zaupate.",
+  "com_nav_auto_scroll_generation": "Samodejno pomikanje med generiranjem",
   "com_ui_api_key": "Ključ API-ja",
   "com_ui_auth_type": "Vrsta avtorizacije",
   "com_ui_auth_url": "URL za avtorizacijo",

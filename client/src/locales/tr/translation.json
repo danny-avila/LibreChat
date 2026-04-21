@@ -356,6 +356,7 @@
   "com_nav_plus_command_description": "Çoklu yanıt ayarı eklemek için \"+\" komutunu aç/kapat",
   "com_nav_profile_picture": "Profil Resmi",
   "com_nav_save_drafts": "Taslakları yerel olarak kaydet",
+  "com_nav_auto_scroll_generation": "Oluşturma sırasında otomatik kaydırma",
   "com_nav_scroll_button": "Sona kaydır düğmesi",
   "com_nav_search_placeholder": "Mesajları ara",
   "com_nav_send_message": "Mesajı gönder",

@@ -546,6 +546,7 @@
   "com_nav_profile_picture": "个人资料头像",
   "com_nav_save_badges_state": "保存徽章状态",
   "com_nav_save_drafts": "在本地保存草稿",
+  "com_nav_auto_scroll_generation": "生成时自动滚动",
   "com_nav_scroll_button": "滚动到末尾按钮",
   "com_nav_search_placeholder": "搜索消息",
   "com_nav_send_message": "发送消息",

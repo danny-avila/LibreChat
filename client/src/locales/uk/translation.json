@@ -526,6 +526,7 @@
   "com_nav_profile_picture": "Зображення профілю",
   "com_nav_save_badges_state": "Зберігати стан значків чату",
   "com_nav_save_drafts": "Зберігати чернетки локально",
+  "com_nav_auto_scroll_generation": "Автоматичне прокручування під час генерації",
   "com_nav_scroll_button": "Кнопка прокручування до кінця повідомлення",
   "com_nav_search_placeholder": "Пошук повідомлень",
   "com_nav_send_message": "Надіслати повідомлення",
