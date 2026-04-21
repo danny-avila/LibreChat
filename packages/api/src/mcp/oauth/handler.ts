@@ -151,8 +151,12 @@ export class MCPOAuthHandler {
      * `.well-known` discovery is a fallback for when the hint is absent — not the
      * other way round — or a split deployment can serve stale/wrong metadata at the
      * path-aware endpoint and strand the flow at a defunct authorization server.
+     *
+     * Reuse `fetchFn` so admin-configured `oauthHeaders` (e.g. a gateway API key
+     * required to reach the MCP endpoint at all) are attached to the probe — without
+     * them, the probe would 401 for the wrong reason and never see the real challenge.
      */
-    const hint = await probeResourceMetadataHint(serverUrl);
+    const hint = await probeResourceMetadataHint(serverUrl, fetchFn);
     if (hint?.resourceMetadataUrl) {
       logger.debug(
         `[MCPOAuth] Using resource_metadata URL from WWW-Authenticate: ${sanitizeUrlForLogging(hint.resourceMetadataUrl.toString())}`,

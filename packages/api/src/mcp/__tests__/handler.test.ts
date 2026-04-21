@@ -2553,5 +2553,50 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       // Exactly one SDK call — no separate path-aware retry.
       expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledTimes(1);
     });
+
+    it('invokes the probe with the OAuth-aware fetch so oauthHeaders reach the server', async () => {
+      // Regression guard: without the wrapper, admin-configured `oauthHeaders` (e.g. a
+      // gateway API key that fronts the MCP endpoint) would be stripped from the probe,
+      // causing the gateway to 401 us for the wrong reason and masking the real hint.
+      mockProbeResourceMetadataHint.mockResolvedValueOnce(null);
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: serverUrl,
+        authorization_servers: ['https://auth.example.com'],
+      });
+
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://auth.example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        serverUrl,
+        'user-123',
+        { 'X-Gateway-Key': 'secret' },
+        undefined,
+      );
+
+      expect(mockProbeResourceMetadataHint).toHaveBeenCalledTimes(1);
+      // Second argument must be a fetchFn (the OAuth-aware wrapper), not `undefined`.
+      const fetchFnArg = mockProbeResourceMetadataHint.mock.calls[0][1];
+      expect(typeof fetchFnArg).toBe('function');
+    });
   });
 });

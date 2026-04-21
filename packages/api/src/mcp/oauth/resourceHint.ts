@@ -1,4 +1,5 @@
 import { extractWWWAuthenticateParams } from '@modelcontextprotocol/sdk/client/auth.js';
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import { mcpConfig } from '../mcpConfig';
 
 export interface ResourceHintProbeResult {
@@ -19,18 +20,25 @@ export interface ResourceHintProbeResult {
  * Tries `HEAD` first (cheap) then falls back to `POST` — some MCP servers only return 401
  * for methods that carry a body (e.g. StackOverflow's MCP). Returns `null` when no 401
  * challenge was observed or the probe itself failed.
+ *
+ * When `fetchFn` is supplied (for example, the OAuth-aware wrapper built by the handler)
+ * it is used for both probes so that admin-configured `oauthHeaders` are attached — a
+ * gateway that requires a static API key to reach the MCP endpoint would otherwise 401
+ * us for the wrong reason and never surface the real Bearer challenge.
  */
 export async function probeResourceMetadataHint(
   serverUrl: string,
+  fetchFn: FetchLike = fetch,
 ): Promise<ResourceHintProbeResult | null> {
-  const headResult = await probeWithMethod(serverUrl, 'HEAD');
+  const headResult = await probeWithMethod(serverUrl, 'HEAD', fetchFn);
   if (headResult) return headResult;
-  return probeWithMethod(serverUrl, 'POST');
+  return probeWithMethod(serverUrl, 'POST', fetchFn);
 }
 
 async function probeWithMethod(
   serverUrl: string,
   method: 'HEAD' | 'POST',
+  fetchFn: FetchLike,
 ): Promise<ResourceHintProbeResult | null> {
   try {
     const fetchOptions: RequestInit = {
@@ -43,7 +51,7 @@ async function probeWithMethod(
       fetchOptions.body = JSON.stringify({});
     }
 
-    const response = await fetch(serverUrl, fetchOptions);
+    const response = await fetchFn(serverUrl, fetchOptions);
     if (response.status !== 401) return null;
 
     const wwwAuth = response.headers.get('www-authenticate');

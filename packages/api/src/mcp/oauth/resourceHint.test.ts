@@ -93,6 +93,29 @@ describe('probeResourceMetadataHint', () => {
     expect(result).toBeNull();
   });
 
+  it('uses the injected fetchFn so admin-configured oauthHeaders reach the probe', async () => {
+    // Simulates an MCP endpoint fronted by a gateway that requires a static API key
+    // header — without it, the gateway 401s before the MCP app ever sees the request,
+    // so the probe needs the OAuth-aware fetch wrapper to attach that header.
+    const customFetch = jest.fn(async () => {
+      return {
+        status: 401,
+        headers: new Headers({ 'www-authenticate': 'Bearer' }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const result = await probeResourceMetadataHint('https://example.com/mcp', customFetch);
+
+    expect(result).toEqual({
+      resourceMetadataUrl: undefined,
+      scope: undefined,
+      bearerChallenge: true,
+    });
+    expect(customFetch).toHaveBeenCalledTimes(1);
+    // Global fetch must not be touched when fetchFn is supplied.
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('treats a non-Bearer 401 as uninformative and keeps probing', async () => {
     // Basic auth challenges carry no OAuth signal: fall through to the POST probe so
     // MCP servers that require a body before emitting their Bearer challenge still work.
