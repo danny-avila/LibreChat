@@ -62,6 +62,7 @@ export default function useSSE(
     isAddedRequest,
     setConversation,
     setIsSubmitting,
+    setAbortScroll,
     newConversation,
     setShowStopButton,
     resetLatestMessage,

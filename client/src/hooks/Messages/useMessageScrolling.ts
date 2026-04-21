@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import useScrollToRef from '~/hooks/useScrollToRef';
+import { logger } from '~/utils';
 import store from '~/store';
 
 const threshold = 0.85;
@@ -12,6 +13,7 @@ const debounceRate = 150;
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);
   const autoScrollDuringGeneration = useRecoilValue(store.autoScrollDuringGeneration);
+  const shouldAutoScrollDuringGeneration = autoScrollDuringGeneration === true;
 
   const scrollableRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -85,9 +87,11 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       isSubmitting &&
       scrollToBottom &&
       abortScroll !== true &&
-      autoScrollDuringGeneration
+      shouldAutoScrollDuringGeneration
     ) {
       scrollToBottom();
+    } else if (isSubmitting && scrollToBottom && !shouldAutoScrollDuringGeneration) {
+      scrollToBottom.cancel();
     }
 
     return () => {
@@ -95,7 +99,14 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
         scrollToBottom && scrollToBottom.cancel();
       }
     };
-  }, [autoScrollDuringGeneration, isSubmitting, messagesTree, scrollToBottom, abortScroll]);
+  }, [
+    autoScrollDuringGeneration,
+    shouldAutoScrollDuringGeneration,
+    isSubmitting,
+    messagesTree,
+    scrollToBottom,
+    abortScroll,
+  ]);
 
   useEffect(() => {
     if (!messagesEndRef.current || !scrollableRef.current) {

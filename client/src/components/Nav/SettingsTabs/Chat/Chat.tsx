@@ -124,6 +124,7 @@ function Chat() {
             localizationKey={config.localizationKey}
             hoverCardText={config.hoverCardText}
             switchId={config.switchId}
+            onCheckedChange={config.onCheckedChange as ((value: boolean) => void) | undefined}
           />
         </div>
       ))}

@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -59,6 +59,7 @@ export type EventHandlerParams = {
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
   setIsSubmitting: SetterOrUpdater<boolean>;
+  setAbortScroll: SetterOrUpdater<boolean>;
   setConversation?: SetterOrUpdater<TConversation | null>;
   newConversation?: ConvoGenerator;
   setShowStopButton: SetterOrUpdater<boolean>;
@@ -173,6 +174,7 @@ export default function useEventHandlers({
   isAddedRequest = false,
   setConversation,
   setIsSubmitting,
+  setAbortScroll,
   newConversation,
   setShowStopButton,
   resetLatestMessage,
@@ -180,7 +182,6 @@ export default function useEventHandlers({
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
-  const setAbortScroll = useSetRecoilState(store.abortScroll);
   const autoScrollDuringGeneration = useRecoilValue(store.autoScrollDuringGeneration);
   const navigate = useNavigate();
   const location = useLocation();
@@ -417,10 +418,13 @@ export default function useEventHandlers({
         resetLatestMessage();
       }
 
-      if (autoScrollDuringGeneration) {
+      const shouldAutoScrollDuringGeneration = autoScrollDuringGeneration === true;
+
+      if (shouldAutoScrollDuringGeneration) {
         scrollToEnd(() => setAbortScroll(false));
       } else {
-        scrollToMessageStart(initialResponse.messageId, () => setAbortScroll(false));
+        setAbortScroll(true);
+        scrollToMessageStart(initialResponse.messageId);
       }
     },
     [
