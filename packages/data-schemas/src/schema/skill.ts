@@ -208,6 +208,18 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
       default: 0,
       min: 0,
     },
+    /**
+     * When `true`, the skill's SKILL.md body is auto-primed into every turn
+     * without user `$` invocation or model discretion. Mirrors the
+     * `always-apply` YAML frontmatter field and is kept as a first-class
+     * column so the `listAlwaysApplySkills` query at the top of every
+     * request is an indexed lookup, not a frontmatter scan.
+     */
+    alwaysApply: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     tenantId: {
       type: String,
       index: true,

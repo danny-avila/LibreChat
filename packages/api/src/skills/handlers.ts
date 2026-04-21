@@ -162,6 +162,7 @@ function serializeSkill(
     source: skill.source,
     sourceMetadata: serializeSourceMetadata(skill.sourceMetadata),
     fileCount: skill.fileCount,
+    alwaysApply: skill.alwaysApply,
     isPublic: pub,
     tenantId: skill.tenantId,
     createdAt: (skill.createdAt ?? new Date()).toISOString(),
@@ -189,6 +190,7 @@ function serializeSkillSummary(
     source: skill.source,
     sourceMetadata: serializeSourceMetadata(skill.sourceMetadata),
     fileCount: skill.fileCount,
+    alwaysApply: skill.alwaysApply,
     isPublic: pub,
     tenantId: skill.tenantId,
     createdAt: (skill.createdAt ?? new Date()).toISOString(),
@@ -393,6 +395,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
           body: body.body,
           frontmatter: body.frontmatter as Record<string, unknown> | undefined,
           category: body.category,
+          alwaysApply: body.alwaysApply,
           author: authorId,
           authorName,
           tenantId: user.tenantId,
@@ -497,6 +500,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         update.frontmatter = rest.frontmatter as Record<string, unknown>;
       }
       if (rest.category !== undefined) update.category = rest.category;
+      if (rest.alwaysApply !== undefined) update.alwaysApply = rest.alwaysApply;
 
       if (Object.keys(update).length === 0) {
         return res.status(400).json({ error: 'At least one field must be provided for update' });

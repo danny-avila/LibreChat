@@ -29,7 +29,7 @@ const {
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   createOpenAIContentAggregator,
-  injectManualSkillPrimes,
+  injectSkillPrimes,
   isChatCompletionValidationFailure,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
@@ -48,7 +48,7 @@ const {
 const {
   getSkillToolDeps,
   enrichWithSkillConfigurable,
-  buildManualSkillPrimedIdsByName,
+  buildSkillPrimedIdsByName,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logViolation } = require('~/cache');
@@ -246,6 +246,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       listSkillsByAccess: db.listSkillsByAccess,
+      listAlwaysApplySkills: db.listAlwaysApplySkills,
       getSkillByName: db.getSkillByName,
     };
 
@@ -432,7 +433,10 @@ const OpenAIChatCompletionController = async (req, res) => {
           req,
           primaryConfig.accessibleSkillIds,
           undefined,
-          buildManualSkillPrimedIdsByName(primaryConfig.manualSkillPrimes),
+          buildSkillPrimedIdsByName(
+            primaryConfig.manualSkillPrimes,
+            primaryConfig.alwaysApplySkillPrimes,
+          ),
         );
       },
       toolEndCallback,
@@ -450,17 +454,23 @@ const OpenAIChatCompletionController = async (req, res) => {
     let indexTokenCountMap = formatted.indexTokenCountMap;
 
     /**
-     * Inject manual skill primes so the model sees SKILL.md bodies for this
-     * turn — parity with AgentClient's chat path. OpenAI-compatible streaming
-     * uses its own tracker/aggregator shape, so the LibreChat-style card SSE
-     * events don't apply here; only the message-context part carries over.
+     * Inject manual + always-apply skill primes so the model sees SKILL.md
+     * bodies for this turn — parity with AgentClient's chat path. OpenAI-
+     * compatible streaming uses its own tracker/aggregator shape, so the
+     * LibreChat-style card SSE events don't apply here; only the
+     * message-context part carries over.
      */
     const manualSkillPrimes = primaryConfig.manualSkillPrimes;
-    if (manualSkillPrimes && manualSkillPrimes.length > 0) {
-      const primeResult = injectManualSkillPrimes({
+    const alwaysApplySkillPrimes = primaryConfig.alwaysApplySkillPrimes;
+    if (
+      (manualSkillPrimes && manualSkillPrimes.length > 0) ||
+      (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
+    ) {
+      const primeResult = injectSkillPrimes({
         initialMessages: formattedMessages,
         indexTokenCountMap,
         manualSkillPrimes,
+        alwaysApplySkillPrimes,
       });
       indexTokenCountMap = primeResult.indexTokenCountMap;
     }

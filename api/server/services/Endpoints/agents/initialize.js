@@ -28,7 +28,7 @@ const { filterFilesByAgentAccess } = require('~/server/services/Files/permission
 const {
   getSkillToolDeps,
   enrichWithSkillConfigurable,
-  buildManualSkillPrimedIdsByName,
+  buildSkillPrimedIdsByName,
 } = require('./skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
@@ -190,7 +190,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         req,
         ctx.accessibleSkillIds,
         codeApiKey,
-        ctx.manualSkillPrimedIdsByName,
+        ctx.skillPrimedIdsByName,
       );
     },
     toolEndCallback,
@@ -287,6 +287,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
       listSkillsByAccess: db.listSkillsByAccess,
+      listAlwaysApplySkills: db.listAlwaysApplySkills,
       getSkillByName: db.getSkillByName,
     },
   );
@@ -294,12 +295,15 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   logger.debug(
     `[initializeClient] Storing tool context for ${primaryConfig.id}: ${primaryConfig.toolDefinitions?.length ?? 0} tools, registry size: ${primaryConfig.toolRegistry?.size ?? '0'}`,
   );
-  /** Maps each manually-primed skill name to the `_id` of the exact doc
-   *  that was primed. Plumbed to `enrichWithSkillConfigurable` so the
-   *  read_file handler can pin same-name collision lookups to the
-   *  resolver's chosen doc. */
-  const manualSkillPrimedIdsByName = buildManualSkillPrimedIdsByName(
+  /** Maps each primed skill name (manual `$` or always-apply) to the
+   *  `_id` of the exact doc that was primed. Plumbed to
+   *  `enrichWithSkillConfigurable` so the read_file handler can pin
+   *  same-name collision lookups to the resolver's chosen doc AND relax
+   *  the disable-model-invocation gate for skills whose body is already
+   *  in this turn's context. */
+  const skillPrimedIdsByName = buildSkillPrimedIdsByName(
     primaryConfig.manualSkillPrimes,
+    primaryConfig.alwaysApplySkillPrimes,
   );
   agentToolContexts.set(primaryConfig.id, {
     agent: primaryAgent,
@@ -308,7 +312,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     tool_resources: primaryConfig.tool_resources,
     actionsEnabled: primaryConfig.actionsEnabled,
     accessibleSkillIds: primaryConfig.accessibleSkillIds,
-    manualSkillPrimedIdsByName,
+    skillPrimedIdsByName,
   });
 
   const {
@@ -349,6 +353,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
         listSkillsByAccess: db.listSkillsByAccess,
+        listAlwaysApplySkills: db.listAlwaysApplySkills,
         getSkillByName: db.getSkillByName,
       },
       // The callback fires during BFS, before the helper prunes agents
@@ -357,6 +362,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       // set. The per-agent tool context map is OK to keep populated even
       // for pruned ids: it's only read by closure in ON_TOOL_EXECUTE,
       // stale entries are unreachable at runtime.
+      //
+      // Handoff agents get the same `skillPrimedIdsByName` plumbing as the
+      // primary so `read_file` can pin same-name collisions to the exact
+      // primed doc AND relax the `disable-model-invocation: true` gate for
+      // skills whose body is already in this turn's context — matters for
+      // handoff agents that have their own always-apply skills bound or
+      // that the user `$`-invokes within the handoff flow.
       onAgentInitialized: (agentId, agent, config) => {
         agentToolContexts.set(agentId, {
           agent,
@@ -365,6 +377,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           tool_resources: config.tool_resources,
           actionsEnabled: config.actionsEnabled,
           accessibleSkillIds: config.accessibleSkillIds,
+          skillPrimedIdsByName: buildSkillPrimedIdsByName(
+            config.manualSkillPrimes,
+            config.alwaysApplySkillPrimes,
+          ),
         });
       },
       // Pass through the `@librechat/api` exports so that tests which

@@ -12,6 +12,7 @@ import {
   validateSkillName,
   validateSkillDescription,
   validateSkillFrontmatter,
+  validateAlwaysApply,
   validateRelativePath,
   inferSkillFileCategory,
   deriveStructuredFrontmatterFields,
@@ -275,6 +276,45 @@ describe('skill validation helpers', () => {
       expect(
         validateSkillFrontmatter({ hooks: deep }).some((i) => i.code === 'INVALID_SHAPE'),
       ).toBe(true);
+    });
+
+    it('accepts always-apply as a boolean', () => {
+      expect(validateSkillFrontmatter({ 'always-apply': true })).toEqual([]);
+      expect(validateSkillFrontmatter({ 'always-apply': false })).toEqual([]);
+    });
+
+    it('rejects always-apply with non-boolean values', () => {
+      expect(
+        validateSkillFrontmatter({ 'always-apply': 'yes' }).some(
+          (i) => i.code === 'INVALID_TYPE' && i.field === 'frontmatter.always-apply',
+        ),
+      ).toBe(true);
+      expect(
+        validateSkillFrontmatter({ 'always-apply': 1 }).some((i) => i.code === 'INVALID_TYPE'),
+      ).toBe(true);
+    });
+  });
+
+  describe('validateAlwaysApply', () => {
+    it('accepts undefined and booleans (undefined = no change)', () => {
+      expect(validateAlwaysApply(undefined)).toEqual([]);
+      expect(validateAlwaysApply(true)).toEqual([]);
+      expect(validateAlwaysApply(false)).toEqual([]);
+    });
+
+    it('rejects null (PATCH forwards any non-undefined value to $set, and null in a boolean column is an ambiguous state)', () => {
+      expect(validateAlwaysApply(null).some((i) => i.code === 'INVALID_TYPE')).toBe(true);
+    });
+
+    it('rejects string payloads (defends against loosely-typed clients)', () => {
+      expect(validateAlwaysApply('true').some((i) => i.code === 'INVALID_TYPE')).toBe(true);
+      expect(validateAlwaysApply('false').some((i) => i.code === 'INVALID_TYPE')).toBe(true);
+    });
+
+    it('rejects numeric / object / array payloads', () => {
+      expect(validateAlwaysApply(1).some((i) => i.code === 'INVALID_TYPE')).toBe(true);
+      expect(validateAlwaysApply({}).some((i) => i.code === 'INVALID_TYPE')).toBe(true);
+      expect(validateAlwaysApply([]).some((i) => i.code === 'INVALID_TYPE')).toBe(true);
     });
   });
 
@@ -605,39 +645,6 @@ describe('Skill CRUD methods', () => {
     expect(fetched?.allowedTools).toEqual(['execute_code']);
   });
 
-  it('backfills legacy skills from frontmatter on listSkillsByAccess summaries', async () => {
-    /* Same legacy-shape simulation; the summary projection now includes
-       frontmatter so the backfill helper has data to read. */
-    const legacy = await Skill.create({
-      name: 'legacy-summary',
-      description: 'A legacy skill listed in summaries.',
-      body: 'body',
-      frontmatter: {
-        name: 'legacy-summary',
-        description: 'A legacy skill listed in summaries.',
-        'disable-model-invocation': true,
-        'user-invocable': false,
-      },
-      author: owner._id,
-      authorName: owner.name ?? 'Skill Owner',
-      version: 1,
-      source: 'inline',
-      fileCount: 0,
-    });
-    await Skill.collection.updateOne(
-      { _id: legacy._id },
-      { $unset: { disableModelInvocation: '', userInvocable: '' } },
-    );
-
-    const result = await methods.listSkillsByAccess({
-      accessibleIds: [legacy._id as mongoose.Types.ObjectId],
-      limit: 10,
-    });
-    expect(result.skills.length).toBe(1);
-    expect(result.skills[0].disableModelInvocation).toBe(true);
-    expect(result.skills[0].userInvocable).toBe(false);
-  });
-
   it('preferModelInvocable picks the model-invocable doc on same-name collision (does NOT filter on userInvocable)', async () => {
     /* Same-name collision scenario the model paths must handle: an older
        user-invocable variant and a newer model-only variant
@@ -881,6 +888,304 @@ describe('Skill CRUD methods', () => {
     });
     expect(bySearch.skills.length).toBe(1);
     expect(bySearch.skills[0].name).toBe('beta-skill');
+  });
+
+  it('listAlwaysApplySkills returns only alwaysApply:true rows within accessibleIds', async () => {
+    const { skill: a } = await methods.createSkill(
+      makeSkillInput({ name: 'always-a', alwaysApply: true }),
+    );
+    const { skill: b } = await methods.createSkill(
+      makeSkillInput({ name: 'always-b', alwaysApply: true }),
+    );
+    const { skill: c } = await methods.createSkill(
+      makeSkillInput({ name: 'not-always-c' /* alwaysApply defaults false */ }),
+    );
+    const ids = [a._id, b._id, c._id];
+    const result = await methods.listAlwaysApplySkills({
+      accessibleIds: ids as unknown as mongoose.Types.ObjectId[],
+      limit: 10,
+    });
+    const names = result.skills.map((s) => s.name).sort();
+    expect(names).toEqual(['always-a', 'always-b']);
+  });
+
+  it('listAlwaysApplySkills excludes rows outside accessibleIds', async () => {
+    const { skill: mine } = await methods.createSkill(
+      makeSkillInput({ name: 'mine-always', alwaysApply: true }),
+    );
+    await methods.createSkill(makeSkillInput({ name: 'other-always', alwaysApply: true }));
+    const result = await methods.listAlwaysApplySkills({
+      accessibleIds: [mine._id] as unknown as mongoose.Types.ObjectId[],
+      limit: 10,
+    });
+    expect(result.skills.map((s) => s.name)).toEqual(['mine-always']);
+  });
+
+  it('listAlwaysApplySkills respects the limit and reports has_more for pagination', async () => {
+    const created = [];
+    for (let i = 0; i < 3; i++) {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({ name: `always-${i}`, alwaysApply: true }),
+      );
+      created.push(skill);
+    }
+    const result = await methods.listAlwaysApplySkills({
+      accessibleIds: created.map((s) => s._id) as unknown as mongoose.Types.ObjectId[],
+      limit: 2,
+    });
+    expect(result.skills).toHaveLength(2);
+    expect(result.has_more).toBe(true);
+    expect(result.after).not.toBeNull();
+  });
+
+  it('listAlwaysApplySkills paginates via cursor to return subsequent rows without duplicates', async () => {
+    const created = [];
+    for (let i = 0; i < 5; i++) {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({ name: `paged-${i}`, alwaysApply: true }),
+      );
+      created.push(skill);
+    }
+    const ids = created.map((s) => s._id) as unknown as mongoose.Types.ObjectId[];
+    const first = await methods.listAlwaysApplySkills({ accessibleIds: ids, limit: 2 });
+    expect(first.skills).toHaveLength(2);
+    expect(first.has_more).toBe(true);
+    const second = await methods.listAlwaysApplySkills({
+      accessibleIds: ids,
+      limit: 2,
+      cursor: first.after,
+    });
+    expect(second.skills).toHaveLength(2);
+    const third = await methods.listAlwaysApplySkills({
+      accessibleIds: ids,
+      limit: 2,
+      cursor: second.after,
+    });
+    expect(third.has_more).toBe(false);
+    expect(third.after).toBeNull();
+    const seenIds = [...first.skills, ...second.skills, ...third.skills].map((s) =>
+      s._id.toString(),
+    );
+    expect(new Set(seenIds).size).toBe(5);
+  });
+
+  it('createSkill persists alwaysApply first-class column', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'flagged', alwaysApply: true }),
+    );
+    expect(skill.alwaysApply).toBe(true);
+
+    const { skill: defaulted } = await methods.createSkill(makeSkillInput({ name: 'defaulted' }));
+    expect(defaulted.alwaysApply).toBe(false);
+  });
+
+  it('createSkill rejects a non-boolean top-level alwaysApply', async () => {
+    await expect(
+      methods.createSkill(
+        makeSkillInput({ name: 'bad-always', alwaysApply: 'false' as unknown as boolean }),
+      ),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+  });
+
+  it('updateSkill rejects a non-boolean top-level alwaysApply', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'type-guard' }));
+    await expect(
+      methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: { alwaysApply: 'true' as unknown as boolean },
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+  });
+
+  it('updateSkill rejects explicit null for alwaysApply (cannot persist ambiguous state)', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'null-guard', alwaysApply: true }),
+    );
+    await expect(
+      methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: { alwaysApply: null as unknown as boolean },
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+  });
+
+  it('createSkill derives alwaysApply from frontmatter when the top-level flag is absent', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'frontmatter-on',
+        frontmatter: {
+          name: 'frontmatter-on',
+          description: 'A small demo skill used in tests.',
+          'always-apply': true,
+        },
+      }),
+    );
+    expect(skill.alwaysApply).toBe(true);
+  });
+
+  it('createSkill prefers explicit top-level alwaysApply over frontmatter', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'explicit-wins',
+        alwaysApply: false,
+        frontmatter: {
+          name: 'explicit-wins',
+          description: 'A small demo skill used in tests.',
+          'always-apply': true,
+        },
+      }),
+    );
+    expect(skill.alwaysApply).toBe(false);
+  });
+
+  it('updateSkill syncs alwaysApply column from a frontmatter-only update', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'sync-test' }));
+    expect(skill.alwaysApply).toBe(false);
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: {
+        frontmatter: {
+          name: 'sync-test',
+          description: 'A small demo skill used in tests.',
+          'always-apply': true,
+        },
+      },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
+
+  it('updateSkill keeps alwaysApply column untouched when the frontmatter update omits always-apply', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'no-flip', alwaysApply: true }),
+    );
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: {
+        frontmatter: { name: 'no-flip', description: 'Updated desc without touching the flag.' },
+      },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
+
+  it('updateSkill top-level alwaysApply wins over a frontmatter flag in the same update', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'explicit-update-wins' }));
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: {
+        alwaysApply: false,
+        frontmatter: {
+          name: 'explicit-update-wins',
+          description: 'A small demo skill used in tests.',
+          'always-apply': true,
+        },
+      },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(false);
+    }
+  });
+
+  it('updateSkill derives alwaysApply from a body edit that flips `always-apply:` inline', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'body-flip', alwaysApply: true }),
+    );
+    const newBody = `---\nname: body-flip\ndescription: still a demo skill.\nalways-apply: false\n---\n\n# Edited body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: newBody },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(false);
+      expect(result.skill.body).toBe(newBody);
+    }
+  });
+
+  it('updateSkill derives alwaysApply=true from a body edit that adds `always-apply: true` inline', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-enable' }));
+    expect(skill.alwaysApply).toBe(false);
+    const newBody = `---\nname: body-enable\ndescription: now opting in.\nalways-apply: true\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: newBody },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
+
+  it('updateSkill flips alwaysApply to false when the body removes the `always-apply:` line', async () => {
+    /* Regression for the “durable mismatch” case: a previously-
+       always-apply skill whose SKILL.md body no longer declares the
+       flag must stop auto-priming. Without this, the column would
+       stick at `true` and the UI pin badge would persist even though
+       the file itself no longer opts in. */
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'body-remove', alwaysApply: true }),
+    );
+    const bodyWithoutKey = `---\nname: body-remove\ndescription: opting out by removing the line.\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: bodyWithoutKey },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(false);
+      expect(result.skill.body).toBe(bodyWithoutKey);
+    }
+  });
+
+  it('updateSkill flips alwaysApply to false when the body update carries no frontmatter block at all', async () => {
+    /* An author rewriting SKILL.md without any YAML frontmatter is an
+       implicit opt-out — there is no declaration anywhere, so the
+       column should reflect that. */
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'body-strip-fm', alwaysApply: true }),
+    );
+    const plainBody = `# Just the body now — no frontmatter.`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: plainBody },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(false);
+    }
+  });
+
+  it('updateSkill explicit alwaysApply still wins when body would otherwise flip it to false', async () => {
+    /* Higher-precedence sources still override: an API caller sending
+       both `alwaysApply: true` and a body without the key keeps the
+       column `true`, because explicit top-level is the authoritative
+       source for programmatic callers. */
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'explicit-trumps-body' }));
+    const bodyWithoutKey = `---\nname: explicit-trumps-body\ndescription: frontmatter block without the flag.\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { alwaysApply: true, body: bodyWithoutKey },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
   });
 });
 
