@@ -793,11 +793,16 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   if (hasExecuteCode && tool_resources) {
     try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+      /**
+       * Read the code-env key from `process.env` rather than `loadAuthValues`
+       * — the per-user `CODE_API_KEY` plugin-auth path was removed alongside
+       * the `bash_tool` decouple (Phase 4). Priming here still runs so user
+       * files uploaded against an `execute_code`-enabled agent land in the
+       * sandbox session that `bash_tool` picks up via `sessions` on the
+       * turn; the legacy `toolContextMap` string keeps the model's "files
+       * available at /mnt/data/..." hint in the prompt unchanged.
+       */
+      const codeApiKey = process.env[EnvVar.CODE_API_KEY] ?? '';
 
       if (codeApiKey) {
         const { toolContext } = await primeCodeFiles(
@@ -1253,11 +1258,12 @@ async function loadToolsForExecution({
   if (isPTC && toolRegistry) {
     configurable.toolRegistry = toolRegistry;
     try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+      /**
+       * Read the code-env key from `process.env` rather than `loadAuthValues`
+       * — PTC follows the same server-env-keyed model as `bash_tool` post
+       * Phase 4, so the per-user plugin-auth path is no longer consulted.
+       */
+      const codeApiKey = process.env[EnvVar.CODE_API_KEY] ?? '';
 
       if (codeApiKey) {
         const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
