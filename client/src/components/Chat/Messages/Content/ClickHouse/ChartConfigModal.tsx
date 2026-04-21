@@ -11,16 +11,16 @@ interface ChartConfigModalProps {
   codeTheme: 'light' | 'dark';
 }
 
-const CHART_TYPE_OPTIONS: Array<{ value: ChartType; label: string; icon: string }> = [
-  { value: 'bar', label: 'Bar', icon: '📊' },
-  { value: 'hbar', label: 'Horizontal Bar', icon: '📊' },
-  { value: 'sbar', label: 'Stacked Bar', icon: '📊' },
-  { value: 'shbar', label: 'Stacked H-Bar', icon: '📊' },
-  { value: 'area', label: 'Area', icon: '📈' },
-  { value: 'line', label: 'Line', icon: '📉' },
-  { value: 'scatter', label: 'Scatter', icon: '🔵' },
-  { value: 'pie', label: 'Pie', icon: '🥧' },
-  { value: 'doughnut', label: 'Doughnut', icon: '🍩' },
+const CHART_TYPE_OPTIONS: Array<{ value: ChartType; label: string }> = [
+  { value: 'bar', label: 'Bar' },
+  { value: 'hbar', label: 'Horizontal Bar' },
+  { value: 'sbar', label: 'Stacked Bar' },
+  { value: 'shbar', label: 'Stacked H-Bar' },
+  { value: 'area', label: 'Area' },
+  { value: 'line', label: 'Line' },
+  { value: 'scatter', label: 'Scatter' },
+  { value: 'pie', label: 'Pie' },
+  { value: 'doughnut', label: 'Doughnut' },
 ];
 
 export default function ChartConfigModal({
@@ -112,7 +112,7 @@ export default function ChartConfigModal({
                 fontSize: 12,
               }}
             >
-              {opt.icon} {opt.label}
+              {opt.label}
             </button>
           ))}
         </div>

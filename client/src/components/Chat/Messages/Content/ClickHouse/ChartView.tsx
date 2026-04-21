@@ -38,11 +38,13 @@ function toNumber(val: unknown): number {
 export default function ChartView({ rows, chartConfig, codeTheme }: ChartViewProps) {
   const { chartType, xAxis, yAxis, title } = chartConfig;
   const textColor = codeTheme === 'dark' ? '#b3b6bd' : '#696e79';
+  const labelColor = codeTheme === 'dark' ? '#ffffff' : '#1a1a1a';
   const gridColor = codeTheme === 'dark' ? '#323232' : '#e6e7e9';
   const tooltipBg = codeTheme === 'dark' ? '#282828' : '#ffffff';
   const tooltipBorder = codeTheme === 'dark' ? '#3a3a3a' : '#e0e0e0';
-  const tooltipStyle = { backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, color: textColor, fontSize: 12 };
-  const labelColor = codeTheme === 'dark' ? '#ffffff' : '#1a1a1a';
+  const tooltipStyle: React.CSSProperties = { backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, fontSize: 12, borderRadius: 6, padding: '8px 12px' };
+  const tooltipLabelStyle: React.CSSProperties = { color: labelColor, fontWeight: 500, marginBottom: 4 };
+  const tooltipItemStyle: React.CSSProperties = { color: textColor };
 
   // Transform rows into recharts-friendly format
   const data = useMemo(
@@ -109,7 +111,7 @@ export default function ChartView({ rows, chartConfig, codeTheme }: ChartViewPro
                 <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: labelColor }} />
+            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
             <Legend wrapperStyle={{ fontSize: 12, color: textColor }} />
           </PieChart>
         </ResponsiveContainer>
@@ -140,7 +142,7 @@ export default function ChartView({ rows, chartConfig, codeTheme }: ChartViewPro
             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
             <XAxis dataKey="x" name={xAxis} tick={{ fontSize: 11, fill: textColor }} />
             <YAxis dataKey="y" name={yCol} tick={{ fontSize: 11, fill: textColor }} />
-            <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: labelColor }} cursor={{ strokeDasharray: '3 3' }} />
+            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} cursor={{ strokeDasharray: '3 3' }} />
             <Scatter data={scatterData} fill={yAxis[0]?.color ?? CHART_COLORS[0]} />
           </ScatterChart>
         </ResponsiveContainer>
@@ -175,7 +177,7 @@ export default function ChartView({ rows, chartConfig, codeTheme }: ChartViewPro
                 <YAxis tick={{ fontSize: 11, fill: textColor }} />
               </>
             )}
-            <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: labelColor }} />
+            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
             {yAxis.length > 1 && <Legend wrapperStyle={{ fontSize: 12, color: textColor }} />}
             {yAxis.map((y, i) => (
               <Bar
@@ -206,7 +208,7 @@ export default function ChartView({ rows, chartConfig, codeTheme }: ChartViewPro
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
           <XAxis dataKey={xAxis} tick={{ fontSize: 11, fill: textColor }} />
           <YAxis tick={{ fontSize: 11, fill: textColor }} />
-          <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: labelColor }} />
+          <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
           {yAxis.length > 1 && <Legend wrapperStyle={{ fontSize: 12, color: textColor }} />}
           {yAxis.map((y, i) => {
             const color = y.color || CHART_COLORS[i % CHART_COLORS.length];
