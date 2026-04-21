@@ -697,6 +697,44 @@ describe('injectSkillCatalog', () => {
     expect(definedNames).toContain('bash_tool');
     expect(definedNames).not.toContain('skill');
   });
+
+  it('does not duplicate bash_tool/read_file already registered by the execute_code path', async () => {
+    /* Simulates the Phase 8 dedupe: when an agent has both the
+       `execute_code` capability (registers bash_tool+read_file via
+       `registerCodeExecutionTools` before catalog injection) AND skills
+       active, `injectSkillCatalog` must see the existing entries in the
+       registry and skip re-adding. One copy of each reaches the LLM. */
+    const owned = makeSkill('owned-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[owned]]);
+    const preRegistry = new Map() as unknown as NonNullable<
+      Parameters<typeof injectSkillCatalog>[0]['toolRegistry']
+    >;
+    const preBash = { name: 'bash_tool', description: 'pre', parameters: {} };
+    const preRead = {
+      name: 'read_file',
+      description: 'pre',
+      parameters: {},
+      responseFormat: 'content' as const,
+    };
+    preRegistry.set('bash_tool', preBash);
+    preRegistry.set('read_file', preRead);
+    const result = await injectSkillCatalog(
+      baseParams({
+        listSkillsByAccess,
+        codeEnvAvailable: true,
+        toolRegistry: preRegistry,
+        toolDefinitions: [preBash, preRead],
+      }),
+    );
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    const bashOccurrences = names.filter((n) => n === 'bash_tool').length;
+    const readOccurrences = names.filter((n) => n === 'read_file').length;
+    expect(bashOccurrences).toBe(1);
+    expect(readOccurrences).toBe(1);
+    /* Skill tool still gets registered because there is at least one
+       catalog-visible skill. */
+    expect(names).toContain('skill');
+  });
 });
 
 describe('buildSkillPrimeMessage', () => {
