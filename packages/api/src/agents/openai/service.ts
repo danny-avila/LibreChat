@@ -19,6 +19,7 @@
  * ```
  */
 import { nanoid } from 'nanoid';
+import { AgentCapabilities } from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
   ChatCompletionResponse,
@@ -414,15 +415,18 @@ export async function createAgentChatCompletion(
      * `agent.tools: ['execute_code']` still produces `bash_tool` +
      * `read_file` in the initialized agent's `toolDefinitions` (Phase 8
      * removed the legacy `execute_code` tool definition, so the
-     * capability flag is the sole gate). Falls back to `undefined` when
-     * the caller doesn't provide `appConfig` — matching the "explicit
-     * opt-in" semantics the in-repo controllers use.
+     * capability flag is the sole gate). Uses the
+     * `AgentCapabilities.execute_code` enum value rather than a string
+     * literal so an enum rename propagates here automatically. Falls
+     * back to `undefined` when the caller doesn't provide `appConfig` —
+     * matching the "explicit opt-in" semantics the in-repo controllers
+     * use.
      */
     const agentsConfig = (deps.appConfig?.endpoints as Record<string, unknown> | undefined)?.agents;
     const codeEnvAvailable =
       agentsConfig != null && typeof agentsConfig === 'object'
         ? ((agentsConfig as { capabilities?: string[] }).capabilities ?? []).includes(
-            'execute_code',
+            AgentCapabilities.execute_code,
           )
         : undefined;
 
