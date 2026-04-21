@@ -494,7 +494,7 @@ class BaseClient {
       }
       /**
        * Persist the user's manual skill picks onto the user message so the
-       * frontend `ManualSkillPills` component can render them in history
+       * frontend `SkillPills` component can render them in history
        * after reload. UI-only metadata — the runtime skill resolution
        * pipeline reads the top-level `req.body.manualSkills` separately.
        * Filter is defense-in-depth on top of Mongoose schema validation:
@@ -510,7 +510,7 @@ class BaseClient {
       }
       /**
        * Persist the names of skills auto-primed this turn via `always-apply`
-       * frontmatter so `ManualSkillPills` can render pinned-variant badges
+       * frontmatter so `SkillPills` can render pinned-variant badges
        * on the user bubble that survive reload and history render. Frozen
        * at turn time (not reconstructed from `Skill.alwaysApply` at render
        * time) because the flag is mutable — historical turns must keep

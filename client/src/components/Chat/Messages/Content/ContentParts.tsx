@@ -144,7 +144,7 @@ const ContentParts = memo(function ContentParts({
    *    response (no `manualSkills` field) → interim cards disappear and
    *    the real `skill` tool_call part in `content` takes over.
    *
-   * Skipped on the user side (they get `ManualSkillPills` on the user
+   * Skipped on the user side (they get `SkillPills` on the user
    * bubble) and when no skills were invoked on this turn.
    */
   const pendingSkills = useMemo(

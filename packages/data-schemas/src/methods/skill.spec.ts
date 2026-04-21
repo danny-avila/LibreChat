@@ -1187,6 +1187,80 @@ describe('Skill CRUD methods', () => {
       expect(result.skill.alwaysApply).toBe(true);
     }
   });
+
+  it('updateSkill accepts a body typo when an explicit top-level alwaysApply overrides it', async () => {
+    /* Validation respects the same precedence as derivation: a caller
+       sending `alwaysApply: true` alongside a body whose frontmatter
+       carries a typo (`always-apply: tru`) should NOT be rejected —
+       the body value is never consulted. Rejecting would be
+       user-hostile for programmatic callers that legitimately own the
+       explicit field. */
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'typo-overridden' }));
+    const bodyWithTypo = `---\nname: typo-overridden\ndescription: body has a broken flag.\nalways-apply: tru\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { alwaysApply: true, body: bodyWithTypo },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
+
+  it('updateSkill accepts a body typo when a structured frontmatter override carries a valid boolean', async () => {
+    /* Same precedence rule for the frontmatter-bag layer: a caller
+       that sends a structured `frontmatter['always-apply']: true`
+       plus a body with a typo is overriding the body at derivation
+       time, so the body typo should not reject the update. */
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'fm-overrides-body' }));
+    const bodyWithTypo = `---\nname: fm-overrides-body\ndescription: broken body flag.\nalways-apply: yes\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: {
+        frontmatter: {
+          name: 'fm-overrides-body',
+          description: 'A small demo skill used in tests.',
+          'always-apply': true,
+        },
+        body: bodyWithTypo,
+      },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
+
+  it('updateSkill still rejects a body typo when no higher-precedence source is provided', async () => {
+    /* Body-inline validation must still fire when nothing else is
+       carrying the value — otherwise a body PATCH with `tru` would
+       silently drop the typo + keep the old column value. */
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'typo-body-only' }));
+    const bodyWithTypo = `---\nname: typo-body-only\ndescription: nothing else carries the flag.\nalways-apply: tru\n---\n\n# Body`;
+    await expect(
+      methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: { body: bodyWithTypo },
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+  });
+
+  it('createSkill accepts a body typo when an explicit top-level alwaysApply overrides it', async () => {
+    /* Same precedence-aware validation on the create path: explicit
+       top-level `alwaysApply` short-circuits body-inline validation. */
+    const bodyWithTypo = `---\nname: create-typo-overridden\ndescription: broken body flag.\nalways-apply: tru\n---\n\n# Body`;
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'create-typo-overridden',
+        alwaysApply: false,
+        body: bodyWithTypo,
+      }),
+    );
+    expect(skill.alwaysApply).toBe(false);
+  });
 });
 
 describe('SkillFile methods', () => {

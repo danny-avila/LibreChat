@@ -756,6 +756,10 @@ function resolveAlwaysApplyFromInput(
   frontmatter: Record<string, unknown> | undefined,
   body: string | undefined,
   fallback: boolean,
+  /* Callers that have already parsed the body (e.g. because they also
+     ran body-level validation) can thread the result in to avoid a
+     second parse. Leave undefined to let the helper parse on demand. */
+  precomputedBody?: BodyAlwaysApplyResult,
 ): boolean {
   if (typeof explicit === 'boolean') {
     return explicit;
@@ -764,7 +768,7 @@ function resolveAlwaysApplyFromInput(
   if (typeof fromFrontmatter === 'boolean') {
     return fromFrontmatter;
   }
-  const fromBody = extractAlwaysApplyFromBody(body);
+  const fromBody = precomputedBody ?? extractAlwaysApplyFromBody(body);
   if (fromBody.status === 'valid') {
     return fromBody.value;
   }
@@ -846,6 +850,11 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
   }
 
   async function createSkill(data: CreateSkillInput): Promise<CreateSkillResult> {
+    /* Parse body's always-apply status once — reused for validation
+       (below) and derivation in `resolveAlwaysApplyFromInput`. Avoids
+       parsing the same YAML frontmatter block twice per create. */
+    const bodyAlwaysApply =
+      data.body !== undefined ? extractAlwaysApplyFromBody(data.body) : undefined;
     const issues: ValidationIssue[] = [
       ...validateSkillName(data.name),
       ...validateSkillDescription(data.description),
@@ -853,8 +862,25 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       ...validateSkillDisplayTitle(data.displayTitle),
       ...validateSkillFrontmatter(data.frontmatter),
       ...validateAlwaysApply(data.alwaysApply),
-      ...validateAlwaysApplyInBody(data.body),
     ];
+    /* Body-level `always-apply:` only needs to be well-formed when a
+       higher-precedence source won't override it (see
+       `resolveAlwaysApplyFromInput` for the cascade). A caller sending
+       an explicit top-level `alwaysApply` or a structured
+       `frontmatter['always-apply']` has the body value overridden at
+       derivation time, so rejecting them for a typo they aren't relying
+       on would be user-hostile. */
+    if (
+      bodyAlwaysApply?.status === 'invalid' &&
+      typeof data.alwaysApply !== 'boolean' &&
+      typeof data.frontmatter?.['always-apply'] !== 'boolean'
+    ) {
+      issues.push({
+        field: 'body.frontmatter.always-apply',
+        code: 'INVALID_TYPE',
+        message: '"always-apply" in SKILL.md frontmatter must be a boolean (true or false)',
+      });
+    }
     const { errors, warnings } = partitionIssues(issues);
     if (errors.length > 0) {
       const error = new Error('Skill validation failed');
@@ -901,6 +927,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
         data.frontmatter,
         data.body,
         false,
+        bodyAlwaysApply,
       ),
       tenantId: data.tenantId,
       ...derived,
@@ -1128,6 +1155,12 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       return { status: 'not_found' };
     }
 
+    /* Parse body's always-apply status once — reused for validation
+       (precedence-aware, below) and the derivation cascade further
+       down. Avoids parsing the same YAML frontmatter block twice per
+       update. */
+    const bodyAlwaysApply =
+      update.body !== undefined ? extractAlwaysApplyFromBody(update.body) : undefined;
     const issues: ValidationIssue[] = [];
     if (update.name !== undefined) issues.push(...validateSkillName(update.name));
     if (update.description !== undefined)
@@ -1138,7 +1171,23 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     if (update.frontmatter !== undefined)
       issues.push(...validateSkillFrontmatter(update.frontmatter));
     if (update.alwaysApply !== undefined) issues.push(...validateAlwaysApply(update.alwaysApply));
-    if (update.body !== undefined) issues.push(...validateAlwaysApplyInBody(update.body));
+    /* Body-level `always-apply:` only needs to be well-formed when a
+       higher-precedence source won't override it (see
+       `resolveAlwaysApplyFromInput` for precedence). Rejecting a typo
+       the caller is already overriding would be user-hostile, and the
+       body-inline derivation branch below is skipped for those
+       payloads anyway. */
+    if (
+      bodyAlwaysApply?.status === 'invalid' &&
+      update.alwaysApply === undefined &&
+      typeof update.frontmatter?.['always-apply'] !== 'boolean'
+    ) {
+      issues.push({
+        field: 'body.frontmatter.always-apply',
+        code: 'INVALID_TYPE',
+        message: '"always-apply" in SKILL.md frontmatter must be a boolean (true or false)',
+      });
+    }
     const { errors, warnings } = partitionIssues(issues);
     if (errors.length > 0) {
       const error = new Error('Skill validation failed');
@@ -1207,11 +1256,10 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
         derivedAlwaysApply = fromFrontmatter;
       }
     }
-    if (derivedAlwaysApply === undefined && update.body !== undefined) {
-      const fromBody = extractAlwaysApplyFromBody(update.body);
-      if (fromBody.status === 'valid') {
-        derivedAlwaysApply = fromBody.value;
-      } else if (fromBody.status === 'absent') {
+    if (derivedAlwaysApply === undefined && bodyAlwaysApply !== undefined) {
+      if (bodyAlwaysApply.status === 'valid') {
+        derivedAlwaysApply = bodyAlwaysApply.value;
+      } else if (bodyAlwaysApply.status === 'absent') {
         /* An `absent` result means the user submitted a new body that
            declares no `always-apply:` key (either the key was removed or
            no frontmatter block was ever there). The body is the

@@ -682,7 +682,7 @@ export const tMessageSchema = z.object({
     .optional(),
   /**
    * Skill names the user invoked manually via the `$` popover on this turn.
-   * Purely UI metadata — `ManualSkillPills` renders these above the message
+   * Purely UI metadata — `SkillPills` renders these above the message
    * bubble so users can see which skills they asked for in history and on
    * reload. Runtime resolution uses the top-level payload field with the
    * same name. Empty / absent for model-invoked skills (shown as tool_call

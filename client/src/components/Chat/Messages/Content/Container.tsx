@@ -1,6 +1,6 @@
 import { TMessage } from 'librechat-data-provider';
 import Files from './Files';
-import ManualSkillPills from './ManualSkillPills';
+import SkillPills from './SkillPills';
 
 const Container = ({ children, message }: { children: React.ReactNode; message?: TMessage }) => (
   <div
@@ -10,8 +10,8 @@ const Container = ({ children, message }: { children: React.ReactNode; message?:
     {message?.isCreatedByUser === true && (
       <>
         <Files message={message} />
-        <ManualSkillPills skills={message.alwaysAppliedSkills} source="always-apply" />
-        <ManualSkillPills skills={message.manualSkills} source="manual" />
+        <SkillPills skills={message.alwaysAppliedSkills} source="always-apply" />
+        <SkillPills skills={message.manualSkills} source="manual" />
       </>
     )}
     {children}

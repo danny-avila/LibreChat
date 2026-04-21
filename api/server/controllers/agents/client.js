@@ -948,11 +948,11 @@ class AgentClient extends BaseClient {
        * the card would cause the skill body to get primed twice per
        * turn starting on turn 2. The user-facing acknowledgement for
        * always-apply lives on the user bubble as the pinned
-       * `ManualSkillPills` row (`message.alwaysAppliedSkills`), which
+       * `SkillPills` row (`message.alwaysAppliedSkills`), which
        * is the durable signal the user wants: "this skill auto-primes".
        *
        * Live streaming display of manual user-bubble pills is handled
-       * by `ManualSkillPills` reading `message.manualSkills`. No
+       * by `SkillPills` reading `message.manualSkills`. No
        * separate SSE emit is needed here; trying to stream a mid-run
        * tool_call at index 0 collided with the LLM's first text
        * content, while emitting at a sparse offset pushed the card

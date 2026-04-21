@@ -216,7 +216,7 @@ describe('SkillsCommand', () => {
     expect(agentUpdater({ skills: true })).toEqual({ skills: true });
 
     /* Textarea is cleared of the `$` trigger but no `$skill-name ` cue is
-       inserted — visual confirmation is the `ManualSkillPills` row that
+       inserted — visual confirmation is the `SkillPills` row that
        renders on the submitted user message, and injecting text would
        mislead users into thinking free-form `$name` invocation works. */
     expect(textAreaRef.current?.value).toBe('');

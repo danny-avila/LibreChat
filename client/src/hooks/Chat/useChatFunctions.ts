@@ -259,7 +259,7 @@ export default function useChatFunctions({
       error: false,
       /**
        * UI-only metadata. Survives reload because the backend persists the
-       * field on the message schema, and `ManualSkillPills` reads straight
+       * field on the message schema, and `SkillPills` reads straight
        * off the message so there's no Recoil state to clean up. Runtime
        * skill resolution reads the top-level `manualSkills` payload field.
        */
