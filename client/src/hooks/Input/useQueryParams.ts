@@ -315,10 +315,7 @@ export default function useQueryParams({
                *  unloaded agent; the `urlAgent`-keyed effect below will submit once
                *  the agent query resolves. */
               if (validSettingsRef.current?.agent_id && !urlAgentRef.current) {
-                logger.log(
-                  'conversation',
-                  'Agent not loaded before timeout, deferring submission',
-                );
+                logger.log('conversation', 'Agent not loaded before timeout, deferring submission');
                 return;
               }
               logger.log(
