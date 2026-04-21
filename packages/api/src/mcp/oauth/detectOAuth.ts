@@ -26,11 +26,20 @@ export interface OAuthDetectionResult {
  * @returns Promise<OAuthDetectionResult> - OAuth requirement details
  */
 export async function detectOAuthRequirement(serverUrl: string): Promise<OAuthDetectionResult> {
-  const protectedResourceResult = await checkProtectedResourceMetadata(serverUrl);
-  if (protectedResourceResult) return protectedResourceResult;
-
+  /**
+   * RFC 9728 §5.1: prefer the `resource_metadata=` URL from the 401
+   * `WWW-Authenticate` challenge over RFC 9728 path-aware `.well-known`
+   * discovery.  Path-aware discovery can return valid-but-wrong metadata in
+   * split deployments where the root and path-aware well-known endpoints are
+   * served by different processes.  The 401 hint is always authoritative.
+   * Matches behaviour of Claude Desktop, OpenAI tooling, Microsoft Copilot
+   * Studio, and the MCP Inspector.
+   */
   const challengeResult = await check401ChallengeMetadata(serverUrl);
   if (challengeResult) return challengeResult;
+
+  const protectedResourceResult = await checkProtectedResourceMetadata(serverUrl);
+  if (protectedResourceResult) return protectedResourceResult;
 
   const fallbackResult = await checkAuthErrorFallback(serverUrl);
   if (fallbackResult) return fallbackResult;

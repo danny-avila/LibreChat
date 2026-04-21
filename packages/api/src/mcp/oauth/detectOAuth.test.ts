@@ -196,6 +196,54 @@ describe('detectOAuthRequirement', () => {
       });
     });
 
+    it('should prefer the WWW-Authenticate resource_metadata hint over RFC 9728 path-aware discovery', async () => {
+      // Regression test for LibreChat#12761: some MCP servers serve valid
+      // but divergent metadata at /.well-known/oauth-protected-resource
+      // (root) vs /.well-known/oauth-protected-resource/<path> (path-aware).
+      // The 401 `resource_metadata=` hint is authoritative per RFC 9728 §5.1
+      // and MUST be preferred, matching Claude / MCP Inspector / OpenAI /
+      // Copilot behaviour.
+      const hintUrl = 'https://mcp.example.com/.well-known/oauth-protected-resource';
+      const correctAuthServer = 'https://mcp.example.com/';
+      const staleAuthServer = 'https://legacy-as.example.com/realms/stale';
+
+      // SDK path-aware discovery returns STALE metadata (should be ignored).
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValue({
+        resource: 'https://mcp.example.com',
+        authorization_servers: [staleAuthServer],
+      } as Awaited<ReturnType<typeof discoverOAuthProtectedResourceMetadata>>);
+
+      mockFetch
+        // HEAD probe — 401 with the hint pointing at the (correct) root URL
+        .mockResolvedValueOnce({
+          status: 401,
+          headers: new Headers({
+            'www-authenticate': `Bearer resource_metadata="${hintUrl}"`,
+          }),
+        } as Response)
+        // Hint fetch — returns the correct metadata
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            resource: correctAuthServer,
+            authorization_servers: [correctAuthServer],
+          }),
+        } as Response);
+
+      const result = await detectOAuthRequirement('https://mcp.example.com/v1');
+
+      expect(result.requiresOAuth).toBe(true);
+      expect(result.method).toBe('401-challenge-metadata');
+      // The hint wins — the stale path-aware AS must NOT appear.
+      expect(result.metadata).toEqual({
+        resource: correctAuthServer,
+        authorization_servers: [correctAuthServer],
+      });
+      expect(
+        (result.metadata as { authorization_servers?: unknown[] })?.authorization_servers,
+      ).not.toContain(staleAuthServer);
+    });
+
     it('should fall back to Bearer detection if metadata fetch fails', async () => {
       const metadataUrl = 'https://auth.example.com/.well-known/oauth-protected-resource';
 

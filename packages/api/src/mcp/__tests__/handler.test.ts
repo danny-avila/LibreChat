@@ -2153,4 +2153,124 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       });
     });
   });
+
+  describe('WWW-Authenticate resource_metadata hint (RFC 9728 §5.1)', () => {
+    // Regression test for LibreChat#12761: the MCP SDK supports
+    // `opts.resourceMetadataUrl` to override RFC 9728 path-aware discovery
+    // with the URL advertised in the 401 `WWW-Authenticate` header.  The
+    // handler must probe the server for that hint and pass it through,
+    // otherwise LibreChat diverges from Claude / MCP Inspector / OpenAI /
+    // Copilot behaviour on servers whose path-aware and root well-known
+    // endpoints disagree.
+
+    const originalFetch = global.fetch;
+    const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+
+    beforeEach(() => {
+      global.fetch = mockFetch;
+      mockFetch.mockReset();
+
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValue({
+        issuer: 'https://mcp.example.com/',
+        authorization_endpoint: 'https://mcp.example.com/authorize',
+        token_endpoint: 'https://mcp.example.com/token',
+        registration_endpoint: 'https://mcp.example.com/register',
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        code_challenge_methods_supported: ['S256'],
+        token_endpoint_auth_methods_supported: ['client_secret_basic'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValue({
+        client_id: 'dcr-client-id',
+        client_secret: 'dcr-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValue({
+        resource: 'https://mcp.example.com/',
+        authorization_servers: ['https://mcp.example.com/'],
+      } as Awaited<ReturnType<typeof discoverOAuthProtectedResourceMetadata>>);
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('passes resource_metadata hint from WWW-Authenticate to the SDK', async () => {
+      const hintUrl = 'https://mcp.example.com/.well-known/oauth-protected-resource';
+
+      // The MCP server 401-challenges the probe with the hint pointing at
+      // the root well-known URL — authoritative per RFC 9728.
+      mockFetch.mockResolvedValueOnce({
+        status: 401,
+        headers: new Headers({
+          'www-authenticate': `Bearer resource_metadata="${hintUrl}"`,
+        }),
+      } as Response);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        undefined, // no pre-configured oauth block → discoverMetadata runs
+      );
+
+      // Must be called with the extracted hint — not empty opts.
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          resourceMetadataUrl: expect.any(URL),
+        }),
+        expect.any(Function),
+      );
+      const opts = mockDiscoverOAuthProtectedResourceMetadata.mock.calls[0][1] as {
+        resourceMetadataUrl?: URL;
+      };
+      expect(opts.resourceMetadataUrl?.toString()).toBe(hintUrl);
+    });
+
+    it('falls back to path-aware discovery when no resource_metadata hint is present', async () => {
+      // 401 without resource_metadata — e.g. legacy server that only says "Bearer".
+      mockFetch.mockResolvedValueOnce({
+        status: 401,
+        headers: new Headers({ 'www-authenticate': 'Bearer' }),
+      } as Response);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        undefined,
+      );
+
+      // SDK still called, but with empty opts — path-aware discovery wins.
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledWith(
+        mockServerUrl,
+        {},
+        expect.any(Function),
+      );
+    });
+
+    it('swallows probe failures and falls back to path-aware discovery', async () => {
+      // Probe errors out — the hint path must not break OAuth initiation.
+      mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        undefined,
+      );
+
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledWith(
+        mockServerUrl,
+        {},
+        expect.any(Function),
+      );
+    });
+  });
 });

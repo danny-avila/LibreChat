@@ -120,6 +120,37 @@ export class MCPOAuthHandler {
   }
 
   /**
+   * Probe the MCP server for a `WWW-Authenticate: Bearer ..., resource_metadata="<url>"`
+   * challenge (RFC 9728 §5.1).  The hint is authoritative when present and should be
+   * preferred over RFC 9728 path-aware discovery, which can return valid-but-wrong
+   * metadata in split deployments where the root and `/<mcp-path>` well-known
+   * endpoints are served by different processes.
+   *
+   * Returns the parsed URL when the server advertises one, or `undefined` when
+   * the probe fails / returns no hint (in which case the caller falls back to
+   * path-aware discovery).
+   */
+  private static async probeResourceMetadataHint(
+    serverUrl: string,
+    fetchFn: FetchLike,
+  ): Promise<URL | undefined> {
+    try {
+      const response = await fetchFn(serverUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (response.status !== 401) return undefined;
+      const wwwAuth = response.headers.get('www-authenticate');
+      const match = wwwAuth?.match(/resource_metadata="([^"]+)"/);
+      if (!match?.[1]) return undefined;
+      return new URL(match[1]);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Discovers OAuth metadata from the server
    */
   private static async discoverMetadata(
@@ -140,12 +171,34 @@ export class MCPOAuthHandler {
 
     const fetchFn = this.createOAuthFetch(oauthHeaders);
 
+    /**
+     * RFC 9728 §5.1: if the MCP server advertises `resource_metadata=<url>` in
+     * the 401 `WWW-Authenticate` header, that URL is the authoritative
+     * protected-resource metadata source.  Use it directly instead of the
+     * SDK's path-aware discovery (which can return valid-but-wrong data when
+     * the path-aware and root well-known endpoints are served by different
+     * processes — e.g. an MCP app behind a gateway with its own hardcoded AS
+     * config, or a server that changed its OAuth story without invalidating
+     * CDN caches).  Matches behaviour of Claude Desktop, OpenAI tooling,
+     * Microsoft Copilot Studio, and the MCP Inspector.
+     */
+    const hintUrl = await this.probeResourceMetadataHint(serverUrl, fetchFn);
+    if (hintUrl) {
+      logger.debug(
+        `[MCPOAuth] Using WWW-Authenticate resource_metadata hint: ${sanitizeUrlForLogging(hintUrl.toString())}`,
+      );
+    }
+
     try {
       // Try to discover resource metadata first
       logger.debug(
         `[MCPOAuth] Attempting to discover protected resource metadata from ${serverUrl}`,
       );
-      resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchFn);
+      resourceMetadata = await discoverOAuthProtectedResourceMetadata(
+        serverUrl,
+        hintUrl ? { resourceMetadataUrl: hintUrl } : {},
+        fetchFn,
+      );
 
       if (resourceMetadata?.authorization_servers?.length) {
         const discoveredAuthServer = resourceMetadata.authorization_servers[0];
