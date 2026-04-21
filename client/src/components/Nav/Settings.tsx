@@ -35,7 +35,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
   const { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
-  const aboutEnabled = startupConfig?.interface?.buildInfo !== false;
+  const aboutEnabled = startupConfig != null && startupConfig.interface?.buildInfo !== false;
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const tabs: SettingsTabValues[] = [
