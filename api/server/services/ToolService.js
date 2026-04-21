@@ -1273,34 +1273,13 @@ async function loadToolsForExecution({
   const isBashTool = toolNames.includes(AgentConstants.BASH_TOOL);
   if (isBashTool) {
     try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-
-      if (codeApiKey) {
-        const bashTool = createBashExecutionTool({ apiKey: codeApiKey });
-        allLoadedTools.push(bashTool);
-      } else {
-        logger.debug('[loadToolsForExecution] bash_tool requested but CODE_API_KEY not available');
-        allLoadedTools.push(
-          toolFn(
-            async () => [
-              'Code execution is not available. Use the read_file tool instead.',
-              undefined,
-            ],
-            {
-              name: AgentConstants.BASH_TOOL,
-              description: 'Bash execution (unavailable - no code API key configured)',
-              schema: { type: 'object', properties: { command: { type: 'string' } } },
-              responseFormat: AgentConstants.CONTENT_AND_ARTIFACT,
-            },
-          ),
-        );
-      }
+      const bashTool = createBashExecutionTool({});
+      allLoadedTools.push(bashTool);
     } catch (error) {
-      logger.error('[loadToolsForExecution] Error creating bash tool:', error);
+      logger.error(
+        '[loadToolsForExecution] Failed to create bash_tool — is LIBRECHAT_CODE_API_KEY set in the server environment?',
+        error,
+      );
     }
   }
 
