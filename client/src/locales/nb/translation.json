@@ -1321,6 +1321,7 @@
   "com_ui_upload_invalid": "Ugyldig fil for opplasting. Må være et bilde som ikke overskrider grensen.",
   "com_ui_upload_invalid_var": "Ugyldig fil for opplasting. Må være et bilde som ikke overskrider {{0}} MB.",
   "com_ui_upload_ocr_text": "Last opp som tekst",
+  "com_ui_upload_provider": "Last opp til modelleverandør",
   "com_ui_upload_success": "Filen ble lastet opp.",
   "com_ui_upload_type": "Velg opplastingstype",
   "com_ui_usage": "Bruk",
