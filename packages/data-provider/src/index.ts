@@ -15,6 +15,8 @@ export * from './generate';
 export * from './models';
 /* mcp */
 export * from './mcp';
+/* notifications */
+export * from './notifications';
 /* RBAC */
 export * from './permissions';
 export * from './roles';
