@@ -218,7 +218,7 @@ const FarmerProfileModal = ({
         .split(',').map((c) => c.trim()).filter(Boolean),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
-      device: detectDevice(),
+      platform: detectDevice(),
     };
     saveMutation.mutate(profile);
   };

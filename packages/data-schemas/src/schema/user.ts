@@ -42,7 +42,7 @@ const FarmerProfileSchema = new Schema(
     usesAgriApps: { type: Boolean },
     highestEducatedPerson: { type: String },
     numberOfSmartphones: { type: Number },
-    device: { type: String },
+    platform: { type: String },
   },
   { _id: false },
 );
