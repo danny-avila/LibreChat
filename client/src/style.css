@@ -3153,3 +3153,7 @@ body {
 .markdown-nj li {
   margin-bottom: .5rem;
 }
+
+.markdown-nj li a {
+  font-weight: normal;
+}
