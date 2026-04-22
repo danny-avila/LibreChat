@@ -418,17 +418,9 @@ export default function useEventHandlers({
         resetLatestMessage();
       }
 
-      const shouldAutoScrollDuringGeneration = autoScrollDuringGeneration === true;
-
-      if (shouldAutoScrollDuringGeneration) {
-        scrollToEnd(() => setAbortScroll(false));
-      } else {
-        setAbortScroll(true);
-        scrollToMessageStart(initialResponse.messageId);
-      }
+      scrollToEnd(() => setAbortScroll(false));
     },
     [
-      autoScrollDuringGeneration,
       setMessages,
       queryClient,
       setAbortScroll,
@@ -454,9 +446,6 @@ export default function useEventHandlers({
         // Handle early abort - aborted during tool loading before any messages saved
         // Don't update conversation state, just reset UI and stay on new chat
         if ((data as Record<string, unknown>).earlyAbort) {
-          console.log(
-            '[finalHandler] Early abort detected - no messages saved, staying on new chat',
-          );
           setShowStopButton(false);
           setIsSubmitting(false);
           // Navigate to new chat if not already there

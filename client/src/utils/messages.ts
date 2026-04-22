@@ -203,6 +203,17 @@ export const scrollToMessageStart = (messageId: string, callback?: () => void) =
 };
 
 /**
+ * Returns true when the top of the generated message has reached or crossed the top
+ * edge of the scroll container, meaning autoscroll should stop to keep the message
+ * start visible.
+ * A 1px tolerance absorbs sub-pixel rendering differences.
+ */
+export const hasMessageReachedContainerTop = (
+  messageTop: number,
+  containerTop: number,
+): boolean => messageTop <= containerTop + 1;
+
+/**
  * Clears messages for both the specified conversation ID and the NEW_CONVO query key.
  * This ensures that messages are properly cleared in all contexts, preventing stale data
  * from persisting in the NEW_CONVO cache.

@@ -5,6 +5,7 @@ import {
   getHeaderPrefixForScreenReader,
   scrollToEnd,
   scrollToMessageStart,
+  hasMessageReachedContainerTop,
 } from '../messages';
 
 const translations: Record<string, string> = {
@@ -125,5 +126,38 @@ describe('scroll helpers', () => {
 
     expect(element.scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant', block: 'start' });
     expect(callback).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('hasMessageReachedContainerTop', () => {
+  it('returns true when message top equals container top', () => {
+    expect(hasMessageReachedContainerTop(100, 100)).toBe(true);
+  });
+
+  it('returns true when message top is above container top (negative offset)', () => {
+    expect(hasMessageReachedContainerTop(50, 100)).toBe(true);
+  });
+
+  it('returns true within the 1px tolerance (messageTop = containerTop + 1)', () => {
+    expect(hasMessageReachedContainerTop(101, 100)).toBe(true);
+  });
+
+  it('returns false when message top is clearly below container top', () => {
+    expect(hasMessageReachedContainerTop(200, 100)).toBe(false);
+  });
+
+  it('returns false just outside the 1px tolerance (messageTop = containerTop + 2)', () => {
+    expect(hasMessageReachedContainerTop(102, 100)).toBe(false);
+  });
+
+  it('handles a container top of 0 (fullscreen layout)', () => {
+    expect(hasMessageReachedContainerTop(0, 0)).toBe(true);
+    expect(hasMessageReachedContainerTop(1, 0)).toBe(true);
+    expect(hasMessageReachedContainerTop(2, 0)).toBe(false);
+  });
+
+  it('handles fractional pixel values', () => {
+    expect(hasMessageReachedContainerTop(100.4, 100)).toBe(true);
+    expect(hasMessageReachedContainerTop(101.1, 100)).toBe(false);
   });
 });
