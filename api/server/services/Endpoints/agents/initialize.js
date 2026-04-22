@@ -462,22 +462,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
-  /** primeInvokedSkills reconstructs bodies of skills invoked in prior turns so
-   *  formatAgentMessages can rebuild HumanMessages and re-prime code-env files.
-   *  Unlike catalog injection and runtime invocation (both scoped per-agent),
-   *  history priming must use the user's full ACL-accessible set: historical
-   *  skill calls can reference skills no longer in any active agent's scope
-   *  (agent.skills edited, ephemeral toggle flipped), and scoping those out
-   *  would drop prior skill context and break file references in follow-up
-   *  turns. The ACL check remains the security gate; handleSkillToolCall is
-   *  where per-agent scoping prevents NEW invocations.
-   *
-   *  Use the primary agent's PER-AGENT `codeEnvAvailable` (admin cap AND
-   *  primary `agent.tools` lists `execute_code`) so a skills-only agent
-   *  doesn't accidentally re-prime historical skill files to the sandbox.
-   *  A prior turn that used a different agent with code execution still
-   *  gets its bodies reconstructed (skills are ACL-gated, not capability-
-   *  gated); only the sandbox-upload branch is skipped. */
+  /** History priming uses the user's full ACL-accessible skill set (not
+   *  per-agent scoped) because prior turns may reference skills no longer
+   *  in any active agent's scope; the ACL check is the security gate.
+   *  `codeEnvAvailable` comes from `primaryConfig` — @see
+   *  `InitializedAgent.codeEnvAvailable` for the per-agent narrowing. */
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
     ? (payload) =>
         primeInvokedSkills({

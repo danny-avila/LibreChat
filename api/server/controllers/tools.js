@@ -74,8 +74,14 @@ const verifyToolAuth = async (req, res) => {
     /**
      * `execute_code` no longer requires a per-user credential — sandbox
      * auth is handled server-side by the agents library. Always report
-     * the tool as system-authenticated so the client proceeds straight
-     * to the call without a key-entry dialog.
+     * system-authenticated so the client proceeds straight to the call
+     * without a key-entry dialog.
+     *
+     * Deployment contract: reachability of the sandbox service is the
+     * admin's responsibility. This endpoint does not probe the service
+     * (a per-auth-check network hop would be too expensive for what is
+     * a UI-gate query). If the sandbox is unreachable, the call path
+     * surfaces the error at execution time instead of here.
      */
     res.status(200).json({ authenticated: true, message: AuthType.SYSTEM_DEFINED });
   } catch (error) {

@@ -69,6 +69,26 @@ export interface RegisterCodeExecutionToolsResult {
 }
 
 /**
+ * Hoisted module-level definitions so `registerCodeExecutionTools` doesn't
+ * re-allocate on every call (including the common no-op second call in the
+ * same run). The shapes are derived entirely from static
+ * `@librechat/agents` exports — no per-request state — so a single frozen
+ * object per tool is safe to share across every agent init.
+ */
+const READ_FILE_DEF: LCTool = Object.freeze({
+  name: ReadFileToolDefinition.name,
+  description: ReadFileToolDefinition.description,
+  parameters: ReadFileToolDefinition.parameters as unknown as LCTool['parameters'],
+  responseFormat: ReadFileToolDefinition.responseFormat,
+}) as LCTool;
+
+const BASH_TOOL_DEF: LCTool = Object.freeze({
+  name: BashExecutionToolDefinition.name,
+  description: BashExecutionToolDefinition.description,
+  parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
+}) as LCTool;
+
+/**
  * Idempotently registers the skill-flavored code-execution tool pair
  * (`bash_tool` + `read_file`) into the run's tool registry and
  * tool-definition list.
@@ -85,22 +105,7 @@ export function registerCodeExecutionTools(
 ): RegisterCodeExecutionToolsResult {
   const { toolRegistry, toolDefinitions, includeBash } = params;
 
-  const readFileDef: LCTool = {
-    name: ReadFileToolDefinition.name,
-    description: ReadFileToolDefinition.description,
-    parameters: ReadFileToolDefinition.parameters as unknown as LCTool['parameters'],
-    responseFormat: ReadFileToolDefinition.responseFormat,
-  };
-
-  const candidates: LCTool[] = [readFileDef];
-  if (includeBash) {
-    const bashToolDef: LCTool = {
-      name: BashExecutionToolDefinition.name,
-      description: BashExecutionToolDefinition.description,
-      parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
-    };
-    candidates.push(bashToolDef);
-  }
+  const candidates: LCTool[] = includeBash ? [READ_FILE_DEF, BASH_TOOL_DEF] : [READ_FILE_DEF];
 
   const existingNames = new Set((toolDefinitions ?? []).map((d) => d.name));
 

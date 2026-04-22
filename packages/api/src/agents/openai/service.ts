@@ -67,7 +67,17 @@ export interface ChatCompletionDependencies {
   ) => Promise<void>;
   /** Create agent run */
   createRun?: CreateRunFn;
-  /** App config */
+  /**
+   * App config. Optional, but required for agents with `execute_code` in
+   * their tools: the helper derives `codeEnvAvailable` from
+   * `appConfig?.endpoints?.agents?.capabilities` and forwards it into
+   * `deps.initializeAgent`. When `appConfig` is omitted, the resolved
+   * `codeEnvAvailable` is `undefined`, so `initializeAgent` skips the
+   * `execute_code` → `bash_tool` + `read_file` expansion entirely and
+   * code-requesting agents silently lose sandbox tools. Pass `appConfig`
+   * (even a minimal shape with just `endpoints.agents.capabilities`) to
+   * keep code execution working.
+   */
   appConfig?: AppConfig;
   /** Tool execute options for event-driven tool execution */
   toolExecuteOptions?: ToolExecuteOptions;
