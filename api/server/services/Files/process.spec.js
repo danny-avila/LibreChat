@@ -4,9 +4,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
 }));
 
-jest.mock('@librechat/agents', () => ({
-  EnvVar: { CODE_API_KEY: 'CODE_API_KEY' },
-}));
+jest.mock('@librechat/agents', () => ({}));
 
 jest.mock('@librechat/api', () => ({
   sanitizeFilename: jest.fn((n) => n),

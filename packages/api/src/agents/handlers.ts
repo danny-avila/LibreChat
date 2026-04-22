@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { EnvVar, GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
+import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type {
   LCTool,
   EventHandler,
@@ -86,11 +86,10 @@ export interface ToolExecuteOptions {
   batchUploadCodeEnvFiles?: (params: {
     req: ServerRequest;
     files: Array<{ stream: NodeJS.ReadableStream; filename: string }>;
-    apiKey: string;
     entity_id?: string;
   }) => Promise<{ session_id: string; files: Array<{ fileId: string; filename: string }> }>;
   /** Checks if a code env file is still active. Returns lastModified or null. */
-  getSessionInfo?: (fileIdentifier: string, apiKey: string) => Promise<string | null>;
+  getSessionInfo?: (fileIdentifier: string) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists codeEnvIdentifiers on skill files after upload */
@@ -532,7 +531,7 @@ async function handleSkillToolCall(
 
   // Prime skill files to code env — only when the `execute_code` capability
   // is enabled for this run. The flag is threaded via configurable upstream
-  // so this gate cannot be bypassed by a stray env var.
+  // so this gate cannot be bypassed.
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
   if (
     codeEnvAvailable &&
@@ -542,30 +541,26 @@ async function handleSkillToolCall(
     getStrategyFunctions &&
     batchUploadCodeEnvFiles
   ) {
-    const codeApiKey = process.env[EnvVar.CODE_API_KEY] ?? '';
-    if (codeApiKey) {
-      try {
-        const skillFiles = await listSkillFiles(skill._id);
-        const primeResult = await primeSkillFiles({
-          skill,
-          skillFiles,
-          req,
-          apiKey: codeApiKey,
-          getStrategyFunctions,
-          batchUploadCodeEnvFiles,
-          getSessionInfo,
-          checkIfActive,
-          updateSkillFileCodeEnvIds,
-        });
-        if (primeResult) {
-          artifact = primeResult;
-        }
-      } catch (error) {
-        logger.error(
-          `[handleSkillToolCall] Failed to prime files for skill "${args.skillName}":`,
-          error instanceof Error ? error.message : error,
-        );
+    try {
+      const skillFiles = await listSkillFiles(skill._id);
+      const primeResult = await primeSkillFiles({
+        skill,
+        skillFiles,
+        req,
+        getStrategyFunctions,
+        batchUploadCodeEnvFiles,
+        getSessionInfo,
+        checkIfActive,
+        updateSkillFileCodeEnvIds,
+      });
+      if (primeResult) {
+        artifact = primeResult;
       }
+    } catch (error) {
+      logger.error(
+        `[handleSkillToolCall] Failed to prime files for skill "${args.skillName}":`,
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 

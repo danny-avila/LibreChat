@@ -8,7 +8,6 @@ import type {
 } from './definitions';
 
 describe('definitions.ts', () => {
-  const mockLoadAuthValues = jest.fn().mockResolvedValue({});
   const mockGetOrFetchMCPServerTools = jest.fn().mockResolvedValue(null);
   const mockIsBuiltInTool = jest.fn().mockReturnValue(false);
 
@@ -27,7 +26,6 @@ describe('definitions.ts', () => {
       const deps: LoadToolDefinitionsDeps = {
         getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
         isBuiltInTool: mockIsBuiltInTool,
-        loadAuthValues: mockLoadAuthValues,
       };
 
       const result = await loadToolDefinitions(params, deps);
@@ -65,7 +63,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 
@@ -106,7 +103,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 
@@ -142,7 +138,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 
@@ -165,7 +160,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 
@@ -188,7 +182,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -216,7 +209,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -238,7 +230,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -262,7 +253,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -286,7 +276,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -308,7 +297,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -362,7 +350,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -421,7 +408,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -465,7 +451,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -497,7 +482,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -524,7 +508,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -550,7 +533,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -605,7 +587,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 
@@ -638,7 +619,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 

@@ -135,8 +135,6 @@ describe('classification.ts', () => {
   });
 
   describe('buildToolClassification with deferredToolsEnabled', () => {
-    const mockLoadAuthValues = jest.fn().mockResolvedValue({});
-
     const createMCPTool = (name: string, description?: string) =>
       ({
         name,
@@ -163,7 +161,6 @@ describe('classification.ts', () => {
         agentId: 'agent1',
         agentToolOptions,
         deferredToolsEnabled: false,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.hasDeferredTools).toBe(false);
@@ -184,7 +181,6 @@ describe('classification.ts', () => {
         agentId: 'agent1',
         agentToolOptions,
         deferredToolsEnabled: false,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.toolRegistry).toBeDefined();
@@ -206,7 +202,6 @@ describe('classification.ts', () => {
         agentId: 'agent1',
         agentToolOptions,
         deferredToolsEnabled: true,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.hasDeferredTools).toBe(true);
@@ -227,7 +222,6 @@ describe('classification.ts', () => {
         agentId: 'agent1',
         agentToolOptions,
         deferredToolsEnabled: true,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.hasDeferredTools).toBe(true);
@@ -247,7 +241,6 @@ describe('classification.ts', () => {
         agentId: 'agent1',
         agentToolOptions,
         deferredToolsEnabled: false,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.hasDeferredTools).toBe(false);
@@ -266,7 +259,6 @@ describe('classification.ts', () => {
         userId: 'user1',
         agentId: 'agent1',
         agentToolOptions,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.hasDeferredTools).toBe(true);
@@ -282,7 +274,6 @@ describe('classification.ts', () => {
         userId: 'user1',
         agentId: 'agent1',
         deferredToolsEnabled: true,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.toolRegistry).toBeUndefined();
@@ -292,8 +283,6 @@ describe('classification.ts', () => {
   });
 
   describe('buildToolClassification with definitionsOnly', () => {
-    const mockLoadAuthValues = jest.fn().mockResolvedValue({ CODE_API_KEY: 'test-key' });
-
     const createMCPTool = (name: string, description?: string) =>
       ({
         name,
@@ -320,7 +309,6 @@ describe('classification.ts', () => {
         agentToolOptions,
         deferredToolsEnabled: true,
         definitionsOnly: true,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.additionalTools.length).toBe(0);
@@ -340,7 +328,6 @@ describe('classification.ts', () => {
         agentToolOptions,
         deferredToolsEnabled: true,
         definitionsOnly: true,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.toolDefinitions.some((d) => d.name === 'tool_search')).toBe(true);
@@ -361,52 +348,11 @@ describe('classification.ts', () => {
         agentToolOptions,
         deferredToolsEnabled: true,
         definitionsOnly: true,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_code')).toBe(true);
       expect(result.toolRegistry?.has('run_tools_with_code')).toBe(true);
       expect(result.additionalTools.length).toBe(0);
-    });
-
-    it('should NOT call loadAuthValues for PTC when definitionsOnly=true', async () => {
-      const loadedTools: GenericTool[] = [createMCPTool('tool1')];
-
-      const agentToolOptions: AgentToolOptions = {
-        tool1: { allowed_callers: ['code_execution'] },
-      };
-
-      await buildToolClassification({
-        loadedTools,
-        userId: 'user1',
-        agentId: 'agent1',
-        agentToolOptions,
-        deferredToolsEnabled: true,
-        definitionsOnly: true,
-        loadAuthValues: mockLoadAuthValues,
-      });
-
-      expect(mockLoadAuthValues).not.toHaveBeenCalled();
-    });
-
-    it('should call loadAuthValues for PTC when definitionsOnly=false', async () => {
-      const loadedTools: GenericTool[] = [createMCPTool('tool1')];
-
-      const agentToolOptions: AgentToolOptions = {
-        tool1: { allowed_callers: ['code_execution'] },
-      };
-
-      await buildToolClassification({
-        loadedTools,
-        userId: 'user1',
-        agentId: 'agent1',
-        agentToolOptions,
-        deferredToolsEnabled: true,
-        definitionsOnly: false,
-        loadAuthValues: mockLoadAuthValues,
-      });
-
-      expect(mockLoadAuthValues).toHaveBeenCalled();
     });
 
     it('should create tool instances when definitionsOnly=false (default)', async () => {
@@ -422,7 +368,6 @@ describe('classification.ts', () => {
         agentId: 'agent1',
         agentToolOptions,
         deferredToolsEnabled: true,
-        loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.additionalTools.some((t) => t.name === 'tool_search')).toBe(true);

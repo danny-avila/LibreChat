@@ -702,10 +702,10 @@ export async function initializeAgent(
    * Unify code-execution tools around `bash_tool` + `read_file` when the
    * agent explicitly lists `execute_code` in its tools and the capability
    * is enabled for the run. The legacy `execute_code` tool (backed by
-   * `CodeExecutionToolDefinition` + per-user `CODE_API_KEY` + `primeCodeFiles`)
-   * is no longer registered; the string `execute_code` on the agent
-   * document stays as the capability-trigger marker but expands into the
-   * skill-flavored tool pair here.
+   * `CodeExecutionToolDefinition` + `primeCodeFiles`) is no longer
+   * registered; the string `execute_code` on the agent document stays as
+   * the capability-trigger marker but expands into the skill-flavored
+   * tool pair here.
    *
    * Done BEFORE the `hasAgentTools` / GOOGLE_TOOL_CONFLICT gate so
    * execute-code-only agents on Google/Vertex still trip the conflict

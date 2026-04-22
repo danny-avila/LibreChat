@@ -74,12 +74,11 @@ export interface RegisterCodeExecutionToolsResult {
  * tool-definition list.
  *
  * Replaces the legacy `CodeExecutionToolDefinition` / `execute_code`
- * registration that previously required per-user `CODE_API_KEY` resolution.
- * `execute_code` as a capability name and as an `agent.tools` entry is
- * preserved — it just expands into this tool pair at load time so there
- * is only one code-execution tool path end-to-end (no same-run dedupe
- * surprises for agents with both `execute_code` capability AND skills
- * active).
+ * registration. `execute_code` as a capability name and as an
+ * `agent.tools` entry is preserved — it just expands into this tool
+ * pair at load time so there is only one code-execution tool path
+ * end-to-end (no same-run dedupe surprises for agents with both
+ * `execute_code` capability AND skills active).
  */
 export function registerCodeExecutionTools(
   params: RegisterCodeExecutionToolsParams,

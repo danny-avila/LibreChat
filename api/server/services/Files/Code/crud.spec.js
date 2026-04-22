@@ -33,7 +33,7 @@ describe('Code CRUD', () => {
       const mockResponse = { data: Readable.from(['chunk']) };
       mockAxios.mockResolvedValue(mockResponse);
 
-      await getCodeOutputDownloadStream('session-1/file-1', 'test-key');
+      await getCodeOutputDownloadStream('session-1/file-1');
 
       const callConfig = mockAxios.mock.calls[0][0];
       expect(callConfig.httpAgent).toBe(codeServerHttpAgent);
@@ -44,22 +44,23 @@ describe('Code CRUD', () => {
       expect(callConfig.httpsAgent.keepAlive).toBe(false);
     });
 
-    it('should request stream response from the correct URL', async () => {
+    it('should request stream response from the correct URL without an X-API-Key header', async () => {
       mockAxios.mockResolvedValue({ data: Readable.from(['chunk']) });
 
-      await getCodeOutputDownloadStream('session-1/file-1', 'test-key');
+      await getCodeOutputDownloadStream('session-1/file-1');
 
       const callConfig = mockAxios.mock.calls[0][0];
       expect(callConfig.url).toBe('https://code-api.example.com/download/session-1/file-1');
       expect(callConfig.responseType).toBe('stream');
       expect(callConfig.timeout).toBe(15000);
-      expect(callConfig.headers['X-API-Key']).toBe('test-key');
+      /* Phase 8 deprecation: no per-user/per-request code-env credential. */
+      expect(callConfig.headers).not.toHaveProperty('X-API-Key');
     });
 
     it('should throw on network error', async () => {
       mockAxios.mockRejectedValue(new Error('ECONNREFUSED'));
 
-      await expect(getCodeOutputDownloadStream('s/f', 'key')).rejects.toThrow();
+      await expect(getCodeOutputDownloadStream('s/f')).rejects.toThrow();
     });
   });
 
@@ -68,7 +69,6 @@ describe('Code CRUD', () => {
       req: { user: { id: 'user-123' } },
       stream: Readable.from(['file-content']),
       filename: 'data.csv',
-      apiKey: 'test-key',
     };
 
     it('should pass dedicated keepAlive:false agents to axios', async () => {
