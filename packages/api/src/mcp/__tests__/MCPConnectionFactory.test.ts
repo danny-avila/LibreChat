@@ -18,6 +18,7 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     debug: jest.fn(),
   },
+  getTenantId: jest.fn(),
 }));
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
