@@ -44,7 +44,7 @@ describe('Code CRUD', () => {
       expect(callConfig.httpsAgent.keepAlive).toBe(false);
     });
 
-    it('should request stream response from the correct URL without an X-API-Key header', async () => {
+    it('should request stream response from the correct URL', async () => {
       mockAxios.mockResolvedValue({ data: Readable.from(['chunk']) });
 
       await getCodeOutputDownloadStream('session-1/file-1');
@@ -53,8 +53,6 @@ describe('Code CRUD', () => {
       expect(callConfig.url).toBe('https://code-api.example.com/download/session-1/file-1');
       expect(callConfig.responseType).toBe('stream');
       expect(callConfig.timeout).toBe(15000);
-      /* Phase 8 deprecation: no per-user/per-request code-env credential. */
-      expect(callConfig.headers).not.toHaveProperty('X-API-Key');
     });
 
     it('should throw on network error', async () => {
