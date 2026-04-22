@@ -1,5 +1,5 @@
 import { Readable } from 'stream';
-import { Constants, EnvVar } from '@librechat/agents';
+import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import type { ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 import type { Types } from 'mongoose';
@@ -19,7 +19,6 @@ export interface PrimeSkillFilesParams {
   skill: { body: string; name: string; _id: Types.ObjectId | string };
   skillFiles: SkillFileRecord[];
   req: ServerRequest;
-  apiKey: string;
   getStrategyFunctions: (source: string) => {
     getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
     [key: string]: unknown;
@@ -27,14 +26,13 @@ export interface PrimeSkillFilesParams {
   batchUploadCodeEnvFiles: (params: {
     req: ServerRequest;
     files: Array<{ stream: NodeJS.ReadableStream; filename: string }>;
-    apiKey: string;
     entity_id?: string;
   }) => Promise<{
     session_id: string;
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified timestamp or null. */
-  getSessionInfo?: (fileIdentifier: string, apiKey: string) => Promise<string | null>;
+  getSessionInfo?: (fileIdentifier: string) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists codeEnvIdentifier on skill files after upload */
@@ -69,7 +67,6 @@ export async function primeSkillFiles(
     skill,
     skillFiles,
     req,
-    apiKey,
     getStrategyFunctions,
     batchUploadCodeEnvFiles,
     getSessionInfo,
@@ -99,7 +96,7 @@ export async function primeSkillFiles(
             if (!representative) {
               return false;
             }
-            const lastModified = await getSessionInfo(representative.codeEnvIdentifier!, apiKey);
+            const lastModified = await getSessionInfo(representative.codeEnvIdentifier!);
             return !!(lastModified && checkIfActive(lastModified));
           }),
         );
@@ -163,7 +160,6 @@ export async function primeSkillFiles(
     const result = await batchUploadCodeEnvFiles({
       req,
       files: filesToUpload,
-      apiKey,
       entity_id: entityId,
     });
     // Exclude SKILL.md from the returned files array — it is uploaded to disk
@@ -268,8 +264,6 @@ export async function primeInvokedSkills(
     return {};
   }
 
-  const apiKey = deps.codeEnvAvailable ? (process.env[EnvVar.CODE_API_KEY] ?? '') : '';
-
   const skills = new Map<string, string>();
 
   // Phase 1: Resolve all skills in parallel (DB lookups)
@@ -299,7 +293,7 @@ export async function primeInvokedSkills(
   let sessions: ToolSessionMap | undefined;
   const skillsWithFiles = resolvedSkills.filter((s) => s.fileCount > 0);
 
-  if (apiKey && skillsWithFiles.length > 0) {
+  if (deps.codeEnvAvailable && skillsWithFiles.length > 0) {
     // Parallel file list lookups (R2 fix)
     const fileListResults = await Promise.all(
       skillsWithFiles.map(async (skill) => ({
@@ -329,10 +323,7 @@ export async function primeInvokedSkills(
             );
             if (!representative) return true;
             try {
-              const lastModified = await deps.getSessionInfo?.(
-                representative.codeEnvIdentifier!,
-                apiKey,
-              );
+              const lastModified = await deps.getSessionInfo?.(representative.codeEnvIdentifier!);
               return !!(lastModified && deps.checkIfActive?.(lastModified));
             } catch {
               return false;
@@ -378,7 +369,6 @@ export async function primeInvokedSkills(
           skill,
           skillFiles: files,
           req: deps.req,
-          apiKey,
           getStrategyFunctions: deps.getStrategyFunctions,
           batchUploadCodeEnvFiles: deps.batchUploadCodeEnvFiles,
           getSessionInfo: deps.getSessionInfo,

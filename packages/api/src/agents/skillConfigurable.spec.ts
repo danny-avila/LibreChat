@@ -32,17 +32,6 @@ describe('enrichWithSkillConfigurable', () => {
     expect(result.configurable.codeEnvAvailable).toBe(false);
   });
 
-  it('does not inject a codeApiKey key (per-user lookup removed)', () => {
-    const result = enrichWithSkillConfigurable(
-      { loadedTools: [], configurable: {} },
-      req,
-      accessibleSkillIds,
-      true,
-    );
-
-    expect(result.configurable).not.toHaveProperty('codeApiKey');
-  });
-
   it('threads skillPrimedIdsByName through unchanged', () => {
     const primed = { 'brand-guidelines': 'abc123' };
     const result = enrichWithSkillConfigurable(

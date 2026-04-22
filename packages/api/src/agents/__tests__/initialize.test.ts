@@ -940,3 +940,201 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(loadTools.mock.calls[0][0].tools).toEqual([]);
   });
 });
+
+describe('initializeAgent — execute_code capability expansion', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('expands execute_code into bash_tool + read_file when codeEnvAvailable=true', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).toContain('bash_tool');
+    expect(names).toContain('read_file');
+    /* The legacy `execute_code` tool def is no longer registered by this
+       path — the string stays in `agent.tools` as the capability trigger
+       but never appears in the tool definitions the LLM sees. */
+    expect(names).not.toContain('execute_code');
+  });
+
+  it('does not register bash_tool + read_file when codeEnvAvailable=false', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).not.toContain('bash_tool');
+    expect(names).not.toContain('read_file');
+  });
+
+  it('does not register bash_tool + read_file when agent does not request execute_code', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).not.toContain('bash_tool');
+    expect(names).not.toContain('read_file');
+  });
+
+  it('narrows codeEnvAvailable on InitializedAgent to the per-agent effective value', async () => {
+    /* The admin-level `params.codeEnvAvailable` is AND-ed with
+       `agent.tools.includes('execute_code')` and stored on the returned
+       agent. Downstream runtime code (JS controllers, `primeInvokedSkills`)
+       reads the narrowed value from the stored context so skills-only
+       agents never accidentally trip sandbox-side logic. */
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    // Admin cap on, agent asks for execute_code → effective true.
+    agent.tools = ['execute_code'];
+    const execAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+    expect(execAgent.codeEnvAvailable).toBe(true);
+
+    // Admin cap on, agent does NOT ask for execute_code → effective false.
+    agent.tools = ['web_search'];
+    const skillsOnlyAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+    expect(skillsOnlyAgent.codeEnvAvailable).toBe(false);
+
+    // Admin cap off, agent asks for execute_code → still effective false.
+    agent.tools = ['execute_code'];
+    const capOffAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+    expect(capOffAgent.codeEnvAvailable).toBe(false);
+
+    // Neither → effective false.
+    agent.tools = ['web_search'];
+    const neitherAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+    expect(neitherAgent.codeEnvAvailable).toBe(false);
+  });
+
+  it('trips GOOGLE_TOOL_CONFLICT on Google/Vertex when execute_code expands alongside provider tools', async () => {
+    /* Pre-Phase 8, an `execute_code`-only agent on Google/Vertex with
+       `options.tools` populated would throw GOOGLE_TOOL_CONFLICT because
+       `CodeExecutionToolDefinition` populated `toolDefinitions` and
+       `hasAgentTools` was true. After dropping that registry entry, the
+       check is now gated on the runtime-expanded `bash_tool` + `read_file`
+       pair — so the expansion MUST happen before `hasAgentTools` is
+       computed or the guard silently goes away for this scenario. */
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      overrideProvider: Providers.GOOGLE,
+    });
+    agent.tools = ['execute_code'];
+
+    /* Surface an options.tools array from the provider config — this is
+       the `google_search` / `url_context` built-in LLM tooling that
+       Google/Vertex exposes via provider options. */
+    mockGetProviderConfig.mockReturnValue({
+      getOptions: jest.fn().mockResolvedValue({
+        llmConfig: { model: 'test-model', maxTokens: 4096 },
+        tools: [{ google_search: {} }],
+      } satisfies InitializeResultBase),
+      overrideProvider: Providers.GOOGLE,
+    });
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+        },
+        db,
+      ),
+    ).rejects.toThrow(/google_tool_conflict/);
+  });
+});
