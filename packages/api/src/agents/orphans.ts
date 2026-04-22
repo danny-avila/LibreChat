@@ -1,0 +1,58 @@
+import { EToolResources } from 'librechat-data-provider';
+import type { AgentToolResources } from 'librechat-data-provider';
+
+const TOOL_RESOURCE_KEYS = Object.values(EToolResources) as Array<keyof AgentToolResources>;
+
+/**
+ * Collects every file_id referenced across all tool_resource categories.
+ * Duplicates are de-duplicated across categories.
+ */
+export function collectToolResourceFileIds(
+  tool_resources: AgentToolResources | undefined | null,
+): string[] {
+  if (!tool_resources) {
+    return [];
+  }
+  const seen = new Set<string>();
+  for (const key of TOOL_RESOURCE_KEYS) {
+    const ids = tool_resources[key]?.file_ids;
+    if (!Array.isArray(ids)) {
+      continue;
+    }
+    for (const id of ids) {
+      if (typeof id === 'string') {
+        seen.add(id);
+      }
+    }
+  }
+  return Array.from(seen);
+}
+
+/**
+ * Removes the given file_ids from every tool_resource category on the provided
+ * tool_resources object. Mutates in place and also returns the same reference
+ * for convenience. Returns the count of removed references.
+ */
+export function stripFileIdsFromToolResources(
+  tool_resources: AgentToolResources | undefined | null,
+  idsToRemove: Iterable<string>,
+): { tool_resources: AgentToolResources | undefined | null; removedCount: number } {
+  if (!tool_resources) {
+    return { tool_resources, removedCount: 0 };
+  }
+  const removeSet = idsToRemove instanceof Set ? idsToRemove : new Set(idsToRemove);
+  if (removeSet.size === 0) {
+    return { tool_resources, removedCount: 0 };
+  }
+  let removedCount = 0;
+  for (const key of TOOL_RESOURCE_KEYS) {
+    const resource = tool_resources[key];
+    if (!resource || !Array.isArray(resource.file_ids)) {
+      continue;
+    }
+    const before = resource.file_ids.length;
+    resource.file_ids = resource.file_ids.filter((id) => !removeSet.has(id));
+    removedCount += before - resource.file_ids.length;
+  }
+  return { tool_resources, removedCount };
+}

@@ -10,7 +10,9 @@ const {
   collectEdgeAgentIds,
   mergeAgentOcrConversion,
   MAX_AVATAR_REFRESH_AGENTS,
+  collectToolResourceFileIds,
   convertOcrToContextInPlace,
+  stripFileIdsFromToolResources,
 } = require('@librechat/api');
 const {
   Time,
@@ -385,6 +387,32 @@ const updateAgentHandler = async (req, res) => {
     }
     if (ocrConversion.tools) {
       updateData.tools = ocrConversion.tools;
+    }
+
+    /*
+     * Strip orphaned file_id stubs (see issue #12776). A file deleted via the
+     * Manage Files tab can leave its id in tool_resources.*.file_ids; if we let
+     * those reach updateAgent, the agent stays in a corrupted state and the UI
+     * eventually blocks new uploads with "Duplicate file detected."
+     */
+    const effectiveResources = updateData.tool_resources ?? existingAgent.tool_resources;
+    const referencedFileIds = collectToolResourceFileIds(effectiveResources);
+    if (referencedFileIds.length > 0) {
+      const existingFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
+        file_id: 1,
+      });
+      const existingIds = new Set((existingFiles ?? []).map((f) => f.file_id));
+      const orphans = referencedFileIds.filter((id) => !existingIds.has(id));
+      if (orphans.length > 0) {
+        logger.warn(
+          `[/Agents/:id] Pruning ${orphans.length} orphaned file reference(s) from agent ${id}`,
+        );
+        if (updateData.tool_resources) {
+          stripFileIdsFromToolResources(updateData.tool_resources, orphans);
+        } else {
+          await db.removeAgentResourceFilesFromAllAgents({ file_ids: orphans });
+        }
+      }
     }
 
     if (updateData.tools) {
