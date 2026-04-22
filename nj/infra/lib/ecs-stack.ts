@@ -330,7 +330,10 @@ export class EcsStack extends cdk.Stack {
       EMBEDDINGS_MODEL: "amazon.titan-embed-text-v1",
     };
 
-    const envSecrets: Record<string, ecs.Secret> = {};
+    const jwtSecret = secrets.Secret.fromSecretNameV2(this, "RagApiJwtSecret", "ai-assistant/rag-api/jwt-secret");
+    const envSecrets: Record<string, ecs.Secret> = {
+      JWT_SECRET: ecs.Secret.fromSecretsManager(jwtSecret, "JWT_SECRET"),
+    };
 
     // Add RDS connection details if available
     if (props.rdsEndpoint && props.rdsPort && props.rdsSecret) {
