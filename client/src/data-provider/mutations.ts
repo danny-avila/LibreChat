@@ -1085,11 +1085,15 @@ export const useSaveFarmerProfileMutation = (
     onSuccess: (data, variables, context) => {
       queryClient.setQueryData<t.TUserTermsResponse>(
         [QueryKeys.userTerms],
-        (prev) =>
-          ({
+        (prev) => {
+          if (!prev) return prev;
+          const hasLocation = !!(variables.location?.latitude && variables.location?.longitude);
+          return {
             ...prev,
             farmerProfileCompleted: true,
-          }) as t.TUserTermsResponse,
+            ...(hasLocation ? { farmerLocationCompleted: true } : {}),
+          } as t.TUserTermsResponse;
+        },
       );
       options?.onSuccess?.(data, variables, context);
     },
