@@ -24,7 +24,11 @@ interface:
   modelSelect: false
 
   # We're purposefully disabling most LibreChat features (for now)
-  agents: false # Can be overriden with env var INTERFACE_AGENTS
+  agents: 
+    use: true
+    create: false # Can be overriden with env var INTERFACE_AGENTS
+    share: false
+    public: false 
   bookmarks: false
   endpointsMenu: false
   fileCitations: false
@@ -44,7 +48,7 @@ interface:
   sidePanel: false
   webSearch: false
   mcpServers:
-    use: false
+    use: true
     create: false
     share: false
     public: false

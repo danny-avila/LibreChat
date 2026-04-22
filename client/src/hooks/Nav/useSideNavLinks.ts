@@ -176,6 +176,7 @@ export default function useSideNavLinks({
       });
     }
 
+    /* NJ - Disable for now so we can set mcp permission without showing the UI panel
     if (
       (hasAccessToUseMCPSettings && availableMCPServers && availableMCPServers.length > 0) ||
       hasAccessToCreateMCP
@@ -188,6 +189,7 @@ export default function useSideNavLinks({
         Component: MCPBuilderPanel,
       });
     }
+    */
 
     if (includeHidePanel && hidePanel) {
       links.push({

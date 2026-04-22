@@ -34,6 +34,18 @@ export async function loadDefaultInterface({
     return value.toLowerCase().trim() === 'true';
   };
 
+  // If an env var is set, let it control agents' `create` alone (we always want `use` enabled)
+  let agents = interfaceConfig?.agents;
+  const agentsEnvVar = getEnvBoolean('INTERFACE_AGENTS');
+  if (agentsEnvVar !== undefined) {
+    agents = {
+      use: true,
+      create: agentsEnvVar,
+      share: false,
+      public: false,
+    };
+  }
+
   const loadedInterface: AppConfig['interfaceConfig'] = removeNullishValues({
     // UI elements - use schema defaults
     modelSelect:
@@ -51,7 +63,7 @@ export async function loadDefaultInterface({
     memories: shouldDisableMemories ? false : interfaceConfig?.memories,
     prompts: interfaceConfig?.prompts,
     multiConvo: interfaceConfig?.multiConvo,
-    agents: getEnvBoolean('INTERFACE_AGENTS') ?? interfaceConfig?.agents,
+    agents: agents,
     temporaryChat: interfaceConfig?.temporaryChat,
     runCode: interfaceConfig?.runCode,
     webSearch: interfaceConfig?.webSearch,
