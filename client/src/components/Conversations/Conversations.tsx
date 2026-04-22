@@ -1,11 +1,11 @@
-import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
+import { useMemo, memo, type FC, useCallback, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { ChevronDown } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useActiveJobs } from '~/data-provider';
 import { groupConversationsByDate, cn } from '~/utils';
@@ -110,7 +110,6 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
 DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
-  | { type: 'favorites' }
   | { type: 'chats-header' }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
@@ -160,21 +159,18 @@ const Conversations: FC<ConversationsProps> = ({
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
-  const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
-  const showAgentMarketplace = useShowMarketplace();
 
-  // Fetch active job IDs for showing generation indicators
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = useMemo(
     () => new Set(activeJobsData?.activeJobIds ?? []),
     [activeJobsData?.activeJobIds],
   );
 
-  // Determine if FavoritesList will render content
-  const shouldShowFavorites =
-    !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+  // 문서 검색 버튼은 FavoritesList 내부에서 무조건 노출되므로,
+  // 즐겨찾기/마켓플레이스가 비어 있어도 검색 중이 아니면 항상 렌더한다.
+  const shouldShowFavorites = !search.query;
 
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
@@ -188,10 +184,6 @@ const Conversations: FC<ConversationsProps> = ({
 
   const flattenedItems = useMemo(() => {
     const items: FlattenedItem[] = [];
-    // Only include favorites row if FavoritesList will render content
-    if (shouldShowFavorites) {
-      items.push({ type: 'favorites' });
-    }
     items.push({ type: 'chats-header' });
 
     if (isChatsExpanded) {
@@ -205,7 +197,7 @@ const Conversations: FC<ConversationsProps> = ({
       }
     }
     return items;
-  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites]);
+  }, [groupedConversations, isLoading, isChatsExpanded]);
 
   // Store flattenedItems in a ref for keyMapper to access without recreating cache
   const flattenedItemsRef = useRef(flattenedItems);
@@ -221,9 +213,6 @@ const Conversations: FC<ConversationsProps> = ({
           const item = flattenedItemsRef.current[index];
           if (!item) {
             return `unknown-${index}`;
-          }
-          if (item.type === 'favorites') {
-            return 'favorites';
           }
           if (item.type === 'chats-header') {
             return 'chats-header';
@@ -243,24 +232,6 @@ const Conversations: FC<ConversationsProps> = ({
     [convoHeight],
   );
 
-  // Debounced function to clear cache and recompute heights
-  const clearFavoritesCache = useCallback(() => {
-    if (cache) {
-      cache.clear(0, 0);
-      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
-        containerRef.current.recomputeRowHeights(0);
-      }
-    }
-  }, [cache, containerRef]);
-
-  // Clear cache when favorites change
-  useEffect(() => {
-    const frameId = requestAnimationFrame(() => {
-      clearFavoritesCache();
-    });
-    return () => cancelAnimationFrame(frameId);
-  }, [favorites.length, isFavoritesLoading, clearFavoritesCache]);
-
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
       const item = flattenedItems[index];
@@ -270,18 +241,6 @@ const Conversations: FC<ConversationsProps> = ({
         return (
           <MeasuredRow key={key} {...rowProps}>
             <LoadingSpinner />
-          </MeasuredRow>
-        );
-      }
-
-      if (item.type === 'favorites') {
-        return (
-          <MeasuredRow key={key} {...rowProps}>
-            <FavoritesList
-              isSmallScreen={isSmallScreen}
-              toggleNav={toggleNav}
-              onHeightChange={clearFavoritesCache}
-            />
           </MeasuredRow>
         );
       }
@@ -298,10 +257,9 @@ const Conversations: FC<ConversationsProps> = ({
       }
 
       if (item.type === 'header') {
-        // First date header index depends on whether favorites row is included
-        // With favorites: [favorites, chats-header, first-header] → index 2
-        // Without favorites: [chats-header, first-header] → index 1
-        const firstHeaderIndex = shouldShowFavorites ? 2 : 1;
+        // FavoritesList 는 가상화 리스트 바깥에 고정 렌더하므로
+        // 첫 번째 date header 는 항상 index === 1 ([chats-header, first-header])
+        const firstHeaderIndex = 1;
         return (
           <MeasuredRow key={key} {...rowProps}>
             <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />
@@ -330,11 +288,9 @@ const Conversations: FC<ConversationsProps> = ({
       flattenedItems,
       moveToTop,
       toggleNav,
-      clearFavoritesCache,
       isSmallScreen,
       isChatsExpanded,
       setIsChatsExpanded,
-      shouldShowFavorites,
       activeJobIds,
     ],
   );
@@ -360,13 +316,16 @@ const Conversations: FC<ConversationsProps> = ({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
+      {shouldShowFavorites && (
+        <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
+      )}
       {isSearchLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner className="text-text-primary" />
           <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
         </div>
       ) : (
-        <div className="flex-1">
+        <div className="min-h-0 flex-1">
           <AutoSizer>
             {({ width, height }) => (
               <List

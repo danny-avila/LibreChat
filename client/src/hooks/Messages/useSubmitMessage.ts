@@ -3,6 +3,7 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { buildBklFilterTag } from '~/utils/bklFilter';
 import store from '~/store';
 
 export default function useSubmitMessage() {
@@ -13,6 +14,7 @@ export default function useSubmitMessage() {
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
+  const periodFilter = useRecoilValue(store.periodFilter);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
 
   const submitMessage = useCallback(
@@ -28,9 +30,14 @@ export default function useSubmitMessage() {
         setMessages([...(rootMessages || []), latestMessage]);
       }
 
+      // Inject UI period filter as a [BKL_FILTER:{..}] prefix that the BKL backend
+      // strips + merges into its search filters. Same pattern as [BKL_GUIDED_RETRY:..].
+      const filterTag = buildBklFilterTag(periodFilter);
+      const textWithFilter = filterTag ? `${filterTag}${data.text}` : data.text;
+
       ask(
         {
-          text: data.text,
+          text: textWithFilter,
         },
         {
           addedConvo: addedConvo ?? undefined,
@@ -38,7 +45,7 @@ export default function useSubmitMessage() {
       );
       methods.reset();
     },
-    [ask, methods, addedConvo, setMessages, getMessages, latestMessage],
+    [ask, methods, addedConvo, setMessages, getMessages, latestMessage, periodFilter],
   );
 
   const submitPrompt = useCallback(

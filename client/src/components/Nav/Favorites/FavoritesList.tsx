@@ -8,13 +8,7 @@ import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import type { AgentQueryResult } from '~/common';
-import {
-  useGetConversation,
-  useShowMarketplace,
-  useFavorites,
-  useLocalize,
-  useNewConvo,
-} from '~/hooks';
+import { useGetConversation, useFavorites, useLocalize, useNewConvo } from '~/hooks';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
@@ -130,7 +124,8 @@ export default function FavoritesList({
   const search = useRecoilValue(store.search);
   const getConversation = useGetConversation(0);
   const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
-  const showAgentMarketplace = useShowMarketplace();
+  // BKL 커스텀: 에이전트/워크플로우 엔트리는 좌측 네비에서 숨김.
+  const showAgentMarketplace = false;
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();
@@ -244,6 +239,17 @@ export default function FavoritesList({
       onHeightChange();
     }
   }, [isAgentsLoading, onHeightChange]);
+
+  // 가상화(virtualized) 리스트가 FavoritesList의 높이 변화를 즉시 따라가지 못해
+  // 아래 "Chats" 헤더와 겹치는 현상을 막기 위해 ResizeObserver 로 실시간 재측정.
+  useEffect(() => {
+    const el = listContainerRef.current;
+    if (!el || !onHeightChange) return;
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => onHeightChange());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [onHeightChange]);
 
   const draggedFavoritesRef = useRef(safeFavorites);
 

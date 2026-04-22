@@ -6,7 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { DayPicker } from 'react-day-picker';
 import { Check, Filter, X } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
-import type { PeriodFilterPreset, PeriodFilterState } from '~/store/filters';
+import type { ExtensionGroup, PeriodFilterPreset, PeriodFilterState } from '~/store/filters';
 import { DEFAULT_PERIOD_FILTER } from '~/store/filters';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -32,6 +32,16 @@ const QUICK_OPTIONS: QuickOption[] = [
   { preset: 'last_5_years', labelKey: 'com_ui_period_last_5_years' },
 ];
 
+// 문서 검색 FilterBar 와 동일한 6-chip 옵션. 백엔드에서 group → 실제 확장자로 전개.
+const EXTENSION_OPTIONS: { id: ExtensionGroup; label: string; hint: string }[] = [
+  { id: 'pdf', label: 'PDF', hint: 'pdf' },
+  { id: 'msg', label: 'MSG', hint: 'msg' },
+  { id: 'docx', label: 'DOCX', hint: 'doc/docx' },
+  { id: 'hwpx', label: 'HWPX', hint: 'hwp/hwpx' },
+  { id: 'pptx', label: 'PPTX', hint: 'ppt/pptx' },
+  { id: 'other', label: '기타', hint: 'other' },
+];
+
 const DATE_FMT = 'yyyy-MM-dd';
 
 const parseDate = (value: string | null): Date | undefined => {
@@ -46,7 +56,8 @@ const parseDate = (value: string | null): Date | undefined => {
 const isActiveFilter = (state: PeriodFilterState): boolean =>
   state.preset !== DEFAULT_PERIOD_FILTER.preset ||
   state.startDate !== null ||
-  state.endDate !== null;
+  state.endDate !== null ||
+  (state.extensionGroups && state.extensionGroups.length > 0);
 
 interface DateTriggerProps {
   label: string;
@@ -97,9 +108,13 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
 
   const handleSelectPreset = useCallback(
     (preset: Exclude<PeriodFilterPreset, 'custom'>) => {
-      setPeriodFilter({ preset, startDate: null, endDate: null });
+      setPeriodFilter((prev) => ({
+        ...prev,
+        preset,
+        startDate: null,
+        endDate: null,
+      }));
       setActiveField(null);
-      setIsOpen(false);
     },
     [setPeriodFilter],
   );
@@ -113,15 +128,27 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
             value && prev.endDate && new Date(value) > new Date(prev.endDate)
               ? null
               : prev.endDate;
-          return { preset: 'custom', startDate: value, endDate: nextEnd };
+          return { ...prev, preset: 'custom', startDate: value, endDate: nextEnd };
         }
         const nextStart =
           value && prev.startDate && new Date(value) < new Date(prev.startDate)
             ? null
             : prev.startDate;
-        return { preset: 'custom', startDate: nextStart, endDate: value };
+        return { ...prev, preset: 'custom', startDate: nextStart, endDate: value };
       });
       setActiveField(null);
+    },
+    [setPeriodFilter],
+  );
+
+  const toggleExt = useCallback(
+    (id: ExtensionGroup) => {
+      setPeriodFilter((prev) => {
+        const set = new Set(prev.extensionGroups ?? []);
+        if (set.has(id)) set.delete(id);
+        else set.add(id);
+        return { ...prev, extensionGroups: Array.from(set) };
+      });
     },
     [setPeriodFilter],
   );
@@ -164,6 +191,8 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
     return undefined;
   }, [activeField, startDate, endDate]);
 
+  const selectedExts = periodFilter.extensionGroups ?? [];
+
   return (
     <Ariakit.MenuProvider store={menu}>
       <TooltipAnchor
@@ -193,11 +222,12 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
         portal
         unmountOnHide
         gutter={4}
-        flip={false}
+        /* flip=true(기본)로 두어 입력창이 뷰포트 하단 가까이 있을 때 자동으로 위로 뒤집히도록 한다. */
         placement="bottom-start"
         hideOnHoverOutside={false}
-        className="popover-ui z-50 w-[300px] !overflow-visible !p-2"
+        className="popover-ui z-50 w-[320px] !overflow-visible !p-2"
       >
+        {/* 기간 */}
         <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
           {localize('com_ui_period_quick_access')}
         </div>
@@ -211,7 +241,7 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
               key={option.preset}
               hideOnClick={false}
               onClick={() => handleSelectPreset(option.preset)}
-              className="group flex w-full cursor-pointer items-center justify-between gap-5 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2"
+              className="group flex w-full cursor-pointer items-center justify-between gap-5 rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-hover focus:bg-surface-hover md:px-2.5"
             >
               <span>{localize(option.labelKey as Parameters<typeof localize>[0])}</span>
               {isSelected && (
@@ -263,12 +293,42 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
             />
           </div>
         )}
+
+        {/* 확장자 (문서 검색과 동일한 6-chip, 다중 선택) */}
+        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
+        <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
+          {localize('com_document_search_filter_extension')}
+        </div>
+        <div className="flex flex-wrap gap-1.5 px-1.5 pb-1 pt-0.5">
+          {EXTENSION_OPTIONS.map((opt) => {
+            const active = selectedExts.includes(opt.id);
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => toggleExt(opt.id)}
+                aria-pressed={active}
+                title={opt.hint}
+                className={cn(
+                  'inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors',
+                  active
+                    ? 'border-text-primary bg-text-primary text-surface-primary'
+                    : 'border-border-medium bg-surface-primary text-text-secondary hover:border-border-heavy hover:text-text-primary',
+                )}
+              >
+                {active && <Check className="h-3 w-3" aria-hidden="true" />}
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
         {isActive && (
           <>
             <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
             <Ariakit.MenuItem
               onClick={handleClear}
-              className="group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-3.5 text-sm text-text-secondary outline-none hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2"
+              className="group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-secondary outline-none hover:bg-surface-hover focus:bg-surface-hover md:px-2.5"
             >
               <X className="h-4 w-4" aria-hidden="true" />
               <span>{localize('com_ui_period_clear')}</span>

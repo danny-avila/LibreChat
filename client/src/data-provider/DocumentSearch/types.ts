@@ -2,8 +2,16 @@ export interface KeywordSearchFilters {
   work_type?: string;
   document_type?: string;
   practice_area?: string;
+  /** YYYY-MM-DD, filtered against imanage_create_date */
   date_from?: string;
+  /** YYYY-MM-DD (inclusive), filtered against imanage_create_date */
   date_to?: string;
+  /** lowercase extensions without leading dot, e.g. ["pdf","msg"]. 세밀 제어용. */
+  extensions?: string[];
+  /** 확장자 그룹: "pdf" | "msg" | "docx" | "hwpx" | "pptx" | "other" (다중 선택). */
+  extension_groups?: string[];
+  workspace_class?: string;
+  matter_uid?: string;
 }
 
 export interface KeywordSearchRequest {
@@ -27,7 +35,12 @@ export interface ChunkPreview {
 export interface DocumentHit {
   doc_id: string;
   file_name: string;
+  imanage_create_date: string | null;
   document_date: string | null;
+  matter_uid: string | null;
+  client_name: string | null;
+  workspace_class: string | null;
+  file_extension: string | null;
   work_type: string | null;
   document_type: string | null;
   practice_area_primary: string | null;
@@ -36,8 +49,19 @@ export interface DocumentHit {
   top_chunks: ChunkPreview[];
 }
 
+export interface FacetBucket {
+  value: string;
+  count: number;
+}
+
+export interface SearchFacets {
+  extensions: FacetBucket[];
+  workspace_classes?: FacetBucket[];
+}
+
 export interface KeywordSearchResponse {
   query: string;
   total: number;
   documents: DocumentHit[];
+  facets?: SearchFacets;
 }
