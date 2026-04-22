@@ -1866,6 +1866,18 @@ describe('MCP Routes', () => {
   });
 
   describe('GET /:serverName/oauth/callback - Tenant Context', () => {
+    beforeEach(() => {
+      const { getTenantId, tenantStorage } = require('@librechat/data-schemas');
+      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      getTenantId.mockReset();
+      tenantStorage.run.mockReset();
+      tenantStorage.run.mockImplementation((store, fn) => fn());
+      MCPOAuthHandler.resolveStateToFlowId.mockReset();
+      MCPOAuthHandler.getFlowState.mockReset();
+      MCPOAuthHandler.completeOAuthFlow.mockReset();
+      MCPTokenStorage.storeTokens.mockReset();
+    });
+
     it('should wrap callback body in tenantStorage.run when flowState has tenantId and no current context', async () => {
       const { getTenantId, tenantStorage } = require('@librechat/data-schemas');
       const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
@@ -1911,7 +1923,6 @@ describe('MCP Routes', () => {
       const csrfToken = generateTestCsrfToken(flowId);
 
       getTenantId.mockReturnValue(undefined);
-      tenantStorage.run.mockClear();
 
       MCPOAuthHandler.resolveStateToFlowId.mockResolvedValue(flowId);
       MCPOAuthHandler.getFlowState.mockResolvedValue({
