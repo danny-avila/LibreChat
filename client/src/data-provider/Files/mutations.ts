@@ -45,6 +45,8 @@ export const useUploadFileMutation = (
         data,
         ...(_files ?? []),
       ]);
+      // Refresh storage usage indicator after upload.
+      queryClient.invalidateQueries([QueryKeys.storageUsage]);
 
       const endpoint = formData.get('endpoint');
       const message_file = formData.get('message_file');
@@ -176,6 +178,8 @@ export const useDeleteFilesMutation = (
 
         return (cachefiles ?? []).filter((file) => !fileMap.has(file.file_id));
       });
+      // Refresh storage usage indicator after delete.
+      queryClient.invalidateQueries([QueryKeys.storageUsage]);
 
       showToast({
         message: localize('com_ui_delete_success'),

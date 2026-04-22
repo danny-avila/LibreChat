@@ -51,6 +51,11 @@ export type FileConfig = {
   fileTokenLimit?: number;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
+  storageQuota?: {
+    enabled?: boolean;
+    defaultLimit?: number;
+    warningThreshold: number;
+  };
   clientImageResize?: {
     enabled?: boolean;
     maxWidth?: number;
@@ -122,7 +127,15 @@ export type TFile = {
 
 export type TFileUpload = TFile & {
   temp_file_id: string;
+  quotaWarning?: {
+    used: string;
+    limit: string;
+  };
 };
+
+export type StorageUsageResponse =
+  | { quotaEnabled: false }
+  | { quotaEnabled: true; bytesUsed: number; bytesLimit: number | null; bytesAvailable: number | null };
 
 export type AvatarUploadResponse = {
   url: string;

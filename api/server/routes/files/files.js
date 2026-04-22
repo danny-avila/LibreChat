@@ -17,6 +17,7 @@ const {
   PermissionBits,
   checkOpenAIStorage,
   isAssistantsEndpoint,
+  mergeFileConfig,
 } = require('librechat-data-provider');
 const {
   filterFile,
@@ -35,6 +36,7 @@ const { cleanFileName } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
 const db = require('~/models');
+const checkStorageQuota = require('~/server/middleware/checkStorageQuota');
 
 const router = express.Router();
 
@@ -124,6 +126,32 @@ router.get('/config', async (req, res) => {
   } catch (error) {
     logger.error('[/files] Error getting fileConfig', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+router.get('/storage', async (req, res) => {
+  try {
+    const quotaConfig = mergeFileConfig(req.config?.fileConfig).storageQuota;
+    if (!quotaConfig?.enabled) {
+      return res.status(200).json({ quotaEnabled: false });
+    }
+
+    const defaultLimit =
+      typeof quotaConfig.defaultLimit === 'number' && quotaConfig.defaultLimit >= 0
+        ? quotaConfig.defaultLimit
+        : null;
+
+    const { bytesUsed, bytesLimit } = await db.getStorageUsage(req.user.id, defaultLimit);
+
+    res.status(200).json({
+      quotaEnabled: true,
+      bytesUsed,
+      bytesLimit,
+      bytesAvailable: bytesLimit == null ? null : Math.max(0, bytesLimit - bytesUsed),
+    });
+  } catch (error) {
+    logger.error('[/files/storage] Error getting storage usage:', error);
+    res.status(500).json({ message: 'Error retrieving storage usage' });
   }
 });
 
@@ -369,7 +397,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', checkStorageQuota, async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
 

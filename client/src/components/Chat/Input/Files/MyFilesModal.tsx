@@ -3,6 +3,7 @@ import type { TFile } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '@librechat/client';
 import { useGetFiles } from '~/data-provider';
 import { DataTable, columns } from './Table';
+import StorageUsageIndicator from './StorageUsageIndicator';
 import { useLocalize } from '~/hooks';
 
 export function MyFilesModal({
@@ -32,7 +33,10 @@ export function MyFilesModal({
         className="w-11/12 bg-background text-text-primary shadow-2xl"
       >
         <OGDialogHeader>
-          <OGDialogTitle>{localize('com_nav_my_files')}</OGDialogTitle>
+          <div className="flex items-center justify-between gap-4 pr-8">
+            <OGDialogTitle>{localize('com_nav_my_files')}</OGDialogTitle>
+            <StorageUsageIndicator />
+          </div>
         </OGDialogHeader>
         <DataTable columns={columns} data={files} />
       </OGDialogContent>

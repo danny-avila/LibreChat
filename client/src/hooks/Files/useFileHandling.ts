@@ -119,6 +119,18 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       onSuccess: (data) => {
         clearUploadTimer(data.temp_file_id);
         console.log('upload success', data);
+
+        if (data.quotaWarning) {
+          showToast({
+            message: localize('com_warning_storage_quota_near', {
+              0: data.quotaWarning.used,
+              1: data.quotaWarning.limit,
+            }),
+            status: 'warning',
+            duration: 7000,
+          });
+        }
+
         if (agent_id) {
           queryClient.refetchQueries([QueryKeys.agent, agent_id]);
           return;
@@ -176,6 +188,24 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           errorMessage = 'com_error_files_upload_canceled';
         } else if (error?.response?.data?.message) {
           errorMessage = error.response.data.message;
+          const { message: msg, fileSize, used, limit } = error.response.data as {
+            message?: string;
+            fileSize?: string;
+            used?: string;
+            limit?: string;
+          };
+          if (
+            msg === 'com_error_storage_quota_exceeded' &&
+            fileSize != null &&
+            used != null &&
+            limit != null
+          ) {
+            errorMessage = localize('com_error_storage_quota_exceeded', {
+              0: fileSize,
+              1: used,
+              2: limit,
+            });
+          }
         }
         setError(errorMessage);
       },

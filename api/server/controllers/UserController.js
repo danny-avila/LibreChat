@@ -326,6 +326,7 @@ const deleteUserController = async (req, res) => {
     await db.deleteAllSharedLinks(user.id);
     await deleteUserFiles(req);
     await db.deleteFiles(null, user.id);
+    await db.deleteStorageUsage({ user: user.id });
     await db.deleteToolCalls(user.id);
     await db.deleteUserAgents(user.id);
     await db.deleteAllAgentApiKeys(user._id);
