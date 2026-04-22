@@ -158,4 +158,27 @@ describe('migrate-orphaned-agent-files (issue #12776)', () => {
     expect(result.details.length).toBeLessThanOrEqual(50);
     expect(result.details.length).toBeGreaterThan(0);
   });
+
+  test('runs the body inside a system tenant context (strict-mode safe)', async () => {
+    // Pins the runAsSystem wrap: without it the migration throws under
+    // TENANT_ISOLATION_STRICT=true on the very first Agent.countDocuments(),
+    // blocking the intended remediation path for corrupted agents.
+    const { SYSTEM_TENANT_ID, tenantStorage } = require('@librechat/data-schemas');
+    await seedFile('keeper');
+    await seedAgent({ file_search: { file_ids: ['keeper', 'orphan'] } });
+
+    const contextsObserved = [];
+    const originalCountDocuments = Agent.countDocuments.bind(Agent);
+    Agent.countDocuments = jest.fn((...args) => {
+      contextsObserved.push(tenantStorage.getStore()?.tenantId);
+      return originalCountDocuments(...args);
+    });
+
+    try {
+      await migrateOrphanedAgentFiles({ dryRun: false });
+      expect(contextsObserved).toContain(SYSTEM_TENANT_ID);
+    } finally {
+      Agent.countDocuments = originalCountDocuments;
+    }
+  });
 });
