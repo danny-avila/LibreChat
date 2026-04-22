@@ -139,7 +139,7 @@ mcpServers:
 speech:
   stt:
     openai:
-      url: 'http://100.100.108.44:8000/v1/audio/transcriptions'
+      url: 'http://100.100.108.44:9016/v1/audio/transcriptions'
       apiKey: 'sk_t4ua3ce1_N4tW6DA6Mroro32ZW7UJkLHy'
       model: 'whisper-1'
   speechTab:
