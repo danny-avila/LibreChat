@@ -62,13 +62,13 @@ describe('OpenAIImageGen', () => {
     jest.useRealTimers();
   });
 
-  describe('image preloading', () => {
-    it('keeps Image mounted during generation (progress < 1)', () => {
+  describe('image visibility', () => {
+    it('hides Image during generation when no filepath exists', () => {
       render(<OpenAIImageGen {...defaultProps} initialProgress={0.5} />);
-      expect(screen.getByTestId('image-component')).toBeInTheDocument();
+      expect(screen.queryByTestId('image-component')).not.toBeInTheDocument();
     });
 
-    it('shows Image when progress >= 1', () => {
+    it('shows Image when filepath is available', () => {
       render(
         <OpenAIImageGen
           {...defaultProps}
@@ -127,7 +127,7 @@ describe('OpenAIImageGen', () => {
 
     it('handles invalid JSON args gracefully', () => {
       render(<OpenAIImageGen {...defaultProps} args="invalid json" />);
-      expect(screen.getByTestId('image-component')).toBeInTheDocument();
+      expect(screen.getByTestId('progress-text')).toBeInTheDocument();
     });
 
     it('handles object args', () => {
@@ -137,7 +137,7 @@ describe('OpenAIImageGen', () => {
           args={{ prompt: 'a dog', quality: 'low', size: '512x512' }}
         />,
       );
-      expect(screen.getByTestId('image-component')).toBeInTheDocument();
+      expect(screen.getByTestId('progress-text')).toBeInTheDocument();
     });
   });
 

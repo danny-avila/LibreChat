@@ -45,17 +45,18 @@ env:
 
 jobs:
   index:
-    # Allow push + dispatch unconditionally; filter native pull_request
-    # events to contributors only. The /gitnexus command workflow does
-    # its own contributor-commenter check before it dispatches this
-    # workflow, so workflow_dispatch is always trusted here — including
-    # the case where the commenter wants to index a non-contributor or
-    # fork PR (the command uses refs/pull/<N>/head so checkout resolves).
+    # Push + dispatch run unconditionally. Native pull_request events
+    # are restricted to PRs authored by danny-avila only — this keeps
+    # automatic CI spend low on a repo with 200+ open PRs.
+    #
+    # Other contributors' PRs can still be indexed on demand:
+    #   - /gitnexus index    (PR comment command, contributor-gated)
+    #   - workflow_dispatch   (manual dispatch from Actions UI)
+    # Both bypass this filter because they arrive as workflow_dispatch,
+    # not pull_request.
     if: |
       github.event_name != 'pull_request' ||
-      github.event.pull_request.author_association == 'OWNER' ||
-      github.event.pull_request.author_association == 'MEMBER' ||
-      github.event.pull_request.author_association == 'COLLABORATOR'
+      github.event.pull_request.user.login == 'danny-avila'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

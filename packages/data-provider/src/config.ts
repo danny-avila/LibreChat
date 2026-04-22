@@ -1020,10 +1020,20 @@ export const memorySchema = z.object({
 
 export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 
-export const summarizationTriggerSchema = z.object({
-  type: z.enum(['token_count']),
-  value: z.number().positive(),
-});
+export const summarizationTriggerSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('token_ratio'),
+    value: z.number().finite().min(0).max(1),
+  }),
+  z.object({
+    type: z.literal('remaining_tokens'),
+    value: z.number().finite().int().positive(),
+  }),
+  z.object({
+    type: z.literal('messages_to_refine'),
+    value: z.number().finite().int().positive(),
+  }),
+]);
 
 export const contextPruningSchema = z.object({
   enabled: z.boolean().optional(),
@@ -1238,6 +1248,7 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-opus-4-7',
   'claude-sonnet-4-6',
   'claude-opus-4-6',
   'claude-sonnet-4-5',
@@ -1260,6 +1271,7 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-opus-4-7',
   'anthropic.claude-sonnet-4-6',
   'anthropic.claude-opus-4-6-v1',
   'anthropic.claude-sonnet-4-5-20250929-v1:0',
