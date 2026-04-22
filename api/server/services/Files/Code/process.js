@@ -70,7 +70,6 @@ const createDownloadFallback = ({
  * @param {ServerRequest} params.req - The Express request object.
  * @param {string} params.id - The file ID from the code environment.
  * @param {string} params.name - The filename.
- * @param {string} params.apiKey - The code execution API key.
  * @param {string} params.toolCallId - The tool call ID that generated the file.
  * @param {string} params.session_id - The code execution session ID.
  * @param {string} params.conversationId - The current conversation ID.
@@ -81,7 +80,6 @@ const processCodeOutput = async ({
   req,
   id,
   name,
-  apiKey,
   toolCallId,
   conversationId,
   messageId,
@@ -108,7 +106,6 @@ const processCodeOutput = async ({
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'LibreChat/1.0',
-        'X-API-Key': apiKey,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -280,15 +277,13 @@ function checkIfActive(dateString) {
 /**
  * Retrieves the `lastModified` time string for a specified file from Code Execution Server.
  *
- * @param {Object} params - The parameters object.
- * @param {string} params.fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
- * @param {string} params.apiKey - The API key for authentication.
+ * @param {string} fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
  *
  * @returns {Promise<string|null>}
  *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
  *          error in initialization or fetching the info.
  */
-async function getSessionInfo(fileIdentifier, apiKey) {
+async function getSessionInfo(fileIdentifier) {
   try {
     const baseURL = getCodeBaseURL();
     const [path, queryString] = fileIdentifier.split('?');
@@ -304,7 +299,6 @@ async function getSessionInfo(fileIdentifier, apiKey) {
       params: queryParams,
       headers: {
         'User-Agent': 'LibreChat/1.0',
-        'X-API-Key': apiKey,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -327,13 +321,12 @@ async function getSessionInfo(fileIdentifier, apiKey) {
  * @param {ServerRequest} options.req
  * @param {Agent['tool_resources']} options.tool_resources
  * @param {string} [options.agentId] - The agent ID for file access control
- * @param {string} apiKey
  * @returns {Promise<{
  * files: Array<{ id: string; session_id: string; name: string }>,
  * toolContext: string,
  * }>}
  */
-const primeFiles = async (options, apiKey) => {
+const primeFiles = async (options) => {
   const { tool_resources, req, agentId } = options;
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
@@ -414,7 +407,6 @@ const primeFiles = async (options, apiKey) => {
             stream,
             filename: file.filename,
             entity_id: queryParams.entity_id,
-            apiKey,
           });
 
           // Preserve existing metadata when adding fileIdentifier
@@ -436,7 +428,7 @@ const primeFiles = async (options, apiKey) => {
           );
         }
       };
-      const uploadTime = await getSessionInfo(file.metadata.fileIdentifier, apiKey);
+      const uploadTime = await getSessionInfo(file.metadata.fileIdentifier);
       if (!uploadTime) {
         logger.warn(`Failed to get upload time for file ${id} in session ${session_id}`);
         await reuploadFile();

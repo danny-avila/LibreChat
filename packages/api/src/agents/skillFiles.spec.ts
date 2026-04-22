@@ -44,23 +44,12 @@ function makeDeps(overrides: Partial<PrimeInvokedSkillsDeps> = {}): PrimeInvoked
 }
 
 describe('primeInvokedSkills — execute_code capability gate', () => {
-  const ORIGINAL_KEY = process.env.LIBRECHAT_CODE_API_KEY;
-
   beforeEach(() => {
     jest.clearAllMocks();
     mockExtract.mockReturnValue(new Set(['brand-guidelines']));
   });
 
-  afterEach(() => {
-    if (ORIGINAL_KEY === undefined) {
-      delete process.env.LIBRECHAT_CODE_API_KEY;
-    } else {
-      process.env.LIBRECHAT_CODE_API_KEY = ORIGINAL_KEY;
-    }
-  });
-
-  it('skips the batch-upload path when codeEnvAvailable is false (even if env key is set)', async () => {
-    process.env.LIBRECHAT_CODE_API_KEY = 'present';
+  it('skips the batch-upload path when codeEnvAvailable is false', async () => {
     const deps = makeDeps({ codeEnvAvailable: false });
 
     const result = await primeInvokedSkills(deps);
@@ -70,19 +59,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(deps.batchUploadCodeEnvFiles).not.toHaveBeenCalled();
   });
 
-  it('skips the batch-upload path when codeEnvAvailable is true but env key is unset', async () => {
-    delete process.env.LIBRECHAT_CODE_API_KEY;
-    const deps = makeDeps({ codeEnvAvailable: true });
-
-    const result = await primeInvokedSkills(deps);
-
-    expect(result.skills?.get('brand-guidelines')).toBe('skill body');
-    expect(deps.listSkillFiles).not.toHaveBeenCalled();
-    expect(deps.batchUploadCodeEnvFiles).not.toHaveBeenCalled();
-  });
-
-  it('enters the batch-upload path when codeEnvAvailable is true and env key is set', async () => {
-    process.env.LIBRECHAT_CODE_API_KEY = 'present';
+  it('enters the batch-upload path when codeEnvAvailable is true', async () => {
     const deps = makeDeps({ codeEnvAvailable: true });
 
     await primeInvokedSkills(deps);
@@ -90,8 +67,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(deps.listSkillFiles).toHaveBeenCalledWith(SKILL_ID);
   });
 
-  it('actually calls batchUploadCodeEnvFiles with the env-sourced apiKey when files are returned', async () => {
-    process.env.LIBRECHAT_CODE_API_KEY = 'sk-from-env';
+  it('calls batchUploadCodeEnvFiles without an apiKey when files are returned', async () => {
     const fileRecords = [
       {
         relativePath: 'references/style.md',
@@ -125,7 +101,10 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
 
     expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(1);
     const [uploadArgs] = batchUploadCodeEnvFiles.mock.calls[0];
-    expect(uploadArgs.apiKey).toBe('sk-from-env');
+    /* Phase 8 deprecation: LibreChat no longer threads an apiKey through
+       the sandbox upload path. The agents library / sandbox service owns
+       auth internally. */
+    expect(uploadArgs).not.toHaveProperty('apiKey');
     expect(uploadArgs.entity_id).toBe(SKILL_ID.toString());
     /* One uploaded file per `fileRecords` entry plus the synthetic
        SKILL.md that `primeSkillFiles` always prepends. */

@@ -1,4 +1,26 @@
-import { buildToolSet, BuildToolSetConfig } from './tools';
+/**
+ * `@librechat/agents` may ship without the skill-flavored tool definitions on
+ * older installed versions. Stub them so `registerCodeExecutionTools` (which
+ * consumes only the three exports below) can be exercised deterministically.
+ * Mirrors the same pattern used in `__tests__/skills.test.ts`.
+ */
+jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
+  ReadFileToolDefinition: {
+    name: 'read_file',
+    description: 'read file',
+    parameters: { type: 'object', properties: {} },
+    responseFormat: 'content',
+  },
+  BashExecutionToolDefinition: {
+    name: 'bash_tool',
+    description: 'bash',
+    schema: { type: 'object', properties: {} },
+  },
+}));
+
+import type { LCTool, LCToolRegistry } from '@librechat/agents';
+import { buildToolSet, BuildToolSetConfig, registerCodeExecutionTools } from './tools';
 
 describe('buildToolSet', () => {
   describe('event-driven mode (toolDefinitions)', () => {
@@ -121,6 +143,127 @@ describe('buildToolSet', () => {
       expect(toolSet.has('valid')).toBe(true);
       expect(toolSet.has('also_valid')).toBe(true);
       expect(toolSet.has('')).toBe(false);
+    });
+  });
+});
+
+describe('registerCodeExecutionTools', () => {
+  const makeRegistry = (): LCToolRegistry => new Map() as unknown as LCToolRegistry;
+
+  describe('fresh run (no pre-existing defs or registry entries)', () => {
+    it('registers read_file + bash_tool when includeBash=true', () => {
+      const toolRegistry = makeRegistry();
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+      });
+
+      const names = result.toolDefinitions.map((d) => d.name).sort();
+      expect(names).toEqual(['bash_tool', 'read_file']);
+      expect(result.registered.sort()).toEqual(['bash_tool', 'read_file']);
+      expect(toolRegistry.has('read_file')).toBe(true);
+      expect(toolRegistry.has('bash_tool')).toBe(true);
+    });
+
+    it('registers read_file only when includeBash=false', () => {
+      const toolRegistry = makeRegistry();
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: false,
+      });
+
+      expect(result.toolDefinitions.map((d) => d.name)).toEqual(['read_file']);
+      expect(result.registered).toEqual(['read_file']);
+      expect(toolRegistry.has('read_file')).toBe(true);
+      expect(toolRegistry.has('bash_tool')).toBe(false);
+    });
+
+    it('preserves pre-existing unrelated tool definitions', () => {
+      const toolRegistry = makeRegistry();
+      const existing: LCTool[] = [
+        { name: 'calculator', description: 'calc', parameters: undefined } as LCTool,
+      ];
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: existing,
+        includeBash: true,
+      });
+
+      const names = result.toolDefinitions.map((d) => d.name);
+      expect(names).toEqual(['calculator', 'read_file', 'bash_tool']);
+    });
+  });
+
+  describe('idempotence (second call in same run)', () => {
+    it('is a no-op when both tools already live in the registry', () => {
+      const toolRegistry = makeRegistry();
+      const first = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+      });
+      /* Second call simulates skills-path + execute_code-path overlap. */
+      const second = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: first.toolDefinitions,
+        includeBash: true,
+      });
+
+      expect(second.registered).toEqual([]);
+      expect(second.toolDefinitions).toHaveLength(2);
+      const names = second.toolDefinitions.map((d) => d.name).sort();
+      expect(names).toEqual(['bash_tool', 'read_file']);
+    });
+
+    it('is a no-op when tools already live in toolDefinitions (no registry available)', () => {
+      const existing: LCTool[] = [
+        { name: 'read_file', description: 'pre', parameters: undefined } as LCTool,
+        { name: 'bash_tool', description: 'pre', parameters: undefined } as LCTool,
+      ];
+      const result = registerCodeExecutionTools({
+        toolRegistry: undefined,
+        toolDefinitions: existing,
+        includeBash: true,
+      });
+
+      expect(result.registered).toEqual([]);
+      expect(result.toolDefinitions).toEqual(existing);
+    });
+
+    it('only adds the missing half when one is already registered', () => {
+      const toolRegistry = makeRegistry();
+      toolRegistry.set('read_file', {
+        name: 'read_file',
+        description: 'prev',
+        parameters: undefined,
+      } as LCTool);
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+      });
+
+      expect(result.registered).toEqual(['bash_tool']);
+      const names = result.toolDefinitions.map((d) => d.name);
+      expect(names).toEqual(['bash_tool']);
+      expect(toolRegistry.has('read_file')).toBe(true);
+      expect(toolRegistry.has('bash_tool')).toBe(true);
+    });
+  });
+
+  describe('no-registry variant', () => {
+    it('still returns merged toolDefinitions when toolRegistry is undefined', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: undefined,
+        toolDefinitions: [],
+        includeBash: true,
+      });
+
+      const names = result.toolDefinitions.map((d) => d.name).sort();
+      expect(names).toEqual(['bash_tool', 'read_file']);
+      expect(result.registered.sort()).toEqual(['bash_tool', 'read_file']);
     });
   });
 });

@@ -697,6 +697,66 @@ describe('injectSkillCatalog', () => {
     expect(definedNames).toContain('bash_tool');
     expect(definedNames).not.toContain('skill');
   });
+
+  it('does NOT register bash_tool when codeEnvAvailable is false (skills-only agent)', async () => {
+    /* Narrowing regression: `initializeAgent` now passes the per-agent
+       effective flag (admin cap AND `agent.tools.includes('execute_code')`).
+       A skills-only agent passes `false` here, and `bash_tool` must stay
+       out of the registered toolDefinitions even with an active skill
+       catalog. `read_file` still registers — manually-primed skills
+       read their `references/*` from storage without a sandbox. */
+    const owned = makeSkill('owned-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[owned]]);
+    const result = await injectSkillCatalog(
+      baseParams({ listSkillsByAccess, codeEnvAvailable: false }),
+    );
+    const definedNames = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(definedNames).toContain('read_file');
+    expect(definedNames).toContain('skill');
+    expect(definedNames).not.toContain('bash_tool');
+  });
+
+  it('does not duplicate bash_tool/read_file already registered by the execute_code path', async () => {
+    /* Simulates the Phase 8 dedupe: when an agent has both the
+       `execute_code` capability (registers bash_tool+read_file via
+       `registerCodeExecutionTools` before catalog injection) AND skills
+       active, `injectSkillCatalog` must see the existing entries in the
+       registry and skip re-adding. One copy of each reaches the LLM. */
+    const owned = makeSkill('owned-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[owned]]);
+    type ToolRegistryArg = NonNullable<Parameters<typeof injectSkillCatalog>[0]['toolRegistry']>;
+    type ToolDef = Parameters<ToolRegistryArg['set']>[1];
+    const preBash: ToolDef = {
+      name: 'bash_tool',
+      description: 'pre',
+      parameters: { type: 'object', properties: {} },
+    };
+    const preRead: ToolDef = {
+      name: 'read_file',
+      description: 'pre',
+      parameters: { type: 'object', properties: {} },
+      responseFormat: 'content',
+    };
+    const preRegistry = new Map<string, ToolDef>() as unknown as ToolRegistryArg;
+    preRegistry.set('bash_tool', preBash);
+    preRegistry.set('read_file', preRead);
+    const result = await injectSkillCatalog(
+      baseParams({
+        listSkillsByAccess,
+        codeEnvAvailable: true,
+        toolRegistry: preRegistry,
+        toolDefinitions: [preBash, preRead],
+      }),
+    );
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    const bashOccurrences = names.filter((n) => n === 'bash_tool').length;
+    const readOccurrences = names.filter((n) => n === 'read_file').length;
+    expect(bashOccurrences).toBe(1);
+    expect(readOccurrences).toBe(1);
+    /* Skill tool still gets registered because there is at least one
+       catalog-visible skill. */
+    expect(names).toContain('skill');
+  });
 });
 
 describe('buildSkillPrimeMessage', () => {

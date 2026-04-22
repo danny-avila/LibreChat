@@ -73,6 +73,16 @@ export interface DiscoverConnectedAgentsParams {
   skillStates?: InitializeAgentParams['skillStates'];
   /** Default active-on-share flag, forwarded to each sub-agent. */
   defaultActiveOnShare?: InitializeAgentParams['defaultActiveOnShare'];
+  /**
+   * Whether the `execute_code` capability is enabled for the run. Forwarded
+   * verbatim to each handoff sub-agent so `registerCodeExecutionTools` can
+   * expand `agent.tools: ['execute_code']` into the `bash_tool` + `read_file`
+   * pair. Omitted (or `undefined`) → the expansion is skipped, matching the
+   * primary-agent gate; callers that already resolved the capability set
+   * for the primary SHOULD forward the same value here or sub-agents lose
+   * code-execution tooling even though their parent had it.
+   */
+  codeEnvAvailable?: InitializeAgentParams['codeEnvAvailable'];
 }
 
 export interface DiscoverConnectedAgentsDeps {
@@ -140,6 +150,7 @@ export async function discoverConnectedAgents(
     computeAccessibleSkillIds,
     skillStates,
     defaultActiveOnShare,
+    codeEnvAvailable,
   } = params;
 
   const {
@@ -240,6 +251,7 @@ export async function discoverConnectedAgents(
         accessibleSkillIds: computeAccessibleSkillIds?.(agent),
         skillStates,
         defaultActiveOnShare,
+        codeEnvAvailable,
       },
       db,
     );

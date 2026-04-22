@@ -606,17 +606,7 @@ describe('createToolExecuteHandler', () => {
       });
     }
 
-    const ORIGINAL_KEY = process.env.LIBRECHAT_CODE_API_KEY;
-    afterEach(() => {
-      if (ORIGINAL_KEY === undefined) {
-        delete process.env.LIBRECHAT_CODE_API_KEY;
-      } else {
-        process.env.LIBRECHAT_CODE_API_KEY = ORIGINAL_KEY;
-      }
-    });
-
-    it('does NOT call listSkillFiles when codeEnvAvailable is false (even when env key is set)', async () => {
-      process.env.LIBRECHAT_CODE_API_KEY = 'present';
+    it('does NOT call listSkillFiles when codeEnvAvailable is false', async () => {
       const listSkillFiles = jest.fn().mockResolvedValue([]);
       const handler = makeSkillHandlerWithFiles({
         codeEnvAvailable: false,
@@ -635,8 +625,7 @@ describe('createToolExecuteHandler', () => {
       expect(listSkillFiles).not.toHaveBeenCalled();
     });
 
-    it('calls listSkillFiles when codeEnvAvailable is true AND the env key is set', async () => {
-      process.env.LIBRECHAT_CODE_API_KEY = 'present';
+    it('calls listSkillFiles when codeEnvAvailable is true', async () => {
       const listSkillFiles = jest.fn().mockResolvedValue([]);
       const handler = makeSkillHandlerWithFiles({
         codeEnvAvailable: true,
@@ -648,22 +637,6 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(listSkillFiles).toHaveBeenCalledWith(SKILL_ID);
-    });
-
-    it('does NOT call listSkillFiles when codeEnvAvailable is true but env key is unset (admin misconfig)', async () => {
-      delete process.env.LIBRECHAT_CODE_API_KEY;
-      const listSkillFiles = jest.fn().mockResolvedValue([]);
-      const handler = makeSkillHandlerWithFiles({
-        codeEnvAvailable: true,
-        listSkillFiles,
-      });
-
-      const [result] = await invokeHandler(handler, [
-        { id: 'call_no_env', name: Constants.SKILL_TOOL, args: { skillName: 'brand-guidelines' } },
-      ]);
-
-      expect(result.status).toBe('success');
-      expect(listSkillFiles).not.toHaveBeenCalled();
     });
   });
 });

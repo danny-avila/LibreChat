@@ -172,11 +172,16 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
+      /** Per-agent narrowed flag (admin capability AND agent.tools
+       *  includes execute_code), captured in `agentToolContexts` when
+       *  the agent initialized. Falls back to `false` on any stray
+       *  ctx miss so a skills-only agent never gains sandbox access
+       *  even if capability lookup somehow skips. */
       return enrichWithSkillConfigurable(
         result,
         req,
         ctx.accessibleSkillIds,
-        codeEnvAvailable,
+        ctx.codeEnvAvailable === true,
         ctx.skillPrimedIdsByName,
       );
     },
@@ -299,6 +304,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     tool_resources: primaryConfig.tool_resources,
     actionsEnabled: primaryConfig.actionsEnabled,
     accessibleSkillIds: primaryConfig.accessibleSkillIds,
+    codeEnvAvailable: primaryConfig.codeEnvAvailable,
     skillPrimedIdsByName,
   });
 
@@ -323,6 +329,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         scopeSkillIds(accessibleSkillIds, ephemeralSkillsToggle ? undefined : agent.skills),
       skillStates,
       defaultActiveOnShare,
+      codeEnvAvailable,
     },
     {
       getAgent: db.getAgent,
@@ -364,6 +371,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           tool_resources: config.tool_resources,
           actionsEnabled: config.actionsEnabled,
           accessibleSkillIds: config.accessibleSkillIds,
+          codeEnvAvailable: config.codeEnvAvailable,
           skillPrimedIdsByName: buildSkillPrimedIdsByName(
             config.manualSkillPrimes,
             config.alwaysApplySkillPrimes,
@@ -404,6 +412,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     parentMessageId,
     allowedProviders,
     primaryAgentId: primaryConfig.id,
+    codeEnvAvailable,
   });
 
   if (updatedMCPAuthMap) {
@@ -421,6 +430,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       tool_resources: config.tool_resources,
       actionsEnabled: config.actionsEnabled,
       accessibleSkillIds: config.accessibleSkillIds,
+      codeEnvAvailable: config.codeEnvAvailable,
     });
   }
 
@@ -452,22 +462,18 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       modelLabel: endpointOption.model_parameters.modelLabel,
     });
 
-  /** primeInvokedSkills reconstructs bodies of skills invoked in prior turns so
-   *  formatAgentMessages can rebuild HumanMessages and re-prime code-env files.
-   *  Unlike catalog injection and runtime invocation (both scoped per-agent),
-   *  history priming must use the user's full ACL-accessible set: historical
-   *  skill calls can reference skills no longer in any active agent's scope
-   *  (agent.skills edited, ephemeral toggle flipped), and scoping those out
-   *  would drop prior skill context and break file references in follow-up
-   *  turns. The ACL check remains the security gate; handleSkillToolCall is
-   *  where per-agent scoping prevents NEW invocations. */
+  /** History priming uses the user's full ACL-accessible skill set (not
+   *  per-agent scoped) because prior turns may reference skills no longer
+   *  in any active agent's scope; the ACL check is the security gate.
+   *  `codeEnvAvailable` comes from `primaryConfig` — @see
+   *  `InitializedAgent.codeEnvAvailable` for the per-agent narrowing. */
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
     ? (payload) =>
         primeInvokedSkills({
           req,
           payload,
           accessibleSkillIds,
-          codeEnvAvailable,
+          codeEnvAvailable: primaryConfig.codeEnvAvailable === true,
           ...getSkillToolDeps(),
         })
     : undefined;

@@ -1,16 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { HumanMessage } from '@langchain/core/messages';
-import {
-  formatSkillCatalog,
-  SkillToolDefinition,
-  ReadFileToolDefinition,
-  BashExecutionToolDefinition,
-} from '@librechat/agents';
+import { formatSkillCatalog, SkillToolDefinition } from '@librechat/agents';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { Agent } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { InitializeAgentDbMethods } from './initialize';
+import { registerCodeExecutionTools } from './tools';
 
 const SKILL_CATALOG_LIMIT = 100;
 /** Max pages scanned per run when filtering out inactive skills. */
@@ -355,43 +351,30 @@ export async function injectSkillCatalog(
     parameters: SkillToolDefinition.parameters as unknown as LCTool['parameters'],
   };
 
-  const readFileDef: LCTool = {
-    name: ReadFileToolDefinition.name,
-    description: ReadFileToolDefinition.description,
-    parameters: ReadFileToolDefinition.parameters as unknown as LCTool['parameters'],
-    responseFormat: ReadFileToolDefinition.responseFormat,
-  };
-
-  const bashToolDef: LCTool = {
-    name: BashExecutionToolDefinition.name,
-    description: BashExecutionToolDefinition.description,
-    parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
-  };
-
   /**
-   * `skill` tool is conditional on having anything for the model to invoke;
-   * `read_file` is always registered when any active skill is in scope
-   * (manually-primed disabled skills still need it); `bash_tool` follows
-   * code-env availability as before.
+   * `skill` tool is conditional on having anything for the model to invoke.
+   * `read_file` + `bash_tool` go through `registerCodeExecutionTools` so
+   * a prior registration from `initializeAgent` (for the `execute_code`
+   * capability) doesn't produce a duplicate copy. `read_file` is always
+   * included — manually-primed `disable-model-invocation: true` skills
+   * still need it to load their `references/*` from storage. `bash_tool`
+   * follows `codeEnvAvailable` as before.
    */
-  const defs: LCTool[] = [];
+  let workingDefs: LCTool[] = [...(inputDefs ?? [])];
   if (catalogVisibleSkills.length > 0) {
-    defs.push(skillToolDef);
-  }
-  defs.push(readFileDef);
-  if (codeEnvAvailable) {
-    defs.push(bashToolDef);
+    workingDefs.push(skillToolDef);
+    toolRegistry?.set(skillToolDef.name, skillToolDef);
   }
 
-  const toolDefinitions = [...(inputDefs ?? []), ...defs];
-  if (toolRegistry) {
-    for (const def of defs) {
-      toolRegistry.set(def.name, def);
-    }
-  }
+  const codeExecResult = registerCodeExecutionTools({
+    toolRegistry,
+    toolDefinitions: workingDefs,
+    includeBash: codeEnvAvailable === true,
+  });
+  workingDefs = codeExecResult.toolDefinitions;
 
   return {
-    toolDefinitions,
+    toolDefinitions: workingDefs,
     skillCount: catalogVisibleSkills.length,
     activeSkillIds: executableSkills.map((s) => s._id),
   };
