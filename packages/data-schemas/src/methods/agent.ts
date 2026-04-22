@@ -6,7 +6,19 @@ import logger from '~/config/winston';
 
 const { mcp_delimiter } = Constants;
 
-const TOOL_RESOURCE_KEYS: readonly string[] = Object.values(EToolResources);
+/**
+ * Mirrors `TOOL_RESOURCE_KEYS` in `@librechat/api` — the subset of
+ * `EToolResources` that actually carries `file_ids` on an agent document.
+ * `code_interpreter` is excluded (it belongs to the Assistants API, not
+ * `AgentToolResources`) to avoid emitting dead MongoDB clauses.
+ */
+const TOOL_RESOURCE_KEYS: readonly string[] = [
+  EToolResources.execute_code,
+  EToolResources.file_search,
+  EToolResources.image_edit,
+  EToolResources.context,
+  EToolResources.ocr,
+];
 
 export interface AgentDeps {
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */

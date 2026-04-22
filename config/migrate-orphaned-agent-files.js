@@ -1,14 +1,19 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
-const { collectToolResourceFileIds } = require('@librechat/api');
-const { EToolResources } = require('librechat-data-provider');
+const { TOOL_RESOURCE_KEYS, collectToolResourceFileIds } = require('@librechat/api');
 
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
 
 const { Agent, File } = require('~/db/models');
 
-const TOOL_RESOURCE_KEYS = Object.values(EToolResources);
+/**
+ * Cap on the number of per-agent entries we retain in `results.details`. Larger
+ * runs still update every affected agent and still report accurate aggregate
+ * counts — we just stop accumulating sample data past this threshold to keep
+ * memory bounded on deployments with thousands of corrupted agents.
+ */
+const DETAIL_SAMPLE_LIMIT = 50;
 
 /**
  * Cleans up orphaned file_id references from agent `tool_resources` — that is,
@@ -61,12 +66,14 @@ async function migrateOrphanedAgentFiles({ dryRun = true, batchSize = 100 } = {}
 
       results.agentsWithOrphans++;
       results.totalOrphansRemoved += orphans.length;
-      results.details.push({
-        agentId: agent.id,
-        name: agent.name,
-        orphanCount: orphans.length,
-        orphans,
-      });
+      if (results.details.length < DETAIL_SAMPLE_LIMIT) {
+        results.details.push({
+          agentId: agent.id,
+          name: agent.name,
+          orphanCount: orphans.length,
+          orphans,
+        });
+      }
 
       if (dryRun) {
         logger.debug(`[dry-run] Would prune ${orphans.length} orphan(s) from agent ${agent.id}`);

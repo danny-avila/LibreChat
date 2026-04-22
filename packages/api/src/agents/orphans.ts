@@ -1,7 +1,19 @@
 import { EToolResources } from 'librechat-data-provider';
 import type { AgentToolResources } from 'librechat-data-provider';
 
-const TOOL_RESOURCE_KEYS = Object.values(EToolResources) as Array<keyof AgentToolResources>;
+/**
+ * Every `EToolResources` member that can carry `file_ids` on an agent document.
+ * `code_interpreter` is intentionally omitted — it's part of `EToolResources`
+ * for the Assistants API but not a key of the agent-side `AgentToolResources`
+ * shape, so including it would be a type lie and generate dead MongoDB clauses.
+ */
+export const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
+  EToolResources.execute_code,
+  EToolResources.file_search,
+  EToolResources.image_edit,
+  EToolResources.context,
+  EToolResources.ocr,
+];
 
 /**
  * Collects every file_id referenced across all tool_resource categories.

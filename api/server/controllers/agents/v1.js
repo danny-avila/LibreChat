@@ -390,28 +390,34 @@ const updateAgentHandler = async (req, res) => {
     }
 
     /*
-     * Strip orphaned file_id stubs (see issue #12776). A file deleted via the
-     * Manage Files tab can leave its id in tool_resources.*.file_ids; if we let
-     * those reach updateAgent, the agent stays in a corrupted state and the UI
-     * eventually blocks new uploads with "Duplicate file detected."
+     * Strip orphaned file_id stubs from the incoming payload (see issue #12776).
+     * Scoped to updates that actually touch tool_resources: if the save does not
+     * modify that field, the delete-time cleanup in processDeleteRequest and the
+     * one-off migration already cover pre-existing corruption, so there's no
+     * reason to pay an extra DB round-trip here. Wrapped in try/catch so a
+     * transient failure in this integrity check never turns a good save into 500.
      */
-    const effectiveResources = updateData.tool_resources ?? existingAgent.tool_resources;
-    const referencedFileIds = collectToolResourceFileIds(effectiveResources);
-    if (referencedFileIds.length > 0) {
-      const existingFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
-        file_id: 1,
-      });
-      const existingIds = new Set((existingFiles ?? []).map((f) => f.file_id));
-      const orphans = referencedFileIds.filter((id) => !existingIds.has(id));
-      if (orphans.length > 0) {
-        logger.warn(
-          `[/Agents/:id] Pruning ${orphans.length} orphaned file reference(s) from agent ${id}`,
-        );
-        if (updateData.tool_resources) {
-          stripFileIdsFromToolResources(updateData.tool_resources, orphans);
-        } else {
-          await db.removeAgentResourceFilesFromAllAgents({ file_ids: orphans });
+    if (updateData.tool_resources) {
+      try {
+        const referencedFileIds = collectToolResourceFileIds(updateData.tool_resources);
+        if (referencedFileIds.length > 0) {
+          const existingFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
+            file_id: 1,
+          });
+          const existingIds = new Set((existingFiles ?? []).map((f) => f.file_id));
+          const orphans = referencedFileIds.filter((id) => !existingIds.has(id));
+          if (orphans.length > 0) {
+            logger.warn(
+              `[/Agents/:id] Pruning ${orphans.length} orphaned file reference(s) from agent ${id}`,
+            );
+            stripFileIdsFromToolResources(updateData.tool_resources, orphans);
+          }
         }
+      } catch (orphanCheckError) {
+        logger.warn(
+          '[/Agents/:id] Orphan file check failed, skipping cleanup for this request',
+          orphanCheckError,
+        );
       }
     }
 
