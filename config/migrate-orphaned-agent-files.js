@@ -126,11 +126,16 @@ if (require.main === module) {
       if (result.errors > 0) {
         console.log(`Errors: ${result.errors}`);
       }
-      if (result.details.length > 0 && result.details.length <= 25) {
+      if (result.details.length > 0) {
         console.log('\nAffected agents:');
         result.details.forEach((d, i) => {
           console.log(`  ${i + 1}. "${d.name}" (${d.agentId}) — ${d.orphanCount} orphan(s)`);
         });
+        if (result.agentsWithOrphans > result.details.length) {
+          console.log(
+            `  ... and ${result.agentsWithOrphans - result.details.length} more (sample capped at ${DETAIL_SAMPLE_LIMIT})`,
+          );
+        }
       }
       process.exit(0);
     })

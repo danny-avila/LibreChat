@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { Constants, EToolResources, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import type { AgentToolResources } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
 import logger from '~/config/winston';
@@ -12,7 +13,7 @@ const { mcp_delimiter } = Constants;
  * `code_interpreter` is excluded (it belongs to the Assistants API, not
  * `AgentToolResources`) to avoid emitting dead MongoDB clauses.
  */
-const TOOL_RESOURCE_KEYS: readonly string[] = [
+const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
   EToolResources.execute_code,
   EToolResources.file_search,
   EToolResources.image_edit,
