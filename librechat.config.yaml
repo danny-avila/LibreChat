@@ -91,19 +91,19 @@ registration:
 mcpServers:
   reviewer:
     type: streamable-http
-    url: http://100.100.108.43:9007/mcp
+    url: http://100.100.108.44:9015/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
    #  chatMenu: false
 
   golden:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9006/mcp
+    url: http://100.100.108.44:9005/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
   pop:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9002/mcp
+    url: http://100.100.108.44:9013/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
@@ -127,7 +127,7 @@ mcpServers:
    #  chatMenu: false
   faq-videos:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9005/mcp
+    url: http://100.100.108.44:9012/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
@@ -136,10 +136,22 @@ mcpServers:
     url: http://100.100.108.43:9023/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
 
+  ajrasakha-soilhealth:
+    type: streamable-http
+    url: http://100.100.108.44:9008/mcp
+    timeout: 60000
+    initTimeout: 120000
+
+  ajrasakha-govt-schemes:
+    type: streamable-http
+    url: http://100.100.108.44:9009/mcp
+    timeout: 60000
+    initTimeout: 120000
+
 speech:
   stt:
     openai:
-      url: 'http://100.100.108.43:8000/v1/audio/transcriptions'
+      url: 'http://100.100.108.44:9016/v1/audio/transcriptions'
       apiKey: 'sk_t4ua3ce1_N4tW6DA6Mroro32ZW7UJkLHy'
       model: 'whisper-1'
   speechTab:
@@ -216,7 +228,7 @@ fileConfig:
 ocr:
    strategy: "mistral_ocr"
    apiKey: "no-key-required"
-   baseURL: "http://100.100.108.43:8029/v1"
+   baseURL: "http://100.100.108.44:8029/v1"
    mistralModel: "mistral-ocr-latest"
 
 
@@ -296,6 +308,35 @@ modelSpecs:
              4.5. **DO NOT SKIP STEPS:** Under NO circumstances should you skip calling the Reviewer dataset first.
              4.6. Dont miss any relevant data from the MCP servers in your response.
              4.7. Fetch market-related data using both MCP tools, ajrasakha-agmarknet and ajrasakha-enam, and return information from whichever source has available data.
+
+          SOIL HEALTH — FERTILIZER DOSAGE RECOMMENDATION (STRICT WORKFLOW):
+          - If a farmer provides ANY soil test value — Nitrogen (N), Phosphorus (P), Potassium (K), or Organic Carbon (OC) — actively ask for any remaining missing soil values before proceeding.
+          - Also collect: State, District, and Crop. Check conversation history first; if missing, ask the farmer.
+          - ONLY when ALL 7 mandatory data points (N, P, K, OC, State, District, Crop) are available, call soilhealth tools in this strict order:
+            1) ajrasakha-soilhealth__get_states
+            2) ajrasakha-soilhealth__get_districts
+            3) ajrasakha-soilhealth__get_crops
+            4) ajrasakha-soilhealth__get_fertilizer_dosage
+          - Do smart matching for State/District/Crop names (case-insensitive, '&' vs 'and', abbreviations like J&K).
+          - DO NOT guess or hallucinate fertilizer recommendations. ALWAYS use the tool.
+          - MANDATORY CITATION: For fertilizer dosage responses, ALWAYS start the reply with:
+            "📋 This information is sourced from the official Soil Health Card portal: https://soilhealth.dac.gov.in/fertilizer-dosage"
+
+          GOVERNMENT SCHEMES FLOW (STRICT WORKFLOW):
+          - Use these two tools for government schemes:
+            1) ajrasakha-govt-schemes__govt_schemes (returns scheme options + slug)
+            2) ajrasakha-govt-schemes__get_scheme_details (takes slug)
+          - Progressive profiling is mandatory:
+            * If user asks generally (e.g., "Are there any schemes for me?"), ask only 3-4 essentials first: State, Age, Gender, and Occupation or Caste.
+            * Do NOT ask all demographic fields in one message.
+            * For boolean flags (is_minority, is_bpl, is_disabled, etc.), assume false unless user explicitly says otherwise.
+          - After essentials are available, call ajrasakha-govt-schemes__govt_schemes and show a numbered list to user:
+            * Use format: "1. [Scheme Name]"
+            * Never show slug values to the user.
+            * Internally remember the mapping between option number and slug.
+          - If user says "tell me more about number X", use the previously mapped slug, call ajrasakha-govt-schemes__get_scheme_details(slug), and return a concise summary.
+          - Direct inquiry chaining: If user asks about a specific scheme by name, first call ajrasakha-govt-schemes__govt_schemes to locate it (use state="All" when unknown), find the slug, then call get_scheme_details(slug).
+          - Never expose raw JSON, slug values, or internal tool arguments in user-facing text.
 
           5. **After answering any query:**
              - Search the **FAQ-Video MCP server** for a relevant YouTube video or summary.  
@@ -680,6 +721,7 @@ modelSpecs:
     - name: "ajrasakha-qwen-ffv"
       label: "AjraSakha-Qwen-FFV"
       default: false
+
       mcpServers:
          - reviewer
          - golden
@@ -688,6 +730,9 @@ modelSpecs:
          - ajrasakha-enam
          - ajrasakha-imd
          - faq-videos
+         - ajrasakha-soilhealth
+         - ajrasakha-govt-schemes
+
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
       preset:
