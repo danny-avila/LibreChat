@@ -50,6 +50,7 @@ export interface IFarmerProfile {
   usesAgriApps: boolean;
   highestEducatedPerson: string;
   numberOfSmartphones: number;
+  device?: string;
 }
 
 export type SaveFarmerProfileMutationOptions = MutationOptions<{ message: string }, IFarmerProfile>;
