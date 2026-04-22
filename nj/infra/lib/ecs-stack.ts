@@ -331,6 +331,7 @@ export class EcsStack extends cdk.Stack {
     };
 
     const jwtSecret = secrets.Secret.fromSecretNameV2(this, "RagApiJwtSecret", "ai-assistant/rag-api/jwt-secret");
+    jwtSecret.grantRead(commonExecRole);
     const envSecrets: Record<string, ecs.Secret> = {
       JWT_SECRET: ecs.Secret.fromSecretsManager(jwtSecret, "JWT_SECRET"),
     };
