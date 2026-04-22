@@ -444,6 +444,7 @@ const createResponse = async (req, res) => {
       userMCPAuthMap: primaryConfig.userMCPAuthMap,
       tool_resources: primaryConfig.tool_resources,
       actionsEnabled: primaryConfig.actionsEnabled,
+      codeEnvAvailable: primaryConfig.codeEnvAvailable,
     });
 
     // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
@@ -501,6 +502,7 @@ const createResponse = async (req, res) => {
               userMCPAuthMap: config.userMCPAuthMap,
               tool_resources: config.tool_resources,
               actionsEnabled: config.actionsEnabled,
+              codeEnvAvailable: config.codeEnvAvailable,
             });
           },
           initializeAgent,
@@ -569,11 +571,14 @@ const createResponse = async (req, res) => {
       }
     }
 
-    /* Stable for the turn: the capability set is the admin config, and
-       the prime lists are fixed once `initializeAgent` resolves. Hoisted
-       here so both the streaming and non-streaming `loadTools` closures
-       below read the same values without recomputing per tool execution. */
-    const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
+    /* Stable for the turn: the prime lists are fixed once
+       `initializeAgent` resolves. Hoisted here so both the streaming
+       and non-streaming `loadTools` closures below reuse it without
+       recomputing per tool execution. `codeEnvAvailable` is read
+       per-agent from the stored tool context (admin cap AND that
+       agent's `tools` list includes `execute_code`) — a skills-only
+       agent never gains sandbox access even if the admin enabled the
+       capability globally. */
     const skillPrimedIdsByName = buildSkillPrimedIdsByName(
       manualSkillPrimes,
       alwaysApplySkillPrimes,
@@ -636,7 +641,7 @@ const createResponse = async (req, res) => {
             result,
             req,
             primaryConfig.accessibleSkillIds,
-            codeEnvAvailable,
+            ctx.codeEnvAvailable === true,
             skillPrimedIdsByName,
           );
         },
@@ -812,7 +817,7 @@ const createResponse = async (req, res) => {
             result,
             req,
             primaryConfig.accessibleSkillIds,
-            codeEnvAvailable,
+            ctx.codeEnvAvailable === true,
             skillPrimedIdsByName,
           );
         },

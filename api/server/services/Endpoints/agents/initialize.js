@@ -172,11 +172,16 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
+      /** Per-agent narrowed flag (admin capability AND agent.tools
+       *  includes execute_code), captured in `agentToolContexts` when
+       *  the agent initialized. Falls back to `false` on any stray
+       *  ctx miss so a skills-only agent never gains sandbox access
+       *  even if capability lookup somehow skips. */
       return enrichWithSkillConfigurable(
         result,
         req,
         ctx.accessibleSkillIds,
-        codeEnvAvailable,
+        ctx.codeEnvAvailable === true,
         ctx.skillPrimedIdsByName,
       );
     },
@@ -299,6 +304,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     tool_resources: primaryConfig.tool_resources,
     actionsEnabled: primaryConfig.actionsEnabled,
     accessibleSkillIds: primaryConfig.accessibleSkillIds,
+    codeEnvAvailable: primaryConfig.codeEnvAvailable,
     skillPrimedIdsByName,
   });
 
@@ -365,6 +371,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           tool_resources: config.tool_resources,
           actionsEnabled: config.actionsEnabled,
           accessibleSkillIds: config.accessibleSkillIds,
+          codeEnvAvailable: config.codeEnvAvailable,
           skillPrimedIdsByName: buildSkillPrimedIdsByName(
             config.manualSkillPrimes,
             config.alwaysApplySkillPrimes,
@@ -423,6 +430,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       tool_resources: config.tool_resources,
       actionsEnabled: config.actionsEnabled,
       accessibleSkillIds: config.accessibleSkillIds,
+      codeEnvAvailable: config.codeEnvAvailable,
     });
   }
 
@@ -462,14 +470,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  (agent.skills edited, ephemeral toggle flipped), and scoping those out
    *  would drop prior skill context and break file references in follow-up
    *  turns. The ACL check remains the security gate; handleSkillToolCall is
-   *  where per-agent scoping prevents NEW invocations. */
+   *  where per-agent scoping prevents NEW invocations.
+   *
+   *  Use the primary agent's PER-AGENT `codeEnvAvailable` (admin cap AND
+   *  primary `agent.tools` lists `execute_code`) so a skills-only agent
+   *  doesn't accidentally re-prime historical skill files to the sandbox.
+   *  A prior turn that used a different agent with code execution still
+   *  gets its bodies reconstructed (skills are ACL-gated, not capability-
+   *  gated); only the sandbox-upload branch is skipped. */
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
     ? (payload) =>
         primeInvokedSkills({
           req,
           payload,
           accessibleSkillIds,
-          codeEnvAvailable,
+          codeEnvAvailable: primaryConfig.codeEnvAvailable === true,
           ...getSkillToolDeps(),
         })
     : undefined;

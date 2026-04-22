@@ -77,6 +77,18 @@ export type InitializedAgent = Agent & {
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
+  /**
+   * Whether the code-execution environment is available *for this agent*.
+   * Narrower than the incoming `params.codeEnvAvailable` admin flag — this
+   * is `admin_capability_enabled && agent.tools.includes('execute_code')`,
+   * computed once here so downstream code (`injectSkillCatalog`,
+   * `enrichWithSkillConfigurable`, `primeInvokedSkills`) doesn't have to
+   * re-scan the tool list on every runtime handler invocation.
+   * Authoritative for both persisted and ephemeral agents: the
+   * ephemeral-agent toggle is reconciled into `agent.tools` upstream
+   * (`packages/api/src/agents/added.ts`), so the check is uniform.
+   */
+  codeEnvAvailable: boolean;
   /** Accessible skill IDs for ACL checking at execute time */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
   /** Number of skills in the catalog (used to determine if SkillTool should be registered) */
@@ -700,24 +712,32 @@ export async function initializeAgent(
 
   /**
    * Unify code-execution tools around `bash_tool` + `read_file` when the
-   * agent explicitly lists `execute_code` in its tools and the capability
-   * is enabled for the run. The legacy `execute_code` tool (backed by
-   * `CodeExecutionToolDefinition` + `primeCodeFiles`) is no longer
-   * registered; the string `execute_code` on the agent document stays as
-   * the capability-trigger marker but expands into the skill-flavored
-   * tool pair here.
+   * agent explicitly lists `execute_code` in its tools and the admin
+   * capability is enabled for the run. The legacy `execute_code` tool
+   * (backed by `CodeExecutionToolDefinition` + `primeCodeFiles`) is no
+   * longer registered; the string `execute_code` on the agent document
+   * stays as the capability-trigger marker but expands into the
+   * skill-flavored tool pair here.
+   *
+   * `effectiveCodeEnvAvailable` is the per-agent truth: the admin-level
+   * `params.codeEnvAvailable` AND the agent actually asking for code
+   * execution. Computed once and reused by the expansion block below,
+   * the `injectSkillCatalog` call, and the returned `InitializedAgent`.
+   * Downstream handlers (runtime `configurable`, `primeInvokedSkills`)
+   * read it from the stored per-agent value so a skills-only agent
+   * never accidentally registers `bash_tool` or primes sandbox files
+   * just because the admin globally enabled code execution.
    *
    * Done BEFORE the `hasAgentTools` / GOOGLE_TOOL_CONFLICT gate so
    * execute-code-only agents on Google/Vertex still trip the conflict
-   * guard when provider-specific tools are also configured (pre-Phase 8
-   * the legacy `execute_code` def would have contributed to
-   * `toolDefinitions` for the same check; now bash_tool + read_file do).
-   * Also before `injectSkillCatalog` so the skill path's own
+   * guard when provider-specific tools are also configured. Also before
+   * `injectSkillCatalog` so the skill path's own
    * `registerCodeExecutionTools` call becomes a no-op via the registry
    * `.has()` dedupe — exactly one copy of each tool reaches the LLM.
    */
   const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
-  if (agentRequestsCodeExec && params.codeEnvAvailable === true) {
+  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  if (effectiveCodeEnvAvailable) {
     const codeExecResult = registerCodeExecutionTools({
       toolRegistry,
       toolDefinitions,
@@ -726,12 +746,12 @@ export async function initializeAgent(
     toolDefinitions = codeExecResult.toolDefinitions;
   } else if (agentRequestsCodeExec) {
     /**
-     * Agent asked for `execute_code` but the runtime gate is off — surface a
-     * debug log so operators tracing "why isn't code interpreter working?"
-     * get a clear signal at the initialize layer. The event-driven tool
-     * loader (`loadToolDefinitionsWrapper`) doesn't log capability-disabled
-     * warnings for the definitions-only path, so without this, the tool
-     * silently vanishes from the LLM's definitions with no trace.
+     * Agent asked for `execute_code` but the admin-level gate is off —
+     * surface a debug log so operators tracing "why isn't code
+     * interpreter working?" get a clear signal. The event-driven tool
+     * loader (`loadToolDefinitionsWrapper`) doesn't log capability-
+     * disabled warnings for the definitions-only path, so without this,
+     * the tool silently vanishes from the LLM's definitions with no trace.
      */
     logger.debug(
       `[initializeAgent] Agent "${agent.id}" requests execute_code but codeEnvAvailable=${String(params.codeEnvAvailable)}; skipping bash_tool + read_file registration.`,
@@ -798,7 +818,7 @@ export async function initializeAgent(
       accessibleSkillIds,
       contextWindowTokens: Number(agentMaxContextTokens) || 200_000,
       listSkillsByAccess: db?.listSkillsByAccess,
-      codeEnvAvailable: params.codeEnvAvailable,
+      codeEnvAvailable: effectiveCodeEnvAvailable,
       userId: req.user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
@@ -839,6 +859,7 @@ export async function initializeAgent(
     hasDeferredTools,
     actionsEnabled,
     baseContextTokens,
+    codeEnvAvailable: effectiveCodeEnvAvailable,
     skillCount,
     accessibleSkillIds: executableSkillIds,
     manualSkillPrimes,

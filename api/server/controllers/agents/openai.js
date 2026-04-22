@@ -314,6 +314,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       userMCPAuthMap: primaryConfig.userMCPAuthMap,
       tool_resources: primaryConfig.tool_resources,
       actionsEnabled: primaryConfig.actionsEnabled,
+      codeEnvAvailable: primaryConfig.codeEnvAvailable,
     });
 
     // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
@@ -371,6 +372,7 @@ const OpenAIChatCompletionController = async (req, res) => {
               userMCPAuthMap: config.userMCPAuthMap,
               tool_resources: config.tool_resources,
               actionsEnabled: config.actionsEnabled,
+              codeEnvAvailable: config.codeEnvAvailable,
             });
           },
           initializeAgent,
@@ -416,11 +418,13 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
-    /* Stable for the turn: the capability set is the admin config, and
-       the prime lists are fixed once `initializeAgent` resolves. Hoisting
-       these out of `loadTools` avoids recomputing them on every tool
-       execution (and keeps the call-site lean). */
-    const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
+    /* Stable for the turn: the prime lists are fixed once
+       `initializeAgent` resolves. Hoisted out of `loadTools` so tool
+       execution doesn't recompute them. `codeEnvAvailable` is read
+       per-agent from the stored tool context (admin cap AND that
+       agent's `tools` list includes `execute_code`) — a skills-only
+       agent never gains sandbox access even if the admin enabled the
+       capability globally. */
     const skillPrimedIdsByName = buildSkillPrimedIdsByName(
       primaryConfig.manualSkillPrimes,
       primaryConfig.alwaysApplySkillPrimes,
@@ -444,7 +448,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           result,
           req,
           primaryConfig.accessibleSkillIds,
-          codeEnvAvailable,
+          ctx.codeEnvAvailable === true,
           skillPrimedIdsByName,
         );
       },

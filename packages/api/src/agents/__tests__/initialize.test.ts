@@ -1019,6 +1019,83 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(names).not.toContain('read_file');
   });
 
+  it('narrows codeEnvAvailable on InitializedAgent to the per-agent effective value', async () => {
+    /* The admin-level `params.codeEnvAvailable` is AND-ed with
+       `agent.tools.includes('execute_code')` and stored on the returned
+       agent. Downstream runtime code (JS controllers, `primeInvokedSkills`)
+       reads the narrowed value from the stored context so skills-only
+       agents never accidentally trip sandbox-side logic. */
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    // Admin cap on, agent asks for execute_code → effective true.
+    agent.tools = ['execute_code'];
+    const execAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+    expect(execAgent.codeEnvAvailable).toBe(true);
+
+    // Admin cap on, agent does NOT ask for execute_code → effective false.
+    agent.tools = ['web_search'];
+    const skillsOnlyAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+    expect(skillsOnlyAgent.codeEnvAvailable).toBe(false);
+
+    // Admin cap off, agent asks for execute_code → still effective false.
+    agent.tools = ['execute_code'];
+    const capOffAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+    expect(capOffAgent.codeEnvAvailable).toBe(false);
+
+    // Neither → effective false.
+    agent.tools = ['web_search'];
+    const neitherAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+    expect(neitherAgent.codeEnvAvailable).toBe(false);
+  });
+
   it('trips GOOGLE_TOOL_CONFLICT on Google/Vertex when execute_code expands alongside provider tools', async () => {
     /* Pre-Phase 8, an `execute_code`-only agent on Google/Vertex with
        `options.tools` populated would throw GOOGLE_TOOL_CONFLICT because
