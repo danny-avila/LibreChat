@@ -1,12 +1,8 @@
+/* eslint-disable i18next/no-literal-string */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useForm } from 'react-hook-form';
 import { useState } from 'react';
-import {
-  OGDialog,
-  OGDialogContent,
-  OGDialogHeader,
-  OGDialogTitle,
-  Label,
-} from '@librechat/client';
+import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Label } from '@librechat/client';
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -40,18 +36,20 @@ const FarmerLocationModal = ({
   } = useForm<FarmerLocationForm>({ mode: 'onChange' });
 
   const saveMutation = useSaveFarmerProfileMutation({
-    onSuccess: () => { onComplete(); },
+    onSuccess: () => {
+      onComplete();
+    },
   });
 
   const onSubmit = (data: FarmerLocationForm) => {
     const profilePayload: IFarmerProfile = {
-      ...(user?.farmerProfile ?? {}), // Retain existing info securely
-      location: data.location?.latitude && data.location?.longitude 
-        ? {
-            latitude: Number(data.location.latitude),
-            longitude: Number(data.location.longitude),
-          }
-        : undefined,
+      location:
+        data.location?.latitude && data.location?.longitude
+          ? {
+              latitude: Number(data.location.latitude),
+              longitude: Number(data.location.longitude),
+            }
+          : undefined,
     };
     saveMutation.mutate(profilePayload);
   };
@@ -60,23 +58,47 @@ const FarmerLocationModal = ({
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent
-        showCloseButton={true}
-        className="w-11/12 max-w-md sm:w-full flex flex-col"
-      >
+      <OGDialogContent showCloseButton={true} className="flex w-11/12 max-w-md flex-col sm:w-full">
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-bold text-text-primary">
-            Update Missing Information
+            Register Home Location
           </OGDialogTitle>
         </OGDialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col mt-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="mt-4 flex flex-col">
           <input type="hidden" {...register('location.latitude', { required: true })} />
           <input type="hidden" {...register('location.longitude', { required: true })} />
-          
-          <p className="text-sm text-text-secondary mb-4">
+
+          <p className="mb-4 text-sm text-text-secondary">
             We noticed you haven't shared your location with us yet. Please capture it below.
           </p>
+
+          <div className="mb-4 rounded-md border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-800 dark:bg-blue-900/10">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg
+                  className="h-5 w-5 text-blue-400 dark:text-blue-500"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-blue-800 dark:text-blue-300">Important</h3>
+                <div className="mt-2 text-sm text-blue-700 dark:text-blue-400">
+                  <p>
+                    Please ensure you are currently located at your home before capturing your
+                    location to ensure accurate profile registration.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div className={fieldClass}>
             <Label>Current Location</Label>
@@ -93,14 +115,18 @@ const FarmerLocationModal = ({
                   }
                   navigator.geolocation.getCurrentPosition(
                     (position) => {
-                      setValue('location.latitude', position.coords.latitude, { shouldValidate: true });
-                      setValue('location.longitude', position.coords.longitude, { shouldValidate: true });
+                      setValue('location.latitude', position.coords.latitude, {
+                        shouldValidate: true,
+                      });
+                      setValue('location.longitude', position.coords.longitude, {
+                        shouldValidate: true,
+                      });
                       setIsLocating(false);
                     },
                     (error) => {
                       setLocationError('Unable to retrieve your location');
                       setIsLocating(false);
-                    }
+                    },
                   );
                 }}
                 disabled={isLocating}
@@ -113,9 +139,7 @@ const FarmerLocationModal = ({
                   ✓ Location Captured Succesfully
                 </span>
               )}
-              {locationError && (
-                <span className="text-sm text-red-500">{locationError}</span>
-              )}
+              {locationError && <span className="text-sm text-red-500">{locationError}</span>}
             </div>
           </div>
 
@@ -123,7 +147,7 @@ const FarmerLocationModal = ({
             <button
               type="submit"
               disabled={!isValid || saveMutation.isLoading}
-              className="inline-flex items-center justify-center rounded-lg bg-surface-active px-6 py-2 text-sm font-medium text-text-primary hover:bg-surface-active-hover disabled:cursor-not-allowed disabled:opacity-50"
+              className="hover:bg-surface-active-hover inline-flex items-center justify-center rounded-lg bg-surface-active px-6 py-2 text-sm font-medium text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saveMutation.isLoading ? 'Saving...' : 'Save Location'}
             </button>

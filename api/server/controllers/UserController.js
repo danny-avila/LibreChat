@@ -122,26 +122,54 @@ const acceptSecondTermsController = async (req, res) => {
 const saveFarmerProfileController = async (req, res) => {
   try {
     const farmerProfile = req.body;
-    const normalizedProfile = {
-      ...farmerProfile,
-      farmerName: farmerProfile.farmerName?.trim().toLowerCase(),
-      villageName: farmerProfile.villageName?.trim().toLowerCase(),
-      blockName: farmerProfile.blockName?.trim().toLowerCase(),
-      district: farmerProfile.district?.trim().toLowerCase(),
-      state: farmerProfile.state?.trim().toLowerCase(),
-      phoneNo: farmerProfile.phoneNo?.trim().replace(/\s+/g, ''),
-      languagePreference: farmerProfile.languagePreference?.trim().toLowerCase(),
-      primaryCrop: farmerProfile.primaryCrop?.trim().toLowerCase(),
-      secondaryCrop: farmerProfile.secondaryCrop?.trim().toLowerCase(),
-      highestEducatedPerson: farmerProfile.highestEducatedPerson?.trim().toLowerCase(),
-      cropsCultivated: Array.isArray(farmerProfile.cropsCultivated)
+    const updateQuery = { $set: {} };
+
+    if (farmerProfile.farmerName !== undefined) {
+      updateQuery.$set['farmerProfile.farmerName'] = farmerProfile.farmerName?.trim().toLowerCase();
+    }
+    if (farmerProfile.villageName !== undefined) {
+      updateQuery.$set['farmerProfile.villageName'] = farmerProfile.villageName?.trim().toLowerCase();
+    }
+    if (farmerProfile.blockName !== undefined) {
+      updateQuery.$set['farmerProfile.blockName'] = farmerProfile.blockName?.trim().toLowerCase();
+    }
+    if (farmerProfile.district !== undefined) {
+      updateQuery.$set['farmerProfile.district'] = farmerProfile.district?.trim().toLowerCase();
+    }
+    if (farmerProfile.state !== undefined) {
+      updateQuery.$set['farmerProfile.state'] = farmerProfile.state?.trim().toLowerCase();
+    }
+    if (farmerProfile.phoneNo !== undefined) {
+      updateQuery.$set['farmerProfile.phoneNo'] = farmerProfile.phoneNo?.trim().replace(/\s+/g, '');
+    }
+    if (farmerProfile.languagePreference !== undefined) {
+      updateQuery.$set['farmerProfile.languagePreference'] = farmerProfile.languagePreference?.trim().toLowerCase();
+    }
+    if (farmerProfile.primaryCrop !== undefined) {
+      updateQuery.$set['farmerProfile.primaryCrop'] = farmerProfile.primaryCrop?.trim().toLowerCase();
+    }
+    if (farmerProfile.secondaryCrop !== undefined) {
+      updateQuery.$set['farmerProfile.secondaryCrop'] = farmerProfile.secondaryCrop?.trim().toLowerCase();
+    }
+    if (farmerProfile.highestEducatedPerson !== undefined) {
+      updateQuery.$set['farmerProfile.highestEducatedPerson'] = farmerProfile.highestEducatedPerson?.trim().toLowerCase();
+    }
+    if (farmerProfile.cropsCultivated !== undefined) {
+      updateQuery.$set['farmerProfile.cropsCultivated'] = Array.isArray(farmerProfile.cropsCultivated)
         ? farmerProfile.cropsCultivated.map((c) => c.trim().toLowerCase())
-        : farmerProfile.cropsCultivated,
-    };
+        : farmerProfile.cropsCultivated;
+    }
+    if (farmerProfile.location !== undefined) {
+      updateQuery.$set['farmerProfile.location'] = farmerProfile.location;
+    }
+
+    if (Object.keys(updateQuery.$set).length === 0) {
+      return res.status(200).json({ message: 'No changes provided to save' });
+    }
 
     const user = await User.findByIdAndUpdate(
       req.user.id,
-      { farmerProfile: normalizedProfile },
+      updateQuery,
       { new: true },
     );
     if (!user) {
