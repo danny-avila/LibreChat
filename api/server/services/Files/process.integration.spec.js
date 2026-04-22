@@ -12,7 +12,6 @@
  * reference cleanup, which is what issue #12776 is about.
  */
 
-const path = require('path');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { agentSchema, fileSchema, createMethods } = require('@librechat/data-schemas');
