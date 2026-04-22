@@ -62,13 +62,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     artifacts,
     fileSearch,
     mcpServerManager,
-    codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
   } = context ?? {};
 
-  const { setIsDialogOpen: setIsCodeDialogOpen, menuTriggerRef: codeMenuTriggerRef } =
-    codeApiKeyForm ?? {};
   const { setIsDialogOpen: setIsSearchDialogOpen, menuTriggerRef: searchMenuTriggerRef } =
     searchApiKeyForm ?? {};
   const {
@@ -76,11 +73,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     setIsPinned: setIsSearchPinned,
     authData: webSearchAuthData,
   } = webSearch ?? {};
-  const {
-    isPinned: isCodePinned,
-    setIsPinned: setIsCodePinned,
-    authData: codeAuthData,
-  } = codeInterpreter ?? {};
+  const { isPinned: isCodePinned, setIsPinned: setIsCodePinned } = codeInterpreter ?? {};
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch ?? {};
   const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts ?? {};
   const { isPinned: isSkillsPinned, setIsPinned: setIsSkillsPinned } = skills ?? {};
@@ -90,11 +83,6 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     if (authTypes.length === 0) return true;
     return !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
   }, [webSearchAuthData?.authTypes]);
-
-  const showCodeSettings = useMemo(
-    () => codeAuthData?.message !== AuthType.SYSTEM_DEFINED,
-    [codeAuthData?.message],
-  );
 
   const handleWebSearchToggle = useCallback(() => {
     const newValue = !webSearch?.toggleState;
@@ -276,26 +264,6 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
             <span>{localize('com_assistants_code_interpreter')}</span>
           </div>
           <div className="flex items-center gap-1">
-            {showCodeSettings && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsCodeDialogOpen?.(true);
-                }}
-                ref={codeMenuTriggerRef}
-                className={cn(
-                  'rounded p-1 transition-all duration-200',
-                  'hover:bg-surface-secondary hover:shadow-sm',
-                  'text-text-secondary hover:text-text-primary',
-                )}
-                aria-label="Configure code interpreter"
-              >
-                <div className="h-4 w-4">
-                  <Settings className="h-4 w-4" aria-hidden="true" />
-                </div>
-              </button>
-            )}
             <button
               type="button"
               onClick={(e) => {

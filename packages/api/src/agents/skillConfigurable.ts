@@ -4,10 +4,8 @@
  * `codeEnvAvailable` is threaded as a boolean (true when the agent's
  * `execute_code` capability is enabled). Downstream skill consumers —
  * the skill-tool handler (for file priming) and `primeInvokedSkills`
- * (for history re-priming) — gate sandbox uploads on this flag rather
- * than on API-key presence, so no sandbox traffic occurs for agents
- * that lack code-execution capability even if
- * `process.env.LIBRECHAT_CODE_API_KEY` happens to be set.
+ * (for history re-priming) — gate sandbox uploads on this flag so no
+ * sandbox traffic occurs for agents that lack code-execution capability.
  *
  * `skillPrimedIdsByName` maps each primed skill name (manual `$` or
  * always-apply) to the `_id` of the exact doc whose body was primed
