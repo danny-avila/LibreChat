@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type { NotificationType } from '../notifications';
 import type * as p from '../accessPermissions';
 import type * as a from '../types/agents';
 import type * as s from '../schemas';
@@ -157,6 +158,38 @@ export type MemoriesResponse = {
   totalTokens: number;
   tokenLimit: number | null;
   usagePercentage: number | null;
+};
+
+/* Notifications */
+export type TNotification = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  link?: string;
+  user: string;
+  read: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NotificationsListParams = {
+  cursor?: string;
+  limit?: number;
+  unreadOnly?: boolean;
+};
+
+export type NotificationsListResponse = {
+  notifications: TNotification[];
+  nextCursor: string | null;
+  hasNextPage: boolean;
+};
+
+export type CreateNotificationBody = {
+  type: NotificationType;
+  title: string;
+  message: string;
+  link?: string;
 };
 
 export type PrincipalSearchParams = {
