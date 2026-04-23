@@ -140,6 +140,7 @@
   },
   "overrides": {
     "@anthropic-ai/sdk": "0.73.0",
+    "@xmldom/xmldom": "^0.8.13",
     "@librechat/agents": {
       "@langchain/anthropic": {
         "@anthropic-ai/sdk": "0.73.0",
