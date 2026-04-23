@@ -6,7 +6,7 @@ import { useMediaQuery } from '@librechat/client';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
-import { useChatHelpers, useLocalize } from '~/hooks';
+import { useBranding, useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
 import ExpandedPanel from './ExpandedPanel';
 import Sidebar from './Sidebar';
@@ -41,6 +41,7 @@ function SidebarChatProvider({ children }: { children: ReactNode }) {
 
 function UnifiedSidebar() {
   const localize = useLocalize();
+  const branding = useBranding();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [expanded, setExpanded] = useRecoilState(store.sidebarExpanded);
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
@@ -150,7 +151,7 @@ function UnifiedSidebar() {
             <ActivePanelProvider>
               <ExpandedPanel links={links} onCollapse={handleCollapse} />
               <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
-                <SidePanelNav links={links} />
+                <SidePanelNav links={links} branding={branding} />
               </nav>
             </ActivePanelProvider>
           </SidebarChatProvider>
