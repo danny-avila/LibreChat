@@ -7,6 +7,7 @@ import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
 import { EditorProvider, SidePanelProvider, ArtifactsProvider } from '~/Providers';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
+import BklSourcesPanel from '~/components/Chat/Messages/Content/BklSourcesPanel';
 import { useSetFilesToDelete } from '~/hooks';
 import store from '~/store';
 
@@ -87,6 +88,10 @@ export default function Presentation({ children }: { children: React.ReactNode }
             {children}
           </main>
         </SidePanelGroup>
+        {/* BKL document citation drawer — overlay, driven by
+            `store.activeBklSource`. Rendered here (outside the resizable
+            split) so it slides in over the full chat area. */}
+        <BklSourcesPanel />
       </SidePanelProvider>
     </DragDropWrapper>
   );

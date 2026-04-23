@@ -142,18 +142,32 @@ export default function useSSE(
             win.__bklRids = win.__bklRids ?? {};
             win.__bklRids[responseMessageId] = bklRequestId;
 
-            fetch(`http://localhost:8000/v1/sources/${bklRequestId}`)
-              .then((r) => (r.ok ? r.json() : null))
-              .then((srcData) => {
-                if (!srcData) {
-                  return;
-                }
-                win.__bklSources = win.__bklSources ?? {};
-                win.__bklSources[responseMessageId] = srcData.sources ?? srcData;
-              })
-              .catch((err) => {
-                console.error('[SSE] Failed to fetch BKL sources:', err);
-              });
+            // If `sources_replace` SSE already delivered the full source list,
+            // copy it into the messageId-keyed dict so the citation drawer can
+            // find it without any extra REST round-trip. This is critical on
+            // remote deployments (vast / bkl-deploy) where the relative fetch
+            // below would otherwise hit the LibreChat api server, not bkl-api.
+            const pre = win.__bklSourcesByRid?.[bklRequestId];
+            if (Array.isArray(pre) && pre.length > 0) {
+              win.__bklSources = win.__bklSources ?? {};
+              win.__bklSources[responseMessageId] = pre;
+            } else {
+              // Fallback — hit bkl-api through the same origin as LibreChat.
+              // `/api` is not prefixed because LibreChat proxies BKL endpoints
+              // at `/v1/...` via nginx in production compose.
+              fetch(`/v1/sources/${bklRequestId}`)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((srcData) => {
+                  if (!srcData) {
+                    return;
+                  }
+                  win.__bklSources = win.__bklSources ?? {};
+                  win.__bklSources[responseMessageId] = srcData.sources ?? srcData;
+                })
+                .catch((err) => {
+                  console.error('[SSE] Failed to fetch BKL sources:', err);
+                });
+            }
           }
         }
         clearDraft(submission.conversation?.conversationId);

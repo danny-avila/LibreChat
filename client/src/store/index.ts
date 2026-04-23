@@ -1,4 +1,5 @@
 import * as artifacts from './artifacts';
+import * as bklSources from './bklSources';
 import families from './families';
 import endpoints from './endpoints';
 import user from './user';
@@ -19,6 +20,7 @@ export * from './favorites';
 
 export default {
   ...artifacts,
+  ...bklSources,
   ...families,
   ...endpoints,
   ...user,

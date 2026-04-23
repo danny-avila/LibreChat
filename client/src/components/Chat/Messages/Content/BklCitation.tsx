@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { useSetRecoilState } from 'recoil';
 import { useMessageContext } from '~/Providers';
-import ChunkModal, { type BklSource } from './ChunkModal';
+import store from '~/store';
+import { type BklSource } from './ChunkModal';
 
 type BklCitationProps = {
   n: number;
@@ -155,10 +157,9 @@ function getSourceLabel(messageId: string, n: number): string | null {
 
 export default function BklCitation({ n }: BklCitationProps) {
   const { messageId } = useMessageContext();
-  const [isOpen, setIsOpen] = useState(false);
-  const [source, setSource] = useState<BklSource | null>(null);
   const [loading, setLoading] = useState(false);
   const [label, setLabel] = useState<string | null>(() => getSourceLabel(messageId, n));
+  const setActiveSource = useSetRecoilState(store.activeBklSource);
 
   useEffect(() => {
     if (label) return;
@@ -189,60 +190,61 @@ export default function BklCitation({ n }: BklCitationProps) {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const cached = (window as any).__bklSources?.[messageId];
-      if (Array.isArray(cached) && cached[n - 1]) {
-        setSource(cached[n - 1]);
-        setIsOpen(true);
-        return;
-      }
+      let source: BklSource | null =
+        Array.isArray(cached) && cached[n - 1] ? cached[n - 1] : null;
 
-      setLoading(true);
-      const sources = await fetchSourcesForMessage(messageId);
-      setLoading(false);
-      if (sources && sources[n - 1]) {
-        setSource(sources[n - 1]);
+      if (!source) {
+        setLoading(true);
+        const sources = await fetchSourcesForMessage(messageId);
+        setLoading(false);
+        source = sources?.[n - 1] ?? null;
         if (!label) {
           const l = getSourceLabel(messageId, n);
           if (l) setLabel(l);
         }
       }
-      setIsOpen(true);
+
+      // Web-search style citations: source has a URL but no document body.
+      // The user explicitly wanted these to open as plain links rather than
+      // showing the drawer, since there is nothing substantive to preview.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const src = source as any;
+      const url: string | undefined = src?.source?.url || src?.source?.embed_url;
+      const hasBody =
+        Array.isArray(src?.document) && typeof src.document[0] === 'string' && src.document[0].trim().length > 0;
+      if (url && !hasBody) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      setActiveSource({ messageId, n });
     },
-    [messageId, n, label],
+    [messageId, n, label, setActiveSource],
   );
 
   return (
-    <>
-      <button
-        onClick={handleClick}
-        disabled={loading}
-        style={{ verticalAlign: 'middle' }}
-        className={
-          label
-            ? 'mx-0.5 inline-flex items-center gap-0.5 rounded bg-black/[0.04] px-1.5 py-0.5 text-[11px] leading-none text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
-            : 'mx-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded bg-black/[0.04] px-1 text-[11px] text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
-        }
-        title={label ? `${label} [${n}]` : `출처 [${n}] 보기`}
-        aria-label={`출처 ${n} 보기`}
-      >
-        {loading ? (
-          '…'
-        ) : label ? (
-          <>
-            <span>『{label}』</span>
-            <span>- [{n}]</span>
-          </>
-        ) : (
-          n
-        )}
-      </button>
-      {isOpen && (
-        <ChunkModal
-          isOpen={isOpen}
-          onClose={() => setIsOpen(false)}
-          source={source}
-          citationNumber={n}
-        />
+    <button
+      onClick={handleClick}
+      disabled={loading}
+      style={{ verticalAlign: 'middle' }}
+      className={
+        label
+          ? 'mx-0.5 inline-flex items-center gap-0.5 rounded bg-black/[0.04] px-1.5 py-0.5 text-[11px] leading-none text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
+          : 'mx-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded bg-black/[0.04] px-1 text-[11px] text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
+      }
+      title={label ? `${label} [${n}]` : `출처 [${n}] 보기`}
+      aria-label={`출처 ${n} 보기`}
+    >
+      {loading ? (
+        '…'
+      ) : label ? (
+        <>
+          <span>『{label}』</span>
+          <span>- [{n}]</span>
+        </>
+      ) : (
+        n
       )}
-    </>
+    </button>
   );
 }

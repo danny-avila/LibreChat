@@ -175,5 +175,27 @@ export async function initializeCustom({
     (options.llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;
   }
 
+  // ── BKL Search passthrough ─────────────────────────────────────────
+  // The LibreChat chat-input badge toggles `ephemeralAgent.web_search`.
+  // For the BKL custom endpoint we do NOT want LibreChat's built-in
+  // Serper/Firecrawl/SearXNG pipeline (it runs in the LibreChat process
+  // and pollutes the conversation with tool_use messages that the BKL
+  // backend never asked for). Instead we simply forward a top-level
+  // `web_search: true` body field to the upstream, which the BKL API
+  // interprets as "override the intent classifier and force Claude's
+  // native web_search tool for this request".
+  //
+  // This flag is harmless for any upstream that doesn't recognise it —
+  // FastAPI/Pydantic will just ignore an unknown field at the extra=
+  // "ignore" default — and it keeps us decoupled from LibreChat's own
+  // web-search plumbing.
+  const ephemeralWebSearch = (req.body as { ephemeralAgent?: { web_search?: unknown } })
+    ?.ephemeralAgent?.web_search;
+  if (ephemeralWebSearch === true && options?.llmConfig != null) {
+    const llmConfig = options.llmConfig as Record<string, unknown>;
+    const existingKwargs = (llmConfig.modelKwargs as Record<string, unknown> | undefined) ?? {};
+    llmConfig.modelKwargs = { ...existingKwargs, web_search: true };
+  }
+
   return options;
 }

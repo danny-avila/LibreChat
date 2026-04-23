@@ -54,11 +54,11 @@ describe('shouldUseSecureCookie', () => {
       expect(shouldUseSecureCookie()).toBe(false);
     });
 
-    it('should return true for http://[::1]:3080 (IPv6 loopback — not detected due to URL bracket parsing)', () => {
-      // Known limitation: new URL('http://[::1]:3080').hostname returns '[::1]' (with brackets)
-      // but the check compares against '::1' (without brackets). IPv6 localhost is rare in practice.
+    it('should return false for http://[::1]:3080 (any explicit http:// scheme opts out of secure)', () => {
+      // Regardless of whether IPv6 loopback is recognised as localhost, an
+      // explicit http:// scheme means Secure cookies cannot be transmitted.
       process.env.DOMAIN_SERVER = 'http://[::1]:3080';
-      expect(shouldUseSecureCookie()).toBe(true);
+      expect(shouldUseSecureCookie()).toBe(false);
     });
 
     it('should return false for subdomain of localhost', () => {
@@ -94,6 +94,40 @@ describe('shouldUseSecureCookie', () => {
     it('should handle case-insensitive hostnames', () => {
       process.env.DOMAIN_SERVER = 'http://LOCALHOST:3080';
       expect(shouldUseSecureCookie()).toBe(false);
+    });
+  });
+
+  describe('explicit http:// scheme opts out of secure cookies', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'production';
+    });
+
+    it('should return false for a LAN IP served over plain HTTP', () => {
+      process.env.DOMAIN_SERVER = 'http://10.0.0.5';
+      expect(shouldUseSecureCookie()).toBe(false);
+    });
+
+    it('should return false for a public IP served over plain HTTP', () => {
+      process.env.DOMAIN_SERVER = 'http://34.64.12.34';
+      expect(shouldUseSecureCookie()).toBe(false);
+    });
+
+    it('should return false for a plain-HTTP FQDN (intranet pilot)', () => {
+      process.env.DOMAIN_SERVER = 'http://chat.intranet.example';
+      expect(shouldUseSecureCookie()).toBe(false);
+    });
+
+    it('should still return true for explicit HTTPS on the same host', () => {
+      process.env.DOMAIN_SERVER = 'https://chat.intranet.example';
+      expect(shouldUseSecureCookie()).toBe(true);
+    });
+
+    it('should return true when scheme is omitted (operator relied on default)', () => {
+      // We only opt out for explicit http://; omitting the scheme must keep
+      // the historical default so HTTPS deployments that set DOMAIN_SERVER=
+      // chat.example.com without a scheme keep Secure cookies.
+      process.env.DOMAIN_SERVER = 'chat.example.com';
+      expect(shouldUseSecureCookie()).toBe(true);
     });
   });
 });

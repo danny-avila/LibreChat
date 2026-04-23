@@ -10,15 +10,27 @@ export const OAUTH_SESSION_COOKIE_PATH = '/api';
 
 /**
  * Determines if secure cookies should be used.
- * Returns `true` in production unless the server is running on localhost (HTTP).
- * This allows cookies to work on `http://localhost` during local development
- * even when `NODE_ENV=production` (common in Docker Compose setups).
+ *
+ * Returns `false` (insecure-allowed) in any of these cases:
+ *   1. `NODE_ENV` is not `production` — typical dev setup.
+ *   2. `DOMAIN_SERVER` points to localhost / 127.0.0.1 / ::1 / *.localhost —
+ *      local Docker Compose behind a non-HTTPS dev proxy.
+ *   3. `DOMAIN_SERVER` uses the `http://` scheme explicitly — operator has
+ *      opted into a plain-HTTP deployment (e.g. LAN-only pilot, behind a
+ *      separate TLS terminator that rewrites the scheme, or intranet IP
+ *      deployments like `http://10.x.x.x/`). Browsers drop `Secure` cookies
+ *      on HTTP connections, so emitting them guarantees broken refresh.
+ *
+ * Returns `true` otherwise (HTTPS production).
  */
 export function shouldUseSecureCookie(): boolean {
   const isProduction = process.env.NODE_ENV === 'production';
+  if (!isProduction) return false;
+
   const domainServer = process.env.DOMAIN_SERVER || '';
 
   let hostname = '';
+  let protocol = '';
   if (domainServer) {
     try {
       const normalized = /^https?:\/\//i.test(domainServer)
@@ -26,6 +38,12 @@ export function shouldUseSecureCookie(): boolean {
         : `http://${domainServer}`;
       const url = new URL(normalized);
       hostname = (url.hostname || '').toLowerCase();
+      // Only trust the protocol when the operator wrote it explicitly;
+      // inferring `http:` when they omitted the scheme would surprise
+      // HTTPS deployments that relied on the previous default.
+      if (/^https?:\/\//i.test(domainServer)) {
+        protocol = url.protocol;
+      }
     } catch {
       hostname = domainServer.toLowerCase();
     }
@@ -37,7 +55,10 @@ export function shouldUseSecureCookie(): boolean {
     hostname === '::1' ||
     hostname.endsWith('.localhost');
 
-  return isProduction && !isLocalhost;
+  if (isLocalhost) return false;
+  if (protocol === 'http:') return false;
+
+  return true;
 }
 
 /** Generates an HMAC-based token for OAuth CSRF protection */

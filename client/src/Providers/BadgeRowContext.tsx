@@ -208,20 +208,29 @@ export default function BadgeRowProvider({
     },
   });
 
-  /** WebSearch hooks */
+  /** WebSearch hooks
+   *
+   * In this BKL fork the web-search badge no longer drives LibreChat's
+   * built-in Serper/Firecrawl/SearXNG pipeline. Instead the toggle state
+   * is forwarded to the BKL custom endpoint as a body flag
+   * (see `packages/api/src/endpoints/custom/initialize.ts`), which makes
+   * the BKL API run Claude's native `web_search_20250305` tool for that
+   * request. That means we do NOT want LibreChat to prompt the user for
+   * Serper / Firecrawl API keys when they click the badge — it would be
+   * a confusing UX asking to configure unrelated providers.
+   *
+   * We still keep `searchApiKeyForm` in the context so existing consumers
+   * (e.g. the settings screen) compile, but the toggle itself uses
+   * `isAuthenticated: true` and no auth dialog.
+   */
   const searchApiKeyForm = useSearchApiKeyForm({});
-  const { setIsDialogOpen: setWebSearchDialogOpen } = searchApiKeyForm;
 
   const webSearch = useToolToggle({
     conversationId,
     storageContextKey,
     toolKey: Tools.web_search,
     localStorageKey: LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_,
-    setIsDialogOpen: setWebSearchDialogOpen,
-    authConfig: {
-      toolId: Tools.web_search,
-      queryOptions: { retry: 1 },
-    },
+    isAuthenticated: true,
   });
 
   /** FileSearch hook */
