@@ -28,6 +28,7 @@ export interface EcsServicesProps extends cdk.StackProps {
   rdsPort?: string;
   rdsSecurityGroup?: ec2.ISecurityGroup;
   rdsSecret?: secrets.ISecret;
+  ragApiJwtSecretArn: string;
 }
 
 export class EcsStack extends cdk.Stack {
@@ -330,7 +331,7 @@ export class EcsStack extends cdk.Stack {
       EMBEDDINGS_MODEL: "amazon.titan-embed-text-v1",
     };
 
-    const jwtSecret = secrets.Secret.fromSecretNameV2(this, "RagApiJwtSecret", "ai-assistant/rag-api/jwt-secret");
+    const jwtSecret = secrets.Secret.fromSecretCompleteArn(this, "RagApiJwtSecret", props.ragApiJwtSecretArn);
     jwtSecret.grantRead(commonExecRole);
     const envSecrets: Record<string, ecs.Secret> = {
       JWT_SECRET: ecs.Secret.fromSecretsManager(jwtSecret, "JWT_SECRET"),

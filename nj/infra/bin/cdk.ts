@@ -69,6 +69,11 @@ const envVars = {
   isProd,
 }
 
+const ragApiJwtSecretSuffix: Record<AwsEnv, string> = {
+  dev: "5vHiQq",
+  prod: "", // TODO: populate after secret is created in prod
+};
+
 const commonTags = {
   Project: "AIAssistantService",
   ManagedBy: "CDK",
@@ -101,6 +106,7 @@ const ecsStack = new EcsStack(app, "EcsStack", {
   rdsPort: databaseStack.rdsPort,
   rdsSecurityGroup: databaseStack.rdsSecurityGroup,
   rdsSecret: databaseStack.rdsSecret,
+  ragApiJwtSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:ai-assistant/rag-api/jwt-secret-${ragApiJwtSecretSuffix[AWS_ENV]}`,
 });
 
 const cognitoStack = new CognitoStack(app, "CognitoStack", {
