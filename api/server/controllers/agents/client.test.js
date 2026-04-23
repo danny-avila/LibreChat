@@ -2265,3 +2265,247 @@ describe('AgentClient - titleConvo', () => {
     });
   });
 });
+
+describe('AgentClient - finalizeSubagentContent', () => {
+  /** Verifies the backend persistence path: per-subagent
+   *  `createContentAggregator` instances (populated by the callbacks
+   *  ON_SUBAGENT_UPDATE handler) have their `contentParts` harvested
+   *  onto the matching parent `subagent` tool_call at message-save time
+   *  so a page refresh shows the same activity the user saw live. */
+  const { createContentAggregator, GraphEvents } = jest.requireActual('@librechat/agents');
+  const { getDefaultHandlers } = require('./callbacks');
+
+  const makeClient = (subagentAggregatorsByToolCallId) => {
+    const client = new AgentClient({
+      req: { user: { id: 'u' }, body: {}, config: { endpoints: {} } },
+      res: {},
+      agent: {
+        id: 'agent',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      subagentAggregatorsByToolCallId,
+    });
+    return client;
+  };
+
+  const event = (phase, data, parentToolCallId = 'call_sub') => ({
+    runId: 'parent-run',
+    subagentRunId: 'child-run',
+    subagentType: 'self',
+    subagentAgentId: 'child',
+    parentToolCallId,
+    phase,
+    data,
+    timestamp: '2026-04-17T00:00:00Z',
+  });
+
+  /** Feeds a SubagentUpdateEvent sequence through the real
+   *  `ON_SUBAGENT_UPDATE` handler so we exercise the same get-or-create
+   *  aggregator logic the live request uses, rather than constructing
+   *  aggregators directly in the test. */
+  const runSubagentEvents = async (events) => {
+    const map = new Map();
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn(), writableEnded: false },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      subagentAggregatorsByToolCallId: map,
+    });
+    const handler = handlers[GraphEvents.ON_SUBAGENT_UPDATE];
+    for (const e of events) {
+      await handler.handle(GraphEvents.ON_SUBAGENT_UPDATE, e);
+    }
+    return map;
+  };
+
+  it('attaches aggregated subagent_content to the matching subagent tool_call part', async () => {
+    const buffer = await runSubagentEvents([
+      event('run_step', {
+        id: 'step_msg',
+        index: 0,
+        stepDetails: { type: 'message_creation' },
+      }),
+      event('message_delta', {
+        id: 'step_msg',
+        delta: { content: [{ type: 'text', text: 'Hello ' }] },
+      }),
+      event('message_delta', {
+        id: 'step_msg',
+        delta: { content: [{ type: 'text', text: 'world!' }] },
+      }),
+      event('run_step', {
+        id: 'step_tool',
+        index: 1,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'inner_1', name: 'calculator', args: '{}' }],
+        },
+      }),
+      event('run_step_completed', {
+        id: 'step_tool',
+        index: 1,
+        result: {
+          id: 'step_tool',
+          type: 'tool_call',
+          tool_call: {
+            id: 'inner_1',
+            name: 'calculator',
+            output: '4',
+            progress: 1,
+          },
+        },
+      }),
+    ]);
+
+    const client = makeClient(buffer);
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'call_sub',
+          name: Constants.SUBAGENT,
+          args: '{}',
+          output: 'final text',
+          progress: 1,
+        },
+      },
+    ];
+
+    client.finalizeSubagentContent();
+
+    const attached = client.contentParts[0].tool_call.subagent_content;
+    expect(Array.isArray(attached)).toBe(true);
+    expect(attached).toHaveLength(2);
+    expect(attached[0].type).toBe('text');
+    expect(attached[0].text).toBe('Hello world!');
+    expect(attached[1].type).toBe('tool_call');
+    expect(attached[1].tool_call.name).toBe('calculator');
+    expect(attached[1].tool_call.output).toBe('4');
+    /** Buffer drained so a second call (e.g. resumable retry) doesn't
+     *  double-append. */
+    expect(buffer.size).toBe(0);
+  });
+
+  it('ignores tool_call parts whose name is not SUBAGENT', async () => {
+    const buffer = await runSubagentEvents([
+      event(
+        'run_step',
+        {
+          id: 'step_msg',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+        'call_regular',
+      ),
+      event(
+        'message_delta',
+        {
+          id: 'step_msg',
+          delta: { content: [{ type: 'text', text: 'x' }] },
+        },
+        'call_regular',
+      ),
+    ]);
+    const client = makeClient(buffer);
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_regular', name: 'calculator', args: '{}' },
+      },
+    ];
+    client.finalizeSubagentContent();
+    expect(client.contentParts[0].tool_call.subagent_content).toBeUndefined();
+  });
+
+  it('is a safe no-op when the aggregator map is empty or missing', () => {
+    const client = makeClient(undefined);
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_sub', name: Constants.SUBAGENT, args: '{}' },
+      },
+    ];
+    expect(() => client.finalizeSubagentContent()).not.toThrow();
+    expect(client.contentParts[0].tool_call.subagent_content).toBeUndefined();
+  });
+
+  it('discards aggregators keyed by a tool_call_id not present in contentParts', async () => {
+    const buffer = await runSubagentEvents([
+      event(
+        'run_step',
+        {
+          id: 'step_msg',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+        'call_missing',
+      ),
+      event(
+        'message_delta',
+        {
+          id: 'step_msg',
+          delta: { content: [{ type: 'text', text: 'x' }] },
+        },
+        'call_missing',
+      ),
+    ]);
+    const client = makeClient(buffer);
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_other', name: Constants.SUBAGENT, args: '{}' },
+      },
+    ];
+    client.finalizeSubagentContent();
+    expect(client.contentParts[0].tool_call.subagent_content).toBeUndefined();
+  });
+
+  it('keeps per-parent tool_call aggregators isolated for parallel subagents', async () => {
+    const buffer = await runSubagentEvents([
+      event(
+        'run_step',
+        {
+          id: 'step_a',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+        'call_a',
+      ),
+      event(
+        'message_delta',
+        { id: 'step_a', delta: { content: [{ type: 'text', text: 'A' }] } },
+        'call_a',
+      ),
+      event(
+        'run_step',
+        {
+          id: 'step_b',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+        'call_b',
+      ),
+      event(
+        'message_delta',
+        { id: 'step_b', delta: { content: [{ type: 'text', text: 'B' }] } },
+        'call_b',
+      ),
+    ]);
+    const client = makeClient(buffer);
+    client.contentParts = [
+      { type: 'tool_call', tool_call: { id: 'call_a', name: Constants.SUBAGENT, args: '{}' } },
+      { type: 'tool_call', tool_call: { id: 'call_b', name: Constants.SUBAGENT, args: '{}' } },
+    ];
+    client.finalizeSubagentContent();
+    expect(client.contentParts[0].tool_call.subagent_content).toEqual([
+      expect.objectContaining({ type: 'text', text: 'A' }),
+    ]);
+    expect(client.contentParts[1].tool_call.subagent_content).toEqual([
+      expect.objectContaining({ type: 'text', text: 'B' }),
+    ]);
+  });
+});

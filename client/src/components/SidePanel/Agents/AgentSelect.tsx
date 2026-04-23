@@ -120,6 +120,11 @@ function AgentSelect({
           return;
         }
 
+        if (name === 'subagents' && typeof value === 'object' && value !== null) {
+          formValues[name] = value;
+          return;
+        }
+
         if (name === 'tool_options' && typeof value === 'object' && value !== null) {
           formValues[name] = value;
           return;

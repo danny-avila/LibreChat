@@ -805,3 +805,118 @@ describe('custom-endpoint provider resolution', () => {
     expect(parameters.modelName).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite 8: subagentConfigs
+// ---------------------------------------------------------------------------
+describe('subagentConfigs', () => {
+  it('is undefined when subagents are not enabled', async () => {
+    const agents = await callAndCapture({});
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('adds self-spawn when enabled and allowSelf defaults to true', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ subagents: { enabled: true } })],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(Array.isArray(configs)).toBe(true);
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({ self: true, type: 'self' });
+  });
+
+  it('omits self-spawn when allowSelf is false', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ subagents: { enabled: true, allowSelf: false } })],
+    });
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('adds explicit subagent configs with agentInputs', async () => {
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Researcher',
+      description: 'Deep web research',
+    });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({
+      type: 'agent_child',
+      name: 'Researcher',
+      description: 'Deep web research',
+    });
+    expect(configs[0].agentInputs).toBeDefined();
+    expect(configs[0].self).toBeUndefined();
+  });
+
+  it('combines self-spawn and explicit subagents when both enabled', async () => {
+    const child = makeAgent({ id: 'agent_child', name: 'Helper' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(2);
+    expect(configs[0].self).toBe(true);
+    expect(configs[1].type).toBe('agent_child');
+  });
+
+  it('skips a child that points at the parent itself', async () => {
+    const self = makeAgent({ id: 'agent_1' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_1'] },
+          subagentAgentConfigs: [self],
+        }),
+      ],
+    });
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('does NOT leak the parent run `initialSummary` into an explicit child (Codex P1 regression)', async () => {
+    /**
+     * `buildAgentInput` is a shared factory that always stamps the parent
+     * run's `initialSummary` on the returned AgentInputs. When it's reused
+     * to build a subagent child's inputs, `buildSubagentConfigs` must clear
+     * that field — otherwise the child inherits unrelated conversation
+     * context, defeating the isolation contract (and burning extra tokens).
+     */
+    const summary = { text: 'parent conversation summary', tokenCount: 99 };
+    const child = makeAgent({ id: 'agent_child', name: 'Child' });
+    const agents = await callAndCapture({
+      initialSummary: summary,
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+
+    const parent = agents[0];
+    /** The parent itself keeps the summary — that's how it receives
+     *  cross-turn context. */
+    expect(parent.initialSummary).toEqual(summary);
+
+    const childConfig = (parent.subagentConfigs as Array<Record<string, unknown>>)[0];
+    const childInputs = childConfig.agentInputs as {
+      initialSummary?: unknown;
+      discoveredTools?: unknown;
+    };
+    expect(childInputs.initialSummary).toBeUndefined();
+    expect(childInputs.discoveredTools).toBeUndefined();
+  });
+});
