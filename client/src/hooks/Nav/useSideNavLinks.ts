@@ -19,6 +19,12 @@ import {
 } from 'librechat-data-provider';
 import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
+import {
+  useAgentCapabilities,
+  useMCPServerManager,
+  useGetAgentsConfig,
+  useHasAccess,
+} from '~/hooks';
 import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
@@ -26,7 +32,6 @@ import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
-import { useHasAccess, useMCPServerManager } from '~/hooks';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
 
@@ -85,6 +90,9 @@ export default function useSideNavLinks({
   });
   const { availableMCPServers } = useMCPServerManager();
 
+  const { agentsConfig } = useGetAgentsConfig({ endpointsConfig });
+  const { skillsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
+
   const Links = useMemo(() => {
     const links: NavLink[] = [];
 
@@ -122,7 +130,7 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToSkills) {
+    if (hasAccessToSkills && skillsEnabled) {
       links.push({
         title: 'com_ui_skills',
         label: '',
@@ -217,6 +225,7 @@ export default function useSideNavLinks({
     hasAccessToCreateAgents,
     hasAccessToPrompts,
     hasAccessToSkills,
+    skillsEnabled,
     hasAccessToMemories,
     hasAccessToReadMemories,
     interfaceConfig.parameters,
