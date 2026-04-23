@@ -85,17 +85,17 @@ const resolveConvoReference = async (user, conversationId) => {
 
   const exactConversation = await getConvo(user, normalizedConversationId);
   if (exactConversation) {
-    const threadId =
-      typeof exactConversation.openaiConversationId === 'string'
-        ? exactConversation.openaiConversationId.trim()
-        : extractThreadIdFromConversationId(exactConversation.conversationId);
-
-    if (!isOpenAIConversationId(threadId)) {
-      return exactConversation;
-    }
-
-    const latestConversation = await getLatestConvoByOpenAIConversationId(user, threadId);
-    return latestConversation ?? exactConversation;
+    /**
+     * IMPORTANT:
+     * If the caller provided an exact LibreChat `conversationId` (including our structured format),
+     * we must return that exact conversation.
+     *
+     * Resolving structured conversationIds to the "latest" convo for the same OpenAI `threadId`
+     * breaks deterministic chat loading in the UI (sidebar items collapse to the most recent chat).
+     *
+     * If a caller wants "latest by OpenAI thread", they should pass the OpenAI `conv_...` id directly.
+     */
+    return exactConversation;
   }
 
   if (isOpenAIConversationId(normalizedConversationId)) {
