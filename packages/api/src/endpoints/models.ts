@@ -310,7 +310,7 @@ export async function getOpenAIModels(opts: GetOpenAIModelsOptions = {}): Promis
     return splitAndTrim(process.env[key]);
   }
 
-  if (opts.userProvidedOpenAI) {
+  if (isUserProvided(process.env.OPENAI_API_KEY)) {
     return models;
   }
 
