@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
@@ -188,7 +188,7 @@ export default function useEventHandlers({
   const { token } = useAuthContext();
 
   const { contentHandler, resetContentHandler } = useContentHandler({ setMessages, getMessages });
-  const { stepHandler, clearStepMaps, syncStepMessage } = useStepHandler({
+  const { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -196,6 +196,47 @@ export default function useEventHandlers({
     lastAnnouncementTimeRef,
   });
   const attachmentHandler = useAttachmentHandler(queryClient);
+
+  /** Wipe the per-subagent Recoil atoms on conversation navigation.
+   *  Historical subagent dialogs rehydrate from the persisted
+   *  `subagent_content` on each `tool_call` (written by the backend
+   *  at message-save time), so clearing live atoms on switch
+   *  doesn't lose any viewable history — it just keeps `atomFamily`
+   *  bounded across multi-conversation sessions.
+   *
+   *  Rule: only reset when transitioning AWAY FROM an established
+   *  conversation (`previous != null`). Transitions FROM null or
+   *  undefined pass through:
+   *    - initial mount on a new-chat route: nothing to clear.
+   *    - new-chat URL stamp mid-stream (null → newId): the in-flight
+   *      subagent ticker/content state for that freshly-stamped id
+   *      would be wiped if we reset here — that id IS the current
+   *      run, not a stale one.
+   *  Cases that DO reset (previous non-null, value changed):
+   *    - id1 → id2 (switching between established chats)
+   *    - id → null (user clicked "new chat")
+   *    - id → undefined (route teardown / navigate away) */
+  const lastConversationIdRef = useRef<string | null | undefined>(paramId);
+  useEffect(() => {
+    const previous = lastConversationIdRef.current;
+    lastConversationIdRef.current = paramId;
+    if (previous != null && previous !== paramId) {
+      resetSubagentAtoms();
+    }
+  }, [paramId, resetSubagentAtoms]);
+
+  /** Final cleanup on component unmount. `useStepHandler` keeps the
+   *  set of known atom keys in a ref; when the hook unmounts (user
+   *  navigates away from the chat route entirely) that ref is lost,
+   *  so a subsequent remount can't clear atoms it never saw created.
+   *  Flush at the teardown boundary to keep `atomFamily` bounded
+   *  across route changes. */
+  useEffect(
+    () => () => {
+      resetSubagentAtoms();
+    },
+    [resetSubagentAtoms],
+  );
 
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {

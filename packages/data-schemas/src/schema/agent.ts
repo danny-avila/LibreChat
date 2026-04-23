@@ -116,6 +116,11 @@ const agentSchema = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    /** Subagent spawning configuration — isolated-context child agents. */
+    subagents: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,
