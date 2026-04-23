@@ -24,6 +24,7 @@ const knownEndpointAssets = {
   [KnownEndpoints.shuttleai]: 'assets/shuttleai.png',
   [KnownEndpoints['together.ai']]: 'assets/together.png',
   [KnownEndpoints.unify]: 'assets/unify.webp',
+  [KnownEndpoints.vercel]: 'assets/vercel.svg',
 };
 
 const knownEndpointClasses = {
