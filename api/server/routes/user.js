@@ -6,6 +6,7 @@ const {
   acceptTermsController,
   acceptSecondTermsController,
   saveFarmerProfileController,
+  updateFarmerPlatformController,
   verifyEmailController,
   deleteUserController,
   getUserController,
@@ -27,6 +28,7 @@ router.get('/terms', requireJwtAuth, getTermsStatusController);
 router.post('/terms/accept', requireJwtAuth, acceptTermsController);
 router.post('/second-terms/accept', requireJwtAuth, acceptSecondTermsController);
 router.post('/profile/farmer', requireJwtAuth, saveFarmerProfileController);
+router.patch('/profile/farmer/platform', requireJwtAuth, updateFarmerPlatformController);
 router.post('/plugins', requireJwtAuth, updateUserPluginsController);
 router.delete('/delete', requireJwtAuth, canDeleteAccount, configMiddleware, deleteUserController);
 router.post('/verify', verifyEmailController);
