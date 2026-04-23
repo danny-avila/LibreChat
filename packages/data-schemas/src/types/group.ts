@@ -14,6 +14,7 @@ export interface IGroup extends Document {
   idOnTheSource?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  tenantId?: string;
 }
 
 export interface CreateGroupRequest {

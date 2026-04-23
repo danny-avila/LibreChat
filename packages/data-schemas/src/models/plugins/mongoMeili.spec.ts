@@ -73,7 +73,10 @@ describe('Meilisearch Mongoose plugin', () => {
       title: 'Test Conversation',
       endpoint: EModelEndpoint.openAI,
     });
-    expect(mockAddDocuments).toHaveBeenCalled();
+    expect(mockAddDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ conversationId: expect.anything() })],
+      { primaryKey: 'conversationId' },
+    );
   });
 
   test('saving conversation indexes with expiredAt=null w/ meilisearch', async () => {
@@ -105,7 +108,10 @@ describe('Meilisearch Mongoose plugin', () => {
       user: new mongoose.Types.ObjectId(),
       isCreatedByUser: true,
     });
-    expect(mockAddDocuments).toHaveBeenCalled();
+    expect(mockAddDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ messageId: expect.anything() })],
+      { primaryKey: 'messageId' },
+    );
   });
 
   test('saving messages with expiredAt=null indexes w/ meilisearch', async () => {
@@ -128,6 +134,87 @@ describe('Meilisearch Mongoose plugin', () => {
       expiredAt: new Date(),
     });
     expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('updating an indexed conversation calls updateDocuments with primaryKey', async () => {
+    const conversationModel = createConversationModel(mongoose);
+    const convo = await conversationModel.create({
+      conversationId: new mongoose.Types.ObjectId().toString(),
+      user: new mongoose.Types.ObjectId(),
+      title: 'Original Title',
+      endpoint: EModelEndpoint.openAI,
+    });
+    mockUpdateDocuments.mockClear();
+
+    convo._meiliIndex = true;
+    convo.title = 'Updated Title';
+    await convo.save();
+
+    expect(mockUpdateDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ conversationId: expect.anything() })],
+      { primaryKey: 'conversationId' },
+    );
+  });
+
+  test('updating an indexed message calls updateDocuments with primaryKey: messageId', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const msg = await messageModel.create({
+      messageId: new mongoose.Types.ObjectId().toString(),
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      isCreatedByUser: true,
+    });
+    mockUpdateDocuments.mockClear();
+
+    msg._meiliIndex = true;
+    msg.text = 'Updated text';
+    await msg.save();
+
+    expect(mockUpdateDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ messageId: expect.anything() })],
+      { primaryKey: 'messageId' },
+    );
+  });
+
+  test('deleteObjectFromMeili calls deleteDocument with messageId, not _id', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const msgId = new mongoose.Types.ObjectId().toString();
+    const msg = await messageModel.create({
+      messageId: msgId,
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      isCreatedByUser: true,
+    });
+    mockDeleteDocument.mockClear();
+
+    const typedMsg = msg as unknown as import('./mongoMeili').DocumentWithMeiliIndex;
+    await new Promise<void>((resolve, reject) => {
+      typedMsg.deleteObjectFromMeili!((err) => (err ? reject(err) : resolve()));
+    });
+
+    expect(mockDeleteDocument).toHaveBeenCalledWith(msgId);
+    expect(mockDeleteDocument).not.toHaveBeenCalledWith(String(msg._id));
+  });
+
+  test('updateDocuments receives preprocessed data with primaryKey', async () => {
+    const conversationModel = createConversationModel(mongoose);
+    const conversationId = 'abc|def|ghi';
+    const convo = await conversationModel.create({
+      conversationId,
+      user: new mongoose.Types.ObjectId(),
+      title: 'Pipe Test',
+      endpoint: EModelEndpoint.openAI,
+    });
+    mockUpdateDocuments.mockClear();
+
+    convo._meiliIndex = true;
+    convo.title = 'Updated Pipe Test';
+    await convo.save();
+
+    expect(mockUpdateDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ conversationId: 'abc--def--ghi' })],
+      { primaryKey: 'conversationId' },
+    );
   });
 
   test('sync w/ meili does not include TTL documents', async () => {
@@ -299,8 +386,10 @@ describe('Meilisearch Mongoose plugin', () => {
       // Run sync which should call processSyncBatch internally
       await conversationModel.syncWithMeili();
 
-      // Verify addDocumentsInBatches was called (new batch method)
-      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+      // Verify addDocumentsInBatches was called with explicit primaryKey
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(expect.any(Array), undefined, {
+        primaryKey: 'conversationId',
+      });
     });
 
     test('addObjectToMeili retries on failure', async () => {

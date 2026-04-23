@@ -45,7 +45,7 @@ export default function Artifacts() {
     <div className="w-full">
       <div className="mb-1.5 flex items-center gap-2">
         <span>
-          <label className="text-token-text-primary block font-medium">
+          <label className="text-token-text-primary block text-sm font-medium">
             {localize('com_ui_artifacts')}
           </label>
         </span>
@@ -98,7 +98,7 @@ function SwitchItem({
     <HoverCard openDelay={50}>
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <div className={disabled ? 'text-text-tertiary' : ''}>{label}</div>
+          <div className={disabled ? 'text-sm text-text-tertiary' : 'text-sm'}>{label}</div>
           <HoverCardTrigger>
             <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
           </HoverCardTrigger>

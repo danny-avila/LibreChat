@@ -1,8 +1,15 @@
+import { logger } from '@librechat/data-schemas';
 import { Run, Providers, Constants } from '@librechat/agents';
-import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
-import type { BaseMessage } from '@langchain/core/messages';
+import {
+  KnownEndpoints,
+  extractEnvVariable,
+  providerEndpointMap,
+  normalizeEndpointName,
+} from 'librechat-data-provider';
 import type {
+  SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
+  ContextPruningConfig,
   OpenAIClientOptions,
   StandardGraphConfig,
   LCToolRegistry,
@@ -12,10 +19,14 @@ import type {
   IState,
   LCTool,
 } from '@librechat/agents';
-import type { IUser } from '@librechat/data-schemas';
-import type { Agent } from 'librechat-data-provider';
+import type { Agent, SummarizationConfig } from 'librechat-data-provider';
+import type { BaseMessage } from '@langchain/core/messages';
+import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
+import { getProviderConfig } from '~/endpoints/config/providers';
+import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+import { isUserProvided } from '~/utils/common';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -162,6 +173,8 @@ export function getReasoningKey(
 type RunAgent = Omit<Agent, 'tools'> & {
   tools?: GenericTool[];
   maxContextTokens?: number;
+  /** Pre-ratio context budget from initializeAgent. */
+  baseContextTokens?: number;
   useLegacyContent?: boolean;
   toolContextMap?: Record<string, string>;
   toolRegistry?: LCToolRegistry;
@@ -169,7 +182,261 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /** Optional per-agent summarization overrides */
+  summarization?: SummarizationConfig;
+  /**
+   * Maximum characters allowed in a single tool result before truncation.
+   * Overrides the default computed from maxContextTokens.
+   */
+  maxToolResultChars?: number;
 };
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+const UNRESOLVED_ENV_VAR_PLACEHOLDER = /\$\{[^}]+\}/;
+
+function hasUnresolvedPlaceholder(value: string): boolean {
+  return UNRESOLVED_ENV_VAR_PLACEHOLDER.test(value);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Merges user-supplied summarization parameters on top of endpoint-resolved
+ * overrides. User params win for top-level keys; `configuration` is
+ * deep-merged so user additions (e.g. `defaultQuery`) don't wipe out the
+ * resolved `baseURL`/`defaultHeaders`/`fetchOptions`.
+ */
+function mergeParameters(
+  overrides: SummarizationClientOverrides,
+  userParams: SummarizationConfig['parameters'],
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...overrides, ...(userParams ?? {}) };
+  const userConfiguration = (userParams as Record<string, unknown> | undefined)?.configuration;
+  if (isPlainObject(overrides.configuration) && isPlainObject(userConfiguration)) {
+    merged.configuration = { ...overrides.configuration, ...userConfiguration };
+  }
+  return merged;
+}
+
+/**
+ * Mirrors `getOpenAIConfig`'s `llmConfig` shape (plus its `configOptions`
+ * assigned to `configuration`). Index signature covers fields that the
+ * helper emits dynamically per provider variant.
+ */
+interface SummarizationClientOverrides {
+  apiKey?: string;
+  streaming?: boolean;
+  configuration?: t.OpenAIConfiguration;
+  [key: string]: unknown;
+}
+
+/**
+ * Resolves a summarization provider string (which may be a custom-endpoint name
+ * like "Ollama") into the SDK-recognized provider and any client-option
+ * overrides required to talk to that endpoint.
+ *
+ * Without this step, a `summarization.provider: "Ollama"` entry in
+ * `librechat.yaml` flows verbatim to the agents SDK, which only knows a fixed
+ * set of provider names and throws "Unsupported LLM provider: Ollama".
+ */
+function resolveSummarizationProvider(
+  rawProvider: string,
+  appConfig: AppConfig | undefined,
+  headerContext: { user?: IUser; requestBody?: t.RequestBody },
+): {
+  provider: string;
+  clientOverrides?: SummarizationClientOverrides;
+} {
+  if (!appConfig || !isNonEmptyString(rawProvider)) {
+    return { provider: rawProvider };
+  }
+  try {
+    const { overrideProvider, customEndpointConfig } = getProviderConfig({
+      provider: rawProvider,
+      appConfig,
+    });
+    if (!customEndpointConfig) {
+      return { provider: overrideProvider };
+    }
+    const rawApiKey = customEndpointConfig.apiKey ?? '';
+    const rawBaseURL = customEndpointConfig.baseURL ?? '';
+    /**
+     * User-provided credentials require an async DB lookup and expiry checks
+     * that are out of scope here. Keep the raw provider so the SDK surfaces
+     * a clear "Unsupported LLM provider" error rather than silently
+     * remapping to `openAI` and routing summaries to the default backend.
+     * Callers wanting user-provided summarization against a non-agent
+     * endpoint must hit the same endpoint as the agent (handled upstream).
+     */
+    if (isUserProvided(rawApiKey) || isUserProvided(rawBaseURL)) {
+      return { provider: rawProvider };
+    }
+    const apiKey = extractEnvVariable(rawApiKey);
+    const baseURL = extractEnvVariable(rawBaseURL);
+    /**
+     * `extractEnvVariable` leaves any unresolved `${VAR}` placeholder in place
+     * — including in the middle of a prefix/suffix string — when the env var
+     * is missing. If the value is still broken, keep the raw provider so the
+     * SDK errors out loudly instead of forwarding a malformed URL/key.
+     */
+    if (
+      !apiKey ||
+      !baseURL ||
+      hasUnresolvedPlaceholder(apiKey) ||
+      hasUnresolvedPlaceholder(baseURL)
+    ) {
+      return { provider: rawProvider };
+    }
+    /**
+     * Resolve templated header values (e.g. `${PORTKEY_API_KEY}`,
+     * `{{LIBRECHAT_BODY_PARENTMESSAGEID}}`) before handing them to
+     * `getOpenAIConfig`, matching the agent main flow where `resolveHeaders`
+     * runs on `llmConfig.configuration.defaultHeaders`.
+     */
+    const resolvedHeaders =
+      customEndpointConfig.headers != null
+        ? resolveHeaders({
+            headers: customEndpointConfig.headers as Record<string, string>,
+            user: createSafeUser(headerContext.user),
+            body: headerContext.requestBody,
+          })
+        : undefined;
+    /**
+     * Run the endpoint config through `getOpenAIConfig` so summarization
+     * inherits the same `headers`, `defaultQuery`, `addParams`/`dropParams`,
+     * and `customParams` transforms that `initializeCustom` applies for the
+     * main agent flow. Without this, summarization drops endpoint-specific
+     * behavior (e.g. Anthropic/Google param transforms, required headers)
+     * that the main agent relied on. `proxy` is forwarded so outbound proxy
+     * dispatchers (`PROXY` env var) apply to cross-endpoint summarization.
+     */
+    const { llmConfig, configOptions } = getOpenAIConfig(
+      apiKey,
+      {
+        reverseProxyUrl: baseURL,
+        proxy: process.env.PROXY ?? null,
+        headers: resolvedHeaders,
+        addParams: customEndpointConfig.addParams,
+        dropParams: customEndpointConfig.dropParams,
+        customParams: customEndpointConfig.customParams,
+        directEndpoint: customEndpointConfig.directEndpoint,
+      },
+      rawProvider,
+    );
+    const clientOverrides: SummarizationClientOverrides = {
+      ...llmConfig,
+    };
+    if (configOptions) {
+      clientOverrides.configuration = configOptions;
+    }
+    /**
+     * `model`/`modelName` on `llmConfig` default to whatever `getOpenAIConfig`
+     * produces from empty modelOptions. Strip them so the user-supplied
+     * `summarization.model` wins.
+     */
+    delete clientOverrides.model;
+    delete clientOverrides.modelName;
+    return {
+      provider: overrideProvider,
+      clientOverrides,
+    };
+  } catch (error) {
+    logger.warn(
+      `[resolveSummarizationProvider] failed to resolve "${rawProvider}"; falling back to raw provider`,
+      error,
+    );
+    return { provider: rawProvider };
+  }
+}
+
+/** Shapes a SummarizationConfig into the format expected by AgentInputs. */
+function shapeSummarizationConfig(
+  config: SummarizationConfig | undefined,
+  fallbackProvider: string,
+  fallbackModel: string | undefined,
+  appConfig: AppConfig | undefined,
+  agentEndpoint: string | undefined,
+  headerContext: { user?: IUser; requestBody?: t.RequestBody },
+) {
+  const rawProvider = config?.provider ?? fallbackProvider;
+  /**
+   * When the summarization provider resolves to the same custom endpoint as
+   * the main agent, skip client-option overrides. The SDK's self-summarize
+   * path will reuse `agentContext.clientOptions` as-is, preserving any
+   * request-resolved dynamic headers, fetch/proxy options, and other state
+   * that `getOpenAIConfig` produced from raw yaml config does not capture.
+   */
+  const isSameEndpointAsAgent =
+    agentEndpoint != null &&
+    isNonEmptyString(rawProvider) &&
+    normalizeEndpointName(rawProvider) === normalizeEndpointName(agentEndpoint);
+
+  const { provider, clientOverrides } = isSameEndpointAsAgent
+    ? { provider: fallbackProvider, clientOverrides: undefined }
+    : resolveSummarizationProvider(rawProvider, appConfig, headerContext);
+
+  const model = config?.model ?? fallbackModel;
+  const trigger =
+    config?.trigger?.type && typeof config?.trigger?.value === 'number'
+      ? { type: config.trigger.type, value: config.trigger.value }
+      : undefined;
+
+  /**
+   * Custom-endpoint overrides are merged into `parameters` so the SDK's
+   * `buildSummarizationClientConfig` spreads them onto the summarization
+   * client options. Only applied when summarization targets a *different*
+   * custom endpoint than the main agent; the same-endpoint case leaves
+   * `parameters` untouched so `agentContext.clientOptions` wins.
+   *
+   * Order matters: `clientOverrides` supplies endpoint defaults (baseURL,
+   * apiKey, headers, transforms), then explicit user `summarization.parameters`
+   * are spread on top so settings like `streaming: false` still win over
+   * `getOpenAIConfig`'s defaults. `configuration` is deep-merged so a user
+   * adding e.g. `configuration.defaultQuery` keeps the resolved `baseURL`
+   * and `defaultHeaders` rather than replacing the whole object.
+   */
+  const parameters =
+    clientOverrides != null
+      ? mergeParameters(clientOverrides, config?.parameters)
+      : config?.parameters;
+
+  return {
+    enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
+    config: {
+      trigger,
+      provider,
+      model,
+      parameters,
+      prompt: config?.prompt,
+      updatePrompt: config?.updatePrompt,
+      reserveRatio: config?.reserveRatio,
+      maxSummaryTokens: config?.maxSummaryTokens,
+    } satisfies AgentSummarizationConfig,
+    contextPruning: config?.contextPruning as ContextPruningConfig | undefined,
+    reserveRatio: config?.reserveRatio,
+  };
+}
+
+/**
+ * Applies `reserveRatio` against the pre-ratio base context budget, falling
+ * back to the pre-computed `maxContextTokens` from initializeAgent.
+ */
+function computeEffectiveMaxContextTokens(
+  reserveRatio: number | undefined,
+  baseContextTokens: number | undefined,
+  maxContextTokens: number | undefined,
+): number | undefined {
+  if (reserveRatio == null || reserveRatio <= 0 || reserveRatio >= 1 || baseContextTokens == null) {
+    return maxContextTokens;
+  }
+  const ratioComputed = Math.max(1024, Math.round(baseContextTokens * (1 - reserveRatio)));
+  return Math.min(maxContextTokens ?? ratioComputed, ratioComputed);
+}
 
 /**
  * Creates a new Run instance with custom handlers and configuration.
@@ -196,6 +463,10 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  summarizationConfig,
+  initialSummary,
+  calibrationRatio,
+  appConfig,
   streaming = true,
   streamUsage = true,
 }: {
@@ -208,6 +479,16 @@ export async function createRun({
   user?: IUser;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
+  summarizationConfig?: SummarizationConfig;
+  /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
+  initialSummary?: { text: string; tokenCount: number };
+  /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
+  calibrationRatio?: number;
+  /**
+   * Resolved app config. Used to translate custom-endpoint provider names
+   * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
+   */
+  appConfig?: AppConfig;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -232,6 +513,16 @@ export async function createRun({
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
       ] as unknown as Providers) ?? agent.provider;
+    const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
+
+    const summarization = shapeSummarizationConfig(
+      agent.summarization ?? summarizationConfig,
+      provider as string,
+      selfModel,
+      appConfig,
+      agent.endpoint ?? undefined,
+      { user, requestBody },
+    );
 
     const llmConfig: t.RunLLMConfig = Object.assign(
       {
@@ -299,6 +590,12 @@ export async function createRun({
       }
     }
 
+    const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
+      summarization.reserveRatio,
+      agent.baseContextTokens,
+      agent.maxContextTokens,
+    );
+
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     const agentInput: AgentInputs = {
       provider,
@@ -310,9 +607,14 @@ export async function createRun({
       instructions: systemContent,
       name: agent.name ?? undefined,
       toolRegistry: agent.toolRegistry,
-      maxContextTokens: agent.maxContextTokens,
+      maxContextTokens: effectiveMaxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
       discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
+      summarizationEnabled: summarization.enabled,
+      summarizationConfig: summarization.config,
+      initialSummary,
+      contextPruningConfig: summarization.contextPruning,
+      maxToolResultChars: agent.maxToolResultChars,
     };
     agentInputs.push(agentInput);
   };
@@ -339,5 +641,6 @@ export async function createRun({
     tokenCounter,
     customHandlers,
     indexTokenCountMap,
+    calibrationRatio,
   });
 }

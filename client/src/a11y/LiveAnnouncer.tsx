@@ -21,6 +21,9 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
       start: localize('com_a11y_start'),
       end: localize('com_a11y_end'),
       composing: localize('com_a11y_ai_composing'),
+      summarize_started: localize('com_a11y_summarize_started'),
+      summarize_completed: localize('com_a11y_summarize_completed'),
+      summarize_failed: localize('com_a11y_summarize_failed'),
     }),
     [localize],
   );

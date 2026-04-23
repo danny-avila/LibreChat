@@ -5,8 +5,6 @@ const agentSchema = new Schema<IAgent>(
   {
     id: {
       type: String,
-      index: true,
-      unique: true,
       required: true,
     },
     name: {
@@ -76,10 +74,6 @@ const agentSchema = new Schema<IAgent>(
       type: [{ type: Schema.Types.Mixed }],
       default: [],
     },
-    isCollaborative: {
-      type: Boolean,
-      default: undefined,
-    },
     conversation_starters: {
       type: [String],
       default: [],
@@ -87,11 +81,6 @@ const agentSchema = new Schema<IAgent>(
     tool_resources: {
       type: Schema.Types.Mixed,
       default: {},
-    },
-    projectIds: {
-      type: [Schema.Types.ObjectId],
-      ref: 'Project',
-      index: true,
     },
     versions: {
       type: [Schema.Types.Mixed],
@@ -123,12 +112,17 @@ const agentSchema = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,
   },
 );
 
+agentSchema.index({ id: 1, tenantId: 1 }, { unique: true });
 agentSchema.index({ updatedAt: -1, _id: 1 });
 agentSchema.index({ 'edges.to': 1 });
 

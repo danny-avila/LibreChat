@@ -30,11 +30,7 @@ interface BadgeRowContextType {
 const BadgeRowContext = createContext<BadgeRowContextType | undefined>(undefined);
 
 export function useBadgeRowContext() {
-  const context = useContext(BadgeRowContext);
-  if (context === undefined) {
-    throw new Error('useBadgeRowContext must be used within a BadgeRowProvider');
-  }
-  return context;
+  return useContext(BadgeRowContext);
 }
 
 interface BadgeRowProviderProps {
