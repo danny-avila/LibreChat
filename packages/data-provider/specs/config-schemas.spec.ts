@@ -7,6 +7,8 @@ import {
   interfaceSchema,
   fileStorageSchema,
   fileStrategiesSchema,
+  summarizationTriggerSchema,
+  summarizationConfigSchema,
 } from '../src/config';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
 import { FileSources } from '../src/types/files';
@@ -500,5 +502,111 @@ describe('interfaceSchema', () => {
     expect(result).not.toHaveProperty('endpointsMenu');
     expect(result).not.toHaveProperty('sidePanel');
     expect(result.modelSelect).toBe(false);
+  });
+});
+
+describe('summarizationTriggerSchema', () => {
+  it.each([
+    ['token_ratio', 0.8],
+    ['remaining_tokens', 500],
+    ['messages_to_refine', 4],
+  ] as const)('accepts documented trigger type "%s" with a sensible value', (type, value) => {
+    const result = summarizationTriggerSchema.safeParse({ type, value });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects the legacy/typoed "token_count" trigger type', () => {
+    const result = summarizationTriggerSchema.safeParse({
+      type: 'token_count',
+      value: 8000,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown trigger types', () => {
+    const result = summarizationTriggerSchema.safeParse({
+      type: 'never_heard_of_it',
+      value: 1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects negative values on any trigger type', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: -0.5 }).success).toBe(
+      false,
+    );
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: -1 }).success,
+    ).toBe(false);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: -1 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects zero for count-based triggers where it has no meaningful effect', () => {
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 0 }).success,
+    ).toBe(false);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: 0 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects token_ratio values > 1 to catch the "80 meant as 80%" mistake', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 80 }).success).toBe(
+      false,
+    );
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 1.01 }).success).toBe(
+      false,
+    );
+  });
+
+  it('accepts token_ratio values at the inclusive 0 and 1 bounds per docs', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 0 }).success).toBe(
+      true,
+    );
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 1 }).success).toBe(
+      true,
+    );
+  });
+
+  it('allows remaining_tokens and messages_to_refine values above 1 (token/message counts)', () => {
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 2000 }).success,
+    ).toBe(true);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: 20 }).success,
+    ).toBe(true);
+  });
+
+  it('rejects non-finite values (Infinity, NaN) for every trigger type', () => {
+    for (const type of ['token_ratio', 'remaining_tokens', 'messages_to_refine'] as const) {
+      expect(summarizationTriggerSchema.safeParse({ type, value: Infinity }).success).toBe(false);
+      expect(summarizationTriggerSchema.safeParse({ type, value: -Infinity }).success).toBe(false);
+      expect(summarizationTriggerSchema.safeParse({ type, value: NaN }).success).toBe(false);
+    }
+  });
+
+  it('requires integer values for count-based triggers', () => {
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 500.5 }).success,
+    ).toBe(false);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: 2.5 }).success,
+    ).toBe(false);
+  });
+
+  it('still allows fractional values for token_ratio', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 0.8 }).success).toBe(
+      true,
+    );
+  });
+
+  it('parses inside the full summarization config', () => {
+    const result = summarizationConfigSchema.safeParse({
+      enabled: true,
+      trigger: { type: 'token_ratio', value: 0.8 },
+    });
+    expect(result.success).toBe(true);
   });
 });

@@ -43,9 +43,17 @@ jest.mock('@librechat/api', () => ({
   buildToolSet: jest.fn().mockReturnValue(new Set()),
   createSafeUser: jest.fn().mockReturnValue({ id: 'user-123' }),
   initializeAgent: jest.fn().mockResolvedValue({
+    id: 'agent-123',
     model: 'claude-3',
     model_parameters: {},
     toolRegistry: {},
+    edges: [],
+  }),
+  discoverConnectedAgents: jest.fn().mockResolvedValue({
+    agentConfigs: new Map(),
+    edges: [],
+    skippedAgentIds: new Set(),
+    userMCPAuthMap: undefined,
   }),
   getBalanceConfig: mockGetBalanceConfig,
   getTransactionsConfig: mockGetTransactionsConfig,
@@ -121,6 +129,19 @@ jest.mock('~/server/controllers/agents/callbacks', () => {
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
+  checkPermission: jest.fn().mockResolvedValue(true),
+}));
+
+jest.mock('~/server/controllers/ModelController', () => ({
+  getModelsConfig: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/server/services/Files/permissions', () => ({
+  filterFilesByAgentAccess: jest.fn(),
+}));
+
+jest.mock('~/cache', () => ({
+  logViolation: jest.fn(),
 }));
 
 const mockUpdateBalance = jest.fn().mockResolvedValue({});

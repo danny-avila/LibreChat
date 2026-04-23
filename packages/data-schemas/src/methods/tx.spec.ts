@@ -2279,6 +2279,46 @@ describe('Claude Model Tests', () => {
       );
     });
   });
+
+  it('should return correct prompt and completion rates for Claude Opus 4.7', () => {
+    expect(getMultiplier({ model: 'claude-opus-4-7', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-opus-4-7'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-opus-4-7', tokenType: 'completion' })).toBe(
+      tokenValues['claude-opus-4-7'].completion,
+    );
+  });
+
+  it('should handle Claude Opus 4.7 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-4-7',
+      'claude-opus-4-7-20260401',
+      'claude-opus-4-7-latest',
+      'anthropic/claude-opus-4-7',
+      'claude-opus-4-7/anthropic',
+      'claude-opus-4-7-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-opus-4-7');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-opus-4-7'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-opus-4-7'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Opus 4.7', () => {
+    expect(getCacheMultiplier({ model: 'claude-opus-4-7', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-opus-4-7'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-opus-4-7', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-opus-4-7'].read,
+    );
+  });
 });
 
 describe('Premium Token Pricing', () => {
@@ -2296,6 +2336,16 @@ describe('Premium Token Pricing', () => {
     expect(premiumEntry.completion).toBeDefined();
     expect(premiumEntry.prompt).toBeGreaterThan(tokenValues[premiumModel].prompt);
     expect(premiumEntry.completion).toBeGreaterThan(tokenValues[premiumModel].completion);
+  });
+
+  it('should have premium pricing defined for claude-opus-4-7', () => {
+    const entry = premiumTokenValues['claude-opus-4-7'];
+    expect(entry).toBeDefined();
+    expect(entry.threshold).toBe(200000);
+    expect(entry.prompt).toBe(10);
+    expect(entry.completion).toBe(37.5);
+    expect(entry.prompt).toBeGreaterThan(tokenValues['claude-opus-4-7'].prompt);
+    expect(entry.completion).toBeGreaterThan(tokenValues['claude-opus-4-7'].completion);
   });
 
   it('should return null from getPremiumRate when inputTokenCount is below threshold', () => {

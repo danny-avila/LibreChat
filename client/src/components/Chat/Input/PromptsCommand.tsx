@@ -4,6 +4,7 @@ import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
+import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import { removeCharIfLast, detectVariables } from '~/utils';
 import { useRecordPromptUsage } from '~/data-provider';
 import { VariableDialog } from '~/components/Prompts';
@@ -79,6 +80,14 @@ function PromptsCommand({
   const { open, setOpen, searchValue, setSearchValue, matches } = useCombobox({
     value: '',
     options: prompts ?? [],
+  });
+
+  const initInputRef = useInitPopoverInput({
+    inputRef,
+    textAreaRef,
+    commandChar,
+    setSearchValue,
+    setOpen,
   });
 
   const handleSelect = useCallback(
@@ -193,10 +202,7 @@ function PromptsCommand({
       <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
           <input
-            // The user expects focus to transition to the input field when the popover is opened
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-            ref={inputRef}
+            ref={initInputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
             className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm focus:outline-none dark:text-gray-200"
             autoComplete="off"
@@ -231,38 +237,28 @@ function PromptsCommand({
               }, 150);
             }}
           />
-          <div className="max-h-40 overflow-y-auto">
-            {(() => {
-              if (isLoading && open) {
-                return (
-                  <div className="flex h-32 items-center justify-center text-text-primary">
-                    <Spinner />
-                  </div>
-                );
-              }
-
-              if (!isLoading && open) {
-                return (
-                  <div className="max-h-40">
-                    <AutoSizer disableHeight>
-                      {({ width }) => (
-                        <List
-                          width={width}
-                          overscanRowCount={5}
-                          rowHeight={ROW_HEIGHT}
-                          rowCount={matches.length}
-                          rowRenderer={rowRenderer}
-                          scrollToIndex={activeIndex}
-                          height={Math.min(matches.length * ROW_HEIGHT, 160)}
-                        />
-                      )}
-                    </AutoSizer>
-                  </div>
-                );
-              }
-              return null;
-            })()}
-          </div>
+          {open && isLoading && matches.length === 0 && (
+            <div className="flex h-32 items-center justify-center text-text-primary">
+              <Spinner />
+            </div>
+          )}
+          {open && matches.length > 0 && (
+            <div className="max-h-40">
+              <AutoSizer disableHeight>
+                {({ width }) => (
+                  <List
+                    width={width}
+                    overscanRowCount={5}
+                    rowHeight={ROW_HEIGHT}
+                    rowCount={matches.length}
+                    rowRenderer={rowRenderer}
+                    scrollToIndex={activeIndex}
+                    height={Math.min(matches.length * ROW_HEIGHT, 160)}
+                  />
+                )}
+              </AutoSizer>
+            </div>
+          )}
         </div>
       </div>
     </PopoverContainer>

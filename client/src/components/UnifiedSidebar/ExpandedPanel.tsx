@@ -6,18 +6,23 @@ import { QueryKeys } from 'librechat-data-provider';
 import { Skeleton, Sidebar, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-import { useActivePanel, resolveActivePanel } from '~/Providers';
+import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { clearMessagesCache, cn } from '~/utils';
 import store from '~/store';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
 
-const NewChatButton = memo(function NewChatButton() {
+const NewChatButton = memo(function NewChatButton({
+  setActive,
+}: {
+  setActive: (id: string) => void;
+}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
   const conversation = useRecoilValue(store.conversationByIndex(0));
+  const switchToHistory = useRecoilValue(store.newChatSwitchToHistory);
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -26,9 +31,12 @@ const NewChatButton = memo(function NewChatButton() {
         clearMessagesCache(queryClient, conversation?.conversationId);
         queryClient.invalidateQueries([QueryKeys.messages]);
         newConversation();
+        if (switchToHistory) {
+          setActive(DEFAULT_PANEL);
+        }
       }
     },
-    [queryClient, conversation?.conversationId, newConversation],
+    [queryClient, conversation?.conversationId, newConversation, switchToHistory, setActive],
   );
 
   return (
@@ -56,12 +64,14 @@ const NavIconButton = memo(function NavIconButton({
   expanded,
   setActive,
   onExpand,
+  onCollapse,
 }: {
   link: NavLink;
   isActive: boolean;
   expanded: boolean;
   setActive: (id: string) => void;
   onExpand?: () => void;
+  onCollapse?: () => void;
 }) {
   const localize = useLocalize();
 
@@ -71,6 +81,10 @@ const NavIconButton = memo(function NavIconButton({
         link.onClick(e);
         return;
       }
+      if (isActive && expanded) {
+        onCollapse?.();
+        return;
+      }
       if (!isActive) {
         setActive(link.id);
       }
@@ -78,7 +92,7 @@ const NavIconButton = memo(function NavIconButton({
         onExpand?.();
       }
     },
-    [link, isActive, setActive, expanded, onExpand],
+    [link, isActive, setActive, expanded, onExpand, onCollapse],
   );
 
   return (
@@ -142,7 +156,7 @@ function ExpandedPanel({
           </Button>
         }
       />
-      <NewChatButton />
+      <NewChatButton setActive={setActive} />
       <div className="mx-2 border-b border-border-light" />
       <div className="flex flex-col gap-1 overflow-y-auto">
         {links.map((link) => (
@@ -153,6 +167,7 @@ function ExpandedPanel({
             expanded={expanded ?? true}
             setActive={setActive}
             onExpand={onExpand}
+            onCollapse={onCollapse}
           />
         ))}
       </div>

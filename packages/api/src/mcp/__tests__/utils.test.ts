@@ -3,6 +3,8 @@ import {
   normalizeServerName,
   redactAllServerSecrets,
   redactServerSecrets,
+  isInvalidClientMessage,
+  isClientRejectionMessage,
   isUserSourced,
 } from '~/mcp/utils';
 import type { ParsedServerConfig } from '~/mcp/types';
@@ -272,6 +274,44 @@ describe('redactAllServerSecrets', () => {
     expect(redacted['server-b'].oauth?.client_secret).toBeUndefined();
     expect(redacted['server-b'].oauth?.client_id).toBe('cid-b');
     expect((redacted['server-c'] as Record<string, unknown>).command).toBeUndefined();
+  });
+});
+
+describe('isInvalidClientMessage', () => {
+  it.each(['invalid_client', 'client_id mismatch', 'client not found', 'unknown client'])(
+    'should detect "%s"',
+    (pattern) => {
+      expect(isInvalidClientMessage(`OAuth error: ${pattern}`)).toBe(true);
+    },
+  );
+
+  it('should be case-insensitive', () => {
+    expect(isInvalidClientMessage('INVALID_CLIENT')).toBe(true);
+    expect(isInvalidClientMessage('Client Not Found')).toBe(true);
+  });
+
+  it('should not match unauthorized_client', () => {
+    expect(isInvalidClientMessage('unauthorized_client')).toBe(false);
+  });
+
+  it('should return false for unrelated messages', () => {
+    expect(isInvalidClientMessage('connection timeout')).toBe(false);
+    expect(isInvalidClientMessage('')).toBe(false);
+  });
+});
+
+describe('isClientRejectionMessage', () => {
+  it('should match all isInvalidClientMessage patterns', () => {
+    expect(isClientRejectionMessage('invalid_client')).toBe(true);
+    expect(isClientRejectionMessage('client not found')).toBe(true);
+  });
+
+  it('should also match unauthorized_client', () => {
+    expect(isClientRejectionMessage('unauthorized_client')).toBe(true);
+  });
+
+  it('should return false for unrelated messages', () => {
+    expect(isClientRejectionMessage('server error')).toBe(false);
   });
 });
 

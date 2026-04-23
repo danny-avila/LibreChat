@@ -157,6 +157,7 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'claude-opus-4': { prompt: 15, completion: 75 },
     'claude-opus-4-5': { prompt: 5, completion: 25 },
     'claude-opus-4-6': { prompt: 5, completion: 25 },
+    'claude-opus-4-7': { prompt: 5, completion: 25 },
     'claude-sonnet-4': { prompt: 3, completion: 15 },
     'claude-sonnet-4-6': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
@@ -289,6 +290,7 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'claude-opus-4': { write: 18.75, read: 1.5 },
   'claude-opus-4-5': { write: 6.25, read: 0.5 },
   'claude-opus-4-6': { write: 6.25, read: 0.5 },
+  'claude-opus-4-7': { write: 6.25, read: 0.5 },
   'gpt-4o': { write: 2.5, read: 1.25 },
   'gpt-4o-mini': { write: 0.15, read: 0.075 },
   'gpt-4.1': { write: 2, read: 0.5 },
@@ -335,6 +337,7 @@ export const premiumTokenValues: Record<
   { threshold: number; prompt: number; completion: number }
 > = {
   'claude-opus-4-6': { threshold: 200000, prompt: 10, completion: 37.5 },
+  'claude-opus-4-7': { threshold: 200000, prompt: 10, completion: 37.5 },
   'claude-sonnet-4-6': { threshold: 200000, prompt: 6, completion: 22.5 },
   'gemini-3.1': { threshold: 200000, prompt: 4, completion: 18 },
 };
