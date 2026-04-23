@@ -5,6 +5,7 @@ const mockSetShowSkillsPopover = jest.fn();
 const mockHasPromptsAccess = { current: true };
 const mockHasMultiConvoAccess = { current: true };
 const mockHasSkillsAccess = { current: true };
+const mockSkillsEnabled = { current: true };
 const mockEndpoint = { current: 'openAI' as string | null };
 const mockCommandToggles = { at: true, plus: true, slash: true, dollar: true };
 
@@ -76,6 +77,16 @@ jest.mock('~/hooks/Roles/useHasAccess', () =>
   }),
 );
 
+jest.mock('~/hooks/Agents/useGetAgentsConfig', () =>
+  jest.fn(() => ({ agentsConfig: { capabilities: [] } })),
+);
+
+jest.mock('~/hooks/Agents/useAgentCapabilities', () =>
+  jest.fn(() => ({
+    skillsEnabled: mockSkillsEnabled.current,
+  })),
+);
+
 import React from 'react';
 import { renderHook, act } from '@testing-library/react';
 import useHandleKeyUp from './useHandleKeyUp';
@@ -118,6 +129,7 @@ beforeEach(() => {
   mockHasPromptsAccess.current = true;
   mockHasMultiConvoAccess.current = true;
   mockHasSkillsAccess.current = true;
+  mockSkillsEnabled.current = true;
   mockEndpoint.current = 'openAI';
   mockCommandToggles.at = true;
   mockCommandToggles.plus = true;
@@ -417,6 +429,16 @@ describe('useHandleKeyUp', () => {
 
     it('does NOT trigger $ skill command without SKILLS access', () => {
       mockHasSkillsAccess.current = false;
+      const ref = makeTextAreaRef('$', 1);
+      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('$')));
+
+      expect(setShowSkillsPopover).not.toHaveBeenCalled();
+    });
+
+    it('does NOT trigger $ skill command when skills capability is disabled on agents endpoint', () => {
+      mockSkillsEnabled.current = false;
       const ref = makeTextAreaRef('$', 1);
       const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
 
