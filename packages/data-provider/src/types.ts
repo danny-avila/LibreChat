@@ -101,6 +101,7 @@ export type TEphemeralAgent = {
   web_search?: boolean;
   file_search?: boolean;
   execute_code?: boolean;
+  image_generation?: boolean;
   artifacts?: string;
 };
 

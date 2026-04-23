@@ -10,6 +10,7 @@ interface AgentCapabilitiesResult {
   fileSearchEnabled: boolean;
   webSearchEnabled: boolean;
   codeEnabled: boolean;
+  imageGenerationEnabled: boolean;
   deferredToolsEnabled: boolean;
   programmaticToolsEnabled: boolean;
 }
@@ -57,6 +58,11 @@ export default function useAgentCapabilities(
     [capabilities],
   );
 
+  const imageGenerationEnabled = useMemo(
+    () => capabilities?.includes(AgentCapabilities.image_generation) ?? false,
+    [capabilities],
+  );
+
   const deferredToolsEnabled = useMemo(
     () => capabilities?.includes(AgentCapabilities.deferred_tools) ?? false,
     [capabilities],
@@ -76,6 +82,7 @@ export default function useAgentCapabilities(
     artifactsEnabled,
     webSearchEnabled,
     fileSearchEnabled,
+    imageGenerationEnabled,
     deferredToolsEnabled,
     programmaticToolsEnabled,
   };
