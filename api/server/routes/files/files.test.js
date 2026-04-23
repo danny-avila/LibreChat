@@ -430,5 +430,74 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.body.unauthorizedFiles).toContain(fileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
+
+    it('should cleanup/unlink agent resources even if the files doesnt exist in the db', async () => {
+      const agentFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: agentFileId,
+        filename: 'agent-file.txt',
+        filepath: '/uploads/agent-file.txt',
+        bytes: 500,
+        type: 'text/plain',
+      });
+
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: {
+          file_search: {
+            file_ids: [agentFileId],
+          },
+        },
+      });
+
+      // First delete (from file dialog, no agent context): actually remove the file from the db immediatly
+      processDeleteRequest.mockImplementationOnce(async ({ files }) => {
+        await File.deleteMany({ file_id: { $in: files.map((f) => f.file_id) } });
+      });
+
+      const firstResponse = await request(app)
+        .delete('/files')
+        .send({
+          files: [
+            {
+              file_id: agentFileId,
+              filepath: '/uploads/agent-file.txt',
+            },
+          ],
+        });
+
+      expect(firstResponse.status).toBe(200);
+      expect(firstResponse.body.message).toBe('Files deleted successfully');
+
+      const fileAfterDelete = await File.findOne({ file_id: agentFileId });
+      expect(fileAfterDelete).toBeNull();
+
+      // Second delete (from agent panel) should unlink from agent even though the file is gone
+      const secondResponse = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [
+            {
+              file_id: agentFileId,
+              filepath: '/uploads/agent-file.txt',
+            },
+          ],
+        });
+
+      expect(secondResponse.status).toBe(200);
+      expect(secondResponse.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).toHaveBeenCalledTimes(2);
+
+      const unlinkCall = processDeleteRequest.mock.calls[1][0];
+      expect(unlinkCall.files).toHaveLength(1);
+      expect(unlinkCall.files[0].file_id).toBe(agentFileId);
+    });
   });
 });
