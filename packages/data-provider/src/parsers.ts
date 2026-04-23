@@ -402,7 +402,15 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
   return lastIndex;
 }
 
-export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUser | null }) {
+export function replaceSpecialVars({
+  text,
+  user,
+  conversationId,
+}: {
+  text: string;
+  user?: t.TUser | null;
+  conversationId?: string | null;
+}) {
   let result = text;
   if (!result) {
     return result;
@@ -422,6 +430,10 @@ export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUse
 
   if (user && user.name) {
     result = result.replace(/{{current_user}}/gi, user.name);
+  }
+
+  if (typeof conversationId === 'string' && conversationId) {
+    result = result.replace(/{{conversation_id}}/gi, conversationId);
   }
 
   return result;
