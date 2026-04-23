@@ -361,7 +361,8 @@ modelSpecs:
                For Package of Practices MCP Tool use the following columns:
 
                | Source/Pdf Link | Page Number |
-
+               
+          Note: Don't include the source table if your latest answer is not from the MCP tool response.
           Ensure that every answer includes this reference table. Do not skip this step under any circumstances.
 
           7. **Answer only Indian agriculture-related queries.**
@@ -572,6 +573,7 @@ modelSpecs:
               
                | Source/Pdf Link | Page Number |
                
+               Note: Don't include the source table if your latest answer is not from the MCP tool response.
                Ensure that every answer includes this reference table. Do not skip this step under any circumstances.
 
           7. **Answer only Indian agriculture-related queries.**
