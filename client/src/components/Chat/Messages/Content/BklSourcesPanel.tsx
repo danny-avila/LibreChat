@@ -1,9 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilState } from 'recoil';
-import { ExternalLink, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Button } from '@librechat/client';
 import store from '~/store';
+import { cn } from '~/utils';
+import MarkdownLite from './MarkdownLite';
 import type { BklSource } from './ChunkModal';
+
+// Keep in sync with the `duration-*` utilities on the root div below. The
+// close animation keeps the component mounted for this long so users see the
+// panel slide out before it unmounts.
+const CLOSE_ANIM_MS = 300;
 
 /**
  * Right-side panel that displays BKL document citations when the user clicks
@@ -61,6 +68,15 @@ export default function BklSourcesPanel() {
   const [active, setActive] = useRecoilState(store.activeBklSource);
   const [sources, setSources] = useState<BklSource[] | null>(null);
 
+  // Slide-in / slide-out animation, mirroring `Artifacts.tsx` so the citation
+  // panel feels like a first-class LibreChat surface. `isVisible` drives the
+  // enter transition (delayed one tick after mount). `isClosing` keeps the
+  // panel mounted for CLOSE_ANIM_MS after `onClose`, so the slide-out has
+  // time to play before we actually null out the Recoil atom and unmount.
+  const [isVisible, setIsVisible] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   /**
    * Re-read cached sources whenever the active messageId changes, and poll
    * briefly if sources haven't arrived yet (the SSE `sources_replace` event
@@ -92,7 +108,47 @@ export default function BklSourcesPanel() {
     };
   }, [active?.messageId]);
 
-  const onClose = useCallback(() => setActive(null), [setActive]);
+  /**
+   * Drive the enter animation. Whenever a citation becomes active (either
+   * from null → set, or from one `[N]` to another while we're still open),
+   * cancel any pending close timer and fire a next-tick `isVisible=true` so
+   * the root div transitions from `translate-x-5 opacity-0` → `translate-x-0
+   * opacity-100`.
+   */
+  useEffect(() => {
+    if (!active) return;
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setIsClosing(false);
+    const t = setTimeout(() => setIsVisible(true), 30);
+    return () => clearTimeout(t);
+  }, [active]);
+
+  const onClose = useCallback(() => {
+    // Play the slide-out first, then clear the Recoil atom (which unmounts
+    // this component via the `!active` guard below).
+    setIsClosing(true);
+    setIsVisible(false);
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      setActive(null);
+      setIsClosing(false);
+      closeTimerRef.current = null;
+    }, CLOSE_ANIM_MS);
+  }, [setActive]);
+
+  // Cleanup any pending close timer on unmount so we don't late-write to an
+  // unmounted tree if the user navigates away mid-animation.
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!active) return;
@@ -111,7 +167,19 @@ export default function BklSourcesPanel() {
   if (!active) return null;
 
   return (
-    <div className="flex h-full w-full flex-col bg-surface-primary text-text-primary">
+    <div
+      className={cn(
+        'flex h-full w-full flex-col bg-surface-primary text-text-primary shadow-2xl',
+        // Desktop slide: same translate-x / opacity values as the native
+        // Artifacts panel (`Artifacts.tsx`). Mobile path isn't handled here —
+        // `SidePanelGroup` wraps us in `fixed inset-0 z-[100]` on small screens,
+        // so the panel covers the viewport without needing a separate
+        // translate-y animation.
+        isVisible && !isClosing
+          ? 'translate-x-0 opacity-100 transition-all duration-300'
+          : 'translate-x-5 opacity-0 transition-all duration-300',
+      )}
+    >
       {/* Header — mirrors Artifacts.tsx chrome: surface-primary-alt bar with
           a subtle bottom border and a ghost-icon close button on the right.
           We intentionally do NOT surface prev/next or a "3 / 10" counter:
@@ -127,7 +195,13 @@ export default function BklSourcesPanel() {
           <PanelTitle source={current} />
         </div>
         <div className="flex items-center gap-1">
-          <ViewerLink source={current} />
+          {/* Previously rendered a "원본 보기" (ExternalLink) button pointing
+              at `/viewer/...` which served raw `.msg` bytes → garbled text.
+              The replacement flow is inline: the OCR pipeline persists each
+              attachment as a PDF and injects a `[📎 원본 파일: ...]` markdown
+              link into the chunk body itself, so users click the link inside
+              the panel content (rendered by MarkdownLite below) and the PDF
+              opens in a new tab. That makes the header button redundant. */}
           <Button size="icon" variant="ghost" onClick={onClose} aria-label="닫기">
             <X size={16} aria-hidden="true" />
           </Button>
@@ -178,31 +252,18 @@ function PanelTitle({ source }: { source: BklSource | null }) {
 function PanelBody({ source }: { source: BklSource }) {
   const text = source.document?.[0] ?? '';
   if (!text) return <p className="text-sm text-text-secondary">내용을 불러올 수 없습니다.</p>;
+  // MarkdownLite (GFM + math + code highlighting) renders the chunk body,
+  // which now includes `[📎 원본 파일: ...]( /v1/attachments/{hash}.pdf )`
+  // links injected by the OCR pipeline (`msg_processor._assemble()`). The
+  // shared `a` component from MarkdownComponents opens external links in a
+  // new tab by default, so no extra wrapping is needed here.
+  //
+  // `prose-sm` + `dark:prose-invert` matches the typography used in the
+  // assistant message surface; `max-w-none` lets paragraphs fill the panel
+  // width instead of the default `prose` narrow measure.
   return (
-    <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-text-primary">
-      {text}
-    </pre>
-  );
-}
-
-function ViewerLink({ source }: { source: BklSource | null }) {
-  // `source.source` is a looser shape than the typed `BklSource`, so we cast
-  // through unknown to safely read the optional url fields.
-  const url = ((source as unknown as { source?: { url?: string; embed_url?: string } } | null)
-    ?.source?.url ??
-    (source as unknown as { source?: { url?: string; embed_url?: string } } | null)?.source
-      ?.embed_url) as string | undefined;
-  if (!url) return null;
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex size-9 items-center justify-center rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-      aria-label="원본 보기"
-      title="원본 보기"
-    >
-      <ExternalLink size={16} aria-hidden="true" />
-    </a>
+    <div className="prose prose-sm max-w-none break-words text-text-primary dark:prose-invert">
+      <MarkdownLite content={text} codeExecution={false} />
+    </div>
   );
 }
