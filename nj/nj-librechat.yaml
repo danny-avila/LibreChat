@@ -79,12 +79,12 @@ modelSpecs:
   list:
     - name: claude-sonnet-4-6
       label: "Claude Sonnet 4.6"
-      default: true
       preset:
         endpoint: "bedrock"
         model: "us.anthropic.claude-sonnet-4-6"
     - name: "Claude Sonnet 4.5"
       label: "Claude Sonnet 4.5"
+      default: true
       preset:
         endpoint: "bedrock"
         model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
