@@ -6,7 +6,7 @@ import commonjs from '@rollup/plugin-commonjs';
 import replace from '@rollup/plugin-replace';
 import terser from '@rollup/plugin-terser';
 
-const plugins = [
+const createPlugins = (outDir) => [
   peerDepsExternal(),
   resolve({
     extensions: ['.mjs', '.js', '.json', '.node', '.ts', '.tsx'],
@@ -19,6 +19,12 @@ const plugins = [
   typescript({
     tsconfig: './tsconfig.rollup.json',
     outputToFilesystem: false,
+    compilerOptions: {
+      outDir,
+      declaration: false,
+      declarationMap: false,
+      composite: false,
+    },
   }),
   commonjs(),
   terser(),
@@ -50,7 +56,7 @@ export default [
         'react-dom',
       ],
       preserveSymlinks: true,
-      plugins,
+      plugins: createPlugins('./dist'),
     },
   },
   // Separate bundle for react-query related part
@@ -73,6 +79,6 @@ export default [
       // 'librechat-data-provider', // Marking main part as external
     ],
     preserveSymlinks: true,
-    plugins,
+    plugins: createPlugins('./dist/react-query'),
   },
 ];
