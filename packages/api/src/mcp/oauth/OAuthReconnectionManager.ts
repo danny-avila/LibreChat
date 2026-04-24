@@ -89,11 +89,27 @@ export class OAuthReconnectionManager {
     for (let i = 0; i < serversToReconnect.length; i++) {
       const serverName = serversToReconnect[i];
       if (i === 0) {
-        void this.tryReconnect(userId, serverName);
+        this.safeTryReconnect(userId, serverName);
       } else {
-        setTimeout(() => void this.tryReconnect(userId, serverName), i * RECONNECT_STAGGER_MS);
+        setTimeout(() => this.safeTryReconnect(userId, serverName), i * RECONNECT_STAGGER_MS);
       }
     }
+  }
+
+  /**
+   * Fire-and-forget wrapper around {@link tryReconnect} that guarantees any
+   * unexpected rejection is surfaced via the logger instead of propagating as
+   * an unhandled promise rejection. Guards against edge cases where an error
+   * escapes the inner try/catch (for example, a synchronous throw in the
+   * pre-try setup or from the cleanup handler itself).
+   */
+  private safeTryReconnect(userId: string, serverName: string): void {
+    this.tryReconnect(userId, serverName).catch((error) => {
+      logger.error(
+        `[OAuthReconnectionManager][User: ${userId}][${serverName}] Unexpected reconnect error`,
+        error,
+      );
+    });
   }
 
   /**

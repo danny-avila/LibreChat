@@ -1,4 +1,4 @@
-import { TokenMethods } from '@librechat/data-schemas';
+import { logger, TokenMethods } from '@librechat/data-schemas';
 import { FlowStateManager, MCPConnection, MCPOAuthTokens, MCPOptions } from '../..';
 import { MCPManager } from '../MCPManager';
 import { OAuthReconnectionManager } from './OAuthReconnectionManager';
@@ -543,6 +543,51 @@ describe('OAuthReconnectionManager', () => {
       );
       expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith(
         expect.objectContaining({ serverName: 'server3' }),
+      );
+    });
+  });
+
+  describe('fire-and-forget reconnect safety', () => {
+    let reconnectionTracker: OAuthReconnectionTracker;
+
+    beforeEach(async () => {
+      reconnectionTracker = new OAuthReconnectionTracker();
+      reconnectionManager = await OAuthReconnectionManager.createInstance(
+        flowManager,
+        tokenMethods,
+        reconnectionTracker,
+      );
+    });
+
+    /**
+     * Regression test for discussion #12078: an error thrown before
+     * `tryReconnect`'s internal try/catch (e.g. from `getServerConfig`) would
+     * otherwise propagate as an unhandled promise rejection and — on Node 15+
+     * — terminate the process. The safe wrapper must surface it via the
+     * logger instead.
+     */
+    it('should swallow unexpected rejection from tryReconnect without propagating', async () => {
+      const userId = 'user-123';
+      const oauthServers = new Set(['server1']);
+      (mockRegistryInstance.getOAuthServers as jest.Mock).mockResolvedValue(oauthServers);
+
+      tokenMethods.findToken.mockResolvedValue({
+        userId,
+        identifier: 'mcp:server1',
+        expiresAt: new Date(Date.now() + 3600000),
+      } as unknown as MCPOAuthTokens);
+
+      const boom = new Error('boom');
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockRejectedValue(boom);
+
+      await expect(reconnectionManager.reconnectServers(userId)).resolves.toBeUndefined();
+
+      // Flush the .catch() microtask attached inside safeTryReconnect
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Unexpected reconnect error'),
+        boom,
       );
     });
   });
