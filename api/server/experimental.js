@@ -441,3 +441,22 @@ process.on('uncaughtException', (err) => {
 
   process.exit(1);
 });
+
+/**
+ * Unhandled promise rejection handler.
+ *
+ * Node 15+ terminates the process by default when a promise rejection is
+ * unhandled. MCP OAuth reconnect storms and streamable-HTTP transport resets
+ * can produce transient fire-and-forget rejections (ECONNRESET, token refresh
+ * races) that are recoverable — the server should log and keep serving other
+ * requests rather than silently crash under load.
+ */
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logger.error('Unhandled promise rejection. The app will continue running.', {
+    name: err.name,
+    message: err.message,
+    stack: err.stack,
+    cause: err.cause,
+  });
+});
