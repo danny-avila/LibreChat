@@ -2,11 +2,17 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown, Users } from 'lucide-react';
 import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
-import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
+import type {
+  TAttachment,
+  TMessageContentParts,
+  Agents,
+  FunctionToolCall,
+} from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
 import { StackedToolIcons } from './ToolOutput';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useMCPIconMap } from '~/hooks/MCP';
+import { AttachmentGroup } from './Parts';
 import { cn, getToolDisplayLabel } from '~/utils';
 import store from '~/store';
 
@@ -59,6 +65,7 @@ interface ToolCallGroupProps {
   isLast: boolean;
   renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
   lastContentIdx: number;
+  groupAttachments?: TAttachment[];
 }
 
 export default function ToolCallGroup({
@@ -67,6 +74,7 @@ export default function ToolCallGroup({
   isLast,
   renderPart,
   lastContentIdx,
+  groupAttachments,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
@@ -206,6 +214,9 @@ export default function ToolCallGroup({
           </div>
         </div>
       </div>
+      {groupAttachments && groupAttachments.length > 0 && (
+        <AttachmentGroup attachments={groupAttachments} variant="images" />
+      )}
     </div>
   );
 }

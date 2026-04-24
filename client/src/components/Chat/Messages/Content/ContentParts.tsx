@@ -28,6 +28,7 @@ type PartWithContextProps = {
   isCreatedByUser: boolean;
   isLast: boolean;
   partAttachments: TAttachment[] | undefined;
+  hideImageAttachments?: boolean;
 };
 
 const PartWithContext = memo(function PartWithContext({
@@ -42,6 +43,7 @@ const PartWithContext = memo(function PartWithContext({
   isCreatedByUser,
   isLast,
   partAttachments,
+  hideImageAttachments,
 }: PartWithContextProps) {
   const contextValue = useMemo(
     () => ({
@@ -66,6 +68,7 @@ const PartWithContext = memo(function PartWithContext({
         isCreatedByUser={isCreatedByUser}
         isLast={isLastPart}
         showCursor={isLastPart && isLast}
+        hideImageAttachments={hideImageAttachments}
       />
     </MessageContext.Provider>
   );
@@ -181,26 +184,29 @@ const ContentParts = memo(function ContentParts({
       <PendingSkillCall key={`pending-skill-${name}`} skillName={name} loaded={hasRealContent} />
     ));
 
-  const renderPart = useCallback(
-    (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
-      const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-      return (
-        <PartWithContext
-          key={`provider-${messageId}-${idx}`}
-          idx={idx}
-          part={part}
-          isLast={isLast}
-          messageId={messageId}
-          isLastPart={isLastPart}
-          conversationId={conversationId}
-          isLatestMessage={isLatestMessage}
-          isCreatedByUser={isCreatedByUser}
-          nextType={content?.[idx + 1]?.type}
-          isSubmitting={effectiveIsSubmitting}
-          partAttachments={attachmentMap[toolCallId]}
-        />
-      );
-    },
+  const makeRenderPart = useCallback(
+    (hideImageAttachments: boolean) =>
+      (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+        const toolCallId =
+          (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+        return (
+          <PartWithContext
+            key={`provider-${messageId}-${idx}`}
+            idx={idx}
+            part={part}
+            isLast={isLast}
+            messageId={messageId}
+            isLastPart={isLastPart}
+            conversationId={conversationId}
+            isLatestMessage={isLatestMessage}
+            isCreatedByUser={isCreatedByUser}
+            nextType={content?.[idx + 1]?.type}
+            isSubmitting={effectiveIsSubmitting}
+            partAttachments={attachmentMap[toolCallId]}
+            hideImageAttachments={hideImageAttachments}
+          />
+        );
+      },
     [
       attachmentMap,
       content,
@@ -212,6 +218,9 @@ const ContentParts = memo(function ContentParts({
       messageId,
     ],
   );
+
+  const renderPart = useMemo(() => makeRenderPart(false), [makeRenderPart]);
+  const renderGroupedPart = useMemo(() => makeRenderPart(true), [makeRenderPart]);
 
   // Early return: no content to render AND no pending skill cards
   if (!content && !hasPendingSkills) {
@@ -305,14 +314,20 @@ const ContentParts = memo(function ContentParts({
           const { part, idx } = group.part;
           return renderPart(part, idx, idx === lastContentIdx);
         }
+        const groupAttachments = group.parts.flatMap(({ part }) => {
+          const toolCallId =
+            (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+          return attachmentMap[toolCallId] ?? [];
+        });
         return (
           <ToolCallGroup
             key={`tool-group-${group.parts[0].idx}`}
             parts={group.parts}
             isSubmitting={effectiveIsSubmitting}
             isLast={group.parts.some((p) => p.idx === lastContentIdx)}
-            renderPart={renderPart}
+            renderPart={renderGroupedPart}
             lastContentIdx={lastContentIdx}
+            groupAttachments={groupAttachments}
           />
         );
       })}
