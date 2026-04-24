@@ -123,6 +123,7 @@ describe('initializeBedrock', () => {
         guardrailIdentifier: 'test-guardrail-id',
         guardrailVersion: '1',
         trace: 'enabled' as const,
+        streamProcessingMode: 'async',
       };
 
       const params = createMockParams({
