@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRecoilState } from 'recoil';
-import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import { Button } from '@librechat/client';
 import store from '~/store';
 import type { BklSource } from './ChunkModal';
@@ -103,54 +103,30 @@ export default function BklSourcesPanel() {
     return () => document.removeEventListener('keydown', handler);
   }, [active, onClose]);
 
-  const total = sources?.length ?? 0;
   const current = useMemo(() => {
     if (!active || !sources) return null;
     return sources[active.n - 1] ?? null;
   }, [active, sources]);
-
-  const goTo = useCallback(
-    (n: number) => {
-      if (!active) return;
-      if (n < 1 || n > total) return;
-      setActive({ messageId: active.messageId, n });
-    },
-    [active, total, setActive],
-  );
 
   if (!active) return null;
 
   return (
     <div className="flex h-full w-full flex-col bg-surface-primary text-text-primary">
       {/* Header — mirrors Artifacts.tsx chrome: surface-primary-alt bar with
-          a subtle bottom border and a ghost-icon close button on the right. */}
+          a subtle bottom border and a ghost-icon close button on the right.
+          We intentionally do NOT surface prev/next or a "3 / 10" counter:
+          only a subset of the retrieved chunks are actually cited in the
+          answer, so exposing navigation across all retrieved sources would
+          mislead the user into treating unused chunks as evidence. The
+          panel shows exactly the one chunk whose `[N]` marker was clicked. */}
       <div className="flex flex-shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-border-light bg-surface-primary-alt px-3 py-2">
         <div className="min-w-0 flex-1">
           <div className="text-xs font-medium uppercase tracking-wider text-text-secondary">
-            출처 {active.n}
-            {total > 0 ? <span className="ml-1 text-text-tertiary">/ {total}</span> : null}
+            출처 [{active.n}]
           </div>
           <PanelTitle source={current} />
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => goTo(active.n - 1)}
-            disabled={active.n <= 1}
-            aria-label="이전 출처"
-          >
-            <ChevronLeft size={16} aria-hidden="true" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => goTo(active.n + 1)}
-            disabled={active.n >= total}
-            aria-label="다음 출처"
-          >
-            <ChevronRight size={16} aria-hidden="true" />
-          </Button>
           <ViewerLink source={current} />
           <Button size="icon" variant="ghost" onClick={onClose} aria-label="닫기">
             <X size={16} aria-hidden="true" />
@@ -170,27 +146,6 @@ export default function BklSourcesPanel() {
             <p className="text-sm text-text-secondary">출처 정보를 찾을 수 없습니다.</p>
           )}
         </div>
-
-        {total > 1 ? (
-          <div className="flex flex-shrink-0 flex-wrap gap-1.5 border-t border-border-light bg-surface-primary-alt px-3 py-2">
-            {Array.from({ length: total }, (_, i) => i + 1).map((n) => (
-              <button
-                key={n}
-                onClick={() => goTo(n)}
-                className={
-                  'inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded px-1.5 text-[11px] transition-colors ' +
-                  (n === active.n
-                    ? 'bg-brand-purple text-white'
-                    : 'bg-surface-secondary text-text-secondary hover:bg-surface-tertiary')
-                }
-                aria-current={n === active.n}
-                aria-label={`출처 ${n}`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
     </div>
   );
