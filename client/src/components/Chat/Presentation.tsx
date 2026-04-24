@@ -58,6 +58,8 @@ export default function Presentation({ children }: { children: React.ReactNode }
   }, []);
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
+  const activeBklSource = useRecoilValue(store.activeBklSource);
+
   /**
    * Memoize artifacts JSX to prevent recreating it on every render
    * This is critical for performance - prevents entire artifact tree from re-rendering
@@ -75,6 +77,21 @@ export default function Presentation({ children }: { children: React.ReactNode }
     return null;
   }, [artifactsVisibility, artifacts]);
 
+  /**
+   * Right-side panel routing:
+   * When the user clicks a `[N]` BKL citation we take over the artifact slot
+   * so the citation renders inside LibreChat's native `ResizablePanel`
+   * (same chrome, same resize handle, same mobile behaviour as artifacts).
+   * Only one of {artifact, citation} is visible at a time; citation wins
+   * because it's always an explicit user action.
+   */
+  const sidePanelElement = useMemo(() => {
+    if (activeBklSource != null) {
+      return <BklSourcesPanel />;
+    }
+    return artifactsElement;
+  }, [activeBklSource, artifactsElement]);
+
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
       <SidePanelProvider>
@@ -82,16 +99,12 @@ export default function Presentation({ children }: { children: React.ReactNode }
           defaultLayout={defaultLayout}
           fullPanelCollapse={fullCollapse}
           defaultCollapsed={defaultCollapsed}
-          artifacts={artifactsElement}
+          artifacts={sidePanelElement}
         >
           <main className="flex h-full flex-col overflow-y-auto" role="main">
             {children}
           </main>
         </SidePanelGroup>
-        {/* BKL document citation drawer — overlay, driven by
-            `store.activeBklSource`. Rendered here (outside the resizable
-            split) so it slides in over the full chat area. */}
-        <BklSourcesPanel />
       </SidePanelProvider>
     </DragDropWrapper>
   );

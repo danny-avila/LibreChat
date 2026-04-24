@@ -1,14 +1,9 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { Globe, Settings, Settings2 } from 'lucide-react';
-import { TooltipAnchor, DropdownPopup, PinIcon } from '@librechat/client';
+import { Globe, Settings2 } from 'lucide-react';
+import { TooltipAnchor, DropdownPopup } from '@librechat/client';
 import type { MenuItemProps } from '~/common';
-import {
-  AuthType,
-  Permissions,
-  PermissionTypes,
-  defaultAgentCapabilities,
-} from 'librechat-data-provider';
+import { Permissions, PermissionTypes, defaultAgentCapabilities } from 'librechat-data-provider';
 import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -21,31 +16,24 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
   const isDisabled = disabled ?? false;
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const { webSearch, agentsConfig, searchApiKeyForm } = useBadgeRowContext();
+  const { webSearch, agentsConfig } = useBadgeRowContext();
 
   const { webSearchEnabled } = useAgentCapabilities(
     agentsConfig?.capabilities ?? defaultAgentCapabilities,
   );
-
-  const { setIsDialogOpen: setIsSearchDialogOpen, menuTriggerRef: searchMenuTriggerRef } =
-    searchApiKeyForm;
-  const {
-    isPinned: isSearchPinned,
-    setIsPinned: setIsSearchPinned,
-    authData: webSearchAuthData,
-  } = webSearch;
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
     permission: Permissions.USE,
   });
 
-  const showWebSearchSettings = useMemo(() => {
-    const authTypes = webSearchAuthData?.authTypes ?? [];
-    if (authTypes.length === 0) return true;
-    return !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
-  }, [webSearchAuthData?.authTypes]);
-
+  /**
+   * BKL fork: web search is always backed by Claude's native `web_search_20250305`
+   * tool (no Serper/Firecrawl keys to configure) and the badge is rendered
+   * unconditionally next to the input (no pin-first step). The dropdown entry
+   * therefore becomes a pure on/off toggle — no gear, no pin — matching the
+   * "single-click toggle" UX we want.
+   */
   const handleWebSearchToggle = useCallback(() => {
     const newValue = !webSearch.toggleState;
     webSearch.debouncedChange({ value: newValue });
@@ -62,45 +50,6 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           <div className="flex items-center gap-2">
             <Globe className="icon-md" aria-hidden="true" />
             <span>{localize('com_ui_web_search')}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            {showWebSearchSettings && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsSearchDialogOpen(true);
-                }}
-                className={cn(
-                  'rounded p-1 transition-all duration-200',
-                  'hover:bg-surface-secondary hover:shadow-sm',
-                  'text-text-secondary hover:text-text-primary',
-                )}
-                aria-label="Configure web search"
-                ref={searchMenuTriggerRef}
-              >
-                <div className="h-4 w-4">
-                  <Settings className="h-4 w-4" aria-hidden="true" />
-                </div>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsSearchPinned(!isSearchPinned);
-              }}
-              className={cn(
-                'rounded p-1 transition-all duration-200',
-                'hover:bg-surface-secondary hover:shadow-sm',
-                !isSearchPinned && 'text-text-secondary hover:text-text-primary',
-              )}
-              aria-label={isSearchPinned ? 'Unpin' : 'Pin'}
-            >
-              <div className="h-4 w-4">
-                <PinIcon unpin={isSearchPinned} />
-              </div>
-            </button>
           </div>
         </div>
       ),
