@@ -67,6 +67,7 @@ endpoints:
       guardrailIdentifier: '${GUARDRAIL_ID}'
       guardrailVersion: '${GUARDRAIL_VERSION}'
       trace: "enabled"
+      streamProcessingMode: "async" # streams responses faster, but may output inappropriate content before the scan completes
 
   agents:
     capabilities:

@@ -124,6 +124,7 @@ export async function initializeBedrock({
       guardrailIdentifier: extractEnvVariable(bedrockConfig.guardrailConfig.guardrailIdentifier),
       guardrailVersion: extractEnvVariable(bedrockConfig.guardrailConfig.guardrailVersion),
       trace: bedrockConfig.guardrailConfig.trace,
+      streamProcessingMode: bedrockConfig.guardrailConfig.streamProcessingMode,
     };
   }
 
