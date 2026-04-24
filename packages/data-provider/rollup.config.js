@@ -14,7 +14,7 @@ const plugins = [
   }),
   commonjs(),
   typescript({
-    tsconfig: './tsconfig.json',
+    tsconfig: './tsconfig.rollup.json',
     useTsconfigDeclarationDir: true,
   }),
   terser(),
