@@ -28,6 +28,9 @@
     "build:watch": "rollup -c -w --bundleConfigAsCjs",
     "dev": "rollup -c -w --bundleConfigAsCjs"
   },
+  "dependencies": {
+    "librechat-data-provider": "*"
+  },
   "peerDependencies": {
     "@ariakit/react": "^0.4.16",
     "@ariakit/react-core": "^0.4.17",
@@ -84,6 +87,7 @@
     "@rollup/plugin-commonjs": "^29.0.0",
     "@rollup/plugin-node-resolve": "^15.0.0",
     "@rollup/plugin-replace": "^5.0.5",
+    "@rollup/plugin-typescript": "^12.1.4",
     "@tanstack/react-query": "^4.28.0",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.13",
@@ -108,8 +112,8 @@
     "rollup": "^4.34.9",
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "rollup-plugin-postcss": "^4.0.2",
-    "rollup-plugin-typescript2": "^0.35.0",
     "tailwindcss-radix": "^2.8.0",
+    "tslib": "^2.8.1",
     "typescript": "^5.0.0"
   }
 }

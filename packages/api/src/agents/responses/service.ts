@@ -160,6 +160,7 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
   if (
     prompt &&
     typeof request.prompt_id === 'string' &&
+    typeof prompt.id === 'string' &&
     prompt.id.trim() !== request.prompt_id.trim()
   ) {
     return { valid: false, error: 'prompt.id and prompt_id must match when both are provided' };

@@ -18,7 +18,9 @@
     "rootDir": "./src",
     "baseUrl": "./src",
     "paths": {
-      "~/*": ["./*"]
+      "~/*": ["./*"],
+      "librechat-data-provider": ["../../data-provider/dist/types/index.d.ts"],
+      "librechat-data-provider/react-query": ["../../data-provider/dist/types/react-query/index.d.ts"]
     },
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "resolveJsonModule": true
