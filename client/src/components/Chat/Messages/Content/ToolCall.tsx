@@ -27,6 +27,7 @@ export default function ToolCall({
   output,
   attachments,
   auth,
+  hideImageAttachments = false,
 }: {
   initialProgress: number;
   isLast?: boolean;
@@ -36,6 +37,7 @@ export default function ToolCall({
   output?: string | null;
   attachments?: TAttachment[];
   auth?: string;
+  hideImageAttachments?: boolean;
 }) {
   const localize = useLocalize();
   const autoExpand = useRecoilValue(store.autoExpandTools);
@@ -254,7 +256,12 @@ export default function ToolCall({
           </p>
         </div>
       )}
-      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {attachments && attachments.length > 0 && (
+        <AttachmentGroup
+          attachments={attachments}
+          variant={hideImageAttachments ? 'non-images' : 'all'}
+        />
+      )}
     </>
   );
 }

@@ -38,6 +38,7 @@ type PartProps = {
   showCursor: boolean;
   isCreatedByUser: boolean;
   attachments?: TAttachment[];
+  hideImageAttachments?: boolean;
 };
 
 const Part = memo(function Part({
@@ -47,6 +48,7 @@ const Part = memo(function Part({
   isLast,
   showCursor,
   isCreatedByUser,
+  hideImageAttachments,
 }: PartProps) {
   if (!part) {
     return null;
@@ -245,6 +247,7 @@ const Part = memo(function Part({
           attachments={attachments}
           auth={toolCall.auth}
           isLast={isLast}
+          hideImageAttachments={hideImageAttachments}
         />
       );
     } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
@@ -302,6 +305,7 @@ const Part = memo(function Part({
           name={toolCall.function.name}
           output={toolCall.function.output}
           isLast={isLast}
+          hideImageAttachments={hideImageAttachments}
         />
       );
     }
