@@ -44,12 +44,11 @@ jobs:
         working-directory: packages/client
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          PUBLISHED_VERSION=$(npm view @librechat/client version 2>/dev/null || echo "0.0.0")
-          if [ "$PACKAGE_VERSION" = "$PUBLISHED_VERSION" ]; then
-            echo "No version change, skipping publish"
+          if npm view "@librechat/client@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+            echo "Version ${PACKAGE_VERSION} already exists on npm, skipping publish"
             echo "skip=true" >> $GITHUB_OUTPUT
           else
-            echo "Version changed, proceeding with publish"
+            echo "Version ${PACKAGE_VERSION} does not exist on npm, proceeding with publish"
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
