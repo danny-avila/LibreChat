@@ -36,6 +36,7 @@ describe('replaceSpecialVars', () => {
     name: 'Test User',
     id: 'user123',
   } as TUser;
+  const mockConversationId = '24fa3d2e-a576-44f7-a65c-23cc4d330726';
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -87,11 +88,12 @@ describe('replaceSpecialVars', () => {
 
   test('should handle multiple replacements in the same text', () => {
     const result = replaceSpecialVars({
-      text: 'Hello {{current_user}}! Today is {{current_date}} and the time is {{current_datetime}}. ISO: {{iso_datetime}}',
+      text: 'Hello {{current_user}}! Today is {{current_date}} and the time is {{current_datetime}}. ISO: {{iso_datetime}}. Convo: {{conversation_id}}',
       user: mockUser,
+      conversationId: mockConversationId,
     });
     expect(result).toBe(
-      'Hello Test User! Today is 2024-04-29 (Monday) and the time is 2024-04-29 12:34:56 -04:00 (Monday). ISO: 2024-04-29T16:34:56.000Z',
+      'Hello Test User! Today is 2024-04-29 (Monday) and the time is 2024-04-29 12:34:56 -04:00 (Monday). ISO: 2024-04-29T16:34:56.000Z. Convo: 24fa3d2e-a576-44f7-a65c-23cc4d330726',
     );
   });
 
@@ -112,6 +114,7 @@ describe('replaceSpecialVars', () => {
     const result = replaceSpecialVars({
       text: specialVarsText,
       user: mockUser,
+      conversationId: mockConversationId,
     });
 
     // Verify none of the original variable placeholders remain in the result
@@ -125,6 +128,7 @@ describe('replaceSpecialVars', () => {
     expect(result).toContain('2024-04-29 12:34:56 -04:00 (Monday)'); // current_datetime
     expect(result).toContain('2024-04-29T16:34:56.000Z'); // iso_datetime
     expect(result).toContain('Test User'); // current_user
+    expect(result).toContain(mockConversationId); // conversation_id
   });
 });
 

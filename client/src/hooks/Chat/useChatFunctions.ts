@@ -132,6 +132,7 @@ export default function useChatFunctions({
       conversation.promptPrefix = replaceSpecialVars({
         text: conversation.promptPrefix,
         user,
+        conversationId,
       });
     }
 
