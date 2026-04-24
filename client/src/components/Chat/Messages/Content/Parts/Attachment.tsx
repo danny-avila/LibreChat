@@ -388,7 +388,15 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
   return <FileAttachment attachment={attachment} />;
 }
 
-export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }) {
+export type AttachmentGroupVariant = 'all' | 'images' | 'non-images';
+
+export function AttachmentGroup({
+  attachments,
+  variant = 'all',
+}: {
+  attachments?: TAttachment[];
+  variant?: AttachmentGroupVariant;
+}) {
   if (!attachments || attachments.length === 0) {
     return null;
   }
@@ -449,9 +457,20 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   mermaidArtifacts.sort(bySalience);
   imageAttachments.sort(bySalience);
 
+  const showImages = variant !== 'non-images' && imageAttachments.length > 0;
+  const showFiles = variant !== 'images' && fileAttachments.length > 0;
+  const showPanelArtifacts =
+    variant !== 'images' && (resolvedPanel.length > 0 || pendingPanel.length > 0);
+  const showMermaid = variant !== 'images' && mermaidArtifacts.length > 0;
+  const showText = variant !== 'images' && textAttachments.length > 0;
+
+  if (!showImages && !showFiles && !showPanelArtifacts && !showMermaid && !showText) {
+    return null;
+  }
+
   return (
     <>
-      {fileAttachments.length > 0 && (
+      {showFiles && (
         <div className="my-2 flex flex-wrap items-center gap-2.5">
           {fileAttachments.map((attachment, index) =>
             attachment.filepath ? (
@@ -463,7 +482,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
           )}
         </div>
       )}
-      {(resolvedPanel.length > 0 || pendingPanel.length > 0) && (
+      {showPanelArtifacts && (
         <div className="my-2 flex flex-wrap items-center gap-2">
           {resolvedPanel.map(({ attachment, type }, index) => (
             <PanelArtifact
@@ -482,7 +501,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
           )}
         </div>
       )}
-      {mermaidArtifacts.length > 0 && (
+      {showMermaid && (
         <div className="my-2 flex flex-col gap-3">
           {mermaidArtifacts.map((attachment, index) => (
             <MermaidArtifact
@@ -492,7 +511,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
           ))}
         </div>
       )}
-      {textAttachments.length > 0 && (
+      {showText && (
         <div className="my-2 flex flex-col gap-3">
           {textAttachments.map((attachment, index) => (
             <TextAttachment
@@ -502,7 +521,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
           ))}
         </div>
       )}
-      {imageAttachments.length > 0 && (
+      {showImages && (
         <div className="mb-2 flex flex-wrap items-center">
           {imageAttachments.map((attachment, index) => (
             <ImageAttachment
