@@ -6,6 +6,7 @@ const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
+const { sleep } = require('@librechat/agents');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { CacheKeys, ErrorTypes, SystemRoles } = require('librechat-data-provider');
 const {
@@ -772,13 +773,6 @@ const setupOpenIdAdmin = (openidConfig) => {
 };
 
 /**
- * Sleep for the specified number of milliseconds.
- * @param {number} ms
- * @returns {Promise<void>}
- */
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
  * Sets up the OpenID strategy for authentication.
  * This function configures the OpenID client, handles proxy settings,
  * and defines the OpenID strategy for Passport.js.
@@ -807,9 +801,8 @@ async function setupOpenId() {
   }
 
   const envRetries = process.env.OPENID_DISCOVERY_RETRIES;
-  const maxRetries = envRetries === undefined || envRetries === ''
-    ? 3
-    : Math.max(0, parseInt(envRetries, 10) || 0);
+  const maxRetries =
+    envRetries === undefined || envRetries === '' ? 3 : Math.max(0, parseInt(envRetries, 10) || 0);
 
   // Validate issuer URL before retrying — invalid URLs are configuration errors, not transient failures
   let issuerUrl;
@@ -841,10 +834,7 @@ async function setupOpenId() {
         );
         await sleep(delay);
       } else {
-        logger.error(
-          `[openidStrategy] Discovery failed after ${maxRetries + 1} attempts`,
-          err,
-        );
+        logger.error(`[openidStrategy] Discovery failed after ${maxRetries + 1} attempts`, err);
         return null;
       }
     }
