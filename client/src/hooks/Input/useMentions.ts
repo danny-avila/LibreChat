@@ -20,7 +20,7 @@ import {
 } from '~/data-provider';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
-import { mapEndpoints, getPresetTitle } from '~/utils';
+import { mapEndpoints, applyEndpointRecency, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 
@@ -68,9 +68,10 @@ export default function useMentions({
   const { data: modelsConfig, isLoading: isLoadingModels } = useGetModelsQuery();
   const { data: startupConfig, isLoading: isLoadingStartup } = useGetStartupConfig();
   const { data: endpointsConfig, isLoading: isLoadingEndpoints } = useGetEndpointsQuery();
-  const { data: endpoints = [] } = useGetEndpointsQuery({
+  const { data: rawEndpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
+  const endpoints = applyEndpointRecency(rawEndpoints);
   const listMap = useAssistantListMap((res) =>
     res.data.map(({ id, name, description }) => ({
       id,

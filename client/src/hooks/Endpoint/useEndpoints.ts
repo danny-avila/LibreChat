@@ -17,7 +17,7 @@ import type {
 } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { mapEndpoints, getIconKey } from '~/utils';
+import { mapEndpoints, applyEndpointRecency, getIconKey } from '~/utils';
 import { useHasAccess } from '~/hooks';
 import { icons } from './Icons';
 
@@ -75,6 +75,8 @@ export const useEndpoints = ({
     return result;
   }, [endpoints, hasAgentAccess, includedEndpoints, interfaceConfig.modelSelect]);
 
+  const orderedEndpoints = applyEndpointRecency(filteredEndpoints);
+
   const endpointRequiresUserKey = useCallback(
     (ep: string) => {
       return !!getEndpointField(endpointsConfig, ep, 'userProvide');
@@ -83,7 +85,7 @@ export const useEndpoints = ({
   );
 
   const mappedEndpoints: Endpoint[] = useMemo(() => {
-    return filteredEndpoints.map((ep) => {
+    return orderedEndpoints.map((ep) => {
       const endpointType = getEndpointField(endpointsConfig, ep, 'type');
       const iconKey = getIconKey({ endpoint: ep, endpointsConfig, endpointType });
       const Icon = icons[iconKey];
@@ -181,7 +183,7 @@ export const useEndpoints = ({
 
       return result;
     });
-  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants]);
+  }, [orderedEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants]);
 
   return {
     mappedEndpoints,
