@@ -43,8 +43,10 @@ jest.mock('~/server/middleware', () => ({
 }));
 
 jest.mock('~/server/utils/sanitization', () => ({
-  sanitizeJsonResponse: jest.fn((data) => data)
+  sanitizeJsonResponse: jest.fn((data) => data),
 }));
+
+const { sanitizeJsonResponse } = require('~/server/utils/sanitization');
 
 let app;
 let mongoServer;
@@ -111,6 +113,7 @@ afterEach(() => {
   if (currentTestUser !== testUsers.owner) {
     currentTestUser = testUsers.owner;
   }
+  sanitizeJsonResponse.mockClear();
 });
 
 afterAll(async () => {

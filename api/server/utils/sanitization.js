@@ -30,7 +30,7 @@ function sanitizeJsonResponse(data) {
     if (data.constructor && data.constructor.name === 'ObjectId') {
       return data.toString();
     }
-    if(Buffer.isBuffer(data)) {
+    if (Buffer.isBuffer(data)) {
       return data.toString();
     }
     const sanitized = {};

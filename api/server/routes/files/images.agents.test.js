@@ -23,11 +23,11 @@ jest.mock('~/server/services/Files/process', () => ({
 }));
 
 jest.mock('~/server/utils/pathValidation', () => ({
-  safeUnlink: jest.fn().mockResolvedValue(undefined)
+  safeUnlink: jest.fn().mockResolvedValue(undefined),
 }));
 
 const { processAgentFileUpload } = require('~/server/services/Files/process');
-const { safeUnlink } = require('~/server/utils/pathValidation')
+const { safeUnlink } = require('~/server/utils/pathValidation');
 
 const router = require('~/server/routes/files/images');
 
