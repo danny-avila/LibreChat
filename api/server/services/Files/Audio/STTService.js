@@ -7,6 +7,8 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { genAzureEndpoint, logAxiosError } = require('@librechat/api');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
+const { validateUrl } = require('~/server/utils/urlValidation');
+const { safeReadFile, safeUnlink } = require('~/server/utils/pathValidation');
 
 /**
  * Maps MIME types to their corresponding file extensions for audio files.
@@ -307,7 +309,18 @@ class STTService {
     }
 
     try {
-      const response = await axios.post(url, data, options);
+      validateUrl(url);
+      if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+        throw new Error('Invalid URL provided');
+      }
+      const sanitizedURL = url.trim();
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid request data');
+      }
+      if (!sanitizedURL.match(/^https?:\/\/[a-zA-Z0-9.-]*/)) {
+        throw new Error('Invalid URL format');
+      }
+      const response = await axios.post(sanitizedURL, data, options);
 
       if (response.status !== 200) {
         throw new Error('Invalid response from the STT API');
@@ -336,7 +349,7 @@ class STTService {
       return res.status(400).json({ message: 'No audio file provided in the FormData' });
     }
 
-    const audioBuffer = await fs.readFile(req.file.path);
+    const audioBuffer = await safeReadFile(req.file.path);
     const audioFile = {
       originalname: req.file.originalname,
       mimetype: req.file.mimetype,
@@ -353,7 +366,7 @@ class STTService {
       res.sendStatus(500);
     } finally {
       try {
-        await fs.unlink(req.file.path);
+        await safeUnlink(req.file.path);
         logger.debug('[/speech/stt] Temp. audio upload file deleted');
       } catch {
         logger.debug('[/speech/stt] Temp. audio upload file already deleted');

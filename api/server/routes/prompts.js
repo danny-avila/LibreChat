@@ -47,6 +47,8 @@ const {
   grantPermission,
 } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const escapeHtml = require('escape-html');
+const { sanitizeJsonResponse } = require('~/server/utils/sanitization');
 
 const router = express.Router();
 
@@ -284,8 +286,8 @@ const createNewPromptGroup = async (req, res) => {
         );
       }
     }
-
-    res.status(200).send(result);
+    const safeResult = result && typeof result === 'object' ? result : {};
+    res.status(200).send(sanitizeJsonResponse(safeResult));
   } catch (error) {
     logger.error(error);
     res.status(500).send({ error: 'Error creating prompt group' });
@@ -327,7 +329,8 @@ const addPromptToGroup = async (req, res) => {
     };
 
     const result = await savePrompt(saveData);
-    res.status(200).send(result);
+    const safeResult = result && typeof result === 'object' ? result : {};
+    res.status(200).send(sanitizeJsonResponse(safeResult));
   } catch (error) {
     logger.error(error);
     res.status(500).send({ error: 'Error adding prompt to group' });
@@ -364,7 +367,8 @@ router.post(
         return res.status(400).send({ error: 'Invalid groupId' });
       }
       const result = await incrementPromptGroupUsage(groupId);
-      res.status(200).send(result);
+      const safeResult = result && typeof result === 'object' ? result : {};
+      res.status(200).send(sanitizeJsonResponse(safeResult));
     } catch (error) {
       logger.error('[recordPromptUsage]', error);
       if (error.message === 'Invalid groupId') {
@@ -401,7 +405,8 @@ const patchPromptGroup = async (req, res) => {
     }
 
     const promptGroup = await updatePromptGroup(filter, validationResult.data);
-    res.status(200).send(promptGroup);
+    const safePromptGroup = promptGroup && typeof promptGroup === 'object' ? promptGroup : {};
+    res.status(200).send(sanitizeJsonResponse(safePromptGroup));
   } catch (error) {
     logger.error(error);
     res.status(500).send({ error: 'Error updating prompt group' });
@@ -427,8 +432,12 @@ router.patch(
   async (req, res) => {
     try {
       const { promptId } = req.params;
+      if (!promptId || typeof promptId !== 'string') {
+        return res.status(400).send({ error: 'Invalid promptId' });
+      }
       const result = await makePromptProduction(promptId);
-      res.status(200).send(result);
+      const safeResult = result && typeof result === 'object' ? result : {};
+      res.status(200).send(sanitizeJsonResponse(safeResult));
     } catch (error) {
       logger.error(error);
       res.status(500).send({ error: 'Error updating prompt production' });
@@ -445,7 +454,7 @@ router.get(
   async (req, res) => {
     const { promptId } = req.params;
     const prompt = await getPrompt({ _id: promptId });
-    res.status(200).send(prompt);
+    res.status(200).send(sanitizeJsonResponse(prompt));
   },
 );
 
@@ -474,8 +483,11 @@ router.get('/', async (req, res) => {
       }
 
       // If user has access, fetch all prompts in the group (not just their own)
-      const prompts = await getPrompts({ groupId: new ObjectId(groupId) });
-      return res.status(200).send(prompts);
+      const sanitizedGroupId = typeof groupId === 'string' ? escapeHtml(groupId).trim() : '';
+      const prompts = await getPrompts({ groupId: new ObjectId(sanitizedGroupId) });
+      const safePrompts = Array.isArray(prompts) ? prompts : [];
+
+      return res.status(200).send(sanitizeJsonResponse(safePrompts));
     }
 
     // If no groupId, return user's own prompts
@@ -491,7 +503,7 @@ router.get('/', async (req, res) => {
       delete query.author;
     }
     const prompts = await getPrompts(query);
-    res.status(200).send(prompts);
+    res.status(200).send(sanitizeJsonResponse(prompts));
   } catch (error) {
     logger.error(error);
     res.status(500).send({ error: 'Error getting prompts' });
@@ -516,7 +528,8 @@ const deletePromptController = async (req, res) => {
     }
     const query = { promptId, groupId };
     const result = await deletePrompt(query);
-    res.status(200).send(result);
+    const safeResult = result && typeof result === 'string' ? result : {};
+    res.status(200).send(sanitizeJsonResponse(safeResult));
   } catch (error) {
     logger.error(error);
     res.status(500).send({ error: 'Error deleting prompt' });

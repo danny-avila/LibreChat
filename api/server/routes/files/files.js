@@ -35,6 +35,7 @@ const { cleanFileName } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
 const db = require('~/models');
+const { safeUnlink } = require('~/server/utils/pathValidation');
 
 const router = express.Router();
 
@@ -409,7 +410,7 @@ router.post('/', async (req, res) => {
     logger.error('[/files] Error processing file:', error);
 
     try {
-      await fs.unlink(req.file.path);
+      await safeUnlink(req.file.path);
       cleanup = false;
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
@@ -418,7 +419,7 @@ router.post('/', async (req, res) => {
   } finally {
     if (cleanup) {
       try {
-        await fs.unlink(req.file.path);
+        await safeUnlink(req.file.path);
       } catch (error) {
         logger.error('[/files] Error deleting file after file processing:', error);
       }
