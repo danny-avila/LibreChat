@@ -56,7 +56,9 @@ export default function useCopyToClipboard({
       if (content) {
         messageText = content.reduce((acc, curr, i) => {
           if (curr.type === ContentTypes.TEXT) {
-            const text = typeof curr.text === 'string' ? curr.text : curr.text.value;
+            const textPart = curr.text;
+            const text =
+              typeof textPart === 'string' ? textPart : (textPart?.value ?? textPart?.toString()) || '';
             return acc + text + (i === content.length - 1 ? '' : '\n');
           }
           return acc;
@@ -69,8 +71,16 @@ export default function useCopyToClipboard({
         const cleanedText = messageText
           .replace(INVALID_CITATION_REGEX, '')
           .replace(CLEANUP_REGEX, '');
+        const markdownText = cleanedText;
+        const plainText = normalizeClipboardPlainText(transformMarkdownTablesToTSV(markdownText));
+        const htmlText = buildClipboardHTML(markdownText);
 
-        copy(cleanedText, { format: 'text/plain' });
+        copy(plainText, {
+          format: 'text/plain',
+          onCopy: (clipboardData) => {
+            setHTMLClipboardData(clipboardData, htmlText);
+          },
+        });
         copyTimeoutRef.current = setTimeout(() => {
           setIsCopied(false);
         }, 3000);
@@ -95,7 +105,14 @@ export default function useCopyToClipboard({
         }
       }
 
-      copy(processedText, { format: 'text/plain' });
+      const plainText = normalizeClipboardPlainText(transformMarkdownTablesToTSV(processedText));
+      const htmlText = buildClipboardHTML(processedText);
+      copy(plainText, {
+        format: 'text/plain',
+        onCopy: (clipboardData) => {
+          setHTMLClipboardData(clipboardData, htmlText);
+        },
+      });
       copyTimeoutRef.current = setTimeout(() => {
         setIsCopied(false);
       }, 3000);
@@ -340,4 +357,139 @@ function processCitations(text: string, searchResults: { [key: string]: SearchRe
     formattedText,
     citations,
   };
+}
+
+function transformMarkdownTablesToTSV(text: string): string {
+  const lines = text.split('\n');
+  const transformedLines: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const nextLine = lines[index + 1];
+
+    if (isTableRow(line) && isSeparatorRow(nextLine)) {
+      transformedLines.push(convertTableRowToTSV(line));
+      index += 2;
+
+      while (index < lines.length && isTableRow(lines[index])) {
+        transformedLines.push(convertTableRowToTSV(lines[index]));
+        index += 1;
+      }
+
+      continue;
+    }
+
+    transformedLines.push(line);
+    index += 1;
+  }
+
+  return transformedLines.join('\n');
+}
+
+function isTableRow(line?: string): boolean {
+  if (!line) {
+    return false;
+  }
+
+  const trimmed = line.trim();
+  return trimmed.includes('|') && trimmed.replace(/\|/g, '').trim().length > 0;
+}
+
+function isSeparatorRow(line?: string): boolean {
+  if (!line) {
+    return false;
+  }
+
+  const normalized = line
+    .trim()
+    .replace(/\|/g, '')
+    .replace(/:/g, '')
+    .replace(/-/g, '')
+    .replace(/\s/g, '');
+  if (normalized.length > 0) {
+    return false;
+  }
+
+  return line.includes('|') && line.includes('-');
+}
+
+function convertTableRowToTSV(row: string): string {
+  const trimmed = row.trim();
+  const noBoundaryPipes = trimmed.replace(/^\|/, '').replace(/\|$/, '');
+  return noBoundaryPipes
+    .split('|')
+    .map((cell) => cell.trim())
+    .join('\t');
+}
+
+function normalizeClipboardPlainText(text: string): string {
+  return text.replace(/\*\*(.+?)\*\*/g, '$1');
+}
+
+function buildClipboardHTML(markdownText: string): string {
+  const lines = markdownText.split('\n');
+  const htmlParts: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const nextLine = lines[index + 1];
+
+    if (isTableRow(line) && isSeparatorRow(nextLine)) {
+      const headers = parseTableCells(line);
+      index += 2;
+      const rows: string[][] = [];
+
+      while (index < lines.length && isTableRow(lines[index])) {
+        rows.push(parseTableCells(lines[index]));
+        index += 1;
+      }
+
+      const tableHeader = `<thead><tr>${headers.map((cell) => `<th>${inlineMarkdownToHTML(cell)}</th>`).join('')}</tr></thead>`;
+      const tableBody = `<tbody>${rows
+        .map((row) => `<tr>${row.map((cell) => `<td>${inlineMarkdownToHTML(cell)}</td>`).join('')}</tr>`)
+        .join('')}</tbody>`;
+      htmlParts.push(`<table>${tableHeader}${tableBody}</table>`);
+      continue;
+    }
+
+    if (line.trim().length === 0) {
+      htmlParts.push('<br />');
+    } else {
+      htmlParts.push(`<p>${inlineMarkdownToHTML(line)}</p>`);
+    }
+    index += 1;
+  }
+
+  return `<div>${htmlParts.join('')}</div>`;
+}
+
+function parseTableCells(row: string): string[] {
+  const trimmed = row.trim();
+  const noBoundaryPipes = trimmed.replace(/^\|/, '').replace(/\|$/, '');
+  return noBoundaryPipes.split('|').map((cell) => cell.trim());
+}
+
+function inlineMarkdownToHTML(text: string): string {
+  const escaped = escapeHTML(text);
+  return escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function escapeHTML(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function setHTMLClipboardData(clipboardData: unknown, htmlText: string): void {
+  if (!clipboardData || typeof clipboardData !== 'object' || !('setData' in clipboardData)) {
+    return;
+  }
+
+  const clipboard = clipboardData as { setData: (mime: string, data: string) => void };
+  clipboard.setData('text/html', htmlText);
 }
