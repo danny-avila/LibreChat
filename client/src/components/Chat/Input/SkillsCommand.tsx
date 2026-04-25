@@ -102,19 +102,18 @@ function SkillsCommandContent({
      activates for the turn); persisted agents gate on the builder's
      `skills_enabled` master toggle — off or unset means opt-out, on with
      an empty allowlist means full catalog, on with a non-empty allowlist
-     means narrow to those ids. While the agents map is still hydrating
-     we leave ephemerals unscoped (undefined → full catalog): the backend
-     is authoritative at turn time, so there's no security benefit to
-     flashing an empty popover. Once the map is authoritative but the
-     persisted agent isn't in it (deleted, or VIEW revoked mid-session),
-     we fail closed. `agentId` is threaded in as a prop so this
-     component stays memoizable. */
+     means narrow to those ids. Persisted agents fail closed during the
+     `agentsMap` hydration window so the user cannot pick a skill the
+     backend will then refuse, and again when the map is authoritative
+     but the agent isn't in it (deleted, or VIEW revoked mid-session).
+     `agentId` is threaded in as a prop so this component stays
+     memoizable. */
   const agentSkillIds = useMemo<string[] | null | undefined>(() => {
     if (!agentId || isEphemeralAgent(agentId)) {
       return undefined;
     }
     if (!agentsMap) {
-      return undefined;
+      return [];
     }
     const agent = agentsMap[agentId];
     if (!agent) {

@@ -364,7 +364,7 @@ describe('SkillsCommand', () => {
     expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
   });
 
-  it('shows the full ACL catalog while the agents map is hydrating (backend still gates the turn)', async () => {
+  it('fails closed for persisted agents while the agents map is hydrating', async () => {
     mockUseSkillsInfiniteQuery.mockReturnValue({
       data: twoSkillsResponse,
       isLoading: false,
@@ -385,11 +385,12 @@ describe('SkillsCommand', () => {
       />,
     );
 
-    /* Hydration race: map not yet loaded. Pass through to full catalog —
-       the backend scopes at turn time and blanking the popover during
-       sub-second hydration is worse UX for no security benefit. */
-    expect(await screen.findByRole('button', { name: /Brand Guidelines/i })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
+    /* Hydration race: agents map not yet loaded. Without `skills_enabled`
+       visibility we cannot prove the persisted agent opted in, so fail
+       closed; otherwise the user can pick a skill the backend will then
+       refuse for the turn. */
+    expect(screen.queryByRole('button', { name: /Brand Guidelines/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Style Guide/i })).toBeNull();
   });
 
   it('fails closed when the agent id is set but missing from the agents map', () => {
