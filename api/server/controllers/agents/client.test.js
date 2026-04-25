@@ -29,6 +29,7 @@ jest.mock('~/server/services/MCP', () => ({
 jest.mock('~/models', () => ({
   getAgent: jest.fn(),
   getRoleByName: jest.fn(),
+  getFormattedMemories: jest.fn(),
 }));
 
 // Mock getMCPManager
@@ -2099,6 +2100,7 @@ describe('AgentClient - titleConvo', () => {
     let mockLoadAgent;
     let mockInitializeAgent;
     let mockCreateMemoryProcessor;
+    let mockGetFormattedMemories;
 
     beforeEach(() => {
       jest.clearAllMocks();
@@ -2147,6 +2149,12 @@ describe('AgentClient - titleConvo', () => {
       mockLoadAgent = require('@librechat/api').loadAgent;
       mockInitializeAgent = require('@librechat/api').initializeAgent;
       mockCreateMemoryProcessor = require('@librechat/api').createMemoryProcessor;
+      mockGetFormattedMemories = require('~/models').getFormattedMemories;
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: '',
+        withoutKeys: '',
+        totalTokens: 0,
+      });
     });
 
     it('should use current agent when memory config agent.id matches current agent id', async () => {
@@ -2211,12 +2219,18 @@ describe('AgentClient - titleConvo', () => {
       );
     });
 
-    it('should return early when prelimAgent is undefined (no valid memory agent config)', async () => {
+    it('should return existing memories without auto-processing when memory agent is not configured', async () => {
       mockReq.config.memory = {
-        agent: {},
+        disabled: false,
+        personalize: true,
       };
 
       mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: 'food: likes pasta',
+        withoutKeys: 'likes pasta',
+        totalTokens: 3,
+      });
 
       client = new AgentClient(mockOptions);
       client.conversationId = 'convo-123';
@@ -2224,9 +2238,11 @@ describe('AgentClient - titleConvo', () => {
 
       const result = await client.useMemory();
 
-      expect(result).toBeUndefined();
+      expect(result).toBe('likes pasta');
+      expect(mockGetFormattedMemories).toHaveBeenCalledWith({ userId: 'user-123' });
       expect(mockInitializeAgent).not.toHaveBeenCalled();
       expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
     });
 
     it('should create ephemeral agent when no id but model and provider are specified', async () => {
