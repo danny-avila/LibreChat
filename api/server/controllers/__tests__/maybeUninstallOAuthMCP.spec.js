@@ -18,21 +18,30 @@ jest.mock('@librechat/data-schemas', () => ({
   webSearchKeys: [],
 }));
 
-jest.mock('@librechat/api', () => ({
-  MCPOAuthHandler: {
-    revokeOAuthToken: (...args) => mockRevokeOAuthToken(...args),
-    generateFlowId: (userId, serverName) => `${userId}:${serverName}`,
-  },
-  MCPTokenStorage: {
-    getTokens: (...args) => mockGetTokens(...args),
-    getClientInfoAndMetadata: (...args) => mockGetClientInfoAndMetadata(...args),
-    deleteUserTokens: (...args) => mockDeleteUserTokens(...args),
-  },
-  normalizeHttpError: jest.fn(),
-  extractWebSearchEnvVars: jest.fn(),
-  needsRefresh: jest.fn(),
-  getNewS3URL: jest.fn(),
-}));
+jest.mock('@librechat/api', () => {
+  class ReauthenticationRequiredError extends Error {
+    constructor(serverName, reason) {
+      super(`Re-authentication required for "${serverName}": ${reason}`);
+      this.name = 'ReauthenticationRequiredError';
+    }
+  }
+  return {
+    MCPOAuthHandler: {
+      revokeOAuthToken: (...args) => mockRevokeOAuthToken(...args),
+      generateFlowId: (userId, serverName) => `${userId}:${serverName}`,
+    },
+    MCPTokenStorage: {
+      getTokens: (...args) => mockGetTokens(...args),
+      getClientInfoAndMetadata: (...args) => mockGetClientInfoAndMetadata(...args),
+      deleteUserTokens: (...args) => mockDeleteUserTokens(...args),
+    },
+    ReauthenticationRequiredError,
+    normalizeHttpError: jest.fn(),
+    extractWebSearchEnvVars: jest.fn(),
+    needsRefresh: jest.fn(),
+    getNewS3URL: jest.fn(),
+  };
+});
 
 jest.mock('librechat-data-provider', () => ({
   Tools: {},
@@ -115,13 +124,7 @@ jest.mock('~/models', () => ({
 }));
 
 const { maybeUninstallOAuthMCP } = require('~/server/controllers/UserController');
-
-class ReauthenticationRequiredError extends Error {
-  constructor(serverName, reason) {
-    super(`Re-authentication required for "${serverName}": ${reason}`);
-    this.name = 'ReauthenticationRequiredError';
-  }
-}
+const { ReauthenticationRequiredError } = require('@librechat/api');
 
 const userId = 'user-123';
 const pluginKey = 'mcp_acme';

@@ -7,6 +7,7 @@ const {
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
+  ReauthenticationRequiredError,
 } = require('@librechat/api');
 const {
   Tools,
@@ -419,7 +420,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
       findToken: db.findToken,
     });
   } catch (error) {
-    if (error?.name === 'ReauthenticationRequiredError') {
+    if (error instanceof ReauthenticationRequiredError) {
       logger.info(
         `[maybeUninstallOAuthMCP] No usable tokens for ${serverName} — skipping revocation, continuing cleanup`,
       );
