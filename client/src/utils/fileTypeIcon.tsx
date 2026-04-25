@@ -21,12 +21,33 @@ import {
 } from 'lucide-react';
 import cn from './cn';
 
+// Original-document extensions we want the icon to reflect even when
+// the OCR pipeline has produced a `*.{ext}.md` / `*.{ext}.markdown`
+// derivative. Mirrors the backend helper
+// `src.api.routes.generate._file_type_for_chunk._ext_from_name`.
+const DOUBLE_EXT_INNER = new Set([
+  'msg', 'eml', 'pdf', 'docx', 'xlsx', 'pptx',
+  'hwp', 'hwpx', 'doc', 'ppt', 'xls',
+]);
+
 export function getFileExtension(name?: string | null): string {
   if (!name) return '';
   const cleaned = name.normalize('NFC').replace(/^『(.+?)』.*$/, '$1');
   const base = cleaned.split('/').pop() ?? cleaned;
   const dot = base.lastIndexOf('.');
-  return dot === -1 ? '' : base.slice(dot + 1).toLowerCase();
+  if (dot === -1) return '';
+  const last = base.slice(dot + 1).toLowerCase();
+  // OCR output is always *.md, so for `foo.msg.md` we want `msg` (Mail
+  // icon). Peek one level deeper when the last token is markdown/text.
+  if (last === 'md' || last === 'markdown') {
+    const stem = base.slice(0, dot);
+    const innerDot = stem.lastIndexOf('.');
+    if (innerDot !== -1) {
+      const inner = stem.slice(innerDot + 1).toLowerCase();
+      if (DOUBLE_EXT_INNER.has(inner)) return inner;
+    }
+  }
+  return last;
 }
 
 type IconProps = {
