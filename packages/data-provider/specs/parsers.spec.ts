@@ -1,4 +1,10 @@
-import { replaceSpecialVars, parseConvo, parseCompactConvo, parseTextParts } from '../src/parsers';
+import {
+  replaceSpecialVars,
+  replaceCustomVariables,
+  parseConvo,
+  parseCompactConvo,
+  parseTextParts,
+} from '../src/parsers';
 import { specialVariables } from '../src/config';
 import { EModelEndpoint } from '../src/schemas';
 import { ContentTypes } from '../src/types/runs';
@@ -125,6 +131,65 @@ describe('replaceSpecialVars', () => {
     expect(result).toContain('2024-04-29 12:34:56 -04:00 (Monday)'); // current_datetime
     expect(result).toContain('2024-04-29T16:34:56.000Z'); // iso_datetime
     expect(result).toContain('Test User'); // current_user
+  });
+});
+
+describe('replaceCustomVariables', () => {
+  test('should return the original text if text is empty or falsy', () => {
+    expect(replaceCustomVariables({ text: '', customVariables: { a: '1' } })).toBe('');
+    expect(
+      replaceCustomVariables({ text: null as unknown as string, customVariables: { a: '1' } }),
+    ).toBe(null);
+    expect(
+      replaceCustomVariables({ text: undefined as unknown as string, customVariables: { a: '1' } }),
+    ).toBe(undefined);
+  });
+
+  test('should return the original text if customVariables is null or undefined', () => {
+    const text = 'Hello {{name}}';
+    expect(replaceCustomVariables({ text, customVariables: null })).toBe(text);
+    expect(replaceCustomVariables({ text, customVariables: undefined })).toBe(text);
+    expect(replaceCustomVariables({ text })).toBe(text);
+  });
+
+  test('should replace a single custom variable', () => {
+    const result = replaceCustomVariables({
+      text: 'Hello {{name}}!',
+      customVariables: { name: 'Alice' },
+    });
+    expect(result).toBe('Hello Alice!');
+  });
+
+  test('should replace multiple different custom variables', () => {
+    const result = replaceCustomVariables({
+      text: '{{greeting}} {{name}}, welcome to {{place}}',
+      customVariables: { greeting: 'Hi', name: 'Bob', place: 'NYC' },
+    });
+    expect(result).toBe('Hi Bob, welcome to NYC');
+  });
+
+  test('should leave unmatched variables as-is when not in customVariables', () => {
+    const result = replaceCustomVariables({
+      text: '{{known}} and {{unknown}}',
+      customVariables: { known: 'yes' },
+    });
+    expect(result).toBe('yes and {{unknown}}');
+  });
+
+  test('should NOT replace special variables even if present in customVariables', () => {
+    Object.keys(specialVariables).forEach((key) => {
+      const result = replaceCustomVariables({
+        text: `{{${key}}}`,
+        customVariables: { [key]: 'should_not_replace' },
+      });
+      expect(result).toBe(`{{${key}}}`);
+    });
+
+    const combined = replaceCustomVariables({
+      text: '{{current_date}} {{current_user}} {{my_var}}',
+      customVariables: { current_date: 'WRONG', current_user: 'WRONG', my_var: 'RIGHT' },
+    });
+    expect(combined).toBe('{{current_date}} {{current_user}} RIGHT');
   });
 });
 

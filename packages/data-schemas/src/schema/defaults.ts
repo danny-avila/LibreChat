@@ -160,4 +160,8 @@ export const conversationPreset = {
   verbosity: {
     type: String,
   },
+  customVariables: {
+    type: Map,
+    of: String,
+  },
 };

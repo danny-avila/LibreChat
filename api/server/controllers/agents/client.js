@@ -144,6 +144,7 @@ class AgentClient extends BaseClient {
           resendFiles: this.options.resendFiles,
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
+          customVariables: this.options.customVariables,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,

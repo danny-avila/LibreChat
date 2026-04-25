@@ -7,6 +7,7 @@ import {
   paramEndpoints,
   isAgentsEndpoint,
   replaceSpecialVars,
+  replaceCustomVariables,
   providerEndpointMap,
 } from 'librechat-data-provider';
 import type {
@@ -406,6 +407,12 @@ export async function initializeAgent(
       text: agent.instructions,
       user: req.user ? (req.user as unknown as TUser) : null,
     });
+    if (endpointOption?.customVariables) {
+      agent.instructions = replaceCustomVariables({
+        text: agent.instructions,
+        customVariables: endpointOption.customVariables,
+      });
+    }
   }
 
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {
