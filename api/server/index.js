@@ -222,20 +222,33 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    await runAsSystem(async () => {
-      await initializeMCPs();
-      await initializeOAuthReconnectManager();
-    });
-    await checkMigrations();
+    /**
+     * The listen callback is async, so any rejection from these awaits would
+     * otherwise be detached from `startServer().catch(...)` (which only
+     * catches errors that happen before `app.listen`). Without explicit
+     * handling, the global `unhandledRejection` handler would swallow init
+     * failures and leave the server listening but only partially
+     * initialized — passing liveness checks while serving broken requests.
+     */
+    try {
+      await runAsSystem(async () => {
+        await initializeMCPs();
+        await initializeOAuthReconnectManager();
+      });
+      await checkMigrations();
 
-    // Configure stream services (auto-detects Redis from USE_REDIS env var)
-    const streamServices = createStreamServices();
-    GenerationJobManager.configure(streamServices);
-    GenerationJobManager.initialize();
+      // Configure stream services (auto-detects Redis from USE_REDIS env var)
+      const streamServices = createStreamServices();
+      GenerationJobManager.configure(streamServices);
+      GenerationJobManager.initialize();
 
-    const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
-    if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
-      memoryDiagnostics.start();
+      const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
+      if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
+        memoryDiagnostics.start();
+      }
+    } catch (initErr) {
+      logger.error('Post-listen initialization failed:', initErr);
+      process.exit(1);
     }
   });
 };

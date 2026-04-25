@@ -362,10 +362,22 @@ if (cluster.isMaster) {
         }:${port}`,
       );
 
-      /** Initialize MCP servers and OAuth reconnection for this worker */
-      await initializeMCPs();
-      await initializeOAuthReconnectManager();
-      await checkMigrations();
+      /**
+       * The listen callback is async, so any rejection from these awaits
+       * would otherwise be detached from `startServer().catch(...)`. Without
+       * explicit handling, the global `unhandledRejection` handler would
+       * swallow init failures and leave the worker listening but only
+       * partially initialized.
+       */
+      try {
+        /** Initialize MCP servers and OAuth reconnection for this worker */
+        await initializeMCPs();
+        await initializeOAuthReconnectManager();
+        await checkMigrations();
+      } catch (initErr) {
+        logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
+        process.exit(1);
+      }
     });
 
     /** Handle inter-process messages from master */
