@@ -421,7 +421,11 @@ export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: Tx
     endpointTokenConfig?: Record<string, Record<string, number>>;
   }): number {
     if (endpointTokenConfig && model) {
-      return endpointTokenConfig?.[model]?.[tokenType as string] ?? defaultRate;
+      return (
+        endpointTokenConfig[model]?.[tokenType as string] ??
+        endpointTokenConfig['*']?.[tokenType as string] ??
+        defaultRate
+      );
     }
 
     if (valueKey && tokenType) {
@@ -466,7 +470,11 @@ export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: Tx
     endpointTokenConfig?: Record<string, Record<string, number>>;
   }): number | null {
     if (endpointTokenConfig && model) {
-      return endpointTokenConfig?.[model]?.[cacheType as string] ?? null;
+      return (
+        endpointTokenConfig[model]?.[cacheType as string] ??
+        endpointTokenConfig['*']?.[cacheType as string] ??
+        null
+      );
     }
 
     if (valueKey && cacheType) {
