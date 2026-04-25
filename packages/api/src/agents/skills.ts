@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { HumanMessage } from '@langchain/core/messages';
+import { isEphemeralAgentId } from 'librechat-data-provider';
 import { formatSkillCatalog, SkillToolDefinition } from '@librechat/agents';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@langchain/core/messages';
@@ -101,6 +102,11 @@ export function isSkillPrimeMessage(msg: unknown): boolean {
  *   the full catalog fallback.
  * - non-empty array of skill `_id` hex strings → intersection of accessible IDs
  *   and agent-configured IDs.
+ *
+ * @internal Building block for {@link resolveAgentScopedSkillIds}; runtime
+ * call sites should prefer the resolver so the activation predicate
+ * (`skillsCapabilityEnabled`, ephemeral toggle, persisted `skills_enabled`)
+ * is enforced uniformly.
  */
 export function scopeSkillIds(
   accessibleSkillIds: Types.ObjectId[],
@@ -114,6 +120,52 @@ export function scopeSkillIds(
   }
   const agentSet = new Set(agentSkills);
   return accessibleSkillIds.filter((oid) => agentSet.has(oid.toString()));
+}
+
+export interface ResolveAgentScopedSkillIdsParams {
+  /** Agent being initialized. Reads `id`, `skills`, and `skills_enabled`. */
+  agent: Pick<Agent, 'id' | 'skills' | 'skills_enabled'>;
+  /** Full set of skill IDs the user can VIEW (pre-scoped by ACL). */
+  accessibleSkillIds: Types.ObjectId[];
+  /** Admin capability: `AgentCapabilities.skills` on the agents endpoint. */
+  skillsCapabilityEnabled: boolean;
+  /** Per-conversation skills badge toggle (`req.body.ephemeralAgent.skills`). */
+  ephemeralSkillsToggle: boolean;
+}
+
+/**
+ * Strict opt-in resolver for per-agent skill scope. Activation requires an
+ * explicit signal from the user or the agent author:
+ *  - Ephemeral agent  → the skills badge toggle for this conversation.
+ *    Toggle ON = full accessible catalog; OFF = no skills.
+ *  - Persisted agent  → the builder's `skills_enabled` master switch.
+ *    Enabled + empty allowlist = full catalog; enabled + non-empty
+ *    allowlist = narrow to those ids; disabled (or undefined) = no skills.
+ *
+ * When not activated, returns `[]` so `injectSkillCatalog`,
+ * `resolveManualSkills`, and `resolveAlwaysApplySkills` all no-op.
+ *
+ * Without this gate, an `agent.skills` of `undefined` on a persisted agent
+ * would fall through to the "full catalog" branch of `scopeSkillIds`,
+ * exposing the skill tool on runs where the author never opted in.
+ */
+export function resolveAgentScopedSkillIds(
+  params: ResolveAgentScopedSkillIdsParams,
+): Types.ObjectId[] {
+  const { agent, accessibleSkillIds, skillsCapabilityEnabled, ephemeralSkillsToggle } = params;
+  if (!skillsCapabilityEnabled || accessibleSkillIds.length === 0) {
+    return [];
+  }
+  if (isEphemeralAgentId(agent.id)) {
+    return ephemeralSkillsToggle ? scopeSkillIds(accessibleSkillIds, undefined) : [];
+  }
+  if (agent.skills_enabled !== true) {
+    return [];
+  }
+  if (!Array.isArray(agent.skills) || agent.skills.length === 0) {
+    return scopeSkillIds(accessibleSkillIds, undefined);
+  }
+  return scopeSkillIds(accessibleSkillIds, agent.skills);
 }
 
 export interface ResolveSkillActiveParams {

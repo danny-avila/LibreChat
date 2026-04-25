@@ -42,6 +42,9 @@ jest.mock('@librechat/api', () => ({
   }),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
   scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
+  resolveAgentScopedSkillIds: jest
+    .fn()
+    .mockImplementation(({ accessibleSkillIds }) => accessibleSkillIds),
   loadSkillStates: jest.fn().mockResolvedValue({ skillStates: {}, defaultActiveOnShare: false }),
   createSafeUser: jest.fn().mockReturnValue({ id: 'user-123' }),
   initializeAgent: jest.fn().mockResolvedValue({

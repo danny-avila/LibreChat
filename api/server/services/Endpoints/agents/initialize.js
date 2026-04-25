@@ -1,7 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
-  scopeSkillIds,
   loadSkillStates,
   initializeAgent,
   primeInvokedSkills,
@@ -10,6 +9,7 @@ const {
   GenerationJobManager,
   getCustomEndpointConfig,
   discoverConnectedAgents,
+  resolveAgentScopedSkillIds,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -115,9 +115,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
 
   /** Query accessible skill IDs once per run (shared across all agents).
-   *  Skills activate when the admin capability is enabled AND either:
-   *  - the per-conversation toggle is on (ephemeral), OR
-   *  - the agent has stored skills (scoped by scopeSkillIds later). */
+   *  Skills activate under strict opt-in semantics — see
+   *  `resolveAgentScopedSkillIds` for the per-agent activation predicate:
+   *    - Ephemeral agent → per-conversation skills badge toggle (full catalog).
+   *    - Persisted agent → `agent.skills_enabled === true`. Optional
+   *      `agent.skills` allowlist narrows the catalog; empty/undefined
+   *      allowlist with the toggle on = full accessible catalog. */
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
@@ -259,6 +262,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    */
   const manualSkills = extractManualSkills(req.body);
 
+  const primaryScopedSkillIds = resolveAgentScopedSkillIds({
+    agent: primaryAgent,
+    accessibleSkillIds,
+    skillsCapabilityEnabled,
+    ephemeralSkillsToggle,
+  });
+
   const primaryConfig = await initializeAgent(
     {
       req,
@@ -271,10 +281,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       endpointOption,
       allowedProviders,
       isInitialAgent: true,
-      accessibleSkillIds: scopeSkillIds(
-        accessibleSkillIds,
-        ephemeralSkillsToggle ? undefined : primaryAgent.skills,
-      ),
+      accessibleSkillIds: primaryScopedSkillIds,
       codeEnvAvailable,
       skillStates,
       defaultActiveOnShare,
@@ -340,7 +347,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       conversationId,
       parentMessageId,
       computeAccessibleSkillIds: (agent) =>
-        scopeSkillIds(accessibleSkillIds, ephemeralSkillsToggle ? undefined : agent.skills),
+        resolveAgentScopedSkillIds({
+          agent,
+          accessibleSkillIds,
+          skillsCapabilityEnabled,
+          ephemeralSkillsToggle,
+        }),
       skillStates,
       defaultActiveOnShare,
       codeEnvAvailable,
@@ -544,10 +556,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           parentMessageId,
           endpointOption: { ...endpointOption, endpoint: EModelEndpoint.agents },
           allowedProviders,
-          accessibleSkillIds: scopeSkillIds(
+          accessibleSkillIds: resolveAgentScopedSkillIds({
+            agent,
             accessibleSkillIds,
-            ephemeralSkillsToggle ? undefined : agent.skills,
-          ),
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
           skillStates,
           defaultActiveOnShare,
         },

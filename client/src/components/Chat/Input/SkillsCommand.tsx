@@ -96,31 +96,33 @@ function SkillsCommandContent({
   const agentsMap = useAgentsMapContext();
   const { isActive } = useSkillActiveState();
 
-  /* Resolve the per-agent skill scope. Mirrors backend `scopeSkillIds` for
-     the happy path: no `skills` field → no scope, `[]` → opt-out, non-empty
-     → intersection. Ephemeral agent ids (null/undefined/placeholder strings
-     that don't begin with `agent_`) are unscoped — they correspond to
-     conversations without a persisted agent and are intentionally absent
-     from the agents map. While the map is still hydrating we pass through
-     (undefined → full catalog): the backend enforces scope at turn time, so
-     there's no security benefit to flashing an empty popover, and the map
-     typically lands well before the first open. Once the map is authoritative
-     but the agent isn't in it (deleted, or VIEW revoked mid-session), we fail
-     closed — scope is unresolvable and the full catalog would be misleading.
-     `agentId` is threaded in as a prop so this component stays memoizable
-     and skips re-renders on unrelated conversation-shape changes. */
+  /* Resolve the per-agent skill scope. Mirrors backend
+     `resolveAgentScopedSkillIds`: ephemeral agents always see the full
+     catalog (picking any skill flips `ephemeralAgent.skills = true` and
+     activates for the turn); persisted agents gate on the builder's
+     `skills_enabled` master toggle — off or unset means opt-out, on with
+     an empty allowlist means full catalog, on with a non-empty allowlist
+     means narrow to those ids. Persisted agents fail closed during the
+     `agentsMap` hydration window so the user cannot pick a skill the
+     backend will then refuse, and again when the map is authoritative
+     but the agent isn't in it (deleted, or VIEW revoked mid-session).
+     `agentId` is threaded in as a prop so this component stays
+     memoizable. */
   const agentSkillIds = useMemo<string[] | null | undefined>(() => {
     if (!agentId || isEphemeralAgent(agentId)) {
       return undefined;
     }
     if (!agentsMap) {
-      return undefined;
+      return [];
     }
     const agent = agentsMap[agentId];
     if (!agent) {
       return [];
     }
-    return agent.skills;
+    if (agent.skills_enabled !== true) {
+      return [];
+    }
+    return Array.isArray(agent.skills) && agent.skills.length > 0 ? agent.skills : undefined;
   }, [agentId, agentsMap]);
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =

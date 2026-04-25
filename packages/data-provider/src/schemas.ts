@@ -293,11 +293,12 @@ export const defaultAgentFormValues = {
     name: '',
     email: '',
   },
-  /** `undefined` = not configured, full catalog applies. `[]` = explicitly none.
-   *  Keeping this `undefined` ensures a brand-new agent (where the user never
-   *  interacted with the skills UI) does not accidentally persist "explicit none"
-   *  on first save — removeNullishValues strips the field server-side. */
+  /** Optional allowlist. Only applies when `skills_enabled === true`.
+   *  Empty/undefined + enabled = full catalog; non-empty + enabled = narrow to ids. */
   skills: undefined as string[] | undefined,
+  /** Master toggle for skill use on this agent. `true` activates skills
+   *  (full catalog unless `skills` narrows it). Anything else = inactive. */
+  skills_enabled: undefined as boolean | undefined,
   /** `undefined` = feature disabled by default (no subagent tool injected). */
   subagents: undefined as
     | { enabled?: boolean; allowSelf?: boolean; agent_ids?: string[] }
