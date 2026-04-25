@@ -102,6 +102,11 @@ export function isSkillPrimeMessage(msg: unknown): boolean {
  *   the full catalog fallback.
  * - non-empty array of skill `_id` hex strings → intersection of accessible IDs
  *   and agent-configured IDs.
+ *
+ * @internal Building block for {@link resolveAgentScopedSkillIds}; runtime
+ * call sites should prefer the resolver so the activation predicate
+ * (`skillsCapabilityEnabled`, ephemeral toggle, persisted `skills_enabled`)
+ * is enforced uniformly.
  */
 export function scopeSkillIds(
   accessibleSkillIds: Types.ObjectId[],

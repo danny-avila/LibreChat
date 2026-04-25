@@ -342,7 +342,10 @@ export default function AgentConfig() {
         {showSkills && (
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between">
-              <label className="text-token-text-primary block text-sm font-medium">
+              <label
+                htmlFor="skills_enabled"
+                className="text-token-text-primary block text-sm font-medium"
+              >
                 {localize('com_ui_skills')}
               </label>
               <Controller
@@ -352,7 +355,7 @@ export default function AgentConfig() {
                   <Switch
                     id="skills_enabled"
                     checked={field.value === true}
-                    onCheckedChange={(value: boolean) => field.onChange(value === true)}
+                    onCheckedChange={(value: boolean) => field.onChange(Boolean(value))}
                     data-testid="skills_enabled"
                     aria-label={localize('com_ui_skills_enable_toggle')}
                   />
