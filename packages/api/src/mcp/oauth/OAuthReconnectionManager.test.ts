@@ -560,13 +560,14 @@ describe('OAuthReconnectionManager', () => {
     });
 
     /**
-     * Regression test for discussion #12078: an error thrown before
-     * `tryReconnect`'s internal try/catch (e.g. from `getServerConfig`) would
-     * otherwise propagate as an unhandled promise rejection and — on Node 15+
-     * — terminate the process. The safe wrapper must surface it via the
-     * logger instead.
+     * Regression test for discussion #12078: a registry rejection from
+     * `getServerConfig` during a reconnect storm previously escaped as an
+     * unhandled promise rejection (Node 15+ terminates the process). The
+     * rejection must be caught and the tracker must be cleaned up so the
+     * server does not stay stuck in `active` state for the full
+     * `RECONNECTION_TIMEOUT_MS` window before retries become possible again.
      */
-    it('should swallow unexpected rejection from tryReconnect without propagating', async () => {
+    it('should clean up tracker state when getServerConfig rejects', async () => {
       const userId = 'user-123';
       const oauthServers = new Set(['server1']);
       (mockRegistryInstance.getOAuthServers as jest.Mock).mockResolvedValue(oauthServers);
@@ -582,13 +583,15 @@ describe('OAuthReconnectionManager', () => {
 
       await expect(reconnectionManager.reconnectServers(userId)).resolves.toBeUndefined();
 
-      // Flush the .catch() microtask attached inside safeTryReconnect
+      // Flush any microtasks attached inside safeTryReconnect / tryReconnect
       await new Promise((resolve) => setImmediate(resolve));
 
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('Unexpected reconnect error'),
-        boom,
-      );
+      // The rejection must be reported (warn from the inner catch) and the
+      // tracker must be returned to a state that allows future retries.
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to reconnect'));
+      expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
+      expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
+      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
     });
   });
 

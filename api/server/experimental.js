@@ -450,13 +450,20 @@ process.on('uncaughtException', (err) => {
  * can produce transient fire-and-forget rejections (ECONNRESET, token refresh
  * races) that are recoverable — the server should log and keep serving other
  * requests rather than silently crash under load.
+ *
+ * Non-Error reasons are forwarded as-is so structured payloads (e.g.
+ * `{ code: "ECONNRESET", errno: -104 }`) survive instead of being collapsed to
+ * "[object Object]" by `String()`.
  */
 process.on('unhandledRejection', (reason) => {
-  const err = reason instanceof Error ? reason : new Error(String(reason));
-  logger.error('Unhandled promise rejection. The app will continue running.', {
-    name: err.name,
-    message: err.message,
-    stack: err.stack,
-    cause: err.cause,
-  });
+  if (reason instanceof Error) {
+    logger.error('Unhandled promise rejection. The app will continue running.', {
+      name: reason.name,
+      message: reason.message,
+      stack: reason.stack,
+      cause: reason.cause,
+    });
+    return;
+  }
+  logger.error('Unhandled promise rejection. The app will continue running.', { reason });
 });
