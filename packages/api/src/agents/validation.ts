@@ -99,6 +99,7 @@ export const agentBaseSchema = z.object({
   model_parameters: z.record(z.unknown()).optional(),
   tools: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
+  skills_enabled: z.boolean().optional(),
   /** @deprecated Use edges instead */
   agent_ids: z.array(z.string()).optional(),
   edges: z.array(graphEdgeSchema).optional(),
