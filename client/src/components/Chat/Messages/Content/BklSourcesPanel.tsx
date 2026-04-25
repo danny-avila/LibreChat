@@ -55,6 +55,38 @@ function extractFileName(metaName: string): string {
   return m ? m[1] : metaName.normalize('NFC');
 }
 
+/**
+ * Build the SectionBadge label from PR-B segment metadata. Returns null when
+ * the chunk did not come from a segmented .msg.md (legacy index slices, raw
+ * PDFs / DOCX, etc.) so the badge area stays empty rather than showing
+ * misleading "본문" tags for non-email documents.
+ *
+ * Body chunks render as just "본문". Attachment chunks fold the index pair
+ * + filename together — `첨부 1/3 · 계약서.docx` — so the user can tell at a
+ * glance that the cited text came from an attachment of a forwarded thread
+ * vs. the main email body.
+ */
+function getSectionBadge(meta: Record<string, unknown> | undefined): {
+  kind: 'body' | 'attachment';
+  label: string;
+  filename?: string;
+} | null {
+  if (!meta) return null;
+  const kind = (meta.section_kind as string | undefined) ?? null;
+  if (!kind) return null;
+  if (kind === 'attachment') {
+    const idx = meta.attachment_idx as number | undefined;
+    const total = meta.attachment_total as number | undefined;
+    const filename = (meta.attachment_filename as string | undefined) ?? '';
+    const counter = idx && total ? `첨부 ${idx}/${total}` : '첨부';
+    return { kind: 'attachment', label: counter, filename };
+  }
+  if (kind === 'body') {
+    return { kind: 'body', label: '본문' };
+  }
+  return null;
+}
+
 function formatRelevance(raw: unknown): string | null {
   if (raw == null) return null;
   if (typeof raw === 'number') {
@@ -255,13 +287,22 @@ function PanelTitle({ source }: { source: BklSource | null }) {
   const fileName = extractFileName(rawName);
   const pageInfo = meta?.page_info;
   const relevance = formatRelevance(meta?.relevance);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const badge = getSectionBadge(meta as any);
   return (
     <>
       <h2 className="mt-0.5 truncate text-sm font-semibold text-text-primary" title={fileName}>
         {fileName}
       </h2>
-      {(pageInfo || relevance) && (
-        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-text-secondary">
+      {(badge || pageInfo || relevance) && (
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-text-secondary">
+          {badge ? (
+            <SectionBadge
+              kind={badge.kind}
+              label={badge.label}
+              filename={badge.filename}
+            />
+          ) : null}
           {pageInfo ? <span>{pageInfo}</span> : null}
           {relevance ? (
             <span className="rounded bg-surface-secondary px-1.5 py-0.5">관련도 {relevance}</span>
@@ -272,20 +313,72 @@ function PanelTitle({ source }: { source: BklSource | null }) {
   );
 }
 
+/**
+ * Visual distinction between email-body and attachment chunks (PR-B).
+ *
+ * Body chunks get a neutral pill so they read as "this came from the email
+ * itself." Attachment chunks get a tinted pill that surfaces both the
+ * `첨부 N/M` counter and the original filename, mirroring what we removed
+ * from the chunk markdown (the `## 첨부 N/M — fname` heading and the
+ * `[📎 원본 파일]` link line both moved into segment metadata so the chunk
+ * body is clean, and we render that metadata explicitly here instead).
+ */
+function SectionBadge({
+  kind,
+  label,
+  filename,
+}: {
+  kind: 'body' | 'attachment';
+  label: string;
+  filename?: string;
+}) {
+  const tone =
+    kind === 'attachment'
+      ? 'bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200'
+      : 'bg-blue-100 text-blue-900 dark:bg-blue-500/20 dark:text-blue-200';
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium',
+        tone,
+      )}
+      title={filename || label}
+    >
+      <span>{label}</span>
+      {filename ? (
+        <span className="max-w-[200px] truncate font-normal opacity-90">· {filename}</span>
+      ) : null}
+    </span>
+  );
+}
+
 function PanelBody({ source }: { source: BklSource }) {
   const text = source.document?.[0] ?? '';
   if (!text) return <p className="text-sm text-text-secondary">내용을 불러올 수 없습니다.</p>;
-  // MarkdownLite (GFM + math + code highlighting) renders the chunk body,
-  // which now includes `[📎 원본 파일: ...]( /v1/attachments/{hash}.pdf )`
-  // links injected by the OCR pipeline (`msg_processor._assemble()`). The
-  // shared `a` component from MarkdownComponents opens external links in a
-  // new tab by default, so no extra wrapping is needed here.
+  // MarkdownLite (GFM + math + code highlighting) renders the chunk body.
+  // PR-B moves the `## 첨부 N/M — fname` heading + `[📎 원본 파일]` link
+  // into segment metadata (rendered as `SectionBadge` above), so chunk
+  // bodies should usually contain no level-2 / level-3 headings at all.
+  //
+  // The prose-h{2,3} overrides are still in place as a defense-in-depth:
+  // legacy index slices (pre-PR-B re-index) and OCR'd attachments that
+  // happen to start with a real H2 in the source document still benefit
+  // from the down-sized typography so a single heading at the top of a
+  // chunk no longer dominates the panel.
   //
   // `prose-sm` + `dark:prose-invert` matches the typography used in the
   // assistant message surface; `max-w-none` lets paragraphs fill the panel
   // width instead of the default `prose` narrow measure.
   return (
-    <div className="prose prose-sm max-w-none break-words text-text-primary dark:prose-invert">
+    <div
+      className={cn(
+        'prose prose-sm max-w-none break-words text-text-primary dark:prose-invert',
+        'prose-h1:text-base prose-h1:font-semibold prose-h1:my-2',
+        'prose-h2:text-sm prose-h2:font-semibold prose-h2:my-2',
+        'prose-h3:text-sm prose-h3:font-semibold prose-h3:my-1.5',
+        'prose-h4:text-sm prose-h4:font-medium prose-h4:my-1.5',
+      )}
+    >
       <MarkdownLite content={text} codeExecution={false} />
     </div>
   );
