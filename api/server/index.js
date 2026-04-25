@@ -240,7 +240,18 @@ const startServer = async () => {
   });
 };
 
-startServer();
+/**
+ * Boot rejections (e.g. `connectDb`, `getAppConfig`, `performStartupChecks`)
+ * must remain fail-fast: a half-initialized process with no listening HTTP
+ * server should die immediately so the orchestrator restarts it, instead of
+ * being kept alive by the `unhandledRejection` handler below until the
+ * liveness probe eventually times out. Mirrors the pattern in
+ * `experimental.js`.
+ */
+startServer().catch((err) => {
+  logger.error('Failed to start server:', err);
+  process.exit(1);
+});
 
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
