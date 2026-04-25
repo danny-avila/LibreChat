@@ -454,6 +454,8 @@ class AgentClient extends BaseClient {
       return;
     }
 
+    const userId = this.options.req.user.id + '';
+
     /** @type {Agent} */
     let prelimAgent;
     const allowedProviders = new Set(
@@ -483,7 +485,17 @@ class AgentClient extends BaseClient {
     }
 
     if (!prelimAgent) {
-      return;
+      this.processMemory = undefined;
+      try {
+        const { withoutKeys } = await db.getFormattedMemories({ userId });
+        return withoutKeys;
+      } catch (error) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #useMemory] Error loading memories without memory agent',
+          error,
+        );
+        return;
+      }
     }
 
     const agent = await initializeAgent(
@@ -534,7 +546,6 @@ class AgentClient extends BaseClient {
       tokenLimit: memoryConfig.tokenLimit,
     };
 
-    const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const streamId = this.options.req?._resumableStreamId || null;
