@@ -199,7 +199,7 @@ const startServer = async () => {
     });
 
     const rawLang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const sanitizedLang = typoeof rawLang === 'string' ? escapeHtml(rawLang) : 'en-US';
+    const sanitizedLang = typeof rawLang === 'string' ? escapeHtml(rawLang) : 'en-US';
     let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${sanitizedLang}"`);
 
     res.type('html');
