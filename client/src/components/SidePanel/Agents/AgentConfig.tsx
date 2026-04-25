@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { X } from 'lucide-react';
-import { useToastContext } from '@librechat/client';
+import { Switch, useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
@@ -72,6 +72,7 @@ export default function AgentConfig() {
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
   const skills = useWatch({ control, name: 'skills' });
+  const skillsActive = useWatch({ control, name: 'skills_enabled' });
   const agent_id = useWatch({ control, name: 'id' });
 
   const {
@@ -340,10 +341,37 @@ export default function AgentConfig() {
 
         {showSkills && (
           <div className="mb-4">
-            <label className="text-token-text-primary mb-2 block text-sm font-medium">
-              {localize('com_ui_skills')}
-            </label>
-            <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-token-text-primary block text-sm font-medium">
+                {localize('com_ui_skills')}
+              </label>
+              <Controller
+                name="skills_enabled"
+                control={control}
+                render={({ field }) => (
+                  <Switch
+                    id="skills_enabled"
+                    checked={field.value === true}
+                    onCheckedChange={(value: boolean) => field.onChange(value === true)}
+                    data-testid="skills_enabled"
+                    aria-label={localize('com_ui_skills_enable_toggle')}
+                  />
+                )}
+              />
+            </div>
+            <p className="mb-2 text-xs text-text-secondary">
+              {skillsActive === true
+                ? localize(
+                    (skills ?? []).length > 0
+                      ? 'com_ui_skills_enabled_allowlist_hint'
+                      : 'com_ui_skills_enabled_all_hint',
+                  )
+                : localize('com_ui_skills_disabled_hint')}
+            </p>
+            <div
+              className={skillsActive === true ? undefined : 'pointer-events-none opacity-50'}
+              aria-disabled={skillsActive !== true}
+            >
               <div className="mb-1">
                 {(skills ?? []).map((skillId) => {
                   const skillName = skillsMap.get(skillId);
@@ -368,6 +396,7 @@ export default function AgentConfig() {
                         }}
                         className="ml-2 flex-shrink-0 text-text-secondary transition-colors hover:text-text-primary"
                         aria-label={localize('com_ui_remove_skill_var', { 0: skillName })}
+                        disabled={skillsActive !== true}
                       >
                         <X className="h-4 w-4" aria-hidden="true" />
                       </button>
@@ -381,6 +410,7 @@ export default function AgentConfig() {
                   onClick={() => setShowSkillDialog(true)}
                   className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
                   aria-haspopup="dialog"
+                  disabled={skillsActive !== true}
                 >
                   <div className="flex w-full items-center justify-center gap-2">
                     {localize('com_ui_add_skills')}

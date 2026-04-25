@@ -12,8 +12,8 @@ const {
 const {
   createRun,
   buildToolSet,
-  scopeSkillIds,
   loadSkillStates,
+  resolveAgentScopedSkillIds,
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
@@ -413,10 +413,12 @@ const createResponse = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
-        accessibleSkillIds: scopeSkillIds(
+        accessibleSkillIds: resolveAgentScopedSkillIds({
+          agent,
           accessibleSkillIds,
-          ephemeralSkillsToggle ? undefined : agent.skills,
-        ),
+          skillsCapabilityEnabled,
+          ephemeralSkillsToggle,
+        }),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         skillStates,
         defaultActiveOnShare,

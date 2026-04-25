@@ -225,7 +225,7 @@ describe('SkillsCommand', () => {
     expect(mockSetShowSkillsPopover).toHaveBeenCalledWith(false);
   });
 
-  it('narrows the list to the agent-configured scope when agent.skills is set', async () => {
+  it('narrows the list to the agent-configured scope when agent.skills is set and skills_enabled is true', async () => {
     mockUseSkillsInfiniteQuery.mockReturnValue({
       data: twoSkillsResponse,
       isLoading: false,
@@ -235,7 +235,7 @@ describe('SkillsCommand', () => {
       isFetchingNextPage: false,
     });
     mockUseAgentsMapContext.mockReturnValue({
-      agent_1: { id: 'agent_1', skills: ['2'] },
+      agent_1: { id: 'agent_1', skills: ['2'], skills_enabled: true },
     });
 
     const textAreaRef = makeTextarea('$');
@@ -253,7 +253,7 @@ describe('SkillsCommand', () => {
     expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
   });
 
-  it('shows nothing when the agent has an empty skills array (explicit opt-out)', () => {
+  it('shows nothing when the agent has skills_enabled:false, regardless of allowlist', () => {
     mockUseSkillsInfiniteQuery.mockReturnValue({
       data: twoSkillsResponse,
       isLoading: false,
@@ -263,7 +263,7 @@ describe('SkillsCommand', () => {
       isFetchingNextPage: false,
     });
     mockUseAgentsMapContext.mockReturnValue({
-      agent_1: { id: 'agent_1', skills: [] },
+      agent_1: { id: 'agent_1', skills: ['1', '2'], skills_enabled: false },
     });
 
     const textAreaRef = makeTextarea('$');
@@ -280,7 +280,7 @@ describe('SkillsCommand', () => {
     expect(screen.queryByRole('button', { name: /Style Guide/i })).toBeNull();
   });
 
-  it('shows the full ACL catalog when the agent has no skills field configured', async () => {
+  it('hides all skills for a persisted agent with skills_enabled undefined (default off)', async () => {
     mockUseSkillsInfiniteQuery.mockReturnValue({
       data: twoSkillsResponse,
       isLoading: false,
@@ -303,8 +303,38 @@ describe('SkillsCommand', () => {
       />,
     );
 
+    /* Mirrors backend `resolveAgentScopedSkillIds`: persisted agents are
+       off by default; the builder's `skills_enabled` master toggle is
+       the only signal that activates skills for the agent. */
+    expect(screen.queryByRole('button', { name: /Brand Guidelines/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Style Guide/i })).toBeNull();
+  });
+
+  it('shows the full catalog for a persisted agent with skills_enabled:true and empty allowlist', async () => {
+    mockUseSkillsInfiniteQuery.mockReturnValue({
+      data: twoSkillsResponse,
+      isLoading: false,
+      isError: false,
+      fetchNextPage: jest.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+    });
+    mockUseAgentsMapContext.mockReturnValue({
+      agent_1: { id: 'agent_1', skills_enabled: true },
+    });
+
+    const textAreaRef = makeTextarea('$');
+    render(
+      <SkillsCommand
+        index={0}
+        textAreaRef={textAreaRef}
+        conversationId={CONVO_ID}
+        agentId="agent_1"
+      />,
+    );
+
     expect(await screen.findByRole('button', { name: /Brand Guidelines/i })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
   });
 
   it('treats an ephemeral agent id as unscoped and shows the full ACL catalog', async () => {

@@ -288,8 +288,11 @@ export type Agent = {
   support_contact?: SupportContact;
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
-  /** Skill ObjectIds the agent can invoke — phase 2 wiring in AgentConfig. */
+  /** Optional allowlist of skill ObjectIds. Only applies when `skills_enabled`. */
   skills?: string[];
+  /** Master toggle for skill use on this agent. `true` = active (full catalog unless
+   *  `skills` narrows it). `false`/undefined = inactive (no skills available). */
+  skills_enabled?: boolean;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
 };
@@ -318,6 +321,7 @@ export type AgentCreateParams = {
   | 'support_contact'
   | 'tool_options'
   | 'skills'
+  | 'skills_enabled'
   | 'subagents'
 >;
 
@@ -344,6 +348,7 @@ export type AgentUpdateParams = {
   | 'support_contact'
   | 'tool_options'
   | 'skills'
+  | 'skills_enabled'
   | 'subagents'
 >;
 

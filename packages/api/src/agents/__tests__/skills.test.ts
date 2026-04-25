@@ -31,6 +31,7 @@ import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import {
   scopeSkillIds,
   resolveSkillActive,
+  resolveAgentScopedSkillIds,
   injectSkillCatalog,
   buildSkillPrimeMessage,
   resolveManualSkills,
@@ -290,6 +291,176 @@ describe('scopeSkillIds', () => {
     expect(scopeSkillIds([], undefined)).toEqual([]);
     expect(scopeSkillIds([], [])).toEqual([]);
     expect(scopeSkillIds([], [new Types.ObjectId().toString()])).toEqual([]);
+  });
+});
+
+describe('resolveAgentScopedSkillIds', () => {
+  const makeId = () => new Types.ObjectId();
+  const persistedAgent = (
+    skills?: string[],
+    skills_enabled?: boolean,
+  ): { id: string; skills?: string[]; skills_enabled?: boolean } => ({
+    id: 'agent_persisted_1',
+    skills,
+    skills_enabled,
+  });
+  const ephemeralAgent = (
+    skills?: string[],
+  ): { id: string; skills?: string[]; skills_enabled?: boolean } => ({
+    id: 'ephemeral_convo_xyz',
+    skills,
+  });
+
+  it('returns [] when the skills capability is disabled, even with every other signal on', () => {
+    const a = makeId();
+    expect(
+      resolveAgentScopedSkillIds({
+        agent: persistedAgent([a.toString()], true),
+        accessibleSkillIds: [a],
+        skillsCapabilityEnabled: false,
+        ephemeralSkillsToggle: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it('returns [] when accessibleSkillIds is empty', () => {
+    expect(
+      resolveAgentScopedSkillIds({
+        agent: ephemeralAgent(),
+        accessibleSkillIds: [],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: true,
+      }),
+    ).toEqual([]);
+  });
+
+  describe('ephemeral agent', () => {
+    it('returns [] when the skills badge toggle is off', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: ephemeralAgent(),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: true,
+          ephemeralSkillsToggle: false,
+        }),
+      ).toEqual([]);
+    });
+
+    it('returns the full accessible catalog when the skills badge toggle is on', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: ephemeralAgent(),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: true,
+      });
+      expect(scoped).toHaveLength(2);
+      expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), b.toString()].sort());
+    });
+
+    it('ignores any `skills` field on an ephemeral agent (toggle is the only signal)', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: ephemeralAgent([a.toString()]),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: true,
+          ephemeralSkillsToggle: false,
+        }),
+      ).toEqual([]);
+    });
+  });
+
+  describe('persisted agent', () => {
+    it('returns [] when `skills_enabled` is undefined (default / never toggled)', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: persistedAgent([a.toString()], undefined),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: true,
+          ephemeralSkillsToggle: false,
+        }),
+      ).toEqual([]);
+    });
+
+    it('returns [] when `skills_enabled` is false, even if an allowlist is set', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: persistedAgent([a.toString()], false),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: true,
+          ephemeralSkillsToggle: false,
+        }),
+      ).toEqual([]);
+    });
+
+    it('returns full accessible catalog when `skills_enabled` is true and allowlist is undefined', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: persistedAgent(undefined, true),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped).toHaveLength(2);
+      expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), b.toString()].sort());
+    });
+
+    it('returns full accessible catalog when `skills_enabled` is true and allowlist is empty', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: persistedAgent([], true),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped).toHaveLength(2);
+    });
+
+    it('returns intersection when `skills_enabled` is true and allowlist overlaps accessible set', () => {
+      const a = makeId();
+      const b = makeId();
+      const c = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: persistedAgent([a.toString(), c.toString()], true),
+        accessibleSkillIds: [a, b, c],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped).toHaveLength(2);
+      expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), c.toString()].sort());
+    });
+
+    it('is unaffected by the ephemeral toggle — the persisted config is authoritative', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: persistedAgent([a.toString()], true),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: true,
+      });
+      expect(scoped).toHaveLength(1);
+      expect(scoped[0].toString()).toBe(a.toString());
+    });
+
+    it('still returns [] when `skills_enabled` is missing even if the ephemeral toggle is on', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: persistedAgent(undefined, undefined),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: true,
+          ephemeralSkillsToggle: true,
+        }),
+      ).toEqual([]);
+    });
   });
 });
 

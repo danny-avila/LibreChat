@@ -115,6 +115,11 @@ function AgentSelect({
           return;
         }
 
+        if (name === 'skills_enabled' && typeof value === 'boolean') {
+          formValues[name] = value;
+          return;
+        }
+
         if (name === 'edges' && Array.isArray(value)) {
           formValues[name] = value;
           return;
