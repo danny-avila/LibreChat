@@ -75,6 +75,13 @@ export default function AgentConfig() {
   const skillsActive = useWatch({ control, name: 'skills_enabled' });
   const agent_id = useWatch({ control, name: 'id' });
 
+  const skillsHintKey =
+    skillsActive !== true
+      ? 'com_ui_skills_disabled_hint'
+      : (skills ?? []).length > 0
+        ? 'com_ui_skills_enabled_allowlist_hint'
+        : 'com_ui_skills_enabled_all_hint';
+
   const {
     codeEnabled,
     toolsEnabled,
@@ -362,15 +369,7 @@ export default function AgentConfig() {
                 )}
               />
             </div>
-            <p className="mb-2 text-xs text-text-secondary">
-              {skillsActive === true
-                ? localize(
-                    (skills ?? []).length > 0
-                      ? 'com_ui_skills_enabled_allowlist_hint'
-                      : 'com_ui_skills_enabled_all_hint',
-                  )
-                : localize('com_ui_skills_disabled_hint')}
-            </p>
+            <p className="mb-2 text-xs text-text-secondary">{localize(skillsHintKey)}</p>
             <div
               className={skillsActive === true ? undefined : 'pointer-events-none opacity-50'}
               aria-disabled={skillsActive !== true}
