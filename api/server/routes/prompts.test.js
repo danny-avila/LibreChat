@@ -42,6 +42,10 @@ jest.mock('~/server/middleware', () => ({
     jest.requireActual('~/server/middleware').canAccessPromptGroupResource,
 }));
 
+jest.mock('~/server/utils/sanitization', () => ({
+  sanitizeJsonResponse: jest.fn((data) => data)
+}));
+
 let app;
 let mongoServer;
 let promptRoutes;
