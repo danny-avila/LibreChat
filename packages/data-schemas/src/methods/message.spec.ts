@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
 import { createMessageMethods } from './message';
@@ -54,7 +55,7 @@ describe('Message Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
-    interfaceConfig?: { temporaryChatRetention?: number };
+    interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockMessageData: Partial<IMessage> = {
     messageId: 'msg123',
@@ -473,6 +474,27 @@ describe('Message Operations', () => {
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
         expectedExpirationTime.getTime() + 1000,
       );
+    });
+
+    it('should set expiredAt for non-temporary message when retentionMode is ALL', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+      const result = await saveMessage(mockCtx, mockMessageData);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeInstanceOf(Date);
+    });
+
+    it('should not set expiredAt when retentionMode is temporary and not isTemporary', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.TEMPORARY,
+      };
+      const result = await saveMessage(mockCtx, mockMessageData);
+      expect(result?.expiredAt).toBeNull();
     });
 
     it('should handle missing config gracefully', async () => {

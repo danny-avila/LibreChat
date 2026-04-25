@@ -27,6 +27,7 @@ const { filterFilesByAgentAccess } = require('~/server/services/Files/permission
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
+const { getRetentionExpiry } = require('~/server/services/Files/process');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();
@@ -182,6 +183,7 @@ const processCodeOutput = async ({
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
         metadata: { fileIdentifier },
+        ...getRetentionExpiry(req),
       };
       await createFile(file, true);
       return Object.assign(file, { messageId, toolCallId });
@@ -241,6 +243,7 @@ const processCodeOutput = async ({
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
+      ...getRetentionExpiry(req),
     };
 
     await createFile(file, true);

@@ -131,6 +131,8 @@ interface:
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
+  # Retention mode: "all" applies expiry to all data types, "temporary" (default) only to temporary chats
+  # retentionMode: "temporary"
 
 # Example Cloudflare turnstile (optional)
 #turnstile:

@@ -65,6 +65,11 @@ jest.mock('~/server/utils', () => ({
   determineFileType: jest.fn().mockResolvedValue({ mime: 'text/csv' }),
 }));
 
+jest.mock('~/server/services/Files/process', () => ({
+  getRetentionExpiry: jest.fn(() => ({})),
+}));
+
+const { getRetentionExpiry } = require('~/server/services/Files/process');
 const { createFile } = require('~/models');
 const { processCodeOutput } = require('../process');
 
@@ -111,6 +116,12 @@ describe('processCodeOutput path traversal protection', () => {
 
     const fileArg = createFile.mock.calls[0][0];
     expect(fileArg.filename).toBe('safe-output.csv');
+  });
+
+  test('getRetentionExpiry is called with the request object', async () => {
+    mockSanitizeFilename.mockReturnValueOnce('output.csv');
+    await processCodeOutput({ ...baseParams, name: 'output.csv' });
+    expect(getRetentionExpiry).toHaveBeenCalledWith(baseParams.req);
   });
 
   test('sanitized name is used for image file records', async () => {

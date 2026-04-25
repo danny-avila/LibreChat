@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
 import type { IConversation } from '../types';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ConversationMethods, createConversationMethods } from './conversation';
@@ -78,7 +78,7 @@ describe('Conversation Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
-    interfaceConfig?: { temporaryChatRetention?: number };
+    interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockConversationData: {
     conversationId: string;
@@ -398,13 +398,46 @@ describe('Conversation Operations', () => {
       expect(secondSave?.expiredAt).toBeNull();
     });
 
-    it('should filter out expired conversations in getConvosByCursor', async () => {
+    it('should set expiredAt for non-temporary conversation when retentionMode is ALL', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.isTemporary).toBe(false);
+    });
+
+    it('should not set expiredAt when retentionMode is temporary and not isTemporary', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.TEMPORARY,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.expiredAt).toBeNull();
+      expect(result?.isTemporary).toBe(false);
+    });
+
+    it('should filter out temporary conversations in getConvosByCursor', async () => {
       // Create some test conversations
-      const nonExpiredConvo = await Conversation.create({
+      const newNonTemporaryConvo = await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
-        title: 'Non-expired',
+        title: 'New Non-temporary Conversation',
         endpoint: EModelEndpoint.openAI,
+        isTemporary: false,
+        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+      });
+
+      const oldNonTemporaryConvo = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Old Non-Temporary Conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: undefined,
         expiredAt: null,
         updatedAt: new Date(),
       });
@@ -412,9 +445,10 @@ describe('Conversation Operations', () => {
       await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
-        title: 'Future expired',
+        title: 'Temporary conversation',
         endpoint: EModelEndpoint.openAI,
-        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
+        isTemporary: true,
+        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         updatedAt: new Date(),
       });
 
@@ -423,41 +457,61 @@ describe('Conversation Operations', () => {
 
       const result = await getConvosByCursor('user123');
 
-      // Should only return conversations with null or non-existent expiredAt
-      expect(result?.conversations).toHaveLength(1);
-      expect(result?.conversations[0]?.conversationId).toBe(nonExpiredConvo.conversationId);
+      // Should return both non-temporary conversations, not the temporary one
+      expect(result?.conversations).toHaveLength(2);
+      const convoIds = result?.conversations.map((c) => c.conversationId);
+      expect(convoIds).toContain(newNonTemporaryConvo.conversationId);
+      expect(convoIds).toContain(oldNonTemporaryConvo.conversationId);
     });
 
-    it('should filter out expired conversations in getConvosQueried', async () => {
-      // Create test conversations
-      const nonExpiredConvo = await Conversation.create({
+    it('should filter out temporary conversations in getConvosQueried', async () => {
+      const newNonTemporaryConvo = await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
-        title: 'Non-expired',
+        title: 'New Non-temporary Conversation',
         endpoint: EModelEndpoint.openAI,
-        expiredAt: null,
+        isTemporary: false,
+        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
       });
 
-      const expiredConvo = await Conversation.create({
+      const oldNonTemporaryConvo = await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
-        title: 'Expired',
+        title: 'Old Non-Temporary Conversation',
         endpoint: EModelEndpoint.openAI,
+        isTemporary: undefined,
+        expiredAt: null,
+        updatedAt: new Date(),
+      });
+
+      const tempConvo = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Temporary conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: true,
         expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
       });
 
       const convoIds = [
-        { conversationId: nonExpiredConvo.conversationId },
-        { conversationId: expiredConvo.conversationId },
+        { conversationId: newNonTemporaryConvo.conversationId },
+        { conversationId: oldNonTemporaryConvo.conversationId },
+        { conversationId: tempConvo.conversationId },
       ];
 
       const result = await getConvosQueried('user123', convoIds);
 
-      // Should only return the non-expired conversation
-      expect(result?.conversations).toHaveLength(1);
-      expect(result?.conversations[0].conversationId).toBe(nonExpiredConvo.conversationId);
-      expect(result?.convoMap[nonExpiredConvo.conversationId]).toBeDefined();
-      expect(result?.convoMap[expiredConvo.conversationId]).toBeUndefined();
+      // Should only return the non-temporary conversations
+      expect(result?.conversations).toHaveLength(2);
+
+      const resultIds = result?.conversations.map((c) => c.conversationId);
+      expect(resultIds).toContain(newNonTemporaryConvo.conversationId);
+      expect(resultIds).toContain(oldNonTemporaryConvo.conversationId);
+      expect(result?.convoMap[newNonTemporaryConvo.conversationId]).toBeDefined();
+      expect(result?.convoMap[oldNonTemporaryConvo.conversationId]).toBeDefined();
+      expect(result?.convoMap[tempConvo.conversationId]).toBeUndefined();
     });
   });
 
