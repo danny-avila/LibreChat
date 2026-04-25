@@ -29,6 +29,7 @@ export * from './email';
 export * from './share';
 export * from './timestamps';
 export * from './bklFilter';
+export * from './fileTypeIcon';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
 export { default as getLoginError } from './getLoginError';

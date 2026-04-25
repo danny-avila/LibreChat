@@ -3,7 +3,7 @@ import { useRecoilState } from 'recoil';
 import { X } from 'lucide-react';
 import { Button } from '@librechat/client';
 import store from '~/store';
-import { cn } from '~/utils';
+import { cn, FileTypeIcon } from '~/utils';
 import MarkdownLite from './MarkdownLite';
 import type { BklSource } from './ChunkModal';
 
@@ -192,7 +192,12 @@ export default function BklSourcesPanel() {
           <div className="text-xs font-medium uppercase tracking-wider text-text-secondary">
             출처 [{active.n}]
           </div>
-          <PanelTitle source={current} />
+          <div className="flex min-w-0 items-start gap-2">
+            <PanelTitleIcon source={current} />
+            <div className="min-w-0 flex-1">
+              <PanelTitle source={current} />
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           {/* Previously rendered a "원본 보기" (ExternalLink) button pointing
@@ -222,6 +227,24 @@ export default function BklSourcesPanel() {
         </div>
       </div>
     </div>
+  );
+}
+
+function PanelTitleIcon({ source }: { source: BklSource | null }) {
+  if (!source) return null;
+  const meta = source.metadata?.[0];
+  // Prefer the explicit `file_type` field if the backend surfaces one (PR-C),
+  // and fall back to parsing the extension from the citation header. Either
+  // way the same icon set lives in `FileTypeIcon`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ext = (meta as any)?.file_type ?? null;
+  const rawName = meta?.name ?? meta?.file_name ?? '';
+  return (
+    <FileTypeIcon
+      ext={ext}
+      name={rawName}
+      className="mt-0.5 h-5 w-5 shrink-0"
+    />
   );
 }
 

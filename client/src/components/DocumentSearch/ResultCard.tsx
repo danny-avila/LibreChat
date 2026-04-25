@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { FileText, Mail, FileType2, File as FileIcon, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import type { ChunkPreview, DocumentHit } from '~/data-provider/DocumentSearch';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, FileTypeIcon, fileExtensionLabel } from '~/utils';
 
 interface ResultCardProps {
   hit: DocumentHit;
@@ -60,27 +60,9 @@ function buildSnippet(content: string, query: string, maxLen = 260): string {
   return (start > 0 ? '…' : '') + content.slice(start, end) + (end < content.length ? '…' : '');
 }
 
-function fileExtension(name: string): string {
-  if (!name) return '';
-  const base = name.split('/').pop() ?? name;
-  const dot = base.lastIndexOf('.');
-  return dot === -1 ? '' : base.slice(dot + 1).toLowerCase();
-}
-
-function extensionLabel(name: string): string {
-  const ext = fileExtension(name);
-  return ext ? ext.toUpperCase() : 'DOC';
-}
-
-function ExtensionIcon({ name }: { name: string }) {
-  const ext = fileExtension(name);
-  const base = 'h-4 w-4 shrink-0';
-  if (ext === 'msg' || ext === 'eml') return <Mail className={cn(base, 'text-sky-600')} />;
-  if (ext === 'pdf') return <FileText className={cn(base, 'text-red-600')} />;
-  if (ext === 'docx' || ext === 'doc') return <FileType2 className={cn(base, 'text-blue-600')} />;
-  if (ext === 'md') return <FileText className={cn(base, 'text-emerald-600')} />;
-  return <FileIcon className={cn(base, 'text-text-secondary')} />;
-}
+// `fileExtension` / `extensionLabel` / `ExtensionIcon` were inlined here
+// originally; they now live in `~/utils/fileTypeIcon.tsx` so the citation
+// chip and the BKL sources panel render the same icon set.
 
 interface ChunkRowProps {
   chunk: ChunkPreview;
@@ -174,9 +156,9 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
     >
       <div className="flex items-start gap-2 px-4">
         <span className="mt-0.5 inline-flex h-5 shrink-0 items-center rounded-sm border border-border-medium bg-surface-secondary px-1.5 text-[10px] font-semibold tabular-nums tracking-wide text-text-secondary">
-          {extensionLabel(hit.file_name)}
+          {fileExtensionLabel(hit.file_name)}
         </span>
-        <ExtensionIcon name={hit.file_name} />
+        <FileTypeIcon name={hit.file_name} />
         <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
           {hit.file_name || hit.doc_id}
         </h3>

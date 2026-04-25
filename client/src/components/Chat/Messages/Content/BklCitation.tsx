@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useMessageContext } from '~/Providers';
 import store from '~/store';
+import { FileTypeIcon } from '~/utils';
 import { type BklSource } from './ChunkModal';
 
 type BklCitationProps = {
@@ -155,10 +156,34 @@ function getSourceLabel(messageId: string, n: number): string | null {
   return truncateMiddle(fileName);
 }
 
+/**
+ * Pull the file type (`pdf`, `msg`, `eml`, …) for citation [n], if known.
+ *
+ * The backend surfaces `metadata[0].file_type` in PR-C; if that field is
+ * missing we fall back to parsing the extension out of the citation header
+ * `『...』`. Returns null when sources aren't loaded yet.
+ */
+function getSourceFileType(messageId: string, n: number): string | null {
+  const sources = loadSourcesFromStorage(messageId);
+  if (!Array.isArray(sources) || !sources[n - 1]) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const src = sources[n - 1] as any;
+  const explicit = src?.metadata?.[0]?.file_type;
+  if (explicit && typeof explicit === 'string') return explicit.toLowerCase().replace(/^\./, '');
+  const name: string = src?.metadata?.[0]?.name || src?.source?.name || '';
+  if (!name) return null;
+  const inner = extractFileName(name);
+  const dot = inner.lastIndexOf('.');
+  return dot === -1 ? null : inner.slice(dot + 1).toLowerCase();
+}
+
 export default function BklCitation({ n }: BklCitationProps) {
   const { messageId } = useMessageContext();
   const [loading, setLoading] = useState(false);
   const [label, setLabel] = useState<string | null>(() => getSourceLabel(messageId, n));
+  const [fileType, setFileType] = useState<string | null>(
+    () => getSourceFileType(messageId, n),
+  );
   const setActiveSource = useSetRecoilState(store.activeBklSource);
 
   useEffect(() => {
@@ -167,7 +192,12 @@ export default function BklCitation({ n }: BklCitationProps) {
 
     const check = () => {
       const l = getSourceLabel(messageId, n);
-      if (l && !cancelled) { setLabel(l); return true; }
+      if (l && !cancelled) {
+        setLabel(l);
+        const ft = getSourceFileType(messageId, n);
+        if (ft) setFileType(ft);
+        return true;
+      }
       return false;
     };
 
@@ -239,6 +269,12 @@ export default function BklCitation({ n }: BklCitationProps) {
         '…'
       ) : label ? (
         <>
+          {fileType ? (
+            <FileTypeIcon
+              ext={fileType}
+              className="-ml-0.5 h-3 w-3 shrink-0"
+            />
+          ) : null}
           <span>『{label}』</span>
           <span>- [{n}]</span>
         </>
