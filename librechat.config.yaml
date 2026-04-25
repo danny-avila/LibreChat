@@ -119,6 +119,12 @@ mcpServers:
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
 
+  ajrasakha-location:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.44:9000/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+
   ajrasakha-agmarknet:
     type: streamable-http # type can optionally be omitted
     url: http://100.100.108.44:9006/mcp
@@ -131,11 +137,7 @@ mcpServers:
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
-  golden-n:
-    type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.43:9023/mcp
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-
+   
   ajrasakha-soilhealth:
     type: streamable-http
     url: http://100.100.108.44:9008/mcp
@@ -272,12 +274,17 @@ modelSpecs:
              - ONLY SKIP if query is: "Hi", "Hello", "Hey", "Namaste", "Good morning", "Good night", "Thanks", "Dhanyavaad", "Bye", "See you", "OK", "Yes", "No", "Hmm", "How are you?", "What's up?"
              - For everything else (including ALL farming questions), verify location using get_location_info if needed, translate to English if needed, then call upload_question_to_reviewer_system IMMEDIATELY as your FIRST tool call.
 
-          2. **Identify the user's location:**
-             - If the user has not provided state, latitude, or longitude, ask for their **pincode**.
-             - Use the **get current weather** MCP function with the pincode to fetch **latitude, longitude, and state**.
-             - When the get current weather MCP function is used, always include the note: "Weather information provided by the India Meteorological Department (IMD)."
-             - When the get_weather_forecast_mcp_ajrasakha-imd MCP function is used, always include the note: "Weather forecast information provided by the India Meteorological Department (IMD)."
-             - Use this state information for all subsequent crop, soil, and climate references.
+          
+          2. **Identify the user's location :**
+              * **Check for coordinates first:**
+                * If the user provides **latitude and longitude**, directly call `location_information_tool` MCP function.
+              * **Call MCP tool:**
+                * Use `location_information_tool(latitude, longitude)` to fetch:
+                  * city
+                  * state
+              * **Use retrieved location:**
+                * Use the **state** (and city if needed) for calling mcp tools
+
 
           3. **Identify the crop and state.**
              - If either is unknown, ask the user politely before proceeding.
@@ -297,20 +304,37 @@ modelSpecs:
                * state = "all"
              - This ensures the system searches across all crops and states for general soil science answers.
 
-          4. **Use MCP tools to fetch data (STRICT SEQUENCE - NO SKIPPING):**
-             4.1. **MANDATORY FIRST STEP - Call Reviewer Dataset:** Always call `get_context_from_reviewer_dataset_mcp_reviewer` FIRST without exception.
-                - This is the PRIMARY data source and must be queried before any other MCP tools.
-                - Wait for the complete response from the Reviewer dataset.
-             4.2. **CHECK REVIEWER RESPONSE:** Analyze the Reviewer dataset response carefully.
-                - If the response contains relevant, actionable information that answers the farmer's question, USE IT and stop.
-                - If the response indicates "no data found", "not available", or information is irrelevant to the query, proceed to next step.
-             4.3. **ONLY IF REVIEWER INSUFFICIENT - Call Golden Dataset:** Only if Reviewer dataset did NOT provide relevant answer, then call `get_context_from_golden_dataset`.
-                - Fetch available states → crops → data from Golden Dataset.
-             4.4. **CHECK GOLDEN RESPONSE:** If Golden Dataset also has no relevant information, check Package of Practices (fetch available states → data).
-             4.5. **DO NOT SKIP STEPS:** Under NO circumstances should you skip calling the Reviewer dataset first.
-             4.6. Dont miss any relevant data from the MCP servers in your response.
-             4.7. Fetch market-related data using both MCP tools, ajrasakha-agmarknet and ajrasakha-enam, and return information from whichever source has available data.
-
+          4. **Use MCP tools to fetch data for agriculture related queries (Not for live market price related queries) (STRICT SEQUENCE - NO SKIPPING)**
+          4.1 **Reviewer Dataset (Primary Step)**
+          * Call: `get_context_from_reviewer_dataset`
+          * Wait for full response.
+          * If user query matches any `question_text` in the response:
+            * Generate answer using **all information from the corresponding `answer_text`**.
+            * Stop.
+          * Else if response is relevant and sufficient:
+            * Generate answer using relevant `answer_text` from MCP data.
+            * Stop.
+          4.2 **Golden Dataset (Fallback 1)**
+          * If Reviewer response is not available / irrelevant / insufficient, call: `golden_retriever_tool`
+          * Wait for full response.
+          * If query matches any `question_text`:
+            * Generate answer using **all information from the corresponding `answer_text`**.
+            * Stop.
+          * Else if relevant and sufficient:
+            * Generate answer using relevant `answer_text` from MCP data.
+            * Stop.
+          4.3 **Package of Practices (POP) (Fallback 2)**
+          * If Golden response is not available / irrelevant / insufficient, call: `get_context_from_package_of_practices`
+          * Wait for full response.
+          * If response is relevant and sufficient:
+            * Generate answer using available data.
+            * Append:
+              "Your query has also been shared with an expert for review. It will be processed within 2 hours. Please ask the same query after 2 hours."
+            * Stop.
+          4.4 **Final Fallback**
+          * If all sources are insufficient, respond:
+            "We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert and will be processed within 2 hours. Please ask the same query after 2 hours."
+          4.5. Fetch market-related data using both MCP tools, ajrasakha-agmarknet and ajrasakha-enam, and return information from whichever source has available data.
           SOIL HEALTH — FERTILIZER DOSAGE RECOMMENDATION (STRICT WORKFLOW):
           - If a farmer provides ANY soil test value — Nitrogen (N), Phosphorus (P), Potassium (K), or Organic Carbon (OC) — actively ask for any remaining missing soil values before proceeding.
           - Also collect: State, District, and Crop. Check conversation history first; if missing, ask the farmer.
@@ -465,6 +489,8 @@ modelSpecs:
          - ajrasakha-enam
          - ajrasakha-imd
          - faq-videos
+         - ajrasakha-location
+
       default: false
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
@@ -507,12 +533,15 @@ modelSpecs:
              - ONLY SKIP if query is: "Hi", "Hello", "Hey", "Namaste", "Good morning", "Good night", "Thanks", "Dhanyavaad", "Bye", "See you", "OK", "Yes", "No", "Hmm", "How are you?", "What's up?"
              - For everything else (including ALL farming questions), verify location using get_location_info if needed, translate to English if needed, then call upload_question_to_reviewer_system IMMEDIATELY as your FIRST tool call.
 
-          2. **Identify the user's location:**
-             - If the user has not provided state, latitude, or longitude, ask for their **pincode**.
-             - Use the **get current weather** MCP function with the pincode to fetch **latitude, longitude, and state**.
-             - When the get current weather MCP function is used, always include the note: "Weather information provided by the India Meteorological Department (IMD)."
-             - When the get_weather_forecast MCP function is used, always include the note: "Weather forecast information provided by the India Meteorological Department (IMD)."
-             - Use this state information for all subsequent crop, soil, and climate references.
+          2. **Identify the user's location :**
+              * **Check for coordinates first:**
+                * If the user provides **latitude and longitude**, directly call `location_information_tool` MCP function.
+              * **Call MCP tool:**
+                * Use `location_information_tool(latitude, longitude)` to fetch:
+                  * city
+                  * state
+              * **Use retrieved location:**
+                * Use the **state** (and city if needed) for calling mcp tools
 
           3. **Identify the crop and state.**
              - If either is unknown, ask the user politely before proceeding.
@@ -532,28 +561,37 @@ modelSpecs:
                * state = "all"
              - This ensures the system searches across all crops and states for general soil science answers.
 
-          4. **Use MCP tools to fetch data (STRICT SEQUENCE - NO SKIPPING):**
-             4.1. **MANDATORY FIRST STEP - Call Reviewer Dataset:** Always call `get_context_from_reviewer_dataset_mcp_reviewer` FIRST without exception.
-                - This is the PRIMARY data source and must be queried before any other MCP tools.
-                - Wait for the complete response from the Reviewer dataset.
-             4.2. **CHECK REVIEWER RESPONSE:** Analyze the Reviewer dataset response carefully.
-                - If the response contains relevant, actionable information that answers the farmer's question, USE IT and stop.
-                - If the response indicates "no data found", "not available", or information is irrelevant to the query, proceed to next step.
-             4.3. **ONLY IF REVIEWER INSUFFICIENT - Call Golden Dataset:** Only if Reviewer dataset did NOT provide relevant answer, then call `get_context_from_golden_dataset`.
-                - Fetch available states → crops → data from Golden Dataset.
-             4.4. **CHECK GOLDEN RESPONSE:** If Golden Dataset also has no relevant information, check Package of Practices (fetch available states → data).
-                  - After retrieving POP data, evaluate relevance:
-                  - If the POP context is NOT relevant or insufficient:
-                    Respond:
-                    "We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert, and we will get back to you within 2 hours."
-                  - If the POP context IS relevant:
-                    - Use the POP data to generate the response.
-                    - Do not miss any relevant details from the MCP data.
-                    - After the response, append:
-                      "Your query has also been shared with an expert for review. We will get back to you within 2 hours if any additional information is available."
-             4.5. **DO NOT SKIP STEPS:** Under NO circumstances should you skip calling the Reviewer dataset first.
-             4.6. Dont miss any relevant data from the MCP servers in your response.
-
+          4. **Use MCP tools to fetch data for agriculture related queries (Not for live market price related queries) (STRICT SEQUENCE - NO SKIPPING)**
+          4.1 **Reviewer Dataset (Primary Step)**
+          * Call: `get_context_from_reviewer_dataset`
+          * Wait for full response.
+          * If user query matches any `question_text` in the response:
+            * Generate answer using **all information from the corresponding `answer_text`**.
+            * Stop.
+          * Else if response is relevant and sufficient:
+            * Generate answer using relevant `answer_text` from MCP data.
+            * Stop.
+          4.2 **Golden Dataset (Fallback 1)**
+          * If Reviewer response is not available / irrelevant / insufficient, call: `golden_retriever_tool`
+          * Wait for full response.
+          * If query matches any `question_text`:
+            * Generate answer using **all information from the corresponding `answer_text`**.
+            * Stop.
+          * Else if relevant and sufficient:
+            * Generate answer using relevant `answer_text` from MCP data.
+            * Stop.
+          4.3 **Package of Practices (POP) (Fallback 2)**
+          * If Golden response is not available / irrelevant / insufficient, call: `get_context_from_package_of_practices`
+          * Wait for full response.
+          * If response is relevant and sufficient:
+            * Generate answer using available data.
+            * Append:
+              "Your query has also been shared with an expert for review. It will be processed within 2 hours. Please ask the same query after 2 hours."
+            * Stop.
+          4.4 **Final Fallback**
+          * If all sources are insufficient, respond:
+            "We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert and will be processed within 2 hours. Please ask the same query after 2 hours."
+          4.5. Fetch market-related data using both MCP tools, ajrasakha-agmarknet and ajrasakha-enam, and return information from whichever source has available data. 
           5. **After answering any query:**
              - Search the **FAQ-Video MCP server** for a relevant YouTube video or summary.  
              - Show it only if the content is clearly relevant; otherwise, do not display or ask about it.
@@ -676,6 +714,8 @@ modelSpecs:
          - ajrasakha-enam
          - ajrasakha-imd
          - faq-videos
+         - ajrasakha-location
+
       default: true
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
@@ -695,6 +735,8 @@ modelSpecs:
          - ajrasakha-enam
          - ajrasakha-imd
          - faq-videos
+         - ajrasakha-location
+
       default: true
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
@@ -714,6 +756,8 @@ modelSpecs:
          - ajrasakha-enam
          - ajrasakha-imd
          - faq-videos
+         - ajrasakha-location
+
       default: true
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
@@ -736,8 +780,8 @@ modelSpecs:
          - ajrasakha-enam
          - ajrasakha-imd
          - faq-videos
-         - ajrasakha-soilhealth
-         - ajrasakha-govt-schemes
+         - ajrasakha-location
+
 
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
