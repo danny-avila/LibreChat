@@ -135,27 +135,31 @@ export async function initializeCustom({
 
   const userId = req.user?.id ?? '';
 
-  const cache = tokenConfigCache();
-  /** tokenConfig is an optional extended property on custom endpoints */
-  const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
-  const tokenKey =
-    !hasTokenConfig && (userProvidesKey || userProvidesURL) ? `${endpoint}:${userId}` : endpoint;
+  if (endpointConfig.freeOfCharge === true) {
+    endpointTokenConfig = { '*': { prompt: 0, completion: 0, context: 0 } };
+  } else {
+    const cache = tokenConfigCache();
+    /** tokenConfig is an optional extended property on custom endpoints */
+    const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
+    const tokenKey =
+      !hasTokenConfig && (userProvidesKey || userProvidesURL) ? `${endpoint}:${userId}` : endpoint;
 
-  const cachedConfig =
-    !hasTokenConfig &&
-    FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
-    (await cache.get(tokenKey));
+    const cachedConfig =
+      !hasTokenConfig &&
+      FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
+      (await cache.get(tokenKey));
 
-  endpointTokenConfig = (cachedConfig as EndpointTokenConfig) || undefined;
+    endpointTokenConfig = (cachedConfig as EndpointTokenConfig) || undefined;
 
-  if (
-    FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
-    endpointConfig &&
-    endpointConfig.models?.fetch &&
-    !endpointTokenConfig
-  ) {
-    await fetchModels({ apiKey, baseURL, name: endpoint, user: userId, tokenKey });
-    endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
+    if (
+      FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
+      endpointConfig &&
+      endpointConfig.models?.fetch &&
+      !endpointTokenConfig
+    ) {
+      await fetchModels({ apiKey, baseURL, name: endpoint, user: userId, tokenKey });
+      endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
+    }
   }
 
   const customOptions = buildCustomOptions(endpointConfig, appConfig, endpointTokenConfig);

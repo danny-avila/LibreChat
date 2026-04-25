@@ -20,7 +20,12 @@ import type {
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
+import type {
+  InitializeResultBase,
+  ServerRequest,
+  EndpointDbMethods,
+  EndpointTokenConfig,
+} from '~/types';
 import {
   optionalChainWithEmptyCheck,
   extractLibreChatParams,
@@ -66,6 +71,8 @@ export type InitializedAgent = Agent & {
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
+  /** Token pricing config for this endpoint (e.g. free-of-charge wildcard). */
+  endpointTokenConfig?: EndpointTokenConfig;
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -456,6 +463,7 @@ export async function initializeAgent(
       maxContextTokens != null && maxContextTokens > 0
         ? maxContextTokens
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
+    endpointTokenConfig: options.endpointTokenConfig,
   };
 
   return initializedAgent;

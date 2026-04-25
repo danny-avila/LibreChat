@@ -374,6 +374,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     resendFiles: primaryConfig.resendFiles ?? true,
     maxContextTokens: primaryConfig.maxContextTokens,
     endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
+    endpointTokenConfig: primaryConfig.endpointTokenConfig,
   });
 
   if (streamId) {
