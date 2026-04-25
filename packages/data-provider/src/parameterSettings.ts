@@ -732,6 +732,19 @@ const google: Record<string, SettingDefinition> = {
     showDefault: false,
     columnSpan: 2,
   },
+  url_context: {
+    key: 'url_context',
+    label: 'com_endpoint_use_url_context',
+    labelCode: true,
+    description: 'com_endpoint_google_use_url_context',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
 };
 
 const googleConfig: SettingsConfiguration = [
@@ -747,6 +760,7 @@ const googleConfig: SettingsConfiguration = [
   google.thinkingBudget,
   google.thinkingLevel,
   google.web_search,
+  google.url_context,
   librechat.fileTokenLimit,
 ];
 
@@ -767,6 +781,7 @@ const googleCol2: SettingsConfiguration = [
   google.thinkingBudget,
   google.thinkingLevel,
   google.web_search,
+  google.url_context,
   librechat.fileTokenLimit,
 ];
 
