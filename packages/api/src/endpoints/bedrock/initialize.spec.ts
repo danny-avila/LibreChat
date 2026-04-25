@@ -203,6 +203,122 @@ describe('initializeBedrock', () => {
       expect(result.llmConfig.guardrailConfig).toEqual(guardrailConfig);
       expect(result.llmConfig.guardrailConfig?.trace).toBe('enabled_full');
     });
+
+    it.each([
+      {
+        description: 'guardrailIdentifier only',
+        envVars: { GUARDRAIL_ID: 'gr-abc123xyz' },
+        input: {
+          guardrailIdentifier: '${GUARDRAIL_ID}',
+          guardrailVersion: '1',
+        },
+        expected: {
+          guardrailIdentifier: 'gr-abc123xyz',
+          guardrailVersion: '1',
+        },
+      },
+      {
+        description: 'guardrailVersion only',
+        envVars: { GUARDRAIL_VERSION: 'DRAFT' },
+        input: {
+          guardrailIdentifier: 'static-guardrail-id',
+          guardrailVersion: '${GUARDRAIL_VERSION}',
+        },
+        expected: {
+          guardrailIdentifier: 'static-guardrail-id',
+          guardrailVersion: 'DRAFT',
+        },
+      },
+      {
+        description: 'both guardrailIdentifier and guardrailVersion',
+        envVars: { PROD_GUARDRAIL_ID: 'gr-production-123', PROD_GUARDRAIL_VERSION: '5' },
+        input: {
+          guardrailIdentifier: '${PROD_GUARDRAIL_ID}',
+          guardrailVersion: '${PROD_GUARDRAIL_VERSION}',
+          trace: 'enabled' as const,
+        },
+        expected: {
+          guardrailIdentifier: 'gr-production-123',
+          guardrailVersion: '5',
+          trace: 'enabled',
+        },
+      },
+      {
+        description: 'direct values when no env variable syntax is used',
+        envVars: {},
+        input: {
+          guardrailIdentifier: 'direct-guardrail-id',
+          guardrailVersion: '3',
+        },
+        expected: {
+          guardrailIdentifier: 'direct-guardrail-id',
+          guardrailVersion: '3',
+        },
+      },
+      {
+        description: 'fallback to original string when env variable is not set',
+        envVars: {},
+        deleteEnvVars: ['NONEXISTENT_GUARDRAIL_ID'],
+        input: {
+          guardrailIdentifier: '${NONEXISTENT_GUARDRAIL_ID}',
+          guardrailVersion: '1',
+        },
+        expected: {
+          guardrailIdentifier: '${NONEXISTENT_GUARDRAIL_ID}',
+          guardrailVersion: '1',
+        },
+      },
+      {
+        description: 'env variable with whitespace around it',
+        envVars: { TRIMMED_GUARDRAIL_ID: 'gr-trimmed-123' },
+        input: {
+          guardrailIdentifier: '  ${TRIMMED_GUARDRAIL_ID}  ',
+          guardrailVersion: '2',
+        },
+        expected: {
+          guardrailIdentifier: 'gr-trimmed-123',
+          guardrailVersion: '2',
+        },
+      },
+      {
+        description: 'preserve trace field when resolving env variables',
+        envVars: { GUARDRAIL_WITH_TRACE: 'gr-with-trace' },
+        input: {
+          guardrailIdentifier: '${GUARDRAIL_WITH_TRACE}',
+          guardrailVersion: '1',
+          trace: 'enabled_full' as const,
+        },
+        expected: {
+          guardrailIdentifier: 'gr-with-trace',
+          guardrailVersion: '1',
+          trace: 'enabled_full',
+        },
+      },
+    ])('should resolve environment variables: $description', async ({ envVars, deleteEnvVars, input, expected }) => {
+      // Set up environment variables
+      Object.entries(envVars).forEach(([key, value]) => {
+        process.env[key] = value;
+      });
+
+      // Delete specified environment variables
+      deleteEnvVars?.forEach((key) => {
+        delete process.env[key];
+      });
+
+      const params = createMockParams({
+        config: {
+          endpoints: {
+            [EModelEndpoint.bedrock]: {
+              guardrailConfig: input,
+            },
+          },
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(result.llmConfig.guardrailConfig).toEqual(expected);
+    });
   });
 
   describe('Proxy Configuration', () => {
