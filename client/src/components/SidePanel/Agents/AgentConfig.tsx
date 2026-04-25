@@ -75,12 +75,16 @@ export default function AgentConfig() {
   const skillsActive = useWatch({ control, name: 'skills_enabled' });
   const agent_id = useWatch({ control, name: 'id' });
 
-  const skillsHintKey =
-    skillsActive !== true
-      ? 'com_ui_skills_disabled_hint'
-      : (skills ?? []).length > 0
+  let skillsHintKey:
+    | 'com_ui_skills_disabled_hint'
+    | 'com_ui_skills_enabled_allowlist_hint'
+    | 'com_ui_skills_enabled_all_hint' = 'com_ui_skills_disabled_hint';
+  if (skillsActive === true) {
+    skillsHintKey =
+      (skills ?? []).length > 0
         ? 'com_ui_skills_enabled_allowlist_hint'
         : 'com_ui_skills_enabled_all_hint';
+  }
 
   const {
     codeEnabled,
