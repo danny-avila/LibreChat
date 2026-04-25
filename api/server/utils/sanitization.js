@@ -1,4 +1,4 @@
-const escapeHtml = require('escape-html'); 
+const escapeHtml = require('escape-html');
 
 /**
  * Sanitizes HTML content to prevent XSS attacks
@@ -11,7 +11,7 @@ function sanitizeHtml(input) {
   }
   return escapeHtml(input).replace(/\//g, '&#x2F;');
 }
- 
+
 /**
  * Sanitizes JSON data before sending as response
  * @param {any} data - The data to sanitize
@@ -25,7 +25,7 @@ function sanitizeJsonResponse(data) {
   if (Array.isArray(data)) {
     return data.map(sanitizeJsonResponse);
   }
- 
+
   if (data && typeof data === 'object') {
     const sanitized = {};
     for (const [key, value] of Object.entries(data)) {
