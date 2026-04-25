@@ -19,6 +19,7 @@
  * ```
  */
 import { nanoid } from 'nanoid';
+import escapeHtml from 'escape-html';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
   ChatCompletionResponse,
@@ -434,7 +435,11 @@ export async function createAgentChatCompletion(
       res.flushHeaders();
 
       // Send initial chunk with role
-      const initialChunk = createChunk(context, { role: 'assistant' });
+      const safeContext = { ...context };
+      if (safeContext.requestId) {
+        safeContext.requestId = typeof safeContext.requestId === 'string' ? escapeHtml(safeContext.requestId) : safeContext.requestId;
+      }
+      const initialChunk = createChunk(safeContext, { role: 'assistant' });
       writeSSE(res, initialChunk);
     }
 
@@ -494,7 +499,11 @@ export async function createAgentChatCompletion(
 
     // Finalize response
     if (isStreaming && handlerConfig) {
-      sendFinalChunk(handlerConfig);
+      const safeConfig = { ...handlerConfig };
+      if (safeConfig.context && safeConfig.context.requestId) {
+        safeConfig.context.requestId = typeof safeConfig.context.requestId === 'string' ? escapeHtml(safeConfig.context.requestId) : safeConfig.context.requestId;
+      }
+      sendFinalChunk(safeConfig);
       res.end();
     } else if (aggregator) {
       // Build and send non-streaming response
@@ -521,7 +530,9 @@ export async function createAgentChatCompletion(
     // Check if we already started streaming (headers sent)
     if (res.headersSent) {
       // Headers already sent, try to send error in stream format
-      const errorChunk = createChunk(context, { content: `\n\nError: ${errorMessage}` }, 'stop');
+      const sanitizedError = typeof errorMessage === 'string' ? escapeHtml(errorMessage) : '';
+      const safeContext = context && typeof context === 'object' ? context : { requestId: '', model: '', created: Date.now() };
+      const errorChunk = createChunk(safeContext, { content: `\n\nError: ${sanitizedError}` }, 'stop');
       writeSSE(res, errorChunk);
       writeSSE(res, '[DONE]');
       res.end();
