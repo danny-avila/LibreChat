@@ -443,6 +443,19 @@ endpoints:
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
+    # FuturMix AI Gateway Example
+    - name: 'FuturMix'
+      apiKey: '${FUTURMIX_API_KEY}'
+      baseURL: 'https://futurmix.ai/v1'
+      models:
+        default:
+          ['claude-sonnet-4-20250514', 'gpt-4o', 'gemini-2.5-flash']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o'
+      modelDisplayLabel: 'FuturMix'
+
+
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
