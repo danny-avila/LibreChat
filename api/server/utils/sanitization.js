@@ -27,6 +27,12 @@ function sanitizeJsonResponse(data) {
   }
 
   if (data && typeof data === 'object') {
+    if (data.constructor && data.constructor.name === 'ObjectId') {
+      return data.toString();
+    }
+    if(Buffer.isBuffer(data)) {
+      return data.toString();
+    }
     const sanitized = {};
     for (const [key, value] of Object.entries(data)) {
       sanitized[sanitizeHtml(key)] = sanitizeJsonResponse(value);
