@@ -47,9 +47,9 @@ const extractUtf8 = (buffer: Buffer): string | null => {
 /**
  * Race a promise against a timeout, rejecting if the work doesn't complete
  * in time. Used to keep document parsing from blocking the response path on
- * pathological inputs.
+ * pathological inputs. Exported for direct unit testing.
  */
-const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+export const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<T>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);

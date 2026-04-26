@@ -1,9 +1,9 @@
 import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
+import { isImageAttachment, isTextAttachment } from './attachmentTypes';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { isImageAttachment, isTextAttachment } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
