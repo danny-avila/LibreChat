@@ -282,6 +282,36 @@ export default function BklSourcesPanel() {
  * Returns null when neither source is available so the button stays
  * hidden rather than rendering a dead link.
  */
+/**
+ * Build the chunk-excerpt that we forward to the .msg viewer as
+ * `?highlight=...`. The backend uses it to scroll-into-view + flash
+ * the matching passage so the user lands directly on the cited
+ * sentence instead of having to re-read the whole email.
+ *
+ * Trade-offs:
+ *  - We strip the leading `[본문] / [첨부 N/M · file]` marker (same
+ *    rule the panel body uses) so the needle starts on real prose.
+ *  - We collapse runs of whitespace to single spaces — the rendered
+ *    .msg body keeps Outlook's literal `\n` paragraph breaks, but
+ *    the chunker normalises whitespace, so an exact substring would
+ *    almost never hit. The viewer's regex uses `\s+` to bridge the
+ *    gap; we keep the prefix short here so the URL stays reasonable.
+ *  - 200 chars is the sweet spot empirically: short enough to fit
+ *    well under any browser/proxy URL limit (the result, after
+ *    percent-encoding Korean chars, is ~600 bytes), long enough to
+ *    pin the right paragraph even on chunk boundaries that share
+ *    a common opening phrase ("안녕하세요" etc.).
+ */
+const _HIGHLIGHT_MAX = 200;
+function buildHighlightExcerpt(source: BklSource | null): string | null {
+  if (!source) return null;
+  const raw = source.document?.[0] ?? '';
+  if (!raw) return null;
+  const stripped = stripLeadingSegmentMarker(raw).replace(/\s+/g, ' ').trim();
+  if (stripped.length < 4) return null;
+  return stripped.substring(0, _HIGHLIGHT_MAX);
+}
+
 function resolveOriginalSourceUrl(source: BklSource | null): string | null {
   if (!source) return null;
   const meta = source.metadata?.[0];
@@ -289,10 +319,19 @@ function resolveOriginalSourceUrl(source: BklSource | null): string | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const m = meta as any;
   if (typeof m.viewer_url === 'string' && m.viewer_url.length > 0) {
+    // Attachment PDFs go straight to attachments-static — Chrome's
+    // built-in PDF viewer doesn't support deep-linking to a phrase
+    // via fragment, so we don't append `highlight=` here. Future
+    // work could pass `#page=N` once the indexer stamps page hits.
     return m.viewer_url;
   }
   if (typeof m.doc_id === 'string' && m.doc_id.length > 0) {
-    return `/v1/source-files/${encodeURIComponent(m.doc_id)}`;
+    let url = `/v1/source-files/${encodeURIComponent(m.doc_id)}`;
+    const excerpt = buildHighlightExcerpt(source);
+    if (excerpt) {
+      url += `?highlight=${encodeURIComponent(excerpt)}`;
+    }
+    return url;
   }
   return null;
 }
