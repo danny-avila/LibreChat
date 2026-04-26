@@ -24,6 +24,12 @@ jest.mock('@librechat/agents', () => ({
     description: 'bash',
     schema: {},
   },
+  buildBashExecutionToolDescription: ({
+    enableToolOutputReferences,
+  }: {
+    enableToolOutputReferences?: boolean;
+  } = {}): string =>
+    enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
 }));
 
 import { Types } from 'mongoose';
@@ -867,6 +873,26 @@ describe('injectSkillCatalog', () => {
     expect(definedNames).toContain('read_file');
     expect(definedNames).toContain('bash_tool');
     expect(definedNames).not.toContain('skill');
+  });
+
+  it('registers bash_tool with the tool-output reference syntax guide when codeEnvAvailable', async () => {
+    /**
+     * Symmetry check with `initializeAgent`'s call: `injectSkillCatalog`
+     * must forward `enableToolOutputReferences` so that if call order
+     * ever flips (skills-first), the resulting `bash_tool` description
+     * still contains the `{{tool<idx>turn<turn>}}` syntax guide. Using
+     * the registry mock's stub of `buildBashExecutionToolDescription`
+     * (defined at the top of this file), the guide collapses to a
+     * `{{tool<idx>turn<turn>}}` literal substring when the flag is on
+     * and is absent when off.
+     */
+    const owned = makeSkill('owned-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[owned]]);
+    const result = await injectSkillCatalog(
+      baseParams({ listSkillsByAccess, codeEnvAvailable: true }),
+    );
+    const bashDef = (result.toolDefinitions ?? []).find((d) => d.name === 'bash_tool');
+    expect(bashDef?.description).toContain('{{tool<idx>turn<turn>}}');
   });
 
   it('does NOT register bash_tool when codeEnvAvailable is false (skills-only agent)', async () => {

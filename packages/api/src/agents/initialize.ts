@@ -742,6 +742,7 @@ export async function initializeAgent(
       toolRegistry,
       toolDefinitions,
       includeBash: true,
+      enableToolOutputReferences: effectiveCodeEnvAvailable,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
   } else if (agentRequestsCodeExec) {
