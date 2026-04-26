@@ -1051,6 +1051,7 @@ async function loadAgentTools({
       hasDeferredTools,
       actionsEnabled,
       tools: agentTools,
+      primedCodeFiles,
     };
   }
 
@@ -1067,6 +1068,7 @@ async function loadAgentTools({
       hasDeferredTools,
       actionsEnabled,
       tools: agentTools,
+      primedCodeFiles,
     };
   }
 

@@ -674,6 +674,7 @@ describe('createToolExecuteHandler', () => {
       codeEnvAvailable?: boolean;
       accessibleSkillIds?: unknown[];
       activeSkillNames?: Set<string>;
+      skillPrimedIdsByName?: Record<string, string>;
       readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
       getSkillByName?: ToolExecuteOptions['getSkillByName'];
     }) {
@@ -683,6 +684,7 @@ describe('createToolExecuteHandler', () => {
           codeEnvAvailable: params.codeEnvAvailable === true,
           accessibleSkillIds: params.accessibleSkillIds ?? [],
           activeSkillNames: params.activeSkillNames,
+          skillPrimedIdsByName: params.skillPrimedIdsByName,
         },
       }));
       return createToolExecuteHandler({
@@ -765,6 +767,71 @@ describe('createToolExecuteHandler', () => {
       );
       expect(result.status).toBe('success');
       expect(result.content).toContain('sandbox-data');
+    });
+
+    it('does NOT misroute primed skills outside the catalog cap to the sandbox', async () => {
+      /**
+       * Regression for review P2 #2: manual ($-popover) and always-apply
+       * primes are intentionally resolved off the wider `accessibleSkillIds`
+       * ACL set BEFORE catalog injection — see `resolveManualSkills`.
+       * A primed skill name can therefore legitimately be ABSENT from
+       * `activeSkillNames` (which reflects the catalog after the
+       * `SKILL_CATALOG_LIMIT` cap and active filter).
+       *
+       * Without the primed-bypass, the `activeSkillNames` shortcut would
+       * misroute `read_file("primed-only-skill/references/foo.md")` to
+       * the sandbox even though the primed skill is in scope and
+       * `getSkillByName` would resolve it via the pinned `_id`.
+       */
+      const primedHex = '507f1f77bcf86cd799439060';
+      const getSkillByName = jest.fn(async () => ({
+        _id: primedHex as unknown as never,
+        name: 'primed-only-skill',
+        body: '# Primed skill body',
+        fileCount: 1,
+      }));
+      const readSandboxFile = jest.fn();
+      const getSkillFileByPath = jest.fn(async () => ({
+        content: 'references content',
+        mimeType: 'text/markdown',
+        bytes: 18,
+        filepath: 'references/foo.md',
+        source: 'local',
+        relativePath: 'references/foo.md',
+        isBinary: false,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: {
+            codeEnvAvailable: true,
+            accessibleSkillIds: skillsInScope(),
+            /* Catalog visible names DO NOT include the primed skill — it's
+               outside the cap. */
+            activeSkillNames: new Set(['some-other-skill']),
+            /* But the prime resolver authorized it for this turn. */
+            skillPrimedIdsByName: { 'primed-only-skill': primedHex },
+          },
+        })),
+        getSkillByName,
+        getSkillFileByPath,
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_primed_outside_catalog',
+          name: Constants.READ_FILE,
+          args: { file_path: 'primed-only-skill/references/foo.md' },
+        },
+      ]);
+
+      // Primed skill resolved through the existing skill path, not the
+      // sandbox shortcut.
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(getSkillByName).toHaveBeenCalledWith('primed-only-skill', expect.any(Array), {});
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('references content');
     });
 
     it('routes through sandbox when skills are not effectively enabled (empty accessibleSkillIds)', async () => {

@@ -566,6 +566,15 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
             skillsCapabilityEnabled,
             ephemeralSkillsToggle,
           }),
+          /** Match the primary / handoff / addedConvo paths: forward the
+           *  endpoint-level admin flag so `initializeAgent` can compute the
+           *  per-agent narrowing (admin AND agent.tools includes
+           *  execute_code) into `InitializedAgent.codeEnvAvailable`. Without
+           *  this, a code-enabled subagent loaded only through
+           *  `subagentAgentConfigs` initializes with `codeEnvAvailable:
+           *  false`, so `bash_tool` / `read_file` sandbox fallback are
+           *  silently gated off even though the seed walk found it. */
+          codeEnvAvailable,
           skillStates,
           defaultActiveOnShare,
         },
@@ -599,6 +608,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         actionsEnabled: config.actionsEnabled,
         accessibleSkillIds: config.accessibleSkillIds,
         activeSkillNames: config.activeSkillNames,
+        codeEnvAvailable: config.codeEnvAvailable,
         skillPrimedIdsByName: buildSkillPrimedIdsByName(
           config.manualSkillPrimes,
           config.alwaysApplySkillPrimes,

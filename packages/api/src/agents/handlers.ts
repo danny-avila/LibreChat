@@ -306,13 +306,35 @@ async function handleReadFileCall(
   }
 
   /**
+   * Read the primed-skills map BEFORE the `activeSkillNames` shortcut.
+   *
+   * `activeSkillNames` is the catalog-visible set after the
+   * `SKILL_CATALOG_LIMIT` cap and the active-state filter run in
+   * `injectSkillCatalog`. Manual ($-popover) primes and always-apply
+   * primes are intentionally resolved off the wider `accessibleSkillIds`
+   * ACL set BEFORE catalog injection — see `resolveManualSkills` for
+   * why a skill outside the catalog cap can still be authorized for
+   * direct manual invocation. So a primed skill name may legitimately
+   * be absent from `activeSkillNames`. Treat any name in
+   * `skillPrimedIdsByName` as "known" for the gate below; otherwise the
+   * shortcut would misroute `read_file("primed-skill/references/foo.md")`
+   * to the sandbox even though the primed skill is in scope.
+   */
+  const skillPrimedIdsByName =
+    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  const primedIdString = skillPrimedIdsByName[skillName];
+  const isPrimedThisTurn = primedIdString != null;
+
+  /**
    * Skills are in scope, but the first segment isn't a name we know.
    * Use the catalog-derived `activeSkillNames` Set (no DB read) to detect
    * this and fall through to the sandbox so the model doesn't have to
    * eat a wasted `read_file` error before retrying with `bash_tool`.
+   * Primed names bypass this shortcut even when absent from the catalog
+   * (see comment on `skillPrimedIdsByName` above).
    */
   const activeSkillNames = mergedConfigurable?.activeSkillNames as Set<string> | undefined;
-  if (activeSkillNames && !activeSkillNames.has(skillName)) {
+  if (activeSkillNames && !activeSkillNames.has(skillName) && !isPrimedThisTurn) {
     if (codeEnvAvailable) {
       return handleSandboxFileFallback(tc, args.file_path, options);
     }
@@ -332,11 +354,6 @@ async function handleReadFileCall(
       errorMessage: 'File reading is not configured',
     };
   }
-
-  const skillPrimedIdsByName =
-    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
-  const primedIdString = skillPrimedIdsByName[skillName];
-  const isPrimedThisTurn = primedIdString != null;
   /* On a primed lookup (manual `$` OR always-apply), pin the accessible
      set to ONLY the primed `_id`. This guarantees the doc whose body got
      primed is the SAME doc whose files we read, even when same-name
