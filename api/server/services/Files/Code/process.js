@@ -243,7 +243,11 @@ const processCodeOutput = async ({
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
-      ...(text != null ? { text } : {}),
+      // Always set `text` explicitly (string or null) so that an update which
+      // produces a binary or oversized artifact clears any previously cached
+      // text — `createFile` uses findOneAndUpdate with $set semantics, which
+      // would otherwise leave a stale value behind.
+      text: text ?? null,
     };
 
     await createFile(file, true);

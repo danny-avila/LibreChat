@@ -45,6 +45,19 @@ describe('extractCodeArtifactText', () => {
       expect(Buffer.byteLength(text!, 'utf-8')).toBeLessThanOrEqual(MAX_TEXT_CACHE_BYTES);
     });
 
+    it('does not split a multi-byte UTF-8 character at the truncation boundary', async () => {
+      // 你 is U+4F60, which encodes as 3 bytes in UTF-8 (E4 BD A0).
+      // Build a buffer where the cut would otherwise land mid-character.
+      const filler = 'a'.repeat(MAX_TEXT_CACHE_BYTES - 30);
+      const tail = '你'.repeat(50);
+      const buffer = Buffer.from(filler + tail, 'utf-8');
+      const text = await extractCodeArtifactText(buffer, 'cjk.txt', 'text/plain', 'utf8-text');
+      expect(text).not.toBeNull();
+      expect(text!.endsWith('…[truncated]')).toBe(true);
+      // U+FFFD (replacement) signals a corrupted boundary — must not appear.
+      expect(text).not.toContain('�');
+    });
+
     it('returns the empty string for an empty buffer', async () => {
       const text = await extractCodeArtifactText(
         Buffer.alloc(0),

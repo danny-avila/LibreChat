@@ -311,7 +311,7 @@ describe('Code Process', () => {
         );
       });
 
-      it('should omit text when extractor returns null', async () => {
+      it('should set text to null when extractor returns null so updates clear stale values', async () => {
         const buffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: buffer });
         determineFileType.mockResolvedValue({ mime: 'application/octet-stream' });
@@ -320,9 +320,31 @@ describe('Code Process', () => {
 
         const result = await processCodeOutput({ ...baseParams, name: 'archive.zip' });
 
-        expect(result).not.toHaveProperty('text');
+        expect(result.text).toBeNull();
         const createCall = createFile.mock.calls[0][0];
-        expect(createCall).not.toHaveProperty('text');
+        expect(createCall.text).toBeNull();
+      });
+
+      it('should overwrite a previously-stored text value when re-emitting a now-binary file', async () => {
+        // Same filename + conversationId already has a stored text value;
+        // claimCodeFile returns the existing record (isUpdate path).
+        mockClaimCodeFile.mockResolvedValueOnce({
+          file_id: 'existing-id',
+          filename: 'output.bin',
+          usage: 1,
+          createdAt: '2024-01-01T00:00:00.000Z',
+        });
+        const binaryBuffer = Buffer.from([0x00, 0xff, 0x00, 0xff]);
+        mockAxios.mockResolvedValue({ data: binaryBuffer });
+        determineFileType.mockResolvedValue({ mime: 'application/octet-stream' });
+        mockClassifyCodeArtifact.mockReturnValueOnce('other');
+        mockExtractCodeArtifactText.mockResolvedValueOnce(null);
+
+        await processCodeOutput({ ...baseParams, name: 'output.bin' });
+
+        // null (not omitted) so $set clears any prior `text` value.
+        const createCall = createFile.mock.calls[0][0];
+        expect(createCall).toHaveProperty('text', null);
       });
 
       it('should not invoke text extraction for image files', async () => {

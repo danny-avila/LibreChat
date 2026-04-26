@@ -1,14 +1,14 @@
-import { memo, useId, useState, useEffect } from 'react';
-import { imageExtRegex, Tools } from 'librechat-data-provider';
+import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { useLocalize } from '~/hooks';
+import { isImageAttachment, isTextAttachment } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const COLLAPSED_MAX_HEIGHT = 320;
-const COLLAPSE_THRESHOLD = 800;
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const [isVisible, setIsVisible] = useState(false);
@@ -57,8 +57,13 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
 const TextAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const localize = useLocalize();
   const preId = useId();
+  const preRef = useRef<HTMLPreElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // Decided once after layout: does the text actually overflow the collapsed
+  // height? Char count is a poor proxy (a 100-char file with many newlines can
+  // overflow; 800 chars of dense single-line text may not), so we measure.
+  const [overflowed, setOverflowed] = useState(false);
   const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
@@ -69,12 +74,21 @@ const TextAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
   });
   const extension = attachment.filename?.split('.').pop();
   const text = file.text ?? '';
-  const canCollapse = text.length > COLLAPSE_THRESHOLD;
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 50);
     return () => clearTimeout(timer);
   }, []);
+
+  useLayoutEffect(() => {
+    const el = preRef.current;
+    if (!el) {
+      return;
+    }
+    setOverflowed(el.scrollHeight > COLLAPSED_MAX_HEIGHT + 1);
+  }, [text]);
+
+  const isClamped = overflowed && !expanded;
 
   return (
     <div
@@ -101,12 +115,16 @@ const TextAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
       <div className="rounded-lg bg-surface-secondary p-4">
         <pre
           id={preId}
-          className="overflow-auto whitespace-pre-wrap break-words font-mono text-sm leading-6 text-text-primary"
-          style={canCollapse && !expanded ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
+          ref={preRef}
+          className={cn(
+            'whitespace-pre-wrap break-words font-mono text-sm leading-6 text-text-primary',
+            isClamped ? 'overflow-hidden' : 'overflow-auto',
+          )}
+          style={isClamped ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
         >
           {text}
         </pre>
-        {canCollapse && (
+        {overflowed && (
           <button
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
@@ -155,21 +173,6 @@ const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
     </div>
   );
 });
-
-const isImageAttachment = (attachment: TAttachment): boolean => {
-  if (!attachment.filename) {
-    return false;
-  }
-  const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
-  return (
-    imageExtRegex.test(attachment.filename) && width != null && height != null && filepath != null
-  );
-};
-
-const isTextAttachment = (attachment: TAttachment): boolean => {
-  const { text } = attachment as TFile & TAttachmentMetadata;
-  return typeof text === 'string' && text.length > 0;
-};
 
 export default function Attachment({ attachment }: { attachment?: TAttachment }) {
   if (!attachment) {

@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { imageExtRegex } from 'librechat-data-provider';
 import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
+import { isTextAttachment } from './attachmentTypes';
 import { useLocalize } from '~/hooks';
 import LogLink from './LogLink';
 
@@ -33,13 +34,15 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
 
     attachments?.forEach((attachment) => {
       const fileData = attachment as TFile & TAttachmentMetadata;
-      const { filepath = null, text } = fileData;
+      const { filepath = null } = fileData;
+      // LogContent uses a looser image check than Attachment.tsx (no
+      // width/height requirement) to keep parity with the legacy log surface.
       const isImage = imageExtRegex.test(attachment.filename ?? '') && filepath != null;
       if (isImage) {
         imageAtts.push(attachment as ImageAttachment);
         return;
       }
-      if (typeof text === 'string' && text.length > 0) {
+      if (isTextAttachment(attachment)) {
         textAtts.push(fileData);
         return;
       }
