@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { imageExtRegex } from 'librechat-data-provider';
 import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
+import { isTextAttachment } from './attachmentTypes';
 import { useLocalize } from '~/hooks';
 import LogLink from './LogLink';
 
@@ -26,23 +27,32 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     return parts[0].trim();
   }, [output]);
 
-  const { imageAttachments, nonImageAttachments } = useMemo(() => {
+  const { imageAttachments, textAttachments, nonInlineAttachments } = useMemo(() => {
     const imageAtts: ImageAttachment[] = [];
-    const nonImageAtts: TAttachment[] = [];
+    const textAtts: Array<TFile & TAttachmentMetadata> = [];
+    const otherAtts: TAttachment[] = [];
 
     attachments?.forEach((attachment) => {
-      const { filepath = null } = attachment as TFile & TAttachmentMetadata;
+      const fileData = attachment as TFile & TAttachmentMetadata;
+      const { filepath = null } = fileData;
+      // LogContent uses a looser image check than Attachment.tsx (no
+      // width/height requirement) to keep parity with the legacy log surface.
       const isImage = imageExtRegex.test(attachment.filename ?? '') && filepath != null;
       if (isImage) {
         imageAtts.push(attachment as ImageAttachment);
-      } else {
-        nonImageAtts.push(attachment);
+        return;
       }
+      if (isTextAttachment(attachment)) {
+        textAtts.push(fileData);
+        return;
+      }
+      otherAtts.push(attachment);
     });
 
     return {
       imageAttachments: renderImages === true ? imageAtts : null,
-      nonImageAttachments: nonImageAtts,
+      textAttachments: textAtts,
+      nonInlineAttachments: otherAtts,
     };
   }, [attachments, renderImages]);
 
@@ -59,10 +69,6 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
 
     const fileData = file as TFile & TAttachmentMetadata;
     const filepath = file.filepath || '';
-
-    // const expirationText = expiresAt
-    //   ? ` ${localize('com_download_expires', { 0: format(expiresAt, 'MM/dd/yy HH:mm') })}`
-    //   : ` ${localize('com_click_to_download')}`;
 
     return (
       <LogLink
@@ -81,14 +87,45 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
   return (
     <>
       {processedContent && <div>{processedContent}</div>}
-      {nonImageAttachments.length > 0 && (
+      {nonInlineAttachments.length > 0 && (
         <div>
           <p>{localize('com_generated_files')}</p>
-          {nonImageAttachments.map((file, index) => (
+          {nonInlineAttachments.map((file, index) => (
             <React.Fragment key={file.filepath}>
               {renderAttachment(file)}
-              {index < nonImageAttachments.length - 1 && ', '}
+              {index < nonInlineAttachments.length - 1 && ', '}
             </React.Fragment>
+          ))}
+        </div>
+      )}
+      {textAttachments.length > 0 && (
+        <div className="mt-2 flex flex-col gap-3">
+          {textAttachments.map((file) => (
+            <div
+              key={file.filepath ?? file.file_id ?? file.filename}
+              className="rounded-lg bg-surface-secondary p-3"
+            >
+              {file.filename && (
+                <div className="mb-1 truncate text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                  {file.filepath ? (
+                    <LogLink
+                      href={file.filepath}
+                      filename={file.filename}
+                      file_id={file.file_id}
+                      user={file.user}
+                      source={file.source}
+                    >
+                      {file.filename}
+                    </LogLink>
+                  ) : (
+                    file.filename
+                  )}
+                </div>
+              )}
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-text-primary">
+                {file.text}
+              </pre>
+            </div>
           ))}
         </div>
       )}

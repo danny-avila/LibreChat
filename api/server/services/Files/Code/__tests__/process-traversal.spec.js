@@ -23,6 +23,8 @@ jest.mock('@librechat/api', () => {
     getBasePath: jest.fn(() => ''),
     sanitizeFilename: mockSanitizeFilename,
     createAxiosInstance: jest.fn(() => mockAxios),
+    classifyCodeArtifact: jest.fn(() => 'other'),
+    extractCodeArtifactText: jest.fn(async () => null),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
   };
