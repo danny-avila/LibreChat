@@ -795,13 +795,6 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
    * sandbox can't see the prior turn's generated artifacts on first read.
    */
   let primedCodeFiles;
-  logger.debug('[loadToolDefinitionsWrapper] code-files prime check', {
-    agentId: agent.id,
-    hasExecuteCode,
-    toolResourceKeys: Object.keys(tool_resources ?? {}),
-    codeFileIdCount: tool_resources?.[EToolResources.execute_code]?.file_ids?.length ?? 0,
-    codeFileObjCount: tool_resources?.[EToolResources.execute_code]?.files?.length ?? 0,
-  });
   if (hasExecuteCode && tool_resources) {
     try {
       const { toolContext, files } = await primeCodeFiles({
@@ -815,13 +808,6 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       if (files?.length) {
         primedCodeFiles = files;
       }
-      logger.debug('[loadToolDefinitionsWrapper] primeCodeFiles result', {
-        agentId: agent.id,
-        primedCount: files?.length ?? 0,
-        sample: (files ?? [])
-          .slice(0, 3)
-          .map((f) => ({ id: f.id, session_id: f.session_id, name: f.name })),
-      });
     } catch (error) {
       logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
     }

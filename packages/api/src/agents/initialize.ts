@@ -399,10 +399,10 @@ export async function initializeAgent(
     let codeGeneratedFiles: IMongoFile[] = [];
     let userCodeFiles: IMongoFile[] = [];
 
-    let threadMessageIds: string[] | undefined;
-    let threadFileIds: string[] | undefined;
-
     if (toolResourceSet.has(EToolResources.execute_code)) {
+      let threadMessageIds: string[] | undefined;
+      let threadFileIds: string[] | undefined;
+
       if (parentMessageId && parentMessageId !== Constants.NO_PARENT && db.getMessages) {
         /** Only select fields needed for thread traversal */
         const messages = await db.getMessages(
@@ -431,74 +431,12 @@ export async function initializeAgent(
       }
     }
 
-    logger.debug('[initializeAgent] code-files lookup', {
-      agentId: agent.id,
-      conversationId,
-      parentMessageId,
-      resendFiles,
-      agentToolStrings: (agent.tools ?? []).filter((t): t is string => typeof t === 'string'),
-      toolResourceSetHasExecCode: toolResourceSet.has(EToolResources.execute_code),
-      convoFileIdCount: fileIds.length,
-      toolFileCount: toolFiles.length,
-      threadMsgCount: threadMessageIds?.length ?? 0,
-      threadFileIdCount: threadFileIds?.length ?? 0,
-      threadMessageIdsSample: (threadMessageIds ?? []).slice(0, 5),
-      codeGeneratedFileCount: codeGeneratedFiles.length,
-      userCodeFileCount: userCodeFiles.length,
-    });
-
-    /**
-     * Sanity probe: when the thread covers a parent message and yet
-     * `getCodeGeneratedFiles` returned 0, run a relaxed lookup for the
-     * same conversation+context and report what's actually in the DB —
-     * this isolates whether the messageId filter is the culprit vs. the
-     * file simply not existing under this conversation/context.
-     */
-    if (
-      toolResourceSet.has(EToolResources.execute_code) &&
-      codeGeneratedFiles.length === 0 &&
-      (threadMessageIds?.length ?? 0) > 0 &&
-      db.getFiles
-    ) {
-      try {
-        const probeFiles = (await db.getFiles(
-          { conversationId, context: 'execute_code' },
-          {},
-          { messageId: 1, file_id: 1, filename: 1, 'metadata.fileIdentifier': 1, _id: 0 },
-        )) as Array<{
-          messageId?: string;
-          file_id?: string;
-          filename?: string;
-          metadata?: { fileIdentifier?: string };
-        }>;
-        logger.debug('[initializeAgent] code-files probe (no messageId filter)', {
-          agentId: agent.id,
-          probeCount: probeFiles.length,
-          sample: probeFiles.slice(0, 5).map((f) => ({
-            messageId: f.messageId,
-            file_id: f.file_id,
-            filename: f.filename,
-            hasFileIdentifier: !!f.metadata?.fileIdentifier,
-          })),
-        });
-      } catch (probeError) {
-        logger.warn('[initializeAgent] code-files probe failed', probeError);
-      }
-    }
-
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     if (requestFiles.length || allToolFiles.length) {
       currentFiles = (await db.updateFilesUsage(requestFiles.concat(allToolFiles))) as IMongoFile[];
     }
   } else if (requestFiles.length) {
     currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
-  } else {
-    logger.debug('[initializeAgent] code-files lookup skipped', {
-      agentId: agent.id,
-      hasConversationId: conversationId != null,
-      resendFiles,
-      requestFileCount: requestFiles.length,
-    });
   }
 
   if (currentFiles && currentFiles.length) {
