@@ -409,8 +409,31 @@ function SectionBadge({
   );
 }
 
+/**
+ * Strip the leading `[본문]` / `[첨부 N/M · file]` marker line that the
+ * indexer prepends to chunk content for body/attachment provenance.
+ *
+ * The marker is *embedded inside the chunk text* on purpose (so retrieval
+ * embeddings and the LLM context both see it), but the citation panel
+ * already surfaces the same information as a `SectionBadge` in the title
+ * area. Rendering the marker a second time as the first line of the body
+ * just looks like noise — see user report 2026-04-26 ("첨부파일인데
+ * [본문] 이라고 나오는 경우가 꽤 많이 있는 것 같은데").
+ *
+ * The indexer fix (`emit_markers = any(s.kind === 'attachment')` in
+ * index_documents.py) prevents [본문] from being prepended to standalone
+ * non-MSG documents going forward, but legacy index slices written before
+ * that fix still carry the marker — this strip handles both.
+ */
+const _CHUNK_MARKER_RE = /^\s*\[(?:본문|첨부(?:\s+\d+\s*\/\s*\d+)?(?:\s*[·•]\s*[^\]\n]+)?)\]\s*\n+/u;
+function stripLeadingSegmentMarker(text: string): string {
+  if (!text) return text;
+  return text.replace(_CHUNK_MARKER_RE, '');
+}
+
 function PanelBody({ source }: { source: BklSource }) {
-  const text = source.document?.[0] ?? '';
+  const rawText = source.document?.[0] ?? '';
+  const text = stripLeadingSegmentMarker(rawText);
   if (!text) return <p className="text-sm text-text-secondary">내용을 불러올 수 없습니다.</p>;
   // MarkdownLite (GFM + math + code highlighting) renders the chunk body.
   // PR-B moves the `## 첨부 N/M — fname` heading + `[📎 원본 파일]` link
