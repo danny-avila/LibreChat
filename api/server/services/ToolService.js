@@ -787,11 +787,26 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     toolContextMap[Tools.web_search] = buildWebSearchContext();
   }
 
+  /**
+   * `files` carry the upload session_ids; we surface them so client.js can
+   * seed `Graph.sessions[EXECUTE_CODE]` before run start. Without that seed,
+   * the agents-side `ToolNode.getCodeSessionContext` returns undefined on
+   * call #1, `_injected_files` is never set on the tool call, and the
+   * sandbox can't see the prior turn's generated artifacts on first read.
+   */
+  let primedCodeFiles;
   if (hasExecuteCode && tool_resources) {
     try {
-      const { toolContext } = await primeCodeFiles({ req, tool_resources, agentId: agent.id });
+      const { toolContext, files } = await primeCodeFiles({
+        req,
+        tool_resources,
+        agentId: agent.id,
+      });
       if (toolContext) {
         toolContextMap[Tools.execute_code] = toolContext;
+      }
+      if (files?.length) {
+        primedCodeFiles = files;
       }
     } catch (error) {
       logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
@@ -848,6 +863,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     toolDefinitions,
     hasDeferredTools,
     actionsEnabled,
+    primedCodeFiles,
   };
 }
 
@@ -946,7 +962,7 @@ async function loadAgentTools({
     });
   }
 
-  const { loadedTools, toolContextMap } = await loadTools({
+  const { loadedTools, toolContextMap, primedCodeFiles } = await loadTools({
     agent,
     signal,
     userMCPAuthMap,
@@ -1174,6 +1190,7 @@ async function loadAgentTools({
     hasDeferredTools,
     actionsEnabled,
     tools: agentTools,
+    primedCodeFiles,
   };
 }
 

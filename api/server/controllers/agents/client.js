@@ -42,7 +42,6 @@ const {
   createMetadataAggregator,
 } = require('@librechat/agents');
 const {
-  Tools,
   Constants,
   Permissions,
   VisionModes,
@@ -55,7 +54,6 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -819,54 +817,29 @@ class AgentClient extends BaseClient {
         : undefined;
 
       /**
-       * Seed Graph.sessions with files from `tool_resources.execute_code` so the
-       * very first `execute_code` call sees them as `_injected_files`. Without
-       * this, the agents-side `CodeExecutor` falls back to a `/files/{session_id}`
-       * fetch — but `session_id` is only set by a previous successful execution,
-       * so attached/generated files were silently dropped on call #1 and
-       * follow-up code couldn't read them. `primeFiles` is dedupe-friendly
-       * (per-session freshness check); the lazy call inside `loadTools` reuses
-       * uploaded refs, so this extra call doesn't double-upload.
+       * Seed Graph.sessions with files primed during each agent's
+       * initialization (see `loadToolDefinitionsWrapper` →
+       * `initializeAgent`). Each `InitializedAgent.primedCodeFiles` is the
+       * pre-uploaded code-env file refs for that agent's
+       * `tool_resources.execute_code` (carries the prior turn's generated
+       * artifacts and any user uploads). Without this seed, the first
+       * `execute_code` / `bash_tool` call lands with `_injected_files`
+       * empty, and the agents-side `CodeExecutor` falls back to a
+       * `/files/{session_id}` fetch — but `session_id` itself is only
+       * populated after a previous successful execution, so primed files
+       * were silently dropped on call #1.
+       *
+       * Multi-agent runs (handoffs / addedConvo) share one `Graph.sessions`
+       * map, so we merge across all agents involved in the run.
        */
       let initialSessions = skillPrimeResult?.initialSessions;
-      const codeToolResources = this.options.agent?.tool_resources?.[Tools.execute_code];
-      const wantsCodeExec = (this.options.agent?.tools ?? []).includes(Tools.execute_code);
-      logger.debug('[AgentClient] Code-files seed check', {
-        wantsCodeExec,
-        agentToolsSample: (this.options.agent?.tools ?? []).slice(0, 8),
-        toolResourceKeys: Object.keys(this.options.agent?.tool_resources ?? {}),
-        codeToolFileIdCount: codeToolResources?.file_ids?.length ?? 0,
-        codeToolFileObjCount: codeToolResources?.files?.length ?? 0,
-        skillSeededExecuteCode: !!skillPrimeResult?.initialSessions?.has?.(Constants.EXECUTE_CODE),
-      });
-      if (
-        wantsCodeExec &&
-        codeToolResources &&
-        ((codeToolResources.file_ids?.length ?? 0) > 0 ||
-          (codeToolResources.files?.length ?? 0) > 0)
-      ) {
-        try {
-          const { files: primedCodeFiles } = await primeCodeFiles({
-            req: this.options.req,
-            tool_resources: this.options.agent.tool_resources,
-            agentId: this.options.agent.id,
-          });
-          logger.debug('[AgentClient] primeCodeFiles result', {
-            primedCount: primedCodeFiles?.length ?? 0,
-            sampleSessionIds: (primedCodeFiles ?? [])
-              .slice(0, 3)
-              .map((f) => ({ id: f.id, session_id: f.session_id, name: f.name })),
-          });
-          if (primedCodeFiles?.length) {
-            initialSessions = seedCodeFilesIntoSessions(primedCodeFiles, initialSessions);
-            const seeded = initialSessions?.get?.(Constants.EXECUTE_CODE);
-            logger.debug('[AgentClient] Seeded EXECUTE_CODE session', {
-              seeded_session_id: seeded?.session_id,
-              seeded_file_count: seeded?.files?.length ?? 0,
-            });
-          }
-        } catch (error) {
-          logger.error('[AgentClient] Error priming code files for session seeding:', error);
+      const agentsToSeed = [
+        this.options.agent,
+        ...(this.agentConfigs ? this.agentConfigs.values() : []),
+      ];
+      for (const a of agentsToSeed) {
+        if (a?.primedCodeFiles?.length) {
+          initialSessions = seedCodeFilesIntoSessions(a.primedCodeFiles, initialSessions);
         }
       }
 
