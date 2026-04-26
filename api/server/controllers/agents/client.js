@@ -831,6 +831,14 @@ class AgentClient extends BaseClient {
       let initialSessions = skillPrimeResult?.initialSessions;
       const codeToolResources = this.options.agent?.tool_resources?.[Tools.execute_code];
       const wantsCodeExec = (this.options.agent?.tools ?? []).includes(Tools.execute_code);
+      logger.debug('[AgentClient] Code-files seed check', {
+        wantsCodeExec,
+        agentToolsSample: (this.options.agent?.tools ?? []).slice(0, 8),
+        toolResourceKeys: Object.keys(this.options.agent?.tool_resources ?? {}),
+        codeToolFileIdCount: codeToolResources?.file_ids?.length ?? 0,
+        codeToolFileObjCount: codeToolResources?.files?.length ?? 0,
+        skillSeededExecuteCode: !!skillPrimeResult?.initialSessions?.has?.(Constants.EXECUTE_CODE),
+      });
       if (
         wantsCodeExec &&
         codeToolResources &&
@@ -843,8 +851,19 @@ class AgentClient extends BaseClient {
             tool_resources: this.options.agent.tool_resources,
             agentId: this.options.agent.id,
           });
+          logger.debug('[AgentClient] primeCodeFiles result', {
+            primedCount: primedCodeFiles?.length ?? 0,
+            sampleSessionIds: (primedCodeFiles ?? [])
+              .slice(0, 3)
+              .map((f) => ({ id: f.id, session_id: f.session_id, name: f.name })),
+          });
           if (primedCodeFiles?.length) {
             initialSessions = seedCodeFilesIntoSessions(primedCodeFiles, initialSessions);
+            const seeded = initialSessions?.get?.(Constants.EXECUTE_CODE);
+            logger.debug('[AgentClient] Seeded EXECUTE_CODE session', {
+              seeded_session_id: seeded?.session_id,
+              seeded_file_count: seeded?.files?.length ?? 0,
+            });
           }
         } catch (error) {
           logger.error('[AgentClient] Error priming code files for session seeding:', error);
