@@ -35,6 +35,17 @@ export function enrichWithSkillConfigurable(
    * the exact doc the resolver primed and relaxes the disable-model gate.
    */
   skillPrimedIdsByName?: Record<string, string>,
+  /**
+   * Names of skills the runtime can resolve, captured at agent init by
+   * `injectSkillCatalog`. Lets `read_file` decide whether a
+   * `{firstSegment}/...` path is a real skill reference vs. a code-env path
+   * that should fall back to bash, without an extra `getSkillByName`
+   * round-trip just to discover the name doesn't resolve. Empty/undefined
+   * ⇒ skills aren't effectively in scope for this agent (admin capability
+   * off, ephemeral badge off, or persisted `skills_enabled !== true`),
+   * which is the same signal as `accessibleSkillIds.length === 0`.
+   */
+  activeSkillNames?: Set<string>,
 ): { loadedTools: unknown[]; configurable: Record<string, unknown> } {
   return {
     ...result,
@@ -44,6 +55,7 @@ export function enrichWithSkillConfigurable(
       codeEnvAvailable,
       accessibleSkillIds,
       skillPrimedIdsByName,
+      activeSkillNames,
     },
   };
 }

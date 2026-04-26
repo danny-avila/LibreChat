@@ -249,6 +249,15 @@ const loadTools = async ({
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
+  /**
+   * @type {import('@librechat/agents').CodeEnvFile[] | undefined}
+   * Captured by the `execute_code` factory when files are primed. Surfaced
+   * out of `loadTools` so client.js can seed `Graph.sessions[EXECUTE_CODE]`
+   * before run start — without that seed, the first `execute_code` /
+   * `bash_tool` call lands with empty `_injected_files` and the sandbox
+   * can't see the prior turn's generated artifacts.
+   */
+  let primedCodeFiles;
   const requestedMCPTools = {};
 
   /** Resolve config-source servers for the current user/tenant context */
@@ -266,6 +275,9 @@ const loadTools = async ({
         });
         if (toolContext) {
           toolContextMap[tool] = toolContext;
+        }
+        if (files?.length) {
+          primedCodeFiles = files;
         }
         return createCodeExecutionTool({ user_id: user, files });
       };
@@ -474,7 +486,7 @@ const loadTools = async ({
     }
   }
   loadedTools.push(...(await Promise.all(mcpToolPromises)).flatMap((plugin) => plugin || []));
-  return { loadedTools, toolContextMap };
+  return { loadedTools, toolContextMap, primedCodeFiles };
 };
 
 module.exports = {

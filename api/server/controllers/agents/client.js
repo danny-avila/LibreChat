@@ -31,6 +31,7 @@ const {
   injectSkillPrimes,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
+  buildInitialToolSessions,
 } = require('@librechat/api');
 const {
   Callback,
@@ -815,6 +816,18 @@ class AgentClient extends BaseClient {
         ? await this.options.primeInvokedSkills(payload)
         : undefined;
 
+      /**
+       * Seed `Graph.sessions` with code-env files primed across every
+       * reachable agent (primary, handoff/addedConvo, and nested
+       * subagents) plus skill-priming output. The merge logic and its
+       * run-wide semantics live in `buildInitialToolSessions`; see that
+       * helper's doc for why this is intentionally NOT per-agent.
+       */
+      const initialSessions = buildInitialToolSessions({
+        skillSessions: skillPrimeResult?.initialSessions,
+        agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
+      });
+
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -943,7 +956,7 @@ class AgentClient extends BaseClient {
           messages,
           indexTokenCountMap,
           initialSummary,
-          initialSessions: skillPrimeResult?.initialSessions,
+          initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,

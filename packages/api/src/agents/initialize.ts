@@ -91,6 +91,13 @@ export type InitializedAgent = Agent & {
   codeEnvAvailable: boolean;
   /** Accessible skill IDs for ACL checking at execute time */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
+  /**
+   * Names of skills the runtime can resolve, mirroring `accessibleSkillIds`.
+   * Surfaced to the runtime so handlers like `read_file` can decide if a
+   * `{firstSegment}/...` path refers to a real skill (vs. a code-env path
+   * that should be routed to the bash fallback) without an extra DB lookup.
+   */
+  activeSkillNames?: Set<string>;
   /** Number of skills in the catalog (used to determine if SkillTool should be registered) */
   skillCount?: number;
   /**
@@ -109,6 +116,18 @@ export type InitializedAgent = Agent & {
    * via `unionPrimeAllowedTools` (same pipeline as manual primes).
    */
   alwaysApplySkillPrimes?: ResolvedAlwaysApplySkill[];
+  /**
+   * Pre-uploaded code-env file refs from `tool_resources.execute_code`
+   * (carries the conversation's prior-turn generated artifacts and any
+   * user uploads). Captured by the `loadTools` callback; the AgentClient
+   * merges these across all run agents into `Graph.sessions[EXECUTE_CODE]`
+   * before run start so the very first `execute_code` / `bash_tool` call
+   * sees them as `_injected_files`. Without this seed the agents-side
+   * `CodeExecutor` falls back to `/files/{session_id}` — but `session_id`
+   * is itself only populated by a previous successful execution, so on
+   * call #1 the sandbox can't see the files at all.
+   */
+  primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -150,6 +169,14 @@ export interface InitializeAgentParams {
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
     actionsEnabled?: boolean;
+    /**
+     * Pre-uploaded code-env file refs for the agent's
+     * `tool_resources.execute_code`. Bubbled up so the run host can seed
+     * `Graph.sessions[EXECUTE_CODE]` before the first tool call —
+     * otherwise `_injected_files` is empty on call #1 and prior-turn
+     * artifacts don't reach the sandbox.
+     */
+    primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
   } | null>;
   /** Endpoint option (contains model_parameters and endpoint info) */
   endpointOption?: Partial<TEndpointOption>;
@@ -622,6 +649,7 @@ export async function initializeAgent(
     hasDeferredTools,
     actionsEnabled,
     tools: structuredTools,
+    primedCodeFiles,
   } = loadToolsResult ?? {
     tools: [],
     toolContextMap: {},
@@ -630,6 +658,7 @@ export async function initializeAgent(
     toolDefinitions: [],
     hasDeferredTools: false,
     actionsEnabled: undefined,
+    primedCodeFiles: undefined,
   };
 
   let toolDefinitions = loadedToolDefinitions;
@@ -810,6 +839,7 @@ export async function initializeAgent(
    * LLM (or a direct-invocation path) names one.
    */
   let executableSkillIds = params.accessibleSkillIds;
+  let activeSkillNames: Set<string> | undefined;
   const { accessibleSkillIds } = params;
   if (accessibleSkillIds && accessibleSkillIds.length > 0) {
     const skillResult = await injectSkillCatalog({
@@ -827,6 +857,7 @@ export async function initializeAgent(
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;
     executableSkillIds = skillResult.activeSkillIds;
+    activeSkillNames = skillResult.activeSkillNames;
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;
@@ -863,6 +894,7 @@ export async function initializeAgent(
     codeEnvAvailable: effectiveCodeEnvAvailable,
     skillCount,
     accessibleSkillIds: executableSkillIds,
+    activeSkillNames,
     manualSkillPrimes,
     alwaysApplySkillPrimes,
     attachments: finalAttachments,
@@ -874,6 +906,7 @@ export async function initializeAgent(
       maxContextTokens != null && maxContextTokens > 0
         ? maxContextTokens
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
+    primedCodeFiles,
   };
 
   return initializedAgent;

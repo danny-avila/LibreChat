@@ -44,6 +44,20 @@ function invokeHandler(
   });
 }
 
+/**
+ * Sentinel non-empty `accessibleSkillIds` for fixtures that need to opt
+ * into "skills are effectively in scope". The `read_file` handler short-
+ * circuits to the sandbox fallback (or errors when code env isn't
+ * available) whenever `accessibleSkillIds` is empty — that's the resolved
+ * output of `resolveAgentScopedSkillIds` (admin capability + ephemeral
+ * badge / persisted `skills_enabled` + ACL). Tests that mock
+ * `getSkillByName` directly need this so they reach the lookup.
+ */
+function skillsInScope(): unknown[] {
+  const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
+  return [new Types.ObjectId()];
+}
+
 describe('createToolExecuteHandler', () => {
   describe('code execution session context passthrough', () => {
     it('passes session_id and _injected_files from codeSessionContext to toolCallConfig', async () => {
@@ -180,6 +194,7 @@ describe('createToolExecuteHandler', () => {
     function createSkillHandler(getSkillByName: ToolExecuteOptions['getSkillByName']) {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
+        configurable: { accessibleSkillIds: skillsInScope() },
       }));
       return createToolExecuteHandler({ loadTools, getSkillByName });
     }
@@ -289,7 +304,10 @@ describe('createToolExecuteHandler', () => {
         fileCount: 0,
       }));
       const handler = createToolExecuteHandler({
-        loadTools: jest.fn(async () => ({ loadedTools: [] })),
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: { accessibleSkillIds: skillsInScope() },
+        })),
         getSkillByName,
       });
 
@@ -329,6 +347,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
+            accessibleSkillIds: skillsInScope(),
             skillPrimedIdsByName: { 'manually-primed': primedHex },
           },
         })),
@@ -375,7 +394,10 @@ describe('createToolExecuteHandler', () => {
         disableModelInvocation: true,
       }));
       const handler = createToolExecuteHandler({
-        loadTools: jest.fn(async () => ({ loadedTools: [] })),
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: { accessibleSkillIds: skillsInScope() },
+        })),
         getSkillByName,
         getSkillFileByPath: jest.fn(),
       });
@@ -401,7 +423,10 @@ describe('createToolExecuteHandler', () => {
         fileCount: 0,
       }));
       const handler = createToolExecuteHandler({
-        loadTools: jest.fn(async () => ({ loadedTools: [] })),
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: { accessibleSkillIds: skillsInScope() },
+        })),
         getSkillByName,
       });
 
@@ -435,6 +460,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
+            accessibleSkillIds: skillsInScope(),
             skillPrimedIdsByName: { 'manual-only-skill': '507f1f77bcf86cd799439020' },
           },
         })),
@@ -469,6 +495,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
+            accessibleSkillIds: skillsInScope(),
             skillPrimedIdsByName: { 'something-else': '507f1f77bcf86cd799439030' },
           },
         })),
@@ -505,6 +532,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
+            accessibleSkillIds: skillsInScope(),
             /* Map includes the always-apply skill because `buildSkillPrimedIdsByName`
                now combines both prime sources. */
             skillPrimedIdsByName: {
@@ -543,6 +571,7 @@ describe('createToolExecuteHandler', () => {
         loadTools: jest.fn(async () => ({
           loadedTools: [],
           configurable: {
+            accessibleSkillIds: skillsInScope(),
             skillPrimedIdsByName: { collides: primedHex },
           },
         })),
@@ -637,6 +666,398 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(listSkillFiles).toHaveBeenCalledWith(SKILL_ID);
+    });
+  });
+
+  describe('read_file sandbox fallback (code-env paths + non-skill segments)', () => {
+    function makeReadFileHandler(params: {
+      codeEnvAvailable?: boolean;
+      accessibleSkillIds?: unknown[];
+      activeSkillNames?: Set<string>;
+      skillPrimedIdsByName?: Record<string, string>;
+      readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
+      getSkillByName?: ToolExecuteOptions['getSkillByName'];
+    }) {
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+        configurable: {
+          codeEnvAvailable: params.codeEnvAvailable === true,
+          accessibleSkillIds: params.accessibleSkillIds ?? [],
+          activeSkillNames: params.activeSkillNames,
+          skillPrimedIdsByName: params.skillPrimedIdsByName,
+        },
+      }));
+      return createToolExecuteHandler({
+        loadTools,
+        getSkillByName: params.getSkillByName,
+        readSandboxFile: params.readSandboxFile,
+      });
+    }
+
+    it('routes /mnt/data/ paths to the sandbox fallback when codeEnv is available', async () => {
+      const readSandboxFile = jest.fn(async () => ({ content: 'hello-world' }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_mnt_1',
+          name: Constants.READ_FILE,
+          args: { file_path: '/mnt/data/sentinel.txt' },
+          codeSessionContext: {
+            session_id: 'sess-X',
+            files: [{ id: 'f1', name: 'sentinel.txt', session_id: 'sess-X' }],
+          },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(readSandboxFile).toHaveBeenCalledWith({
+        file_path: '/mnt/data/sentinel.txt',
+        session_id: 'sess-X',
+        files: [{ id: 'f1', name: 'sentinel.txt', session_id: 'sess-X' }],
+      });
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('hello-world');
+    });
+
+    it('returns a clear error for /mnt/data/ when codeEnv is not available', async () => {
+      const readSandboxFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: false,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_mnt_2',
+          name: Constants.READ_FILE,
+          args: { file_path: '/mnt/data/sentinel.txt' },
+        },
+      ]);
+
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('code-execution sandbox path');
+    });
+
+    it('falls back to sandbox when first segment is not a known skill name', async () => {
+      const readSandboxFile = jest.fn(async () => ({ content: 'sandbox-data' }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        activeSkillNames: new Set(['only-real-skill']),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_unknown_skill',
+          name: Constants.READ_FILE,
+          args: { file_path: 'not-a-skill/foo.md' },
+          codeSessionContext: { session_id: 'sess-Y' },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(readSandboxFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file_path: 'not-a-skill/foo.md', session_id: 'sess-Y' }),
+      );
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('sandbox-data');
+    });
+
+    it('does NOT misroute primed skills outside the catalog cap to the sandbox', async () => {
+      /**
+       * Regression for review P2 #2: manual ($-popover) and always-apply
+       * primes are intentionally resolved off the wider `accessibleSkillIds`
+       * ACL set BEFORE catalog injection — see `resolveManualSkills`.
+       * A primed skill name can therefore legitimately be ABSENT from
+       * `activeSkillNames` (which reflects the catalog after the
+       * `SKILL_CATALOG_LIMIT` cap and active filter).
+       *
+       * Without the primed-bypass, the `activeSkillNames` shortcut would
+       * misroute `read_file("primed-only-skill/references/foo.md")` to
+       * the sandbox even though the primed skill is in scope and
+       * `getSkillByName` would resolve it via the pinned `_id`.
+       */
+      const primedHex = '507f1f77bcf86cd799439060';
+      const getSkillByName = jest.fn(async () => ({
+        _id: primedHex as unknown as never,
+        name: 'primed-only-skill',
+        body: '# Primed skill body',
+        fileCount: 1,
+      }));
+      const readSandboxFile = jest.fn();
+      const getSkillFileByPath = jest.fn(async () => ({
+        content: 'references content',
+        mimeType: 'text/markdown',
+        bytes: 18,
+        filepath: 'references/foo.md',
+        source: 'local',
+        relativePath: 'references/foo.md',
+        isBinary: false,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: {
+            codeEnvAvailable: true,
+            accessibleSkillIds: skillsInScope(),
+            /* Catalog visible names DO NOT include the primed skill — it's
+               outside the cap. */
+            activeSkillNames: new Set(['some-other-skill']),
+            /* But the prime resolver authorized it for this turn. */
+            skillPrimedIdsByName: { 'primed-only-skill': primedHex },
+          },
+        })),
+        getSkillByName,
+        getSkillFileByPath,
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_primed_outside_catalog',
+          name: Constants.READ_FILE,
+          args: { file_path: 'primed-only-skill/references/foo.md' },
+        },
+      ]);
+
+      // Primed skill resolved through the existing skill path, not the
+      // sandbox shortcut.
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(getSkillByName).toHaveBeenCalledWith('primed-only-skill', expect.any(Array), {});
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('references content');
+    });
+
+    it('routes through sandbox when skills are not effectively enabled (empty accessibleSkillIds)', async () => {
+      /**
+       * `accessibleSkillIds: []` is what `resolveAgentScopedSkillIds`
+       * returns when the admin capability is off, the ephemeral badge is
+       * off, or the persisted agent has `skills_enabled !== true`. Skip
+       * the skill resolver entirely.
+       */
+      const readSandboxFile = jest.fn(async () => ({ content: 'sandbox-content' }));
+      const getSkillByName = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: [],
+        readSandboxFile,
+        getSkillByName,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_skills_off',
+          name: Constants.READ_FILE,
+          args: { file_path: 'whatever/path.md' },
+        },
+      ]);
+
+      expect(getSkillByName).not.toHaveBeenCalled();
+      expect(readSandboxFile).toHaveBeenCalled();
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('sandbox-content');
+    });
+
+    it('returns a clear error when skills off + codeEnv off (nowhere to route)', async () => {
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: false,
+        accessibleSkillIds: [],
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_no_route',
+          name: Constants.READ_FILE,
+          args: { file_path: 'whatever/path.md' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('Skill files are not available');
+    });
+
+    it('still resolves a real skill when activeSkillNames knows the name', async () => {
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'real-skill-id' as unknown as never,
+        name: 'real-skill',
+        body: '# Real Body',
+        fileCount: 0,
+      }));
+      const readSandboxFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        activeSkillNames: new Set(['real-skill']),
+        readSandboxFile,
+        getSkillByName,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_real_skill',
+          name: Constants.READ_FILE,
+          args: { file_path: 'real-skill/SKILL.md' },
+        },
+      ]);
+
+      expect(getSkillByName).toHaveBeenCalled();
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('Real Body');
+    });
+
+    it('falls back to sandbox for trailing-slash paths (empty relativePath, codeEnv on)', async () => {
+      /**
+       * Regression for review Finding #4: `read_file("output/")` is
+       * malformed-but-unambiguously-not-a-skill. Previously this branch
+       * dead-ended with `Missing file path after skill name`; with code
+       * execution available it should route to the sandbox like every
+       * other malformed-path branch.
+       */
+      const readSandboxFile = jest.fn(async () => ({ content: 'whatever' }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_trailing_slash',
+          name: Constants.READ_FILE,
+          args: { file_path: 'output/' },
+        },
+      ]);
+
+      expect(readSandboxFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file_path: 'output/' }),
+      );
+      expect(result.status).toBe('success');
+    });
+
+    it('still errors on trailing-slash paths when codeEnv is off (no sandbox to route to)', async () => {
+      const readSandboxFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: false,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_trailing_slash_no_env',
+          name: Constants.READ_FILE,
+          args: { file_path: 'output/' },
+        },
+      ]);
+
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('Missing file path after skill name');
+    });
+
+    it('hints toward bash_tool when readSandboxFile is not configured', async () => {
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        // readSandboxFile intentionally omitted
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_no_callback',
+          name: Constants.READ_FILE,
+          args: { file_path: '/mnt/data/x.txt' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('bash_tool');
+    });
+
+    it('caps sandbox fallback content at MAX_READABLE_BYTES before line-numbering (Codex review #1)', async () => {
+      /**
+       * Without the cap, `addLineNumbers` would allocate a SECOND
+       * full-size string with per-line prefixes, materializing ~2x
+       * the file in memory before downstream truncation kicks in.
+       * Match the skill-file path's 256KB ceiling: truncate the raw
+       * content first, then number, and surface the truncation to
+       * the model so it knows to use `bash_tool` for the rest.
+       */
+      const oversize = 'A'.repeat(300_000); // 300KB > 256KB MAX_READABLE_BYTES
+      const readSandboxFile = jest.fn(async () => ({ content: oversize }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_huge_file',
+          name: Constants.READ_FILE,
+          args: { file_path: '/mnt/data/huge.log' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      // `addLineNumbers` of a 256KB single-char run roughly preserves
+      // the 256KB payload size (one char per line is impossible — the
+      // content is one long line — so the line-prefix overhead is a
+      // few bytes total). Either way the prefix-stripped content
+      // length should NOT exceed the cap.
+      expect((result.content as string).length).toBeLessThan(oversize.length);
+      expect(result.content).toContain('truncated at 262144 bytes');
+      expect(result.content).toContain('bash_tool');
+      expect(result.content).toContain('huge.log');
+    });
+
+    it('does not truncate when sandbox content is within MAX_READABLE_BYTES', async () => {
+      const readSandboxFile = jest.fn(async () => ({ content: 'sentinel-XYZ-1234\n' }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_small_file',
+          name: Constants.READ_FILE,
+          args: { file_path: '/mnt/data/sentinel.txt' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).not.toContain('truncated');
+      expect(result.content).toContain('sentinel-XYZ-1234');
+    });
+
+    it('surfaces sandbox fallback failures with a bash_tool retry hint', async () => {
+      const readSandboxFile = jest.fn(async () => null);
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_null_result',
+          name: Constants.READ_FILE,
+          args: { file_path: '/mnt/data/missing.txt' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('Failed to read');
+      expect(result.errorMessage).toContain('bash_tool');
     });
   });
 });
