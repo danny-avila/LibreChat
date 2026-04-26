@@ -1,11 +1,6 @@
 import type { TAttachment } from 'librechat-data-provider';
-import {
-  artifactTypeForAttachment,
-  isImageAttachment,
-  isMermaidArtifact,
-  isPanelArtifact,
-  isTextAttachment,
-} from '../attachmentTypes';
+import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
+import { artifactTypeForAttachment, isImageAttachment, isTextAttachment } from '../attachmentTypes';
 
 const baseAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
   ({
@@ -139,40 +134,30 @@ describe('artifactTypeForAttachment', () => {
   });
 });
 
-describe('isMermaidArtifact / isPanelArtifact', () => {
-  it('routes mermaid to isMermaidArtifact, not isPanelArtifact', () => {
+describe('artifactTypeForAttachment branching', () => {
+  it('returns the mermaid type for .mmd files', () => {
     const attachment = baseAttachment({
       filename: 'flow.mmd',
       text: 'graph TD\nA-->B',
     } as Partial<TAttachment>);
-    expect(isMermaidArtifact(attachment)).toBe(true);
-    expect(isPanelArtifact(attachment)).toBe(false);
+    expect(artifactTypeForAttachment(attachment)).toBe(TOOL_ARTIFACT_TYPES.MERMAID);
   });
 
-  it('routes html/jsx/markdown to isPanelArtifact, not isMermaidArtifact', () => {
-    const html = baseAttachment({
-      filename: 'index.html',
-      text: '<h1>hi</h1>',
+  it.each([
+    ['index.html', TOOL_ARTIFACT_TYPES.HTML],
+    ['App.tsx', TOOL_ARTIFACT_TYPES.REACT],
+    ['notes.md', TOOL_ARTIFACT_TYPES.MARKDOWN],
+  ])('returns the panel type for %s (not mermaid)', (filename, expected) => {
+    const attachment = baseAttachment({
+      filename,
+      text: 'content',
     } as Partial<TAttachment>);
-    expect(isPanelArtifact(html)).toBe(true);
-    expect(isMermaidArtifact(html)).toBe(false);
-
-    const jsx = baseAttachment({
-      filename: 'App.tsx',
-      text: 'export default () => null;',
-    } as Partial<TAttachment>);
-    expect(isPanelArtifact(jsx)).toBe(true);
-
-    const md = baseAttachment({
-      filename: 'notes.md',
-      text: '# hi',
-    } as Partial<TAttachment>);
-    expect(isPanelArtifact(md)).toBe(true);
+    const type = artifactTypeForAttachment(attachment);
+    expect(type).toBe(expected);
+    expect(type).not.toBe(TOOL_ARTIFACT_TYPES.MERMAID);
   });
 
-  it('returns false for both when there is no text', () => {
-    const attachment = baseAttachment({ filename: 'index.html' });
-    expect(isPanelArtifact(attachment)).toBe(false);
-    expect(isMermaidArtifact(attachment)).toBe(false);
+  it('returns null when there is no text', () => {
+    expect(artifactTypeForAttachment(baseAttachment({ filename: 'index.html' }))).toBeNull();
   });
 });

@@ -4,10 +4,10 @@ import { imageExtRegex } from 'librechat-data-provider';
 import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import { artifactTypeForAttachment, isTextAttachment } from './attachmentTypes';
+import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
 import ToolArtifactCard from './ToolArtifactCard';
-import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import { useLocalize } from '~/hooks';
 import LogLink from './LogLink';
 

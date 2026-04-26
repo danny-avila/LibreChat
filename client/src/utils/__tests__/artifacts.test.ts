@@ -73,6 +73,26 @@ describe('detectArtifactTypeFromFile', () => {
     ).toBe(TOOL_ARTIFACT_TYPES.MARKDOWN);
   });
 
+  it.each([
+    ['text/html; charset=utf-8', TOOL_ARTIFACT_TYPES.HTML],
+    ['text/html;charset=utf-8', TOOL_ARTIFACT_TYPES.HTML],
+    ['TEXT/HTML; CHARSET=UTF-8', TOOL_ARTIFACT_TYPES.HTML],
+    ['text/markdown; charset=utf-8', TOOL_ARTIFACT_TYPES.MARKDOWN],
+    ['application/vnd.react; foo=bar', TOOL_ARTIFACT_TYPES.REACT],
+  ])('strips MIME parameters before lookup (%s)', (mime, expected) => {
+    expect(detectArtifactTypeFromFile({ filename: 'noext', type: mime, text: 'x' })).toBe(expected);
+  });
+
+  it.each([
+    ['application/vnd.react'],
+    ['application/vnd.ant.react'],
+    ['application/vnd.mermaid'],
+    ['application/vnd.code-html'],
+  ])('routes %s by MIME alone', (mime) => {
+    const result = detectArtifactTypeFromFile({ filename: 'noext', type: mime, text: 'x' });
+    expect(result).not.toBeNull();
+  });
+
   it('returns null for unsupported types', () => {
     expect(
       detectArtifactTypeFromFile({ filename: 'output.csv', type: 'text/csv', text: 'a,b' }),
