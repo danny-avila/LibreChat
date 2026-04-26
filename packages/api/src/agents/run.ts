@@ -239,6 +239,14 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /**
+   * Per-agent codeenv gate set by `initializeAgent`: admin-level
+   * `execute_code` capability AND the agent actually requested
+   * `execute_code` in its tools. Used here to enable
+   * `RunConfig.toolOutputReferences` only on runs where the bash tool
+   * is actually registered.
+   */
+  codeEnvAvailable?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /**
@@ -818,6 +826,18 @@ export async function createRun({
     (graphConfig as StandardGraphConfig).type = 'standard';
   }
 
+  /**
+   * Enable tool-output references when the bash tool is actually
+   * present for this run. `codeEnvAvailable` on each `RunAgent` is the
+   * per-agent gate (admin `execute_code` capability AND the agent's own
+   * `tools` listing `execute_code`), so the feature follows the same
+   * activation as the bash-tool registration in `initializeAgent`.
+   * SDK defaults (~400 KB per output, 5 MB total) keep substituted
+   * payloads inside typical shell ARG_MAX limits, so no overrides are
+   * needed for the experimental rollout.
+   */
+  const enableToolOutputReferences = agents.some((a) => a.codeEnvAvailable === true);
+
   return Run.create({
     runId,
     graphConfig,
@@ -826,5 +846,8 @@ export async function createRun({
     indexTokenCountMap,
     initialSessions,
     calibrationRatio,
+    ...(enableToolOutputReferences && {
+      toolOutputReferences: { enabled: true },
+    }),
   });
 }
