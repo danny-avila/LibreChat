@@ -41,6 +41,8 @@ const mockAxios = jest.fn();
 mockAxios.post = jest.fn();
 mockAxios.isAxiosError = jest.fn(() => false);
 
+const mockClassifyCodeArtifact = jest.fn(() => 'other');
+const mockExtractCodeArtifactText = jest.fn(async () => null);
 jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
@@ -49,6 +51,8 @@ jest.mock('@librechat/api', () => {
     getBasePath: jest.fn(() => ''),
     sanitizeFilename: jest.fn((name) => name),
     createAxiosInstance: jest.fn(() => mockAxios),
+    classifyCodeArtifact: (...args) => mockClassifyCodeArtifact(...args),
+    extractCodeArtifactText: (...args) => mockExtractCodeArtifactText(...args),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
   };
@@ -280,6 +284,56 @@ describe('Code Process', () => {
         const result = await processCodeOutput({ ...baseParams, name: 'unknown.xyz' });
 
         expect(result.type).toBe('application/octet-stream');
+      });
+    });
+
+    describe('inline text extraction', () => {
+      it('should populate text on the file when extractor returns content', async () => {
+        const buffer = Buffer.from('hello world\n', 'utf-8');
+        mockAxios.mockResolvedValue({ data: buffer });
+        determineFileType.mockResolvedValue({ mime: 'text/plain' });
+        mockClassifyCodeArtifact.mockReturnValueOnce('utf8-text');
+        mockExtractCodeArtifactText.mockResolvedValueOnce('hello world\n');
+
+        const result = await processCodeOutput({ ...baseParams, name: 'note.txt' });
+
+        expect(mockClassifyCodeArtifact).toHaveBeenCalledWith('note.txt', 'text/plain');
+        expect(mockExtractCodeArtifactText).toHaveBeenCalledWith(
+          buffer,
+          'note.txt',
+          'text/plain',
+          'utf8-text',
+        );
+        expect(result.text).toBe('hello world\n');
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ text: 'hello world\n' }),
+          true,
+        );
+      });
+
+      it('should omit text when extractor returns null', async () => {
+        const buffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: buffer });
+        determineFileType.mockResolvedValue({ mime: 'application/octet-stream' });
+        mockClassifyCodeArtifact.mockReturnValueOnce('other');
+        mockExtractCodeArtifactText.mockResolvedValueOnce(null);
+
+        const result = await processCodeOutput({ ...baseParams, name: 'archive.zip' });
+
+        expect(result).not.toHaveProperty('text');
+        const createCall = createFile.mock.calls[0][0];
+        expect(createCall).not.toHaveProperty('text');
+      });
+
+      it('should not invoke text extraction for image files', async () => {
+        const imageBuffer = Buffer.alloc(500);
+        mockAxios.mockResolvedValue({ data: imageBuffer });
+        convertImage.mockResolvedValue({ filepath: '/uploads/x.webp', bytes: 400 });
+
+        await processCodeOutput({ ...baseParams, name: 'chart.png' });
+
+        expect(mockClassifyCodeArtifact).not.toHaveBeenCalled();
+        expect(mockExtractCodeArtifactText).not.toHaveBeenCalled();
       });
     });
 

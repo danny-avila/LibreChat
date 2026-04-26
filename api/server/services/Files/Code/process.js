@@ -7,8 +7,10 @@ const {
   logAxiosError,
   sanitizeFilename,
   createAxiosInstance,
+  classifyCodeArtifact,
   codeServerHttpAgent,
   codeServerHttpsAgent,
+  extractCodeArtifactText,
 } = require('@librechat/api');
 const {
   Tools,
@@ -222,6 +224,9 @@ const processCodeOutput = async ({
       basePath: 'uploads',
     });
 
+    const category = classifyCodeArtifact(name, mimeType);
+    const text = await extractCodeArtifactText(buffer, name, mimeType, category);
+
     const file = {
       file_id,
       filepath,
@@ -238,6 +243,7 @@ const processCodeOutput = async ({
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
+      ...(text != null ? { text } : {}),
     };
 
     await createFile(file, true);
