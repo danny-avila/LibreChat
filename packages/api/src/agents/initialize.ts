@@ -463,8 +463,8 @@ export async function initializeAgent(
       try {
         const probeFiles = (await db.getFiles(
           { conversationId, context: 'execute_code' },
-          { messageId: 1, file_id: 1, filename: 1, 'metadata.fileIdentifier': 1, _id: 0 },
           {},
+          { messageId: 1, file_id: 1, filename: 1, 'metadata.fileIdentifier': 1, _id: 0 },
         )) as Array<{
           messageId?: string;
           file_id?: string;
