@@ -76,11 +76,19 @@ export function seedCodeFilesIntoSessions(
  * sessions); changing only this helper would diverge from how the
  * sandbox actually behaves at runtime.
  *
- * **Walk:** primary first, then `agentConfigs` (handoff/addedConvo),
- * then recurse into each config's `subagentAgentConfigs`. The visited
- * set is keyed by object identity (Set<CodeFilesAgent>) so cycles in
- * a malformed agent graph (a subagent that points back at its parent)
- * can't infinite-loop the seed.
+ * **Walk order:** primary first, then `agentConfigs` (handoff/addedConvo)
+ * in iteration order, then recurse into each config's
+ * `subagentAgentConfigs` breadth-first. Order matters because when no
+ * skill sessions exist, the FIRST agent's first file supplies the
+ * representative `session_id` written to `Graph.sessions[EXECUTE_CODE]`.
+ * `ToolNode` ultimately uses per-file `session_id`s for injection so
+ * the representative is informational rather than load-bearing, but
+ * primary-first keeps it predictable and matches the existing
+ * `loadSubagentsFor` walk pattern in `Endpoints/agents/initialize.js`.
+ *
+ * The visited set is keyed by object identity (`Set<CodeFilesAgent>`)
+ * so cycles in a malformed agent graph (a subagent that points back at
+ * its parent) can't infinite-loop the seed.
  *
  * @param skillSessions - Output of `primeInvokedSkills` — already
  *   contains an `EXECUTE_CODE` entry when skill files were primed; new
@@ -97,12 +105,21 @@ export function buildInitialToolSessions(params: {
   const { skillSessions, agents } = params;
   let sessions = skillSessions;
   const visited = new Set<CodeFilesAgent>();
-  const stack: CodeFilesAgent[] = [];
+  /**
+   * FIFO queue: primary lands at index 0 and gets visited first, so its
+   * first file is what `seedCodeFilesIntoSessions` records as the
+   * representative `session_id` (when no skill seed exists). A LIFO
+   * stack (`pop()`) would visit the last top-level agent first and
+   * silently flip which agent supplies that id. `Array.shift()` is
+   * O(n); the agent set is small (handoff + subagents, typically <20)
+   * so the overhead is negligible vs. the readability win.
+   */
+  const queue: CodeFilesAgent[] = [];
   for (const a of agents) {
-    if (a) stack.push(a);
+    if (a) queue.push(a);
   }
-  while (stack.length > 0) {
-    const agent = stack.pop()!;
+  while (queue.length > 0) {
+    const agent = queue.shift()!;
     if (visited.has(agent)) continue;
     visited.add(agent);
     if (agent.primedCodeFiles && agent.primedCodeFiles.length > 0) {
@@ -110,7 +127,7 @@ export function buildInitialToolSessions(params: {
     }
     if (agent.subagentAgentConfigs && agent.subagentAgentConfigs.length > 0) {
       for (const child of agent.subagentAgentConfigs) {
-        if (child && !visited.has(child)) stack.push(child);
+        if (child && !visited.has(child)) queue.push(child);
       }
     }
   }

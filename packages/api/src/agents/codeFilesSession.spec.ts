@@ -198,6 +198,32 @@ describe('buildInitialToolSessions', () => {
     expect(entry.files![0].name).toBe('x.txt');
   });
 
+  it('walks primary-first so the primary supplies the representative session_id (no skill seed)', () => {
+    /**
+     * Regression: a LIFO stack would visit the last top-level agent
+     * first, flipping which agent's first file becomes the
+     * representative `session_id` written to the EXECUTE_CODE entry.
+     * The walk is FIFO so the primary always lands first.
+     */
+    const primary = agent('primary', [file('p1', 'sess-PRIMARY', 'top.txt')]);
+    const handoffA = agent('handoff-A', [file('a1', 'sess-A', 'a.txt')]);
+    const handoffB = agent('handoff-B', [file('b1', 'sess-B', 'b.txt')]);
+
+    const result = buildInitialToolSessions({
+      agents: [primary, handoffA, handoffB],
+    });
+
+    const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
+    expect(entry.session_id).toBe('sess-PRIMARY');
+    /* All three agents still contributed their files into the merged set. */
+    expect(entry.files!.map((f) => f.name).sort()).toEqual(['a.txt', 'b.txt', 'top.txt']);
+    /* And the per-file session_ids are preserved (ToolNode injects per-file). */
+    const byName = new Map(entry.files!.map((f) => [f.name, f.session_id]));
+    expect(byName.get('top.txt')).toBe('sess-PRIMARY');
+    expect(byName.get('a.txt')).toBe('sess-A');
+    expect(byName.get('b.txt')).toBe('sess-B');
+  });
+
   it('deduplicates a single agent referenced as both primary and a subagent', () => {
     /**
      * `agentConfigs` may include an agent that is also a subagent of
