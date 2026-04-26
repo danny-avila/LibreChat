@@ -1529,11 +1529,25 @@ html {
 
 /*
  * Force "text" presentation for Enclosed Alphanumerics (U+2460–U+24FF, e.g.
- * ① ② ③) and similar symbols. Without this hint, Chromium / WebKit fall
- * back to the color-emoji font (Apple Color Emoji on macOS), which renders
- * these codepoints at emoji metrics — visibly ~1.6× the surrounding Korean
- * body text. `font-variant-emoji: text` is the standardized switch; we also
- * pin a unicode-range fallback for browsers that haven't shipped it yet.
+ * ① ② ③), CJK-Compatibility ㉠–㋾ (U+3251–U+32BF), and Enclosed Alphanumeric
+ * Supplement (U+1F100–U+1F1FF, e.g. 🅐 🅑). Without this hint, Chromium /
+ * WebKit fall back to the color-emoji font (Apple Color Emoji on macOS),
+ * which renders these codepoints at emoji metrics — visibly ~1.6× the
+ * surrounding Korean body text and breaking line-heights inside chunk
+ * paragraphs.
+ *
+ * `font-variant-emoji: text` (the standardised CSS switch) is set first,
+ * but in practice it doesn't take effect across every Chromium build the
+ * Cursor / LibreChat shells run on, especially when a `.prose` class
+ * (Tailwind typography) re-asserts a different font-family afterwards.
+ *
+ * The robust mechanism, layered on top, is a `@font-face` whose `src` is
+ * a chain of `local()` references to the same Latin/Korean fonts our
+ * body already uses, scoped via `unicode-range` to the enclosed-alphanumerics
+ * blocks. We then prepend that family to the global font stack — by the
+ * time the renderer goes looking for ① it finds `BklEnclosedText` first,
+ * which resolves to a *text* font, never the color-emoji font. This trick
+ * is the canonical way to win against `Apple Color Emoji` priority.
  */
 body,
 .markdown,
@@ -1541,21 +1555,38 @@ body,
   font-variant-emoji: text;
 }
 
-@supports not (font-variant-emoji: text) {
-  body,
-  .markdown,
-  .prose {
-    font-family:
-      Inter,
-      'Noto Sans KR',
-      'Apple SD Gothic Neo',
-      'Malgun Gothic',
-      system-ui,
-      -apple-system,
-      'Segoe UI',
-      Roboto,
-      sans-serif;
-  }
+@font-face {
+  font-family: 'BklEnclosedText';
+  src:
+    local('Inter'),
+    local('Noto Sans KR'),
+    local('Apple SD Gothic Neo'),
+    local('Malgun Gothic'),
+    local('Helvetica Neue'),
+    local('Arial');
+  unicode-range:
+    U+2460-24FF,    /* Enclosed Alphanumerics       (①-Ⓙ) */
+    U+2776-2793,    /* Dingbat circled digits       (❶-❾, ➀-➒) */
+    U+3251-32BF,    /* CJK Compatibility enclosed    (㉑-㊿) */
+    U+3220-325F,    /* Enclosed CJK Letters & Months */
+    U+1F100-1F1FF;  /* Enclosed Alphanumeric Suppl.   (🅐-🅩) */
+  font-display: swap;
+}
+
+body,
+.markdown,
+.prose {
+  font-family:
+    'BklEnclosedText',
+    Inter,
+    'Noto Sans KR',
+    'Apple SD Gothic Neo',
+    'Malgun Gothic',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
 }
 
 .markdown {
