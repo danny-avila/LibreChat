@@ -268,6 +268,15 @@ async function handleReadFileCall(
   const skillName = args.file_path.slice(0, slashIdx);
   const relativePath = args.file_path.slice(slashIdx + 1);
   if (!relativePath) {
+    /**
+     * `read_file("output/")`: a malformed-but-unambiguously-not-a-skill
+     * path. Stay consistent with the other malformed-path branches and
+     * route to the sandbox when code execution is available, instead of
+     * dead-ending with a skill-centric error message.
+     */
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
     return {
       toolCallId: tc.id,
       status: 'error',

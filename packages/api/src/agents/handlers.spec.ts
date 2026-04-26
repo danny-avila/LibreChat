@@ -44,6 +44,20 @@ function invokeHandler(
   });
 }
 
+/**
+ * Sentinel non-empty `accessibleSkillIds` for fixtures that need to opt
+ * into "skills are effectively in scope". The `read_file` handler short-
+ * circuits to the sandbox fallback (or errors when code env isn't
+ * available) whenever `accessibleSkillIds` is empty — that's the resolved
+ * output of `resolveAgentScopedSkillIds` (admin capability + ephemeral
+ * badge / persisted `skills_enabled` + ACL). Tests that mock
+ * `getSkillByName` directly need this so they reach the lookup.
+ */
+function skillsInScope(): unknown[] {
+  const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
+  return [new Types.ObjectId()];
+}
+
 describe('createToolExecuteHandler', () => {
   describe('code execution session context passthrough', () => {
     it('passes session_id and _injected_files from codeSessionContext to toolCallConfig', async () => {
@@ -177,21 +191,6 @@ describe('createToolExecuteHandler', () => {
   });
 
   describe('skill tool model-invocation gate', () => {
-    /**
-     * Sentinel non-empty `accessibleSkillIds` for fixtures that exercise the
-     * existing skill-resolution path. The `read_file` handler short-circuits
-     * to the sandbox fallback (or errors when code env isn't available)
-     * whenever `accessibleSkillIds` is empty — the resolved-output of the
-     * `resolveAgentScopedSkillIds` chain (admin capability + ephemeral badge
-     * / persisted `skills_enabled` + ACL). Tests that mock `getSkillByName`
-     * directly need to opt in to "skills are in scope" so they reach the
-     * lookup; otherwise they'd hit the gate with an unconfigured runtime.
-     */
-    const skillsInScope = (): unknown[] => {
-      const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
-      return [new Types.ObjectId()];
-    };
-
     function createSkillHandler(getSkillByName: ToolExecuteOptions['getSkillByName']) {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
@@ -671,17 +670,6 @@ describe('createToolExecuteHandler', () => {
   });
 
   describe('read_file sandbox fallback (code-env paths + non-skill segments)', () => {
-    /**
-     * `accessibleSkillIds.length > 0` is the runtime signal "skills are
-     * effectively in scope" — the resolver chain (admin capability +
-     * ephemeral badge / persisted `skills_enabled` + ACL) collapses into
-     * this single value at agent init.
-     */
-    const skillsInScope = (): unknown[] => {
-      const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
-      return [new Types.ObjectId()];
-    };
-
     function makeReadFileHandler(params: {
       codeEnvAvailable?: boolean;
       accessibleSkillIds?: unknown[];
@@ -855,6 +843,56 @@ describe('createToolExecuteHandler', () => {
       expect(readSandboxFile).not.toHaveBeenCalled();
       expect(result.status).toBe('success');
       expect(result.content).toContain('Real Body');
+    });
+
+    it('falls back to sandbox for trailing-slash paths (empty relativePath, codeEnv on)', async () => {
+      /**
+       * Regression for review Finding #4: `read_file("output/")` is
+       * malformed-but-unambiguously-not-a-skill. Previously this branch
+       * dead-ended with `Missing file path after skill name`; with code
+       * execution available it should route to the sandbox like every
+       * other malformed-path branch.
+       */
+      const readSandboxFile = jest.fn(async () => ({ content: 'whatever' }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_trailing_slash',
+          name: Constants.READ_FILE,
+          args: { file_path: 'output/' },
+        },
+      ]);
+
+      expect(readSandboxFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file_path: 'output/' }),
+      );
+      expect(result.status).toBe('success');
+    });
+
+    it('still errors on trailing-slash paths when codeEnv is off (no sandbox to route to)', async () => {
+      const readSandboxFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: false,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_trailing_slash_no_env',
+          name: Constants.READ_FILE,
+          args: { file_path: 'output/' },
+        },
+      ]);
+
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('Missing file path after skill name');
     });
 
     it('hints toward bash_tool when readSandboxFile is not configured', async () => {

@@ -108,7 +108,7 @@ const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
 const { codeServerHttpAgent, codeServerHttpsAgent } = require('@librechat/api');
 
-const { processCodeOutput, getSessionInfo } = require('./process');
+const { processCodeOutput, getSessionInfo, readSandboxFile } = require('./process');
 
 describe('Code Process', () => {
   const mockReq = {
@@ -492,6 +492,165 @@ describe('Code Process', () => {
       });
     });
 
+    describe('persistedMessageId (regression for cross-turn priming)', () => {
+      /**
+       * `getCodeGeneratedFiles` filters by `messageId IN <thread message ids>`
+       * to scope files to the current branch. If `processCodeOutput` overwrote
+       * the file's `messageId` with the current run's id on every update, a
+       * file re-touched by a later turn (e.g. a failed read attempt that
+       * re-shells the same filename) would lose its link to the assistant
+       * message that originally produced it. Subsequent turns then can't find
+       * it via `getCodeGeneratedFiles`, the priming chain has nothing to seed,
+       * and the model thinks its own prior-turn artifact disappeared.
+       *
+       * Contract:
+       *  - On UPDATE (claimCodeFile returned an existing record): the persisted
+       *    `messageId` is `claimed.messageId` (preserved). Falls back to the
+       *    current run's `messageId` when the existing record predates the
+       *    `messageId` field (legacy data).
+       *  - On CREATE (new file): the persisted `messageId` is the current run's.
+       *  - The runtime return value ALWAYS uses the current run's `messageId`
+       *    via `Object.assign(file, { messageId, toolCallId })` so the artifact
+       *    attaches to the correct tool_call in the live response.
+       */
+
+      /**
+       * `processCodeOutput` mutates the file object after `createFile` returns
+       * (`Object.assign(file, { messageId, toolCallId })`) so the runtime
+       * caller sees the live messageId on the response. Reading
+       * `createFile.mock.calls[0][0]` directly would therefore reflect the
+       * post-mutation state because JS captures by reference. To assert
+       * what was actually PERSISTED, snapshot the args at call time.
+       */
+      function snapshotCreateFileArgs() {
+        const snapshots = [];
+        createFile.mockImplementation(async (file) => {
+          snapshots.push({ ...file });
+          return {};
+        });
+        return snapshots;
+      }
+
+      it('preserves the original messageId in the persisted record on UPDATE', async () => {
+        mockClaimCodeFile.mockResolvedValue({
+          file_id: 'existing-id',
+          filename: 'sentinel.txt',
+          usage: 1,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          messageId: 'turn-1-original-msg',
+        });
+        const persisted = snapshotCreateFileArgs();
+
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+
+        await processCodeOutput({
+          ...baseParams,
+          name: 'sentinel.txt',
+          messageId: 'turn-2-current-run-msg',
+        });
+
+        expect(persisted[0].messageId).toBe('turn-1-original-msg');
+      });
+
+      it('falls back to current run messageId on UPDATE when claimed.messageId is undefined (legacy record)', async () => {
+        // Legacy record predates the persistedMessageId tracking.
+        mockClaimCodeFile.mockResolvedValue({
+          file_id: 'legacy-id',
+          filename: 'legacy.txt',
+          usage: 1,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          // messageId intentionally absent
+        });
+        const persisted = snapshotCreateFileArgs();
+
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+
+        await processCodeOutput({
+          ...baseParams,
+          name: 'legacy.txt',
+          messageId: 'turn-N-current-run-msg',
+        });
+
+        expect(persisted[0].messageId).toBe('turn-N-current-run-msg');
+      });
+
+      it('uses the current run messageId on CREATE (no claimed record)', async () => {
+        mockClaimCodeFile.mockResolvedValue({
+          file_id: 'mock-uuid-1234',
+          user: 'user-123',
+        });
+        const persisted = snapshotCreateFileArgs();
+
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+
+        await processCodeOutput({
+          ...baseParams,
+          messageId: 'turn-1-create-msg',
+        });
+
+        expect(persisted[0].messageId).toBe('turn-1-create-msg');
+      });
+
+      it('returns the CURRENT run messageId in the runtime response even on UPDATE (artifact attribution)', async () => {
+        // The persisted DB record keeps the original messageId, but the
+        // returned object surfaces the live messageId so the artifact lands
+        // on the correct tool_call in this run's response.
+        mockClaimCodeFile.mockResolvedValue({
+          file_id: 'existing-id',
+          filename: 'sentinel.txt',
+          usage: 1,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          messageId: 'turn-1-original-msg',
+        });
+        const persisted = snapshotCreateFileArgs();
+
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+
+        const result = await processCodeOutput({
+          ...baseParams,
+          name: 'sentinel.txt',
+          messageId: 'turn-2-current-run-msg',
+        });
+
+        // DB preserves original
+        expect(persisted[0].messageId).toBe('turn-1-original-msg');
+        // Runtime return surfaces the live (current) messageId
+        expect(result.messageId).toBe('turn-2-current-run-msg');
+      });
+
+      it('preserves the original messageId on UPDATE for image files too', async () => {
+        // Same contract as text files; the image branch builds its own file
+        // record and would silently regress if the ternary diverged there.
+        mockClaimCodeFile.mockResolvedValue({
+          file_id: 'existing-img',
+          filename: 'chart.png',
+          usage: 1,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          messageId: 'turn-1-image-msg',
+        });
+        const persisted = snapshotCreateFileArgs();
+
+        const imageBuffer = Buffer.alloc(500);
+        mockAxios.mockResolvedValue({ data: imageBuffer });
+        convertImage.mockResolvedValue({
+          filepath: '/uploads/chart.webp',
+          bytes: 400,
+        });
+
+        await processCodeOutput({
+          ...baseParams,
+          name: 'chart.png',
+          messageId: 'turn-2-current-img-msg',
+        });
+
+        expect(persisted[0].messageId).toBe('turn-1-image-msg');
+      });
+    });
+
     describe('socket pool isolation', () => {
       it('should pass dedicated keepAlive:false agents to axios for processCodeOutput', async () => {
         const smallBuffer = Buffer.alloc(100);
@@ -520,6 +679,222 @@ describe('Code Process', () => {
         expect(callConfig.httpsAgent).toBe(codeServerHttpsAgent);
         expect(callConfig.httpAgent.keepAlive).toBe(false);
         expect(callConfig.httpsAgent.keepAlive).toBe(false);
+      });
+    });
+  });
+
+  describe('readSandboxFile', () => {
+    /**
+     * `readSandboxFile` shells `cat <file_path>` through the sandbox
+     * `/exec` endpoint. The `file_path` argument is model-controlled, so
+     * the single-quote escaping is a security boundary — a regression
+     * here would let a malicious filename break out of the `cat`
+     * argument and inject arbitrary shell. Lock the contract in tests.
+     */
+
+    /** Pull the bash code that the helper would send to /exec, given
+     *  the file_path that the model supplied. */
+    function execCodeFor(file_path) {
+      mockAxios.mockResolvedValueOnce({ data: { stdout: '', stderr: '' } });
+      return readSandboxFile({ file_path }).then(() => {
+        const postData = mockAxios.mock.calls[0][0].data;
+        return postData.code;
+      });
+    }
+
+    describe('shell quoting (security boundary)', () => {
+      it('wraps a plain filename in single quotes', async () => {
+        const code = await execCodeFor('/mnt/data/sentinel.txt');
+        expect(code).toBe(`cat '/mnt/data/sentinel.txt'`);
+      });
+
+      it("escapes a literal single-quote in the filename via the standard '\\'' sequence", async () => {
+        // Adversarial filename: `quote'breakout.txt`. Naive
+        // single-quoting would terminate the quoted string and
+        // inject the trailing `breakout.txt'` as shell tokens.
+        const code = await execCodeFor(`/mnt/data/quote'breakout.txt`);
+        // Expected escape: end the string, escape a literal quote,
+        // start a new string. POSIX-portable.
+        expect(code).toBe(`cat '/mnt/data/quote'\\''breakout.txt'`);
+      });
+
+      it('does not interpret command substitution syntax inside the quoted argument', async () => {
+        // `$(rm -rf /)` would expand if the path were unquoted or
+        // double-quoted. Inside POSIX single-quotes it stays literal.
+        const code = await execCodeFor('/mnt/data/$(rm -rf /).txt');
+        expect(code).toBe(`cat '/mnt/data/$(rm -rf /).txt'`);
+      });
+
+      it('does not expand backtick command substitution inside the quoted argument', async () => {
+        const code = await execCodeFor('/mnt/data/`whoami`.txt');
+        expect(code).toBe(`cat '/mnt/data/\`whoami\`.txt'`);
+      });
+
+      it('keeps newlines literal inside the quoted argument', async () => {
+        const code = await execCodeFor('/mnt/data/line1\nline2.txt');
+        expect(code).toBe(`cat '/mnt/data/line1\nline2.txt'`);
+      });
+
+      it('keeps spaces and other shell metacharacters literal', async () => {
+        const code = await execCodeFor('/mnt/data/file ; ls -la /etc/passwd');
+        expect(code).toBe(`cat '/mnt/data/file ; ls -la /etc/passwd'`);
+      });
+
+      it('handles multiple consecutive single-quotes', async () => {
+        const code = await execCodeFor(`a''b`);
+        // Each `'` becomes the 4-char escape sequence.
+        expect(code).toBe(`cat 'a'\\'''\\''b'`);
+      });
+    });
+
+    describe('payload shape', () => {
+      it('POSTs to /exec on the configured codeapi base URL with bash language', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: 'ok', stderr: '' } });
+
+        await readSandboxFile({ file_path: '/mnt/data/x.txt' });
+
+        const call = mockAxios.mock.calls[0][0];
+        expect(call.method).toBe('post');
+        expect(call.url).toBe('https://code-api.example.com/exec');
+        expect(call.data.lang).toBe('bash');
+      });
+
+      it('omits session_id and files when not provided', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: '', stderr: '' } });
+
+        await readSandboxFile({ file_path: '/mnt/data/x.txt' });
+
+        const data = mockAxios.mock.calls[0][0].data;
+        expect(data).not.toHaveProperty('session_id');
+        expect(data).not.toHaveProperty('files');
+      });
+
+      it('forwards session_id when provided so the read lands in the seeded sandbox', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: '', stderr: '' } });
+
+        await readSandboxFile({
+          file_path: '/mnt/data/x.txt',
+          session_id: 'sess-XYZ',
+        });
+
+        expect(mockAxios.mock.calls[0][0].data.session_id).toBe('sess-XYZ');
+      });
+
+      it('forwards files (non-empty array) so prior-turn artifacts are mounted', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: '', stderr: '' } });
+
+        const files = [{ id: 'f1', name: 'sentinel.txt', session_id: 'sess-XYZ' }];
+        await readSandboxFile({
+          file_path: '/mnt/data/sentinel.txt',
+          session_id: 'sess-XYZ',
+          files,
+        });
+
+        expect(mockAxios.mock.calls[0][0].data.files).toEqual(files);
+      });
+
+      it('omits files when an empty array is provided (cleaner payload)', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: '', stderr: '' } });
+
+        await readSandboxFile({
+          file_path: '/mnt/data/x.txt',
+          session_id: 'sess-XYZ',
+          files: [],
+        });
+
+        expect(mockAxios.mock.calls[0][0].data).not.toHaveProperty('files');
+      });
+
+      it('uses dedicated keepAlive:false agents (matches processCodeOutput pool isolation)', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: '', stderr: '' } });
+
+        await readSandboxFile({ file_path: '/mnt/data/x.txt' });
+
+        const call = mockAxios.mock.calls[0][0];
+        expect(call.httpAgent).toBe(codeServerHttpAgent);
+        expect(call.httpsAgent).toBe(codeServerHttpsAgent);
+      });
+    });
+
+    describe('response handling', () => {
+      it('returns { content: stdout } on success', async () => {
+        mockAxios.mockResolvedValueOnce({
+          data: { stdout: 'sentinel-XYZ-1234\n', stderr: '' },
+        });
+
+        const result = await readSandboxFile({ file_path: '/mnt/data/sentinel.txt' });
+
+        expect(result).toEqual({ content: 'sentinel-XYZ-1234\n' });
+      });
+
+      it('returns null when getCodeBaseURL is not configured', async () => {
+        const { getCodeBaseURL } = require('@librechat/agents');
+        getCodeBaseURL.mockReturnValueOnce('');
+
+        const result = await readSandboxFile({ file_path: '/mnt/data/x.txt' });
+
+        expect(result).toBeNull();
+        expect(mockAxios).not.toHaveBeenCalled();
+      });
+
+      it('returns null when stdout is missing entirely (no content to surface)', async () => {
+        // stdout absent + no stderr = nothing to report; caller turns this
+        // into a model-visible "Failed to read" message.
+        mockAxios.mockResolvedValueOnce({ data: { stderr: '' } });
+
+        const result = await readSandboxFile({ file_path: '/mnt/data/x.txt' });
+
+        expect(result).toBeNull();
+      });
+
+      it('throws when the command writes to stderr with no stdout (exposes the error to the caller)', async () => {
+        mockAxios.mockResolvedValueOnce({
+          data: { stdout: '', stderr: 'cat: /mnt/data/missing.txt: No such file or directory\n' },
+        });
+
+        await expect(readSandboxFile({ file_path: '/mnt/data/missing.txt' })).rejects.toThrow(
+          'cat: /mnt/data/missing.txt: No such file or directory',
+        );
+      });
+
+      it('returns stdout even when stderr is also present (stdout wins on partial-success)', async () => {
+        // Some `cat` builds emit warnings on stderr while still producing
+        // stdout (e.g. unusual line endings). Surface the content.
+        mockAxios.mockResolvedValueOnce({
+          data: { stdout: 'partial', stderr: 'warning: ...' },
+        });
+
+        const result = await readSandboxFile({ file_path: '/mnt/data/x.txt' });
+
+        expect(result).toEqual({ content: 'partial' });
+      });
+
+      it('rethrows axios transport errors after logging via logAxiosError', async () => {
+        const { logAxiosError } = require('@librechat/api');
+        const transportError = Object.assign(new Error('connect ECONNREFUSED'), {
+          code: 'ECONNREFUSED',
+        });
+        mockAxios.mockRejectedValueOnce(transportError);
+
+        await expect(readSandboxFile({ file_path: '/mnt/data/x.txt' })).rejects.toBe(
+          transportError,
+        );
+        expect(logAxiosError).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining('/mnt/data/x.txt'),
+            error: transportError,
+          }),
+        );
+      });
+    });
+
+    describe('timeout', () => {
+      it('uses the same 15s timeout as processCodeOutput (consistent code-server SLA)', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: '', stderr: '' } });
+
+        await readSandboxFile({ file_path: '/mnt/data/x.txt' });
+
+        expect(mockAxios.mock.calls[0][0].timeout).toBe(15000);
       });
     });
   });
