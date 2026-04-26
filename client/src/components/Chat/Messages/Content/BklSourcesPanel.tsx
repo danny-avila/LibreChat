@@ -470,9 +470,48 @@ function stripLeadingSegmentMarker(text: string): string {
   return text.replace(_CHUNK_MARKER_RE, '');
 }
 
+/**
+ * Defensively unescape mammoth's over-eager backslash-escaping of
+ * punctuation that is virtually never markdown-significant in mid-
+ * paragraph Korean prose.
+ *
+ * `mammoth.convert_to_markdown` defensively writes `\(`, `\)`, `\[`,
+ * `\]`, `\.`, `\-`, `\+`, `\=`, `\|` for ASCII punctuation embedded in
+ * paragraph runs. Three things go wrong when that lands in this panel:
+ *
+ *  1. `\(...\)` is the LaTeX inline-math delimiter that
+ *     `MarkdownLite`'s `remark-math`/`rehype-katex` chain happily
+ *     consumes — KaTeX strips intra-math whitespace and re-renders
+ *     Latin runs in math-italic glyphs. That's why "Mobile Virtual
+ *     Network Operator" / "KT" / "SKT" / "LGU\+" come out as the
+ *     mathematical italic block (`𝑀𝑜𝑏𝑖𝑙𝑒𝑉𝑖𝑟𝑡𝑢𝑎𝑙…`) with no spaces in
+ *     the legal-doc panel screenshot (2026-04-26 user report
+ *     "워드 파일 청크가 이상하게 보여").
+ *  2. `\.`, `\-`, `\+` etc. occasionally leak through React-Markdown
+ *     verbatim ("정리하였습니다\." instead of "정리하였습니다.").
+ *  3. The escapes pollute embeddings and chunk-snippet readability.
+ *
+ * Backend (`mammoth_docx_processor.py`) now strips these escapes
+ * before chunking, but legacy index slices written before that fix
+ * still carry them. Apply the same normalisation client-side as a
+ * belt-and-braces measure so panels never render math-italicised
+ * legal text again.
+ *
+ * Why these specific characters: they have *no* CommonMark meaning
+ * inside a paragraph (parens are only special as link tails, brackets
+ * as link openers, periods only after a digit at the start of a line).
+ * We intentionally do not unescape `\*`, `\_`, `` \` ``, `\\`, `\#`,
+ * `\!`, `\{`, `\}`, `\~` — those genuinely need escaping.
+ */
+const _MAMMOTH_UNESCAPE_RE = /\\([()\[\].\-+=|<>])/g;
+function normaliseMammothEscapes(text: string): string {
+  if (!text || text.indexOf('\\') === -1) return text;
+  return text.replace(_MAMMOTH_UNESCAPE_RE, '$1');
+}
+
 function PanelBody({ source }: { source: BklSource }) {
   const rawText = source.document?.[0] ?? '';
-  const text = stripLeadingSegmentMarker(rawText);
+  const text = normaliseMammothEscapes(stripLeadingSegmentMarker(rawText));
   if (!text) return <p className="text-sm text-text-secondary">내용을 불러올 수 없습니다.</p>;
   // MarkdownLite (GFM + math + code highlighting) renders the chunk body.
   // PR-B moves the `## 첨부 N/M — fname` heading + `[📎 원본 파일]` link
