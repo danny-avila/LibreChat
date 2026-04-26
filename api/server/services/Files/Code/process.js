@@ -466,9 +466,81 @@ const primeFiles = async (options) => {
   return { files, toolContext };
 };
 
+/**
+ * Reads a single file from the code-execution sandbox by shelling `cat`
+ * through the sandbox `/exec` endpoint. Used by the `read_file` host
+ * handler when the requested path is a code-env path (`/mnt/data/...`)
+ * or otherwise not resolvable as a skill file. Resolves to
+ * `{ content }` from stdout on success, or `null` when the codeapi base
+ * URL isn't configured / the read returns no content (caller turns that
+ * into a model-visible error). Throws axios-style errors on transport
+ * failure so the caller can surface a meaningful error message.
+ *
+ * `session_id` and `files` come from the seeded `tc.codeSessionContext`
+ * (emitted by the agents-side `ToolNode` for `read_file` calls in
+ * v3.1.72+) so the read lands in the same sandbox session that holds
+ * the agent's prior-turn artifacts.
+ *
+ * @param {Object} params
+ * @param {string} params.file_path - Absolute path inside the sandbox (e.g. `/mnt/data/foo.txt`).
+ * @param {string} [params.session_id] - Sandbox session id from the seeded context.
+ * @param {Array<{id: string, name: string, session_id?: string}>} [params.files] - File refs to mount.
+ * @returns {Promise<{content: string} | null>}
+ */
+async function readSandboxFile({ file_path, session_id, files }) {
+  const baseURL = getCodeBaseURL();
+  if (!baseURL) {
+    return null;
+  }
+
+  /** Single-quote `file_path` with embedded-quote escaping so a malicious
+   *  filename can't break out of the `cat` command. The handler upstream
+   *  has already established this is a code-env path the model
+   *  legitimately asked to read; this just keeps the shell quoting safe. */
+  const safePath = `'${file_path.replace(/'/g, `'\\''`)}'`;
+  /** @type {Record<string, unknown>} */
+  const postData = { lang: 'bash', code: `cat ${safePath}` };
+  if (session_id) {
+    postData.session_id = session_id;
+  }
+  if (files && files.length > 0) {
+    postData.files = files;
+  }
+
+  try {
+    const response = await axios({
+      method: 'post',
+      url: `${baseURL}/exec`,
+      data: postData,
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'LibreChat/1.0',
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 15000,
+    });
+    const result = response?.data ?? {};
+    if (result.stderr && (result.stdout == null || result.stdout === '')) {
+      throw new Error(String(result.stderr).trim());
+    }
+    if (result.stdout == null) {
+      return null;
+    }
+    return { content: String(result.stdout) };
+  } catch (error) {
+    logAxiosError({
+      message: `Error reading sandbox file "${file_path}"`,
+      error,
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   primeFiles,
   checkIfActive,
   getSessionInfo,
   processCodeOutput,
+  readSandboxFile,
 };

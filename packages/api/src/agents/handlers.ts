@@ -119,6 +119,20 @@ export interface ToolExecuteOptions {
     relativePath: string,
     update: { content?: string; isBinary?: boolean },
   ) => Promise<void>;
+  /**
+   * Reads a code-execution sandbox file by shelling `cat` through the
+   * sandbox `/exec` endpoint. The host implementation supplies the
+   * codeapi base URL + auth and forwards the seeded `session_id` and
+   * `files` so the read lands in the same sandbox session that holds
+   * the agent's prior-turn artifacts. Returns `null` when codeapi is
+   * unavailable; throws on transport errors so the handler can surface
+   * a meaningful error message to the model.
+   */
+  readSandboxFile?: (params: {
+    file_path: string;
+    session_id?: string;
+    files?: Array<{ id: string; name: string; session_id?: string }>;
+  }) => Promise<{ content: string } | null>;
 }
 
 const MAX_READABLE_BYTES = 262_144;
@@ -131,6 +145,65 @@ function addLineNumbers(content: string): string {
   const lines = content.split('\n');
   const w = String(lines.length).length;
   return lines.map((l, i) => `${String(i + 1).padStart(w, ' ')} | ${l}`).join('\n');
+}
+
+/**
+ * Routes a `read_file` call to the code-execution sandbox via the
+ * host-provided `readSandboxFile` callback. The sandbox session id and
+ * primed file refs come from `tc.codeSessionContext` (emitted by ToolNode
+ * for `read_file` tool calls in agents v3.1.72+) so the read lands in the
+ * same session that holds the agent's prior-turn artifacts. Returns a
+ * `ToolExecuteResult` with the file content (line-numbered) on success,
+ * or an instructive error pointing the model at `bash_tool` when the
+ * sandbox isn't reachable from this configuration.
+ */
+async function handleSandboxFileFallback(
+  tc: ToolCallRequest,
+  filePath: string,
+  options: ToolExecuteOptions,
+): Promise<ToolExecuteResult> {
+  const { readSandboxFile } = options;
+  if (!readSandboxFile) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Path "${filePath}" is not a skill file. Use \`bash_tool\` to read code-execution sandbox files (e.g. \`cat ${filePath}\`).`,
+    };
+  }
+
+  const ctx = tc.codeSessionContext as
+    | { session_id?: string; files?: Array<{ id: string; name: string; session_id?: string }> }
+    | undefined;
+  try {
+    const result = await readSandboxFile({
+      file_path: filePath,
+      session_id: ctx?.session_id,
+      files: ctx?.files,
+    });
+    if (!result || result.content == null) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `Failed to read "${filePath}" from the code-execution sandbox. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
+      };
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: addLineNumbers(result.content),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`[handleReadFileCall] Sandbox fallback failed for "${filePath}": ${message}`);
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Error reading "${filePath}" from the code-execution sandbox: ${message}. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
+    };
+  }
 }
 
 async function handleReadFileCall(
@@ -151,8 +224,39 @@ async function handleReadFileCall(
     };
   }
 
+  const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
+  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+  /**
+   * `accessibleSkillIds` is the resolver's authoritative output (admin
+   * capability AND ACL access AND ephemeral badge / persisted
+   * `skills_enabled`). Empty ⇒ skills are not effectively in scope, so we
+   * skip skill resolution entirely and route to the sandbox fallback when
+   * the agent has code-execution available.
+   */
+  const skillsEffectivelyEnabled = accessibleIds.length > 0;
+
+  /**
+   * Short-circuit absolute code-env paths: the path can never be a skill
+   * reference (skill paths are relative `{skillName}/...`), and consulting
+   * `getSkillByName` would just burn a DB round-trip on a guaranteed miss.
+   */
+  if (args.file_path.startsWith('/mnt/data/')) {
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Path "${args.file_path}" is a code-execution sandbox path, but this agent does not have code execution enabled.`,
+    };
+  }
+
   const slashIdx = args.file_path.indexOf('/');
   if (slashIdx < 1) {
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
     return {
       toolCallId: tc.id,
       status: 'error',
@@ -172,6 +276,45 @@ async function handleReadFileCall(
     };
   }
 
+  /**
+   * Skills not in scope (admin capability off, ephemeral badge off, or
+   * persisted `skills_enabled !== true` — all already collapsed into
+   * `accessibleSkillIds.length === 0` by `resolveAgentScopedSkillIds`):
+   * route to the sandbox fallback when code execution is available, else
+   * the lookup truly has nowhere to go.
+   */
+  if (!skillsEffectivelyEnabled) {
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage:
+        'Skill files are not available for this agent and code execution is not enabled.',
+    };
+  }
+
+  /**
+   * Skills are in scope, but the first segment isn't a name we know.
+   * Use the catalog-derived `activeSkillNames` Set (no DB read) to detect
+   * this and fall through to the sandbox so the model doesn't have to
+   * eat a wasted `read_file` error before retrying with `bash_tool`.
+   */
+  const activeSkillNames = mergedConfigurable?.activeSkillNames as Set<string> | undefined;
+  if (activeSkillNames && !activeSkillNames.has(skillName)) {
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${skillName}" not found or not accessible`,
+    };
+  }
+
   if (!getSkillByName) {
     return {
       toolCallId: tc.id,
@@ -181,7 +324,6 @@ async function handleReadFileCall(
     };
   }
 
-  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
   const skillPrimedIdsByName =
     (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
   const primedIdString = skillPrimedIdsByName[skillName];

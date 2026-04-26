@@ -231,6 +231,15 @@ export interface InjectSkillCatalogResult {
    * resolvable.
    */
   activeSkillIds: Types.ObjectId[];
+  /**
+   * Names of skills the runtime can resolve, mirroring `activeSkillIds`.
+   * Surfaced so host-side handlers (e.g. `read_file`) can decide whether a
+   * `{firstSegment}/...` path is a real skill reference vs. a code-env path
+   * (`/mnt/data/...`) that should be routed to the bash fallback — without
+   * issuing an extra `getSkillByName` round-trip just to discover the name
+   * doesn't resolve.
+   */
+  activeSkillNames: Set<string>;
 }
 
 /**
@@ -261,7 +270,12 @@ export async function injectSkillCatalog(
   } = params;
 
   if (!listSkillsByAccess || accessibleSkillIds.length === 0) {
-    return { toolDefinitions: inputDefs, skillCount: 0, activeSkillIds: [] };
+    return {
+      toolDefinitions: inputDefs,
+      skillCount: 0,
+      activeSkillIds: [],
+      activeSkillNames: new Set<string>(),
+    };
   }
 
   type SkillSummary = Awaited<ReturnType<NonNullable<typeof listSkillsByAccess>>>['skills'][number];
@@ -321,7 +335,12 @@ export async function injectSkillCatalog(
   }
 
   if (activeSkills.length === 0) {
-    return { toolDefinitions: inputDefs, skillCount: 0, activeSkillIds: [] };
+    return {
+      toolDefinitions: inputDefs,
+      skillCount: 0,
+      activeSkillIds: [],
+      activeSkillNames: new Set<string>(),
+    };
   }
 
   if (!reachedEnd && visibleCount < SKILL_CATALOG_LIMIT) {
@@ -442,6 +461,7 @@ export async function injectSkillCatalog(
     toolDefinitions: workingDefs,
     skillCount: catalogVisibleSkills.length,
     activeSkillIds: executableSkills.map((s) => s._id),
+    activeSkillNames: new Set<string>(executableSkills.map((s) => s.name)),
   };
 }
 

@@ -91,6 +91,13 @@ export type InitializedAgent = Agent & {
   codeEnvAvailable: boolean;
   /** Accessible skill IDs for ACL checking at execute time */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
+  /**
+   * Names of skills the runtime can resolve, mirroring `accessibleSkillIds`.
+   * Surfaced to the runtime so handlers like `read_file` can decide if a
+   * `{firstSegment}/...` path refers to a real skill (vs. a code-env path
+   * that should be routed to the bash fallback) without an extra DB lookup.
+   */
+  activeSkillNames?: Set<string>;
   /** Number of skills in the catalog (used to determine if SkillTool should be registered) */
   skillCount?: number;
   /**
@@ -832,6 +839,7 @@ export async function initializeAgent(
    * LLM (or a direct-invocation path) names one.
    */
   let executableSkillIds = params.accessibleSkillIds;
+  let activeSkillNames: Set<string> | undefined;
   const { accessibleSkillIds } = params;
   if (accessibleSkillIds && accessibleSkillIds.length > 0) {
     const skillResult = await injectSkillCatalog({
@@ -849,6 +857,7 @@ export async function initializeAgent(
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;
     executableSkillIds = skillResult.activeSkillIds;
+    activeSkillNames = skillResult.activeSkillNames;
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;
@@ -885,6 +894,7 @@ export async function initializeAgent(
     codeEnvAvailable: effectiveCodeEnvAvailable,
     skillCount,
     accessibleSkillIds: executableSkillIds,
+    activeSkillNames,
     manualSkillPrimes,
     alwaysApplySkillPrimes,
     attachments: finalAttachments,

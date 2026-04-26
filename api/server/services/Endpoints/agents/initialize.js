@@ -186,6 +186,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         ctx.accessibleSkillIds,
         ctx.codeEnvAvailable === true,
         ctx.skillPrimedIdsByName,
+        ctx.activeSkillNames,
       );
     },
     toolEndCallback,
@@ -324,6 +325,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     tool_resources: primaryConfig.tool_resources,
     actionsEnabled: primaryConfig.actionsEnabled,
     accessibleSkillIds: primaryConfig.accessibleSkillIds,
+    activeSkillNames: primaryConfig.activeSkillNames,
     codeEnvAvailable: primaryConfig.codeEnvAvailable,
     skillPrimedIdsByName,
   });
@@ -397,6 +399,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           tool_resources: config.tool_resources,
           actionsEnabled: config.actionsEnabled,
           accessibleSkillIds: config.accessibleSkillIds,
+          activeSkillNames: config.activeSkillNames,
           codeEnvAvailable: config.codeEnvAvailable,
           skillPrimedIdsByName: buildSkillPrimedIdsByName(
             config.manualSkillPrimes,
@@ -456,6 +459,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       tool_resources: config.tool_resources,
       actionsEnabled: config.actionsEnabled,
       accessibleSkillIds: config.accessibleSkillIds,
+      activeSkillNames: config.activeSkillNames,
       codeEnvAvailable: config.codeEnvAvailable,
     });
   }
@@ -594,6 +598,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         tool_resources: config.tool_resources,
         actionsEnabled: config.actionsEnabled,
         accessibleSkillIds: config.accessibleSkillIds,
+        activeSkillNames: config.activeSkillNames,
         skillPrimedIdsByName: buildSkillPrimedIdsByName(
           config.manualSkillPrimes,
           config.alwaysApplySkillPrimes,
