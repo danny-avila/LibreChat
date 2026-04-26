@@ -1155,7 +1155,7 @@
   "com_ui_mcp_servers_allow_share": "Allow users to share MCP servers",
   "com_ui_mcp_servers_allow_share_public": "Allow users to share MCP servers publicly",
   "com_ui_mcp_servers_allow_use": "Allow users to use MCP servers",
-  "com_ui_mcp_title_invalid": "Title can only contain letters, numbers, and spaces",
+  "com_ui_mcp_title_invalid": "Title can only contain letters, numbers, spaces, apostrophes, and hyphens",
   "com_ui_mcp_tool_options": "Tool Options",
   "com_ui_mcp_transport": "Transport",
   "com_ui_mcp_type_sse": "SSE",
