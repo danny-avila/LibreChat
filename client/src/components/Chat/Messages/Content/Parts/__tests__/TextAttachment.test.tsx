@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { AttachmentGroup, default as Attachment } from '../Attachment';
 import type { TAttachment } from 'librechat-data-provider';
+import Attachment, { AttachmentGroup } from '../Attachment';
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -48,6 +48,11 @@ const textAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
     ...overrides,
   }) as TAttachment;
 
+const originalScrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+  HTMLPreElement.prototype,
+  'scrollHeight',
+);
+
 const setScrollHeight = (value: number) => {
   Object.defineProperty(HTMLPreElement.prototype, 'scrollHeight', {
     configurable: true,
@@ -56,6 +61,21 @@ const setScrollHeight = (value: number) => {
     },
   });
 };
+
+const restoreScrollHeight = () => {
+  if (originalScrollHeightDescriptor) {
+    Object.defineProperty(HTMLPreElement.prototype, 'scrollHeight', originalScrollHeightDescriptor);
+  } else {
+    // No own descriptor existed before — delete the override so the prototype
+    // chain falls back to the inherited HTMLElement implementation.
+
+    delete (HTMLPreElement.prototype as any).scrollHeight;
+  }
+};
+
+afterAll(() => {
+  restoreScrollHeight();
+});
 
 describe('TextAttachment (via Attachment default export)', () => {
   beforeEach(() => {
