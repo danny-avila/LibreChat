@@ -1,8 +1,9 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { RecoilRoot } from 'recoil';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { RecoilRoot, useRecoilValue } from 'recoil';
 import type { TAttachment } from 'librechat-data-provider';
 import Attachment, { AttachmentGroup } from '../Attachment';
+import store from '~/store';
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -56,6 +57,48 @@ const baseAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
   }) as TAttachment;
 
 const renderWith = (ui: React.ReactElement) => render(<RecoilRoot>{ui}</RecoilRoot>);
+
+interface ArtifactsSnapshot {
+  visibility: boolean;
+  currentArtifactId: string | null;
+  artifactIds: string[];
+}
+
+const StateProbe = ({ onSnapshot }: { onSnapshot: (snap: ArtifactsSnapshot) => void }) => {
+  const visibility = useRecoilValue(store.artifactsVisibility);
+  const currentArtifactId = useRecoilValue(store.currentArtifactId);
+  const artifacts = useRecoilValue(store.artifactsState);
+  React.useEffect(() => {
+    onSnapshot({
+      visibility,
+      currentArtifactId,
+      artifactIds: Object.keys(artifacts ?? {}),
+    });
+  });
+  return null;
+};
+
+const renderWithProbe = (ui: React.ReactElement) => {
+  let snapshot: ArtifactsSnapshot = {
+    visibility: false,
+    currentArtifactId: null,
+    artifactIds: [],
+  };
+  const utils = render(
+    <RecoilRoot>
+      <StateProbe
+        onSnapshot={(snap) => {
+          snapshot = snap;
+        }}
+      />
+      {ui}
+    </RecoilRoot>,
+  );
+  return {
+    ...utils,
+    getSnapshot: () => snapshot,
+  };
+};
 
 describe('Attachment routing for tool artifacts', () => {
   it('renders an HTML artifact card (panel artifact) and exposes a download control', () => {
@@ -114,6 +157,57 @@ describe('Attachment routing for tool artifacts', () => {
     const { container } = renderWith(<Attachment attachment={csv} />);
     expect(container.querySelector('pre')).not.toBeNull();
     expect(screen.queryByTestId('mermaid-render')).not.toBeInTheDocument();
+  });
+});
+
+describe('ToolArtifactCard click behaviour', () => {
+  const html = (): TAttachment =>
+    baseAttachment({
+      file_id: 'html-1',
+      filename: 'index.html',
+      text: '<h1>hi</h1>',
+    } as Partial<TAttachment>);
+
+  // Critical invariant: rendering a tool-artifact card must NOT register
+  // the artifact (or select it) until the user clicks. `artifactsVisibility`
+  // defaults to `true`, so eager mount-time registration would cause every
+  // newly-arriving tool artifact to surface in the side panel without user
+  // intent. Matches the same "no side effect on mount" rule as ArtifactButton.
+  it('does not register the artifact or change selection on mount', () => {
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
+    expect(getSnapshot().artifactIds).toEqual([]);
+    expect(getSnapshot().currentArtifactId).toBeNull();
+  });
+
+  it('registers the artifact, opens the panel, and selects it on click', () => {
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
+    const openButton = screen.getByRole('button', { pressed: false });
+    act(() => {
+      fireEvent.click(openButton);
+    });
+    const snap = getSnapshot();
+    expect(snap.artifactIds).toContain('tool-artifact-html-1');
+    expect(snap.currentArtifactId).toBe('tool-artifact-html-1');
+    expect(snap.visibility).toBe(true);
+  });
+
+  it('toggles closed on a second click of the same card', () => {
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
+    const openButton = screen.getByRole('button', { pressed: false });
+    act(() => {
+      fireEvent.click(openButton);
+    });
+    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-html-1');
+    // Re-query: aria-pressed flipped to true after the first click
+    const closeButton = screen.getByRole('button', { pressed: true });
+    act(() => {
+      fireEvent.click(closeButton);
+    });
+    const snap = getSnapshot();
+    expect(snap.currentArtifactId).toBeNull();
+    expect(snap.visibility).toBe(false);
+    // Artifact stays registered so re-opening it later doesn't lose state
+    expect(snap.artifactIds).toContain('tool-artifact-html-1');
   });
 });
 

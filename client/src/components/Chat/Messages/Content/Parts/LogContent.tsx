@@ -2,13 +2,25 @@ import { isAfter } from 'date-fns';
 import React, { useMemo } from 'react';
 import { imageExtRegex } from 'librechat-data-provider';
 import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
-import { isMermaidArtifact, isPanelArtifact, isTextAttachment } from './attachmentTypes';
+import type { Artifact } from '~/common';
+import { artifactTypeForAttachment, isTextAttachment } from './attachmentTypes';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
 import ToolArtifactCard from './ToolArtifactCard';
-import { fileToArtifact } from '~/utils/artifacts';
+import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import { useLocalize } from '~/hooks';
 import LogLink from './LogLink';
+
+interface PanelEntry {
+  attachment: TAttachment;
+  artifact: Artifact;
+}
+
+interface MermaidEntry {
+  attachment: TAttachment;
+  text: string;
+  file_id?: string;
+}
 
 interface LogContentProps {
   output?: string;
@@ -39,8 +51,8 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
   } = useMemo(() => {
     const imageAtts: ImageAttachment[] = [];
     const textAtts: Array<TFile & TAttachmentMetadata> = [];
-    const panelAtts: TAttachment[] = [];
-    const mermaidAtts: TAttachment[] = [];
+    const panelAtts: PanelEntry[] = [];
+    const mermaidAtts: MermaidEntry[] = [];
     const otherAtts: TAttachment[] = [];
 
     attachments?.forEach((attachment) => {
@@ -53,12 +65,22 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
         imageAtts.push(attachment as ImageAttachment);
         return;
       }
-      if (isMermaidArtifact(attachment)) {
-        mermaidAtts.push(attachment);
+      const artType = artifactTypeForAttachment(attachment);
+      if (artType === TOOL_ARTIFACT_TYPES.MERMAID) {
+        if (fileData.text) {
+          mermaidAtts.push({
+            attachment,
+            text: fileData.text,
+            file_id: fileData.file_id,
+          });
+        }
         return;
       }
-      if (isPanelArtifact(attachment)) {
-        panelAtts.push(attachment);
+      if (artType != null) {
+        const artifact = fileToArtifact(fileData);
+        if (artifact) {
+          panelAtts.push({ attachment, artifact });
+        }
         return;
       }
       if (isTextAttachment(attachment)) {
@@ -121,37 +143,24 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       )}
       {panelAttachments.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          {panelAttachments.map((attachment, index) => {
-            const file = attachment as TFile & TAttachmentMetadata;
-            const artifact = fileToArtifact(file);
-            if (!artifact) {
-              return null;
-            }
-            return (
-              <ToolArtifactCard
-                key={`artifact-${file.file_id ?? index}`}
-                attachment={attachment}
-                artifact={artifact}
-              />
-            );
-          })}
+          {panelAttachments.map(({ attachment, artifact }, index) => (
+            <ToolArtifactCard
+              key={`artifact-${artifact.id}-${index}`}
+              attachment={attachment}
+              artifact={artifact}
+            />
+          ))}
         </div>
       )}
       {mermaidAttachments.length > 0 && (
         <div className="mt-2 flex flex-col gap-3">
-          {mermaidAttachments.map((attachment, index) => {
-            const file = attachment as TFile & TAttachmentMetadata;
-            if (!file.text) {
-              return null;
-            }
-            return (
-              <ToolMermaidArtifact
-                key={`mermaid-${file.file_id ?? index}`}
-                attachment={attachment}
-                text={file.text}
-              />
-            );
-          })}
+          {mermaidAttachments.map(({ attachment, text, file_id }, index) => (
+            <ToolMermaidArtifact
+              key={`mermaid-${file_id ?? index}`}
+              attachment={attachment}
+              text={text}
+            />
+          ))}
         </div>
       )}
       {textAttachments.length > 0 && (

@@ -1,6 +1,6 @@
-import { memo, useEffect } from 'react';
+import { memo } from 'react';
 import { Download } from 'lucide-react';
-import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
@@ -10,41 +10,26 @@ import { cn, getFileType } from '~/utils';
 import store from '~/store';
 
 interface ToolArtifactCardProps {
-  attachment: Partial<TAttachment>;
+  attachment: TAttachment;
   artifact: Artifact;
 }
 
 /**
  * Card that opens a code-execution-produced artifact in the side panel.
- * Mirrors `ArtifactButton` but registers the artifact directly in
- * `artifactsState` (no streaming-derived `visibleArtifacts` plumbing) and
- * pairs the open-panel action with a download button for the underlying
- * file — code-execution artifacts always have a real file behind them.
+ * Mirrors `ArtifactButton`'s pattern: registration into `artifactsState`
+ * happens in the click handler, not on mount, so a message containing
+ * tool artifacts cannot inadvertently surface them in an open side panel
+ * before the user opts in. The card is paired with a download button so
+ * the underlying file remains reachable.
  */
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
   const setVisible = useSetRecoilState(store.artifactsVisibility);
-  const [artifacts, setArtifacts] = useRecoilState(store.artifactsState);
-  const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
+  const setArtifacts = useSetRecoilState(store.artifactsState);
+  const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const isSelected = artifact.id === currentArtifactId;
-
-  // Register the artifact on mount / when content changes. Idempotent on
-  // shallow equality so re-renders don't churn state.
-  useEffect(() => {
-    setArtifacts((prev) => {
-      const existing = prev?.[artifact.id];
-      if (
-        existing != null &&
-        existing.content === artifact.content &&
-        existing.type === artifact.type &&
-        existing.title === artifact.title
-      ) {
-        return prev;
-      }
-      return { ...(prev ?? {}), [artifact.id]: artifact };
-    });
-  }, [artifact, setArtifacts]);
 
   const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
@@ -61,9 +46,18 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       setVisible(false);
       return;
     }
-    if (artifacts?.[artifact.id] == null) {
-      setArtifacts((prev) => ({ ...(prev ?? {}), [artifact.id]: artifact }));
-    }
+    setArtifacts((prev) => {
+      const existing = prev?.[artifact.id];
+      if (
+        existing != null &&
+        existing.content === artifact.content &&
+        existing.type === artifact.type &&
+        existing.title === artifact.title
+      ) {
+        return prev;
+      }
+      return { ...(prev ?? {}), [artifact.id]: artifact };
+    });
     setCurrentArtifactId(artifact.id);
     setVisible(true);
   };

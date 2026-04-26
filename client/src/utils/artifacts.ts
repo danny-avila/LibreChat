@@ -201,6 +201,25 @@ const extensionOf = (filename: string | undefined): string => {
   return filename.slice(dot + 1).toLowerCase();
 };
 
+/** Strip charset / boundary parameters so we can do exact MIME comparisons. */
+const baseMime = (mime: string | undefined): string => {
+  if (!mime) {
+    return '';
+  }
+  const semi = mime.indexOf(';');
+  return (semi < 0 ? mime : mime.slice(0, semi)).trim().toLowerCase();
+};
+
+const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
+  'text/html': TOOL_ARTIFACT_TYPES.HTML,
+  'application/vnd.code-html': TOOL_ARTIFACT_TYPES.HTML,
+  'text/markdown': TOOL_ARTIFACT_TYPES.MARKDOWN,
+  'text/md': TOOL_ARTIFACT_TYPES.MARKDOWN,
+  'application/vnd.react': TOOL_ARTIFACT_TYPES.REACT,
+  'application/vnd.ant.react': TOOL_ARTIFACT_TYPES.REACT,
+  'application/vnd.mermaid': TOOL_ARTIFACT_TYPES.MERMAID,
+};
+
 /**
  * Decide whether a tool-produced file should render through the artifacts
  * panel (or inline mermaid component). Returns the canonical artifact MIME
@@ -217,17 +236,7 @@ export function detectArtifactTypeFromFile(
   if (byExtension) {
     return byExtension;
   }
-  const mime = attachment.type;
-  if (!mime) {
-    return null;
-  }
-  if (mime === 'text/html' || mime === 'application/vnd.code-html') {
-    return TOOL_ARTIFACT_TYPES.HTML;
-  }
-  if (mime === 'text/markdown' || mime === 'text/md') {
-    return TOOL_ARTIFACT_TYPES.MARKDOWN;
-  }
-  return null;
+  return MIME_TO_TOOL_ARTIFACT_TYPE[baseMime(attachment.type)] ?? null;
 }
 
 const toolArtifactId = (file: Pick<TFile, 'file_id' | 'filename'>): string =>
@@ -259,7 +268,8 @@ export function fileToArtifact(
     id: toolArtifactId(attachment),
     type,
     title: attachment.filename ?? 'Generated artifact',
-    content: attachment.text ?? '',
+    // detectArtifactTypeFromFile guarantees `text` is a non-empty string here.
+    content: attachment.text as string,
     messageId: attachment.messageId ?? undefined,
     lastUpdateTime: toLastUpdate(attachment),
   };

@@ -7,7 +7,7 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface ToolMermaidArtifactProps {
-  attachment: Partial<TAttachment>;
+  attachment: TAttachment;
   text: string;
 }
 
@@ -58,7 +58,9 @@ const ToolMermaidArtifact = memo(({ attachment, text }: ToolMermaidArtifactProps
           )}
         </div>
       )}
-      <Mermaid id={file.file_id}>{text}</Mermaid>
+      {/* `id` is optional on Mermaid; pass only when we have a real file_id
+          so the component generates a unique render target on its own. */}
+      {file.file_id ? <Mermaid id={file.file_id}>{text}</Mermaid> : <Mermaid>{text}</Mermaid>}
     </div>
   );
 });

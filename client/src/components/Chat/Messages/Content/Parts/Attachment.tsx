@@ -1,17 +1,12 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
-import {
-  isImageAttachment,
-  isMermaidArtifact,
-  isPanelArtifact,
-  isTextAttachment,
-} from './attachmentTypes';
+import { artifactTypeForAttachment, isImageAttachment, isTextAttachment } from './attachmentTypes';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
 import ToolArtifactCard from './ToolArtifactCard';
-import { fileToArtifact } from '~/utils/artifacts';
+import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -182,9 +177,11 @@ const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
   );
 });
 
-const PanelArtifact = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
-  const file = attachment as TFile & TAttachmentMetadata;
-  const artifact = useMemo(() => fileToArtifact(file), [file]);
+const PanelArtifact = memo(({ attachment }: { attachment: TAttachment }) => {
+  const artifact = useMemo(
+    () => fileToArtifact(attachment as TFile & TAttachmentMetadata),
+    [attachment],
+  );
   if (!artifact) {
     return null;
   }
@@ -192,7 +189,7 @@ const PanelArtifact = memo(({ attachment }: { attachment: Partial<TAttachment> }
 });
 PanelArtifact.displayName = 'PanelArtifact';
 
-const MermaidArtifact = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
+const MermaidArtifact = memo(({ attachment }: { attachment: TAttachment }) => {
   const file = attachment as TFile & TAttachmentMetadata;
   if (!file.text) {
     return null;
@@ -200,6 +197,9 @@ const MermaidArtifact = memo(({ attachment }: { attachment: Partial<TAttachment>
   return <ToolMermaidArtifact attachment={attachment} text={file.text} />;
 });
 MermaidArtifact.displayName = 'MermaidArtifact';
+
+const fileIdOf = (attachment: TAttachment, fallback: number): string =>
+  (attachment as TFile & TAttachmentMetadata).file_id ?? `${fallback}`;
 
 export default function Attachment({ attachment }: { attachment?: TAttachment }) {
   if (!attachment) {
@@ -212,10 +212,14 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
   if (isImageAttachment(attachment)) {
     return <ImageAttachment attachment={attachment} />;
   }
-  if (isMermaidArtifact(attachment)) {
+  // Single classification call — predicates internally do the same thing,
+  // so checking once and branching avoids `detectArtifactTypeFromFile`
+  // running twice per attachment.
+  const artType = artifactTypeForAttachment(attachment);
+  if (artType === TOOL_ARTIFACT_TYPES.MERMAID) {
     return <MermaidArtifact attachment={attachment} />;
   }
-  if (isPanelArtifact(attachment)) {
+  if (artType != null) {
     return <PanelArtifact attachment={attachment} />;
   }
   if (isTextAttachment(attachment)) {
@@ -246,11 +250,12 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
       imageAttachments.push(attachment);
       return;
     }
-    if (isMermaidArtifact(attachment)) {
+    const artType = artifactTypeForAttachment(attachment);
+    if (artType === TOOL_ARTIFACT_TYPES.MERMAID) {
       mermaidArtifacts.push(attachment);
       return;
     }
-    if (isPanelArtifact(attachment)) {
+    if (artType != null) {
       panelArtifacts.push(attachment);
       return;
     }
@@ -267,7 +272,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
         <div className="my-2 flex flex-wrap items-center gap-2.5">
           {fileAttachments.map((attachment, index) =>
             attachment.filepath ? (
-              <FileAttachment attachment={attachment} key={`file-${index}`} />
+              <FileAttachment attachment={attachment} key={`file-${fileIdOf(attachment, index)}`} />
             ) : null,
           )}
         </div>
@@ -275,28 +280,34 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
       {panelArtifacts.length > 0 && (
         <div className="my-2 flex flex-wrap items-center gap-2">
           {panelArtifacts.map((attachment, index) => (
-            <PanelArtifact attachment={attachment} key={`artifact-${index}`} />
+            <PanelArtifact
+              attachment={attachment}
+              key={`artifact-${fileIdOf(attachment, index)}`}
+            />
           ))}
         </div>
       )}
       {mermaidArtifacts.length > 0 && (
         <div className="my-2 flex flex-col gap-3">
           {mermaidArtifacts.map((attachment, index) => (
-            <MermaidArtifact attachment={attachment} key={`mermaid-${index}`} />
+            <MermaidArtifact
+              attachment={attachment}
+              key={`mermaid-${fileIdOf(attachment, index)}`}
+            />
           ))}
         </div>
       )}
       {textAttachments.length > 0 && (
         <div className="my-2 flex flex-col gap-3">
           {textAttachments.map((attachment, index) => (
-            <TextAttachment attachment={attachment} key={`text-${index}`} />
+            <TextAttachment attachment={attachment} key={`text-${fileIdOf(attachment, index)}`} />
           ))}
         </div>
       )}
       {imageAttachments.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center">
           {imageAttachments.map((attachment, index) => (
-            <ImageAttachment attachment={attachment} key={`image-${index}`} />
+            <ImageAttachment attachment={attachment} key={`image-${fileIdOf(attachment, index)}`} />
           ))}
         </div>
       )}
