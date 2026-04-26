@@ -920,3 +920,62 @@ describe('subagentConfigs', () => {
     expect(childInputs.discoveredTools).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite: toolOutputReferences gating
+// ---------------------------------------------------------------------------
+describe('toolOutputReferences gating', () => {
+  /**
+   * Captures the top-level `Run.create` config (not just agentInputs) so the
+   * test can assert presence/absence of the `toolOutputReferences` key.
+   */
+  async function callAndCaptureRunConfig(
+    overrides?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const agents = [makeAgent(overrides)];
+    const signal = new AbortController().signal;
+
+    await createRun({
+      agents: agents as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    expect(createMock).toHaveBeenCalledTimes(1);
+    return createMock.mock.calls[0][0] as Record<string, unknown>;
+  }
+
+  it('passes toolOutputReferences when agent has codeEnvAvailable=true', async () => {
+    const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: true });
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('omits toolOutputReferences when codeEnvAvailable is false', async () => {
+    const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: false });
+    expect(callArgs).not.toHaveProperty('toolOutputReferences');
+  });
+
+  it('omits toolOutputReferences when codeEnvAvailable is unset', async () => {
+    const callArgs = await callAndCaptureRunConfig();
+    expect(callArgs).not.toHaveProperty('toolOutputReferences');
+  });
+
+  it('enables toolOutputReferences if any agent in a multi-agent run has codeEnvAvailable=true', async () => {
+    const signal = new AbortController().signal;
+    await createRun({
+      agents: [
+        makeAgent({ id: 'agent_a', codeEnvAvailable: false }),
+        makeAgent({ id: 'agent_b', codeEnvAvailable: true }),
+      ] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+});

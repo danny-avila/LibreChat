@@ -24,6 +24,12 @@ jest.mock('@librechat/agents', () => ({
     description: 'bash',
     schema: {},
   },
+  buildBashExecutionToolDescription: ({
+    enableToolOutputReferences,
+  }: {
+    enableToolOutputReferences?: boolean;
+  } = {}): string =>
+    enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
 }));
 
 import { Types } from 'mongoose';

@@ -17,6 +17,17 @@ jest.mock('@librechat/agents', () => ({
     description: 'bash',
     schema: { type: 'object', properties: {} },
   },
+  /**
+   * Deterministic stub mirroring the SDK's `buildBashExecutionToolDescription`:
+   * appends an LLM-facing reference-syntax marker only when
+   * `enableToolOutputReferences` is true.
+   */
+  buildBashExecutionToolDescription: ({
+    enableToolOutputReferences,
+  }: {
+    enableToolOutputReferences?: boolean;
+  } = {}): string =>
+    enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
 }));
 
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
@@ -264,6 +275,46 @@ describe('registerCodeExecutionTools', () => {
       const names = result.toolDefinitions.map((d) => d.name).sort();
       expect(names).toEqual(['bash_tool', 'read_file']);
       expect(result.registered.sort()).toEqual(['bash_tool', 'read_file']);
+    });
+  });
+
+  describe('enableToolOutputReferences', () => {
+    const findBashDef = (defs: LCTool[]): LCTool | undefined =>
+      defs.find((d) => d.name === 'bash_tool');
+
+    it('appends the {{tool<idx>turn<turn>}} guide when flag is true', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: true,
+      });
+
+      const bash = findBashDef(result.toolDefinitions);
+      expect(bash?.description).toContain('{{tool<idx>turn<turn>}}');
+    });
+
+    it('omits the {{tool<idx>turn<turn>}} guide when flag is false', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: false,
+      });
+
+      const bash = findBashDef(result.toolDefinitions);
+      expect(bash?.description).not.toContain('{{tool<idx>turn<turn>}}');
+    });
+
+    it('omits the guide by default when flag is unspecified', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+      });
+
+      const bash = findBashDef(result.toolDefinitions);
+      expect(bash?.description).not.toContain('{{tool<idx>turn<turn>}}');
     });
   });
 });
