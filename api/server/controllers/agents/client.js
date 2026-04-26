@@ -838,10 +838,20 @@ class AgentClient extends BaseClient {
         ...(this.agentConfigs ? this.agentConfigs.values() : []),
       ];
       for (const a of agentsToSeed) {
+        logger.debug('[AgentClient] seed pass for agent', {
+          agentId: a?.id,
+          primedCodeFilesCount: a?.primedCodeFiles?.length ?? 0,
+          hasPrimedCodeFilesField: 'primedCodeFiles' in (a ?? {}),
+          codeEnvAvailable: a?.codeEnvAvailable,
+        });
         if (a?.primedCodeFiles?.length) {
           initialSessions = seedCodeFilesIntoSessions(a.primedCodeFiles, initialSessions);
         }
       }
+      logger.debug('[AgentClient] final initialSessions for createRun', {
+        hasMap: !!initialSessions,
+        executeCodeEntryFiles: initialSessions?.get?.('execute_code')?.files?.length ?? 0,
+      });
 
       let {
         messages: initialMessages,
