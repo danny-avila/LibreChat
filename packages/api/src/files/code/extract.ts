@@ -61,11 +61,37 @@ export const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): 
   });
 };
 
+/**
+ * Map a known office-document extension back to its canonical MIME so we can
+ * route through `parseDocument` even when buffer-sniffing yielded a generic
+ * value like `application/zip` or `application/octet-stream`. `parseDocument`
+ * dispatches strictly by MIME, so without this remap a `.docx` with a sniffed
+ * `application/zip` would silently fall back to `null`.
+ */
+const documentMimeFromExtension = (name: string): string | null => {
+  const ext = path.extname(name).toLowerCase();
+  switch (ext) {
+    case '.docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case '.xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    case '.xls':
+      return 'application/vnd.ms-excel';
+    case '.ods':
+      return 'application/vnd.oasis.opendocument.spreadsheet';
+    case '.odt':
+      return 'application/vnd.oasis.opendocument.text';
+    default:
+      return null;
+  }
+};
+
 const extractDocument = async (
   buffer: Buffer,
   name: string,
   mimeType: string,
 ): Promise<string | null> => {
+  const canonicalMime = documentMimeFromExtension(name) ?? mimeType;
   const tempPath = path.join(os.tmpdir(), `code-artifact-${randomUUID()}`);
   await fs.writeFile(tempPath, buffer);
   try {
@@ -74,7 +100,7 @@ const extractDocument = async (
         file: {
           path: tempPath,
           size: buffer.length,
-          mimetype: mimeType,
+          mimetype: canonicalMime,
           originalname: path.basename(name),
         } as Express.Multer.File,
       }),

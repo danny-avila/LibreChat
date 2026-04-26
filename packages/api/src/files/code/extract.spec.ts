@@ -101,6 +101,41 @@ describe('extractCodeArtifactText', () => {
       expect(text).toBeNull();
     });
 
+    it('rewrites a generic sniffed MIME to the canonical document MIME by extension', async () => {
+      // Code-output buffers for office docs are commonly sniffed as
+      // application/zip — without canonicalization, parseDocument would
+      // reject these and inline previews would silently disappear.
+      const buffer = Buffer.from('PKfake-docx');
+      await extractCodeArtifactText(buffer, 'report.docx', 'application/zip', 'document');
+      expect(parseDocumentCalls[0]?.originalname).toBe('report.docx');
+    });
+
+    it.each([
+      [
+        'report.docx',
+        'application/zip',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ],
+      [
+        'data.xlsx',
+        'application/octet-stream',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ],
+      ['legacy.xls', 'application/octet-stream', 'application/vnd.ms-excel'],
+      ['sheet.ods', 'application/zip', 'application/vnd.oasis.opendocument.spreadsheet'],
+      ['notes.odt', 'application/zip', 'application/vnd.oasis.opendocument.text'],
+    ])('passes canonical mimetype for %s when sniff returns %s', async (name, sniffed, _canon) => {
+      const parseDocumentMock = (
+        jest.requireMock('~/files/documents/crud') as {
+          parseDocument: jest.Mock;
+        }
+      ).parseDocument;
+      parseDocumentMock.mockClear();
+      await extractCodeArtifactText(Buffer.from('PK'), name, sniffed, 'document');
+      const call = parseDocumentMock.mock.calls[0]?.[0];
+      expect(call?.file?.mimetype).toBe(_canon);
+    });
+
     it('writes the temp file inside os.tmpdir() regardless of artifact name', async () => {
       const buffer = Buffer.from('PKfake-docx');
       await extractCodeArtifactText(
