@@ -78,7 +78,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
           {/* Avatar */}
           <div className="flex-shrink-0 self-center">
             <div className="overflow-hidden rounded-full shadow-[0_0_15px_rgba(0,0,0,0.3)] dark:shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-              <AgentAvatar agent={agent} size="sm" />
+              <AgentAvatar agent={agent} size="sm" showBorder={false} />
             </div>
           </div>
 

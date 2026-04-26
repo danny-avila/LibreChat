@@ -191,7 +191,9 @@ export default function Conversation({
           localize={localize}
         >
           {isGenerating ? (
-            <Spinner size={20} />
+            <span role="status" aria-label={localize('com_ui_generating')}>
+              <Spinner size={20} />
+            </span>
           ) : (
             <EndpointIcon
               conversation={conversation}

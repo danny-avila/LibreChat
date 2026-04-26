@@ -1,8 +1,8 @@
-import React, { memo, useState, useEffect } from 'react';
+import React, { memo, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
 import { icons } from '~/hooks/Endpoint/Icons';
-import { isImageCached } from '~/utils';
+import { cn, isImageCached } from '~/utils';
 
 export const URLIcon = memo(
   ({
@@ -22,16 +22,13 @@ export const URLIcon = memo(
   }) => {
     const [imageError, setImageError] = useState(false);
     const [isLoaded, setIsLoaded] = useState(() => isImageCached(iconURL));
+    const [prevIconURL, setPrevIconURL] = useState(iconURL);
 
-    useEffect(() => {
-      if (isImageCached(iconURL)) {
-        setIsLoaded(true);
-        setImageError(false);
-      } else {
-        setIsLoaded(false);
-        setImageError(false);
-      }
-    }, [iconURL]);
+    if (prevIconURL !== iconURL) {
+      setPrevIconURL(iconURL);
+      setIsLoaded(isImageCached(iconURL));
+      setImageError(false);
+    }
 
     const handleImageError = () => {
       setImageError(true);
@@ -60,7 +57,7 @@ export const URLIcon = memo(
     }
 
     return (
-      <div className={`${className} relative`} style={containerStyle}>
+      <div className={cn(className, 'relative')} style={containerStyle}>
         <img
           src={iconURL}
           alt={altName ?? 'Icon'}
