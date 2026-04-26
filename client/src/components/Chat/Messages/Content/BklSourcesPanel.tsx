@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilState } from 'recoil';
-import { X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import { Button } from '@librechat/client';
 import store from '~/store';
 import { cn, FileTypeIcon } from '~/utils';
@@ -232,13 +232,7 @@ export default function BklSourcesPanel() {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {/* Previously rendered a "원본 보기" (ExternalLink) button pointing
-              at `/viewer/...` which served raw `.msg` bytes → garbled text.
-              The replacement flow is inline: the OCR pipeline persists each
-              attachment as a PDF and injects a `[📎 원본 파일: ...]` markdown
-              link into the chunk body itself, so users click the link inside
-              the panel content (rendered by MarkdownLite below) and the PDF
-              opens in a new tab. That makes the header button redundant. */}
+          <OriginalSourceButton source={current} />
           <Button size="icon" variant="ghost" onClick={onClose} aria-label="닫기">
             <X size={16} aria-hidden="true" />
           </Button>
@@ -259,6 +253,65 @@ export default function BklSourcesPanel() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Resolve the URL to open when the user clicks "원본 보기" in the panel
+ * header. The retrieval payload may carry one of two shapes:
+ *
+ *   1. An MSG-attachment chunk: `viewer_url` is pre-populated by the
+ *      indexer with `/v1/attachments/{sha256}.pdf` — that PDF is the
+ *      attachment converted from the original .docx/.xlsx/etc., served
+ *      directly from `attachments-static`. We open it as-is.
+ *   2. Anything else (.msg itself, standalone .pdf/.docx/.hwp uploads,
+ *      or pre-PR-B legacy chunks where the indexer didn't stamp a
+ *      viewer_url): we fall back to `/v1/sources/{doc_id}`, which
+ *      proxies through the corpus-static origin to the original file.
+ *      For .msg this returns a server-rendered HTML viewer
+ *      (subject/body/attachments) instead of raw OLE garbage.
+ *
+ * The base nginx in front of bkl-api routes both `/v1/attachments/*`
+ * and `/v1/sources/*` straight to the FastAPI service, so neither URL
+ * needs the LibreChat `/bkl/` prefix.
+ *
+ * Returns null when neither source is available so the button stays
+ * hidden rather than rendering a dead link.
+ */
+function resolveOriginalSourceUrl(source: BklSource | null): string | null {
+  if (!source) return null;
+  const meta = source.metadata?.[0];
+  if (!meta) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const m = meta as any;
+  if (typeof m.viewer_url === 'string' && m.viewer_url.length > 0) {
+    return m.viewer_url;
+  }
+  if (typeof m.doc_id === 'string' && m.doc_id.length > 0) {
+    return `/v1/sources/${encodeURIComponent(m.doc_id)}`;
+  }
+  return null;
+}
+
+function OriginalSourceButton({ source }: { source: BklSource | null }) {
+  const url = resolveOriginalSourceUrl(source);
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="원본 보기"
+      aria-label="원본 보기"
+      className={cn(
+        'inline-flex h-8 w-8 items-center justify-center rounded-md',
+        'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+        'focus-visible:outline-none focus-visible:ring-2',
+        'focus-visible:ring-border-medium',
+      )}
+    >
+      <ExternalLink size={16} aria-hidden="true" />
+    </a>
   );
 }
 
