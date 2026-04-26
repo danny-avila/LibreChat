@@ -117,7 +117,7 @@ const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
 const { codeServerHttpAgent, codeServerHttpsAgent } = require('@librechat/api');
 
-const { processCodeOutput, getSessionInfo, readSandboxFile } = require('./process');
+const { processCodeOutput, getSessionInfo, readSandboxFile, primeFiles } = require('./process');
 
 describe('Code Process', () => {
   const mockReq = {
@@ -905,6 +905,109 @@ describe('Code Process', () => {
 
         expect(mockAxios.mock.calls[0][0].timeout).toBe(15000);
       });
+    });
+  });
+
+  describe('primeFiles reupload pushes FRESH sandbox ids (Pass-N review P2)', () => {
+    /**
+     * Regression: when a primed code file is missing/expired in the
+     * sandbox (`getSessionInfo` returns null), `primeFiles` re-uploads
+     * the file via `handleFileUpload` and persists the new
+     * `fileIdentifier`. Before the fix, the in-memory `files[]` array
+     * (now consumed by `buildInitialToolSessions` to seed
+     * `Graph.sessions`) still received the STALE `(session_id, id)`
+     * parsed from the original `fileIdentifier` at the top of the
+     * loop. The DB record was correct but the seed referenced a
+     * sandbox object that no longer existed — the first tool call
+     * 404'd trying to mount it until the next turn re-read metadata.
+     *
+     * Fix: parse the FRESH `fileIdentifier` returned by upload and
+     * push those ids into both the dedupe Map and the seed list.
+     */
+
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    const { updateFile, getFiles } = require('~/models');
+    const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+
+    /**
+     * Mock the full strategy pair. `primeFiles` calls
+     * `getStrategyFunctions(file.source)` for the download stream and
+     * `getStrategyFunctions(FileSources.execute_code)` for the code-env
+     * upload — both go through the same factory in production.
+     */
+    function setupReuploadMocks(newFileIdentifier) {
+      const handleFileUpload = jest.fn().mockResolvedValue(newFileIdentifier);
+      const getDownloadStream = jest.fn().mockResolvedValue('mock-stream');
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === 'execute_code') return { handleFileUpload };
+        return { getDownloadStream };
+      });
+      updateFile.mockResolvedValue({});
+      filterFilesByAgentAccess.mockImplementation(({ files }) => Promise.resolve(files));
+      // getSessionInfo is mocked at module level via mockAxios; return null
+      // to force the reupload path. Each `getSessionInfo` call hits axios.
+      mockAxios.mockResolvedValue({ data: null });
+      return { handleFileUpload, getDownloadStream };
+    }
+
+    it('seed receives FRESH session_id + id parsed off the new fileIdentifier on reupload', async () => {
+      const dbFile = {
+        file_id: 'librechat-file-id',
+        filename: 'sentinel.txt',
+        filepath: '/uploads/sentinel.txt',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          /* Stale sandbox ref — this is what `getSessionInfo` will 404 on. */
+          fileIdentifier: 'OLD_SESSION/OLD_ID',
+        },
+      };
+      getFiles.mockResolvedValue([dbFile]);
+
+      setupReuploadMocks('NEW_SESSION/NEW_ID');
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: { file_ids: ['librechat-file-id'], files: [] },
+        },
+        agentId: 'agent-id',
+      });
+
+      // The seed list (consumed by buildInitialToolSessions) MUST carry
+      // the post-reupload ids — not the stale pre-reupload ones.
+      expect(result.files).toEqual([
+        { id: 'NEW_ID', session_id: 'NEW_SESSION', name: 'sentinel.txt' },
+      ]);
+    });
+
+    it('persists the new fileIdentifier on the DB record (existing behavior, regression-locked)', async () => {
+      const dbFile = {
+        file_id: 'librechat-file-id',
+        filename: 'sentinel.txt',
+        filepath: '/uploads/sentinel.txt',
+        source: 'local',
+        context: 'execute_code',
+        metadata: { fileIdentifier: 'OLD_SESSION/OLD_ID' },
+      };
+      getFiles.mockResolvedValue([dbFile]);
+
+      setupReuploadMocks('NEW_SESSION/NEW_ID');
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: { file_ids: ['librechat-file-id'], files: [] },
+        },
+        agentId: 'agent-id',
+      });
+
+      expect(updateFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: 'librechat-file-id',
+          metadata: expect.objectContaining({ fileIdentifier: 'NEW_SESSION/NEW_ID' }),
+        }),
+      );
     });
   });
 });

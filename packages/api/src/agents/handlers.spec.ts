@@ -981,6 +981,64 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('bash_tool');
     });
 
+    it('caps sandbox fallback content at MAX_READABLE_BYTES before line-numbering (Codex review #1)', async () => {
+      /**
+       * Without the cap, `addLineNumbers` would allocate a SECOND
+       * full-size string with per-line prefixes, materializing ~2x
+       * the file in memory before downstream truncation kicks in.
+       * Match the skill-file path's 256KB ceiling: truncate the raw
+       * content first, then number, and surface the truncation to
+       * the model so it knows to use `bash_tool` for the rest.
+       */
+      const oversize = 'A'.repeat(300_000); // 300KB > 256KB MAX_READABLE_BYTES
+      const readSandboxFile = jest.fn(async () => ({ content: oversize }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_huge_file',
+          name: Constants.READ_FILE,
+          args: { file_path: '/mnt/data/huge.log' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      // `addLineNumbers` of a 256KB single-char run roughly preserves
+      // the 256KB payload size (one char per line is impossible — the
+      // content is one long line — so the line-prefix overhead is a
+      // few bytes total). Either way the prefix-stripped content
+      // length should NOT exceed the cap.
+      expect((result.content as string).length).toBeLessThan(oversize.length);
+      expect(result.content).toContain('truncated at 262144 bytes');
+      expect(result.content).toContain('bash_tool');
+      expect(result.content).toContain('huge.log');
+    });
+
+    it('does not truncate when sandbox content is within MAX_READABLE_BYTES', async () => {
+      const readSandboxFile = jest.fn(async () => ({ content: 'sentinel-XYZ-1234\n' }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_small_file',
+          name: Constants.READ_FILE,
+          args: { file_path: '/mnt/data/sentinel.txt' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).not.toContain('truncated');
+      expect(result.content).toContain('sentinel-XYZ-1234');
+    });
+
     it('surfaces sandbox fallback failures with a bash_tool retry hint', async () => {
       const readSandboxFile = jest.fn(async () => null);
       const handler = makeReadFileHandler({

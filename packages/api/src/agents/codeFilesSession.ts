@@ -30,6 +30,13 @@ export interface CodeFilesAgent {
  * files), incoming files are appended after the existing ones. The pre-existing
  * representative `session_id` is preserved so a partial-cache/fresh-prime
  * collision doesn't shift which session id `ToolNode` picks for the call.
+ *
+ * Files are deduplicated by `session_id + id` as the stable identity key.
+ * Multiple agents in the same run commonly carry the same primed
+ * code-execution resources (shared conversation files), and without dedupe
+ * `_injected_files` would grow proportionally to agent count and inflate
+ * every `/exec` POST. First-seen wins so the original ordering / source
+ * is preserved.
  */
 export function seedCodeFilesIntoSessions(
   files: CodeEnvFile[] | undefined,
@@ -42,9 +49,26 @@ export function seedCodeFilesIntoSessions(
   const sessions: ToolSessionMap = existing ?? new Map();
   const prior = sessions.get(Constants.EXECUTE_CODE) as CodeSessionContext | undefined;
 
-  const mergedFiles: FileRefs = prior?.files ? [...prior.files, ...files] : files;
-  const representativeSessionId = prior?.session_id ?? files[0].session_id;
+  /**
+   * Compose `(session_id, id)` as a stable identity. `name` alone isn't
+   * sufficient — two distinct primed uploads can share a filename
+   * (different sessions, different file_ids). The composite stays
+   * cheap to compute and the keys are short uuids.
+   */
+  const seenKeys = new Set<string>();
+  const mergedFiles: FileRefs = [];
+  const pushIfFresh = (f: { id?: string; session_id?: string; name?: string }): void => {
+    const key = `${f.session_id ?? ''}\0${f.id ?? ''}`;
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+    mergedFiles.push(f as FileRefs[number]);
+  };
+  if (prior?.files) {
+    for (const f of prior.files) pushIfFresh(f);
+  }
+  for (const f of files) pushIfFresh(f);
 
+  const representativeSessionId = prior?.session_id ?? files[0].session_id;
   if (!representativeSessionId) {
     return existing;
   }

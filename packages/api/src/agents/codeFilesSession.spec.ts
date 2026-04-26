@@ -80,6 +80,56 @@ describe('seedCodeFilesIntoSessions', () => {
     const result = seedCodeFilesIntoSessions([fileWithoutSession], undefined);
     expect(result).toBeUndefined();
   });
+
+  it('dedupes incoming files that share session_id + id with existing entries', () => {
+    /**
+     * Regression for Codex review #2: shared conversation files commonly
+     * appear in multiple agents' `primedCodeFiles`. Without dedupe,
+     * `_injected_files` would grow proportionally to agent count and
+     * inflate every `/exec` POST.
+     */
+    const shared = file('f1', 'sess-S', 'shared.csv');
+    const result = seedCodeFilesIntoSessions([shared, shared, shared], undefined);
+    const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
+    expect(entry.files).toHaveLength(1);
+    expect(entry.files![0].id).toBe('f1');
+  });
+
+  it('dedupes incoming files against pre-existing entries on merge', () => {
+    const existing: ToolSessionMap = new Map();
+    existing.set(Constants.EXECUTE_CODE, {
+      session_id: 'skill-sess',
+      files: [file('skill-1', 'skill-sess', 'a.py'), file('shared-1', 'sess-S', 'shared.csv')],
+      lastUpdated: 1,
+    } satisfies CodeSessionContext);
+
+    const result = seedCodeFilesIntoSessions(
+      [
+        file('shared-1', 'sess-S', 'shared.csv'), // duplicate of prior entry
+        file('new-1', 'sess-N', 'new.csv'),
+      ],
+      existing,
+    );
+    const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
+    /* prior 2 + 1 new (the duplicate is dropped). */
+    expect(entry.files).toHaveLength(3);
+    expect(entry.files!.map((f) => f.id).sort()).toEqual(['new-1', 'shared-1', 'skill-1']);
+  });
+
+  it('treats same name + same session as a duplicate; same name + different sessions as distinct', () => {
+    /**
+     * The dedupe key is `(session_id, id)` — not `name` alone. Two
+     * primed uploads can legitimately share a filename when they live
+     * in different sandbox sessions (e.g. each agent re-uploaded the
+     * same source file). Both should land in the seed.
+     */
+    const a = file('id-A', 'sess-A', 'data.csv');
+    const b = file('id-B', 'sess-B', 'data.csv');
+    const result = seedCodeFilesIntoSessions([a, a, b], undefined);
+    const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
+    expect(entry.files).toHaveLength(2);
+    expect(entry.files!.map((f) => f.session_id).sort()).toEqual(['sess-A', 'sess-B']);
+  });
 });
 
 describe('buildInitialToolSessions', () => {
@@ -222,6 +272,28 @@ describe('buildInitialToolSessions', () => {
     expect(byName.get('top.txt')).toBe('sess-PRIMARY');
     expect(byName.get('a.txt')).toBe('sess-A');
     expect(byName.get('b.txt')).toBe('sess-B');
+  });
+
+  it('dedupes shared conversation files across multiple run agents (Codex review #2)', () => {
+    /**
+     * The realistic case: a conversation with a primary + handoff +
+     * subagent all sharing the SAME `tool_resources.execute_code`
+     * file_ids. Without dedupe, the same file ref would land in
+     * `_injected_files` 3 times and bloat the `/exec` POST. With
+     * dedupe, exactly one ref reaches the sandbox.
+     */
+    const sharedFile = file('shared-id', 'sess-shared', 'data.csv');
+    const result = buildInitialToolSessions({
+      agents: [
+        agent('primary', [sharedFile, file('p1', 'sess-P', 'private.csv')]),
+        agent('handoff', [sharedFile]),
+        agent('subagent', [sharedFile, file('s1', 'sess-S', 'sub.csv')]),
+      ],
+    });
+
+    const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
+    expect(entry.files).toHaveLength(3);
+    expect(entry.files!.map((f) => f.id).sort()).toEqual(['p1', 's1', 'shared-id']);
   });
 
   it('deduplicates a single agent referenced as both primary and a subagent', () => {

@@ -384,7 +384,19 @@ const primeFiles = async (options) => {
       const [path, queryString] = file.metadata.fileIdentifier.split('?');
       const [session_id, id] = path.split('/');
 
-      const pushFile = () => {
+      /**
+       * `pushFile` accepts optional overrides so the reupload path can
+       * push the FRESH `(session_id, id)` parsed off the new
+       * `fileIdentifier`. Without these overrides, the closure would
+       * capture the stale pre-reupload refs from the outer loop and
+       * the in-memory `files` array (now consumed by
+       * `buildInitialToolSessions` to seed `Graph.sessions`) would
+       * point at a sandbox object that no longer exists. The DB record
+       * gets the new identifier via `updateFile`, but the seed would
+       * still inject the old one — bash_tool / read_file would 404
+       * trying to mount the file until the next turn re-reads metadata.
+       */
+      const pushFile = (overrideSessionId, overrideId) => {
         if (!toolContext) {
           toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
         }
@@ -399,8 +411,8 @@ const primeFiles = async (options) => {
 
         toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}`;
         files.push({
-          id,
-          session_id,
+          id: overrideId ?? id,
+          session_id: overrideSessionId ?? session_id,
           name: file.filename,
         });
       };
@@ -439,8 +451,18 @@ const primeFiles = async (options) => {
             file_id: file.file_id,
             metadata: updatedMetadata,
           });
-          sessions.set(session_id, true);
-          pushFile();
+          /**
+           * Parse the FRESH fileIdentifier returned by the reupload and
+           * route it through both the dedupe Map and the in-memory
+           * `files` list. The original `(session_id, id)` parsed at the
+           * top of this iteration refer to the old, expired/missing
+           * sandbox object — using them here would silently re-introduce
+           * the bug `Graph.sessions` seeding is supposed to fix.
+           */
+          const [newPath] = fileIdentifier.split('?');
+          const [newSessionId, newId] = newPath.split('/');
+          sessions.set(newSessionId, true);
+          pushFile(newSessionId, newId);
         } catch (error) {
           logger.error(
             `Error re-uploading file ${id} in session ${session_id}: ${error.message}`,

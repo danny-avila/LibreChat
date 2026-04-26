@@ -189,10 +189,29 @@ async function handleSandboxFileFallback(
         errorMessage: `Failed to read "${filePath}" from the code-execution sandbox. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
       };
     }
+    /**
+     * Cap before line-numbering. `addLineNumbers` allocates a SECOND
+     * full-size string with per-line prefixes, so a multi-MB log read
+     * would materialize ~2x in memory before downstream truncation
+     * kicks in. Match the skill-file path's `MAX_READABLE_BYTES`
+     * (256KB) ceiling: truncate the raw content first, then number,
+     * and surface the truncation to the model so it can use
+     * `bash_tool head` / `tail` for the rest.
+     */
+    let payload = result.content;
+    let truncated = false;
+    if (payload.length > MAX_READABLE_BYTES) {
+      payload = payload.slice(0, MAX_READABLE_BYTES);
+      truncated = true;
+    }
+    let numbered = addLineNumbers(payload);
+    if (truncated) {
+      numbered += `\n\n[truncated at ${MAX_READABLE_BYTES} bytes — use \`bash_tool\` (e.g. \`head -c\` / \`tail\`) to read the rest of "${filePath}"]`;
+    }
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: addLineNumbers(result.content),
+      content: numbered,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
