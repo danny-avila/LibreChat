@@ -1527,6 +1527,37 @@ html {
   height: 100%;
 }
 
+/*
+ * Force "text" presentation for Enclosed Alphanumerics (U+2460–U+24FF, e.g.
+ * ① ② ③) and similar symbols. Without this hint, Chromium / WebKit fall
+ * back to the color-emoji font (Apple Color Emoji on macOS), which renders
+ * these codepoints at emoji metrics — visibly ~1.6× the surrounding Korean
+ * body text. `font-variant-emoji: text` is the standardized switch; we also
+ * pin a unicode-range fallback for browsers that haven't shipped it yet.
+ */
+body,
+.markdown,
+.prose {
+  font-variant-emoji: text;
+}
+
+@supports not (font-variant-emoji: text) {
+  body,
+  .markdown,
+  .prose {
+    font-family:
+      Inter,
+      'Noto Sans KR',
+      'Apple SD Gothic Neo',
+      'Malgun Gothic',
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
+  }
+}
+
 .markdown {
   max-width: none;
   font-size: var(--markdown-font-size, var(--font-size-base));
