@@ -224,8 +224,8 @@ const processCodeOutput = async ({
       basePath: 'uploads',
     });
 
-    const category = classifyCodeArtifact(name, mimeType);
-    const text = await extractCodeArtifactText(buffer, name, mimeType, category);
+    const category = classifyCodeArtifact(safeName, mimeType);
+    const text = await extractCodeArtifactText(buffer, safeName, mimeType, category);
 
     const file = {
       file_id,

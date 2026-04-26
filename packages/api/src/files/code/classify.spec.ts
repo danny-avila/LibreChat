@@ -122,4 +122,21 @@ describe('classifyCodeArtifact', () => {
     expect(classifyCodeArtifact('REPORT.DOCX', 'application/octet-stream')).toBe('document');
     expect(classifyCodeArtifact('SCRIPT.PY', 'application/octet-stream')).toBe('utf8-text');
   });
+
+  describe('extensionless filenames', () => {
+    it.each([
+      ['Makefile', 'application/octet-stream'],
+      ['makefile', 'application/octet-stream'],
+      ['MAKEFILE', 'application/octet-stream'],
+      ['Dockerfile', 'application/octet-stream'],
+      ['dockerfile', 'application/octet-stream'],
+      ['/tmp/Dockerfile', 'application/octet-stream'],
+    ])('matches %s as utf8-text', (name, mime) => {
+      expect(classifyCodeArtifact(name, mime)).toBe('utf8-text');
+    });
+
+    it('falls through to other for unknown bare names', () => {
+      expect(classifyCodeArtifact('mystery', 'application/octet-stream')).toBe('other');
+    });
+  });
 });

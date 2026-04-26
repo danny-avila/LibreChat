@@ -1,6 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type { CodeArtifactCategory } from './classify';
 import { parseDocument } from '~/files/documents/crud';
@@ -34,7 +35,7 @@ const extractDocument = async (
   name: string,
   mimeType: string,
 ): Promise<string | null> => {
-  const tempPath = path.join(os.tmpdir(), `code-artifact-${process.pid}-${Date.now()}-${name}`);
+  const tempPath = path.join(os.tmpdir(), `code-artifact-${randomUUID()}`);
   await fs.writeFile(tempPath, buffer);
   try {
     const result = await parseDocument({
@@ -42,7 +43,7 @@ const extractDocument = async (
         path: tempPath,
         size: buffer.length,
         mimetype: mimeType,
-        originalname: name,
+        originalname: path.basename(name),
       } as Express.Multer.File,
     });
     if (!result?.text) {

@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useId, useState, useEffect } from 'react';
 import { imageExtRegex, Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
@@ -56,6 +56,7 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
 
 const TextAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const localize = useLocalize();
+  const preId = useId();
   const [isVisible, setIsVisible] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const file = attachment as TFile & TAttachmentMetadata;
@@ -99,6 +100,7 @@ const TextAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
       )}
       <div className="rounded-lg bg-surface-secondary p-4">
         <pre
+          id={preId}
           className="overflow-auto whitespace-pre-wrap break-words font-mono text-sm leading-6 text-text-primary"
           style={canCollapse && !expanded ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
         >
@@ -108,6 +110,8 @@ const TextAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
           <button
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
+            aria-expanded={expanded}
+            aria-controls={preId}
             className="mt-2 text-xs text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           >
             {expanded ? localize('com_ui_collapse') : localize('com_ui_show_all')}

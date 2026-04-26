@@ -128,6 +128,19 @@ const extensionOf = (name: string): string => {
   return name.slice(dot + 1).toLowerCase();
 };
 
+/**
+ * Lookup key for extensionless filenames (Makefile, Dockerfile, etc.).
+ * Matches against the same UTF8_TEXT_EXTENSIONS set so familiar bare names
+ * still get inline text rendering.
+ */
+const bareNameOf = (name: string): string => {
+  if (name.includes('.')) {
+    return '';
+  }
+  const slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+  return name.slice(slash + 1).toLowerCase();
+};
+
 const isUtf8TextMime = (mime: string): boolean => {
   if (UTF8_TEXT_MIME_EXACT.has(mime)) {
     return true;
@@ -162,6 +175,10 @@ export function classifyCodeArtifact(name: string, mimeType: string): CodeArtifa
   }
   if (ext && PPTX_EXTENSIONS.has(ext)) {
     return 'pptx';
+  }
+  const bare = bareNameOf(name);
+  if (bare && UTF8_TEXT_EXTENSIONS.has(bare)) {
+    return 'utf8-text';
   }
   if (isUtf8TextMime(mimeType)) {
     return 'utf8-text';

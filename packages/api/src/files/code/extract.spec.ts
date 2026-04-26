@@ -1,10 +1,14 @@
+import * as os from 'os';
+import * as path from 'path';
 import { extractCodeArtifactText, MAX_TEXT_CACHE_BYTES, MAX_TEXT_EXTRACT_BYTES } from './extract';
 
 const docxText = '__DOCX_PARSED__';
 const docxFailureName = 'force-docx-failure.docx';
+const parseDocumentCalls: Array<{ path: string; originalname: string }> = [];
 
 jest.mock('~/files/documents/crud', () => ({
-  parseDocument: jest.fn(async ({ file }: { file: { originalname: string } }) => {
+  parseDocument: jest.fn(async ({ file }: { file: { path: string; originalname: string } }) => {
+    parseDocumentCalls.push({ path: file.path, originalname: file.originalname });
     if (file.originalname === docxFailureName) {
       throw new Error('parse failed');
     }
@@ -53,6 +57,10 @@ describe('extractCodeArtifactText', () => {
   });
 
   describe('document', () => {
+    beforeEach(() => {
+      parseDocumentCalls.length = 0;
+    });
+
     it('routes through parseDocument and returns its text', async () => {
       const buffer = Buffer.from('PKfake-docx');
       const text = await extractCodeArtifactText(
@@ -73,6 +81,22 @@ describe('extractCodeArtifactText', () => {
         'document',
       );
       expect(text).toBeNull();
+    });
+
+    it('writes the temp file inside os.tmpdir() regardless of artifact name', async () => {
+      const buffer = Buffer.from('PKfake-docx');
+      await extractCodeArtifactText(
+        buffer,
+        '../../../etc/passwd.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'document',
+      );
+      const call = parseDocumentCalls[0];
+      expect(call).toBeDefined();
+      const tmpRoot = path.resolve(os.tmpdir());
+      expect(path.resolve(call.path).startsWith(tmpRoot)).toBe(true);
+      expect(call.path).not.toContain('..');
+      expect(call.originalname).toBe('passwd.docx');
     });
   });
 
