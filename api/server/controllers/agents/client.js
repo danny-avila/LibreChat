@@ -31,6 +31,7 @@ const {
   injectSkillPrimes,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
+  seedCodeFilesIntoSessions,
 } = require('@librechat/api');
 const {
   Callback,
@@ -41,6 +42,7 @@ const {
   createMetadataAggregator,
 } = require('@librechat/agents');
 const {
+  Tools,
   Constants,
   Permissions,
   VisionModes,
@@ -53,6 +55,7 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -815,6 +818,39 @@ class AgentClient extends BaseClient {
         ? await this.options.primeInvokedSkills(payload)
         : undefined;
 
+      /**
+       * Seed Graph.sessions with files from `tool_resources.execute_code` so the
+       * very first `execute_code` call sees them as `_injected_files`. Without
+       * this, the agents-side `CodeExecutor` falls back to a `/files/{session_id}`
+       * fetch — but `session_id` is only set by a previous successful execution,
+       * so attached/generated files were silently dropped on call #1 and
+       * follow-up code couldn't read them. `primeFiles` is dedupe-friendly
+       * (per-session freshness check); the lazy call inside `loadTools` reuses
+       * uploaded refs, so this extra call doesn't double-upload.
+       */
+      let initialSessions = skillPrimeResult?.initialSessions;
+      const codeToolResources = this.options.agent?.tool_resources?.[Tools.execute_code];
+      const wantsCodeExec = (this.options.agent?.tools ?? []).includes(Tools.execute_code);
+      if (
+        wantsCodeExec &&
+        codeToolResources &&
+        ((codeToolResources.file_ids?.length ?? 0) > 0 ||
+          (codeToolResources.files?.length ?? 0) > 0)
+      ) {
+        try {
+          const { files: primedCodeFiles } = await primeCodeFiles({
+            req: this.options.req,
+            tool_resources: this.options.agent.tool_resources,
+            agentId: this.options.agent.id,
+          });
+          if (primedCodeFiles?.length) {
+            initialSessions = seedCodeFilesIntoSessions(primedCodeFiles, initialSessions);
+          }
+        } catch (error) {
+          logger.error('[AgentClient] Error priming code files for session seeding:', error);
+        }
+      }
+
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -943,7 +979,7 @@ class AgentClient extends BaseClient {
           messages,
           indexTokenCountMap,
           initialSummary,
-          initialSessions: skillPrimeResult?.initialSessions,
+          initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,
