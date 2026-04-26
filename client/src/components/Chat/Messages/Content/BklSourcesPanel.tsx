@@ -509,9 +509,56 @@ function normaliseMammothEscapes(text: string): string {
   return text.replace(_MAMMOTH_UNESCAPE_RE, '$1');
 }
 
+/**
+ * Defuse Korean YYYY. M. D. style date headings that CommonMark/remark-gfm
+ * misparses as a *nested* ordered list.
+ *
+ * Concrete example from the OCR'd PDF panel (2026-04-26 user report
+ * "2024. k. 11.(월) 이거 왜 이렇게 깨지냐고"): the source line is
+ *
+ *     2024. 11. 11.(월)
+ *
+ * which CommonMark folds into
+ *
+ *     <ol start="2024">
+ *       <li>
+ *         <ol start="11">
+ *           <li>11.(월)</li>
+ *         </ol>
+ *       </li>
+ *     </ol>
+ *
+ * because every `digit{1,9}.` token is treated as a list marker and the
+ * trailing-text indentation hits the nested-item threshold. LibreChat's
+ * `style.css` defaults the *nested* `<ol ol>` to `list-style-type:
+ * lower-alpha`, so position 11 in the inner list renders as the marker
+ * "k." — hence the user's "2024. k. 11.(월)".
+ *
+ * Escaping just the FIRST period after a 4-digit year at the start of a
+ * line is enough to prevent the entire chain (verified locally with
+ * `unified` + `remark-gfm`@4 / `remark-math`@6, the exact LibreChat
+ * MarkdownLite plugin set). Markdown then renders the line as a single
+ * paragraph, identical text shape, no list at all.
+ *
+ * The pattern is intentionally conservative: it ONLY fires when the line
+ * starts with optional whitespace, a 4-digit number, a period, and a
+ * space, AND is followed by another `digit.` token before any
+ * non-numeric word — the canonical YYYY. M. D. shape. A bare `2024.`
+ * paragraph (no further dotted segment) is left untouched so we don't
+ * suppress legitimate ordered-list usage of large start numbers.
+ */
+const _DATE_LIST_GUARD_RE =
+  /^([ \t]*)(\d{4})\.([ \t]+)(?=\d{1,2}\.[ \t]+(?:\d{1,2}\.|[\d(]))/gm;
+function neutraliseDateListMarker(text: string): string {
+  if (!text) return text;
+  return text.replace(_DATE_LIST_GUARD_RE, '$1$2\\.$3');
+}
+
 function PanelBody({ source }: { source: BklSource }) {
   const rawText = source.document?.[0] ?? '';
-  const text = normaliseMammothEscapes(stripLeadingSegmentMarker(rawText));
+  const text = neutraliseDateListMarker(
+    normaliseMammothEscapes(stripLeadingSegmentMarker(rawText)),
+  );
   if (!text) return <p className="text-sm text-text-secondary">내용을 불러올 수 없습니다.</p>;
   // MarkdownLite (GFM + math + code highlighting) renders the chunk body.
   // PR-B moves the `## 첨부 N/M — fname` heading + `[📎 원본 파일]` link
