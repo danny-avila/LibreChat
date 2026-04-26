@@ -554,10 +554,43 @@ function neutraliseDateListMarker(text: string): string {
   return text.replace(_DATE_LIST_GUARD_RE, '$1$2\\.$3');
 }
 
+/**
+ * Promote / repair docx headings that landed in the index as bold runs.
+ *
+ * mammoth emits docx headings like `__제6조 [이행사항]__`, often with a
+ * trailing space inside the delimiter (the original Word run was the
+ * Korean section name plus a space before the paragraph mark). After
+ * the previous `normaliseMammothEscapes` strip, `\[` / `\]` get
+ * unescaped and the line becomes
+ *
+ *     __제6조 [이행사항] __
+ *
+ * — and CommonMark refuses to parse `__strong__` whose closing
+ * delimiter has whitespace immediately before it. The result is the
+ * panel rendering both `__` delimiters literally (user report
+ * 2026-04-26: "원기호 저거 크게 보이는 거" + "청크가 왜 이러지").
+ *
+ * The backend mammoth processor now promotes these to ATX `## ...`
+ * headings at OCR time, but legacy index slices written before that
+ * fix still carry the bold-run shape. Promote them client-side too:
+ * any standalone-line bold run carrying `제\d+\s*[장절조항]` becomes
+ * a real ATX heading. Trailing whitespace inside the delimiters is
+ * dropped as part of the rewrite. Inline bold elsewhere on a line
+ * is left untouched.
+ */
+const _LEGAL_HEADING_BOLD_RE =
+  /^([ \t]*)(?:__|\*\*)[ \t]*(제\s*\d+\s*[장절조항][^\n_*]*?)[ \t]*(?:__|\*\*)[ \t]*$/gmu;
+function promoteLegalBoldHeading(text: string): string {
+  if (!text) return text;
+  return text.replace(_LEGAL_HEADING_BOLD_RE, '$1## $2');
+}
+
 function PanelBody({ source }: { source: BklSource }) {
   const rawText = source.document?.[0] ?? '';
-  const text = neutraliseDateListMarker(
-    normaliseMammothEscapes(stripLeadingSegmentMarker(rawText)),
+  const text = promoteLegalBoldHeading(
+    neutraliseDateListMarker(
+      normaliseMammothEscapes(stripLeadingSegmentMarker(rawText)),
+    ),
   );
   if (!text) return <p className="text-sm text-text-secondary">내용을 불러올 수 없습니다.</p>;
   // MarkdownLite (GFM + math + code highlighting) renders the chunk body.
