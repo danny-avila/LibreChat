@@ -162,6 +162,16 @@ const processCodeOutput = async ({
       );
     }
 
+    /**
+     * Preserve the original `messageId` on update. Each `processCodeOutput`
+     * call would otherwise overwrite it with the current run's run id, which
+     * decouples the file from the assistant message that originally created
+     * it. `getCodeGeneratedFiles` filters by `messageId IN <thread>`, so a
+     * stale id (e.g. from a later regeneration / failed re-read attempt)
+     * silently excludes the file from priming on subsequent turns.
+     */
+    const persistedMessageId = isUpdate ? (claimed.messageId ?? messageId) : messageId;
+
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
       const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
@@ -170,7 +180,7 @@ const processCodeOutput = async ({
         ..._file,
         filepath,
         file_id,
-        messageId,
+        messageId: persistedMessageId,
         usage,
         filename: safeName,
         conversationId,
@@ -230,7 +240,7 @@ const processCodeOutput = async ({
     const file = {
       file_id,
       filepath,
-      messageId,
+      messageId: persistedMessageId,
       object: 'file',
       filename: safeName,
       type: mimeType,
@@ -374,7 +384,19 @@ const primeFiles = async (options) => {
       const [path, queryString] = file.metadata.fileIdentifier.split('?');
       const [session_id, id] = path.split('/');
 
-      const pushFile = () => {
+      /**
+       * `pushFile` accepts optional overrides so the reupload path can
+       * push the FRESH `(session_id, id)` parsed off the new
+       * `fileIdentifier`. Without these overrides, the closure would
+       * capture the stale pre-reupload refs from the outer loop and
+       * the in-memory `files` array (now consumed by
+       * `buildInitialToolSessions` to seed `Graph.sessions`) would
+       * point at a sandbox object that no longer exists. The DB record
+       * gets the new identifier via `updateFile`, but the seed would
+       * still inject the old one — bash_tool / read_file would 404
+       * trying to mount the file until the next turn re-reads metadata.
+       */
+      const pushFile = (overrideSessionId, overrideId) => {
         if (!toolContext) {
           toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
         }
@@ -389,8 +411,8 @@ const primeFiles = async (options) => {
 
         toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}`;
         files.push({
-          id,
-          session_id,
+          id: overrideId ?? id,
+          session_id: overrideSessionId ?? session_id,
           name: file.filename,
         });
       };
@@ -429,8 +451,18 @@ const primeFiles = async (options) => {
             file_id: file.file_id,
             metadata: updatedMetadata,
           });
-          sessions.set(session_id, true);
-          pushFile();
+          /**
+           * Parse the FRESH fileIdentifier returned by the reupload and
+           * route it through both the dedupe Map and the in-memory
+           * `files` list. The original `(session_id, id)` parsed at the
+           * top of this iteration refer to the old, expired/missing
+           * sandbox object — using them here would silently re-introduce
+           * the bug `Graph.sessions` seeding is supposed to fix.
+           */
+          const [newPath] = fileIdentifier.split('?');
+          const [newSessionId, newId] = newPath.split('/');
+          sessions.set(newSessionId, true);
+          pushFile(newSessionId, newId);
         } catch (error) {
           logger.error(
             `Error re-uploading file ${id} in session ${session_id}: ${error.message}`,
@@ -456,9 +488,81 @@ const primeFiles = async (options) => {
   return { files, toolContext };
 };
 
+/**
+ * Reads a single file from the code-execution sandbox by shelling `cat`
+ * through the sandbox `/exec` endpoint. Used by the `read_file` host
+ * handler when the requested path is a code-env path (`/mnt/data/...`)
+ * or otherwise not resolvable as a skill file. Resolves to
+ * `{ content }` from stdout on success, or `null` when the codeapi base
+ * URL isn't configured / the read returns no content (caller turns that
+ * into a model-visible error). Throws axios-style errors on transport
+ * failure so the caller can surface a meaningful error message.
+ *
+ * `session_id` and `files` come from the seeded `tc.codeSessionContext`
+ * (emitted by the agents-side `ToolNode` for `read_file` calls in
+ * v3.1.72+) so the read lands in the same sandbox session that holds
+ * the agent's prior-turn artifacts.
+ *
+ * @param {Object} params
+ * @param {string} params.file_path - Absolute path inside the sandbox (e.g. `/mnt/data/foo.txt`).
+ * @param {string} [params.session_id] - Sandbox session id from the seeded context.
+ * @param {Array<{id: string, name: string, session_id?: string}>} [params.files] - File refs to mount.
+ * @returns {Promise<{content: string} | null>}
+ */
+async function readSandboxFile({ file_path, session_id, files }) {
+  const baseURL = getCodeBaseURL();
+  if (!baseURL) {
+    return null;
+  }
+
+  /** Single-quote `file_path` with embedded-quote escaping so a malicious
+   *  filename can't break out of the `cat` command. The handler upstream
+   *  has already established this is a code-env path the model
+   *  legitimately asked to read; this just keeps the shell quoting safe. */
+  const safePath = `'${file_path.replace(/'/g, `'\\''`)}'`;
+  /** @type {Record<string, unknown>} */
+  const postData = { lang: 'bash', code: `cat ${safePath}` };
+  if (session_id) {
+    postData.session_id = session_id;
+  }
+  if (files && files.length > 0) {
+    postData.files = files;
+  }
+
+  try {
+    const response = await axios({
+      method: 'post',
+      url: `${baseURL}/exec`,
+      data: postData,
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'LibreChat/1.0',
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 15000,
+    });
+    const result = response?.data ?? {};
+    if (result.stderr && (result.stdout == null || result.stdout === '')) {
+      throw new Error(String(result.stderr).trim());
+    }
+    if (result.stdout == null) {
+      return null;
+    }
+    return { content: String(result.stdout) };
+  } catch (error) {
+    logAxiosError({
+      message: `Error reading sandbox file "${file_path}"`,
+      error,
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   primeFiles,
   checkIfActive,
   getSessionInfo,
   processCodeOutput,
+  readSandboxFile,
 };

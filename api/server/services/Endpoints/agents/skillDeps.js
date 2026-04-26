@@ -1,6 +1,10 @@
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
-const { getSessionInfo, checkIfActive } = require('~/server/services/Files/Code/process');
+const {
+  getSessionInfo,
+  checkIfActive,
+  readSandboxFile,
+} = require('~/server/services/Files/Code/process');
 const { enrichWithSkillConfigurable } = require('@librechat/api');
 const db = require('~/models');
 
@@ -66,6 +70,15 @@ const skillToolDeps = {
   updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
   getSkillFileByPath: db.getSkillFileByPath,
   updateSkillFileContent: db.updateSkillFileContent,
+  /**
+   * `read_file` falls back to a sandbox `cat` for `/mnt/data/...` paths
+   * and for `{firstSegment}/...` paths whose first segment isn't a known
+   * skill name. The handler routes through this when the agent has code
+   * execution enabled; the codeapi base URL comes from
+   * `LIBRECHAT_CODE_BASEURL` and the sandbox session id is forwarded by
+   * the agents-side `ToolNode` via `tc.codeSessionContext`.
+   */
+  readSandboxFile,
 };
 
 function getSkillToolDeps() {

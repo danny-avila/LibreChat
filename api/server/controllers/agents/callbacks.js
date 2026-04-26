@@ -553,7 +553,23 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
-            session_id: output.artifact.session_id,
+            /**
+             * Use the FILE's session_id (storage session), not the
+             * top-level artifact session_id (exec session). The codeapi
+             * worker reports two distinct ids on a tool result:
+             *   - `artifact.session_id` is the EXEC session — the
+             *     sandbox VM that ran the bash command. Files don't
+             *     live there; it's torn down post-execution.
+             *   - `file.session_id` is the STORAGE session — the
+             *     file-server bucket prefix where artifacts actually
+             *     live and are served from.
+             * `processCodeOutput` builds `/download/{session_id}/{id}`,
+             * so passing the exec id resolves to a path the file-server
+             * doesn't know about and 404s. Fall back to artifact-level
+             * for older worker payloads that may not populate per-file
+             * ids.
+             */
+            session_id: file.session_id ?? output.artifact.session_id,
           });
           if (!streamId && !res.headersSent) {
             return fileMetadata;
@@ -754,7 +770,23 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
-            session_id: output.artifact.session_id,
+            /**
+             * Use the FILE's session_id (storage session), not the
+             * top-level artifact session_id (exec session). The codeapi
+             * worker reports two distinct ids on a tool result:
+             *   - `artifact.session_id` is the EXEC session — the
+             *     sandbox VM that ran the bash command. Files don't
+             *     live there; it's torn down post-execution.
+             *   - `file.session_id` is the STORAGE session — the
+             *     file-server bucket prefix where artifacts actually
+             *     live and are served from.
+             * `processCodeOutput` builds `/download/{session_id}/{id}`,
+             * so passing the exec id resolves to a path the file-server
+             * doesn't know about and 404s. Fall back to artifact-level
+             * for older worker payloads that may not populate per-file
+             * ids.
+             */
+            session_id: file.session_id ?? output.artifact.session_id,
           });
 
           if (!fileMetadata) {
