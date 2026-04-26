@@ -1,3 +1,18 @@
+/**
+ * Stub `buildBashExecutionToolDescription` since the installed SDK version
+ * may pre-date the export. Kept as a partial mock so `Providers` and the
+ * rest of the namespace come through `jest.requireActual`.
+ */
+jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
+  buildBashExecutionToolDescription: ({
+    enableToolOutputReferences,
+  }: {
+    enableToolOutputReferences?: boolean;
+  } = {}): string =>
+    enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
+}));
+
 import { Providers } from '@librechat/agents';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent } from 'librechat-data-provider';

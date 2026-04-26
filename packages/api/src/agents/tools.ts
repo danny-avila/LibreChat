@@ -1,4 +1,8 @@
-import { BashExecutionToolDefinition, ReadFileToolDefinition } from '@librechat/agents';
+import {
+  BashExecutionToolDefinition,
+  ReadFileToolDefinition,
+  buildBashExecutionToolDescription,
+} from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 
 interface ToolDefLike {
@@ -60,6 +64,13 @@ export interface RegisterCodeExecutionToolsParams {
    * no-op so there is exactly one copy of each tool in `toolDefinitions`.
    */
   includeBash: boolean;
+  /**
+   * When `true`, the registered `bash_tool` description includes the
+   * LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide so the
+   * model knows it can substitute prior tool outputs in subsequent
+   * commands. Paired with `RunConfig.toolOutputReferences` in `createRun`.
+   */
+  enableToolOutputReferences?: boolean;
 }
 
 export interface RegisterCodeExecutionToolsResult {
@@ -69,11 +80,11 @@ export interface RegisterCodeExecutionToolsResult {
 }
 
 /**
- * Hoisted module-level definitions so `registerCodeExecutionTools` doesn't
- * re-allocate on every call (including the common no-op second call in the
- * same run). The shapes are derived entirely from static
- * `@librechat/agents` exports — no per-request state — so a single frozen
- * object per tool is safe to share across every agent init.
+ * Hoisted module-level definition for `read_file` so
+ * `registerCodeExecutionTools` doesn't re-allocate on every call. The
+ * shape is derived entirely from a static `@librechat/agents` export —
+ * no per-request state — so a single frozen object is safe to share
+ * across every agent init.
  */
 const READ_FILE_DEF: LCTool = Object.freeze({
   name: ReadFileToolDefinition.name,
@@ -82,11 +93,33 @@ const READ_FILE_DEF: LCTool = Object.freeze({
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
 
-const BASH_TOOL_DEF: LCTool = Object.freeze({
-  name: BashExecutionToolDefinition.name,
-  description: BashExecutionToolDefinition.description,
-  parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
-}) as LCTool;
+/**
+ * The `bash_tool` description varies along exactly one axis — whether
+ * the LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide is
+ * appended — so two frozen module-level singletons cover every call
+ * site. Both are shaped identically to the legacy `BASH_TOOL_DEF`
+ * constant; only `description` differs. Sharing references across
+ * every agent init avoids per-call `Object.freeze` + SDK
+ * `buildBashExecutionToolDescription` work, matching the no-allocation
+ * intent of the original constant while keeping the per-agent gate
+ * behavior introduced for tool-output references.
+ */
+function createBashToolDef(enableToolOutputReferences: boolean): LCTool {
+  return Object.freeze({
+    name: BashExecutionToolDefinition.name,
+    description: buildBashExecutionToolDescription({ enableToolOutputReferences }),
+    parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
+  }) as LCTool;
+}
+
+const BASH_TOOL_DEF_WITH_OUTPUT_REFS = createBashToolDef(true);
+const BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS = createBashToolDef(false);
+
+function buildBashToolDef(opts: { enableToolOutputReferences: boolean }): LCTool {
+  return opts.enableToolOutputReferences
+    ? BASH_TOOL_DEF_WITH_OUTPUT_REFS
+    : BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS;
+}
 
 /**
  * Idempotently registers the skill-flavored code-execution tool pair
@@ -103,9 +136,11 @@ const BASH_TOOL_DEF: LCTool = Object.freeze({
 export function registerCodeExecutionTools(
   params: RegisterCodeExecutionToolsParams,
 ): RegisterCodeExecutionToolsResult {
-  const { toolRegistry, toolDefinitions, includeBash } = params;
+  const { toolRegistry, toolDefinitions, includeBash, enableToolOutputReferences = false } = params;
 
-  const candidates: LCTool[] = includeBash ? [READ_FILE_DEF, BASH_TOOL_DEF] : [READ_FILE_DEF];
+  const candidates: LCTool[] = includeBash
+    ? [READ_FILE_DEF, buildBashToolDef({ enableToolOutputReferences })]
+    : [READ_FILE_DEF];
 
   const existingNames = new Set((toolDefinitions ?? []).map((d) => d.name));
 

@@ -418,10 +418,23 @@ export async function injectSkillCatalog(
     toolRegistry?.set(skillToolDef.name, skillToolDef);
   }
 
+  /**
+   * Forward `enableToolOutputReferences` to keep the skills caller
+   * symmetric with `initializeAgent`'s call. Today `initializeAgent`
+   * registers `bash_tool` first and the registry `.has()` check makes
+   * this call a no-op — but if call order ever flips (skills-first),
+   * a missing flag here would silently produce a `bash_tool`
+   * description without the `{{tool<idx>turn<turn>}}` guide, and the
+   * `initializeAgent` pass would become the no-op. Mirror the gate
+   * `initializeAgent` uses (`effectiveCodeEnvAvailable`, which here
+   * is `codeEnvAvailable === true`) so both paths produce identical
+   * tool definitions regardless of which fires first.
+   */
   const codeExecResult = registerCodeExecutionTools({
     toolRegistry,
     toolDefinitions: workingDefs,
     includeBash: codeEnvAvailable === true,
+    enableToolOutputReferences: codeEnvAvailable === true,
   });
   workingDefs = codeExecResult.toolDefinitions;
 
