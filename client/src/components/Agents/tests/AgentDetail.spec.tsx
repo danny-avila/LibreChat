@@ -45,8 +45,9 @@ jest.mock('@librechat/client', () => ({
   useToastContext: jest.fn(),
 }));
 
-jest.mock('~/utils/agents', () => ({
-  AgentAvatar: jest.fn(({ agent, size }) => <div data-testid="agent-avatar" data-size={size} />),
+jest.mock('../AgentAvatar', () => ({
+  __esModule: true,
+  default: jest.fn(({ size }) => <div data-testid="agent-avatar" data-size={size} />),
 }));
 
 jest.mock('~/Providers', () => ({

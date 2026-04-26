@@ -2,39 +2,7 @@ import React, { useState } from 'react';
 import { Feather } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
 import type t from 'librechat-data-provider';
-
-/**
- * Checks if an image is already cached in the browser
- * Returns true if image is complete and has valid dimensions
- */
-export const isImageCached = (url: string | null | undefined): boolean => {
-  if (typeof window === 'undefined' || !url) {
-    return false;
-  }
-  const img = new Image();
-  img.src = url;
-  return img.complete && img.naturalWidth > 0;
-};
-
-/**
- * Extracts the avatar URL from an agent's avatar property
- * Handles both string and object formats
- */
-export const getAgentAvatarUrl = (agent: t.Agent | null | undefined): string | null => {
-  if (!agent?.avatar) {
-    return null;
-  }
-
-  if (typeof agent.avatar === 'string') {
-    return agent.avatar;
-  }
-
-  if (agent.avatar && typeof agent.avatar === 'object' && 'filepath' in agent.avatar) {
-    return agent.avatar.filepath;
-  }
-
-  return null;
-};
+import { getAgentAvatarUrl, isImageCached } from '~/utils';
 
 const LazyAgentAvatar = ({
   url,
@@ -82,11 +50,7 @@ const LazyAgentAvatar = ({
   );
 };
 
-/**
- * Renders an agent avatar with fallback to Bot icon
- * Consistent across all agent displays
- */
-export const AgentAvatar = ({
+const AgentAvatar = ({
   agent,
   size = 'md',
   className = '',
@@ -99,7 +63,6 @@ export const AgentAvatar = ({
 }) => {
   const avatarUrl = getAgentAvatarUrl(agent);
 
-  // Size mappings for responsive design
   const sizeClasses = {
     icon: 'h-5 w-5',
     sm: 'h-12 w-12 sm:h-14 sm:w-14',
@@ -144,17 +107,4 @@ export const AgentAvatar = ({
   );
 };
 
-/**
- * Gets the display name for a contact (prioritizes name over email)
- */
-export const getContactDisplayName = (agent: t.Agent | null | undefined): string | null => {
-  if (!agent) return null;
-
-  const supportName = (agent as any).support_contact?.name;
-  const supportEmail = (agent as any).support_contact?.email;
-  const authorName = (agent as any).authorName;
-
-  return supportName || authorName || supportEmail || null;
-};
-
-// All hardcoded category constants removed - now using database-driven categories
+export default AgentAvatar;

@@ -126,8 +126,12 @@ jest.mock('~/data-provider/Agents', () => ({
 
 // Mock utility functions
 jest.mock('~/utils/agents', () => ({
-  AgentAvatar: jest.fn(() => <div data-testid="agent-avatar" />),
   getContactDisplayName: jest.fn((agent) => agent.authorName),
+}));
+
+jest.mock('../AgentAvatar', () => ({
+  __esModule: true,
+  default: jest.fn(() => <div data-testid="agent-avatar" />),
 }));
 
 // Mock SmartLoader

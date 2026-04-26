@@ -7,7 +7,8 @@ import type { FavoriteModel } from '~/store/favorites';
 import type t from 'librechat-data-provider';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { useFavorites, useLocalize } from '~/hooks';
-import { AgentAvatar, cn } from '~/utils';
+import { cn } from '~/utils';
+import AgentAvatar from '~/components/Agents/AgentAvatar';
 
 type Kwargs = {
   model?: string;

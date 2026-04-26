@@ -12,8 +12,9 @@ import {
 } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useLocalize, useDefaultConvo, useFavorites } from '~/hooks';
-import { AgentAvatar, clearMessagesCache } from '~/utils';
+import { clearMessagesCache } from '~/utils';
 import { useChatContext } from '~/Providers';
+import AgentAvatar from './AgentAvatar';
 
 interface SupportContact {
   name?: string;
