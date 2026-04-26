@@ -162,6 +162,16 @@ const processCodeOutput = async ({
       );
     }
 
+    /**
+     * Preserve the original `messageId` on update. Each `processCodeOutput`
+     * call would otherwise overwrite it with the current run's run id, which
+     * decouples the file from the assistant message that originally created
+     * it. `getCodeGeneratedFiles` filters by `messageId IN <thread>`, so a
+     * stale id (e.g. from a later regeneration / failed re-read attempt)
+     * silently excludes the file from priming on subsequent turns.
+     */
+    const persistedMessageId = isUpdate ? (claimed.messageId ?? messageId) : messageId;
+
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
       const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
@@ -170,7 +180,7 @@ const processCodeOutput = async ({
         ..._file,
         filepath,
         file_id,
-        messageId,
+        messageId: persistedMessageId,
         usage,
         filename: safeName,
         conversationId,
@@ -230,7 +240,7 @@ const processCodeOutput = async ({
     const file = {
       file_id,
       filepath,
-      messageId,
+      messageId: persistedMessageId,
       object: 'file',
       filename: safeName,
       type: mimeType,
