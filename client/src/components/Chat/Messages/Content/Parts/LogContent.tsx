@@ -2,8 +2,11 @@ import { isAfter } from 'date-fns';
 import React, { useMemo } from 'react';
 import { imageExtRegex } from 'librechat-data-provider';
 import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
+import { isMermaidArtifact, isPanelArtifact, isTextAttachment } from './attachmentTypes';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { isTextAttachment } from './attachmentTypes';
+import ToolMermaidArtifact from './ToolMermaidArtifact';
+import ToolArtifactCard from './ToolArtifactCard';
+import { fileToArtifact } from '~/utils/artifacts';
 import { useLocalize } from '~/hooks';
 import LogLink from './LogLink';
 
@@ -27,9 +30,17 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     return parts[0].trim();
   }, [output]);
 
-  const { imageAttachments, textAttachments, nonInlineAttachments } = useMemo(() => {
+  const {
+    imageAttachments,
+    textAttachments,
+    panelAttachments,
+    mermaidAttachments,
+    nonInlineAttachments,
+  } = useMemo(() => {
     const imageAtts: ImageAttachment[] = [];
     const textAtts: Array<TFile & TAttachmentMetadata> = [];
+    const panelAtts: TAttachment[] = [];
+    const mermaidAtts: TAttachment[] = [];
     const otherAtts: TAttachment[] = [];
 
     attachments?.forEach((attachment) => {
@@ -42,6 +53,14 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
         imageAtts.push(attachment as ImageAttachment);
         return;
       }
+      if (isMermaidArtifact(attachment)) {
+        mermaidAtts.push(attachment);
+        return;
+      }
+      if (isPanelArtifact(attachment)) {
+        panelAtts.push(attachment);
+        return;
+      }
       if (isTextAttachment(attachment)) {
         textAtts.push(fileData);
         return;
@@ -52,6 +71,8 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     return {
       imageAttachments: renderImages === true ? imageAtts : null,
       textAttachments: textAtts,
+      panelAttachments: panelAtts,
+      mermaidAttachments: mermaidAtts,
       nonInlineAttachments: otherAtts,
     };
   }, [attachments, renderImages]);
@@ -96,6 +117,41 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
               {index < nonInlineAttachments.length - 1 && ', '}
             </React.Fragment>
           ))}
+        </div>
+      )}
+      {panelAttachments.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {panelAttachments.map((attachment, index) => {
+            const file = attachment as TFile & TAttachmentMetadata;
+            const artifact = fileToArtifact(file);
+            if (!artifact) {
+              return null;
+            }
+            return (
+              <ToolArtifactCard
+                key={`artifact-${file.file_id ?? index}`}
+                attachment={attachment}
+                artifact={artifact}
+              />
+            );
+          })}
+        </div>
+      )}
+      {mermaidAttachments.length > 0 && (
+        <div className="mt-2 flex flex-col gap-3">
+          {mermaidAttachments.map((attachment, index) => {
+            const file = attachment as TFile & TAttachmentMetadata;
+            if (!file.text) {
+              return null;
+            }
+            return (
+              <ToolMermaidArtifact
+                key={`mermaid-${file.file_id ?? index}`}
+                attachment={attachment}
+                text={file.text}
+              />
+            );
+          })}
         </div>
       )}
       {textAttachments.length > 0 && (

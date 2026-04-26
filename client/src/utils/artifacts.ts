@@ -4,7 +4,8 @@ import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,
 } from '@codesandbox/sandpack-react';
-import type { TStartupConfig } from 'librechat-data-provider';
+import type { TStartupConfig, TAttachment, TFile } from 'librechat-data-provider';
+import type { Artifact } from '~/common';
 
 const artifactFilename = {
   'application/vnd.react': 'App.tsx',
@@ -159,6 +160,108 @@ export function buildSandpackOptions(
   return {
     ...sharedOptions,
     bundlerURL: template === 'static' ? startupConfig.staticBundlerURL : startupConfig.bundlerURL,
+  };
+}
+
+/**
+ * Artifact MIME types we currently know how to render in the side panel
+ * (or, for mermaid, inline). Anything outside this set falls back to the
+ * existing inline `<pre>` or download chip. Intentionally narrow — we
+ * expand it as dedicated viewers for csv/docx/xlsx/pptx land.
+ */
+export const TOOL_ARTIFACT_TYPES = {
+  HTML: 'text/html',
+  REACT: 'application/vnd.react',
+  MARKDOWN: 'text/markdown',
+  MERMAID: 'application/vnd.mermaid',
+} as const;
+
+export type ToolArtifactType = (typeof TOOL_ARTIFACT_TYPES)[keyof typeof TOOL_ARTIFACT_TYPES];
+
+const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
+  html: TOOL_ARTIFACT_TYPES.HTML,
+  htm: TOOL_ARTIFACT_TYPES.HTML,
+  jsx: TOOL_ARTIFACT_TYPES.REACT,
+  tsx: TOOL_ARTIFACT_TYPES.REACT,
+  md: TOOL_ARTIFACT_TYPES.MARKDOWN,
+  markdown: TOOL_ARTIFACT_TYPES.MARKDOWN,
+  mdx: TOOL_ARTIFACT_TYPES.MARKDOWN,
+  mmd: TOOL_ARTIFACT_TYPES.MERMAID,
+  mermaid: TOOL_ARTIFACT_TYPES.MERMAID,
+};
+
+const extensionOf = (filename: string | undefined): string => {
+  if (!filename) {
+    return '';
+  }
+  const dot = filename.lastIndexOf('.');
+  if (dot < 0 || dot === filename.length - 1) {
+    return '';
+  }
+  return filename.slice(dot + 1).toLowerCase();
+};
+
+/**
+ * Decide whether a tool-produced file should render through the artifacts
+ * panel (or inline mermaid component). Returns the canonical artifact MIME
+ * type if so, or `null` to let the caller fall through to the existing
+ * download / inline-text rendering.
+ */
+export function detectArtifactTypeFromFile(
+  attachment: Pick<TFile, 'filename' | 'type' | 'text'>,
+): ToolArtifactType | null {
+  if (!attachment.text) {
+    return null;
+  }
+  const byExtension = EXTENSION_TO_TOOL_ARTIFACT_TYPE[extensionOf(attachment.filename)];
+  if (byExtension) {
+    return byExtension;
+  }
+  const mime = attachment.type;
+  if (!mime) {
+    return null;
+  }
+  if (mime === 'text/html' || mime === 'application/vnd.code-html') {
+    return TOOL_ARTIFACT_TYPES.HTML;
+  }
+  if (mime === 'text/markdown' || mime === 'text/md') {
+    return TOOL_ARTIFACT_TYPES.MARKDOWN;
+  }
+  return null;
+}
+
+const toolArtifactId = (file: Pick<TFile, 'file_id' | 'filename'>): string =>
+  `tool-artifact-${file.file_id ?? file.filename ?? 'unknown'}`;
+
+const toLastUpdate = (file: Pick<TFile, 'updatedAt' | 'createdAt'>): number => {
+  const value = file.updatedAt ?? file.createdAt;
+  if (value == null) {
+    return Date.now();
+  }
+  const ms = new Date(value as string | number | Date).getTime();
+  return Number.isFinite(ms) ? ms : Date.now();
+};
+
+/**
+ * Convert a code-execution attachment to an `Artifact` shape if (and only
+ * if) we have a viewer for it. The id is derived from `file_id` so the
+ * same file across renders maps to the same artifact entry.
+ */
+export function fileToArtifact(
+  attachment: Pick<TAttachment, 'messageId'> &
+    Pick<TFile, 'file_id' | 'filename' | 'type' | 'text' | 'updatedAt' | 'createdAt'>,
+): Artifact | null {
+  const type = detectArtifactTypeFromFile(attachment);
+  if (!type) {
+    return null;
+  }
+  return {
+    id: toolArtifactId(attachment),
+    type,
+    title: attachment.filename ?? 'Generated artifact',
+    content: attachment.text ?? '',
+    messageId: attachment.messageId ?? undefined,
+    lastUpdateTime: toLastUpdate(attachment),
   };
 }
 

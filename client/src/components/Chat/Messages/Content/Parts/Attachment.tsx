@@ -1,9 +1,17 @@
-import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
-import { isImageAttachment, isTextAttachment } from './attachmentTypes';
+import {
+  isImageAttachment,
+  isMermaidArtifact,
+  isPanelArtifact,
+  isTextAttachment,
+} from './attachmentTypes';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
+import ToolMermaidArtifact from './ToolMermaidArtifact';
+import ToolArtifactCard from './ToolArtifactCard';
+import { fileToArtifact } from '~/utils/artifacts';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -174,6 +182,25 @@ const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
   );
 });
 
+const PanelArtifact = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
+  const file = attachment as TFile & TAttachmentMetadata;
+  const artifact = useMemo(() => fileToArtifact(file), [file]);
+  if (!artifact) {
+    return null;
+  }
+  return <ToolArtifactCard attachment={attachment} artifact={artifact} />;
+});
+PanelArtifact.displayName = 'PanelArtifact';
+
+const MermaidArtifact = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
+  const file = attachment as TFile & TAttachmentMetadata;
+  if (!file.text) {
+    return null;
+  }
+  return <ToolMermaidArtifact attachment={attachment} text={file.text} />;
+});
+MermaidArtifact.displayName = 'MermaidArtifact';
+
 export default function Attachment({ attachment }: { attachment?: TAttachment }) {
   if (!attachment) {
     return null;
@@ -184,6 +211,12 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
 
   if (isImageAttachment(attachment)) {
     return <ImageAttachment attachment={attachment} />;
+  }
+  if (isMermaidArtifact(attachment)) {
+    return <MermaidArtifact attachment={attachment} />;
+  }
+  if (isPanelArtifact(attachment)) {
+    return <PanelArtifact attachment={attachment} />;
   }
   if (isTextAttachment(attachment)) {
     return <TextAttachment attachment={attachment} />;
@@ -202,6 +235,8 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   const fileAttachments: TAttachment[] = [];
   const imageAttachments: TAttachment[] = [];
   const textAttachments: TAttachment[] = [];
+  const panelArtifacts: TAttachment[] = [];
+  const mermaidArtifacts: TAttachment[] = [];
 
   attachments.forEach((attachment) => {
     if (attachment.type === Tools.web_search) {
@@ -209,6 +244,14 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
     }
     if (isImageAttachment(attachment)) {
       imageAttachments.push(attachment);
+      return;
+    }
+    if (isMermaidArtifact(attachment)) {
+      mermaidArtifacts.push(attachment);
+      return;
+    }
+    if (isPanelArtifact(attachment)) {
+      panelArtifacts.push(attachment);
       return;
     }
     if (isTextAttachment(attachment)) {
@@ -227,6 +270,20 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
               <FileAttachment attachment={attachment} key={`file-${index}`} />
             ) : null,
           )}
+        </div>
+      )}
+      {panelArtifacts.length > 0 && (
+        <div className="my-2 flex flex-wrap items-center gap-2">
+          {panelArtifacts.map((attachment, index) => (
+            <PanelArtifact attachment={attachment} key={`artifact-${index}`} />
+          ))}
+        </div>
+      )}
+      {mermaidArtifacts.length > 0 && (
+        <div className="my-2 flex flex-col gap-3">
+          {mermaidArtifacts.map((attachment, index) => (
+            <MermaidArtifact attachment={attachment} key={`mermaid-${index}`} />
+          ))}
         </div>
       )}
       {textAttachments.length > 0 && (

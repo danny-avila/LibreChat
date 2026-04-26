@@ -34,8 +34,23 @@ jest.mock('~/components/Chat/Messages/Content/Image', () => ({
   default: ({ altText }: { altText?: string }) => <img alt={altText ?? ''} data-testid="image" />,
 }));
 
+jest.mock('~/components/Messages/Content/Mermaid/Mermaid', () => ({
+  __esModule: true,
+  default: ({ children }: { children: string }) => (
+    <div data-testid="mermaid-render">{children}</div>
+  ),
+}));
+
+jest.mock('~/components/Chat/Input/Files/FilePreview', () => ({
+  __esModule: true,
+  default: () => <div data-testid="file-preview" />,
+}));
+
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
+  getFileType: () => ({ paths: [], color: '', title: 'Artifact' }),
+  logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn() },
+  isArtifactRoute: () => false,
 }));
 
 const textAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
