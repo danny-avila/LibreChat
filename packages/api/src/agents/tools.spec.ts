@@ -316,5 +316,57 @@ describe('registerCodeExecutionTools', () => {
       const bash = findBashDef(result.toolDefinitions);
       expect(bash?.description).not.toContain('{{tool<idx>turn<turn>}}');
     });
+
+    it('returns the same frozen bash_tool reference across calls with the same flag', () => {
+      /**
+       * The two `bash_tool` variants are cached at module scope so
+       * repeated agent inits in the same process don't re-allocate
+       * + re-freeze + re-build the description on every call.
+       * Asserting reference equality across two fresh registries
+       * pins that contract — a regression that switches back to a
+       * per-call `Object.freeze` would fail this test.
+       */
+      const a = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: true,
+      });
+      const b = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: true,
+      });
+
+      expect(findBashDef(a.toolDefinitions)).toBe(findBashDef(b.toolDefinitions));
+    });
+
+    it('returns distinct frozen references for the two flag variants', () => {
+      /**
+       * Sanity check on the two-singleton cache: the with-refs and
+       * without-refs definitions are distinct objects so toggling
+       * the flag in `registerCodeExecutionTools` actually picks up
+       * the alternate description, not the same cached reference.
+       */
+      const withRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: true,
+      });
+      const withoutRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: false,
+      });
+
+      const a = findBashDef(withRefs.toolDefinitions);
+      const b = findBashDef(withoutRefs.toolDefinitions);
+      expect(a).not.toBe(b);
+      expect(a?.description).toContain('{{tool<idx>turn<turn>}}');
+      expect(b?.description).not.toContain('{{tool<idx>turn<turn>}}');
+    });
   });
 });

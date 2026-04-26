@@ -94,21 +94,31 @@ const READ_FILE_DEF: LCTool = Object.freeze({
 }) as LCTool;
 
 /**
- * Builds the `bash_tool` definition. The description varies with
- * `enableToolOutputReferences`: when `true`, the SDK appends an
- * LLM-facing guide explaining the `{{tool<idx>turn<turn>}}` substitution
- * syntax, so the model knows to reuse prior outputs without echoing
- * them. Per-call (not module-level) because the description differs
- * per agent based on the per-run codeenv gate.
+ * The `bash_tool` description varies along exactly one axis — whether
+ * the LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide is
+ * appended — so two frozen module-level singletons cover every call
+ * site. Both are shaped identically to the legacy `BASH_TOOL_DEF`
+ * constant; only `description` differs. Sharing references across
+ * every agent init avoids per-call `Object.freeze` + SDK
+ * `buildBashExecutionToolDescription` work, matching the no-allocation
+ * intent of the original constant while keeping the per-agent gate
+ * behavior introduced for tool-output references.
  */
-function buildBashToolDef(opts: { enableToolOutputReferences: boolean }): LCTool {
+function createBashToolDef(enableToolOutputReferences: boolean): LCTool {
   return Object.freeze({
     name: BashExecutionToolDefinition.name,
-    description: buildBashExecutionToolDescription({
-      enableToolOutputReferences: opts.enableToolOutputReferences,
-    }),
+    description: buildBashExecutionToolDescription({ enableToolOutputReferences }),
     parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
   }) as LCTool;
+}
+
+const BASH_TOOL_DEF_WITH_OUTPUT_REFS = createBashToolDef(true);
+const BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS = createBashToolDef(false);
+
+function buildBashToolDef(opts: { enableToolOutputReferences: boolean }): LCTool {
+  return opts.enableToolOutputReferences
+    ? BASH_TOOL_DEF_WITH_OUTPUT_REFS
+    : BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS;
 }
 
 /**
