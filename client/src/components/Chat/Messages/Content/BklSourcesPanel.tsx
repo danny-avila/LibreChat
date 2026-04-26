@@ -266,14 +266,18 @@ export default function BklSourcesPanel() {
  *      directly from `attachments-static`. We open it as-is.
  *   2. Anything else (.msg itself, standalone .pdf/.docx/.hwp uploads,
  *      or pre-PR-B legacy chunks where the indexer didn't stamp a
- *      viewer_url): we fall back to `/v1/sources/{doc_id}`, which
+ *      viewer_url): we fall back to `/v1/source-files/{doc_id}`, which
  *      proxies through the corpus-static origin to the original file.
  *      For .msg this returns a server-rendered HTML viewer
  *      (subject/body/attachments) instead of raw OLE garbage.
  *
+ *      Note: this is `/v1/source-files/` (not `/v1/sources/`). The
+ *      latter is owned by `generate.py` for the chat sources cache —
+ *      see src/api/routes/source_viewer.py for the rename rationale.
+ *
  * The base nginx in front of bkl-api routes both `/v1/attachments/*`
- * and `/v1/sources/*` straight to the FastAPI service, so neither URL
- * needs the LibreChat `/bkl/` prefix.
+ * and `/v1/source-files/*` straight to the FastAPI service, so neither
+ * URL needs the LibreChat `/bkl/` prefix.
  *
  * Returns null when neither source is available so the button stays
  * hidden rather than rendering a dead link.
@@ -288,7 +292,7 @@ function resolveOriginalSourceUrl(source: BklSource | null): string | null {
     return m.viewer_url;
   }
   if (typeof m.doc_id === 'string' && m.doc_id.length > 0) {
-    return `/v1/sources/${encodeURIComponent(m.doc_id)}`;
+    return `/v1/source-files/${encodeURIComponent(m.doc_id)}`;
   }
   return null;
 }
