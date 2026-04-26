@@ -51,6 +51,15 @@ jest.mock('@librechat/api', () => {
     getBasePath: jest.fn(() => ''),
     sanitizeFilename: jest.fn((name) => name),
     createAxiosInstance: jest.fn(() => mockAxios),
+    /**
+     * Arrow-function indirection (vs. a direct `jest.fn()` reference) so
+     * tests can per-case `mockReturnValueOnce` / `mockImplementationOnce`
+     * on `mockClassifyCodeArtifact` / `mockExtractCodeArtifactText`.
+     * `jest.mock(...)` is hoisted above the outer `const` declarations
+     * at parse time, so a direct reference here would capture
+     * `undefined`; the arrow defers the binding to call time. The
+     * direct-`jest.fn()` mocks below stay constant per file.
+     */
     classifyCodeArtifact: (...args) => mockClassifyCodeArtifact(...args),
     extractCodeArtifactText: (...args) => mockExtractCodeArtifactText(...args),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
