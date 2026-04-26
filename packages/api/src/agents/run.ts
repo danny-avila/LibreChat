@@ -511,6 +511,43 @@ function computeEffectiveMaxContextTokens(
 const SELF_SUBAGENT_TYPE = 'self';
 
 /**
+ * Recursive any-true check across the agent tree: returns `true` if this
+ * agent or any subagent (transitively) has the per-agent codeenv gate
+ * enabled.
+ *
+ * The SDK's tool-output reference registry is shared across every
+ * `ToolNode` compiled from the run's graph (parent + every subagent
+ * alike), so a single subagent with `bash_tool` registered is enough to
+ * make `RunConfig.toolOutputReferences` worth activating for the whole
+ * run — without it, the subagent's `{{tool<idx>turn<turn>}}`
+ * placeholders would pass through to the shell unsubstituted.
+ *
+ * Cycle-safe via a `visited` set, mirroring `buildSubagentConfigs`'s
+ * `ancestors` pattern. The bash tool description itself is still gated
+ * per-agent in `initializeAgent`, so only agents that actually have
+ * bash registered learn the `{{…}}` syntax — broadening the run-level
+ * registry gate doesn't broaden the model-facing surface.
+ */
+function anyAgentHasCodeEnv(agents: RunAgent[], visited: Set<string> = new Set()): boolean {
+  for (const agent of agents) {
+    if (visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (agent.codeEnvAvailable === true) {
+      return true;
+    }
+    if (
+      agent.subagentAgentConfigs != null &&
+      anyAgentHasCodeEnv(agent.subagentAgentConfigs, visited)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Builds SubagentConfig entries for an agent: optional self-spawn plus any
  * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
  * array when subagents are disabled or no spawn targets are available.
@@ -828,15 +865,22 @@ export async function createRun({
 
   /**
    * Enable tool-output references when the bash tool is actually
-   * present for this run. `codeEnvAvailable` on each `RunAgent` is the
-   * per-agent gate (admin `execute_code` capability AND the agent's own
-   * `tools` listing `execute_code`), so the feature follows the same
-   * activation as the bash-tool registration in `initializeAgent`.
-   * SDK defaults (~400 KB per output, 5 MB total) keep substituted
-   * payloads inside typical shell ARG_MAX limits, so no overrides are
-   * needed for the experimental rollout.
+   * present anywhere in this run — top-level agent OR any subagent
+   * (transitively). `codeEnvAvailable` on each `RunAgent` is the
+   * per-agent gate (admin `execute_code` capability AND the agent's
+   * own `tools` listing `execute_code`), so the feature follows the
+   * same activation as the bash-tool registration in
+   * `initializeAgent`. The walk into `subagentAgentConfigs` is
+   * load-bearing: a parent without `execute_code` can spawn a
+   * subagent that has it, and the SDK's shared registry serves
+   * every `ToolNode` compiled from this run's graph — so missing
+   * subagents in this gate would leave the child's
+   * `{{tool<idx>turn<turn>}}` placeholders unsubstituted. SDK
+   * defaults (~400 KB per output, 5 MB total) keep substituted
+   * payloads inside typical shell ARG_MAX limits, so no overrides
+   * are needed for the experimental rollout.
    */
-  const enableToolOutputReferences = agents.some((a) => a.codeEnvAvailable === true);
+  const enableToolOutputReferences = anyAgentHasCodeEnv(agents);
 
   return Run.create({
     runId,
