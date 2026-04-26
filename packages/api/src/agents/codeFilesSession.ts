@@ -2,6 +2,18 @@ import { Constants } from '@librechat/agents';
 import type { FileRefs, CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 
 /**
+ * Minimal shape for an agent that may contribute primed code files to the
+ * run-wide sandbox seed. Both `InitializedAgent` and `RunAgent` satisfy it,
+ * and the recursive walk in {@link buildInitialToolSessions} traverses
+ * `subagentAgentConfigs` so nested subagents (which aren't in the top-level
+ * `agentConfigs` map after pure-subagent pruning) still contribute.
+ */
+export interface CodeFilesAgent {
+  primedCodeFiles?: CodeEnvFile[];
+  subagentAgentConfigs?: CodeFilesAgent[];
+}
+
+/**
  * Merges primed code-execution file references into a `ToolSessionMap` so the
  * Graph's `ToolNode` can inject them into the very first `execute_code` tool
  * call as `_injected_files`. Without this seed, `ToolNode.getCodeSessionContext`
@@ -43,5 +55,64 @@ export function seedCodeFilesIntoSessions(
     lastUpdated: Date.now(),
   } satisfies CodeSessionContext);
 
+  return sessions;
+}
+
+/**
+ * Builds the run-wide initial `ToolSessionMap` for `Graph.sessions`,
+ * combining skill-priming output with code-resource files primed across
+ * every agent that may execute code in this run.
+ *
+ * **Why "run-wide" (not per-agent):** `Graph.sessions` is a single map
+ * shared by every `ToolNode` instance in the run by design — the
+ * agents-library treats the code-execution sandbox as a conversation-
+ * scoped workspace, not an agent-scoped one. Two agents that both have
+ * code-execution enabled (a primary + a handoff target, or a parent +
+ * a subagent) implicitly share session_id and file refs through this
+ * map. This helper makes that explicit at the seeding boundary: every
+ * reachable agent's `primedCodeFiles` flows into the same
+ * `EXECUTE_CODE` entry. If per-agent isolation is ever needed, that
+ * has to land in the agents library first (per-agent `AgentContext`
+ * sessions); changing only this helper would diverge from how the
+ * sandbox actually behaves at runtime.
+ *
+ * **Walk:** primary first, then `agentConfigs` (handoff/addedConvo),
+ * then recurse into each config's `subagentAgentConfigs`. The visited
+ * set is keyed by object identity (Set<CodeFilesAgent>) so cycles in
+ * a malformed agent graph (a subagent that points back at its parent)
+ * can't infinite-loop the seed.
+ *
+ * @param skillSessions - Output of `primeInvokedSkills` — already
+ *   contains an `EXECUTE_CODE` entry when skill files were primed; new
+ *   files from this walk merge into it (representative `session_id`
+ *   from the skill side is preserved).
+ * @param agents - The complete set of code-execution-capable agents in
+ *   the run. Caller passes `[primaryConfig, ...agentConfigs.values()]`;
+ *   this function recurses into each one's `subagentAgentConfigs`.
+ */
+export function buildInitialToolSessions(params: {
+  skillSessions?: ToolSessionMap;
+  agents: Iterable<CodeFilesAgent | undefined | null>;
+}): ToolSessionMap | undefined {
+  const { skillSessions, agents } = params;
+  let sessions = skillSessions;
+  const visited = new Set<CodeFilesAgent>();
+  const stack: CodeFilesAgent[] = [];
+  for (const a of agents) {
+    if (a) stack.push(a);
+  }
+  while (stack.length > 0) {
+    const agent = stack.pop()!;
+    if (visited.has(agent)) continue;
+    visited.add(agent);
+    if (agent.primedCodeFiles && agent.primedCodeFiles.length > 0) {
+      sessions = seedCodeFilesIntoSessions(agent.primedCodeFiles, sessions);
+    }
+    if (agent.subagentAgentConfigs && agent.subagentAgentConfigs.length > 0) {
+      for (const child of agent.subagentAgentConfigs) {
+        if (child && !visited.has(child)) stack.push(child);
+      }
+    }
+  }
   return sessions;
 }

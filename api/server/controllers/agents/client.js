@@ -31,7 +31,7 @@ const {
   injectSkillPrimes,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
-  seedCodeFilesIntoSessions,
+  buildInitialToolSessions,
 } = require('@librechat/api');
 const {
   Callback,
@@ -817,31 +817,16 @@ class AgentClient extends BaseClient {
         : undefined;
 
       /**
-       * Seed Graph.sessions with files primed during each agent's
-       * initialization (see `loadToolDefinitionsWrapper` →
-       * `initializeAgent`). Each `InitializedAgent.primedCodeFiles` is the
-       * pre-uploaded code-env file refs for that agent's
-       * `tool_resources.execute_code` (carries the prior turn's generated
-       * artifacts and any user uploads). Without this seed, the first
-       * `execute_code` / `bash_tool` call lands with `_injected_files`
-       * empty, and the agents-side `CodeExecutor` falls back to a
-       * `/files/{session_id}` fetch — but `session_id` itself is only
-       * populated after a previous successful execution, so primed files
-       * were silently dropped on call #1.
-       *
-       * Multi-agent runs (handoffs / addedConvo) share one `Graph.sessions`
-       * map, so we merge across all agents involved in the run.
+       * Seed `Graph.sessions` with code-env files primed across every
+       * reachable agent (primary, handoff/addedConvo, and nested
+       * subagents) plus skill-priming output. The merge logic and its
+       * run-wide semantics live in `buildInitialToolSessions`; see that
+       * helper's doc for why this is intentionally NOT per-agent.
        */
-      let initialSessions = skillPrimeResult?.initialSessions;
-      const agentsToSeed = [
-        this.options.agent,
-        ...(this.agentConfigs ? this.agentConfigs.values() : []),
-      ];
-      for (const a of agentsToSeed) {
-        if (a?.primedCodeFiles?.length) {
-          initialSessions = seedCodeFilesIntoSessions(a.primedCodeFiles, initialSessions);
-        }
-      }
+      const initialSessions = buildInitialToolSessions({
+        skillSessions: skillPrimeResult?.initialSessions,
+        agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
+      });
 
       let {
         messages: initialMessages,
