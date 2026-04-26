@@ -1,11 +1,6 @@
 import * as os from 'os';
 import * as path from 'path';
-import {
-  extractCodeArtifactText,
-  MAX_TEXT_CACHE_BYTES,
-  MAX_TEXT_EXTRACT_BYTES,
-  withTimeout,
-} from './extract';
+import { extractCodeArtifactText, MAX_TEXT_CACHE_BYTES, MAX_TEXT_EXTRACT_BYTES } from './extract';
 
 const docxText = '__DOCX_PARSED__';
 const docxFailureName = 'force-docx-failure.docx';
@@ -173,21 +168,5 @@ describe('extractCodeArtifactText', () => {
       );
       expect(text).toBeNull();
     });
-  });
-});
-
-describe('withTimeout', () => {
-  it('resolves with the underlying value when the work finishes in time', async () => {
-    await expect(withTimeout(Promise.resolve(42), 100, 'fast')).resolves.toBe(42);
-  });
-
-  it('propagates rejections from the underlying promise', async () => {
-    const failing = Promise.reject(new Error('boom'));
-    await expect(withTimeout(failing, 100, 'rejects')).rejects.toThrow('boom');
-  });
-
-  it('rejects with a timeout error when the promise stalls past the deadline', async () => {
-    const stalled = new Promise(() => {});
-    await expect(withTimeout(stalled, 25, 'stall')).rejects.toThrow('stall timed out after 25ms');
   });
 });

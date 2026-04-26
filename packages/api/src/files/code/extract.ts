@@ -6,6 +6,7 @@ import { logger } from '@librechat/data-schemas';
 import type { CodeArtifactCategory } from './classify';
 import { parseDocument } from '~/files/documents/crud';
 import { isBinaryBuffer } from '~/skills/binary';
+import { withTimeout } from '~/utils/promise';
 
 export const MAX_TEXT_CACHE_BYTES = 512 * 1024;
 export const MAX_TEXT_EXTRACT_BYTES = 1024 * 1024;
@@ -42,23 +43,6 @@ const extractUtf8 = (buffer: Buffer): string | null => {
     return buffer.toString('utf-8');
   }
   return truncate(buffer.toString('utf-8'), buffer);
-};
-
-/**
- * Race a promise against a timeout, rejecting if the work doesn't complete
- * in time. Used to keep document parsing from blocking the response path on
- * pathological inputs. Exported for direct unit testing.
- */
-export const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  });
 };
 
 /**
@@ -105,7 +89,7 @@ const extractDocument = async (
         } as Express.Multer.File,
       }),
       DOCUMENT_PARSE_TIMEOUT_MS,
-      'parseDocument',
+      `parseDocument exceeded ${DOCUMENT_PARSE_TIMEOUT_MS}ms`,
     );
     if (!result?.text) {
       return null;
