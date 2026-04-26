@@ -399,10 +399,10 @@ export async function initializeAgent(
     let codeGeneratedFiles: IMongoFile[] = [];
     let userCodeFiles: IMongoFile[] = [];
 
-    if (toolResourceSet.has(EToolResources.execute_code)) {
-      let threadMessageIds: string[] | undefined;
-      let threadFileIds: string[] | undefined;
+    let threadMessageIds: string[] | undefined;
+    let threadFileIds: string[] | undefined;
 
+    if (toolResourceSet.has(EToolResources.execute_code)) {
       if (parentMessageId && parentMessageId !== Constants.NO_PARENT && db.getMessages) {
         /** Only select fields needed for thread traversal */
         const messages = await db.getMessages(
@@ -431,12 +431,34 @@ export async function initializeAgent(
       }
     }
 
+    logger.debug('[initializeAgent] code-files lookup', {
+      agentId: agent.id,
+      conversationId,
+      parentMessageId,
+      resendFiles,
+      agentToolStrings: (agent.tools ?? []).filter((t): t is string => typeof t === 'string'),
+      toolResourceSetHasExecCode: toolResourceSet.has(EToolResources.execute_code),
+      convoFileIdCount: fileIds.length,
+      toolFileCount: toolFiles.length,
+      threadMsgCount: threadMessageIds?.length ?? 0,
+      threadFileIdCount: threadFileIds?.length ?? 0,
+      codeGeneratedFileCount: codeGeneratedFiles.length,
+      userCodeFileCount: userCodeFiles.length,
+    });
+
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     if (requestFiles.length || allToolFiles.length) {
       currentFiles = (await db.updateFilesUsage(requestFiles.concat(allToolFiles))) as IMongoFile[];
     }
   } else if (requestFiles.length) {
     currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
+  } else {
+    logger.debug('[initializeAgent] code-files lookup skipped', {
+      agentId: agent.id,
+      hasConversationId: conversationId != null,
+      resendFiles,
+      requestFileCount: requestFiles.length,
+    });
   }
 
   if (currentFiles && currentFiles.length) {
