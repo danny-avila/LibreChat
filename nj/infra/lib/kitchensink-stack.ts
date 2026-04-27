@@ -47,6 +47,7 @@ export class KitchenSinkStack extends cdk.Stack {
       listener, props.certificateArn,
       envBucket, fileBucket,
     );
+    const adminPanelService = this.createAdminPanelService(vpc, cluster, execRole, listener);
 
     mongoService.connections.allowFrom(librechatService, ec2.Port.tcp(27017), "LibreChat to MongoDB");
     vectorDbService.connections.allowFrom(ragApiService, ec2.Port.tcp(5432), "RAG API to VectorDB");
@@ -57,6 +58,9 @@ export class KitchenSinkStack extends cdk.Stack {
     ragApiService.connections.allowFrom(librechatService, ec2.Port.tcp(8000), "LibreChat to RAG API");
     librechatService.connections.allowFrom(lbSecurityGroup, ec2.Port.tcp(3080), "ALB to LibreChat");
     librechatService.connections.allowFrom(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(3080), "Health checks to LibreChat");
+    librechatService.connections.allowFrom(adminPanelService, ec2.Port.tcp(3080), "Admin Panel to LibreChat");
+    adminPanelService.connections.allowFrom(lbSecurityGroup, ec2.Port.tcp(3000), "ALB to Admin Panel");
+    adminPanelService.connections.allowFrom(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(3000), "Health checks to Admin Panel");
 
     // Explicitly add egress rule to ALB security group (imported, so allowFrom doesn't add egress)
     new ec2.CfnSecurityGroupEgress(this, "AlbToKitchenSinkEgress", {
@@ -66,6 +70,14 @@ export class KitchenSinkStack extends cdk.Stack {
       toPort: 3080,
       destinationSecurityGroupId: librechatService.connections.securityGroups[0].securityGroupId,
       description: "ALB to KitchenSink LibreChat",
+    });
+    new ec2.CfnSecurityGroupEgress(this, "AlbToAdminPanelEgress", {
+      groupId: lbSecurityGroup.securityGroupId,
+      ipProtocol: "tcp",
+      fromPort: 3000,
+      toPort: 3000,
+      destinationSecurityGroupId: adminPanelService.connections.securityGroups[0].securityGroupId,
+      description: "ALB to KitchenSink Admin Panel",
     });
   }
 
@@ -387,6 +399,7 @@ export class KitchenSinkStack extends cdk.Stack {
       desiredCount: 1,
       minHealthyPercent: 50,
       enableExecuteCommand: true,
+      cloudMapOptions: { name: "librechat" },
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
@@ -399,6 +412,69 @@ export class KitchenSinkStack extends cdk.Stack {
     new cdk.CfnOutput(this, "KitchenSinkImageUri", {
       value: `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/librechat-dev:latest`,
     });
+
+    return service;
+  }
+
+  private createAdminPanelService(
+    vpc: ec2.IVpc,
+    cluster: ecs.Cluster,
+    execRole: iam.Role,
+    listener: elbv2.IApplicationListener,
+  ): ecs.FargateService {
+    const taskDef = new ecs.FargateTaskDefinition(this, "AdminPanelTaskDef", {
+      cpu: 256,
+      memoryLimitMiB: 512,
+      executionRole: execRole,
+      taskRole: execRole,
+    });
+
+    taskDef.addContainer("librechat-admin-panel", {
+      image: ecs.ContainerImage.fromRegistry("152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/librechat-admin-panel"),
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: "lc-admin-panel" }),
+      environment: {
+        PORT: "3000",
+        API_SERVER_URL: "http://librechat.kitchensink:3080",
+      },
+      portMappings: [{ containerPort: 3000 }],
+    });
+
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, "AdminPanelTg", {
+      vpc,
+      port: 3000,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.IP,
+      deregistrationDelay: cdk.Duration.seconds(30),
+      healthCheck: {
+        path: "/",
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(10),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
+        healthyHttpCodes: "200-399",
+      },
+    });
+
+    listener.addAction("AdminPanelRule", {
+      conditions: [
+        elbv2.ListenerCondition.hostHeaders([DOMAIN]),
+        elbv2.ListenerCondition.pathPatterns(["/admin", "/admin/*"]),
+      ],
+      priority: 5,
+      action: elbv2.ListenerAction.forward([targetGroup]),
+    });
+
+    const service = new ecs.FargateService(this, "AdminPanelService", {
+      cluster,
+      taskDefinition: taskDef,
+      desiredCount: 1,
+      minHealthyPercent: 50,
+      enableExecuteCommand: true,
+      cloudMapOptions: { name: "admin-panel" },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+    });
+
+    service.attachToApplicationTargetGroup(targetGroup);
 
     return service;
   }
