@@ -247,6 +247,8 @@ export const baseEndpointSchema = z.object({
   titlePromptTemplate: z.string().optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
+  /** Custom label for the endpoint group in the Model Selector dropdown. */
+  groupLabel: z.string().optional(),
 });
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
@@ -1208,6 +1210,22 @@ export const alternateName = {
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',
+};
+
+/**
+ * Maps endpoint keys to their i18n translation keys for group labels
+ * in the Model Selector dropdown.
+ */
+export const alternateNameKeys: Record<string, string> = {
+  [EModelEndpoint.openAI]: 'com_endpoint_group_openai',
+  [EModelEndpoint.assistants]: 'com_endpoint_group_assistants',
+  [EModelEndpoint.agents]: 'com_endpoint_group_agents',
+  [EModelEndpoint.azureAssistants]: 'com_endpoint_group_azure_assistants',
+  [EModelEndpoint.azureOpenAI]: 'com_endpoint_group_azure_openai',
+  [EModelEndpoint.google]: 'com_endpoint_group_google',
+  [EModelEndpoint.anthropic]: 'com_endpoint_group_anthropic',
+  [EModelEndpoint.custom]: 'com_endpoint_group_custom',
+  [EModelEndpoint.bedrock]: 'com_endpoint_group_bedrock',
 };
 
 const sharedOpenAIModels = [

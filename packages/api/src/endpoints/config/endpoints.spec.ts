@@ -163,6 +163,79 @@ describe('createEndpointsConfigService', () => {
       ]);
     });
 
+    it('forwards admin-defined groupLabel for built-in endpoints', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+          [EModelEndpoint.assistants]: { userProvide: false, order: 1 },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              [EModelEndpoint.agents]: { groupLabel: 'My Super AI' },
+              [EModelEndpoint.assistants]: { groupLabel: 'Helpers', version: 2 },
+            },
+          }),
+        ),
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+      const result = await getEndpointsConfig(fakeReq());
+
+      expect(result?.[EModelEndpoint.agents]?.groupLabel).toBe('My Super AI');
+      expect(result?.[EModelEndpoint.assistants]?.groupLabel).toBe('Helpers');
+    });
+
+    it('forwards admin-defined groupLabel for custom endpoints', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({}),
+        loadCustomEndpointsConfig: jest.fn().mockReturnValue({
+          MyCustom: { userProvide: false, groupLabel: 'Internal LLMs' },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(appConfig({ endpoints: {} })),
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+      const result = await getEndpointsConfig(fakeReq());
+
+      expect(result?.MyCustom?.groupLabel).toBe('Internal LLMs');
+    });
+
+    it('falls back to endpoints.all.groupLabel when no per-endpoint override is set', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
+          [EModelEndpoint.agents]: { userProvide: false, order: 1 },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              all: { groupLabel: 'Global Default' },
+              [EModelEndpoint.agents]: { groupLabel: 'My Super AI' },
+            },
+          }),
+        ),
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+      const result = await getEndpointsConfig(fakeReq());
+
+      // openAI has no per-endpoint override → global fallback wins.
+      expect(result?.[EModelEndpoint.openAI]?.groupLabel).toBe('Global Default');
+      // agents has a per-endpoint override → it wins over global.
+      expect(result?.[EModelEndpoint.agents]?.groupLabel).toBe('My Super AI');
+    });
+
+    it('omits groupLabel when neither per-endpoint nor global is set', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(appConfig({ endpoints: {} })),
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+      const result = await getEndpointsConfig(fakeReq());
+
+      expect(result?.[EModelEndpoint.openAI]?.groupLabel).toBeUndefined();
+    });
+
     it('uses req.config when available instead of calling getAppConfig', async () => {
       const mockGetAppConfig = jest.fn();
       const deps = createMockDeps({ getAppConfig: mockGetAppConfig });
