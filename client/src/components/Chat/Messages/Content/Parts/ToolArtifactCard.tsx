@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { Download } from 'lucide-react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
@@ -16,11 +16,15 @@ interface ToolArtifactCardProps {
 
 /**
  * Card that opens a code-execution-produced artifact in the side panel.
- * Mirrors `ArtifactButton`'s pattern: registration into `artifactsState`
- * happens in the click handler, not on mount, so a message containing
- * tool artifacts cannot inadvertently surface them in an open side panel
- * before the user opts in. The card is paired with a download button so
- * the underlying file remains reachable.
+ * Registers the artifact in `artifactsState` on mount (idempotent) so the
+ * side panel auto-opens — matching the legacy artifact streaming UX where
+ * a fresh artifact appears in the panel without an explicit user click.
+ *
+ * The panel's `useArtifacts` hook handles auto-selecting the latest by
+ * `lastUpdateTime`. Visibility is intentionally not toggled here: the
+ * Recoil default is `true`, which gives the auto-open behaviour for fresh
+ * conversations, while a user who has explicitly closed the panel keeps
+ * it closed until they click a card.
  */
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
@@ -30,6 +34,21 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const isSelected = artifact.id === currentArtifactId;
+
+  useEffect(() => {
+    setArtifacts((prev) => {
+      const existing = prev?.[artifact.id];
+      if (
+        existing != null &&
+        existing.content === artifact.content &&
+        existing.type === artifact.type &&
+        existing.title === artifact.title
+      ) {
+        return prev;
+      }
+      return { ...(prev ?? {}), [artifact.id]: artifact };
+    });
+  }, [artifact, setArtifacts]);
 
   const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
@@ -46,18 +65,8 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       setVisible(false);
       return;
     }
-    setArtifacts((prev) => {
-      const existing = prev?.[artifact.id];
-      if (
-        existing != null &&
-        existing.content === artifact.content &&
-        existing.type === artifact.type &&
-        existing.title === artifact.title
-      ) {
-        return prev;
-      }
-      return { ...(prev ?? {}), [artifact.id]: artifact };
-    });
+    // Registration already happened in the mount effect; the click only
+    // needs to focus + reveal the panel for users who have closed it.
     setCurrentArtifactId(artifact.id);
     setVisible(true);
   };

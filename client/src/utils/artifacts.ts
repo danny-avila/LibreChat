@@ -165,15 +165,17 @@ export function buildSandpackOptions(
 
 /**
  * Artifact MIME types we currently know how to render in the side panel
- * (or, for mermaid, inline). Anything outside this set falls back to the
- * existing inline `<pre>` or download chip. Intentionally narrow — we
- * expand it as dedicated viewers for csv/docx/xlsx/pptx land.
+ * (or, for mermaid, inline). Plain text covers files we can show as raw
+ * content even without a dedicated viewer (txt, docx-extracted text, …);
+ * `useArtifactProps` routes `text/plain` through the markdown template
+ * so the panel renders them cleanly.
  */
 export const TOOL_ARTIFACT_TYPES = {
   HTML: 'text/html',
   REACT: 'application/vnd.react',
   MARKDOWN: 'text/markdown',
   MERMAID: 'application/vnd.mermaid',
+  PLAIN_TEXT: 'text/plain',
 } as const;
 
 export type ToolArtifactType = (typeof TOOL_ARTIFACT_TYPES)[keyof typeof TOOL_ARTIFACT_TYPES];
@@ -188,6 +190,13 @@ const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
   mdx: TOOL_ARTIFACT_TYPES.MARKDOWN,
   mmd: TOOL_ARTIFACT_TYPES.MERMAID,
   mermaid: TOOL_ARTIFACT_TYPES.MERMAID,
+  // Plain text + office documents fall through to the markdown-style
+  // viewer until dedicated renderers land. `pptx` is wired up here so
+  // the routing fires as soon as backend text extraction is added.
+  txt: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  docx: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  odt: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  pptx: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
 };
 
 const extensionOf = (filename: string | undefined): string => {
@@ -218,6 +227,12 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
   'application/vnd.react': TOOL_ARTIFACT_TYPES.REACT,
   'application/vnd.ant.react': TOOL_ARTIFACT_TYPES.REACT,
   'application/vnd.mermaid': TOOL_ARTIFACT_TYPES.MERMAID,
+  'text/plain': TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  'application/vnd.oasis.opendocument.text': TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+    TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
 };
 
 /**

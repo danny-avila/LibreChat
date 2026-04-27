@@ -138,6 +138,22 @@ describe('Attachment routing for tool artifacts', () => {
     expect(screen.getByRole('button', { name: /com_ui_download.*notes\.md/i })).toBeInTheDocument();
   });
 
+  it.each([
+    ['readme.txt', 'Lorem ipsum'],
+    ['report.docx', 'Extracted document text'],
+    ['notes.odt', 'OpenDocument body text'],
+    ['slides.pptx', 'Slide titles and bullets'],
+  ])('renders a panel artifact card for %s (text/plain bucket)', (filename, text) => {
+    const file = baseAttachment({
+      filename,
+      text,
+    } as Partial<TAttachment>);
+    renderWith(<Attachment attachment={file} />);
+    expect(screen.getByText(filename)).toBeInTheDocument();
+    const downloadPattern = new RegExp(`com_ui_download.*${filename.replace('.', '\\.')}`, 'i');
+    expect(screen.getByRole('button', { name: downloadPattern })).toBeInTheDocument();
+  });
+
   it('renders a Mermaid artifact through the standalone Mermaid component (not the panel)', () => {
     const mmd = baseAttachment({
       filename: 'flow.mmd',
@@ -168,18 +184,16 @@ describe('ToolArtifactCard click behaviour', () => {
       text: '<h1>hi</h1>',
     } as Partial<TAttachment>);
 
-  // Critical invariant: rendering a tool-artifact card must NOT register
-  // the artifact (or select it) until the user clicks. `artifactsVisibility`
-  // defaults to `true`, so eager mount-time registration would cause every
-  // newly-arriving tool artifact to surface in the side panel without user
-  // intent. Matches the same "no side effect on mount" rule as ArtifactButton.
-  it('does not register the artifact or change selection on mount', () => {
+  // Auto-open invariant: rendering a tool-artifact card must register the
+  // artifact in `artifactsState` so the side panel can auto-open the same
+  // way legacy streaming artifacts do. The panel's `useArtifacts` hook
+  // handles auto-selecting the latest by `lastUpdateTime`.
+  it('registers the artifact in state on mount so the panel can auto-open', () => {
     const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
-    expect(getSnapshot().artifactIds).toEqual([]);
-    expect(getSnapshot().currentArtifactId).toBeNull();
+    expect(getSnapshot().artifactIds).toContain('tool-artifact-html-1');
   });
 
-  it('registers the artifact, opens the panel, and selects it on click', () => {
+  it('opens the panel and selects the artifact on click', () => {
     const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
     const openButton = screen.getByRole('button', { pressed: false });
     act(() => {

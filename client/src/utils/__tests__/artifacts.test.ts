@@ -53,6 +53,10 @@ describe('detectArtifactTypeFromFile', () => {
     ['notes.mdx', TOOL_ARTIFACT_TYPES.MARKDOWN],
     ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID],
     ['flow.mermaid', TOOL_ARTIFACT_TYPES.MERMAID],
+    ['readme.txt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['report.docx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['notes.odt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['slides.pptx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
   ])('classifies %s by extension', (filename, expected) => {
     expect(detectArtifactTypeFromFile({ filename, type: '', text: 'content' })).toBe(expected);
   });

@@ -163,7 +163,10 @@ describe('AttachmentGroup', () => {
   });
 
   it('routes text-bearing attachments through the text rendering path', () => {
-    const attachments = [textAttachment({ file_id: 'a', filename: 'a.txt' })] as TAttachment[];
+    // `.csv` is text-bearing but not artifact-eligible (CSV gets a
+    // dedicated viewer in a follow-up), so it falls through to the
+    // inline <pre> renderer rather than the side panel card.
+    const attachments = [textAttachment({ file_id: 'a', filename: 'a.csv' })] as TAttachment[];
     const { container } = render(<AttachmentGroup attachments={attachments} />);
     expect(container.querySelector('pre')).not.toBeNull();
   });
