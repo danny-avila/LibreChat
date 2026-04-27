@@ -1,9 +1,18 @@
-import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
-import { isImageAttachment, isTextAttachment } from './attachmentTypes';
+import type { ToolArtifactType } from '~/utils/artifacts';
+import {
+  artifactTypeForAttachment,
+  isImageAttachment,
+  isTextAttachment,
+  renderAttachmentKey,
+} from './attachmentTypes';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
+import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import Image from '~/components/Chat/Messages/Content/Image';
+import ToolMermaidArtifact from './ToolMermaidArtifact';
+import ToolArtifactCard from './ToolArtifactCard';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -174,6 +183,40 @@ const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
   );
 });
 
+interface PanelArtifactProps {
+  attachment: TAttachment;
+  /** Pre-classified type from the routing decision tree, threaded down so
+   * `fileToArtifact` doesn't re-run `detectArtifactTypeFromFile`. */
+  type: ToolArtifactType;
+}
+
+const PanelArtifact = memo(({ attachment, type }: PanelArtifactProps) => {
+  const localize = useLocalize();
+  const placeholder = localize('com_ui_artifact_preview_pending');
+  const artifact = useMemo(
+    () =>
+      fileToArtifact(attachment as TFile & TAttachmentMetadata, {
+        placeholder,
+        preClassifiedType: type,
+      }),
+    [attachment, type, placeholder],
+  );
+  if (!artifact) {
+    return null;
+  }
+  return <ToolArtifactCard attachment={attachment} artifact={artifact} />;
+});
+PanelArtifact.displayName = 'PanelArtifact';
+
+const MermaidArtifact = memo(({ attachment }: { attachment: TAttachment }) => {
+  const file = attachment as TFile & TAttachmentMetadata;
+  if (!file.text) {
+    return null;
+  }
+  return <ToolMermaidArtifact attachment={attachment} text={file.text} />;
+});
+MermaidArtifact.displayName = 'MermaidArtifact';
+
 export default function Attachment({ attachment }: { attachment?: TAttachment }) {
   if (!attachment) {
     return null;
@@ -184,6 +227,16 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
 
   if (isImageAttachment(attachment)) {
     return <ImageAttachment attachment={attachment} />;
+  }
+  // Single classification call. The result is threaded into
+  // `PanelArtifact` -> `fileToArtifact` so the panel path doesn't
+  // re-run `detectArtifactTypeFromFile` a second time.
+  const artType = artifactTypeForAttachment(attachment);
+  if (artType === TOOL_ARTIFACT_TYPES.MERMAID) {
+    return <MermaidArtifact attachment={attachment} />;
+  }
+  if (artType != null) {
+    return <PanelArtifact attachment={attachment} type={artType} />;
   }
   if (isTextAttachment(attachment)) {
     return <TextAttachment attachment={attachment} />;
@@ -202,6 +255,8 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   const fileAttachments: TAttachment[] = [];
   const imageAttachments: TAttachment[] = [];
   const textAttachments: TAttachment[] = [];
+  const panelArtifacts: Array<{ attachment: TAttachment; type: ToolArtifactType }> = [];
+  const mermaidArtifacts: TAttachment[] = [];
 
   attachments.forEach((attachment) => {
     if (attachment.type === Tools.web_search) {
@@ -209,6 +264,15 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
     }
     if (isImageAttachment(attachment)) {
       imageAttachments.push(attachment);
+      return;
+    }
+    const artType = artifactTypeForAttachment(attachment);
+    if (artType === TOOL_ARTIFACT_TYPES.MERMAID) {
+      mermaidArtifacts.push(attachment);
+      return;
+    }
+    if (artType != null) {
+      panelArtifacts.push({ attachment, type: artType });
       return;
     }
     if (isTextAttachment(attachment)) {
@@ -224,22 +288,52 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
         <div className="my-2 flex flex-wrap items-center gap-2.5">
           {fileAttachments.map((attachment, index) =>
             attachment.filepath ? (
-              <FileAttachment attachment={attachment} key={`file-${index}`} />
+              <FileAttachment
+                attachment={attachment}
+                key={renderAttachmentKey('file', attachment, index)}
+              />
             ) : null,
           )}
+        </div>
+      )}
+      {panelArtifacts.length > 0 && (
+        <div className="my-2 flex flex-wrap items-center gap-2">
+          {panelArtifacts.map(({ attachment, type }, index) => (
+            <PanelArtifact
+              attachment={attachment}
+              type={type}
+              key={renderAttachmentKey('artifact', attachment, index)}
+            />
+          ))}
+        </div>
+      )}
+      {mermaidArtifacts.length > 0 && (
+        <div className="my-2 flex flex-col gap-3">
+          {mermaidArtifacts.map((attachment, index) => (
+            <MermaidArtifact
+              attachment={attachment}
+              key={renderAttachmentKey('mermaid', attachment, index)}
+            />
+          ))}
         </div>
       )}
       {textAttachments.length > 0 && (
         <div className="my-2 flex flex-col gap-3">
           {textAttachments.map((attachment, index) => (
-            <TextAttachment attachment={attachment} key={`text-${index}`} />
+            <TextAttachment
+              attachment={attachment}
+              key={renderAttachmentKey('text', attachment, index)}
+            />
           ))}
         </div>
       )}
       {imageAttachments.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center">
           {imageAttachments.map((attachment, index) => (
-            <ImageAttachment attachment={attachment} key={`image-${index}`} />
+            <ImageAttachment
+              attachment={attachment}
+              key={renderAttachmentKey('image', attachment, index)}
+            />
           ))}
         </div>
       )}

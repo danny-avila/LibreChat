@@ -93,6 +93,9 @@ const UTF8_TEXT_EXTENSIONS = new Set<string>([
   'hcl',
   'patch',
   'diff',
+  // diagrams
+  'mmd',
+  'mermaid',
 ]);
 
 const UTF8_TEXT_MIME_PREFIXES = ['text/'] as const;

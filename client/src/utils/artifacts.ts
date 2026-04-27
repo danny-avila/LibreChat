@@ -4,7 +4,8 @@ import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,
 } from '@codesandbox/sandpack-react';
-import type { TStartupConfig } from 'librechat-data-provider';
+import type { TStartupConfig, TAttachment, TFile } from 'librechat-data-provider';
+import type { Artifact } from '~/common';
 
 const artifactFilename = {
   'application/vnd.react': 'App.tsx',
@@ -159,6 +160,208 @@ export function buildSandpackOptions(
   return {
     ...sharedOptions,
     bundlerURL: template === 'static' ? startupConfig.staticBundlerURL : startupConfig.bundlerURL,
+  };
+}
+
+/**
+ * Artifact MIME types we currently know how to render in the side panel
+ * (or, for mermaid, inline). Plain text covers files we can show as raw
+ * content even without a dedicated viewer (txt, docx-extracted text, …);
+ * `useArtifactProps` routes `text/plain` through the markdown template
+ * so the panel renders them cleanly.
+ */
+export const TOOL_ARTIFACT_TYPES = {
+  HTML: 'text/html',
+  REACT: 'application/vnd.react',
+  MARKDOWN: 'text/markdown',
+  MERMAID: 'application/vnd.mermaid',
+  PLAIN_TEXT: 'text/plain',
+} as const;
+
+export type ToolArtifactType = (typeof TOOL_ARTIFACT_TYPES)[keyof typeof TOOL_ARTIFACT_TYPES];
+
+const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
+  html: TOOL_ARTIFACT_TYPES.HTML,
+  htm: TOOL_ARTIFACT_TYPES.HTML,
+  jsx: TOOL_ARTIFACT_TYPES.REACT,
+  tsx: TOOL_ARTIFACT_TYPES.REACT,
+  md: TOOL_ARTIFACT_TYPES.MARKDOWN,
+  markdown: TOOL_ARTIFACT_TYPES.MARKDOWN,
+  mdx: TOOL_ARTIFACT_TYPES.MARKDOWN,
+  mmd: TOOL_ARTIFACT_TYPES.MERMAID,
+  mermaid: TOOL_ARTIFACT_TYPES.MERMAID,
+  // Plain text + office documents fall through to the markdown-style
+  // viewer until dedicated renderers land. `pptx` is wired up here so
+  // the routing fires as soon as backend text extraction is added.
+  txt: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  docx: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  odt: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  pptx: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+};
+
+const extensionOf = (filename: string | undefined): string => {
+  if (!filename) {
+    return '';
+  }
+  const dot = filename.lastIndexOf('.');
+  if (dot < 0 || dot === filename.length - 1) {
+    return '';
+  }
+  return filename.slice(dot + 1).toLowerCase();
+};
+
+/** Strip charset / boundary parameters so we can do exact MIME comparisons. */
+const baseMime = (mime: string | undefined): string => {
+  if (!mime) {
+    return '';
+  }
+  const semi = mime.indexOf(';');
+  return (semi < 0 ? mime : mime.slice(0, semi)).trim().toLowerCase();
+};
+
+const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
+  'text/html': TOOL_ARTIFACT_TYPES.HTML,
+  'application/vnd.code-html': TOOL_ARTIFACT_TYPES.HTML,
+  'text/markdown': TOOL_ARTIFACT_TYPES.MARKDOWN,
+  'text/md': TOOL_ARTIFACT_TYPES.MARKDOWN,
+  'application/vnd.react': TOOL_ARTIFACT_TYPES.REACT,
+  'application/vnd.ant.react': TOOL_ARTIFACT_TYPES.REACT,
+  'application/vnd.mermaid': TOOL_ARTIFACT_TYPES.MERMAID,
+  // Office MIME types fall through to the plain-text bucket here too —
+  // matches the extension map so a file whose extension was stripped
+  // somewhere upstream still routes to the panel.
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  'application/vnd.oasis.opendocument.text': TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+    TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  // Note: bare `text/plain` is NOT mapped here. The extension map handles
+  // `.txt` explicitly; routing every unrecognized-extension `text/plain`
+  // file (extensionless scripts, .env, etc.) through the panel would be a
+  // wider catch than intended. Those still render via the inline `<pre>`.
+};
+
+/**
+ * Decide whether a tool-produced file should render through the artifacts
+ * panel (or inline mermaid component). Returns the canonical artifact MIME
+ * type if so, or `null` to let the caller fall through to the existing
+ * download / inline-text rendering.
+ *
+ * Empty `text` is tolerated for the plain-text and markdown buckets so a
+ * file whose extraction is still TBD (e.g. pptx, or a docx where the
+ * extractor errored) keeps visual parity with its docx/odt siblings — the
+ * card still routes through the panel and `fileToArtifact` substitutes a
+ * placeholder so the panel renders something sensible. The HTML, React,
+ * and Mermaid buckets still require real content because their viewers
+ * (sandpack / mermaid.js) error on empty input.
+ */
+export function detectArtifactTypeFromFile(
+  attachment: Partial<Pick<TFile, 'filename' | 'type' | 'text'>>,
+): ToolArtifactType | null {
+  const byExtension = EXTENSION_TO_TOOL_ARTIFACT_TYPE[extensionOf(attachment.filename)];
+  const type = byExtension ?? MIME_TO_TOOL_ARTIFACT_TYPE[baseMime(attachment.type)] ?? null;
+  if (type == null) {
+    return null;
+  }
+  if (
+    !attachment.text &&
+    type !== TOOL_ARTIFACT_TYPES.PLAIN_TEXT &&
+    type !== TOOL_ARTIFACT_TYPES.MARKDOWN
+  ) {
+    return null;
+  }
+  return type;
+}
+
+/**
+ * Stable per-file key used for both the artifactsState entry and the
+ * `toolArtifactClaim` atom that dedups duplicate cards. Same call shape
+ * everywhere so a panel card and a mermaid card for the same file share
+ * the same claim. Falls through `file_id` → `filename` → `filepath` to
+ * minimise collision risk for any caller that (rarely) lacks `file_id`.
+ */
+export const toolArtifactKey = (
+  file: Partial<Pick<TFile, 'file_id' | 'filename' | 'filepath'>>,
+): string => `tool-artifact-${file.file_id ?? file.filename ?? file.filepath ?? 'unknown'}`;
+
+/**
+ * Stable epoch fallback (instead of `Date.now()`) when neither timestamp
+ * is available. `useArtifacts` sorts by `lastUpdateTime`, so a fresh
+ * `Date.now()` on every call would re-sort entries non-deterministically
+ * across renders. Using `0` parks unsorted entries at the bottom of the
+ * panel's tab strip until real timestamps arrive.
+ */
+const toLastUpdate = (file: Partial<Pick<TFile, 'updatedAt' | 'createdAt'>>): number => {
+  const value = file.updatedAt ?? file.createdAt;
+  if (value == null) {
+    return 0;
+  }
+  const ms = new Date(value as string | number | Date).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+interface FileToArtifactOptions {
+  /**
+   * Markdown rendered in the panel when the underlying file has no text
+   * yet (e.g. a pptx whose extractor hasn't run). Callers should provide
+   * a localized string via `useLocalize`; if omitted, an empty string is
+   * substituted (the panel will look bare but won't crash).
+   */
+  placeholder?: string;
+  /**
+   * Pre-classified artifact type from a prior `detectArtifactTypeFromFile`
+   * call; skips re-classification. Used by the routing decision tree
+   * which has already classified to pick which renderer to use.
+   */
+  preClassifiedType?: ToolArtifactType;
+}
+
+/**
+ * Convert a code-execution attachment to an `Artifact` shape if (and only
+ * if) we have a viewer for it. The id is derived from `file_id` so the
+ * same file across renders maps to the same artifact entry.
+ */
+export function fileToArtifact(
+  // Every picked field is read with a fallback in the implementation
+  // (`detectArtifactTypeFromFile`, `toolArtifactKey`, `toLastUpdate`,
+  // and the empty-string nullish coalesces below), so the input type
+  // mirrors that and marks them optional. Required-by-strict-pick was
+  // making every test fixture and many real callers fail typecheck for
+  // fields the function never strictly needs.
+  attachment: Partial<
+    Pick<TAttachment, 'messageId'> &
+      Pick<TFile, 'file_id' | 'filename' | 'filepath' | 'type' | 'text' | 'updatedAt' | 'createdAt'>
+  >,
+  options?: FileToArtifactOptions,
+): Artifact | null {
+  const type = options?.preClassifiedType ?? detectArtifactTypeFromFile(attachment);
+  if (!type) {
+    return null;
+  }
+  // Mirror the empty-text gate from `detectArtifactTypeFromFile` so a
+  // caller that supplies `preClassifiedType` (and thus skips that gate)
+  // can't accidentally hand HTML/React/Mermaid an empty buffer that
+  // their viewers would error on. Plain-text and markdown are still
+  // tolerated empty — the markdown viewer renders empty cleanly.
+  if (
+    !attachment.text &&
+    type !== TOOL_ARTIFACT_TYPES.PLAIN_TEXT &&
+    type !== TOOL_ARTIFACT_TYPES.MARKDOWN
+  ) {
+    return null;
+  }
+  return {
+    id: toolArtifactKey(attachment),
+    type,
+    title: attachment.filename ?? 'Generated artifact',
+    // Nullish coalesce — an empty string is a legitimate file (e.g. a
+    // user wrote an empty `.md`) and should render as empty in the
+    // panel rather than be replaced by the deferred-extraction
+    // placeholder. Only `null`/`undefined` fall through to the
+    // placeholder, matching "no extraction has run yet."
+    content: attachment.text ?? options?.placeholder ?? '',
+    messageId: attachment.messageId ?? undefined,
+    lastUpdateTime: toLastUpdate(attachment),
   };
 }
 
