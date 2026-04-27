@@ -123,6 +123,16 @@ describe('classifyCodeArtifact', () => {
     expect(classifyCodeArtifact('SCRIPT.PY', 'application/octet-stream')).toBe('utf8-text');
   });
 
+  describe('diagram files', () => {
+    it.each([
+      ['flow.mmd', 'application/octet-stream'],
+      ['diagram.mermaid', 'application/octet-stream'],
+      ['FLOW.MMD', 'application/octet-stream'],
+    ])('classifies %s as utf8-text', (name, mime) => {
+      expect(classifyCodeArtifact(name, mime)).toBe('utf8-text');
+    });
+  });
+
   describe('extensionless filenames', () => {
     it.each([
       ['Makefile', 'application/octet-stream'],

@@ -1,4 +1,9 @@
-import { buildSandpackOptions } from '../artifacts';
+import {
+  buildSandpackOptions,
+  detectArtifactTypeFromFile,
+  fileToArtifact,
+  TOOL_ARTIFACT_TYPES,
+} from '../artifacts';
 
 const TAILWIND_CDN = 'https://cdn.tailwindcss.com/3.4.17#tailwind.js';
 
@@ -34,5 +39,213 @@ describe('buildSandpackOptions', () => {
   it('returns base options without bundlerURL when no config is provided', () => {
     const options = buildSandpackOptions('react-ts');
     expect(options?.bundlerURL).toBeUndefined();
+  });
+});
+
+describe('detectArtifactTypeFromFile', () => {
+  it.each([
+    ['index.html', TOOL_ARTIFACT_TYPES.HTML],
+    ['index.HTM', TOOL_ARTIFACT_TYPES.HTML],
+    ['App.jsx', TOOL_ARTIFACT_TYPES.REACT],
+    ['App.tsx', TOOL_ARTIFACT_TYPES.REACT],
+    ['notes.md', TOOL_ARTIFACT_TYPES.MARKDOWN],
+    ['notes.markdown', TOOL_ARTIFACT_TYPES.MARKDOWN],
+    ['notes.mdx', TOOL_ARTIFACT_TYPES.MARKDOWN],
+    ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID],
+    ['flow.mermaid', TOOL_ARTIFACT_TYPES.MERMAID],
+    ['readme.txt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['report.docx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['notes.odt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['slides.pptx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+  ])('classifies %s by extension', (filename, expected) => {
+    expect(detectArtifactTypeFromFile({ filename, type: '', text: 'content' })).toBe(expected);
+  });
+
+  it.each([
+    ['index.html', TOOL_ARTIFACT_TYPES.HTML],
+    ['App.tsx', TOOL_ARTIFACT_TYPES.REACT],
+    ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID],
+  ])('returns null when %s has no text (%s viewer needs real content)', (filename) => {
+    expect(detectArtifactTypeFromFile({ filename, type: '', text: '' })).toBeNull();
+    expect(detectArtifactTypeFromFile({ filename, type: '', text: undefined })).toBeNull();
+  });
+
+  it.each([
+    ['readme.txt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['slides.pptx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['report.docx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['notes.md', TOOL_ARTIFACT_TYPES.MARKDOWN],
+  ])(
+    'still routes %s through the panel without text (deferred-extraction case)',
+    (filename, expected) => {
+      expect(detectArtifactTypeFromFile({ filename, type: '', text: '' })).toBe(expected);
+      expect(detectArtifactTypeFromFile({ filename, type: '', text: undefined })).toBe(expected);
+    },
+  );
+
+  it('falls back to MIME when the extension is unknown', () => {
+    expect(detectArtifactTypeFromFile({ filename: 'noext', type: 'text/html', text: 'x' })).toBe(
+      TOOL_ARTIFACT_TYPES.HTML,
+    );
+    expect(
+      detectArtifactTypeFromFile({ filename: 'noext', type: 'text/markdown', text: 'x' }),
+    ).toBe(TOOL_ARTIFACT_TYPES.MARKDOWN);
+  });
+
+  it.each([
+    ['text/html; charset=utf-8', TOOL_ARTIFACT_TYPES.HTML],
+    ['text/html;charset=utf-8', TOOL_ARTIFACT_TYPES.HTML],
+    ['TEXT/HTML; CHARSET=UTF-8', TOOL_ARTIFACT_TYPES.HTML],
+    ['text/markdown; charset=utf-8', TOOL_ARTIFACT_TYPES.MARKDOWN],
+    ['application/vnd.react; foo=bar', TOOL_ARTIFACT_TYPES.REACT],
+  ])('strips MIME parameters before lookup (%s)', (mime, expected) => {
+    expect(detectArtifactTypeFromFile({ filename: 'noext', type: mime, text: 'x' })).toBe(expected);
+  });
+
+  it.each([
+    ['application/vnd.react'],
+    ['application/vnd.ant.react'],
+    ['application/vnd.mermaid'],
+    ['application/vnd.code-html'],
+  ])('routes %s by MIME alone', (mime) => {
+    const result = detectArtifactTypeFromFile({ filename: 'noext', type: mime, text: 'x' });
+    expect(result).not.toBeNull();
+  });
+
+  it('returns null for unsupported types', () => {
+    expect(
+      detectArtifactTypeFromFile({ filename: 'output.csv', type: 'text/csv', text: 'a,b' }),
+    ).toBeNull();
+    expect(
+      detectArtifactTypeFromFile({ filename: 'doc.pdf', type: 'application/pdf', text: 'x' }),
+    ).toBeNull();
+  });
+
+  it('does not route bare text/plain MIME without a recognized extension', () => {
+    // Files with text/plain MIME and an unrecognized name (extensionless
+    // scripts, .env, etc.) should keep the inline <pre> rendering, not
+    // hijack the artifact panel.
+    expect(
+      detectArtifactTypeFromFile({ filename: 'unknown', type: 'text/plain', text: 'x' }),
+    ).toBeNull();
+    expect(
+      detectArtifactTypeFromFile({ filename: '.env', type: 'text/plain', text: 'KEY=value' }),
+    ).toBeNull();
+  });
+});
+
+describe('fileToArtifact', () => {
+  const baseFile = {
+    file_id: 'fid-1',
+    filename: 'index.html',
+    type: 'text/html',
+    text: '<h1>hi</h1>',
+    messageId: 'msg-1',
+    updatedAt: '2026-04-26T10:00:00.000Z',
+  };
+
+  it('builds an Artifact for supported files, with stable id derived from file_id', () => {
+    const artifact = fileToArtifact(baseFile);
+    expect(artifact).not.toBeNull();
+    expect(artifact!.id).toBe('tool-artifact-fid-1');
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.HTML);
+    expect(artifact!.title).toBe('index.html');
+    expect(artifact!.content).toBe('<h1>hi</h1>');
+    expect(artifact!.messageId).toBe('msg-1');
+    expect(artifact!.lastUpdateTime).toBe(new Date(baseFile.updatedAt).getTime());
+  });
+
+  it('returns null for unsupported types so callers can fall through', () => {
+    expect(fileToArtifact({ ...baseFile, filename: 'data.csv', type: 'text/csv' })).toBeNull();
+  });
+
+  it('returns null when an HTML/React/Mermaid file has no text', () => {
+    expect(fileToArtifact({ ...baseFile, text: '' })).toBeNull();
+    expect(fileToArtifact({ ...baseFile, filename: 'App.tsx', type: '', text: '' })).toBeNull();
+    expect(fileToArtifact({ ...baseFile, filename: 'flow.mmd', type: '', text: '' })).toBeNull();
+  });
+
+  it('uses the caller-provided placeholder when a deferred-extraction file has no text', () => {
+    // Backend extractor returns null for pptx (deferred). Client sees
+    // `text === null` and substitutes the localized placeholder.
+    const artifact = fileToArtifact(
+      {
+        ...baseFile,
+        filename: 'slides.pptx',
+        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        text: null as unknown as string,
+      },
+      { placeholder: '_Coming soon_' },
+    );
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(artifact!.content).toBe('_Coming soon_');
+  });
+
+  it('falls back to empty content when no placeholder is supplied and text is missing', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'slides.pptx',
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      text: undefined,
+    });
+    expect(artifact!.content).toBe('');
+  });
+
+  it('preserves an empty string as legitimate content (does not fall through to placeholder)', () => {
+    // A user can write a 0-byte `.md` or `.txt`; that's a valid artifact
+    // with empty content, not "extraction unavailable."
+    const artifact = fileToArtifact(
+      { ...baseFile, filename: 'empty.md', type: 'text/markdown', text: '' },
+      { placeholder: '_should not appear_' },
+    );
+    expect(artifact!.content).toBe('');
+  });
+
+  it('uses real text when present for deferred-extraction file types', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'slides.pptx',
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      text: 'Slide 1: Intro\nSlide 2: Outro',
+    });
+    expect(artifact!.content).toBe('Slide 1: Intro\nSlide 2: Outro');
+  });
+
+  it('skips re-classification when preClassifiedType is provided', () => {
+    // Filename would normally classify as html, but caller forces plain-text.
+    const artifact = fileToArtifact(
+      { ...baseFile, filename: 'index.html', type: 'text/html', text: 'x' },
+      { preClassifiedType: TOOL_ARTIFACT_TYPES.PLAIN_TEXT },
+    );
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+  });
+
+  it.each([[TOOL_ARTIFACT_TYPES.HTML], [TOOL_ARTIFACT_TYPES.REACT], [TOOL_ARTIFACT_TYPES.MERMAID]])(
+    'returns null when preClassifiedType=%s is paired with empty text (defense in depth)',
+    (preClassifiedType) => {
+      // Bypassing classification with a strict-viewer type but no text
+      // would otherwise hand sandpack/mermaid.js an empty buffer that
+      // throws. Internal guard catches it before construction.
+      const artifact = fileToArtifact(
+        { ...baseFile, filename: 'whatever', type: '', text: '' },
+        { preClassifiedType },
+      );
+      expect(artifact).toBeNull();
+    },
+  );
+
+  it('falls back to createdAt when updatedAt is missing', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      updatedAt: undefined,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(artifact!.lastUpdateTime).toBe(new Date('2026-01-01T00:00:00.000Z').getTime());
+  });
+
+  it('falls back to filename when file_id is missing', () => {
+    const artifact = fileToArtifact({ ...baseFile, file_id: undefined as unknown as string });
+    expect(artifact!.id).toBe('tool-artifact-index.html');
   });
 });
