@@ -68,6 +68,46 @@ export function sanitizeFilename(inputName: string): string {
 }
 
 /**
+ * Sanitize a code-execution artifact path while preserving directory components
+ * so subsequent prime() runs can place the file at the same nested location in
+ * the next sandbox session. Each segment is sanitized independently with the
+ * same rules as `sanitizeFilename`. Falls back to the basename for absolute
+ * paths or names containing `..` traversal.
+ */
+export function sanitizeArtifactPath(inputName: string): string {
+  if (!inputName) return '_';
+  if (path.isAbsolute(inputName)) return sanitizeFilename(inputName);
+  const normalized = path.posix.normalize(inputName);
+  if (
+    normalized === '..' ||
+    normalized.startsWith('../') ||
+    normalized.includes('/../') ||
+    normalized.endsWith('/..') ||
+    normalized.endsWith('/')
+  ) {
+    return sanitizeFilename(inputName);
+  }
+  const segments = normalized
+    .split('/')
+    .map((seg) => seg.replace(/[^a-zA-Z0-9.-]/g, '_'))
+    .filter((seg) => seg.length > 0 && seg !== '.');
+  if (segments.length === 0) return '_';
+  const leafIdx = segments.length - 1;
+  if (segments[leafIdx].startsWith('.')) segments[leafIdx] = '_' + segments[leafIdx];
+  return segments.join('/');
+}
+
+/**
+ * Map a (sanitized) artifact path to a flat storage-safe key. The local
+ * storage strategies key by single component; this avoids creating
+ * unintended subdirectories on disk while the DB record retains the
+ * nested path for the next prime().
+ */
+export function flattenArtifactPath(safePath: string): string {
+  return safePath.replace(/\//g, '__');
+}
+
+/**
  * Options for reading files
  */
 export interface ReadFileOptions {

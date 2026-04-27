@@ -5,7 +5,8 @@ const { getCodeBaseURL } = require('@librechat/agents');
 const {
   getBasePath,
   logAxiosError,
-  sanitizeFilename,
+  sanitizeArtifactPath,
+  flattenArtifactPath,
   createAxiosInstance,
   classifyCodeArtifact,
   codeServerHttpAgent,
@@ -134,14 +135,34 @@ const processCodeOutput = async ({
 
     const fileIdentifier = `${session_id}/${id}`;
 
+    /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
+     * so the next prime() can place the file at the same nested path in the
+     * sandbox; flattening would re-create the bug where every nested artifact
+     * collapsed into the root and read_file calls 404'd. `flatName` is for the
+     * local storage key only — `saveBuffer` strategies key by single
+     * filename, so we encode the path with `__` and the original is recovered
+     * from the DB record. */
+    const safeName = sanitizeArtifactPath(name);
+    const flatName = flattenArtifactPath(safeName);
+    if (safeName !== name) {
+      logger.warn(
+        `[processCodeOutput] Filename sanitized: "${name}" -> "${safeName}" | conv=${conversationId}`,
+      );
+    }
+
     /**
      * Atomically claim a file_id for this (filename, conversationId, context) tuple.
      * Uses $setOnInsert so concurrent calls for the same filename converge on
      * a single record instead of creating duplicates (TOCTOU race fix).
+     *
+     * Claim by `safeName` (not raw `name`) so the claim and the eventual
+     * `createFile` agree on the filename column — otherwise weird inputs
+     * (e.g. `"proj name/file@v1.txt"`) would claim under the raw name and
+     * then write under the sanitized one, leaving the claim row orphaned.
      */
     const newFileId = v4();
     const claimed = await claimCodeFile({
-      filename: name,
+      filename: safeName,
       conversationId,
       file_id: newFileId,
       user: req.user.id,
@@ -151,14 +172,7 @@ const processCodeOutput = async ({
 
     if (isUpdate) {
       logger.debug(
-        `[processCodeOutput] Updating existing file "${name}" (${file_id}) instead of creating duplicate`,
-      );
-    }
-
-    const safeName = sanitizeFilename(name);
-    if (safeName !== name) {
-      logger.warn(
-        `[processCodeOutput] Filename sanitized: "${name}" -> "${safeName}" | conv=${conversationId}`,
+        `[processCodeOutput] Updating existing file "${safeName}" (${file_id}) instead of creating duplicate`,
       );
     }
 
@@ -226,7 +240,7 @@ const processCodeOutput = async ({
       );
     }
 
-    const fileName = `${file_id}__${safeName}`;
+    const fileName = `${file_id}__${flatName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,
       buffer,

@@ -50,6 +50,8 @@ jest.mock('@librechat/api', () => {
     logAxiosError: jest.fn(),
     getBasePath: jest.fn(() => ''),
     sanitizeFilename: jest.fn((name) => name),
+    sanitizeArtifactPath: jest.fn((name) => name),
+    flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
     /**
      * Arrow-function indirection (vs. a direct `jest.fn()` reference) so
@@ -272,6 +274,42 @@ describe('Code Process', () => {
         expect(result.type).toBe('text/plain');
         expect(result.filepath).toBe('/uploads/saved-file.txt');
         expect(result.bytes).toBe(100);
+      });
+
+      it('preserves nested directory paths in the DB record while flattening the storage key', async () => {
+        /* Regression test for the silent-data-loss path: when codeapi reports a
+         * file with a nested name like "test_folder/test_file.txt", LibreChat
+         * used to feed it through `sanitizeFilename` (basename-only), which
+         * persisted "test_file.txt" to the DB and made the file un-locatable on
+         * the next prime() (cat /mnt/data/test_folder/test_file.txt would
+         * 404). The fix: keep the path on the DB record (so primeFiles can
+         * place it back at the same nested location), but flatten it for the
+         * storage key (saveBuffer strategies key by single component). */
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+        const mockSaveBuffer = jest.fn().mockResolvedValue('/uploads/saved.txt');
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        const result = await processCodeOutput({
+          ...baseParams,
+          name: 'test_folder/test_file.txt',
+        });
+
+        // Storage key flattens `/` to `__` so on-disk strategies don't
+        // accidentally create real subdirectories under uploads/.
+        expect(mockSaveBuffer).toHaveBeenCalledWith(
+          expect.objectContaining({
+            fileName: 'mock-uuid-1234__test_folder__test_file.txt',
+          }),
+        );
+        // DB row keeps the nested path verbatim — that's what primeFiles
+        // ships back to the sandbox on the next turn.
+        expect(result.filename).toBe('test_folder/test_file.txt');
+        // Claim is also keyed by the path-preserving name so the
+        // (filename, conversationId) compound key stays consistent.
+        expect(mockClaimCodeFile).toHaveBeenCalledWith(
+          expect.objectContaining({ filename: 'test_folder/test_file.txt' }),
+        );
       });
 
       it('should detect MIME type from buffer', async () => {

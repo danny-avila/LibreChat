@@ -1,4 +1,9 @@
-import { sanitizeFilename, resolveUploadErrorMessage } from './files';
+import {
+  sanitizeFilename,
+  sanitizeArtifactPath,
+  flattenArtifactPath,
+  resolveUploadErrorMessage,
+} from './files';
 
 jest.mock('node:crypto', () => {
   const actualModule = jest.requireActual('node:crypto');
@@ -49,6 +54,62 @@ describe('sanitizeFilename', () => {
 
   test('handles input with only special characters', () => {
     expect(sanitizeFilename('@#$%^&*')).toBe('_______');
+  });
+});
+
+describe('sanitizeArtifactPath', () => {
+  test('preserves a single nested directory component', () => {
+    expect(sanitizeArtifactPath('test_folder/test_file.txt')).toBe('test_folder/test_file.txt');
+  });
+
+  test('preserves multiple nested directory components', () => {
+    expect(sanitizeArtifactPath('a/b/c/file.txt')).toBe('a/b/c/file.txt');
+  });
+
+  test('replaces non-alphanumeric characters per segment', () => {
+    expect(sanitizeArtifactPath('proj name/file@v1.txt')).toBe('proj_name/file_v1.txt');
+  });
+
+  test('falls back to basename for parent traversal', () => {
+    expect(sanitizeArtifactPath('../escape.txt')).toBe('escape.txt');
+  });
+
+  test('falls back to basename for embedded parent traversal', () => {
+    expect(sanitizeArtifactPath('a/../escape.txt')).toBe('escape.txt');
+  });
+
+  test('falls back to basename for absolute paths', () => {
+    expect(sanitizeArtifactPath('/abs/path.txt')).toBe('path.txt');
+  });
+
+  test('collapses redundant separators', () => {
+    expect(sanitizeArtifactPath('dir//file.txt')).toBe('dir/file.txt');
+  });
+
+  test('strips current-directory segments', () => {
+    expect(sanitizeArtifactPath('./dir/./file.txt')).toBe('dir/file.txt');
+  });
+
+  test('prepends underscore only on the leaf when it starts with a dot', () => {
+    expect(sanitizeArtifactPath('dir/.hidden')).toBe('dir/_.hidden');
+  });
+
+  test('returns underscore for empty input', () => {
+    expect(sanitizeArtifactPath('')).toBe('_');
+  });
+});
+
+describe('flattenArtifactPath', () => {
+  test('joins path components with __ for storage keys', () => {
+    expect(flattenArtifactPath('a/b/c.txt')).toBe('a__b__c.txt');
+  });
+
+  test('passes through paths with no separator', () => {
+    expect(flattenArtifactPath('file.txt')).toBe('file.txt');
+  });
+
+  test('handles single-level nesting', () => {
+    expect(flattenArtifactPath('test_folder/test_file.txt')).toBe('test_folder__test_file.txt');
   });
 });
 
