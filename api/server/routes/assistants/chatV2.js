@@ -5,6 +5,7 @@ const {
   setHeaders,
   handleAbort,
   validateModel,
+  enforceSubscriptionQuota,
   // validateEndpoint,
   buildEndpointOption,
   trace,
@@ -30,6 +31,7 @@ router.post(
   buildEndpointOption,
   validateAssistant,
   validateConvoAccess,
+  enforceSubscriptionQuota,
   setHeaders,
   chatController,
 );

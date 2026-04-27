@@ -1,13 +1,27 @@
+/* eslint-disable i18next/no-literal-string */
 import React from 'react';
+import * as Tabs from '@radix-ui/react-tabs';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
-import { UserIcon } from '@librechat/client';
 import type { TDialogProps } from '~/common';
 import { Account } from './SettingsTabs';
+import SubscriptionSection from './SettingsTabs/Account/SubscriptionSection';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-export default function Settings({ open, onOpenChange }: TDialogProps) {
+type SettingsTab = 'account' | 'subscription';
+type SettingsProps = TDialogProps & {
+  initialTab?: SettingsTab;
+};
+
+export default function Settings({ open, onOpenChange, initialTab = 'account' }: SettingsProps) {
   const localize = useLocalize();
+  const [activeTab, setActiveTab] = React.useState<SettingsTab>(initialTab);
+
+  React.useEffect(() => {
+    if (open) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, open]);
 
   return (
     <Transition appear show={open}>
@@ -67,9 +81,48 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   <span className="sr-only">{localize('com_ui_close_settings')}</span>
                 </button>
               </DialogTitle>
-              <div className="max-h-[550px] overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
-                <Account />
-              </div>
+              <Tabs.Root
+                value={activeTab}
+                onValueChange={(value) => setActiveTab(value as SettingsTab)}
+                className="flex flex-col"
+              >
+                <div className="px-6">
+                  <Tabs.List className="mb-2 flex gap-2 border-b border-border-light pb-2">
+                    <Tabs.Trigger
+                      value="account"
+                      className={cn(
+                        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                        activeTab === 'account'
+                          ? 'bg-surface-hover text-text-primary'
+                          : 'text-text-secondary hover:text-text-primary',
+                      )}
+                    >
+                      Account
+                    </Tabs.Trigger>
+                    <Tabs.Trigger
+                      value="subscription"
+                      className={cn(
+                        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                        activeTab === 'subscription'
+                          ? 'bg-surface-hover text-text-primary'
+                          : 'text-text-secondary hover:text-text-primary',
+                      )}
+                    >
+                      Subscription
+                    </Tabs.Trigger>
+                  </Tabs.List>
+                </div>
+                <div className="max-h-[550px] overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
+                  <Tabs.Content value="account" tabIndex={-1}>
+                    <Account showSubscription={false} />
+                  </Tabs.Content>
+                  <Tabs.Content value="subscription" tabIndex={-1}>
+                    <div className="p-1">
+                      <SubscriptionSection />
+                    </div>
+                  </Tabs.Content>
+                </div>
+              </Tabs.Root>
             </DialogPanel>
           </div>
         </TransitionChild>

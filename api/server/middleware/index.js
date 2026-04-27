@@ -24,12 +24,14 @@ const uaParser = require('./uaParser');
 const checkBan = require('./checkBan');
 const noIndex = require('./noIndex');
 const roles = require('./roles');
+const subscriptionQuota = require('./subscriptionQuota');
 
 module.exports = {
   ...abortMiddleware,
   ...validate,
   ...limiters,
   ...roles,
+  ...subscriptionQuota,
   ...accessResources,
   noIndex,
   checkBan,

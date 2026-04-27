@@ -9,6 +9,7 @@ const {
 } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
+const { getSubscriptionPublicConfig } = require('~/server/services/Billing/RevenueCatService');
 const { getProjectByName } = require('~/models/Project');
 const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -63,6 +64,7 @@ router.get('/', async function (req, res) {
       !!process.env.SAML_SESSION_SECRET;
 
     const balanceConfig = getBalanceConfig(appConfig);
+    const subscriptionConfig = getSubscriptionPublicConfig();
 
     /** @type {TStartupConfig} */
     const payload = {
@@ -102,6 +104,7 @@ router.get('/', async function (req, res) {
       helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://codecan.ai',
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
+      subscription: subscriptionConfig,
       modelSpecs: appConfig?.modelSpecs,
       balance: balanceConfig,
       sharedLinksEnabled,

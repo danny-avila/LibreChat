@@ -1,26 +1,48 @@
-import { useState, memo } from 'react';
+/* eslint-disable i18next/no-literal-string */
+import { useEffect, useState, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useSubscription } from '~/hooks/Subscription';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
 
+type SettingsTab = 'account' | 'subscription';
+
 function AccountSettings() {
   const localize = useLocalize();
+  const location = useLocation();
   const { user, isAuthenticated, logout } = useAuthContext();
+  const { isPro } = useSubscription();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
   const [showSettings, setShowSettings] = useState(false);
+  const [initialSettingsTab, setInitialSettingsTab] = useState<SettingsTab>('account');
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
   const privacyPolicy = startupConfig?.interface?.privacyPolicy;
   const termsOfService = startupConfig?.interface?.termsOfService;
+
+  const openSettings = (tab: SettingsTab = 'account') => {
+    setInitialSettingsTab(tab);
+    setShowSettings(true);
+  };
+
+  const openSubscriptionFromQuery = location.search.includes('settings=subscription');
+
+  useEffect(() => {
+    if (openSubscriptionFromQuery) {
+      setInitialSettingsTab('subscription');
+      setShowSettings(true);
+    }
+  }, [openSubscriptionFromQuery]);
 
   return (
     <Select.SelectProvider>
@@ -39,6 +61,9 @@ function AccountSettings() {
           style={{ marginTop: '0', marginLeft: '0' }}
         >
           {user?.name ?? user?.username ?? localize('com_nav_user')}
+          <div className="text-xs text-text-secondary">
+            {isPro ? 'CodeCan AI Pro' : 'Free plan'}
+          </div>
         </div>
       </Select.Select>
       <Select.SelectPopover
@@ -82,11 +107,19 @@ function AccountSettings() {
         )}
         <Select.SelectItem
           value=""
-          onClick={() => setShowSettings(true)}
+          onClick={() => openSettings('account')}
           className="select-item text-sm"
         >
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
+        </Select.SelectItem>
+        <Select.SelectItem
+          value=""
+          onClick={() => openSettings('subscription')}
+          className="select-item text-sm"
+        >
+          <GearIcon className="icon-md" aria-hidden="true" />
+          Subscription
         </Select.SelectItem>
         {privacyPolicy?.externalUrl != null && (
           <Select.SelectItem
@@ -130,7 +163,13 @@ function AccountSettings() {
         </Select.SelectItem>
       </Select.SelectPopover>
       {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
-      {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {showSettings && (
+        <Settings
+          open={showSettings}
+          onOpenChange={setShowSettings}
+          initialTab={initialSettingsTab}
+        />
+      )}
     </Select.SelectProvider>
   );
 }

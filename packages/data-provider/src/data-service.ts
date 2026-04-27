@@ -96,6 +96,18 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
+export function getSubscription(): Promise<Record<string, unknown>> {
+  return request.get(endpoints.subscription());
+}
+
+export function refreshSubscription(): Promise<Record<string, unknown>> {
+  return request.post(endpoints.refreshSubscription(), {});
+}
+
+export function getSubscriptionCheckoutLink(): Promise<{ url?: string | null }> {
+  return request.post(endpoints.subscriptionCheckoutLink(), {});
+}
+
 export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
 }

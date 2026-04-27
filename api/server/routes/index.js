@@ -27,8 +27,12 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
+const revenuecat = require('./revenuecat');
+const subscription = require('./subscription');
 
 module.exports = {
+  subscription,
+  revenuecat,
   mcp,
   edit,
   auth,
