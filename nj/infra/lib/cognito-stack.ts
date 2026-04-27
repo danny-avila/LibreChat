@@ -14,6 +14,8 @@ export interface CognitoStackProps extends cdk.StackProps {
 }
 
 export class CognitoStack extends cdk.Stack {
+    public readonly userPool: cognito.UserPool;
+
     constructor(scope: Construct, id: string, props: CognitoStackProps) {
         super(scope, id, props);
         const name_prefix = `nj-ai-assistant-${props.envVars.env}`;
@@ -21,6 +23,7 @@ export class CognitoStack extends cdk.Stack {
         const logoutUrl = `https://${props.envVars.domainName}/oauth/openid/logout`;
 
         const userPool = this.createUserPool(props);
+        this.userPool = userPool;
         const userPoolClient = this.createUserPoolClient(props, userPool, callbackUrl, logoutUrl);
         this.createManagedLoginBranding(props, userPool, userPoolClient, name_prefix);
     }

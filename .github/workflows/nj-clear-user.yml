@@ -1,0 +1,40 @@
+name: NJ Clear User
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: Email address of the user to clear
+        required: true
+        type: string
+      environment:
+        description: Target environment
+        type: choice
+        options:
+          - dev
+          - prod
+        required: true
+        default: dev
+
+jobs:
+  clear-user:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke Lambda
+        run: |
+          aws lambda invoke \
+            --function-name ai-assistant-clear-user \
+            --payload "$(jq -n --arg email "$EMAIL" '{email: $email}')" \
+            --cli-binary-format raw-in-base64-out \
+            response.json
+          cat response.json
+        env:
+          EMAIL: ${{ inputs.email }}

@@ -35,6 +35,7 @@ import { EcsStack } from "../lib/ecs-stack";
 import { CognitoStack } from "../lib/cognito-stack";
 import { MonitoringStack } from "../lib/monitoring-stack";
 import { KitchenSinkStack } from "../lib/kitchensink-stack";
+import { LambdaStack } from "../lib/lambda-stack";
 import {branding, assets} from "../lib/branding";
 
 const app = new cdk.App({
@@ -115,6 +116,16 @@ const cognitoStack = new CognitoStack(app, "CognitoStack", {
   branding: branding,
   assets: assets,
 });
+
+if (!isProd) {
+  const lambdaStack = new LambdaStack(app, "LambdaStack", {
+    env,
+    envVars,
+    userPool: cognitoStack.userPool,
+  });
+
+  applyTags(lambdaStack);
+}
 
 const monitoringStack = new MonitoringStack(app, "MonitoringStack", {
   env: env,
