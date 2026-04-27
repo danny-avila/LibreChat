@@ -31,7 +31,7 @@
   "dependencies": {
     "@ariakit/react": "^0.4.15",
     "@ariakit/react-core": "^0.4.17",
-    "@capacitor/keyboard": "^6.0.4",
+    "@capacitor/keyboard": "^8.0.3",
     "@codesandbox/sandpack-react": "^2.19.10",
     "@dicebear/collection": "^9.2.2",
     "@dicebear/core": "^9.2.2",
