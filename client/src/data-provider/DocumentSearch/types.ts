@@ -25,6 +25,7 @@ export interface KeywordSearchRequest {
 export interface ChunkPreview {
   chunk_id: string;
   content: string;
+  snippet?: string | null;
   section: string | null;
   chunk_index: number;
   page_start: number | null;
@@ -46,6 +47,7 @@ export interface DocumentHit {
   practice_area_primary: string | null;
   score: number;
   chunk_count: number;
+  source_url?: string | null;
   top_chunks: ChunkPreview[];
 }
 
