@@ -61,12 +61,27 @@ describe('detectArtifactTypeFromFile', () => {
     expect(detectArtifactTypeFromFile({ filename, type: '', text: 'content' })).toBe(expected);
   });
 
-  it('returns null when there is no text content', () => {
-    expect(detectArtifactTypeFromFile({ filename: 'index.html', type: '', text: '' })).toBeNull();
-    expect(
-      detectArtifactTypeFromFile({ filename: 'index.html', type: '', text: undefined }),
-    ).toBeNull();
+  it.each([
+    ['index.html', TOOL_ARTIFACT_TYPES.HTML],
+    ['App.tsx', TOOL_ARTIFACT_TYPES.REACT],
+    ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID],
+  ])('returns null when %s has no text (%s viewer needs real content)', (filename) => {
+    expect(detectArtifactTypeFromFile({ filename, type: '', text: '' })).toBeNull();
+    expect(detectArtifactTypeFromFile({ filename, type: '', text: undefined })).toBeNull();
   });
+
+  it.each([
+    ['readme.txt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['slides.pptx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['report.docx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['notes.md', TOOL_ARTIFACT_TYPES.MARKDOWN],
+  ])(
+    'still routes %s through the panel without text (deferred-extraction case)',
+    (filename, expected) => {
+      expect(detectArtifactTypeFromFile({ filename, type: '', text: '' })).toBe(expected);
+      expect(detectArtifactTypeFromFile({ filename, type: '', text: undefined })).toBe(expected);
+    },
+  );
 
   it('falls back to MIME when the extension is unknown', () => {
     expect(detectArtifactTypeFromFile({ filename: 'noext', type: 'text/html', text: 'x' })).toBe(
@@ -132,8 +147,33 @@ describe('fileToArtifact', () => {
     expect(fileToArtifact({ ...baseFile, filename: 'data.csv', type: 'text/csv' })).toBeNull();
   });
 
-  it('returns null when there is no text content', () => {
+  it('returns null when an HTML/React/Mermaid file has no text', () => {
     expect(fileToArtifact({ ...baseFile, text: '' })).toBeNull();
+    expect(fileToArtifact({ ...baseFile, filename: 'App.tsx', type: '', text: '' })).toBeNull();
+    expect(fileToArtifact({ ...baseFile, filename: 'flow.mmd', type: '', text: '' })).toBeNull();
+  });
+
+  it('falls back to a placeholder when a deferred-extraction file has no text', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'slides.pptx',
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      text: '',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(artifact!.content).toContain('Preview not available yet');
+    expect(artifact!.content).toContain('Download');
+  });
+
+  it('uses real text when present for deferred-extraction file types', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'slides.pptx',
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      text: 'Slide 1: Intro\nSlide 2: Outro',
+    });
+    expect(artifact!.content).toBe('Slide 1: Intro\nSlide 2: Outro');
   });
 
   it('falls back to createdAt when updatedAt is missing', () => {

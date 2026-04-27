@@ -240,18 +240,31 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
  * panel (or inline mermaid component). Returns the canonical artifact MIME
  * type if so, or `null` to let the caller fall through to the existing
  * download / inline-text rendering.
+ *
+ * Empty `text` is tolerated for the plain-text and markdown buckets so a
+ * file whose extraction is still TBD (e.g. pptx, or a docx where the
+ * extractor errored) keeps visual parity with its docx/odt siblings — the
+ * card still routes through the panel and `fileToArtifact` substitutes a
+ * placeholder so the panel renders something sensible. The HTML, React,
+ * and Mermaid buckets still require real content because their viewers
+ * (sandpack / mermaid.js) error on empty input.
  */
 export function detectArtifactTypeFromFile(
   attachment: Pick<TFile, 'filename' | 'type' | 'text'>,
 ): ToolArtifactType | null {
-  if (!attachment.text) {
+  const byExtension = EXTENSION_TO_TOOL_ARTIFACT_TYPE[extensionOf(attachment.filename)];
+  const type = byExtension ?? MIME_TO_TOOL_ARTIFACT_TYPE[baseMime(attachment.type)] ?? null;
+  if (type == null) {
     return null;
   }
-  const byExtension = EXTENSION_TO_TOOL_ARTIFACT_TYPE[extensionOf(attachment.filename)];
-  if (byExtension) {
-    return byExtension;
+  if (
+    !attachment.text &&
+    type !== TOOL_ARTIFACT_TYPES.PLAIN_TEXT &&
+    type !== TOOL_ARTIFACT_TYPES.MARKDOWN
+  ) {
+    return null;
   }
-  return MIME_TO_TOOL_ARTIFACT_TYPE[baseMime(attachment.type)] ?? null;
+  return type;
 }
 
 const toolArtifactId = (file: Pick<TFile, 'file_id' | 'filename'>): string =>
@@ -265,6 +278,16 @@ const toLastUpdate = (file: Pick<TFile, 'updatedAt' | 'createdAt'>): number => {
   const ms = new Date(value as string | number | Date).getTime();
   return Number.isFinite(ms) ? ms : Date.now();
 };
+
+/**
+ * Markdown shown in the panel when a panel-eligible file has no extracted
+ * text yet (today: pptx, where the backend extractor is deferred). Renders
+ * cleanly in the markdown / plain-text viewer; HTML/React buckets won't
+ * reach this path because `detectArtifactTypeFromFile` keeps them out
+ * when text is empty.
+ */
+const TOOL_ARTIFACT_PLACEHOLDER =
+  '_Preview not available yet — click **Download** to view the file._';
 
 /**
  * Convert a code-execution attachment to an `Artifact` shape if (and only
@@ -283,8 +306,7 @@ export function fileToArtifact(
     id: toolArtifactId(attachment),
     type,
     title: attachment.filename ?? 'Generated artifact',
-    // detectArtifactTypeFromFile guarantees `text` is a non-empty string here.
-    content: attachment.text as string,
+    content: attachment.text || TOOL_ARTIFACT_PLACEHOLDER,
     messageId: attachment.messageId ?? undefined,
     lastUpdateTime: toLastUpdate(attachment),
   };
