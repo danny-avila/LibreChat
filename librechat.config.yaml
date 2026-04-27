@@ -336,13 +336,17 @@ modelSpecs:
           * If response is relevant and sufficient:
             * Generate answer using available data.
             * Append:
-              "Your query has also been shared with an expert for review. It will be processed within 2 hours. Please ask the same query after 2 hours."
+              "# Your query has also been shared with an expert for review. It will be processed within 2 hours. Please ask the same query after 2 hours."
             * Stop.
           4.4 **Final Fallback**
           * If all sources are insufficient, respond:
-            "We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert and will be processed within 2 hours. Please ask the same query after 2 hours."
-          4.5. Fetch market-related data using market MCP tools, ajrasakha-agmarknet, ajrasakha-other-markets and ajrasakha-enam, and return information from whichever source has available data.
-          SOIL HEALTH — FERTILIZER DOSAGE RECOMMENDATION (STRICT WORKFLOW):
+            "# We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert and will be processed within 2 hours. Please ask the same query after 2 hours."
+          4.5. Fetch market-related data using MCP tools with strict priority order.
+              First query Ajrasakha-Agmarknet and return data if available.
+              If no data is found, then query Ajrasakha-eNAM and return results if available.
+              If both sources do not return data, then proceed to query ajrasakha-other-markets tool.
+              Always return data from the highest-priority source where results are found, without querying lower-priority sources unnecessarily.
+
           - If a farmer provides ANY soil test value — Nitrogen (N), Phosphorus (P), Potassium (K), or Organic Carbon (OC) — actively ask for any remaining missing soil values before proceeding.
           - Also collect: State, District, and Crop. Check conversation history first; if missing, ask the farmer.
           - ONLY when ALL 7 mandatory data points (N, P, K, OC, State, District, Crop) are available, call soilhealth tools in this strict order:
@@ -571,7 +575,7 @@ modelSpecs:
                * state = "all"
              - This ensures the system searches across all crops and states for general soil science answers.
 
-          4. **Use MCP tools to fetch data for agriculture related queries (Not for live market price related queries) (STRICT SEQUENCE - NO SKIPPING)**
+          4. **Use MCP tools to fetch data for agriculture related queries (Not for live market price related queries) (STRICT SEQUENCE FOR ALL LANGUAGES- NO SKIPPING)**
           4.1 **Reviewer Dataset (Primary Step)**
           * Call: `get_context_from_reviewer_dataset`
           * Wait for full response.
@@ -601,7 +605,12 @@ modelSpecs:
           4.4 **Final Fallback**
           * If all sources are insufficient, respond:
             "We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert and will be processed within 2 hours. Please ask the same query after 2 hours."
-          4.5. Fetch market-related data using market MCP tools, ajrasakha-agmarknet, ajrasakha-other-markets and ajrasakha-enam, and return information from whichever source has available data.
+          4.5. **Fetch market-related data using MCP tools with strict priority order.**
+              First query Ajrasakha-Agmarknet and return data if available.
+              If no data is found, then query Ajrasakha-eNAM and return results if available.
+              If both sources do not return data, then proceed to query ajrasakha-other-markets tool.
+              Always return data from the highest-priority source where results are found, without querying lower-priority sources unnecessarily.
+
           5. **After answering any query:**
              - Search the **FAQ-Video MCP server** for a relevant YouTube video or summary.  
              - Show it only if the content is clearly relevant; otherwise, do not display or ask about it.
@@ -728,6 +737,7 @@ modelSpecs:
          - ajrasakha-other-markets
          - ajrasakha-govt-schemes
          - ajrasakha-soilhealth
+
       default: true
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
@@ -750,7 +760,7 @@ modelSpecs:
          - ajrasakha-location
          - ajrasakha-other-markets
          - ajrasakha-govt-schemes
-         - ajrasakha-soilhealth
+         - ajrasakha-soilhealth  
 
       default: true
       description: "Next-gen argi-centric model from annam.ai"
