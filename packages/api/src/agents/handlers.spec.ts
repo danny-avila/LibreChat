@@ -1059,5 +1059,160 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('Failed to read');
       expect(result.errorMessage).toContain('bash_tool');
     });
+
+    describe('binary file guard', () => {
+      /**
+       * Regression for the matplotlib-shape bug where `read_file` on
+       * `/mnt/data/simple_graph.png` shelled `cat` through codeapi and
+       * line-numbered the lossy-string-decoded PNG bytes back to the
+       * model. The guard short-circuits BEFORE the network call for any
+       * extension that can never round-trip through codeapi's JSON
+       * `/exec` transport, and falls back to a NUL-byte sniff after the
+       * read for unknown extensions.
+       */
+      it('rejects images by extension without ever calling readSandboxFile', async () => {
+        const readSandboxFile = jest.fn();
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_png',
+            name: Constants.READ_FILE,
+            args: { file_path: '/mnt/data/simple_graph.png' },
+            codeSessionContext: { session_id: 'sess-Z' },
+          } as unknown as ToolCallRequest,
+        ]);
+
+        expect(readSandboxFile).not.toHaveBeenCalled();
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('image file');
+        expect(result.errorMessage).toContain('.png');
+        expect(result.errorMessage).toContain('already attached');
+        expect(result.errorMessage).toContain('bash_tool');
+      });
+
+      it('rejects non-image binary types with a bash-pointing message (not the image-attachment hint)', async () => {
+        const readSandboxFile = jest.fn();
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_zip',
+            name: Constants.READ_FILE,
+            args: { file_path: '/mnt/data/archive.zip' },
+          },
+        ]);
+
+        expect(readSandboxFile).not.toHaveBeenCalled();
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('binary file');
+        expect(result.errorMessage).toContain('.zip');
+        expect(result.errorMessage).not.toContain('already attached');
+        expect(result.errorMessage).toContain('bash_tool');
+      });
+
+      it('is case-insensitive on the extension match (PNG vs .png)', async () => {
+        const readSandboxFile = jest.fn();
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_uppercase',
+            name: Constants.READ_FILE,
+            args: { file_path: '/mnt/data/CHART.PNG' },
+          },
+        ]);
+
+        expect(readSandboxFile).not.toHaveBeenCalled();
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('image file');
+      });
+
+      it('rejects binary content (NUL bytes) post-fetch when the extension was unknown', async () => {
+        /* No extension → no precheck shortcut → read goes through, but the
+         * NUL-byte sniff catches it before line-numbering. Mojibake from
+         * codeapi's lossy JSON-encoding still round-trips through whatever
+         * string LibreChat builds, and the NUL terminator from the binary
+         * header survives that. */
+        const binaryWithNul = '   \rIHDR  ';
+        const readSandboxFile = jest.fn(async () => ({ content: binaryWithNul }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_nul_sniff',
+            name: Constants.READ_FILE,
+            args: { file_path: '/mnt/data/mystery_file' },
+          },
+        ]);
+
+        expect(readSandboxFile).toHaveBeenCalled();
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('binary');
+        expect(result.errorMessage).toContain('bash_tool');
+        // The bytes themselves never reach the model.
+        expect(result.content).toBe('');
+      });
+
+      it('still allows text files with binary-adjacent extensions (e.g. log.txt → readable)', async () => {
+        const readSandboxFile = jest.fn(async () => ({ content: 'plain text\nline 2' }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_text',
+            name: Constants.READ_FILE,
+            args: { file_path: '/mnt/data/notes.txt' },
+          },
+        ]);
+
+        expect(readSandboxFile).toHaveBeenCalled();
+        expect(result.status).toBe('success');
+        expect(result.content).toContain('plain text');
+      });
+
+      it('does not false-trigger on filenames containing `.` in directory names', async () => {
+        /* `lowercaseExtension` must use the basename, not the path —
+         * `proj.v1/notes` should yield `''` (no extension), not `.v1/notes`,
+         * so the file goes through the normal read path. */
+        const readSandboxFile = jest.fn(async () => ({ content: 'text from a dotted-dir path' }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_dotted_dir',
+            name: Constants.READ_FILE,
+            args: { file_path: '/mnt/data/proj.v1/notes' },
+          },
+        ]);
+
+        expect(readSandboxFile).toHaveBeenCalled();
+        expect(result.status).toBe('success');
+      });
+    });
   });
 });
