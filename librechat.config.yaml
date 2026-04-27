@@ -497,6 +497,9 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
+         - ajrasakha-other-markets
+         - ajrasakha-govt-schemes
+         - ajrasakha-soilhealth
 
       default: false
       description: "Next-gen argi-centric model from annam.ai"
@@ -722,7 +725,9 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
-
+         - ajrasakha-other-markets
+         - ajrasakha-govt-schemes
+         - ajrasakha-soilhealth
       default: true
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
@@ -743,6 +748,9 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
+         - ajrasakha-other-markets
+         - ajrasakha-govt-schemes
+         - ajrasakha-soilhealth
 
       default: true
       description: "Next-gen argi-centric model from annam.ai"
@@ -764,7 +772,9 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
-
+         - ajrasakha-other-markets
+         - ajrasakha-govt-schemes
+         - ajrasakha-soilhealth
       default: true
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
@@ -788,7 +798,9 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
-
+         - ajrasakha-other-markets
+         - ajrasakha-govt-schemes
+         - ajrasakha-soilhealth
 
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
