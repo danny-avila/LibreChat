@@ -72,6 +72,36 @@ const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
 const DEFAULT_INIT_TIMEOUT = 30000;
+/** Max 307/308 redirects to follow per request (prevents redirect loops) */
+const MAX_REDIRECTS = 5;
+
+function buildFetchInit(
+  init: UndiciRequestInit | undefined,
+  dispatcher: Agent,
+  requestHeaders: Record<string, string> | null | undefined,
+): UndiciRequestInit {
+  if (!requestHeaders) {
+    return { ...init, redirect: 'manual', dispatcher };
+  }
+
+  let initHeaders: Record<string, string> = {};
+  if (init?.headers) {
+    if (init.headers instanceof Headers) {
+      initHeaders = Object.fromEntries(init.headers.entries());
+    } else if (Array.isArray(init.headers)) {
+      initHeaders = Object.fromEntries(init.headers);
+    } else {
+      initHeaders = init.headers as Record<string, string>;
+    }
+  }
+
+  return {
+    ...init,
+    redirect: 'manual',
+    headers: { ...initHeaders, ...requestHeaders },
+    dispatcher,
+  };
+}
 
 interface CircuitBreakerState {
   cycleCount: number;
@@ -449,38 +479,31 @@ export class MCPConnection extends EventEmitter {
       this.agents.push(getAgent);
     }
 
-    return function customFetch(
+    return async function customFetch(
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
       const isGet = (init?.method ?? 'GET').toUpperCase() === 'GET';
       const dispatcher = isGet && getAgent ? getAgent : postAgent;
+      const mergedInit = buildFetchInit(init, dispatcher, getHeaders());
 
-      const requestHeaders = getHeaders();
-      if (!requestHeaders) {
-        return undiciFetch(input, { ...init, redirect: 'manual', dispatcher });
-      }
+      let url = input;
+      for (let redirects = 0; ; redirects++) {
+        const response = await undiciFetch(url, mergedInit);
+        const isMethodPreservingRedirect = response.status === 307 || response.status === 308;
 
-      let initHeaders: Record<string, string> = {};
-      if (init?.headers) {
-        if (init.headers instanceof Headers) {
-          initHeaders = Object.fromEntries(init.headers.entries());
-        } else if (Array.isArray(init.headers)) {
-          initHeaders = Object.fromEntries(init.headers);
-        } else {
-          initHeaders = init.headers as Record<string, string>;
+        if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
+          return response;
         }
-      }
 
-      return undiciFetch(input, {
-        ...init,
-        redirect: 'manual',
-        headers: {
-          ...initHeaders,
-          ...requestHeaders,
-        },
-        dispatcher,
-      });
+        const location = response.headers.get('location');
+        if (!location) {
+          return response;
+        }
+
+        const baseUrl = typeof url === 'string' ? url : url.toString();
+        url = new URL(location, baseUrl).href;
+      }
     };
   }
 
