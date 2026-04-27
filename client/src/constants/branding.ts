@@ -19,4 +19,5 @@ export const ASSISTANT_MODEL_LABEL =
 /**
  * Optional icon URL for the assistant; falls back to provider-specific icon when not set.
  */
-export const ASSISTANT_ICON_URL = import.meta.env.VITE_ASSISTANT_ICON_URL?.trim() ?? '';
+export const ASSISTANT_ICON_URL =
+  import.meta.env.VITE_ASSISTANT_ICON_URL?.trim() || '/assets/logo.svg';

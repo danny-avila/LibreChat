@@ -33,8 +33,8 @@ export const defaultTheme: IThemeRGB = {
   'rgb-surface-tertiary': '236 236 236', // #ececec (gray-100)
   'rgb-surface-tertiary-alt': '255 255 255', // #fff (white)
   'rgb-surface-dialog': '255 255 255', // #fff (white)
-  'rgb-surface-submit': '56 130 186', // #3882ba (brand-blue-500)
-  'rgb-surface-submit-hover': '41 114 167', // #2972a7 (brand-blue-600)
+  'rgb-surface-submit': '11 47 91', // #0B2F5B (brand-blue-500)
+  'rgb-surface-submit-hover': '20 67 122', // #14437A (brand-blue-600)
   'rgb-surface-destructive': '185 28 28', // #b91c1c (red-700)
   'rgb-surface-destructive-hover': '153 27 27', // #991b1b (red-800)
   'rgb-surface-chat': '255 255 255', // #fff (white)
@@ -47,7 +47,7 @@ export const defaultTheme: IThemeRGB = {
   'rgb-border-xheavy': '89 89 89', // #595959 (gray-500)
 
   // Brand colors
-  'rgb-brand-purple': '171 104 255', // #ab68ff
+  'rgb-brand-purple': '30 90 156', // #1E5A9C
 
   // Presentation
   'rgb-presentation': '255 255 255', // #fff (white)
