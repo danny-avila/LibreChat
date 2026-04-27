@@ -1,10 +1,7 @@
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { MongoClient } from 'mongodb';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const secretsClient = new SecretsManagerClient({});
 const cognitoClient = new CognitoIdentityProviderClient({});

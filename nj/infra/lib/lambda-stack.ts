@@ -68,7 +68,7 @@ export class LambdaStack extends cdk.Stack {
         USER_POOL_ID: userPool.userPoolId,
       },
       bundling: {
-        format: OutputFormat.ESM,
+        format: OutputFormat.CJS,
         commandHooks: {
           afterBundling(_inputDir, outputDir) {
             const pemSrc = path.join(__dirname, "../../lambda/clearUser/global-bundle.pem");
