@@ -16,15 +16,25 @@ interface ToolArtifactCardProps {
 
 /**
  * Card that opens a code-execution-produced artifact in the side panel.
- * Registers the artifact in `artifactsState` on mount (idempotent) so the
- * side panel auto-opens — matching the legacy artifact streaming UX where
- * a fresh artifact appears in the panel without an explicit user click.
  *
- * The panel's `useArtifacts` hook handles auto-selecting the latest by
- * `lastUpdateTime`. Visibility is intentionally not toggled here: the
- * Recoil default is `true`, which gives the auto-open behaviour for fresh
- * conversations, while a user who has explicitly closed the panel keeps
- * it closed until they click a card.
+ * Two effects, separately scoped:
+ *
+ *  1. **Self-heal registration** (no deps). The panel's `useArtifacts`
+ *     hook resets `artifactsState` whenever the panel unmounts — including
+ *     when the user closes it via visibility-toggle. Without re-registering
+ *     on every render, an artifact disappears from state after a close and
+ *     a subsequent click on the same card has nothing to open. The
+ *     idempotent dedup makes this cheap.
+ *
+ *  2. **Focus on mount** (deps: artifact.id). A freshly-mounted card
+ *     means a new artifact has arrived; we steal panel focus to match
+ *     the legacy streaming-artifact UX where the latest artifact
+ *     auto-opens. Cards that re-render with the same artifact don't
+ *     refire this, so user clicks on older cards aren't overridden.
+ *
+ * Visibility is intentionally not toggled. The Recoil default is `true`,
+ * which auto-opens the panel on first registration; a user who has
+ * explicitly closed the panel keeps it closed until they click.
  */
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
@@ -48,7 +58,11 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       }
       return { ...(prev ?? {}), [artifact.id]: artifact };
     });
-  }, [artifact, setArtifacts]);
+  });
+
+  useEffect(() => {
+    setCurrentArtifactId(artifact.id);
+  }, [artifact.id, setCurrentArtifactId]);
 
   const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({

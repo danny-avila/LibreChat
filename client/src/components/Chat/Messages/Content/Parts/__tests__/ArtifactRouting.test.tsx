@@ -110,8 +110,9 @@ describe('Attachment routing for tool artifacts', () => {
 
     // Card body shows the artifact title
     expect(screen.getByText('index.html')).toBeInTheDocument();
-    // Open-panel button is the one with aria-pressed
-    expect(screen.getByRole('button', { pressed: false })).toBeInTheDocument();
+    // Open-panel button carries aria-pressed (auto-focused on mount per the
+    // legacy auto-open behaviour).
+    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
     // Download button has the download aria-label
     expect(
       screen.getByRole('button', { name: /com_ui_download.*index\.html/i }),
@@ -184,35 +185,21 @@ describe('ToolArtifactCard click behaviour', () => {
       text: '<h1>hi</h1>',
     } as Partial<TAttachment>);
 
-  // Auto-open invariant: rendering a tool-artifact card must register the
-  // artifact in `artifactsState` so the side panel can auto-open the same
-  // way legacy streaming artifacts do. The panel's `useArtifacts` hook
-  // handles auto-selecting the latest by `lastUpdateTime`.
-  it('registers the artifact in state on mount so the panel can auto-open', () => {
+  // Auto-open invariant: rendering a tool-artifact card must (a) register
+  // the artifact in `artifactsState` and (b) focus it via
+  // `currentArtifactId`. With `artifactsVisibility` defaulting to `true`,
+  // this surfaces the latest tool artifact in the side panel — matching
+  // the legacy streaming-artifact UX.
+  it('registers and auto-focuses the artifact on mount', () => {
     const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
-    expect(getSnapshot().artifactIds).toContain('tool-artifact-html-1');
-  });
-
-  it('opens the panel and selects the artifact on click', () => {
-    const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
-    const openButton = screen.getByRole('button', { pressed: false });
-    act(() => {
-      fireEvent.click(openButton);
-    });
     const snap = getSnapshot();
     expect(snap.artifactIds).toContain('tool-artifact-html-1');
     expect(snap.currentArtifactId).toBe('tool-artifact-html-1');
-    expect(snap.visibility).toBe(true);
   });
 
-  it('toggles closed on a second click of the same card', () => {
+  it('toggles closed when the user clicks the (already-selected) card', () => {
     const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
-    const openButton = screen.getByRole('button', { pressed: false });
-    act(() => {
-      fireEvent.click(openButton);
-    });
-    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-html-1');
-    // Re-query: aria-pressed flipped to true after the first click
+    // Mount auto-focuses; the open button is in the pressed state.
     const closeButton = screen.getByRole('button', { pressed: true });
     act(() => {
       fireEvent.click(closeButton);
@@ -220,8 +207,46 @@ describe('ToolArtifactCard click behaviour', () => {
     const snap = getSnapshot();
     expect(snap.currentArtifactId).toBeNull();
     expect(snap.visibility).toBe(false);
-    // Artifact stays registered so re-opening it later doesn't lose state
+    // Self-heal effect keeps the artifact registered so re-opening works.
     expect(snap.artifactIds).toContain('tool-artifact-html-1');
+  });
+
+  it('reopens after a close (regression: artifact still openable post-close)', () => {
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { pressed: true }));
+    });
+    expect(getSnapshot().visibility).toBe(false);
+    expect(getSnapshot().currentArtifactId).toBeNull();
+    // Click the now-unpressed open button again.
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { pressed: false }));
+    });
+    const snap = getSnapshot();
+    expect(snap.currentArtifactId).toBe('tool-artifact-html-1');
+    expect(snap.visibility).toBe(true);
+    expect(snap.artifactIds).toContain('tool-artifact-html-1');
+  });
+
+  it('focuses the latest card when multiple artifacts mount (legacy parity)', () => {
+    // Order: older first, newer last. Last-mounted should win currentArtifactId.
+    const olderHtml = baseAttachment({
+      file_id: 'older',
+      filename: 'old.html',
+      text: '<p>1</p>',
+    } as Partial<TAttachment>);
+    const newerHtml = baseAttachment({
+      file_id: 'newer',
+      filename: 'new.html',
+      text: '<p>2</p>',
+    } as Partial<TAttachment>);
+    const { getSnapshot } = renderWithProbe(
+      <AttachmentGroup attachments={[olderHtml, newerHtml]} />,
+    );
+    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-newer');
+    expect(getSnapshot().artifactIds).toEqual(
+      expect.arrayContaining(['tool-artifact-older', 'tool-artifact-newer']),
+    );
   });
 });
 
