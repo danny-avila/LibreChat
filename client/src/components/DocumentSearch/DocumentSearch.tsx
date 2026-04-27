@@ -23,7 +23,7 @@ import FilterBar, {
 } from './FilterBar';
 
 const DEFAULT_TOP_K = 50;
-const DEFAULT_CHUNKS_PER_DOC = 32;
+const DEFAULT_CHUNKS_PER_DOC = 1000;
 
 function toApiFilters(f: DocumentSearchFilterState): KeywordSearchFilters | undefined {
   const { from, to } = resolvePeriodRange(f);
@@ -44,6 +44,7 @@ const DocumentSearch: React.FC = () => {
 
   const queryFromUrl = searchParams.get('q') || '';
   const [query, setQuery] = useState(queryFromUrl);
+  const [submittedQuery, setSubmittedQuery] = useState(queryFromUrl);
   const [filters, setFilters] = useState<DocumentSearchFilterState>(EMPTY_DOC_FILTERS);
 
   useDocumentTitle(`${localize('com_nav_document_search')} | LibreChat`);
@@ -53,6 +54,7 @@ const DocumentSearch: React.FC = () => {
   const runSearch = useCallback(
     (q: string, f: DocumentSearchFilterState) => {
       setQuery(q);
+      setSubmittedQuery(q);
       const next = new URLSearchParams(searchParams);
       if (q) next.set('q', q);
       else next.delete('q');
@@ -80,20 +82,20 @@ const DocumentSearch: React.FC = () => {
   }, []);
 
   const documents = search.data?.documents ?? [];
-  const hasQuery = !!query;
+  const hasQuery = !!submittedQuery;
   const hasResults = documents.length > 0;
   const isSearching = search.isLoading;
   const hasActiveFilters = isFilterActive(filters);
-  const canReset = hasQuery || hasActiveFilters || !!search.data || search.isError;
+  const canReset = !!query || hasQuery || hasActiveFilters || !!search.data || search.isError;
 
   const resultHeading = useMemo(() => {
     if (!hasQuery) return null;
     if (isSearching) return localize('com_document_search_searching');
     return localize('com_document_search_result_heading', {
-      0: query,
+      0: submittedQuery,
       1: String(search.data?.total ?? 0),
     });
-  }, [hasQuery, query, search.data?.total, isSearching, localize]);
+  }, [hasQuery, submittedQuery, search.data?.total, isSearching, localize]);
 
   const handleNewChat = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
@@ -110,13 +112,14 @@ const DocumentSearch: React.FC = () => {
   const handleFiltersChange = useCallback(
     (next: DocumentSearchFilterState) => {
       setFilters(next);
-      if (query) runSearch(query, next);
+      if (submittedQuery) runSearch(submittedQuery, next);
     },
-    [query, runSearch],
+    [submittedQuery, runSearch],
   );
 
   const handleResetSearch = useCallback(() => {
     setQuery('');
+    setSubmittedQuery('');
     setFilters(EMPTY_DOC_FILTERS);
     setSearchParams(new URLSearchParams(), { replace: true });
     search.reset();
@@ -200,7 +203,7 @@ const DocumentSearch: React.FC = () => {
                   title={localize('com_document_search_hint_title')}
                   message={localize('com_document_search_hint')}
                   tipsHeading={localize('com_document_search_tips_heading')}
-                  onPickExample={(example) => runSearch(example, filters)}
+                  onPickExample={(example) => setQuery(example)}
                 />
               )}
 
@@ -224,7 +227,7 @@ const DocumentSearch: React.FC = () => {
                     const key = hit.doc_id || hit.file_name;
                     return (
                       <li key={key}>
-                        <ResultCard hit={hit} query={query} />
+                        <ResultCard hit={hit} query={submittedQuery} />
                       </li>
                     );
                   })}
@@ -253,20 +256,20 @@ const EmptyState: React.FC<{
 type SearchTip = {
   example: string;
   descKey:
+    | 'com_document_search_tip_and_desc'
+    | 'com_document_search_tip_comma_desc'
     | 'com_document_search_tip_phrase_desc'
-    | 'com_document_search_tip_required_desc'
+    | 'com_document_search_tip_exclude_desc'
     | 'com_document_search_tip_or_desc'
-    | 'com_document_search_tip_prefix_desc'
-    | 'com_document_search_tip_fuzzy_desc'
     | 'com_document_search_tip_proximity_desc';
 };
 
 const SEARCH_TIPS: SearchTip[] = [
+  { example: '세종텔레콤 알뜰폰', descKey: 'com_document_search_tip_and_desc' },
+  { example: '세종텔레콤, 아이즈비전', descKey: 'com_document_search_tip_comma_desc' },
   { example: '"주주간 계약 해지"', descKey: 'com_document_search_tip_phrase_desc' },
-  { example: '+주식매매 -우선주', descKey: 'com_document_search_tip_required_desc' },
+  { example: '주식매매 -우선주', descKey: 'com_document_search_tip_exclude_desc' },
   { example: '합병 | 분할', descKey: 'com_document_search_tip_or_desc' },
-  { example: '정보통신*', descKey: 'com_document_search_tip_prefix_desc' },
-  { example: '정보통신망법~1', descKey: 'com_document_search_tip_fuzzy_desc' },
   { example: '"신탁 위반"~5', descKey: 'com_document_search_tip_proximity_desc' },
 ];
 
