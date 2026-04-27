@@ -3,7 +3,11 @@ import React, { useMemo } from 'react';
 import { imageExtRegex } from 'librechat-data-provider';
 import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
-import { artifactTypeForAttachment, isTextAttachment } from './attachmentTypes';
+import {
+  artifactTypeForAttachment,
+  isTextAttachment,
+  renderAttachmentKey,
+} from './attachmentTypes';
 import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
@@ -19,7 +23,6 @@ interface PanelEntry {
 interface MermaidEntry {
   attachment: TAttachment;
   text: string;
-  file_id?: string;
 }
 
 interface LogContentProps {
@@ -86,7 +89,6 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
           mermaidAtts.push({
             attachment,
             text: fileData.text,
-            file_id: fileData.file_id,
           });
         }
         return;
@@ -152,7 +154,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
         <div>
           <p>{localize('com_generated_files')}</p>
           {nonInlineAttachments.map((file, index) => (
-            <React.Fragment key={file.filepath}>
+            <React.Fragment key={renderAttachmentKey('nonInline', file, index)}>
               {renderAttachment(file)}
               {index < nonInlineAttachments.length - 1 && ', '}
             </React.Fragment>
@@ -163,7 +165,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {panelAttachments.map(({ attachment, artifact }, index) => (
             <ToolArtifactCard
-              key={`artifact-${artifact.id}-${index}`}
+              key={renderAttachmentKey('artifact', attachment, index)}
               attachment={attachment}
               artifact={artifact}
             />
@@ -172,9 +174,9 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       )}
       {mermaidAttachments.length > 0 && (
         <div className="mt-2 flex flex-col gap-3">
-          {mermaidAttachments.map(({ attachment, text, file_id }, index) => (
+          {mermaidAttachments.map(({ attachment, text }, index) => (
             <ToolMermaidArtifact
-              key={`mermaid-${file_id ?? index}`}
+              key={renderAttachmentKey('mermaid', attachment, index)}
               attachment={attachment}
               text={text}
             />
@@ -183,9 +185,9 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       )}
       {textAttachments.length > 0 && (
         <div className="mt-2 flex flex-col gap-3">
-          {textAttachments.map((file) => (
+          {textAttachments.map((file, index) => (
             <div
-              key={file.filepath ?? file.file_id ?? file.filename}
+              key={renderAttachmentKey('text', file, index)}
               className="rounded-lg bg-surface-secondary p-3"
             >
               {file.filename && (
@@ -212,11 +214,11 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
           ))}
         </div>
       )}
-      {imageAttachments?.map((attachment) => (
+      {imageAttachments?.map((attachment, index) => (
         <Image
           width={attachment.width}
           height={attachment.height}
-          key={attachment.filepath}
+          key={renderAttachmentKey('image', attachment, index)}
           altText={attachment.filename}
           imagePath={attachment.filepath}
         />

@@ -38,3 +38,22 @@ export const artifactTypeForAttachment = (attachment: TAttachment): ToolArtifact
   const file = attachment as TFile & TAttachmentMetadata;
   return detectArtifactTypeFromFile(file);
 };
+
+/**
+ * Per-rendered-occurrence React key for an attachment. The `file_id`
+ * provides stability across re-renders for the common case (each tool
+ * call's output has unique file ids), and the index suffix disambiguates
+ * the rare case where the same `file_id` appears twice in one bucket
+ * (e.g. a tool call writing the same path twice). Without the suffix the
+ * duplicates would share a key and React would reconcile them as a single
+ * child — undermining the latest-mention dedup since the two cards would
+ * share an instance instead of contesting the claim.
+ */
+export const renderAttachmentKey = (
+  prefix: string,
+  attachment: TAttachment,
+  index: number,
+): string => {
+  const fileId = (attachment as TFile & TAttachmentMetadata).file_id;
+  return `${prefix}-${fileId ?? 'noid'}-${index}`;
+};
