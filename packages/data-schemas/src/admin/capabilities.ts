@@ -38,6 +38,8 @@ export const SystemCapabilities = {
   /** Reserved — not yet enforced by any middleware. */
   READ_ASSISTANTS: 'read:assistants',
   MANAGE_ASSISTANTS: 'manage:assistants',
+  READ_BANNERS: 'read:banners',
+  MANAGE_BANNERS: 'manage:banners',
 } as const;
 
 /**
@@ -53,6 +55,7 @@ export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSy
     [SystemCapabilities.MANAGE_AGENTS]: [SystemCapabilities.READ_AGENTS],
     [SystemCapabilities.MANAGE_PROMPTS]: [SystemCapabilities.READ_PROMPTS],
     [SystemCapabilities.MANAGE_ASSISTANTS]: [SystemCapabilities.READ_ASSISTANTS],
+    [SystemCapabilities.MANAGE_BANNERS]: [SystemCapabilities.READ_BANNERS],
   };
 
 // ---------------------------------------------------------------------------
@@ -212,6 +215,11 @@ export const CAPABILITY_CATEGORIES: CapabilityCategory[] = [
   {
     key: 'system',
     labelKey: 'com_cap_cat_system',
-    capabilities: [SystemCapabilities.ACCESS_ADMIN, SystemCapabilities.READ_USAGE],
+    capabilities: [
+      SystemCapabilities.ACCESS_ADMIN,
+      SystemCapabilities.READ_USAGE,
+      SystemCapabilities.MANAGE_BANNERS,
+      SystemCapabilities.READ_BANNERS,
+    ],
   },
 ];
