@@ -325,6 +325,17 @@ function resolveOriginalSourceUrl(source: BklSource | null): string | null {
     // work could pass `#page=N` once the indexer stamps page hits.
     return m.viewer_url;
   }
+  // 2026-04-27: when the chunk is an MSG attachment but the indexer
+  // could not produce a preview PDF (Synapse failed on the source
+  // .docx, the attachment was a `.bin` blob, etc.) we used to fall
+  // through to `/v1/source-files/{doc_id}` — but `doc_id` for an
+  // attachment chunk is the parent MSG's id, so the user clicked
+  // "원본 보기" on a Word attachment chunk and got the parent email
+  // viewer instead of the attachment. Hide the button rather than
+  // ship that misdirection.
+  if (m.section_kind === 'attachment') {
+    return null;
+  }
   if (typeof m.doc_id === 'string' && m.doc_id.length > 0) {
     let url = `/v1/source-files/${encodeURIComponent(m.doc_id)}`;
     const excerpt = buildHighlightExcerpt(source);
