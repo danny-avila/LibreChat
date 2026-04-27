@@ -34,7 +34,12 @@ interface ToolArtifactCardProps {
  *     entry is missing or the cached content/type/title drifted. The
  *     panel's `useArtifacts` hook resets `artifactsState` on close, so
  *     this re-fires deterministically once the slice transitions back
- *     to `undefined` — without the no-deps render-loop pattern.
+ *     to `undefined` — without the no-deps render-loop pattern. The
+ *     write is also gated on `isMyClaim`, making the registration
+ *     single-writer per id: when two cards exist for the same file
+ *     across turns, only the latest (claim-holder) updates state.
+ *     Without that guard, both cards would observe each other's write
+ *     and trade overwrites in a loop.
  *
  *  3. **Focus on mount** (deps: artifact.id). A freshly-mounted card
  *     means a new artifact has arrived; we steal panel focus to match
@@ -71,6 +76,14 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   }, [claimKey, setClaim]);
 
   useEffect(() => {
+    // Only the claim-winner writes. Two cards with the same `artifact.id`
+    // but divergent content (same file_id reused across turns) would
+    // otherwise see each other's write through `existingEntry`, detect
+    // drift, and trade overwrites in a loop. Gating on `isMyClaim`
+    // makes registration single-writer per id.
+    if (!isMyClaim) {
+      return;
+    }
     if (
       existingEntry != null &&
       existingEntry.content === artifact.content &&
@@ -80,7 +93,7 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       return;
     }
     setArtifacts((prev) => ({ ...(prev ?? {}), [artifact.id]: artifact }));
-  }, [artifact, existingEntry, setArtifacts]);
+  }, [artifact, existingEntry, isMyClaim, setArtifacts]);
 
   useEffect(() => {
     setCurrentArtifactId(artifact.id);

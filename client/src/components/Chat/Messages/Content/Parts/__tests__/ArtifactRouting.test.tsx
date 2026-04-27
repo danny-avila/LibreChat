@@ -254,6 +254,51 @@ describe('ToolArtifactCard click behaviour', () => {
     }
   });
 
+  it('does not ping-pong artifactsState when same file_id has divergent content across turns', () => {
+    // Real production path: a code-execution file is overwritten across
+    // turns (same file_id, new content). Both ToolArtifactCard
+    // instances stay mounted; the older one renders null, but its
+    // self-heal effect still ran. Without claim-gating, the older card
+    // would observe the newer card's write through `existingEntry`,
+    // detect drift, and overwrite it back — old → new → old → ... in a
+    // loop. Gating registration on `isMyClaim` makes the write
+    // single-writer per id; final state must reflect the newer card.
+    interface ContentSnapshot {
+      ids: string[];
+      contentForDup: string | null;
+    }
+    let snapshot: ContentSnapshot = { ids: [], contentForDup: null };
+    const ContentProbe = () => {
+      const artifacts = useRecoilValue(store.artifactsState);
+      React.useEffect(() => {
+        const ids = Object.keys(artifacts ?? {});
+        const dup = artifacts?.['tool-artifact-dup-divergent'];
+        snapshot = { ids, contentForDup: dup?.content ?? null };
+      });
+      return null;
+    };
+    const older = baseAttachment({
+      file_id: 'dup-divergent',
+      filename: 'output.html',
+      text: '<h1>v1 (older)</h1>',
+    } as Partial<TAttachment>);
+    const newer = baseAttachment({
+      file_id: 'dup-divergent',
+      filename: 'output.html',
+      text: '<h1>v2 (newer)</h1>',
+    } as Partial<TAttachment>);
+    render(
+      <RecoilRoot>
+        <ContentProbe />
+        <AttachmentGroup attachments={[older]} />
+        <AttachmentGroup attachments={[newer]} />
+      </RecoilRoot>,
+    );
+    expect(snapshot.ids).toContain('tool-artifact-dup-divergent');
+    // Newer (claim-winner) content must win and stay won.
+    expect(snapshot.contentForDup).toBe('<h1>v2 (newer)</h1>');
+  });
+
   it('dedups cards for the same file_id across separate AttachmentGroups (latest mount wins)', () => {
     // Real scenario: each tool call renders its own AttachmentGroup; the
     // same file (same file_id) shows up in two of them. We expect only
