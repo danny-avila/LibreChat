@@ -1,5 +1,11 @@
+import { logger } from '@librechat/data-schemas';
 import { Run, Providers, Constants } from '@librechat/agents';
-import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
+import {
+  KnownEndpoints,
+  extractEnvVariable,
+  providerEndpointMap,
+  normalizeEndpointName,
+} from 'librechat-data-provider';
 import type {
   SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
@@ -7,17 +13,21 @@ import type {
   OpenAIClientOptions,
   StandardGraphConfig,
   LCToolRegistry,
+  SubagentConfig,
   AgentInputs,
   GenericTool,
   RunConfig,
   IState,
   LCTool,
 } from '@librechat/agents';
-import type { Agent, SummarizationConfig } from 'librechat-data-provider';
+import type { Agent, AgentSubagentsConfig, SummarizationConfig } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
-import type { IUser } from '@librechat/data-schemas';
+import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
+import { getProviderConfig } from '~/endpoints/config/providers';
+import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+import { isUserProvided } from '~/utils/common';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -109,6 +119,62 @@ export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<
 }
 
 /**
+ * Extracts skill names that were invoked in previous turns from raw message payload.
+ * Scans assistant messages for tool_call content parts where name === 'skill'.
+ * Works with TPayload (raw message objects) so it can run before formatAgentMessages.
+ *
+ * @param payload - The raw conversation message payload
+ * @returns Set of skill names that were previously invoked
+ */
+export function extractInvokedSkillsFromPayload(
+  payload: Array<Partial<{ role: string; content: unknown }>>,
+): Set<string> {
+  const invokedSkills = new Set<string>();
+
+  for (const message of payload) {
+    if (message.role !== 'assistant') {
+      continue;
+    }
+
+    const content = message.content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+
+    for (const part of content) {
+      if (
+        part == null ||
+        typeof part !== 'object' ||
+        (part as { type?: string }).type !== 'tool_call'
+      ) {
+        continue;
+      }
+      const toolCall = (part as { tool_call?: { name?: string; args?: unknown } }).tool_call;
+      if (toolCall?.name !== Constants.SKILL_TOOL) {
+        continue;
+      }
+      const rawArgs = toolCall.args;
+      const args =
+        typeof rawArgs === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(rawArgs) as Record<string, unknown>;
+              } catch {
+                return {};
+              }
+            })()
+          : (rawArgs as Record<string, unknown> | undefined);
+      const skillName = args?.skillName;
+      if (typeof skillName === 'string' && skillName.length > 0) {
+        invokedSkills.add(skillName);
+      }
+    }
+  }
+
+  return invokedSkills;
+}
+
+/**
  * Overrides defer_loading to false for tools that were already discovered via tool_search.
  * This prevents the LLM from having to re-discover tools on every turn.
  *
@@ -173,6 +239,14 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /**
+   * Per-agent codeenv gate set by `initializeAgent`: admin-level
+   * `execute_code` capability AND the agent actually requested
+   * `execute_code` in its tools. Used here to enable
+   * `RunConfig.toolOutputReferences` only on runs where the bash tool
+   * is actually registered.
+   */
+  codeEnvAvailable?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /**
@@ -180,10 +254,173 @@ type RunAgent = Omit<Agent, 'tools'> & {
    * Overrides the default computed from maxContextTokens.
    */
   maxToolResultChars?: number;
+  /** Initialized subagent configs (loaded by initialize.js from agent.subagents.agent_ids). */
+  subagentAgentConfigs?: RunAgent[];
+  /** Source subagent spawning configuration (enabled / allowSelf / agent_ids). */
+  subagents?: AgentSubagentsConfig;
 };
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+const UNRESOLVED_ENV_VAR_PLACEHOLDER = /\$\{[^}]+\}/;
+
+function hasUnresolvedPlaceholder(value: string): boolean {
+  return UNRESOLVED_ENV_VAR_PLACEHOLDER.test(value);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Merges user-supplied summarization parameters on top of endpoint-resolved
+ * overrides. User params win for top-level keys; `configuration` is
+ * deep-merged so user additions (e.g. `defaultQuery`) don't wipe out the
+ * resolved `baseURL`/`defaultHeaders`/`fetchOptions`.
+ */
+function mergeParameters(
+  overrides: SummarizationClientOverrides,
+  userParams: SummarizationConfig['parameters'],
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...overrides, ...(userParams ?? {}) };
+  const userConfiguration = (userParams as Record<string, unknown> | undefined)?.configuration;
+  if (isPlainObject(overrides.configuration) && isPlainObject(userConfiguration)) {
+    merged.configuration = { ...overrides.configuration, ...userConfiguration };
+  }
+  return merged;
+}
+
+/**
+ * Mirrors `getOpenAIConfig`'s `llmConfig` shape (plus its `configOptions`
+ * assigned to `configuration`). Index signature covers fields that the
+ * helper emits dynamically per provider variant.
+ */
+interface SummarizationClientOverrides {
+  apiKey?: string;
+  streaming?: boolean;
+  configuration?: t.OpenAIConfiguration;
+  [key: string]: unknown;
+}
+
+/**
+ * Resolves a summarization provider string (which may be a custom-endpoint name
+ * like "Ollama") into the SDK-recognized provider and any client-option
+ * overrides required to talk to that endpoint.
+ *
+ * Without this step, a `summarization.provider: "Ollama"` entry in
+ * `librechat.yaml` flows verbatim to the agents SDK, which only knows a fixed
+ * set of provider names and throws "Unsupported LLM provider: Ollama".
+ */
+function resolveSummarizationProvider(
+  rawProvider: string,
+  appConfig: AppConfig | undefined,
+  headerContext: { user?: IUser; requestBody?: t.RequestBody },
+): {
+  provider: string;
+  clientOverrides?: SummarizationClientOverrides;
+} {
+  if (!appConfig || !isNonEmptyString(rawProvider)) {
+    return { provider: rawProvider };
+  }
+  try {
+    const { overrideProvider, customEndpointConfig } = getProviderConfig({
+      provider: rawProvider,
+      appConfig,
+    });
+    if (!customEndpointConfig) {
+      return { provider: overrideProvider };
+    }
+    const rawApiKey = customEndpointConfig.apiKey ?? '';
+    const rawBaseURL = customEndpointConfig.baseURL ?? '';
+    /**
+     * User-provided credentials require an async DB lookup and expiry checks
+     * that are out of scope here. Keep the raw provider so the SDK surfaces
+     * a clear "Unsupported LLM provider" error rather than silently
+     * remapping to `openAI` and routing summaries to the default backend.
+     * Callers wanting user-provided summarization against a non-agent
+     * endpoint must hit the same endpoint as the agent (handled upstream).
+     */
+    if (isUserProvided(rawApiKey) || isUserProvided(rawBaseURL)) {
+      return { provider: rawProvider };
+    }
+    const apiKey = extractEnvVariable(rawApiKey);
+    const baseURL = extractEnvVariable(rawBaseURL);
+    /**
+     * `extractEnvVariable` leaves any unresolved `${VAR}` placeholder in place
+     * — including in the middle of a prefix/suffix string — when the env var
+     * is missing. If the value is still broken, keep the raw provider so the
+     * SDK errors out loudly instead of forwarding a malformed URL/key.
+     */
+    if (
+      !apiKey ||
+      !baseURL ||
+      hasUnresolvedPlaceholder(apiKey) ||
+      hasUnresolvedPlaceholder(baseURL)
+    ) {
+      return { provider: rawProvider };
+    }
+    /**
+     * Resolve templated header values (e.g. `${PORTKEY_API_KEY}`,
+     * `{{LIBRECHAT_BODY_PARENTMESSAGEID}}`) before handing them to
+     * `getOpenAIConfig`, matching the agent main flow where `resolveHeaders`
+     * runs on `llmConfig.configuration.defaultHeaders`.
+     */
+    const resolvedHeaders =
+      customEndpointConfig.headers != null
+        ? resolveHeaders({
+            headers: customEndpointConfig.headers as Record<string, string>,
+            user: createSafeUser(headerContext.user),
+            body: headerContext.requestBody,
+          })
+        : undefined;
+    /**
+     * Run the endpoint config through `getOpenAIConfig` so summarization
+     * inherits the same `headers`, `defaultQuery`, `addParams`/`dropParams`,
+     * and `customParams` transforms that `initializeCustom` applies for the
+     * main agent flow. Without this, summarization drops endpoint-specific
+     * behavior (e.g. Anthropic/Google param transforms, required headers)
+     * that the main agent relied on. `proxy` is forwarded so outbound proxy
+     * dispatchers (`PROXY` env var) apply to cross-endpoint summarization.
+     */
+    const { llmConfig, configOptions } = getOpenAIConfig(
+      apiKey,
+      {
+        reverseProxyUrl: baseURL,
+        proxy: process.env.PROXY ?? null,
+        headers: resolvedHeaders,
+        addParams: customEndpointConfig.addParams,
+        dropParams: customEndpointConfig.dropParams,
+        customParams: customEndpointConfig.customParams,
+        directEndpoint: customEndpointConfig.directEndpoint,
+      },
+      rawProvider,
+    );
+    const clientOverrides: SummarizationClientOverrides = {
+      ...llmConfig,
+    };
+    if (configOptions) {
+      clientOverrides.configuration = configOptions;
+    }
+    /**
+     * `model`/`modelName` on `llmConfig` default to whatever `getOpenAIConfig`
+     * produces from empty modelOptions. Strip them so the user-supplied
+     * `summarization.model` wins.
+     */
+    delete clientOverrides.model;
+    delete clientOverrides.modelName;
+    return {
+      provider: overrideProvider,
+      clientOverrides,
+    };
+  } catch (error) {
+    logger.warn(
+      `[resolveSummarizationProvider] failed to resolve "${rawProvider}"; falling back to raw provider`,
+      error,
+    );
+    return { provider: rawProvider };
+  }
 }
 
 /** Shapes a SummarizationConfig into the format expected by AgentInputs. */
@@ -191,13 +428,51 @@ function shapeSummarizationConfig(
   config: SummarizationConfig | undefined,
   fallbackProvider: string,
   fallbackModel: string | undefined,
+  appConfig: AppConfig | undefined,
+  agentEndpoint: string | undefined,
+  headerContext: { user?: IUser; requestBody?: t.RequestBody },
 ) {
-  const provider = config?.provider ?? fallbackProvider;
+  const rawProvider = config?.provider ?? fallbackProvider;
+  /**
+   * When the summarization provider resolves to the same custom endpoint as
+   * the main agent, skip client-option overrides. The SDK's self-summarize
+   * path will reuse `agentContext.clientOptions` as-is, preserving any
+   * request-resolved dynamic headers, fetch/proxy options, and other state
+   * that `getOpenAIConfig` produced from raw yaml config does not capture.
+   */
+  const isSameEndpointAsAgent =
+    agentEndpoint != null &&
+    isNonEmptyString(rawProvider) &&
+    normalizeEndpointName(rawProvider) === normalizeEndpointName(agentEndpoint);
+
+  const { provider, clientOverrides } = isSameEndpointAsAgent
+    ? { provider: fallbackProvider, clientOverrides: undefined }
+    : resolveSummarizationProvider(rawProvider, appConfig, headerContext);
+
   const model = config?.model ?? fallbackModel;
   const trigger =
-    config?.trigger?.type && config?.trigger?.value
+    config?.trigger?.type && typeof config?.trigger?.value === 'number'
       ? { type: config.trigger.type, value: config.trigger.value }
       : undefined;
+
+  /**
+   * Custom-endpoint overrides are merged into `parameters` so the SDK's
+   * `buildSummarizationClientConfig` spreads them onto the summarization
+   * client options. Only applied when summarization targets a *different*
+   * custom endpoint than the main agent; the same-endpoint case leaves
+   * `parameters` untouched so `agentContext.clientOptions` wins.
+   *
+   * Order matters: `clientOverrides` supplies endpoint defaults (baseURL,
+   * apiKey, headers, transforms), then explicit user `summarization.parameters`
+   * are spread on top so settings like `streaming: false` still win over
+   * `getOpenAIConfig`'s defaults. `configuration` is deep-merged so a user
+   * adding e.g. `configuration.defaultQuery` keeps the resolved `baseURL`
+   * and `defaultHeaders` rather than replacing the whole object.
+   */
+  const parameters =
+    clientOverrides != null
+      ? mergeParameters(clientOverrides, config?.parameters)
+      : config?.parameters;
 
   return {
     enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
@@ -205,7 +480,7 @@ function shapeSummarizationConfig(
       trigger,
       provider,
       model,
-      parameters: config?.parameters,
+      parameters,
       prompt: config?.prompt,
       updatePrompt: config?.updatePrompt,
       reserveRatio: config?.reserveRatio,
@@ -230,6 +505,128 @@ function computeEffectiveMaxContextTokens(
   }
   const ratioComputed = Math.max(1024, Math.round(baseContextTokens * (1 - reserveRatio)));
   return Math.min(maxContextTokens ?? ratioComputed, ratioComputed);
+}
+
+/** Identifier for the self-spawn subagent (reuses parent's AgentInputs in an isolated child graph). */
+const SELF_SUBAGENT_TYPE = 'self';
+
+/**
+ * Recursive any-true check across the agent tree: returns `true` if this
+ * agent or any subagent (transitively) has the per-agent codeenv gate
+ * enabled.
+ *
+ * The SDK's tool-output reference registry is shared across every
+ * `ToolNode` compiled from the run's graph (parent + every subagent
+ * alike), so a single subagent with `bash_tool` registered is enough to
+ * make `RunConfig.toolOutputReferences` worth activating for the whole
+ * run — without it, the subagent's `{{tool<idx>turn<turn>}}`
+ * placeholders would pass through to the shell unsubstituted.
+ *
+ * Cycle-safe via a `visited` set, mirroring `buildSubagentConfigs`'s
+ * `ancestors` pattern. The bash tool description itself is still gated
+ * per-agent in `initializeAgent`, so only agents that actually have
+ * bash registered learn the `{{…}}` syntax — broadening the run-level
+ * registry gate doesn't broaden the model-facing surface.
+ */
+function anyAgentHasCodeEnv(agents: RunAgent[], visited: Set<string> = new Set()): boolean {
+  for (const agent of agents) {
+    if (visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (agent.codeEnvAvailable === true) {
+      return true;
+    }
+    if (
+      agent.subagentAgentConfigs != null &&
+      anyAgentHasCodeEnv(agent.subagentAgentConfigs, visited)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Builds SubagentConfig entries for an agent: optional self-spawn plus any
+ * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
+ * array when subagents are disabled or no spawn targets are available.
+ */
+function buildSubagentConfigs(
+  agent: RunAgent,
+  agentInput: AgentInputs,
+  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+  ancestors: Set<string> = new Set(),
+): SubagentConfig[] {
+  if (!agent.subagents?.enabled) {
+    return [];
+  }
+
+  const configs: SubagentConfig[] = [];
+  const allowSelf = agent.subagents.allowSelf !== false;
+
+  if (allowSelf) {
+    const selfName = agentInput.name ?? agent.name ?? 'self';
+    configs.push({
+      self: true,
+      type: SELF_SUBAGENT_TYPE,
+      name: selfName,
+      description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
+    });
+  }
+
+  /** Cycle-safety: include the current agent in `ancestors` before
+   *  descending into children so a `A → B → A` configuration stops at
+   *  the second encounter of A rather than recursing forever. Skip
+   *  `A → A` too (already guarded) and anything that would re-enter
+   *  an ancestor. */
+  const nextAncestors = new Set(ancestors);
+  nextAncestors.add(agent.id);
+
+  for (const child of agent.subagentAgentConfigs ?? []) {
+    if (!child?.id || child.id === agent.id) {
+      continue;
+    }
+    if (ancestors.has(child.id)) {
+      continue;
+    }
+    /**
+     * `buildAgentInput` applies parent-run context (initialSummary +
+     * discoveredTools) to the returned AgentInputs *and* to the
+     * passed-in agent's `toolRegistry` / `toolDefinitions` — flipping
+     * `defer_loading: true → false` on tools the parent had previously
+     * searched for, and injecting those tools' definitions into the
+     * child's `toolDefinitions`. Clearing fields on the returned
+     * object post-hoc would leave those side-effects in place, leaking
+     * the parent's tool-search state into an "isolated" subagent and
+     * inflating the child's prompt/token budget. The `isSubagent` flag
+     * skips both the field stamping and the registry mutation at the
+     * source so children truly start fresh.
+     */
+    const childInputs = toInput(child, { isSubagent: true });
+    /**
+     * Recursively resolve the child's own spawn targets so multi-level
+     * delegation (A → B → C) works. Without this, a child whose own
+     * `subagents.enabled` is true loses every explicit target when
+     * invoked as a subagent — only the top-level loop attaches
+     * `subagentConfigs`, and that only runs for the outer agents in
+     * `agents[]`. Cycle-safe via `nextAncestors`.
+     */
+    const grandchildConfigs = buildSubagentConfigs(child, childInputs, toInput, nextAncestors);
+    if (grandchildConfigs.length > 0) {
+      childInputs.subagentConfigs = grandchildConfigs;
+    }
+    configs.push({
+      type: child.id,
+      name: child.name ?? child.id,
+      description:
+        child.description ??
+        `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
+      agentInputs: childInputs,
+    });
+  }
+
+  return configs;
 }
 
 /**
@@ -257,9 +654,11 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  initialSessions,
   summarizationConfig,
   initialSummary,
   calibrationRatio,
+  appConfig,
   streaming = true,
   streamUsage = true,
 }: {
@@ -277,9 +676,15 @@ export async function createRun({
   initialSummary?: { text: string; tokenCount: number };
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
-} & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
-  Run<IState>
-> {
+  /**
+   * Resolved app config. Used to translate custom-endpoint provider names
+   * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
+   */
+  appConfig?: AppConfig;
+} & Pick<
+  RunConfig,
+  'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
+>): Promise<Run<IState>> {
   /**
    * Only extract discovered tools if:
    * 1. We have message history to parse
@@ -295,8 +700,8 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const agentInputs: AgentInputs[] = [];
-  const buildAgentContext = (agent: RunAgent) => {
+  const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
+    const isSubagent = opts.isSubagent === true;
     const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
@@ -307,6 +712,9 @@ export async function createRun({
       agent.summarization ?? summarizationConfig,
       provider as string,
       selfModel,
+      appConfig,
+      agent.endpoint ?? undefined,
+      { user, requestBody },
     );
 
     const llmConfig: t.RunLLMConfig = Object.assign(
@@ -354,12 +762,22 @@ export async function createRun({
     }
 
     /**
-     * Override defer_loading for tools that were discovered in previous turns.
-     * This prevents the LLM from having to re-discover tools via tool_search.
-     * Also add the discovered tools' definitions so the LLM has their schemas.
+     * Override defer_loading for tools that were discovered in previous
+     * turns. This prevents the LLM from having to re-discover tools via
+     * tool_search. Also add the discovered tools' definitions so the
+     * LLM has their schemas.
+     *
+     * Skipped for subagent children (`isSubagent`) — they run in an
+     * isolated context by contract, so inheriting the parent's
+     * tool-search state leaks unrelated history and pre-loads tools the
+     * child shouldn't care about. Mutations on `agent.toolRegistry`
+     * and additions to `toolDefinitions` both happen here, so the flag
+     * has to gate the whole block (clearing fields post-return can't
+     * undo registry writes).
      */
     let toolDefinitions = agent.toolDefinitions ?? [];
-    if (discoveredTools.size > 0 && agent.toolRegistry) {
+    let toolRegistry = agent.toolRegistry;
+    if (!isSubagent && discoveredTools.size > 0 && agent.toolRegistry) {
       overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
 
       /** Add discovered tools' definitions so the LLM can see their schemas */
@@ -373,6 +791,25 @@ export async function createRun({
           toolDefinitions = [...toolDefinitions, toolDef];
         }
       }
+    } else if (isSubagent && agent.toolRegistry) {
+      /**
+       * Subagent children: hand the child a deep-enough clone of the
+       * registry so later parent-graph builds (e.g. when the same
+       * agent also appears as a handoff target in the outer loop)
+       * can't mutate `defer_loading` on tool definitions the child
+       * already holds a reference to. Clone the `Map` *and* each
+       * `LCTool` — `overrideDeferLoadingForDiscoveredTools` writes
+       * through to the tool object itself, so a shallow Map copy
+       * alone wouldn't isolate the flag.
+       */
+      toolRegistry = new Map();
+      for (const [name, tool] of agent.toolRegistry.entries()) {
+        toolRegistry.set(name, { ...tool });
+      }
+      /** Child's own `toolDefinitions` list gets the same shallow-
+       *  copied view so any later parent mutation of shared definitions
+       *  is contained to the parent-graph path. */
+      toolDefinitions = toolDefinitions.map((def) => ({ ...def }));
     }
 
     const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
@@ -382,7 +819,7 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
-    const agentInput: AgentInputs = {
+    return {
       provider,
       reasoningKey,
       toolDefinitions,
@@ -391,21 +828,27 @@ export async function createRun({
       clientOptions: llmConfig,
       instructions: systemContent,
       name: agent.name ?? undefined,
-      toolRegistry: agent.toolRegistry,
+      toolRegistry,
       maxContextTokens: effectiveMaxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
-      discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
+      discoveredTools:
+        !isSubagent && discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
       summarizationEnabled: summarization.enabled,
       summarizationConfig: summarization.config,
-      initialSummary,
+      initialSummary: isSubagent ? undefined : initialSummary,
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
-    agentInputs.push(agentInput);
   };
 
+  const agentInputs: AgentInputs[] = [];
   for (const agent of agents) {
-    buildAgentContext(agent);
+    const agentInput = buildAgentInput(agent);
+    const subagentConfigs = buildSubagentConfigs(agent, agentInput, buildAgentInput);
+    if (subagentConfigs.length > 0) {
+      agentInput.subagentConfigs = subagentConfigs;
+    }
+    agentInputs.push(agentInput);
   }
 
   const graphConfig: RunConfig['graphConfig'] = {
@@ -420,12 +863,35 @@ export async function createRun({
     (graphConfig as StandardGraphConfig).type = 'standard';
   }
 
+  /**
+   * Enable tool-output references when the bash tool is actually
+   * present anywhere in this run — top-level agent OR any subagent
+   * (transitively). `codeEnvAvailable` on each `RunAgent` is the
+   * per-agent gate (admin `execute_code` capability AND the agent's
+   * own `tools` listing `execute_code`), so the feature follows the
+   * same activation as the bash-tool registration in
+   * `initializeAgent`. The walk into `subagentAgentConfigs` is
+   * load-bearing: a parent without `execute_code` can spawn a
+   * subagent that has it, and the SDK's shared registry serves
+   * every `ToolNode` compiled from this run's graph — so missing
+   * subagents in this gate would leave the child's
+   * `{{tool<idx>turn<turn>}}` placeholders unsubstituted. SDK
+   * defaults (~400 KB per output, 5 MB total) keep substituted
+   * payloads inside typical shell ARG_MAX limits, so no overrides
+   * are needed for the experimental rollout.
+   */
+  const enableToolOutputReferences = anyAgentHasCodeEnv(agents);
+
   return Run.create({
     runId,
     graphConfig,
     tokenCounter,
     customHandlers,
     indexTokenCountMap,
+    initialSessions,
     calibrationRatio,
+    ...(enableToolOutputReferences && {
+      toolOutputReferences: { enabled: true },
+    }),
   });
 }

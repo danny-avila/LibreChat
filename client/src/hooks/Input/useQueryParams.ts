@@ -19,8 +19,8 @@ import {
   logger,
 } from '~/utils';
 import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from '~/hooks';
+import { startupConfigKey, useGetAgentByIdQuery } from '~/data-provider';
 import { useChatContext, useChatFormContext } from '~/Providers';
-import { useGetAgentByIdQuery } from '~/data-provider';
 import store from '~/store';
 
 const injectAgentIntoAgentsMap = (queryClient: QueryClient, agent: any) => {
@@ -84,7 +84,7 @@ export default function useQueryParams({
       }
       let newPreset = removeUnavailableTools(_newPreset, availableTools);
       if (newPreset.spec != null && newPreset.spec !== '') {
-        const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+        const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
         const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
         const spec = modelSpecs.find((s) => s.name === newPreset.spec);
         if (!spec) {
@@ -258,7 +258,7 @@ export default function useQueryParams({
       if (!textAreaRef.current) {
         return;
       }
-      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
       if (!startupConfig) {
         return;
       }

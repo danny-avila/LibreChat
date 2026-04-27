@@ -28,6 +28,7 @@ export enum FileContext {
   image_generation = 'image_generation',
   assistants_output = 'assistants_output',
   message_attachment = 'message_attachment',
+  skill_file = 'skill_file',
   filename = 'filename',
   updatedAt = 'updatedAt',
   source = 'source',
@@ -117,6 +118,7 @@ export type TFile = {
   height?: number;
   expiresAt?: string | Date;
   preview?: string;
+  text?: string;
   metadata?: { fileIdentifier?: string };
   createdAt?: string | Date;
   updatedAt?: string | Date;

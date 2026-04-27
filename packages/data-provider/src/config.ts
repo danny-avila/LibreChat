@@ -62,14 +62,28 @@ export enum SettingsViews {
   advanced = 'advanced',
 }
 
+/** Validates any FileSources value — use for file metadata, DB records, and upload routing. */
 export const fileSourceSchema = z.nativeEnum(FileSources);
+
+/** Storage backend strategies only — use for config fields that set where files are stored. */
+const FILE_STORAGE_BACKENDS = [
+  FileSources.local,
+  FileSources.firebase,
+  FileSources.s3,
+  FileSources.azure_blob,
+] as const satisfies ReadonlyArray<FileSources>;
+
+export const fileStorageSchema = z.enum(FILE_STORAGE_BACKENDS);
+
+export type FileStorage = z.infer<typeof fileStorageSchema>;
 
 export const fileStrategiesSchema = z
   .object({
-    default: fileSourceSchema.optional(),
-    avatar: fileSourceSchema.optional(),
-    image: fileSourceSchema.optional(),
-    document: fileSourceSchema.optional(),
+    default: fileStorageSchema.optional(),
+    avatar: fileStorageSchema.optional(),
+    image: fileStorageSchema.optional(),
+    document: fileStorageSchema.optional(),
+    skills: fileStorageSchema.optional(),
   })
   .optional();
 
@@ -115,13 +129,39 @@ export const modelConfigSchema = z
 
 export type TAzureModelConfig = z.infer<typeof modelConfigSchema>;
 
+const paramValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(paramValueSchema),
+    z.record(z.string(), paramValueSchema),
+  ]),
+);
+
+/** Validates addParams while keeping web_search aligned with current runtime boolean handling. */
+const addParamsSchema: z.ZodType<Record<string, unknown>> = z
+  .record(z.string(), paramValueSchema)
+  .superRefine((params, ctx) => {
+    if (params.web_search === undefined || typeof params.web_search === 'boolean') {
+      return;
+    }
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['web_search'],
+      message: '`web_search` must be a boolean in addParams',
+    });
+  });
+
 export const azureBaseSchema = z.object({
   apiKey: z.string(),
   serverless: z.boolean().optional(),
   instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
   assistants: z.boolean().optional(),
-  addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  addParams: addParamsSchema.optional(),
   dropParams: z.array(z.string()).optional(),
   version: z.string().optional(),
   baseURL: z.string().optional(),
@@ -183,8 +223,10 @@ export enum AgentCapabilities {
   file_search = 'file_search',
   web_search = 'web_search',
   artifacts = 'artifacts',
+  subagents = 'subagents',
   actions = 'actions',
   context = 'context',
+  skills = 'skills',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -272,8 +314,10 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
   AgentCapabilities.artifacts,
+  AgentCapabilities.subagents,
   AgentCapabilities.actions,
   AgentCapabilities.context,
+  AgentCapabilities.skills,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -361,7 +405,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
     headers: z.record(z.string()).optional(),
-    addParams: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+    addParams: addParamsSchema.optional(),
     dropParams: z.array(z.string()).optional(),
     customParams: z
       .object({
@@ -651,10 +695,8 @@ export const interfaceSchema = z
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
-    endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
-    sidePanel: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
     memories: z.boolean().optional(),
@@ -707,12 +749,22 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
+    skills: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+          defaultActiveOnShare: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
-    endpointsMenu: true,
     modelSelect: true,
     parameters: true,
-    sidePanel: true,
     presets: true,
     multiConvo: true,
     bookmarks: true,
@@ -753,6 +805,13 @@ export const interfaceSchema = z
       create: false,
       share: false,
       public: false,
+    },
+    skills: {
+      use: true,
+      create: true,
+      share: false,
+      public: false,
+      defaultActiveOnShare: false,
     },
   });
 
@@ -824,6 +883,7 @@ export type TStartupConfig = {
   sharePointPickerGraphScope?: string;
   sharePointPickerSharePointScope?: string;
   openidReuseTokens?: boolean;
+  allowAccountDeletion: boolean;
   minPasswordLength?: number;
   webSearch?: {
     searchProvider?: SearchProviders;
@@ -984,10 +1044,20 @@ export const memorySchema = z.object({
 
 export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 
-export const summarizationTriggerSchema = z.object({
-  type: z.enum(['token_count']),
-  value: z.number().positive(),
-});
+export const summarizationTriggerSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('token_ratio'),
+    value: z.number().finite().min(0).max(1),
+  }),
+  z.object({
+    type: z.literal('remaining_tokens'),
+    value: z.number().finite().int().positive(),
+  }),
+  z.object({
+    type: z.literal('messages_to_refine'),
+    value: z.number().finite().int().positive(),
+  }),
+]);
 
 export const contextPruningSchema = z.object({
   enabled: z.boolean().optional(),
@@ -1033,7 +1103,7 @@ export const configSchema = z.object({
     .optional(),
   interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
-  fileStrategy: fileSourceSchema.default(FileSources.local),
+  fileStrategy: fileStorageSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,
   actions: z
     .object({
@@ -1202,6 +1272,7 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-opus-4-7',
   'claude-sonnet-4-6',
   'claude-opus-4-6',
   'claude-sonnet-4-5',
@@ -1224,6 +1295,7 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-opus-4-7',
   'anthropic.claude-sonnet-4-6',
   'anthropic.claude-opus-4-6-v1',
   'anthropic.claude-sonnet-4-5-20250929-v1:0',
@@ -1805,9 +1877,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.4',
+  VERSION = 'v0.8.5',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.6',
+  CONFIG_VERSION = '1.3.9',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -1855,7 +1927,12 @@ export enum Constants {
   EPHEMERAL_AGENT_ID = 'ephemeral',
   /** Programmatic Tool Calling tool name */
   PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
+  /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
+  SUBAGENT = 'subagent',
 }
+
+/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
+export const MAX_SUBAGENTS = 10;
 
 export enum LocalStorageKeys {
   /** Key for the admin defined App Title */
@@ -1900,6 +1977,8 @@ export enum LocalStorageKeys {
   LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
   /** Last checked toggle for Artifacts per conversation ID */
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
+  /** Last checked toggle for Skills per conversation ID */
+  LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

@@ -60,6 +60,9 @@ jest.mock('@librechat/api', () => {
 
 jest.mock('@librechat/data-schemas', () => ({
   getTenantId: jest.fn(),
+  tenantStorage: {
+    run: jest.fn((store, fn) => fn()),
+  },
   logger: {
     debug: jest.fn(),
     info: jest.fn(),
@@ -309,6 +312,87 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/error?error=access_denied`);
+    });
+
+    describe('OAuth error callback failFlow', () => {
+      it('should fail the flow when OAuth error is received with valid CSRF cookie', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          failFlow: jest.fn().mockResolvedValue(true),
+        };
+
+        getLogStores.mockReturnValueOnce({});
+        require('~/config').getFlowStateManager.mockReturnValueOnce(mockFlowManager);
+        MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(flowId);
+
+        const csrfToken = generateTestCsrfToken(flowId);
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .set('Cookie', [`oauth_csrf=${csrfToken}`])
+          .query({
+            error: 'invalid_client',
+            state: flowId,
+          });
+        const basePath = getBasePath();
+
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_client`);
+        expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+          flowId,
+          'mcp_oauth',
+          'invalid_client',
+        );
+      });
+
+      it('should fail the flow when OAuth error is received with valid session cookie', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          failFlow: jest.fn().mockResolvedValue(true),
+        };
+
+        getLogStores.mockReturnValueOnce({});
+        require('~/config').getFlowStateManager.mockReturnValueOnce(mockFlowManager);
+        MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(flowId);
+
+        const sessionToken = generateTestCsrfToken('test-user-id');
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .set('Cookie', [`oauth_session=${sessionToken}`])
+          .query({
+            error: 'invalid_client',
+            state: flowId,
+          });
+        const basePath = getBasePath();
+
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_client`);
+        expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+          flowId,
+          'mcp_oauth',
+          'invalid_client',
+        );
+      });
+
+      it('should NOT fail the flow when OAuth error is received without cookies (DoS prevention)', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          failFlow: jest.fn(),
+        };
+
+        getLogStores.mockReturnValueOnce({});
+        require('~/config').getFlowStateManager.mockReturnValueOnce(mockFlowManager);
+        MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(flowId);
+
+        const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
+          error: 'invalid_client',
+          state: flowId,
+        });
+        const basePath = getBasePath();
+
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_client`);
+        expect(mockFlowManager.failFlow).not.toHaveBeenCalled();
+      });
     });
 
     it('should redirect to error page when code is missing', async () => {
@@ -1778,6 +1862,88 @@ describe('MCP Routes', () => {
       const basePath = getBasePath();
 
       expect(response.headers.location).toContain(`${basePath}/oauth/success`);
+    });
+  });
+
+  describe('GET /:serverName/oauth/callback - Tenant Context', () => {
+    beforeEach(() => {
+      const { getTenantId, tenantStorage } = require('@librechat/data-schemas');
+      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      getTenantId.mockReset();
+      tenantStorage.run.mockReset();
+      tenantStorage.run.mockImplementation((store, fn) => fn());
+      MCPOAuthHandler.resolveStateToFlowId.mockReset();
+      MCPOAuthHandler.getFlowState.mockReset();
+      MCPOAuthHandler.completeOAuthFlow.mockReset();
+      MCPTokenStorage.storeTokens.mockReset();
+    });
+
+    it('should wrap callback body in tenantStorage.run when flowState has tenantId and no current context', async () => {
+      const { getTenantId, tenantStorage } = require('@librechat/data-schemas');
+      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      const flowId = 'user123:test-server';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      getTenantId.mockReturnValue(undefined);
+
+      MCPOAuthHandler.resolveStateToFlowId.mockResolvedValue(flowId);
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        serverName: 'test-server',
+        userId: 'user123',
+        tenantId: 'tenant-abc',
+        metadata: {},
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+      });
+      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+        access_token: 'token',
+        token_type: 'bearer',
+      });
+      MCPTokenStorage.storeTokens.mockResolvedValue();
+
+      const response = await request(app)
+        .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .expect(302);
+
+      expect(tenantStorage.run).toHaveBeenCalledWith(
+        { tenantId: 'tenant-abc' },
+        expect.any(Function),
+      );
+      expect(MCPTokenStorage.storeTokens).toHaveBeenCalled();
+
+      const basePath = getBasePath();
+      expect(response.headers.location).toContain(`${basePath}/oauth/success`);
+    });
+
+    it('should not call tenantStorage.run when flowState has no tenantId', async () => {
+      const { getTenantId, tenantStorage } = require('@librechat/data-schemas');
+      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      const flowId = 'user123:test-server';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      getTenantId.mockReturnValue(undefined);
+
+      MCPOAuthHandler.resolveStateToFlowId.mockResolvedValue(flowId);
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        serverName: 'test-server',
+        userId: 'user123',
+        metadata: {},
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+      });
+      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+        access_token: 'token',
+        token_type: 'bearer',
+      });
+      MCPTokenStorage.storeTokens.mockResolvedValue();
+
+      await request(app)
+        .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .expect(302);
+
+      expect(tenantStorage.run).not.toHaveBeenCalled();
     });
   });
 

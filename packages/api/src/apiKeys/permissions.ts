@@ -5,6 +5,7 @@ import {
   PermissionBits,
   AccessRoleIds,
 } from 'librechat-data-provider';
+import { permissionBitSupersets } from '@librechat/data-schemas';
 import type { PipelineStage, AnyBulkWriteOperation } from 'mongoose';
 
 export interface Principal {
@@ -47,13 +48,18 @@ export async function enrichRemoteAgentPrincipals(
       ? Types.ObjectId.createFromHexString(resourceId)
       : resourceId;
 
+  /**
+   * Filter `permBits` with `$in: permissionBitSupersets(SHARE)` instead of
+   * `$bitsAllSet` for Cosmos DB for MongoDB compatibility. `$in` is indexable
+   * and, for the current 4-bit permission set, expands to at most 8 values.
+   */
   const agentOwnerEntries = await deps.aggregateAclEntries([
     {
       $match: {
         resourceType: ResourceType.AGENT,
         resourceId: resourceObjectId,
         principalType: PrincipalType.USER,
-        permBits: { $bitsAllSet: PermissionBits.SHARE },
+        permBits: { $in: permissionBitSupersets(PermissionBits.SHARE) },
       },
     },
     {

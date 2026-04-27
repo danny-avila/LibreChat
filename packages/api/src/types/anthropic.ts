@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Dispatcher } from 'undici';
 import { AuthKeys, anthropicSchema, TVertexAISchema } from 'librechat-data-provider';
 import type { AnthropicClientOptions } from '@librechat/agents';
+import type { ThinkingDisplayWireValue } from 'librechat-data-provider';
 import type { LLMConfigResult } from './openai';
 import type { GoogleServiceKey } from '../utils/key';
 
@@ -46,6 +47,7 @@ export interface ThinkingConfigEnabled {
 
 export interface ThinkingConfigAdaptive {
   type: 'adaptive';
+  display?: ThinkingDisplayWireValue;
 }
 
 /**

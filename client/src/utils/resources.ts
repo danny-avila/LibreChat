@@ -60,6 +60,17 @@ export const RESOURCE_CONFIGS: Record<ResourceType, ResourceConfig> = {
       `Manage API access for ${name && name !== '' ? `"${name}"` : 'agent'}`,
     getCopyUrlMessage: () => 'API endpoint copied',
   },
+  [ResourceType.SKILL]: {
+    resourceType: ResourceType.SKILL,
+    defaultViewerRoleId: AccessRoleIds.SKILL_VIEWER,
+    defaultEditorRoleId: AccessRoleIds.SKILL_EDITOR,
+    defaultOwnerRoleId: AccessRoleIds.SKILL_OWNER,
+    getResourceName: (name?: string) => (name && name !== '' ? name : 'skill'),
+    getShareMessage: (name?: string) => (name && name !== '' ? name : 'skill'),
+    getManageMessage: (name?: string) =>
+      `Manage permissions for ${name && name !== '' ? name : 'skill'}`,
+    getCopyUrlMessage: () => 'Skill URL copied',
+  },
 };
 
 export const getResourceConfig = (resourceType: ResourceType): ResourceConfig | undefined => {

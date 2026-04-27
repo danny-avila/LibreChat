@@ -137,12 +137,18 @@ const userSchema = new Schema<IUser>(
       type: [
         {
           _id: false,
-          agentId: String, // for agent
-          model: String, // for model
-          endpoint: String, // for model
+          agentId: { type: String, maxlength: 256 },
+          model: { type: String, maxlength: 256 },
+          endpoint: { type: String, maxlength: 256 },
+          spec: { type: String, maxlength: 256 },
         },
       ],
       default: [],
+    },
+    skillStates: {
+      type: Map,
+      of: Boolean,
+      default: () => new Map(),
     },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {

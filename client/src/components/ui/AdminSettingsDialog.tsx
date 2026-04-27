@@ -1,8 +1,8 @@
-import { useMemo, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import { Permissions, SystemRoles } from 'librechat-data-provider';
 import {
   OGDialog,
   OGDialogTitle,
@@ -13,8 +13,9 @@ import {
   DropdownPopup,
 } from '@librechat/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
+import type { PermissionTypes } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
-import { useLocalize, useAuthContext } from '~/hooks';
+import { useLocalize, useAuthContext, useRoleSelector } from '~/hooks';
 
 type FormValues = Record<Permissions, boolean>;
 
@@ -34,7 +35,7 @@ export interface AdminSettingsDialogProps {
   menuId: string;
   /** Mutation function and loading state from the permission update hook */
   mutation: {
-    mutate: (data: { roleName: SystemRoles; updates: Record<Permissions, boolean> }) => void;
+    mutate: (data: { roleName: string; updates: Record<Permissions, boolean> }) => void;
     isLoading: boolean;
   };
   /** Whether to show the admin access warning when ADMIN role and USE permission is displayed (default: true) */
@@ -108,18 +109,18 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
   extraContent,
 }) => {
   const localize = useLocalize();
-  const { user, roles } = useAuthContext();
+  const { user } = useAuthContext();
   const { mutate, isLoading } = mutation;
 
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.USER);
-
-  const defaultValues = useMemo(() => {
-    if (roles?.[selectedRole]?.permissions) {
-      return roles[selectedRole]?.permissions[permissionType];
-    }
-    return roleDefaults[selectedRole].permissions[permissionType];
-  }, [roles, selectedRole, permissionType]);
+  const {
+    selectedRole,
+    isSelectedCustomRole,
+    isCustomRoleLoading,
+    isCustomRoleError,
+    defaultValues,
+    roleDropdownItems,
+  } = useRoleSelector(permissionType);
 
   const {
     reset,
@@ -134,12 +135,11 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
   });
 
   useEffect(() => {
-    if (roles?.[selectedRole]?.permissions?.[permissionType]) {
-      reset(roles[selectedRole]?.permissions[permissionType]);
-    } else {
-      reset(roleDefaults[selectedRole].permissions[permissionType]);
+    if (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError)) {
+      return;
     }
-  }, [roles, selectedRole, reset, permissionType]);
+    reset(defaultValues);
+  }, [isSelectedCustomRole, isCustomRoleLoading, isCustomRoleError, defaultValues, reset]);
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -148,21 +148,6 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
   const onSubmit = (data: FormValues) => {
     mutate({ roleName: selectedRole, updates: data });
   };
-
-  const roleDropdownItems = [
-    {
-      label: SystemRoles.USER,
-      onClick: () => {
-        setSelectedRole(SystemRoles.USER);
-      },
-    },
-    {
-      label: SystemRoles.ADMIN,
-      onClick: () => {
-        setSelectedRole(SystemRoles.ADMIN);
-      },
-    },
-  ];
 
   const defaultTrigger = (
     <Button
@@ -199,7 +184,7 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
               isOpen={isRoleMenuOpen}
               setIsOpen={setIsRoleMenuOpen}
               trigger={
-                <Ariakit.MenuButton className="inline-flex w-1/4 items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
+                <Ariakit.MenuButton className="inline-flex min-w-[6rem] items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
                   {selectedRole}
                 </Ariakit.MenuButton>
               }
@@ -257,7 +242,11 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
               <Button
                 type="submit"
                 variant="submit"
-                disabled={isSubmitting || isLoading}
+                disabled={
+                  isSubmitting ||
+                  isLoading ||
+                  (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError))
+                }
                 aria-label={localize('com_ui_save')}
               >
                 {localize('com_ui_save')}

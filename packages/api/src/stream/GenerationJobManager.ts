@@ -770,14 +770,27 @@ class GenerationJobManagerClass {
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
 
+      /**
+       * Pass earlyReplayCount to syncReorderBuffer so it can prune duplicate pub/sub
+       * entries (seqs 0..count-1) without touching live in-flight chunks.
+       *
+       * Only set when the buffer was actually replayed — those specific seqs were
+       * delivered via onChunk and their pub/sub copies are duplicates.
+       * When skipBufferReplay is true, the resume sync payload delivers aggregated
+       * content up to the Redis counter, so syncReorderBuffer should trust currentSeq
+       * as the frontier (earlyReplayCount = 0).
+       */
+      let earlyReplayCount = 0;
+
       if (runtime.earlyEventBuffer.length > 0) {
         if (options?.skipBufferReplay) {
           logger.debug(
             `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (skipBufferReplay)`,
           );
         } else {
+          earlyReplayCount = runtime.earlyEventBuffer.length;
           logger.debug(
-            `[GenerationJobManager] Replaying ${runtime.earlyEventBuffer.length} buffered events for ${streamId}`,
+            `[GenerationJobManager] Replaying ${earlyReplayCount} buffered events for ${streamId}`,
           );
           for (const bufferedEvent of runtime.earlyEventBuffer) {
             onChunk(bufferedEvent);
@@ -807,7 +820,14 @@ class GenerationJobManagerClass {
         onChunk(createdEvent);
       }
 
-      this.eventTransport.syncReorderBuffer?.(streamId);
+      try {
+        await this.eventTransport.syncReorderBuffer?.(streamId, earlyReplayCount);
+      } catch (err) {
+        logger.warn(
+          `[GenerationJobManager] Failed to sync reorder buffer for ${streamId}; proceeding with current nextSeq:`,
+          err,
+        );
+      }
     }
 
     if (isFirst) {

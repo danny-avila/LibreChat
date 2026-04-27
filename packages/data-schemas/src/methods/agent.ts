@@ -1,10 +1,25 @@
 import crypto from 'node:crypto';
-import { Constants, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import { Constants, EToolResources, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import type { AgentToolResources } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
 import logger from '~/config/winston';
 
 const { mcp_delimiter } = Constants;
+
+/**
+ * Mirrors `TOOL_RESOURCE_KEYS` in `@librechat/api` — the subset of
+ * `EToolResources` that actually carries `file_ids` on an agent document.
+ * `code_interpreter` is excluded (it belongs to the Assistants API, not
+ * `AgentToolResources`) to avoid emitting dead MongoDB clauses.
+ */
+const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
+  EToolResources.execute_code,
+  EToolResources.file_search,
+  EToolResources.image_edit,
+  EToolResources.context,
+  EToolResources.ocr,
+];
 
 export interface AgentDeps {
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */
@@ -478,6 +493,37 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
   }
 
   /**
+   * Removes the given file_ids from every agent's `tool_resources.*.file_ids`
+   * so file deletion cannot leave orphaned stubs behind (see issue #12776).
+   */
+  async function removeAgentResourceFilesFromAllAgents({
+    file_ids,
+  }: {
+    file_ids: string[];
+  }): Promise<{ matchedCount: number; modifiedCount: number }> {
+    if (!file_ids || file_ids.length === 0) {
+      return { matchedCount: 0, modifiedCount: 0 };
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+
+    const orQuery = TOOL_RESOURCE_KEYS.map((key) => ({
+      [`tool_resources.${key}.file_ids`]: { $in: file_ids },
+    }));
+
+    const pullAllOps = TOOL_RESOURCE_KEYS.reduce<Record<string, string[]>>((acc, key) => {
+      acc[`tool_resources.${key}.file_ids`] = file_ids;
+      return acc;
+    }, {});
+
+    const result = await Agent.updateMany({ $or: orQuery }, { $pullAll: pullAllOps });
+    return {
+      matchedCount: result.matchedCount ?? 0,
+      modifiedCount: result.modifiedCount ?? 0,
+    };
+  }
+
+  /**
    * Deletes an agent based on the provided search parameter.
    */
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
@@ -665,6 +711,12 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       category: 1,
       support_contact: 1,
       is_promoted: 1,
+      /* Needed so the client can scope the `$` skill popover to each agent's
+         configured catalog without refetching the full agent document. The
+         master toggle is required alongside the allowlist so the popover can
+         distinguish "enabled with full catalog" from "disabled". */
+      skills: 1,
+      skills_enabled: 1,
     }).sort({ updatedAt: -1, _id: 1 });
 
     if (isPaginated && normalizedLimit) {
@@ -774,6 +826,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     removeAgentResourceFiles,
     generateActionMetadataHash,
     removeAgentFromUserFavorites,
+    removeAgentResourceFilesFromAllAgents,
   };
 }
 

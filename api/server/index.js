@@ -34,6 +34,7 @@ const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
+const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
@@ -154,8 +155,10 @@ const startServer = async () => {
   app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/config', routes.adminConfig);
+  app.use('/api/admin/grants', routes.adminGrants);
   app.use('/api/admin/groups', routes.adminGroups);
   app.use('/api/admin/roles', routes.adminRoles);
+  app.use('/api/admin/users', routes.adminUsers);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);
@@ -165,11 +168,12 @@ const startServer = async () => {
   app.use('/api/convos', routes.convos);
   app.use('/api/presets', routes.presets);
   app.use('/api/prompts', routes.prompts);
+  app.use('/api/skills', routes.skills);
   app.use('/api/categories', routes.categories);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/balance', routes.balance);
   app.use('/api/models', routes.models);
-  app.use('/api/config', preAuthTenantMiddleware, routes.config);
+  app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
   app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
@@ -219,25 +223,49 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    await runAsSystem(async () => {
-      await initializeMCPs();
-      await initializeOAuthReconnectManager();
-    });
-    await checkMigrations();
+    /**
+     * The listen callback is async, so any rejection from these awaits would
+     * otherwise be detached from `startServer().catch(...)` (which only
+     * catches errors that happen before `app.listen`). Without explicit
+     * handling, the global `unhandledRejection` handler would swallow init
+     * failures and leave the server listening but only partially
+     * initialized — passing liveness checks while serving broken requests.
+     */
+    try {
+      await runAsSystem(async () => {
+        await initializeMCPs();
+        await initializeOAuthReconnectManager();
+      });
+      await checkMigrations();
 
-    // Configure stream services (auto-detects Redis from USE_REDIS env var)
-    const streamServices = createStreamServices();
-    GenerationJobManager.configure(streamServices);
-    GenerationJobManager.initialize();
+      // Configure stream services (auto-detects Redis from USE_REDIS env var)
+      const streamServices = createStreamServices();
+      GenerationJobManager.configure(streamServices);
+      GenerationJobManager.initialize();
 
-    const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
-    if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
-      memoryDiagnostics.start();
+      const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
+      if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
+        memoryDiagnostics.start();
+      }
+    } catch (initErr) {
+      logger.error('Post-listen initialization failed:', initErr);
+      process.exit(1);
     }
   });
 };
 
-startServer();
+/**
+ * Boot rejections (e.g. `connectDb`, `getAppConfig`, `performStartupChecks`)
+ * must remain fail-fast: a half-initialized process with no listening HTTP
+ * server should die immediately so the orchestrator restarts it, instead of
+ * being kept alive by the `unhandledRejection` handler below until the
+ * liveness probe eventually times out. Mirrors the pattern in
+ * `experimental.js`.
+ */
+startServer().catch((err) => {
+  logger.error('Failed to start server:', err);
+  process.exit(1);
+});
 
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
@@ -294,6 +322,32 @@ process.on('uncaughtException', (err) => {
   }
 
   process.exit(1);
+});
+
+/**
+ * Unhandled promise rejection handler.
+ *
+ * Node 15+ terminates the process by default when a promise rejection is
+ * unhandled. MCP OAuth reconnect storms and streamable-HTTP transport resets
+ * can produce transient fire-and-forget rejections (ECONNRESET, token refresh
+ * races) that are recoverable — the server should log and keep serving other
+ * requests rather than silently crash under load.
+ *
+ * Non-Error reasons are forwarded as-is so structured payloads (e.g.
+ * `{ code: "ECONNRESET", errno: -104 }`) survive instead of being collapsed to
+ * "[object Object]" by `String()`.
+ */
+process.on('unhandledRejection', (reason) => {
+  if (reason instanceof Error) {
+    logger.error('Unhandled promise rejection. The app will continue running.', {
+      name: reason.name,
+      message: reason.message,
+      stack: reason.stack,
+      cause: reason.cause,
+    });
+    return;
+  }
+  logger.error('Unhandled promise rejection. The app will continue running.', { reason });
 });
 
 /** Export app for easier testing purposes */

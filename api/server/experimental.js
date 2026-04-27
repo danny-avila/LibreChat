@@ -19,6 +19,7 @@ const {
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
+  preAuthTenantMiddleware,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -31,6 +32,7 @@ const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
+const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
@@ -308,11 +310,12 @@ if (cluster.isMaster) {
     app.use('/api/convos', routes.convos);
     app.use('/api/presets', routes.presets);
     app.use('/api/prompts', routes.prompts);
+    app.use('/api/skills', routes.skills);
     app.use('/api/categories', routes.categories);
     app.use('/api/endpoints', routes.endpoints);
     app.use('/api/balance', routes.balance);
     app.use('/api/models', routes.models);
-    app.use('/api/config', routes.config);
+    app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
     app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
@@ -360,10 +363,22 @@ if (cluster.isMaster) {
         }:${port}`,
       );
 
-      /** Initialize MCP servers and OAuth reconnection for this worker */
-      await initializeMCPs();
-      await initializeOAuthReconnectManager();
-      await checkMigrations();
+      /**
+       * The listen callback is async, so any rejection from these awaits
+       * would otherwise be detached from `startServer().catch(...)`. Without
+       * explicit handling, the global `unhandledRejection` handler would
+       * swallow init failures and leave the worker listening but only
+       * partially initialized.
+       */
+      try {
+        /** Initialize MCP servers and OAuth reconnection for this worker */
+        await initializeMCPs();
+        await initializeOAuthReconnectManager();
+        await checkMigrations();
+      } catch (initErr) {
+        logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
+        process.exit(1);
+      }
     });
 
     /** Handle inter-process messages from master */
@@ -438,4 +453,30 @@ process.on('uncaughtException', (err) => {
   }
 
   process.exit(1);
+});
+
+/**
+ * Unhandled promise rejection handler.
+ *
+ * Node 15+ terminates the process by default when a promise rejection is
+ * unhandled. MCP OAuth reconnect storms and streamable-HTTP transport resets
+ * can produce transient fire-and-forget rejections (ECONNRESET, token refresh
+ * races) that are recoverable — the server should log and keep serving other
+ * requests rather than silently crash under load.
+ *
+ * Non-Error reasons are forwarded as-is so structured payloads (e.g.
+ * `{ code: "ECONNRESET", errno: -104 }`) survive instead of being collapsed to
+ * "[object Object]" by `String()`.
+ */
+process.on('unhandledRejection', (reason) => {
+  if (reason instanceof Error) {
+    logger.error('Unhandled promise rejection. The app will continue running.', {
+      name: reason.name,
+      message: reason.message,
+      stack: reason.stack,
+      cause: reason.cause,
+    });
+    return;
+  }
+  logger.error('Unhandled promise rejection. The app will continue running.', { reason });
 });

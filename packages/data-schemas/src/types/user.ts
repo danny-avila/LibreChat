@@ -1,4 +1,5 @@
 import type { Document, Types } from 'mongoose';
+import type { TUserFavorite } from 'librechat-data-provider';
 import { CursorPaginationParams } from '~/common';
 
 export interface IUser extends Document {
@@ -41,11 +42,9 @@ export interface IUser extends Document {
   personalization?: {
     memories?: boolean;
   };
-  favorites?: Array<{
-    agentId?: string;
-    model?: string;
-    endpoint?: string;
-  }>;
+  favorites?: TUserFavorite[];
+  /** Per-skill active/inactive overrides. Key = skillId, value = active state. */
+  skillStates?: Record<string, boolean>;
   createdAt?: Date;
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
@@ -88,6 +87,7 @@ export interface UpdateUserRequest {
   personalization?: {
     memories?: boolean;
   };
+  skillStates?: Record<string, boolean>;
 }
 
 export interface UserDeleteResult {

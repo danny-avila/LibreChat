@@ -26,6 +26,8 @@ import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
 import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
+import PendingManualSkillsChips from './PendingManualSkillsChips';
+import SkillsCommand from './SkillsCommand';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
 import CollapseChat from './CollapseChat';
@@ -83,10 +85,8 @@ const ChatForm = memo(function ChatForm({
   const [badges, setBadges] = useRecoilState(store.chatBadges);
   const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
-  const [showPlusPopover, setShowPlusPopover] = useRecoilState(store.showPlusPopoverFamily(index));
-  const [showMentionPopover, setShowMentionPopover] = useRecoilState(
-    store.showMentionPopoverFamily(index),
-  );
+  const plusPopoverAtom = useMemo(() => store.showPlusPopoverFamily(index), [index]);
+  const mentionPopoverAtom = useMemo(() => store.showMentionPopoverFamily(index), [index]);
 
   const { requiresKey } = useRequiresKey();
   const methods = useChatFormContext();
@@ -158,8 +158,6 @@ const ChatForm = memo(function ChatForm({
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
-    setShowPlusPopover,
-    setShowMentionPopover,
   });
   const {
     isNotAppendable,
@@ -242,24 +240,28 @@ const ChatForm = memo(function ChatForm({
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
         <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
-          {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
-            <Mention
-              setShowMentionPopover={setShowPlusPopover}
-              newConversation={generateConversation}
-              textAreaRef={textAreaRef}
-              commandChar="+"
-              placeholder="com_ui_add_model_preset"
-              includeAssistants={false}
-            />
-          )}
-          {showMentionPopover && (
-            <Mention
-              setShowMentionPopover={setShowMentionPopover}
-              newConversation={newConversation}
-              textAreaRef={textAreaRef}
-            />
-          )}
+          <Mention
+            index={index}
+            popoverAtom={plusPopoverAtom}
+            newConversation={generateConversation}
+            textAreaRef={textAreaRef}
+            commandChar="+"
+            placeholder="com_ui_add_model_preset"
+            includeAssistants={false}
+          />
+          <Mention
+            index={index}
+            popoverAtom={mentionPopoverAtom}
+            newConversation={newConversation}
+            textAreaRef={textAreaRef}
+          />
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
+          <SkillsCommand
+            index={index}
+            textAreaRef={textAreaRef}
+            conversationId={conversationId}
+            agentId={conversation?.agent_id}
+          />
           <div
             onClick={handleContainerClick}
             className={cn(
@@ -271,6 +273,7 @@ const ChatForm = memo(function ChatForm({
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
+            <PendingManualSkillsChips conversationId={conversationId} />
             {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}

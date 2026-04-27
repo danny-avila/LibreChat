@@ -18,7 +18,6 @@ const {
   getEndpointFileConfig,
   documentParserMimeTypes,
 } = require('librechat-data-provider');
-const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { sanitizeFilename, parseText, processAudioFile } = require('@librechat/api');
 const {
@@ -219,6 +218,14 @@ const processDeleteRequest = async ({ req, files }) => {
 
   await Promise.allSettled(promises);
   await db.deleteFiles(resolvedFileIds);
+
+  if (resolvedFileIds.length > 0) {
+    try {
+      await db.removeAgentResourceFilesFromAllAgents({ file_ids: resolvedFileIds });
+    } catch (error) {
+      logger.error('Error cleaning up orphaned agent file references', error);
+    }
+  }
 };
 
 /**
@@ -495,13 +502,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error('Code execution is not enabled for Agents');
     }
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
-    const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
     const stream = fs.createReadStream(file.path);
     const fileIdentifier = await uploadCodeEnvFile({
       req,
       stream,
       filename: file.originalname,
-      apiKey: result[EnvVar.CODE_API_KEY],
       entity_id,
     });
     fileInfoMetadata = { fileIdentifier };

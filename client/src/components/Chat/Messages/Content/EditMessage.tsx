@@ -61,6 +61,10 @@ const EditMessage = ({
         },
         {
           overrideFiles: message.files,
+          /** Pills on the edited user message stay visible after save-and-submit;
+           *  carry the picks forward so the new turn primes the same skills
+           *  instead of running unprimed. */
+          overrideManualSkills: message.manualSkills,
           addedConvo: getAddedConvo() || undefined,
         },
       );
@@ -80,6 +84,10 @@ const EditMessage = ({
           editedMessageId: messageId,
           isRegenerate: true,
           isEdited: true,
+          /** Edit-assistant-response flow replays the parent user turn; keep
+           *  the same manual skills so the regenerated response is primed
+           *  identically. */
+          overrideManualSkills: parentMessage.manualSkills,
           addedConvo: getAddedConvo() || undefined,
         },
       );

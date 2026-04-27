@@ -141,6 +141,7 @@ export default function Message(props: TMessageProps) {
                     attachments={attachments}
                     isSubmitting={isSubmitting}
                     searchResults={searchResults}
+                    manualSkills={message.manualSkills}
                     messageId={message.messageId}
                     setSiblingIdx={setSiblingIdx}
                     isCreatedByUser={message.isCreatedByUser}
@@ -179,7 +180,6 @@ export default function Message(props: TMessageProps) {
         </div>
       </div>
       <MultiMessage
-        key={messageId}
         messageId={messageId}
         conversation={conversation}
         messagesTree={children ?? []}

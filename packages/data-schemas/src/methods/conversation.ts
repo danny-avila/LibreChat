@@ -222,7 +222,10 @@ export function createConversationMethods(
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const bulkOps = conversations.map((convo) => ({
         updateOne: {
-          filter: { conversationId: convo.conversationId, user: convo.user },
+          filter: {
+            conversationId: convo.conversationId,
+            user: convo.user,
+          },
           update: convo,
           upsert: true,
           timestamps: false,

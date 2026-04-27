@@ -1,4 +1,4 @@
-import { AnthropicEffort } from 'librechat-data-provider';
+import { AnthropicEffort, ThinkingDisplay } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { getLLMConfig } from './llm';
 
@@ -1024,6 +1024,120 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig.invocationKwargs?.output_config).toEqual({
           effort: AnthropicEffort.high,
         });
+      });
+
+      it('should set xhigh effort via output_config for Opus 4.7', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-7',
+            thinking: true,
+            effort: 'xhigh' as AnthropicEffort,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('adaptive');
+        expect(result.llmConfig.invocationKwargs?.output_config).toEqual({
+          effort: 'xhigh',
+        });
+      });
+
+      it('should request summarized thinking display for Opus 4.7 (opt back in)', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-opus-4-7', thinking: true },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('summarized');
+      });
+
+      it('should NOT set thinking.display for pre-Opus-4.7 adaptive models', () => {
+        const pre47Models = ['claude-opus-4-6', 'claude-sonnet-4-6'];
+
+        pre47Models.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model, thinking: true },
+          });
+
+          const thinking = result.llmConfig.thinking as unknown as {
+            type: string;
+            display?: string;
+          };
+          expect(thinking.type).toBe('adaptive');
+          expect(thinking.display).toBeUndefined();
+        });
+      });
+
+      it('should honor explicit thinkingDisplay="summarized" on Opus 4.6', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-6',
+            thinking: true,
+            thinkingDisplay: ThinkingDisplay.summarized,
+          },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('summarized');
+      });
+
+      it('should honor explicit thinkingDisplay="omitted" on Opus 4.7', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-7',
+            thinking: true,
+            thinkingDisplay: ThinkingDisplay.omitted,
+          },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('omitted');
+      });
+
+      it('should recover display from persisted agent thinking object (Opus 4.7 omitted)', () => {
+        /** Agents persist `thinking` as the full Anthropic object. Without
+         * extracting `.display` back into `thinkingDisplay`, Opus 4.7's auto
+         * resolver would silently flip it to 'summarized'. */
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-7',
+            thinking: { type: 'adaptive', display: 'omitted' },
+          } as unknown as t.AnthropicModelOptions,
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('omitted');
+      });
+
+      it('explicit thinkingDisplay wins over persisted thinking.display', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-7',
+            thinking: { type: 'adaptive', display: 'summarized' },
+            thinkingDisplay: ThinkingDisplay.omitted,
+          } as unknown as t.AnthropicModelOptions,
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.display).toBe('omitted');
       });
 
       it('should exclude topP/topK for Sonnet 4.6 with adaptive thinking', () => {

@@ -1,4 +1,6 @@
-import type { SummarizationConfig } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
+import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, FileSources } from 'librechat-data-provider';
 import { createRun } from '~/agents/run';
 
 // Mock winston logger
@@ -57,6 +59,7 @@ async function callAndCapture(
     agents?: ReturnType<typeof makeAgent>[];
     summarizationConfig?: SummarizationConfig;
     initialSummary?: { text: string; tokenCount: number };
+    appConfig?: AppConfig;
   } = {},
 ) {
   const agents = opts.agents ?? [makeAgent()];
@@ -67,6 +70,7 @@ async function callAndCapture(
     signal,
     summarizationConfig: opts.summarizationConfig,
     initialSummary: opts.initialSummary,
+    appConfig: opts.appConfig,
     streaming: true,
     streamUsage: true,
   });
@@ -75,6 +79,40 @@ async function callAndCapture(
   expect(createMock).toHaveBeenCalledTimes(1);
   const callArgs = createMock.mock.calls[0][0];
   return callArgs.graphConfig.agents as Array<Record<string, unknown>>;
+}
+
+/** Minimal AppConfig with a single custom endpoint for testing provider resolution. */
+type TestCustomEndpoint = Partial<TEndpoint> & {
+  name: string;
+  baseURL: string;
+  apiKey: string;
+};
+
+/**
+ * Shape of summarization parameters used in tests. The LibreChat config
+ * schema restricts yaml `parameters` to primitive values, but the SDK
+ * passes any record through as-is — tests need the wider shape to exercise
+ * cross-endpoint `configuration` merging.
+ */
+type TestSummarizationParameters = Record<string, unknown> & {
+  configuration?: Record<string, unknown>;
+};
+
+/**
+ * Minimal AppConfig fixture for testing. Only `endpoints` is read by
+ * `resolveSummarizationProvider`; other required AppConfig fields are
+ * filled with empty/default values so the shape matches without needing
+ * `as unknown as AppConfig`.
+ */
+function makeAppConfig(customEndpoints: TestCustomEndpoint[]): AppConfig {
+  return {
+    config: {},
+    fileStrategy: FileSources.local,
+    imageOutputType: 'png',
+    endpoints: {
+      [EModelEndpoint.custom]: customEndpoints,
+    },
+  };
 }
 
 beforeEach(() => {
@@ -218,7 +256,7 @@ describe('summarizationConfig field passthrough', () => {
     const agents = await callAndCapture({
       summarizationConfig: {
         enabled: true,
-        trigger: { type: 'token_count', value: 8000 },
+        trigger: { type: 'token_ratio', value: 0.8 },
         provider: 'anthropic',
         model: 'claude-3-haiku',
         parameters: { temperature: 0.2 },
@@ -233,7 +271,7 @@ describe('summarizationConfig field passthrough', () => {
     // `enabled` is not forwarded to the agent-level config — it is resolved
     // into the separate `summarizationEnabled` boolean on the agent input.
     expect(agents[0].summarizationEnabled).toBe(true);
-    expect(config.trigger).toEqual({ type: 'token_count', value: 8000 });
+    expect(config.trigger).toEqual({ type: 'token_ratio', value: 0.8 });
     expect(config.provider).toBe('anthropic');
     expect(config.model).toBe('claude-3-haiku');
     expect(config.parameters).toEqual({ temperature: 0.2 });
@@ -253,6 +291,31 @@ describe('summarizationConfig field passthrough', () => {
     expect(agents[0].summarizationEnabled).toBe(true);
     expect(config.provider).toBe('openAI');
     expect(config.model).toBe('gpt-4o');
+  });
+
+  it('preserves `token_ratio` trigger with `value: 0` (documented, extreme-but-valid)', async () => {
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        enabled: true,
+        trigger: { type: 'token_ratio', value: 0 },
+      },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.trigger).toEqual({ type: 'token_ratio', value: 0 });
+  });
+
+  it.each([
+    ['remaining_tokens', 500],
+    ['messages_to_refine', 4],
+  ] as const)('passes %s trigger through unchanged', async (type, value) => {
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        enabled: true,
+        trigger: { type, value },
+      },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.trigger).toEqual({ type, value });
   });
 });
 
@@ -295,5 +358,717 @@ describe('initialSummary passthrough', () => {
   it('undefined when not provided', async () => {
     const agents = await callAndCapture({});
     expect(agents[0].initialSummary).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite 7: custom-endpoint provider resolution
+// ---------------------------------------------------------------------------
+describe('custom-endpoint provider resolution', () => {
+  it('remaps a custom endpoint name to openAI and injects baseURL/apiKey', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('openAI');
+    expect(config.model).toBe('llama3');
+
+    const parameters = config.parameters as Record<string, unknown>;
+    expect(parameters).toMatchObject({
+      configuration: { baseURL: 'http://localhost:11434/v1' },
+      apiKey: 'ollama-key',
+    });
+  });
+
+  it('matches Ollama case-insensitively (via normalizeEndpointName)', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('openAI');
+    expect((config.parameters as Record<string, unknown>).apiKey).toBe('ollama-key');
+  });
+
+  it('resolves non-Ollama endpoints on exact-case match', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Together', baseURL: 'https://api.together.ai/v1', apiKey: 'together-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Together', model: 'mixtral' },
+      appConfig,
+    });
+    expect((agents[0].summarizationConfig as Record<string, unknown>).provider).toBe('openAI');
+  });
+
+  it('does not match non-Ollama endpoints with different casing', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Together', baseURL: 'https://api.together.ai/v1', apiKey: 'together-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'together', model: 'mixtral' },
+      appConfig,
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('together');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('leaves known SDK providers untouched', async () => {
+    const appConfig = makeAppConfig([]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'anthropic', model: 'claude' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('anthropic');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('preserves unknown provider names when appConfig is missing', async () => {
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('Ollama');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('leaves unrecognized names untouched when no matching custom endpoint exists', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'nonexistent', model: 'foo' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('nonexistent');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('extracts ${ENV_VAR} references in custom endpoint credentials', async () => {
+    process.env.TEST_OLLAMA_KEY = 'resolved-key-value';
+    try {
+      const appConfig = makeAppConfig([
+        {
+          name: 'Ollama',
+          baseURL: 'http://localhost:11434/v1',
+          apiKey: '${TEST_OLLAMA_KEY}',
+        },
+      ]);
+      const agents = await callAndCapture({
+        summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+        appConfig,
+      });
+
+      const config = agents[0].summarizationConfig as Record<string, unknown>;
+      const parameters = config.parameters as Record<string, unknown>;
+      expect(parameters.apiKey).toBe('resolved-key-value');
+    } finally {
+      delete process.env.TEST_OLLAMA_KEY;
+    }
+  });
+
+  it('keeps raw provider when apiKey is marked user_provided', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'user_provided' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    /**
+     * Keep the raw name so the SDK raises "Unsupported LLM provider: Ollama"
+     * rather than silently remapping to `openAI` and routing summaries to the
+     * default backend. (User-provided creds cannot be resolved here — the
+     * async DB lookup is out of scope for this synchronous code path.)
+     */
+    expect(config.provider).toBe('Ollama');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('keeps raw provider when env var reference cannot be resolved', async () => {
+    delete process.env.UNSET_TEST_KEY;
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: '${UNSET_TEST_KEY}',
+      },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('Ollama');
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('keeps raw provider when partial env var reference (prefix/suffix) stays unresolved', async () => {
+    delete process.env.UNSET_TEST_SEGMENT;
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'https://${UNSET_TEST_SEGMENT}.example.com/v1',
+        apiKey: 'ollama-key',
+      },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('Ollama');
+    /** Even though the baseURL is a partial-match pattern, it must not be forwarded. */
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('merges overrides alongside user-supplied parameters', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: 'Ollama',
+        model: 'llama3',
+        parameters: { temperature: 0.2 },
+      },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    expect(parameters).toMatchObject({
+      temperature: 0.2,
+      apiKey: 'ollama-key',
+    });
+    const configuration = parameters.configuration as Record<string, unknown>;
+    expect(configuration.baseURL).toBe('http://localhost:11434/v1');
+  });
+
+  it('forwards custom-endpoint headers as configuration.defaultHeaders', async () => {
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: 'ollama-key',
+        headers: { 'X-Custom-Header': 'value-123' },
+      },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    const configuration = parameters.configuration as Record<string, unknown>;
+    const defaultHeaders = configuration.defaultHeaders as Record<string, string>;
+    expect(defaultHeaders['X-Custom-Header']).toBe('value-123');
+  });
+
+  it('runs custom-endpoint headers through resolveHeaders (not forwarded raw)', async () => {
+    const { resolveHeaders } = jest.requireMock('~/utils/env') as {
+      resolveHeaders: jest.Mock;
+    };
+    resolveHeaders.mockClear();
+
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: 'ollama-key',
+        headers: { Authorization: 'Bearer ${TEST_PORTKEY_KEY}' },
+      },
+    ]);
+    await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    /**
+     * Templated header values must go through the same `resolveHeaders`
+     * pipeline the main agent flow uses, so `${VAR}`/`{{BODY_FIELD}}`
+     * references don't get forwarded verbatim to the summarization backend.
+     */
+    const call = resolveHeaders.mock.calls.find(
+      (args: unknown[]) =>
+        (args[0] as { headers?: Record<string, string> }).headers?.Authorization ===
+        'Bearer ${TEST_PORTKEY_KEY}',
+    );
+    expect(call).toBeDefined();
+  });
+
+  it('forwards PROXY env var into summarization client configuration', async () => {
+    const originalProxy = process.env.PROXY;
+    process.env.PROXY = 'http://proxy.internal:3128';
+    try {
+      const appConfig = makeAppConfig([
+        { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+      ]);
+      const agents = await callAndCapture({
+        summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+        appConfig,
+      });
+
+      const config = agents[0].summarizationConfig as Record<string, unknown>;
+      const parameters = config.parameters as Record<string, unknown>;
+      const configuration = parameters.configuration as Record<string, unknown>;
+      /** getOpenAIConfig wires proxy through to fetchOptions.dispatcher (undici ProxyAgent). */
+      expect(configuration.fetchOptions).toBeDefined();
+    } finally {
+      if (originalProxy === undefined) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+    }
+  });
+
+  it('skips overrides when summarization targets the same endpoint as the agent', async () => {
+    /**
+     * When summarization provider matches the agent's endpoint, we rely on
+     * the SDK's self-summarize path (which reuses agentContext.clientOptions).
+     * Overriding here would shallow-replace the agent's resolved configuration
+     * (dynamic headers, proxy/fetch options) with yaml-only config.
+     */
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      agents: [makeAgent({ provider: 'openAI', endpoint: 'Ollama' })],
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.provider).toBe('openAI');
+    /** No overrides injected — SDK will pull from agentContext.clientOptions. */
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('skips overrides when endpoints differ only by case for Ollama', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      agents: [makeAgent({ provider: 'openAI', endpoint: 'Ollama' })],
+      summarizationConfig: { provider: 'ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('applies overrides when summarization targets a different endpoint than the agent', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+      { name: 'Together', baseURL: 'https://api.together.ai/v1', apiKey: 'together-key' },
+    ]);
+    const agents = await callAndCapture({
+      agents: [makeAgent({ provider: 'openAI', endpoint: 'Ollama' })],
+      summarizationConfig: { provider: 'Together', model: 'mixtral' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    expect(parameters.apiKey).toBe('together-key');
+    expect((parameters.configuration as Record<string, unknown>).baseURL).toBe(
+      'https://api.together.ai/v1',
+    );
+  });
+
+  it('deep-merges user configuration with endpoint-resolved configuration', async () => {
+    /**
+     * User-supplied `parameters.configuration.defaultQuery` must merge with —
+     * not replace — the resolved `configuration` (baseURL, defaultHeaders).
+     */
+    const appConfig = makeAppConfig([
+      {
+        name: 'Ollama',
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: 'ollama-key',
+        headers: { 'X-Required-Header': 'keep-me' },
+      },
+    ]);
+    const parameters: TestSummarizationParameters = {
+      configuration: { defaultQuery: { 'api-version': '2024-06-01' } },
+    };
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: 'Ollama',
+        model: 'llama3',
+        parameters: parameters as SummarizationConfig['parameters'],
+      },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const resolvedParameters = config.parameters as Record<string, unknown>;
+    const configuration = resolvedParameters.configuration as Record<string, unknown>;
+    /** Endpoint defaults preserved... */
+    expect(configuration.baseURL).toBe('http://localhost:11434/v1');
+    expect((configuration.defaultHeaders as Record<string, string>)['X-Required-Header']).toBe(
+      'keep-me',
+    );
+    /** ...alongside the user's additions. */
+    expect(configuration.defaultQuery).toEqual({ 'api-version': '2024-06-01' });
+  });
+
+  it('user-supplied configuration.baseURL overrides resolved baseURL', async () => {
+    /**
+     * Deep-merge still lets user keys win on conflict — if a user explicitly
+     * sets `configuration.baseURL` in their summarization parameters, it
+     * must override the baseURL resolved from the endpoint config.
+     */
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const parameters: TestSummarizationParameters = {
+      configuration: { baseURL: 'https://user-override.example.com/v1' },
+    };
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: 'Ollama',
+        model: 'llama3',
+        parameters: parameters as SummarizationConfig['parameters'],
+      },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const resolvedParameters = config.parameters as Record<string, unknown>;
+    const configuration = resolvedParameters.configuration as Record<string, unknown>;
+    expect(configuration.baseURL).toBe('https://user-override.example.com/v1');
+  });
+
+  it('user-supplied summarization.parameters override endpoint defaults', async () => {
+    /**
+     * `getOpenAIConfig` defaults `streaming: true`, but a user who sets
+     * `summarization.parameters.streaming: false` in their config has
+     * explicitly opted out; the user's setting must win over endpoint
+     * defaults injected from the custom endpoint config.
+     */
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: {
+        provider: 'Ollama',
+        model: 'llama3',
+        parameters: { streaming: false },
+      },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    expect(parameters.streaming).toBe(false);
+    /** Endpoint defaults still injected for the rest. */
+    expect(parameters.apiKey).toBe('ollama-key');
+  });
+
+  it('does not leak model/modelName from getOpenAIConfig defaults', async () => {
+    const appConfig = makeAppConfig([
+      { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Ollama', model: 'llama3' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.model).toBe('llama3');
+    const parameters = config.parameters as Record<string, unknown>;
+    /** Summarization.model must win — parameters must not carry a stale model/modelName. */
+    expect(parameters.model).toBeUndefined();
+    expect(parameters.modelName).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite 8: subagentConfigs
+// ---------------------------------------------------------------------------
+describe('subagentConfigs', () => {
+  it('is undefined when subagents are not enabled', async () => {
+    const agents = await callAndCapture({});
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('adds self-spawn when enabled and allowSelf defaults to true', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ subagents: { enabled: true } })],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(Array.isArray(configs)).toBe(true);
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({ self: true, type: 'self' });
+  });
+
+  it('omits self-spawn when allowSelf is false', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ subagents: { enabled: true, allowSelf: false } })],
+    });
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('adds explicit subagent configs with agentInputs', async () => {
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Researcher',
+      description: 'Deep web research',
+    });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({
+      type: 'agent_child',
+      name: 'Researcher',
+      description: 'Deep web research',
+    });
+    expect(configs[0].agentInputs).toBeDefined();
+    expect(configs[0].self).toBeUndefined();
+  });
+
+  it('combines self-spawn and explicit subagents when both enabled', async () => {
+    const child = makeAgent({ id: 'agent_child', name: 'Helper' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(2);
+    expect(configs[0].self).toBe(true);
+    expect(configs[1].type).toBe('agent_child');
+  });
+
+  it('skips a child that points at the parent itself', async () => {
+    const self = makeAgent({ id: 'agent_1' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_1'] },
+          subagentAgentConfigs: [self],
+        }),
+      ],
+    });
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('does NOT leak the parent run `initialSummary` into an explicit child (Codex P1 regression)', async () => {
+    /**
+     * `buildAgentInput` is a shared factory that always stamps the parent
+     * run's `initialSummary` on the returned AgentInputs. When it's reused
+     * to build a subagent child's inputs, `buildSubagentConfigs` must clear
+     * that field — otherwise the child inherits unrelated conversation
+     * context, defeating the isolation contract (and burning extra tokens).
+     */
+    const summary = { text: 'parent conversation summary', tokenCount: 99 };
+    const child = makeAgent({ id: 'agent_child', name: 'Child' });
+    const agents = await callAndCapture({
+      initialSummary: summary,
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+
+    const parent = agents[0];
+    /** The parent itself keeps the summary — that's how it receives
+     *  cross-turn context. */
+    expect(parent.initialSummary).toEqual(summary);
+
+    const childConfig = (parent.subagentConfigs as Array<Record<string, unknown>>)[0];
+    const childInputs = childConfig.agentInputs as {
+      initialSummary?: unknown;
+      discoveredTools?: unknown;
+    };
+    expect(childInputs.initialSummary).toBeUndefined();
+    expect(childInputs.discoveredTools).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: toolOutputReferences gating
+// ---------------------------------------------------------------------------
+describe('toolOutputReferences gating', () => {
+  /**
+   * Captures the top-level `Run.create` config (not just agentInputs) so the
+   * test can assert presence/absence of the `toolOutputReferences` key.
+   */
+  async function callAndCaptureRunConfig(
+    overrides?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const agents = [makeAgent(overrides)];
+    const signal = new AbortController().signal;
+
+    await createRun({
+      agents: agents as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    expect(createMock).toHaveBeenCalledTimes(1);
+    return createMock.mock.calls[0][0] as Record<string, unknown>;
+  }
+
+  it('passes toolOutputReferences when agent has codeEnvAvailable=true', async () => {
+    const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: true });
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('omits toolOutputReferences when codeEnvAvailable is false', async () => {
+    const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: false });
+    expect(callArgs).not.toHaveProperty('toolOutputReferences');
+  });
+
+  it('omits toolOutputReferences when codeEnvAvailable is unset', async () => {
+    const callArgs = await callAndCaptureRunConfig();
+    expect(callArgs).not.toHaveProperty('toolOutputReferences');
+  });
+
+  it('enables toolOutputReferences if any agent in a multi-agent run has codeEnvAvailable=true', async () => {
+    const signal = new AbortController().signal;
+    await createRun({
+      agents: [
+        makeAgent({ id: 'agent_a', codeEnvAvailable: false }),
+        makeAgent({ id: 'agent_b', codeEnvAvailable: true }),
+      ] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('enables toolOutputReferences when only a subagent has codeEnvAvailable=true', async () => {
+    /**
+     * Real scenario: a parent agent without `execute_code` spawns a
+     * subagent that does have it. The SDK's shared tool-output
+     * reference registry serves every ToolNode in the run, so the
+     * subagent's `bash_tool` benefits from the run-level flag — and
+     * without this gate looking at `subagentAgentConfigs`, the
+     * subagent's `{{tool<idx>turn<turn>}}` placeholders would pass
+     * through unsubstituted.
+     */
+    const signal = new AbortController().signal;
+    const subagent = makeAgent({ id: 'agent_child', codeEnvAvailable: true });
+    await createRun({
+      agents: [
+        makeAgent({
+          id: 'agent_parent',
+          codeEnvAvailable: false,
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [subagent],
+        }),
+      ] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('enables toolOutputReferences when a transitively-nested subagent has codeEnvAvailable=true', async () => {
+    /**
+     * Multi-level delegation (parent → child → grandchild): only the
+     * grandchild has `codeEnvAvailable`. Verifies the recursion
+     * descends past one level of `subagentAgentConfigs`.
+     */
+    const signal = new AbortController().signal;
+    const grandchild = makeAgent({ id: 'agent_grandchild', codeEnvAvailable: true });
+    const child = makeAgent({
+      id: 'agent_child',
+      codeEnvAvailable: false,
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_grandchild'] },
+      subagentAgentConfigs: [grandchild],
+    });
+    await createRun({
+      agents: [
+        makeAgent({
+          id: 'agent_parent',
+          codeEnvAvailable: false,
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('terminates and omits toolOutputReferences for a cyclic agent tree with no codeenv', async () => {
+    /**
+     * Cycle safety: `A → B → A`, neither has `codeEnvAvailable`. The
+     * `visited` set in `anyAgentHasCodeEnv` must short-circuit the
+     * recursion — without it this would stack-overflow before
+     * `Run.create` is reached. Mirrors the cycle-safety pattern
+     * `buildSubagentConfigs` already uses elsewhere in this module.
+     */
+    const signal = new AbortController().signal;
+    type CyclicAgent = ReturnType<typeof makeAgent> & {
+      subagentAgentConfigs?: ReturnType<typeof makeAgent>[];
+    };
+    const a = makeAgent({ id: 'agent_a', codeEnvAvailable: false }) as CyclicAgent;
+    const b = makeAgent({ id: 'agent_b', codeEnvAvailable: false }) as CyclicAgent;
+    a.subagentAgentConfigs = [b];
+    b.subagentAgentConfigs = [a];
+
+    await createRun({
+      agents: [a] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs).not.toHaveProperty('toolOutputReferences');
   });
 });

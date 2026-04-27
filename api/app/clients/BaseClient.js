@@ -17,11 +17,13 @@ const {
   ContentTypes,
   excludedKeys,
   EModelEndpoint,
+  mergeFileConfig,
   isParamEndpoint,
   isAgentsEndpoint,
   isEphemeralAgentId,
   supportsBalanceCheck,
   isBedrockDocumentType,
+  getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -71,6 +73,10 @@ class BaseClient {
     this.currentMessages = [];
     /** @type {import('librechat-data-provider').VisionModes | undefined} */
     this.visionMode;
+    /** @type {import('librechat-data-provider').FileConfig | undefined} */
+    this._mergedFileConfig;
+    /** @type {import('librechat-data-provider').EndpointFileConfig | undefined} */
+    this._endpointFileConfig;
   }
 
   setOptions() {
@@ -486,6 +492,39 @@ class BaseClient {
         }
         delete userMessage.image_urls;
       }
+      /**
+       * Persist the user's manual skill picks onto the user message so the
+       * frontend `SkillPills` component can render them in history
+       * after reload. UI-only metadata — the runtime skill resolution
+       * pipeline reads the top-level `req.body.manualSkills` separately.
+       * Filter is defense-in-depth on top of Mongoose schema validation:
+       * keeps the DB row free of empty/non-string entries even if a
+       * crafted payload slips past schema checks upstream.
+       */
+      const rawManualSkills = this.options.req?.body?.manualSkills;
+      if (Array.isArray(rawManualSkills) && rawManualSkills.length > 0) {
+        const skills = rawManualSkills.filter((s) => typeof s === 'string' && s.length > 0);
+        if (skills.length > 0) {
+          userMessage.manualSkills = skills;
+        }
+      }
+      /**
+       * Persist the names of skills auto-primed this turn via `always-apply`
+       * frontmatter so `SkillPills` can render pinned-variant badges
+       * on the user bubble that survive reload and history render. Frozen
+       * at turn time (not reconstructed from `Skill.alwaysApply` at render
+       * time) because the flag is mutable — historical turns must keep
+       * their audit trail even if an admin flips `alwaysApply` off later.
+       */
+      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      if (Array.isArray(alwaysApplySkillPrimes) && alwaysApplySkillPrimes.length > 0) {
+        const names = alwaysApplySkillPrimes
+          .map((p) => p?.name)
+          .filter((n) => typeof n === 'string' && n.length > 0);
+        if (names.length > 0) {
+          userMessage.alwaysAppliedSkills = names;
+        }
+      }
       userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
         (err) => {
           logger.error('[BaseClient] Failed to save user message:', err);
@@ -523,6 +562,8 @@ class BaseClient {
           getMultiplier: db.getMultiplier,
           findBalanceByUser: db.findBalanceByUser,
           createAutoRefillTransaction: db.createAutoRefillTransaction,
+          balanceConfig,
+          upsertBalanceFields: db.upsertBalanceFields,
         },
       );
     }
@@ -1085,6 +1126,7 @@ class BaseClient {
         provider: this.options.agent?.provider ?? this.options.endpoint,
         endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
         useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+        model: this.modelOptions?.model ?? this.model,
       },
       getStrategyFunctions,
     );
@@ -1157,6 +1199,16 @@ class BaseClient {
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
 
+    if (!this._mergedFileConfig && this.options.req?.config?.fileConfig) {
+      this._mergedFileConfig = mergeFileConfig(this.options.req.config.fileConfig);
+      const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
+      this._endpointFileConfig = getEndpointFileConfig({
+        fileConfig: this._mergedFileConfig,
+        endpoint,
+        endpointType: this.options.endpointType,
+      });
+    }
+
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
@@ -1182,6 +1234,14 @@ class BaseClient {
         allFiles.push(file);
       } else if (file.type.startsWith('audio/')) {
         categorizedAttachments.audios.push(file);
+        allFiles.push(file);
+      } else if (
+        file.type &&
+        this._mergedFileConfig &&
+        this._endpointFileConfig?.supportedMimeTypes &&
+        this._mergedFileConfig.checkType(file.type, this._endpointFileConfig.supportedMimeTypes)
+      ) {
+        categorizedAttachments.documents.push(file);
         allFiles.push(file);
       }
     }

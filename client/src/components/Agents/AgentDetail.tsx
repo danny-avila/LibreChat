@@ -183,7 +183,12 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
           >
             <Link className="h-4 w-4" aria-hidden="true" />
           </Button>
-          <Button className="w-full max-w-xs" onClick={handleStartChat} disabled={!agent}>
+          <Button
+            variant="submit"
+            className="w-full max-w-xs"
+            onClick={handleStartChat}
+            disabled={!agent}
+          >
             {localize('com_agents_start_chat')}
           </Button>
         </div>

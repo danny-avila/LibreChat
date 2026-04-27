@@ -2,6 +2,7 @@ import {
   Verbosity,
   ImageDetail,
   ThinkingLevel,
+  ThinkingDisplay,
   EModelEndpoint,
   openAISettings,
   googleSettings,
@@ -462,7 +463,26 @@ const anthropic: Record<string, SettingDefinition> = {
       [AnthropicEffort.low]: 'com_ui_low',
       [AnthropicEffort.medium]: 'com_ui_medium',
       [AnthropicEffort.high]: 'com_ui_high',
+      [AnthropicEffort.xhigh]: 'com_ui_xhigh',
       [AnthropicEffort.max]: 'com_ui_max',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  thinkingDisplay: {
+    key: 'thinkingDisplay',
+    label: 'com_endpoint_anthropic_thinking_display',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_thinking_display_desc',
+    descriptionCode: true,
+    type: 'enum',
+    default: anthropicSettings.thinkingDisplay.default,
+    component: 'slider',
+    options: anthropicSettings.thinkingDisplay.options,
+    enumMappings: {
+      [ThinkingDisplay.auto]: 'com_ui_auto',
+      [ThinkingDisplay.summarized]: 'com_ui_summarized',
+      [ThinkingDisplay.omitted]: 'com_ui_omitted',
     },
     optionType: 'model',
     columnSpan: 4,
@@ -809,6 +829,7 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
+  anthropic.thinkingDisplay,
   anthropic.web_search,
   librechat.fileTokenLimit,
 ];
@@ -830,6 +851,7 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
+  anthropic.thinkingDisplay,
   anthropic.web_search,
   librechat.fileTokenLimit,
 ];
@@ -849,6 +871,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
+  anthropic.thinkingDisplay,
   librechat.fileTokenLimit,
 ];
 
@@ -907,6 +930,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
+  anthropic.thinkingDisplay,
   librechat.fileTokenLimit,
 ];
 

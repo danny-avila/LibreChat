@@ -82,10 +82,6 @@ export interface AdminGroupsDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<DeleteResult>;
-  deleteGrantsForPrincipal: (
-    principalType: PrincipalType,
-    principalId: string | Types.ObjectId,
-  ) => Promise<void>;
 }
 
 export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
@@ -102,7 +98,6 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
     findUsers,
     deleteConfig,
     deleteAclEntries,
-    deleteGrantsForPrincipal,
   } = deps;
 
   async function listGroupsHandler(req: ServerRequest, res: Response) {
@@ -308,7 +303,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       /**
        * deleteAclEntries is a raw deleteMany wrapper with no type casting.
        * grantPermission stores group principalId as ObjectId, so we must
-       * cast here. deleteConfig and deleteGrantsForPrincipal normalize internally.
+       * cast here. deleteConfig normalizes internally.
        */
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.GROUP, id),
@@ -316,7 +311,6 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
           principalType: PrincipalType.GROUP,
           principalId: new Types.ObjectId(id),
         }),
-        deleteGrantsForPrincipal(PrincipalType.GROUP, id),
       ]);
       for (const result of cleanupResults) {
         if (result.status === 'rejected') {

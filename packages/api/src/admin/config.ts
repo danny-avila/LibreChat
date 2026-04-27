@@ -1,5 +1,10 @@
 import { logger } from '@librechat/data-schemas';
-import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
+import {
+  PrincipalType,
+  PrincipalModel,
+  INTERFACE_PERMISSION_FIELDS,
+  PERMISSION_SUB_KEYS,
+} from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
@@ -24,6 +29,33 @@ export function isValidFieldPath(path: string): boolean {
 
 export function getTopLevelSection(fieldPath: string): string {
   return fieldPath.split('.')[0];
+}
+
+/**
+ * Returns true if `fieldPath` targets an interface permission field or permission sub-key.
+ *
+ * - `"interface.prompts"` → true (boolean permission field)
+ * - `"interface.agents.use"` → true (permission sub-key)
+ * - `"interface.mcpServers"` → true (entire composite field)
+ * - `"interface.mcpServers.use"` → true (permission sub-key)
+ * - `"interface.mcpServers.placeholder"` → false (UI-only sub-key)
+ * - `"interface.peoplePicker.users"` → true (all peoplePicker sub-keys are permissions)
+ * - `"interface.modelSelect"` → false (UI-only field)
+ */
+function isInterfacePermissionPath(fieldPath: string): boolean {
+  const parts = fieldPath.split('.');
+  if (parts[0] !== 'interface' || parts.length < 2) {
+    return false;
+  }
+  if (!INTERFACE_PERMISSION_FIELDS.has(parts[1])) {
+    return false;
+  }
+  // "interface.<permField>" with no sub-key → permission (blocks the whole field)
+  if (parts.length === 2) {
+    return true;
+  }
+  // "interface.<permField>.<subKey>" → only block if sub-key is a permission bit
+  return PERMISSION_SUB_KEYS.has(parts[2]);
 }
 
 export interface AdminConfigDeps {
@@ -262,7 +294,49 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const overrideSections = Object.keys(overrides);
+      let filteredOverrides = overrides;
+      const iface = (overrides as Record<string, unknown>).interface;
+      if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
+        const filteredIface: Record<string, unknown> = {};
+        for (const [field, val] of Object.entries(iface as Record<string, unknown>)) {
+          if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
+            filteredIface[field] = val;
+          } else if (val != null && typeof val === 'object' && !Array.isArray(val)) {
+            // Composite permission field (e.g. mcpServers): strip permission
+            // sub-keys but preserve UI-only sub-keys like placeholder/trustCheckbox.
+            const uiOnly: Record<string, unknown> = {};
+            for (const [sub, subVal] of Object.entries(val as Record<string, unknown>)) {
+              if (!PERMISSION_SUB_KEYS.has(sub)) {
+                uiOnly[sub] = subVal;
+              } else {
+                logger.warn(
+                  `[adminConfig] Stripping interface permission sub-field "${field}.${sub}" — use role permissions instead`,
+                );
+              }
+            }
+            if (Object.keys(uiOnly).length > 0) {
+              filteredIface[field] = uiOnly;
+            }
+          } else {
+            logger.warn(
+              `[adminConfig] Stripping interface permission field "${field}" — use role permissions instead`,
+            );
+          }
+        }
+        filteredOverrides = { ...(overrides as Record<string, unknown>) } as Partial<TCustomConfig>;
+        if (Object.keys(filteredIface).length > 0) {
+          (filteredOverrides as Record<string, unknown>).interface = filteredIface;
+        } else {
+          delete (filteredOverrides as Record<string, unknown>).interface;
+        }
+      }
+
+      const overrideSections = Object.keys(filteredOverrides);
+
+      if (overrideSections.length === 0 && priority == null) {
+        return res.status(200).json({ message: 'No actionable override sections provided' });
+      }
+
       if (overrideSections.length > 0) {
         const allowed = await Promise.all(
           overrideSections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
@@ -279,7 +353,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         principalType,
         principalId,
         principalModel(principalType),
-        overrides,
+        filteredOverrides,
         priority ?? DEFAULT_PRIORITY,
       );
 
@@ -339,8 +413,25 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
+      const validEntries = entries.filter((entry) => {
+        if (isInterfacePermissionPath(entry.fieldPath)) {
+          logger.warn(
+            `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
+          );
+          return false;
+        }
+        return true;
+      });
+
+      if (validEntries.length === 0) {
+        if (!(await hasConfigCapability(user, null, 'manage'))) {
+          return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        return res.status(200).json({ message: 'No actionable field entries provided' });
+      }
+
       if (!(await hasConfigCapability(user, null, 'manage'))) {
-        const sections = [...new Set(entries.map((e) => getTopLevelSection(e.fieldPath)))];
+        const sections = [...new Set(validEntries.map((e) => getTopLevelSection(e.fieldPath)))];
         const allowed = await Promise.all(
           sections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
         );
@@ -354,7 +445,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
 
       const seen = new Set<string>();
       const fields: Record<string, unknown> = {};
-      for (const entry of entries) {
+      for (const entry of validEntries) {
         if (seen.has(entry.fieldPath)) {
           return res.status(400).json({ error: `Duplicate fieldPath: ${entry.fieldPath}` });
         }
@@ -414,10 +505,18 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       const section = getTopLevelSection(fieldPath);
+
       if (!(await hasConfigCapability(user, section as ConfigSection, 'manage'))) {
         return res.status(403).json({
           error: `Insufficient permissions for config section: ${section}`,
         });
+      }
+
+      if (isInterfacePermissionPath(fieldPath)) {
+        logger.warn(
+          `[adminConfig] Ignoring delete for interface permission field "${fieldPath}" — use role permissions instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
       }
 
       const config = await unsetConfigField(principalType, principalId, fieldPath);

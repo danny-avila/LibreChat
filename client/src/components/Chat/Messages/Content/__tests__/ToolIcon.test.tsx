@@ -12,6 +12,12 @@ describe('getToolIconType - ACTN-01: Action delimiter detection', () => {
     expect(getToolIconType(toolName)).toBe('mcp');
   });
 
+  it('returns "mcp" not "action" for MCP tool whose name ends with _action (cross-delimiter collision)', () => {
+    const toolName = `get_action${Constants.mcp_delimiter}myserver`;
+    expect(getToolIconType(toolName)).not.toBe('action');
+    expect(getToolIconType(toolName)).toBe('mcp');
+  });
+
   it('returns "generic" for plain tool name without delimiters', () => {
     expect(getToolIconType('some_plain_tool')).toBe('generic');
   });
@@ -24,5 +30,31 @@ describe('getToolIconType - ACTN-01: Action delimiter detection', () => {
     expect(getToolIconType('image_edit_oai')).toBe('image_gen');
     expect(getToolIconType('gemini_image_gen')).toBe('image_gen');
     expect(getToolIconType(`${Constants.LC_TRANSFER_TO_}agent1`)).toBe('agent_handoff');
+  });
+});
+
+describe('getToolIconType - SKILL-01: Skill tool icon types', () => {
+  it('returns "skill" for tool name "skill"', () => {
+    expect(getToolIconType('skill')).toBe('skill');
+  });
+
+  it('returns "read_file" for tool name "read_file"', () => {
+    expect(getToolIconType('read_file')).toBe('read_file');
+  });
+
+  it('returns "bash_tool" for tool name "bash_tool"', () => {
+    expect(getToolIconType('bash_tool')).toBe('bash_tool');
+  });
+
+  it('skill types take priority over the "generic" fallback', () => {
+    expect(getToolIconType('skill')).not.toBe('generic');
+    expect(getToolIconType('read_file')).not.toBe('generic');
+    expect(getToolIconType('bash_tool')).not.toBe('generic');
+  });
+
+  it('skill types take priority over the "action" fallback', () => {
+    expect(getToolIconType('skill')).not.toBe('action');
+    expect(getToolIconType('read_file')).not.toBe('action');
+    expect(getToolIconType('bash_tool')).not.toBe('action');
   });
 });

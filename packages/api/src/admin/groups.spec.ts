@@ -8,7 +8,7 @@ import { createAdminGroupsHandlers } from './groups';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
-  logger: { error: jest.fn(), warn: jest.fn() },
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
 describe('createAdminGroupsHandlers', () => {
@@ -76,7 +76,6 @@ describe('createAdminGroupsHandlers', () => {
       findUsers: jest.fn().mockResolvedValue([]),
       deleteConfig: jest.fn().mockResolvedValue(null),
       deleteAclEntries: jest.fn().mockResolvedValue({ deletedCount: 0 }),
-      deleteGrantsForPrincipal: jest.fn().mockResolvedValue(undefined),
       ...overrides,
     };
   }
@@ -809,10 +808,9 @@ describe('createAdminGroupsHandlers', () => {
         principalType: PrincipalType.GROUP,
         principalId: new Types.ObjectId(validId),
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
     });
 
-    it('cleans up Config, AclEntry, and SystemGrant on group delete', async () => {
+    it('cleans up Config and AclEntry on group delete', async () => {
       const deps = createDeps({ deleteGroup: jest.fn().mockResolvedValue(mockGroup()) });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = createReqRes({ params: { id: validId } });
@@ -825,7 +823,6 @@ describe('createAdminGroupsHandlers', () => {
         principalType: PrincipalType.GROUP,
         principalId: new Types.ObjectId(validId),
       });
-      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledWith(PrincipalType.GROUP, validId);
     });
   });
 
