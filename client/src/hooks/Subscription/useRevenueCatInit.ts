@@ -85,6 +85,13 @@ export default function useRevenueCatInit({
     return () => {
       cancelled = true;
       listenerRegisteredRef.current = false;
+      if (!isNativePlatform()) {
+        listenerIdRef.current = null;
+        if (!enabled) {
+          initializedUserRef.current = null;
+        }
+        return;
+      }
       void (async () => {
         const purchasesModule = await loadPurchasesModule();
         const { Purchases } = purchasesModule ?? {};

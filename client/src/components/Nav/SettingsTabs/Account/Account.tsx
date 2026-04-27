@@ -4,14 +4,20 @@ import DeleteAccount from './DeleteAccount';
 import SubscriptionSection from './SubscriptionSection';
 import { useAuthContext } from '~/hooks';
 
-function Account() {
+type AccountProps = {
+  showSubscription?: boolean;
+};
+
+function Account({ showSubscription = true }: AccountProps) {
   const { user } = useAuthContext();
 
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
-      <div className="pb-3">
-        <SubscriptionSection />
-      </div>
+      {showSubscription && (
+        <div className="pb-3">
+          <SubscriptionSection />
+        </div>
+      )}
       {user?.provider === 'local' && (
         <div className="pb-3">
           <ChangePassword />

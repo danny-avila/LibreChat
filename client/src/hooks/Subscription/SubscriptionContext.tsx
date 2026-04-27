@@ -64,6 +64,13 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
   const subscriptionEnabled = subscriptionConfig?.enabled !== false;
   const entitlementId = subscriptionConfig?.entitlementId ?? 'codecan_ai_pro';
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+    console.debug('[Subscription] startup config', startupConfig?.subscription ?? null);
+  }, [startupConfig]);
+
   const [hasShownDependencyWarning, setHasShownDependencyWarning] = useState(false);
   const handleMissingDependency = useCallback(() => {
     if (hasShownDependencyWarning) {
@@ -126,6 +133,19 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
   const currentPlan = subscription?.currentPlan ?? null;
   const freeMessagesRemaining = subscription?.freeMessagesRemaining ?? null;
   const managementUrl = subscription?.managementUrl ?? null;
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+    if (subscriptionQuery.error) {
+      console.warn('[Subscription] query error', subscriptionQuery.error);
+      return;
+    }
+    if (subscriptionQuery.data) {
+      console.debug('[Subscription] query success', subscriptionQuery.data);
+    }
+  }, [subscriptionQuery.data, subscriptionQuery.error]);
 
   const openUpgradeFlow = useCallback(async () => {
     if (!subscriptionEnabled) {
@@ -300,3 +320,5 @@ export const useSubscription = () => {
   }
   return context;
 };
+
+export const useOptionalSubscription = () => useContext(SubscriptionContext);

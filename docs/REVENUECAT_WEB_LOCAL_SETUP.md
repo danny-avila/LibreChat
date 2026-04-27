@@ -159,7 +159,7 @@ REVENUECAT_ENTITLEMENT_ID=codecan_ai_pro
 REVENUECAT_FREE_MESSAGES_PER_MONTH=3
 REVENUECAT_SECRET_API_KEY=YOUR_REVENUECAT_SECRET_API_KEY
 REVENUECAT_WEBHOOK_AUTH=YOUR_RANDOM_WEBHOOK_TOKEN
-REVENUECAT_WEB_PURCHASE_LINK_URL=YOUR_REVENUECAT_SANDBOX_PURCHASE_LINK
+REVENUECAT_WEB_PURCHASE_LINK_URL=https://pay.rev.cat/sandbox/YOUR_TOKEN/{APP_USER_ID}
 ```
 
 Optional native SDK keys:
@@ -174,6 +174,7 @@ Notes:
 - `REVENUECAT_SECRET_API_KEY` is required for backend sync and hosted checkout link handling.
 - `REVENUECAT_WEBHOOK_AUTH` is checked by this app on the RevenueCat webhook route.
 - `REVENUECAT_WEB_PURCHASE_LINK_URL` should be the **sandbox** hosted purchase link while testing locally.
+- For identified users, use path-style app user id format: `https://pay.rev.cat/<token>/{APP_USER_ID}`.
 
 ## Step 9: Understand how user identity works
 

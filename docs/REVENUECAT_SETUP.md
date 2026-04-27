@@ -26,6 +26,7 @@ Notes:
 - `REVENUECAT_SECRET_API_KEY` is required for backend customer sync and webhook refresh.
 - `REVENUECAT_WEBHOOK_AUTH` is the token this app expects on `POST /api/webhooks/revenuecat`.
 - `REVENUECAT_WEB_PURCHASE_LINK_URL` should be a RevenueCat hosted purchase link for your web offering.
+- Use identified-link format with path app user id, for example: `https://pay.rev.cat/<token>/{APP_USER_ID}`.
 - If the purchase link contains `{APP_USER_ID}` or `{{APP_USER_ID}}`, the backend will replace it with the signed-in user id automatically.
 - `REVENUECAT_PUBLIC_SDK_KEY_IOS` and `REVENUECAT_PUBLIC_SDK_KEY_ANDROID` are used for native Capacitor purchases and are exposed through startup config.
 

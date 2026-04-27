@@ -1,1 +1,5 @@
-export { SubscriptionProvider, useSubscription } from './SubscriptionContext';
+export {
+  SubscriptionProvider,
+  useSubscription,
+  useOptionalSubscription,
+} from './SubscriptionContext';

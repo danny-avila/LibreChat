@@ -16,9 +16,19 @@ export const isNativePlatform = () => Capacitor.isNativePlatform?.() ?? false;
 
 export const getNativePlatform = () => Capacitor.getPlatform?.() ?? 'web';
 
-export const loadPurchasesModule = () => importModule('@revenuecat/purchases-capacitor');
+export const loadPurchasesModule = () => {
+  if (!isNativePlatform()) {
+    return Promise.resolve(null);
+  }
+  return importModule('@revenuecat/purchases-capacitor');
+};
 
-export const loadPurchasesUiModule = () => importModule('@revenuecat/purchases-capacitor-ui');
+export const loadPurchasesUiModule = () => {
+  if (!isNativePlatform()) {
+    return Promise.resolve(null);
+  }
+  return importModule('@revenuecat/purchases-capacitor-ui');
+};
 
 export const getRevenueCatPublicSdkKey = (
   startupConfig?: Record<string, any> | null,

@@ -8,7 +8,23 @@ const {
 
 const DEFAULT_FREE_LIMIT = 3;
 const DEFAULT_ENTITLEMENT_ID = 'codecan_ai_pro';
-const COLLECTION_NAME = SubscriptionProfile.collection.collectionName;
+
+function getCollectionName() {
+  if (SubscriptionProfile?.collection?.collectionName) {
+    return SubscriptionProfile.collection.collectionName;
+  }
+
+  if (mongoose.models?.SubscriptionProfile?.collection?.collectionName) {
+    return mongoose.models.SubscriptionProfile.collection.collectionName;
+  }
+
+  try {
+    const subscriptionModel = mongoose.model('SubscriptionProfile');
+    return subscriptionModel?.collection?.collectionName ?? null;
+  } catch (_error) {
+    return null;
+  }
+}
 
 function getSubscriptionConfig(req) {
   const subscriptionConfig =
@@ -58,7 +74,12 @@ function getCollection() {
     return null;
   }
 
-  return mongoose.connection.collection(COLLECTION_NAME);
+  const collectionName = getCollectionName();
+  if (!collectionName) {
+    return null;
+  }
+
+  return mongoose.connection.collection(collectionName);
 }
 
 function getEntitlementPath(entitlementId) {
@@ -289,10 +310,10 @@ async function evaluateSubscriptionQuota(req) {
 }
 
 module.exports = {
-  COLLECTION_NAME,
   DEFAULT_ENTITLEMENT_ID,
   DEFAULT_FREE_LIMIT,
   evaluateSubscriptionQuota,
+  getCollectionName,
   getCurrentPeriod,
   getSubscriptionConfig,
   isCountableChatRequest,

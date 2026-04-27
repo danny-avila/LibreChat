@@ -1,6 +1,7 @@
 /* eslint-disable i18next/no-literal-string */
+import { useEffect } from 'react';
 import { Button, Spinner } from '@librechat/client';
-import { useSubscription } from '~/hooks/Subscription';
+import { useOptionalSubscription } from '~/hooks/Subscription';
 
 const formatPlanLabel = (plan: string | null, isPro: boolean) => {
   if (!isPro) {
@@ -19,6 +20,28 @@ const formatPlanLabel = (plan: string | null, isPro: boolean) => {
 };
 
 export default function SubscriptionSection() {
+  const subscription = useOptionalSubscription();
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+    console.debug('[SubscriptionSection] mounted', {
+      hasProvider: Boolean(subscription),
+    });
+  }, [subscription]);
+
+  if (!subscription) {
+    return (
+      <div className="flex flex-col gap-2 rounded-2xl border border-border-light bg-surface-primary p-4">
+        <div className="text-base font-semibold">CodeCan AI Pro</div>
+        <div className="text-sm text-text-secondary">
+          Subscription settings are temporarily unavailable. Reload the page and try again.
+        </div>
+      </div>
+    );
+  }
+
   const {
     isLoading,
     isNative,
@@ -29,7 +52,7 @@ export default function SubscriptionSection() {
     openUpgradeFlow,
     openManageFlow,
     restorePurchases,
-  } = useSubscription();
+  } = subscription;
 
   const manageDisabled = !isNative && !managementUrl;
   const planLabel = formatPlanLabel(currentPlan, isPro);

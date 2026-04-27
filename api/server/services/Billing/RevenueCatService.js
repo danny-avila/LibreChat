@@ -404,17 +404,31 @@ const buildHostedCheckoutUrl = ({ appUserId, email }) => {
 
   let resolvedUrl = webPurchaseLinkUrl;
   const encodedAppUserId = encodeURIComponent(appUserId);
+  let replacedAppUserIdTemplate = false;
 
   if (resolvedUrl.includes('{{APP_USER_ID}}')) {
     resolvedUrl = resolvedUrl.replaceAll('{{APP_USER_ID}}', encodedAppUserId);
+    replacedAppUserIdTemplate = true;
   } else if (resolvedUrl.includes('{APP_USER_ID}')) {
     resolvedUrl = resolvedUrl.replaceAll('{APP_USER_ID}', encodedAppUserId);
+    replacedAppUserIdTemplate = true;
   }
 
   const url = new URL(resolvedUrl);
-  if (!url.searchParams.has('app_user_id')) {
-    url.searchParams.set('app_user_id', appUserId);
+  const pathname = url.pathname.replace(/\/+$/, '');
+  const pathSegments = pathname.split('/').filter(Boolean);
+  const lastPathSegment = pathSegments[pathSegments.length - 1] ?? '';
+  const hasAppUserIdInPath = decodeURIComponent(lastPathSegment) === appUserId;
+
+  /**
+   * RevenueCat identified Web Purchase Links expect app user id on the path:
+   * https://pay.rev.cat/<token>/<app_user_id>?email=...
+   * Keep query-param fallback for links explicitly configured that way.
+   */
+  if (!replacedAppUserIdTemplate && !hasAppUserIdInPath && !url.searchParams.has('app_user_id')) {
+    url.pathname = `${pathname}/${encodedAppUserId}`;
   }
+
   if (email && !url.searchParams.has('email')) {
     url.searchParams.set('email', email);
   }
