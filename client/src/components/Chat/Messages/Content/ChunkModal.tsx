@@ -1,8 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 
 export type BklSource = {
+  source?: {
+    url?: string;
+    embed_url?: string;
+  };
   document: string[];
   metadata: Array<{
     name?: string;
@@ -37,6 +41,7 @@ export default function ChunkModal({ isOpen, onClose, source, citationNumber }: 
   const pageInfo = meta?.page_info;
   const relevanceRaw = meta?.relevance;
   const chunkText = source?.document?.[0] ?? '';
+  const sourceUrl = source?.source?.url ?? source?.source?.embed_url;
 
   // relevance: 0–1이면 *100, 이미 0–100이면 그대로 (100 초과 시 100으로 캡)
   const relevanceDisplay =
@@ -76,14 +81,28 @@ export default function ChunkModal({ isOpen, onClose, source, citationNumber }: 
                 )}
               </div>
             </div>
-            <button
-              ref={closeButtonRef}
-              onClick={onClose}
-              className="ml-3 flex-shrink-0 rounded-md p-1 text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
-              aria-label="닫기"
-            >
-              <X className="size-4" />
-            </button>
+            <div className="ml-3 flex flex-shrink-0 items-center gap-1">
+              {sourceUrl && (
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md p-1 text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
+                  aria-label="원문 보기"
+                  title="원문 보기"
+                >
+                  <ExternalLink className="size-4" />
+                </a>
+              )}
+              <button
+                ref={closeButtonRef}
+                onClick={onClose}
+                className="rounded-md p-1 text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
+                aria-label="닫기"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
           </div>
 
           {/* Body */}
