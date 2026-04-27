@@ -56,8 +56,8 @@ export default defineConfig(({ command }) => ({
         name: 'CodeCan AI',
         short_name: 'CodeCan AI',
         display: 'standalone',
-        background_color: '#000000',
-        theme_color: '#3882ba',
+        background_color: '#0B2F5B',
+        theme_color: '#0B2F5B',
         icons: [
           {
             src: 'assets/favicon-32x32.png',

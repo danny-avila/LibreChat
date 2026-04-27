@@ -25,6 +25,7 @@ const compat = new FlatCompat({
 export default [
   {
     ignores: [
+      'capacitor.config.ts',
       'client/vite.config.ts',
       'client/dist/**/*',
       'client/public/**/*',

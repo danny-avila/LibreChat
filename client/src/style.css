@@ -18,17 +18,18 @@
   --gray-800: #212121;
   --gray-850: #171717;
   --gray-900: #0d0d0d;
-  --brand-blue-50: #f0f5f9;
-  --brand-blue-100: #dceaf3;
-  --brand-blue-200: #c3e1f6;
-  --brand-blue-300: #8ebeda;
-  --brand-blue-400: #4a90c0;
-  --brand-blue-500: #3882ba;
-  --brand-blue-600: #2972a7;
-  --brand-blue-700: #1d5b8b;
-  --brand-blue-800: #133b54;
-  --brand-blue-900: #0d2f43;
-  --brand-blue-950: #08202f;
+  --brand-blue-50: #EAF2FF;
+  --brand-blue-100: #D9E3F2;
+  --brand-blue-200: #B8CDE8;
+  --brand-blue-300: #7FA3CC;
+  --brand-blue-400: #1E5A9C;
+  --brand-blue-500: #0B2F5B;
+  --brand-blue-550: #14437A;
+  --brand-blue-600: #14437A;
+  --brand-blue-700: #0A2A4E;
+  --brand-blue-800: #07142E;
+  --brand-blue-900: #050D1F;
+  --brand-blue-950: #030814;
   --green-50: var(--brand-blue-50);
   --green-100: var(--brand-blue-100);
   --green-200: var(--brand-blue-200);
@@ -46,8 +47,8 @@
   --red-300: #fca5a5;
   --red-400: #f87171;
   --red-500: #ef4444;
-  --red-600: #dc2626;
-  --red-700: #b91c1c;
+  --red-600: #D63A3A;
+  --red-700: #B62E2E;
   --red-800: #991b1b;
   --red-900: #7f1d1d;
   --red-950: #450a0a;
@@ -62,10 +63,21 @@
   --amber-800: #92400e;
   --amber-900: #78350f;
   --amber-950: #451a03;
-  --brand-purple: #ab68ff;
+  --brand-purple: #1E5A9C;
   --gizmo-gray-500: #999;
   --gizmo-gray-600: #666;
   --gizmo-gray-950: #0f0f0f;
+  --paper-50:  #FFFFFF;
+  --paper-100: #F6F9FF;
+  --paper-200: #EAF2FF;
+  --paper-300: #D9E3F2;
+  --slate-300: #C4CDDC;
+  --slate-500: #7C8AA3;
+  --diagram-100: #EAF1F8;
+  --diagram-200: #E5EEF8;
+  --signal-amber: #F2B644;
+  --signal-mint:  #6EFFC7;
+  --signal-flag:  #D63A3A;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -83,7 +95,7 @@
   }
 }
 html {
-  --brand-purple: #ab68ff;
+  --brand-purple: #1E5A9C;
   --presentation: var(--white);
   --text-primary: var(--gray-800);
   --text-secondary: var(--gray-600);
@@ -144,7 +156,7 @@ html {
   --switch-unchecked: 0 0% 58%;
 }
 .dark {
-  --brand-purple: #ab68ff;
+  --brand-purple: #1E5A9C;
   --presentation: var(--gray-800);
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'ai.librechat.app',
-  appName: 'LibreChat',
+  appName: 'CodeCan AI',
   webDir: 'client/dist',
 };
 

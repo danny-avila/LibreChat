@@ -12,7 +12,7 @@
   "com_agents_mcp_icon_size": "Minimikoko 128 x 128 px",
   "com_agents_mcp_info": "Lisää MCP-palvelimia agentillesi, jotta se voi ottaa yhteyttä ulkoisiin palveluihin ja suorittaa tehtäviä niissä.",
   "com_agents_mcp_name_placeholder": "Mukautettu työkalu",
-  "com_agents_mcp_trust_subtext": "LibreChat ei varmenna mukautettuja liittymiä.",
+  "com_agents_mcp_trust_subtext": "CodeCan AI ei varmenna mukautettuja liittymiä.",
   "com_agents_mcps_disabled": "Agentti on luotava ennen MCP:n lisäämistä.",
   "com_agents_missing_provider_model": "Valitse palvelun tuottaja ja malli ennen agentin luomista.",
   "com_agents_name_placeholder": "Valinnainen: Agentin nimi",
