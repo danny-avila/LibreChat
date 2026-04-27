@@ -16,8 +16,10 @@ export type BannerCreateInput = Partial<
 >;
 
 export type BannerUpdateInput = Partial<
-  Pick<IBanner, 'message' | 'displayFrom' | 'displayTo' | 'type' | 'isPublic' | 'persistable'>
->;
+  Pick<IBanner, 'message' | 'displayFrom' | 'type' | 'isPublic' | 'persistable'>
+> & {
+  displayTo?: Date | null;
+};
 
 export function createBannerMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -81,11 +83,33 @@ export function createBannerMethods(mongoose: typeof import('mongoose')) {
     data: BannerUpdateInput,
   ): Promise<IBanner | null> {
     const Banner = mongoose.models.Banner as Model<IBanner>;
-    return (await Banner.findByIdAndUpdate(
-      id,
-      { $set: data },
-      { new: true },
-    ).lean()) as IBanner | null;
+    const set: Partial<IBanner> = {};
+    const unset: Partial<Record<keyof BannerUpdateInput, ''>> = {};
+    (Object.keys(data) as Array<keyof BannerUpdateInput>).forEach((key) => {
+      const value = data[key];
+      if (value === undefined) {
+        return;
+      }
+      if (value === null) {
+        unset[key] = '';
+        return;
+      }
+      (set as Record<string, unknown>)[key] = value;
+    });
+    const update: { $set?: Partial<IBanner>; $unset?: Partial<Record<keyof BannerUpdateInput, ''>> } = {};
+    if (Object.keys(set).length > 0) {
+      update.$set = set;
+    }
+    if (Object.keys(unset).length > 0) {
+      update.$unset = unset;
+    }
+    if (Object.keys(update).length === 0) {
+      return (await Banner.findById(id).lean()) as IBanner | null;
+    }
+    return (await Banner.findByIdAndUpdate(id, update, {
+      new: true,
+      runValidators: true,
+    }).lean()) as IBanner | null;
   }
 
   async function deleteBannerById(id: string | Types.ObjectId): Promise<IBanner | null> {

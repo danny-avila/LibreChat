@@ -32,8 +32,10 @@ type BannerCreateData = Partial<
 >;
 
 type BannerUpdateData = Partial<
-  Pick<IBanner, 'message' | 'displayFrom' | 'displayTo' | 'type' | 'isPublic' | 'persistable'>
->;
+  Pick<IBanner, 'message' | 'displayFrom' | 'type' | 'isPublic' | 'persistable'>
+> & {
+  displayTo?: Date | null;
+};
 
 export interface AdminBannersDeps {
   listBanners: (options?: { limit?: number; offset?: number }) => Promise<IBanner[]>;
@@ -61,9 +63,15 @@ function parseDate(value: string | Date | null | undefined): Date | null | undef
   return date;
 }
 
-function isValidDateValue(value: string | Date | null | undefined): boolean {
-  if (value === undefined || value === null) {
+function isValidDateValue(
+  value: string | Date | null | undefined,
+  { allowNull }: { allowNull: boolean },
+): boolean {
+  if (value === undefined) {
     return true;
+  }
+  if (value === null) {
+    return allowNull;
   }
   const date = value instanceof Date ? value : new Date(value);
   return !Number.isNaN(date.getTime());
@@ -138,10 +146,13 @@ export function createAdminBannersHandlers(deps: AdminBannersDeps) {
     if (body.persistable !== undefined && typeof body.persistable !== 'boolean') {
       return 'persistable must be a boolean';
     }
-    if (body.displayFrom !== undefined && !isValidDateValue(body.displayFrom)) {
-      return 'displayFrom must be a valid date or null';
+    if (
+      body.displayFrom !== undefined &&
+      !isValidDateValue(body.displayFrom, { allowNull: false })
+    ) {
+      return 'displayFrom must be a valid date';
     }
-    if (body.displayTo !== undefined && !isValidDateValue(body.displayTo)) {
+    if (body.displayTo !== undefined && !isValidDateValue(body.displayTo, { allowNull: true })) {
       return 'displayTo must be a valid date or null';
     }
     return null;
@@ -208,11 +219,19 @@ export function createAdminBannersHandlers(deps: AdminBannersDeps) {
       }
       if (body.displayFrom !== undefined) {
         const parsed = parseDate(body.displayFrom);
-        updateData.displayFrom = (parsed ?? new Date()) as Date;
+        if (parsed instanceof Date) {
+          updateData.displayFrom = parsed;
+        }
       }
       if (body.displayTo !== undefined) {
-        const parsed = parseDate(body.displayTo);
-        updateData.displayTo = (parsed ?? undefined) as Date | undefined;
+        if (body.displayTo === null) {
+          updateData.displayTo = null;
+        } else {
+          const parsed = parseDate(body.displayTo);
+          if (parsed instanceof Date) {
+            updateData.displayTo = parsed;
+          }
+        }
       }
       if (body.type !== undefined) {
         updateData.type = body.type as IBanner['type'];
