@@ -48,6 +48,8 @@ function highlight(text: string, query: string): React.ReactNode {
 function cleanPreviewText(content: string): string {
   return content
     .replace(/<!--\s*BKL_SEG\b[^>]*-->/gi, '')
+    .replace(/\n-{3,}\s*\n📄\s*문서:[\s\S]*$/m, '')
+    .replace(/^📄\s*문서:[\s\S]*$/m, '')
     .replace(/^\s*\[(본문|첨부[^\]\n]*)\]\s*/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
