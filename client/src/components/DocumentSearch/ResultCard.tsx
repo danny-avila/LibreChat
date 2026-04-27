@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ExternalLink } from 'lucide-react';
 import type { ChunkPreview, DocumentHit } from '~/data-provider/DocumentSearch';
 import { useLocalize } from '~/hooks';
 import { cn, FileTypeIcon, fileExtensionLabel } from '~/utils';
@@ -12,19 +12,25 @@ interface ResultCardProps {
 }
 
 /** case-insensitive token highlighter */
+function queryTokens(query: string): string[] {
+  return query
+    .replace(/[+"()]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim().replace(/^[|-]+|[~*]+$/g, ''))
+    .filter((t) => t.length >= 1);
+}
+
 function highlight(text: string, query: string): React.ReactNode {
   if (!text) return null;
-  const tokens = query
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length >= 1);
+  const tokens = queryTokens(query);
   if (tokens.length === 0) return text;
 
   const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const re = new RegExp(`(${escaped.join('|')})`, 'gi');
   const parts = text.split(re);
+  const tokenSet = new Set(tokens.map((t) => t.toLowerCase()));
   return parts.map((part, i) =>
-    re.test(part) ? (
+    tokenSet.has(part.toLowerCase()) ? (
       <mark
         key={i}
         className="rounded bg-yellow-200 px-0.5 font-medium text-text-primary dark:bg-yellow-700/60"
@@ -37,13 +43,19 @@ function highlight(text: string, query: string): React.ReactNode {
   );
 }
 
+function cleanPreviewText(content: string): string {
+  return content
+    .replace(/<!--\s*BKL_SEG\b[^>]*-->/gi, '')
+    .replace(/^\s*\[(본문|첨부[^\]\n]*)\]\s*/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function buildSnippet(content: string, query: string, maxLen = 260): string {
-  if (!content) return '';
-  const tokens = query
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-  const lower = content.toLowerCase();
+  const cleaned = cleanPreviewText(content);
+  if (!cleaned) return '';
+  const tokens = queryTokens(query);
+  const lower = cleaned.toLowerCase();
   let idx = -1;
   for (const t of tokens) {
     const hit = lower.indexOf(t.toLowerCase());
@@ -53,11 +65,17 @@ function buildSnippet(content: string, query: string, maxLen = 260): string {
     }
   }
   if (idx === -1) {
-    return content.slice(0, maxLen) + (content.length > maxLen ? '…' : '');
+    return cleaned.slice(0, maxLen) + (cleaned.length > maxLen ? '…' : '');
   }
   const start = Math.max(0, idx - 80);
-  const end = Math.min(content.length, start + maxLen);
-  return (start > 0 ? '…' : '') + content.slice(start, end) + (end < content.length ? '…' : '');
+  const end = Math.min(cleaned.length, start + maxLen);
+  return (start > 0 ? '…' : '') + cleaned.slice(start, end) + (end < cleaned.length ? '…' : '');
+}
+
+function previewForChunk(chunk: ChunkPreview, query: string): string {
+  const snippet = cleanPreviewText(chunk.snippet || '');
+  if (snippet && snippet !== '...') return snippet;
+  return buildSnippet(chunk.content, query);
 }
 
 // `fileExtension` / `extensionLabel` / `ExtensionIcon` were inlined here
@@ -67,11 +85,11 @@ function buildSnippet(content: string, query: string, maxLen = 260): string {
 interface ChunkRowProps {
   chunk: ChunkPreview;
   index: number;
+  total: number;
   query: string;
-  localize: ReturnType<typeof useLocalize>;
 }
 
-const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, query, localize }) => {
+const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, total, query }) => {
   const [expanded, setExpanded] = useState(false);
   const pageInfo =
     chunk.page_start != null
@@ -79,9 +97,11 @@ const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, query, localize }) =>
         ? `p.${chunk.page_start}-${chunk.page_end}`
         : `p.${chunk.page_start}`
       : null;
+  const preview = previewForChunk(chunk, query);
+  const expandedText = cleanPreviewText(chunk.content) || chunk.content;
 
   return (
-    <div className="group/chunk rounded-md border border-transparent px-2 py-1.5 hover:border-border-light hover:bg-surface-hover">
+    <div className="group/chunk rounded-md border border-transparent px-2 py-2 hover:border-border-light hover:bg-surface-hover">
       <button
         type="button"
         onClick={(e) => {
@@ -99,28 +119,20 @@ const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, query, localize }) =>
           aria-hidden="true"
         />
         <span className="inline-flex h-5 shrink-0 items-center rounded bg-surface-secondary px-1.5 text-[10px] font-semibold tabular-nums text-text-secondary">
-          {localize('com_document_search_chunk_label', { 0: String(index + 1) })}
+          {index + 1}/{total}
         </span>
-        {chunk.section && (
-          <span className="inline-flex h-5 shrink-0 items-center rounded bg-surface-secondary px-1.5 text-[10px] text-text-tertiary">
-            {localize('com_document_search_section_prefix')}: {chunk.section}
-          </span>
-        )}
         {pageInfo && (
           <span className="shrink-0 text-[11px] tabular-nums text-text-tertiary">{pageInfo}</span>
         )}
-        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-text-tertiary">
-          {chunk.score.toFixed(2)}
-        </span>
       </button>
       <div className="mt-1 pl-5">
         {expanded ? (
           <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-text-primary">
-            {highlight(chunk.content, query)}
+            {highlight(expandedText, query)}
           </pre>
         ) : (
-          <p className="line-clamp-2 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-secondary">
-            {highlight(buildSnippet(chunk.content, query), query)}
+          <p className="line-clamp-3 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-secondary">
+            {highlight(preview, query)}
           </p>
         )}
       </div>
@@ -154,26 +166,45 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
         isSelected && 'bg-surface-active-alt',
       )}
     >
-      <div className="flex items-start gap-2 px-4">
-        <span className="mt-0.5 inline-flex h-5 shrink-0 items-center rounded-sm border border-border-medium bg-surface-secondary px-1.5 text-[10px] font-semibold tabular-nums tracking-wide text-text-secondary">
+      <div className="flex items-center gap-2 px-4">
+        <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border-medium bg-surface-secondary px-1.5 text-[10px] font-semibold leading-none tabular-nums tracking-wide text-text-secondary">
           {fileExtensionLabel(hit.file_name)}
         </span>
-        <FileTypeIcon name={hit.file_name} />
+        <FileTypeIcon name={hit.file_name} className="h-4 w-4 shrink-0" />
         <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
           {hit.file_name || hit.doc_id}
         </h3>
-        <span
-          className="shrink-0 text-[11px] tabular-nums text-text-secondary"
-          title={localize('com_document_search_score')}
-        >
-          {localize('com_document_search_score')} {hit.score.toFixed(2)}
-        </span>
+        {hit.source_url && (
+          <a
+            href={hit.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+            aria-label="원문 보기"
+            title="원문 보기"
+          >
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            원문
+          </a>
+        )}
       </div>
 
       {hit.top_chunks.length > 0 && (
-        <div className="mt-2 flex flex-col gap-1 px-3">
-          {hit.top_chunks.slice(0, 3).map((c, i) => (
-            <ChunkRow key={c.chunk_id} chunk={c} index={i} query={query} localize={localize} />
+        <div
+          className={cn(
+            'mt-2 flex flex-col gap-1 px-3',
+            hit.top_chunks.length > 3 && 'max-h-72 overflow-y-auto pr-2',
+          )}
+        >
+          {hit.top_chunks.map((c, i) => (
+            <ChunkRow
+              key={c.chunk_id || `${hit.doc_id}-${i}`}
+              chunk={c}
+              index={i}
+              total={hit.chunk_count || hit.top_chunks.length}
+              query={query}
+            />
           ))}
         </div>
       )}
@@ -189,7 +220,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
             · {b}
           </span>
         ))}
-        <span className="ml-auto">
+        <span className="ml-auto tabular-nums">
           {localize('com_document_search_matched_chunks')}: {hit.chunk_count}
         </span>
       </div>

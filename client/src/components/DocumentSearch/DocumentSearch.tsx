@@ -3,7 +3,7 @@ import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
-import { FileSearch } from 'lucide-react';
+import { FileSearch, RotateCcw } from 'lucide-react';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useLocalize } from '~/hooks';
 import { useChatContext } from '~/Providers';
@@ -17,12 +17,13 @@ import SearchBar from './SearchBar';
 import ResultCard from './ResultCard';
 import FilterBar, {
   EMPTY_DOC_FILTERS,
+  isFilterActive,
   resolvePeriodRange,
   type DocumentSearchFilterState,
 } from './FilterBar';
 
 const DEFAULT_TOP_K = 50;
-const DEFAULT_CHUNKS_PER_DOC = 3;
+const DEFAULT_CHUNKS_PER_DOC = 8;
 
 function toApiFilters(f: DocumentSearchFilterState): KeywordSearchFilters | undefined {
   const { from, to } = resolvePeriodRange(f);
@@ -71,7 +72,7 @@ const DocumentSearch: React.FC = () => {
   );
 
   useEffect(() => {
-    if (queryFromUrl && !search.data && !search.isPending && !search.isError) {
+    if (queryFromUrl && !search.data && !search.isLoading && !search.isError) {
       runSearch(queryFromUrl, filters);
     }
     // only on mount
@@ -81,15 +82,18 @@ const DocumentSearch: React.FC = () => {
   const documents = search.data?.documents ?? [];
   const hasQuery = !!query;
   const hasResults = documents.length > 0;
+  const isSearching = search.isLoading;
+  const hasActiveFilters = isFilterActive(filters);
+  const canReset = hasQuery || hasActiveFilters || !!search.data || search.isError;
 
   const resultHeading = useMemo(() => {
     if (!hasQuery) return null;
-    if (search.isPending) return localize('com_document_search_searching');
+    if (isSearching) return localize('com_document_search_searching');
     return localize('com_document_search_result_heading', {
       0: query,
       1: String(search.data?.total ?? 0),
     });
-  }, [hasQuery, query, search.data?.total, search.isPending, localize]);
+  }, [hasQuery, query, search.data?.total, isSearching, localize]);
 
   const handleNewChat = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
@@ -110,6 +114,13 @@ const DocumentSearch: React.FC = () => {
     },
     [query, runSearch],
   );
+
+  const handleResetSearch = useCallback(() => {
+    setQuery('');
+    setFilters(EMPTY_DOC_FILTERS);
+    setSearchParams(new URLSearchParams(), { replace: true });
+    search.reset();
+  }, [search, setSearchParams]);
 
   return (
     <div className="relative flex w-full grow overflow-hidden bg-presentation">
@@ -149,16 +160,29 @@ const DocumentSearch: React.FC = () => {
             <SearchBar
               value={query}
               onSubmit={(q) => runSearch(q, filters)}
-              isLoading={search.isPending}
+              isLoading={isSearching}
             />
 
             {/* Inline filter bar */}
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <FilterBar
                 value={filters}
                 onChange={handleFiltersChange}
-                disabled={search.isPending && !hasResults}
+                disabled={isSearching && !hasResults}
               />
+              {canReset && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 gap-1.5 rounded-full px-3 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                  onClick={handleResetSearch}
+                  disabled={isSearching && !hasResults}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                  초기화
+                </Button>
+              )}
             </div>
 
             {/* Result heading */}
@@ -170,7 +194,7 @@ const DocumentSearch: React.FC = () => {
 
             {/* Body */}
             <div className="mt-2">
-              {!hasQuery && !search.isPending && (
+              {!hasQuery && !isSearching && (
                 <SearchHintPanel
                   icon={<FileSearch className="h-10 w-10 opacity-40" aria-hidden="true" />}
                   title={localize('com_document_search_hint_title')}
@@ -186,7 +210,7 @@ const DocumentSearch: React.FC = () => {
                 </div>
               )}
 
-              {hasQuery && search.data && !hasResults && !search.isPending && (
+              {hasQuery && search.data && !hasResults && !isSearching && (
                 <EmptyState
                   icon={<FileSearch className="h-10 w-10 opacity-40" aria-hidden="true" />}
                   title={localize('com_document_search_empty_title')}
