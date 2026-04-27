@@ -256,7 +256,7 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
  * (sandpack / mermaid.js) error on empty input.
  */
 export function detectArtifactTypeFromFile(
-  attachment: Pick<TFile, 'filename' | 'type' | 'text'>,
+  attachment: Partial<Pick<TFile, 'filename' | 'type' | 'text'>>,
 ): ToolArtifactType | null {
   const byExtension = EXTENSION_TO_TOOL_ARTIFACT_TYPE[extensionOf(attachment.filename)];
   const type = byExtension ?? MIME_TO_TOOL_ARTIFACT_TYPE[baseMime(attachment.type)] ?? null;
@@ -280,8 +280,9 @@ export function detectArtifactTypeFromFile(
  * the same claim. Falls through `file_id` → `filename` → `filepath` to
  * minimise collision risk for any caller that (rarely) lacks `file_id`.
  */
-export const toolArtifactKey = (file: Pick<TFile, 'file_id' | 'filename' | 'filepath'>): string =>
-  `tool-artifact-${file.file_id ?? file.filename ?? file.filepath ?? 'unknown'}`;
+export const toolArtifactKey = (
+  file: Partial<Pick<TFile, 'file_id' | 'filename' | 'filepath'>>,
+): string => `tool-artifact-${file.file_id ?? file.filename ?? file.filepath ?? 'unknown'}`;
 
 /**
  * Stable epoch fallback (instead of `Date.now()`) when neither timestamp
@@ -290,7 +291,7 @@ export const toolArtifactKey = (file: Pick<TFile, 'file_id' | 'filename' | 'file
  * across renders. Using `0` parks unsorted entries at the bottom of the
  * panel's tab strip until real timestamps arrive.
  */
-const toLastUpdate = (file: Pick<TFile, 'updatedAt' | 'createdAt'>): number => {
+const toLastUpdate = (file: Partial<Pick<TFile, 'updatedAt' | 'createdAt'>>): number => {
   const value = file.updatedAt ?? file.createdAt;
   if (value == null) {
     return 0;
@@ -321,8 +322,16 @@ interface FileToArtifactOptions {
  * same file across renders maps to the same artifact entry.
  */
 export function fileToArtifact(
-  attachment: Pick<TAttachment, 'messageId'> &
-    Pick<TFile, 'file_id' | 'filename' | 'filepath' | 'type' | 'text' | 'updatedAt' | 'createdAt'>,
+  // Every picked field is read with a fallback in the implementation
+  // (`detectArtifactTypeFromFile`, `toolArtifactKey`, `toLastUpdate`,
+  // and the empty-string nullish coalesces below), so the input type
+  // mirrors that and marks them optional. Required-by-strict-pick was
+  // making every test fixture and many real callers fail typecheck for
+  // fields the function never strictly needs.
+  attachment: Partial<
+    Pick<TAttachment, 'messageId'> &
+      Pick<TFile, 'file_id' | 'filename' | 'filepath' | 'type' | 'text' | 'updatedAt' | 'createdAt'>
+  >,
   options?: FileToArtifactOptions,
 ): Artifact | null {
   const type = options?.preClassifiedType ?? detectArtifactTypeFromFile(attachment);
