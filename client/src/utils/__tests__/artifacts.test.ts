@@ -120,6 +120,18 @@ describe('detectArtifactTypeFromFile', () => {
       detectArtifactTypeFromFile({ filename: 'doc.pdf', type: 'application/pdf', text: 'x' }),
     ).toBeNull();
   });
+
+  it('does not route bare text/plain MIME without a recognized extension', () => {
+    // Files with text/plain MIME and an unrecognized name (extensionless
+    // scripts, .env, etc.) should keep the inline <pre> rendering, not
+    // hijack the artifact panel.
+    expect(
+      detectArtifactTypeFromFile({ filename: 'unknown', type: 'text/plain', text: 'x' }),
+    ).toBeNull();
+    expect(
+      detectArtifactTypeFromFile({ filename: '.env', type: 'text/plain', text: 'KEY=value' }),
+    ).toBeNull();
+  });
 });
 
 describe('fileToArtifact', () => {
@@ -153,17 +165,29 @@ describe('fileToArtifact', () => {
     expect(fileToArtifact({ ...baseFile, filename: 'flow.mmd', type: '', text: '' })).toBeNull();
   });
 
-  it('falls back to a placeholder when a deferred-extraction file has no text', () => {
+  it('uses the caller-provided placeholder when a deferred-extraction file has no text', () => {
+    const artifact = fileToArtifact(
+      {
+        ...baseFile,
+        filename: 'slides.pptx',
+        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        text: '',
+      },
+      { placeholder: '_Coming soon_' },
+    );
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(artifact!.content).toBe('_Coming soon_');
+  });
+
+  it('falls back to empty content when no placeholder is supplied and text is missing', () => {
     const artifact = fileToArtifact({
       ...baseFile,
       filename: 'slides.pptx',
       type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       text: '',
     });
-    expect(artifact).not.toBeNull();
-    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
-    expect(artifact!.content).toContain('Preview not available yet');
-    expect(artifact!.content).toContain('Download');
+    expect(artifact!.content).toBe('');
   });
 
   it('uses real text when present for deferred-extraction file types', () => {
@@ -174,6 +198,15 @@ describe('fileToArtifact', () => {
       text: 'Slide 1: Intro\nSlide 2: Outro',
     });
     expect(artifact!.content).toBe('Slide 1: Intro\nSlide 2: Outro');
+  });
+
+  it('skips re-classification when preClassifiedType is provided', () => {
+    // Filename would normally classify as html, but caller forces plain-text.
+    const artifact = fileToArtifact(
+      { ...baseFile, filename: 'index.html', type: 'text/html', text: 'x' },
+      { preClassifiedType: TOOL_ARTIFACT_TYPES.PLAIN_TEXT },
+    );
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
   });
 
   it('falls back to createdAt when updatedAt is missing', () => {

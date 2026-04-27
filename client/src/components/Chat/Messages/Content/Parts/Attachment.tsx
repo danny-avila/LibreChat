@@ -3,6 +3,7 @@ import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import { artifactTypeForAttachment, isImageAttachment, isTextAttachment } from './attachmentTypes';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
+import type { ToolArtifactType } from '~/utils/artifacts';
 import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
@@ -177,10 +178,23 @@ const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
   );
 });
 
-const PanelArtifact = memo(({ attachment }: { attachment: TAttachment }) => {
+interface PanelArtifactProps {
+  attachment: TAttachment;
+  /** Pre-classified type from the routing decision tree, threaded down so
+   * `fileToArtifact` doesn't re-run `detectArtifactTypeFromFile`. */
+  type: ToolArtifactType;
+}
+
+const PanelArtifact = memo(({ attachment, type }: PanelArtifactProps) => {
+  const localize = useLocalize();
+  const placeholder = localize('com_ui_artifact_preview_pending');
   const artifact = useMemo(
-    () => fileToArtifact(attachment as TFile & TAttachmentMetadata),
-    [attachment],
+    () =>
+      fileToArtifact(attachment as TFile & TAttachmentMetadata, {
+        placeholder,
+        preClassifiedType: type,
+      }),
+    [attachment, type, placeholder],
   );
   if (!artifact) {
     return null;
@@ -212,15 +226,15 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
   if (isImageAttachment(attachment)) {
     return <ImageAttachment attachment={attachment} />;
   }
-  // Single classification call — predicates internally do the same thing,
-  // so checking once and branching avoids `detectArtifactTypeFromFile`
-  // running twice per attachment.
+  // Single classification call. The result is threaded into
+  // `PanelArtifact` -> `fileToArtifact` so the panel path doesn't
+  // re-run `detectArtifactTypeFromFile` a second time.
   const artType = artifactTypeForAttachment(attachment);
   if (artType === TOOL_ARTIFACT_TYPES.MERMAID) {
     return <MermaidArtifact attachment={attachment} />;
   }
   if (artType != null) {
-    return <PanelArtifact attachment={attachment} />;
+    return <PanelArtifact attachment={attachment} type={artType} />;
   }
   if (isTextAttachment(attachment)) {
     return <TextAttachment attachment={attachment} />;
@@ -239,7 +253,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   const fileAttachments: TAttachment[] = [];
   const imageAttachments: TAttachment[] = [];
   const textAttachments: TAttachment[] = [];
-  const panelArtifacts: TAttachment[] = [];
+  const panelArtifacts: Array<{ attachment: TAttachment; type: ToolArtifactType }> = [];
   const mermaidArtifacts: TAttachment[] = [];
 
   attachments.forEach((attachment) => {
@@ -256,7 +270,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
       return;
     }
     if (artType != null) {
-      panelArtifacts.push(attachment);
+      panelArtifacts.push({ attachment, type: artType });
       return;
     }
     if (isTextAttachment(attachment)) {
@@ -279,9 +293,10 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
       )}
       {panelArtifacts.length > 0 && (
         <div className="my-2 flex flex-wrap items-center gap-2">
-          {panelArtifacts.map((attachment, index) => (
+          {panelArtifacts.map(({ attachment, type }, index) => (
             <PanelArtifact
               attachment={attachment}
+              type={type}
               key={`artifact-${fileIdOf(attachment, index)}`}
             />
           ))}

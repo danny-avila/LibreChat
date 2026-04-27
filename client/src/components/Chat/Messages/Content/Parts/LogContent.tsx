@@ -32,6 +32,7 @@ type ImageAttachment = TFile & TAttachmentMetadata;
 
 const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, attachments }) => {
   const localize = useLocalize();
+  const artifactPreviewPending = localize('com_ui_artifact_preview_pending');
 
   const processedContent = useMemo(() => {
     if (!output) {
@@ -77,7 +78,10 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
         return;
       }
       if (artType != null) {
-        const artifact = fileToArtifact(fileData);
+        const artifact = fileToArtifact(fileData, {
+          placeholder: artifactPreviewPending,
+          preClassifiedType: artType,
+        });
         if (artifact) {
           panelAtts.push({ attachment, artifact });
         }
@@ -97,7 +101,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       mermaidAttachments: mermaidAtts,
       nonInlineAttachments: otherAtts,
     };
-  }, [attachments, renderImages]);
+  }, [attachments, renderImages, artifactPreviewPending]);
 
   const renderAttachment = (file: TAttachment) => {
     const now = new Date();

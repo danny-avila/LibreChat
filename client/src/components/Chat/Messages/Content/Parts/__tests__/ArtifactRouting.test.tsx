@@ -228,28 +228,37 @@ describe('ToolArtifactCard click behaviour', () => {
     expect(snap.artifactIds).toContain('tool-artifact-html-1');
   });
 
-  it('dedups two cards for the same file_id (latest mount wins)', () => {
-    // Same file_id appears twice — e.g. agent reads back what it just
-    // wrote. We expect only ONE card chip, not two.
+  it('dedups cards for the same file_id across separate AttachmentGroups (latest mount wins)', () => {
+    // Real scenario: each tool call renders its own AttachmentGroup; the
+    // same file (same file_id) shows up in two of them. We expect only
+    // ONE card chip in total — the dedup atom collapses them.
     const dup = baseAttachment({
       file_id: 'dup',
       filename: 'index.html',
       text: '<h1>v1</h1>',
     } as Partial<TAttachment>);
-    const { container } = renderWith(<AttachmentGroup attachments={[dup, dup]} />);
-    // Only one card body should be visible (one filename label).
+    const { container } = renderWith(
+      <>
+        <AttachmentGroup attachments={[dup]} />
+        <AttachmentGroup attachments={[dup]} />
+      </>,
+    );
     const titles = container.querySelectorAll('div[title="index.html"]');
     expect(titles.length).toBe(1);
   });
 
-  it('dedups two mermaid cards for the same file_id (latest mount wins)', () => {
+  it('dedups two mermaid cards for the same file_id across groups (latest mount wins)', () => {
     const dupMermaid = baseAttachment({
       file_id: 'mmd-dup',
       filename: 'flow.mmd',
       text: 'graph TD\nA-->B',
     } as Partial<TAttachment>);
-    renderWith(<AttachmentGroup attachments={[dupMermaid, dupMermaid]} />);
-    // Only one rendered diagram, not two.
+    renderWith(
+      <>
+        <AttachmentGroup attachments={[dupMermaid]} />
+        <AttachmentGroup attachments={[dupMermaid]} />
+      </>,
+    );
     expect(screen.getAllByTestId('mermaid-render')).toHaveLength(1);
   });
 

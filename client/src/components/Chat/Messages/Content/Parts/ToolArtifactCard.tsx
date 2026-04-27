@@ -1,8 +1,8 @@
 import { memo, useEffect, useId, useLayoutEffect } from 'react';
 import { Download } from 'lucide-react';
 import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
-import type { Artifact } from '~/common';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
+import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
@@ -29,12 +29,12 @@ interface ToolArtifactCardProps {
  *     don't trigger re-renders here. Cleanup releases the claim if it's
  *     still ours so a subsequent re-mount can take it.
  *
- *  2. **Self-heal registration** (no deps). The panel's `useArtifacts`
- *     hook resets `artifactsState` whenever the panel unmounts — including
- *     when the user closes it via visibility-toggle. Without re-registering
- *     on every render, an artifact disappears from state after a close and
- *     a subsequent click on the same card has nothing to open. The
- *     idempotent dedup makes this cheap.
+ *  2. **Self-heal registration** subscribes to the per-id selector
+ *     `artifactByIdSelector(artifact.id)` and writes only when the
+ *     entry is missing or the cached content/type/title drifted. The
+ *     panel's `useArtifacts` hook resets `artifactsState` on close, so
+ *     this re-fires deterministically once the slice transitions back
+ *     to `undefined` — without the no-deps render-loop pattern.
  *
  *  3. **Focus on mount** (deps: artifact.id). A freshly-mounted card
  *     means a new artifact has arrived; we steal panel focus to match
@@ -54,6 +54,7 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
+  const existingEntry = useRecoilValue(store.artifactByIdSelector(artifact.id));
   const [claim, setClaim] = useRecoilState(store.toolArtifactClaim(artifact.id));
   const isSelected = artifact.id === currentArtifactId;
   const isMyClaim = claim === claimKey;
@@ -70,19 +71,16 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   }, [claimKey, setClaim]);
 
   useEffect(() => {
-    setArtifacts((prev) => {
-      const existing = prev?.[artifact.id];
-      if (
-        existing != null &&
-        existing.content === artifact.content &&
-        existing.type === artifact.type &&
-        existing.title === artifact.title
-      ) {
-        return prev;
-      }
-      return { ...(prev ?? {}), [artifact.id]: artifact };
-    });
-  });
+    if (
+      existingEntry != null &&
+      existingEntry.content === artifact.content &&
+      existingEntry.type === artifact.type &&
+      existingEntry.title === artifact.title
+    ) {
+      return;
+    }
+    setArtifacts((prev) => ({ ...(prev ?? {}), [artifact.id]: artifact }));
+  }, [artifact, existingEntry, setArtifacts]);
 
   useEffect(() => {
     setCurrentArtifactId(artifact.id);

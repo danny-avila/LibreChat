@@ -1,0 +1,155 @@
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import { RecoilRoot } from 'recoil';
+import type { TAttachment } from 'librechat-data-provider';
+import LogContent from '../LogContent';
+
+jest.mock('~/hooks', () => ({
+  useLocalize:
+    () =>
+    (key: string): string =>
+      key,
+}));
+
+jest.mock('../LogLink', () => ({
+  __esModule: true,
+  default: ({
+    href,
+    filename,
+    children,
+  }: {
+    href: string;
+    filename: string;
+    children?: React.ReactNode;
+  }) => (
+    <a data-testid="log-link" href={href} data-filename={filename}>
+      {children}
+    </a>
+  ),
+  useAttachmentLink: () => ({ handleDownload: jest.fn() }),
+}));
+
+jest.mock('~/components/Chat/Input/Files/FilePreview', () => ({
+  __esModule: true,
+  default: () => <div data-testid="file-preview" />,
+}));
+
+jest.mock('~/components/Chat/Messages/Content/Image', () => ({
+  __esModule: true,
+  default: ({ altText }: { altText?: string }) => <img alt={altText ?? ''} data-testid="image" />,
+}));
+
+jest.mock('~/components/Messages/Content/Mermaid/Mermaid', () => ({
+  __esModule: true,
+  default: ({ children }: { children: string }) => (
+    <div data-testid="mermaid-render">{children}</div>
+  ),
+}));
+
+jest.mock('~/utils', () => ({
+  cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
+  getFileType: () => ({ paths: [], color: '', title: 'Artifact' }),
+  logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn() },
+  isArtifactRoute: () => false,
+}));
+
+const baseAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
+  ({
+    file_id: 'file-1',
+    filename: 'unset',
+    filepath: '/files/file-1',
+    type: 'application/octet-stream',
+    ...overrides,
+  }) as TAttachment;
+
+const renderWith = (ui: React.ReactElement) => render(<RecoilRoot>{ui}</RecoilRoot>);
+
+describe('LogContent attachment routing', () => {
+  it('routes HTML attachments through ToolArtifactCard (panel)', () => {
+    const html = baseAttachment({
+      file_id: 'a',
+      filename: 'index.html',
+      text: '<h1>hi</h1>',
+    } as Partial<TAttachment>);
+    renderWith(<LogContent output="" attachments={[html]} />);
+    // The panel card carries an aria-pressed state; auto-focused on mount.
+    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+    expect(screen.getByText('index.html')).toBeInTheDocument();
+  });
+
+  it('routes mermaid attachments through the standalone Mermaid component', () => {
+    const mmd = baseAttachment({
+      file_id: 'b',
+      filename: 'flow.mmd',
+      text: 'graph TD\nA-->B',
+    } as Partial<TAttachment>);
+    renderWith(<LogContent output="" attachments={[mmd]} />);
+    expect(screen.getByTestId('mermaid-render')).toHaveTextContent('graph TD');
+    // Panel card not rendered for mermaid
+    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+  });
+
+  it('routes text-bearing CSV through inline <pre>, not the panel', () => {
+    const csv = baseAttachment({
+      file_id: 'c',
+      filename: 'data.csv',
+      text: 'a,b,c\n1,2,3',
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<LogContent output="" attachments={[csv]} />);
+    expect(container.querySelector('pre')).not.toBeNull();
+    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('mermaid-render')).not.toBeInTheDocument();
+  });
+
+  it('routes files without text or panel-eligibility to the LogLink download', () => {
+    const zip = baseAttachment({
+      file_id: 'd',
+      filename: 'archive.zip',
+      type: 'application/zip',
+    } as Partial<TAttachment>);
+    renderWith(<LogContent output="" attachments={[zip]} />);
+    expect(screen.getByTestId('log-link')).toHaveAttribute('data-filename', 'archive.zip');
+  });
+
+  it('renders a panel card for pptx with empty text using the placeholder', () => {
+    // pptx text extraction is deferred; the artifact still routes through
+    // the panel and gets the localized placeholder content. Here the
+    // localize mock returns the key, so we assert by class/structure.
+    const pptx = baseAttachment({
+      file_id: 'e',
+      filename: 'slides.pptx',
+      text: undefined as unknown as string,
+    } as Partial<TAttachment>);
+    renderWith(<LogContent output="" attachments={[pptx]} />);
+    expect(screen.getByText('slides.pptx')).toBeInTheDocument();
+  });
+
+  it('splits a mixed list into the right buckets', () => {
+    const attachments = [
+      baseAttachment({
+        file_id: 'h',
+        filename: 'index.html',
+        text: '<h1>hi</h1>',
+      } as Partial<TAttachment>),
+      baseAttachment({
+        file_id: 'm',
+        filename: 'flow.mmd',
+        text: 'graph TD\nA-->B',
+      } as Partial<TAttachment>),
+      baseAttachment({
+        file_id: 't',
+        filename: 'notes.csv',
+        text: 'a,b\n1,2',
+      } as Partial<TAttachment>),
+    ] as TAttachment[];
+    const { container } = renderWith(
+      <LogContent output="" attachments={attachments} renderImages={true} />,
+    );
+    // panel artifact card present (find the html title)
+    expect(screen.getByText('index.html')).toBeInTheDocument();
+    // mermaid render present
+    expect(screen.getByTestId('mermaid-render')).toBeInTheDocument();
+    // CSV inline pre present
+    expect(container.querySelector('pre')).not.toBeNull();
+  });
+});

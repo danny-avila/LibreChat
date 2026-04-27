@@ -227,12 +227,18 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
   'application/vnd.react': TOOL_ARTIFACT_TYPES.REACT,
   'application/vnd.ant.react': TOOL_ARTIFACT_TYPES.REACT,
   'application/vnd.mermaid': TOOL_ARTIFACT_TYPES.MERMAID,
-  'text/plain': TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  // Office MIME types fall through to the plain-text bucket here too —
+  // matches the extension map so a file whose extension was stripped
+  // somewhere upstream still routes to the panel.
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
     TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
   'application/vnd.oasis.opendocument.text': TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
   'application/vnd.openxmlformats-officedocument.presentationml.presentation':
     TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  // Note: bare `text/plain` is NOT mapped here. The extension map handles
+  // `.txt` explicitly; routing every unrecognized-extension `text/plain`
+  // file (extensionless scripts, .env, etc.) through the panel would be a
+  // wider catch than intended. Those still render via the inline `<pre>`.
 };
 
 /**
@@ -271,31 +277,43 @@ export function detectArtifactTypeFromFile(
  * Stable per-file key used for both the artifactsState entry and the
  * `toolArtifactClaim` atom that dedups duplicate cards. Same call shape
  * everywhere so a panel card and a mermaid card for the same file share
- * the same claim.
+ * the same claim. Falls through `file_id` → `filename` → `filepath` to
+ * minimise collision risk for any caller that (rarely) lacks `file_id`.
  */
-export const toolArtifactKey = (file: Pick<TFile, 'file_id' | 'filename'>): string =>
-  `tool-artifact-${file.file_id ?? file.filename ?? 'unknown'}`;
+export const toolArtifactKey = (file: Pick<TFile, 'file_id' | 'filename' | 'filepath'>): string =>
+  `tool-artifact-${file.file_id ?? file.filename ?? file.filepath ?? 'unknown'}`;
 
-const toolArtifactId = toolArtifactKey;
-
+/**
+ * Stable epoch fallback (instead of `Date.now()`) when neither timestamp
+ * is available. `useArtifacts` sorts by `lastUpdateTime`, so a fresh
+ * `Date.now()` on every call would re-sort entries non-deterministically
+ * across renders. Using `0` parks unsorted entries at the bottom of the
+ * panel's tab strip until real timestamps arrive.
+ */
 const toLastUpdate = (file: Pick<TFile, 'updatedAt' | 'createdAt'>): number => {
   const value = file.updatedAt ?? file.createdAt;
   if (value == null) {
-    return Date.now();
+    return 0;
   }
   const ms = new Date(value as string | number | Date).getTime();
-  return Number.isFinite(ms) ? ms : Date.now();
+  return Number.isFinite(ms) ? ms : 0;
 };
 
-/**
- * Markdown shown in the panel when a panel-eligible file has no extracted
- * text yet (today: pptx, where the backend extractor is deferred). Renders
- * cleanly in the markdown / plain-text viewer; HTML/React buckets won't
- * reach this path because `detectArtifactTypeFromFile` keeps them out
- * when text is empty.
- */
-const TOOL_ARTIFACT_PLACEHOLDER =
-  '_Preview not available yet — click **Download** to view the file._';
+interface FileToArtifactOptions {
+  /**
+   * Markdown rendered in the panel when the underlying file has no text
+   * yet (e.g. a pptx whose extractor hasn't run). Callers should provide
+   * a localized string via `useLocalize`; if omitted, an empty string is
+   * substituted (the panel will look bare but won't crash).
+   */
+  placeholder?: string;
+  /**
+   * Pre-classified artifact type from a prior `detectArtifactTypeFromFile`
+   * call; skips re-classification. Used by the routing decision tree
+   * which has already classified to pick which renderer to use.
+   */
+  preClassifiedType?: ToolArtifactType;
+}
 
 /**
  * Convert a code-execution attachment to an `Artifact` shape if (and only
@@ -304,17 +322,18 @@ const TOOL_ARTIFACT_PLACEHOLDER =
  */
 export function fileToArtifact(
   attachment: Pick<TAttachment, 'messageId'> &
-    Pick<TFile, 'file_id' | 'filename' | 'type' | 'text' | 'updatedAt' | 'createdAt'>,
+    Pick<TFile, 'file_id' | 'filename' | 'filepath' | 'type' | 'text' | 'updatedAt' | 'createdAt'>,
+  options?: FileToArtifactOptions,
 ): Artifact | null {
-  const type = detectArtifactTypeFromFile(attachment);
+  const type = options?.preClassifiedType ?? detectArtifactTypeFromFile(attachment);
   if (!type) {
     return null;
   }
   return {
-    id: toolArtifactId(attachment),
+    id: toolArtifactKey(attachment),
     type,
     title: attachment.filename ?? 'Generated artifact',
-    content: attachment.text || TOOL_ARTIFACT_PLACEHOLDER,
+    content: attachment.text || options?.placeholder || '',
     messageId: attachment.messageId ?? undefined,
     lastUpdateTime: toLastUpdate(attachment),
   };
