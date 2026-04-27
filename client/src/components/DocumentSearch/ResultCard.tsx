@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import type { ChunkPreview, DocumentHit } from '~/data-provider/DocumentSearch';
 import { useLocalize } from '~/hooks';
 import { cn, FileTypeIcon, fileExtensionLabel } from '~/utils';
@@ -10,6 +10,8 @@ interface ResultCardProps {
   isSelected?: boolean;
   onClick?: () => void;
 }
+
+const CHUNKS_PER_PAGE = 8;
 
 /** case-insensitive token highlighter */
 function queryTokens(query: string): string[] {
@@ -142,8 +144,13 @@ const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, total, query }) => {
 
 const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick }) => {
   const localize = useLocalize();
+  const [page, setPage] = useState(0);
   const displayedChunkCount = hit.top_chunks.length;
   const matchedChunkCount = hit.chunk_count || displayedChunkCount;
+  const totalPages = Math.max(1, Math.ceil(displayedChunkCount / CHUNKS_PER_PAGE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = safePage * CHUNKS_PER_PAGE;
+  const visibleChunks = hit.top_chunks.slice(pageStart, pageStart + CHUNKS_PER_PAGE);
   const chunkCountLabel =
     matchedChunkCount > displayedChunkCount
       ? `표시 ${displayedChunkCount}개 / 매칭 ${matchedChunkCount}개`
@@ -178,8 +185,13 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
         </span>
         <FileTypeIcon name={hit.file_name} className="h-4 w-4 shrink-0" />
         <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
-          {hit.file_name || hit.doc_id}
+          {highlight(hit.file_name || hit.doc_id, query)}
         </h3>
+        {hit.title_match && (
+          <span className="shrink-0 rounded bg-surface-secondary px-1.5 py-0.5 text-[10px] text-text-tertiary">
+            파일명
+          </span>
+        )}
         {hit.source_url && (
           <a
             href={hit.source_url}
@@ -196,22 +208,54 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
         )}
       </div>
 
-      {hit.top_chunks.length > 0 && (
+      {visibleChunks.length > 0 && (
         <div
           className={cn(
             'mt-2 flex flex-col gap-1 px-3',
-            hit.top_chunks.length > 3 && 'max-h-72 overflow-y-auto pr-2',
+            visibleChunks.length > 3 && 'max-h-72 overflow-y-auto pr-2',
           )}
         >
-          {hit.top_chunks.map((c, i) => (
+          {visibleChunks.map((c, i) => (
             <ChunkRow
               key={c.chunk_id || `${hit.doc_id}-${i}`}
               chunk={c}
-              index={i}
+              index={pageStart + i}
               total={displayedChunkCount}
               query={query}
             />
           ))}
+        </div>
+      )}
+
+      {displayedChunkCount > CHUNKS_PER_PAGE && (
+        <div className="mt-2 flex items-center justify-end gap-2 px-4 text-[11px] text-text-secondary">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPage((p) => Math.max(0, p - 1));
+            }}
+            disabled={safePage === 0}
+            className="inline-flex h-6 items-center gap-1 rounded px-2 hover:bg-surface-hover disabled:cursor-default disabled:opacity-40"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            이전
+          </button>
+          <span className="tabular-nums">
+            {safePage + 1}/{totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPage((p) => Math.min(totalPages - 1, p + 1));
+            }}
+            disabled={safePage >= totalPages - 1}
+            className="inline-flex h-6 items-center gap-1 rounded px-2 hover:bg-surface-hover disabled:cursor-default disabled:opacity-40"
+          >
+            다음
+            <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
         </div>
       )}
 

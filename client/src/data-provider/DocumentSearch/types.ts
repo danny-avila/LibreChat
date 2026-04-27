@@ -47,6 +47,7 @@ export interface DocumentHit {
   practice_area_primary: string | null;
   score: number;
   chunk_count: number;
+  title_match?: boolean;
   source_url?: string | null;
   top_chunks: ChunkPreview[];
 }

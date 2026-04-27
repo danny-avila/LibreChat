@@ -23,7 +23,7 @@ import FilterBar, {
 } from './FilterBar';
 
 const DEFAULT_TOP_K = 50;
-const DEFAULT_CHUNKS_PER_DOC = 8;
+const DEFAULT_CHUNKS_PER_DOC = 32;
 
 function toApiFilters(f: DocumentSearchFilterState): KeywordSearchFilters | undefined {
   const { from, to } = resolvePeriodRange(f);
