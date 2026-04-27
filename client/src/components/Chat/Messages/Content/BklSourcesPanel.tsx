@@ -66,19 +66,39 @@ function extractFileName(metaName: string): string {
  * glance that the cited text came from an attachment of a forwarded thread
  * vs. the main email body.
  */
-function getSectionBadge(meta: Record<string, unknown> | undefined): {
+const _LEADING_SECTION_MARKER_RE =
+  /^\s*\[(본문|첨부(?:\s+(\d+)\s*\/\s*(\d+))?(?:\s*[·•]\s*([^\]\n]+))?)\]/u;
+
+function badgeFromChunkMarker(text: string | undefined): {
   kind: 'body' | 'attachment';
   label: string;
   filename?: string;
 } | null {
-  if (!meta) return null;
+  if (!text) return null;
+  const m = text.match(_LEADING_SECTION_MARKER_RE);
+  if (!m) return null;
+  if (m[1] === '본문') return { kind: 'body', label: '본문' };
+  return {
+    kind: 'attachment',
+    label: m[2] && m[3] ? `첨부 ${m[2]}/${m[3]}` : '첨부',
+    filename: m[4]?.trim() || undefined,
+  };
+}
+
+function getSectionBadge(meta: Record<string, unknown> | undefined, documentText?: string): {
+  kind: 'body' | 'attachment';
+  label: string;
+  filename?: string;
+} | null {
+  if (!meta) return badgeFromChunkMarker(documentText);
   const kind = (meta.section_kind as string | undefined) ?? null;
-  if (!kind) return null;
+  if (!kind) return badgeFromChunkMarker(documentText);
   if (kind === 'attachment') {
+    const fallback = badgeFromChunkMarker(documentText);
     const idx = meta.attachment_idx as number | undefined;
     const total = meta.attachment_total as number | undefined;
-    const filename = (meta.attachment_filename as string | undefined) ?? '';
-    const counter = idx && total ? `첨부 ${idx}/${total}` : '첨부';
+    const filename = (meta.attachment_filename as string | undefined) ?? fallback?.filename ?? '';
+    const counter = idx && total ? `첨부 ${idx}/${total}` : fallback?.label ?? '첨부';
     return { kind: 'attachment', label: counter, filename };
   }
   if (kind === 'body') {
@@ -418,7 +438,7 @@ function PanelTitle({ source }: { source: BklSource | null }) {
   const pageInfo = meta?.page_info;
   const relevance = formatRelevance(meta?.relevance);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const badge = getSectionBadge(meta as any);
+  const badge = getSectionBadge(meta as any, source.document?.[0]);
   return (
     <>
       <h2 className="mt-0.5 truncate text-sm font-semibold text-text-primary" title={fileName}>

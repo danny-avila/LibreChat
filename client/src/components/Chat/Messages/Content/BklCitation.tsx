@@ -149,7 +149,8 @@ async function fetchSourcesForMessage(messageId: string): Promise<BklSource[] | 
 function getSourceLabel(messageId: string, n: number): string | null {
   const sources = loadSourcesFromStorage(messageId);
   if (!Array.isArray(sources) || !sources[n - 1]) return null;
-  const src = sources[n - 1];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const src = sources[n - 1] as any;
   const name: string = src.metadata?.[0]?.name || src.source?.name || '';
   if (!name) return null;
   const fileName = extractFileName(name);
@@ -256,13 +257,12 @@ export default function BklCitation({ n }: BklCitationProps) {
     <button
       onClick={handleClick}
       disabled={loading}
-      /* `vertical-align: middle` aligns to x-height, not the prose line box —
-         badges looked top-hung next to Korean body text. `text-bottom` +
-         a tiny nudge tracks the alphabetic baseline more naturally. */
-      style={{ verticalAlign: 'text-bottom', position: 'relative', top: '0.08em' }}
+      /* Keep the chip on the text baseline, then lower the compact badge
+         slightly so it sits inside Korean body text instead of floating above it. */
+      style={{ verticalAlign: 'baseline', position: 'relative', top: '0.12em' }}
       className={
         label
-          ? 'mx-0.5 inline-flex items-center gap-0.5 rounded bg-black/[0.04] px-1.5 py-0.5 text-[11px] leading-tight text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
+          ? 'mx-0.5 inline-flex items-center gap-0.5 rounded bg-black/[0.04] px-1.5 py-px text-[11px] leading-none text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
           : 'mx-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded bg-black/[0.04] px-1 text-[11px] leading-none text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
       }
       title={label ? `${label} [${n}]` : `출처 [${n}] 보기`}
