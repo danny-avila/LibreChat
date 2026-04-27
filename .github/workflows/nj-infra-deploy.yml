@@ -26,6 +26,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Install Lambda dependencies
+        run: npm install --prefix nj/lambda/clearUser
+
       - name: AWS CDK GitHub Actions
         uses: youyo/aws-cdk-github-actions@v2.1.4
         with:
@@ -54,6 +57,9 @@ jobs:
           exit 1
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Install Lambda dependencies
+        run: npm install --prefix nj/lambda/clearUser
 
       - name: AWS CDK GitHub Actions
         uses: youyo/aws-cdk-github-actions@v2.1.4
