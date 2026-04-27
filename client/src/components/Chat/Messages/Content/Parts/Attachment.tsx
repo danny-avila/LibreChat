@@ -1,9 +1,9 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
+import type { ToolArtifactType } from '~/utils/artifacts';
 import { artifactTypeForAttachment, isImageAttachment, isTextAttachment } from './attachmentTypes';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
-import type { ToolArtifactType } from '~/utils/artifacts';
 import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
@@ -212,8 +212,20 @@ const MermaidArtifact = memo(({ attachment }: { attachment: TAttachment }) => {
 });
 MermaidArtifact.displayName = 'MermaidArtifact';
 
-const fileIdOf = (attachment: TAttachment, fallback: number): string =>
-  (attachment as TFile & TAttachmentMetadata).file_id ?? `${fallback}`;
+/**
+ * Derive a per-rendered-occurrence React key. The `file_id` provides
+ * stability across re-renders for the common case (each tool call's
+ * output has unique file ids), and the index suffix disambiguates the
+ * rare case where the same `file_id` appears twice in one bucket
+ * (e.g. a tool call writing the same path twice). Without the suffix
+ * the duplicates would share a key and React would reconcile them as
+ * a single child — undermining the latest-mention dedup since the two
+ * cards would share an instance instead of contesting the claim.
+ */
+const renderKey = (prefix: string, attachment: TAttachment, index: number): string => {
+  const fileId = (attachment as TFile & TAttachmentMetadata).file_id;
+  return `${prefix}-${fileId ?? 'noid'}-${index}`;
+};
 
 export default function Attachment({ attachment }: { attachment?: TAttachment }) {
   if (!attachment) {
@@ -286,7 +298,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
         <div className="my-2 flex flex-wrap items-center gap-2.5">
           {fileAttachments.map((attachment, index) =>
             attachment.filepath ? (
-              <FileAttachment attachment={attachment} key={`file-${fileIdOf(attachment, index)}`} />
+              <FileAttachment attachment={attachment} key={renderKey('file', attachment, index)} />
             ) : null,
           )}
         </div>
@@ -297,7 +309,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
             <PanelArtifact
               attachment={attachment}
               type={type}
-              key={`artifact-${fileIdOf(attachment, index)}`}
+              key={renderKey('artifact', attachment, index)}
             />
           ))}
         </div>
@@ -307,7 +319,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
           {mermaidArtifacts.map((attachment, index) => (
             <MermaidArtifact
               attachment={attachment}
-              key={`mermaid-${fileIdOf(attachment, index)}`}
+              key={renderKey('mermaid', attachment, index)}
             />
           ))}
         </div>
@@ -315,14 +327,14 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
       {textAttachments.length > 0 && (
         <div className="my-2 flex flex-col gap-3">
           {textAttachments.map((attachment, index) => (
-            <TextAttachment attachment={attachment} key={`text-${fileIdOf(attachment, index)}`} />
+            <TextAttachment attachment={attachment} key={renderKey('text', attachment, index)} />
           ))}
         </div>
       )}
       {imageAttachments.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center">
           {imageAttachments.map((attachment, index) => (
-            <ImageAttachment attachment={attachment} key={`image-${fileIdOf(attachment, index)}`} />
+            <ImageAttachment attachment={attachment} key={renderKey('image', attachment, index)} />
           ))}
         </div>
       )}

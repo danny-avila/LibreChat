@@ -166,12 +166,14 @@ describe('fileToArtifact', () => {
   });
 
   it('uses the caller-provided placeholder when a deferred-extraction file has no text', () => {
+    // Backend extractor returns null for pptx (deferred). Client sees
+    // `text === null` and substitutes the localized placeholder.
     const artifact = fileToArtifact(
       {
         ...baseFile,
         filename: 'slides.pptx',
         type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        text: '',
+        text: null as unknown as string,
       },
       { placeholder: '_Coming soon_' },
     );
@@ -185,8 +187,18 @@ describe('fileToArtifact', () => {
       ...baseFile,
       filename: 'slides.pptx',
       type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      text: '',
+      text: undefined,
     });
+    expect(artifact!.content).toBe('');
+  });
+
+  it('preserves an empty string as legitimate content (does not fall through to placeholder)', () => {
+    // A user can write a 0-byte `.md` or `.txt`; that's a valid artifact
+    // with empty content, not "extraction unavailable."
+    const artifact = fileToArtifact(
+      { ...baseFile, filename: 'empty.md', type: 'text/markdown', text: '' },
+      { placeholder: '_should not appear_' },
+    );
     expect(artifact!.content).toBe('');
   });
 
@@ -208,6 +220,20 @@ describe('fileToArtifact', () => {
     );
     expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
   });
+
+  it.each([[TOOL_ARTIFACT_TYPES.HTML], [TOOL_ARTIFACT_TYPES.REACT], [TOOL_ARTIFACT_TYPES.MERMAID]])(
+    'returns null when preClassifiedType=%s is paired with empty text (defense in depth)',
+    (preClassifiedType) => {
+      // Bypassing classification with a strict-viewer type but no text
+      // would otherwise hand sandpack/mermaid.js an empty buffer that
+      // throws. Internal guard catches it before construction.
+      const artifact = fileToArtifact(
+        { ...baseFile, filename: 'whatever', type: '', text: '' },
+        { preClassifiedType },
+      );
+      expect(artifact).toBeNull();
+    },
+  );
 
   it('falls back to createdAt when updatedAt is missing', () => {
     const artifact = fileToArtifact({

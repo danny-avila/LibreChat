@@ -329,11 +329,28 @@ export function fileToArtifact(
   if (!type) {
     return null;
   }
+  // Mirror the empty-text gate from `detectArtifactTypeFromFile` so a
+  // caller that supplies `preClassifiedType` (and thus skips that gate)
+  // can't accidentally hand HTML/React/Mermaid an empty buffer that
+  // their viewers would error on. Plain-text and markdown are still
+  // tolerated empty — the markdown viewer renders empty cleanly.
+  if (
+    !attachment.text &&
+    type !== TOOL_ARTIFACT_TYPES.PLAIN_TEXT &&
+    type !== TOOL_ARTIFACT_TYPES.MARKDOWN
+  ) {
+    return null;
+  }
   return {
     id: toolArtifactKey(attachment),
     type,
     title: attachment.filename ?? 'Generated artifact',
-    content: attachment.text || options?.placeholder || '',
+    // Nullish coalesce — an empty string is a legitimate file (e.g. a
+    // user wrote an empty `.md`) and should render as empty in the
+    // panel rather than be replaced by the deferred-extraction
+    // placeholder. Only `null`/`undefined` fall through to the
+    // placeholder, matching "no extraction has run yet."
+    content: attachment.text ?? options?.placeholder ?? '',
     messageId: attachment.messageId ?? undefined,
     lastUpdateTime: toLastUpdate(attachment),
   };

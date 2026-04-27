@@ -228,6 +228,32 @@ describe('ToolArtifactCard click behaviour', () => {
     expect(snap.artifactIds).toContain('tool-artifact-html-1');
   });
 
+  it('renders sibling cards with the same file_id in one group without React key collisions', () => {
+    // Real-world: rare but possible (a single tool call writing the same
+    // path twice). The dedup atom collapses duplicates to one rendered
+    // chip, but React still has to reconcile both children pre-effect —
+    // they need unique keys per occurrence so the wrong card-instance
+    // doesn't get reused (and effects reordered) during reconciliation.
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const dup = baseAttachment({
+        file_id: 'dup-same-group',
+        filename: 'index.html',
+        text: '<h1>v1</h1>',
+      } as Partial<TAttachment>);
+      const { container } = renderWith(<AttachmentGroup attachments={[dup, dup]} />);
+      // Dedup atom keeps just one card visible.
+      expect(container.querySelectorAll('div[title="index.html"]')).toHaveLength(1);
+      // No "two children with the same key" warning fired.
+      const keyWarning = errorSpy.mock.calls.find(
+        (args) => typeof args[0] === 'string' && args[0].includes('same key'),
+      );
+      expect(keyWarning).toBeUndefined();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('dedups cards for the same file_id across separate AttachmentGroups (latest mount wins)', () => {
     // Real scenario: each tool call renders its own AttachmentGroup; the
     // same file (same file_id) shows up in two of them. We expect only
