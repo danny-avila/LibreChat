@@ -90,6 +90,10 @@ export class EcsStack extends cdk.Stack {
         availabilityZones: ['us-east-1a']
       }
     });
+    vpc.addInterfaceEndpoint("SecretsManagerEndpoint", {
+      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+      securityGroups: [endpointsSg],
+    });
     vpc.addGatewayEndpoint("S3GatewayEndpoint", {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
