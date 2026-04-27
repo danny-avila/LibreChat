@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { useRecoilValue } from 'recoil';
 import { motion } from 'framer-motion';
-import { Skeleton, useMediaQuery } from '@librechat/client';
+import { useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
@@ -37,14 +37,6 @@ export const NAV_WIDTH = {
   MOBILE: 320,
   DESKTOP: 260,
 } as const;
-
-const SearchBarSkeleton = memo(() => (
-  <div className={cn('flex h-10 items-center py-2')}>
-    <Skeleton className="h-10 w-full rounded-lg" />
-  </div>
-));
-
-SearchBarSkeleton.displayName = 'SearchBarSkeleton';
 
 const NavMask = memo(
   ({ navVisible, toggleNavVisible }: { navVisible: boolean; toggleNavVisible: () => void }) => (
@@ -176,7 +168,6 @@ const Nav = memo(
     const subHeaders = useMemo(
       () => (
         <>
-          {search.enabled === null && <SearchBarSkeleton />}
           {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
         </>
       ),
