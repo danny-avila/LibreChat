@@ -157,12 +157,12 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.azureAssistants]: assistantsIcon,
     [EModelEndpoint.azureOpenAI]: {
       icon: brandedIcon,
-      bg: 'linear-gradient(0.375turn, #61bde2, #4389d0)',
+      bg: ASSISTANT_ICON_URL ? 'transparent' : 'linear-gradient(0.375turn, #61bde2, #4389d0)',
       name: ASSISTANT_MODEL_LABEL,
     },
     [EModelEndpoint.openAI]: {
       icon: brandedIcon,
-      bg: getOpenAIColor(model),
+      bg: ASSISTANT_ICON_URL ? 'transparent' : getOpenAIColor(model),
       name: ASSISTANT_MODEL_LABEL,
     },
     [EModelEndpoint.gptPlugins]: {
