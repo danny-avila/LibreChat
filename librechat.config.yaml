@@ -103,7 +103,7 @@ mcpServers:
    #  chatMenu: false
   pop:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.44:9013/mcp
+    url: http://100.100.108.43:9013/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
