@@ -10,7 +10,7 @@ import {
 } from '@librechat/client';
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
-import { STATES, DISTRICTS, INDIAN_LANGUAGES } from '~/utils/metaData';
+import { STATES, DISTRICTS, BLOCKS, VILLAGES, CROPS, INDIAN_LANGUAGES } from '~/utils/metaData';
 
 // ── Searchable Select ────────────────────────────────────────────────────────
 
@@ -129,7 +129,9 @@ type FarmerProfileForm = {
   district: string;
   customDistrict: string;
   blockName: string;
+  customBlock: string;
   villageName: string;
+  customVillage: string;
   phoneNo: string;
   languagePreference: string;
   yearsOfExperience: number;
@@ -172,25 +174,48 @@ const FarmerProfileModal = ({
     formState: { errors, isValid },
   } = useForm<FarmerProfileForm>({ mode: 'onChange' });
 
-  const selectedState = watch('state');
-  const selectedDistrict = watch('district');
+ const selectedState = watch('state');
+const selectedDistrict = watch('district');
+const selectedBlock = watch('blockName');
+const selectedCrops = watch('cropsCultivated');
 
-  const handleStateChange = (val: string) => {
-    setValue('state', val, { shouldValidate: true });
-    setValue('district', '', { shouldValidate: false });
+const handleStateChange = (val: string) => {
+  setValue('state', val, { shouldValidate: true });
+  setValue('district', '', { shouldValidate: false });
+  setValue('customDistrict', '', { shouldValidate: false });
+  setValue('blockName', '', { shouldValidate: false });
+  setValue('villageName', '', { shouldValidate: false });
+};
+
+const handleDistrictChange = (val: string) => {
+  setValue('district', val, { shouldValidate: true });
+  if (val !== 'Other') {
     setValue('customDistrict', '', { shouldValidate: false });
-  };
+  }
+  setValue('blockName', '', { shouldValidate: false });
+  setValue('villageName', '', { shouldValidate: false });
+};
 
-  const handleDistrictChange = (val: string) => {
-    setValue('district', val, { shouldValidate: true });
-    if (val !== 'Other') {
-      setValue('customDistrict', '', { shouldValidate: false });
-    }
-  };
+const handleBlockChange = (val: string) => {
+  setValue('blockName', val, { shouldValidate: true });
+  setValue('villageName', '', { shouldValidate: false });
+};
 
-  const districtOptions = selectedState
-    ? [...(DISTRICTS[selectedState] ?? []), 'Other']
-    : ['Other'];
+const districtOptions = selectedState
+  ? [...(DISTRICTS[selectedState] ?? []), 'Other']
+  : ['Other'];
+
+const blockOptions = selectedDistrict && selectedDistrict !== 'Other'
+  ? [...(BLOCKS[selectedDistrict] ?? BLOCKS['Other']), 'Other']
+  : [...BLOCKS['Other'], 'Other'];
+
+const villageOptions = selectedBlock && selectedBlock !== 'Other'
+  ? [...(VILLAGES[selectedBlock] ?? []), 'Other']
+  : ['Other'];
+
+const selectedCropsList = selectedCrops
+  ? selectedCrops.split(',').map((c: string) => c.trim()).filter(Boolean)
+  : [];
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => { onComplete(); },
@@ -204,10 +229,16 @@ const FarmerProfileModal = ({
   const onSubmit = (data: FarmerProfileForm) => {
     const resolvedDistrict =
       data.district === 'Other' ? data.customDistrict : data.district;
+    const resolvedBlock =
+      data.blockName === 'Other' ? data.customBlock : data.blockName;
+    const resolvedVillage =
+      data.villageName === 'Other' ? data.customVillage : data.villageName;
 
     const profile: IFarmerProfile = {
       ...data,
       district: resolvedDistrict,
+      blockName: resolvedBlock,
+      villageName: resolvedVillage,
       age: Number(data.age),
       yearsOfExperience: Number(data.yearsOfExperience),
       numberOfSmartphones: Number(data.numberOfSmartphones),
@@ -434,26 +465,76 @@ const FarmerProfileModal = ({
               )}
 
               <div className={fieldClass}>
-                <Label htmlFor="blockName">Block Name</Label>
-                <Input
-                  id="blockName"
-                  placeholder="Enter block name"
-                  className={inputClass}
-                  {...register('blockName', { required: 'Block name is required' })}
+                <Label>Block Name</Label>
+                <Controller
+                  name="blockName"
+                  control={control}
+                  rules={{ required: 'Block name is required' }}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      options={blockOptions}
+                      value={field.value ?? ''}
+                      onChange={handleBlockChange}
+                      placeholder={selectedDistrict ? 'Select block' : 'Select a district first'}
+                      disabled={!selectedDistrict}
+                    />
+                  )}
                 />
                 {errors.blockName && <p className={errorClass}>{errors.blockName.message}</p>}
               </div>
 
+              {selectedBlock === 'Other' && (
+                <div className={fieldClass}>
+                  <Label htmlFor="customBlock">Enter Your Block Name</Label>
+                  <Input
+                    id="customBlock"
+                    placeholder="Type your block name"
+                    className={inputClass}
+                    {...register('customBlock', {
+                      required: 'Please enter your block name',
+                    })}
+                  />
+                  {errors.customBlock && (
+                    <p className={errorClass}>{errors.customBlock.message}</p>
+                  )}
+                </div>
+              )}
+
               <div className={fieldClass}>
-                <Label htmlFor="villageName">Village Name</Label>
-                <Input
-                  id="villageName"
-                  placeholder="Enter village name"
-                  className={inputClass}
-                  {...register('villageName', { required: 'Village name is required' })}
+                <Label>Village Name</Label>
+                <Controller
+                  name="villageName"
+                  control={control}
+                  rules={{ required: 'Village name is required' }}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      options={villageOptions}
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      placeholder={selectedBlock ? 'Select village' : 'Select a block first'}
+                      disabled={!selectedBlock}
+                    />
+                  )}
                 />
                 {errors.villageName && <p className={errorClass}>{errors.villageName.message}</p>}
               </div>
+
+              {selectedBlock === 'Other' || watch('villageName') === 'Other' ? (
+                <div className={fieldClass}>
+                  <Label htmlFor="customVillage">Enter Your Village Name</Label>
+                  <Input
+                    id="customVillage"
+                    placeholder="Type your village name"
+                    className={inputClass}
+                    {...register('customVillage', {
+                      required: 'Please enter your village name',
+                    })}
+                  />
+                  {errors.customVillage && (
+                    <p className={errorClass}>{errors.customVillage.message}</p>
+                  )}
+                </div>
+              ) : null}
 
               <div className={fieldClass}>
                 <Label htmlFor="phoneNo">Phone No.</Label>
@@ -515,13 +596,32 @@ const FarmerProfileModal = ({
               </div>
 
               <div className={fieldClass}>
-                <Label htmlFor="cropsCultivated">Crops Cultivated</Label>
-                <Input
-                  id="cropsCultivated"
-                  placeholder="e.g. Wheat, Rice, Maize (comma separated)"
-                  className={inputClass}
-                  {...register('cropsCultivated', { required: 'Crops cultivated is required' })}
-                />
+                <Label>Crops Cultivated</Label>
+                <div className="mt-1 flex flex-wrap gap-2 rounded-md border border-border-heavy bg-surface-secondary px-3 py-2">
+                  {CROPS.map((crop) => {
+                    const isSelected = selectedCropsList.includes(crop);
+                    return (
+                      <button
+                        key={crop}
+                        type="button"
+                        onClick={() => {
+                          const updated = isSelected
+                            ? selectedCropsList.filter((c) => c !== crop)
+                            : [...selectedCropsList, crop];
+                          setValue('cropsCultivated', updated.join(', '), { shouldValidate: true });
+                        }}
+                        className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                          isSelected
+                            ? 'bg-green-600 text-white border-green-600'
+                            : 'bg-surface-primary text-text-primary border-border-heavy hover:bg-surface-active'
+                        }`}
+                      >
+                        {crop}
+                      </button>
+                    );
+                  })}
+                </div>
+                <input type="hidden" {...register('cropsCultivated', { required: 'Please select at least one crop' })} />
                 {errors.cropsCultivated && (
                   <p className={errorClass}>{errors.cropsCultivated.message}</p>
                 )}
@@ -529,12 +629,20 @@ const FarmerProfileModal = ({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className={fieldClass}>
-                  <Label htmlFor="primaryCrop">Primary Crop</Label>
-                  <Input
-                    id="primaryCrop"
-                    placeholder="e.g. Wheat"
-                    className={inputClass}
-                    {...register('primaryCrop', { required: 'Primary crop is required' })}
+                  <Label>Primary Crop</Label>
+                  <Controller
+                    name="primaryCrop"
+                    control={control}
+                    rules={{ required: 'Primary crop is required' }}
+                    render={({ field }) => (
+                      <SearchableSelect
+                        options={selectedCropsList}
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        placeholder={selectedCropsList.length ? 'Select primary crop' : 'Select crops first'}
+                        disabled={!selectedCropsList.length}
+                      />
+                    )}
                   />
                   {errors.primaryCrop && (
                     <p className={errorClass}>{errors.primaryCrop.message}</p>
@@ -542,12 +650,20 @@ const FarmerProfileModal = ({
                 </div>
 
                 <div className={fieldClass}>
-                  <Label htmlFor="secondaryCrop">Secondary Crop</Label>
-                  <Input
-                    id="secondaryCrop"
-                    placeholder="e.g. Rice"
-                    className={inputClass}
-                    {...register('secondaryCrop', { required: 'Secondary crop is required' })}
+                  <Label>Secondary Crop</Label>
+                  <Controller
+                    name="secondaryCrop"
+                    control={control}
+                    rules={{ required: 'Secondary crop is required' }}
+                    render={({ field }) => (
+                      <SearchableSelect
+                        options={selectedCropsList}
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        placeholder={selectedCropsList.length ? 'Select secondary crop' : 'Select crops first'}
+                        disabled={!selectedCropsList.length}
+                      />
+                    )}
                   />
                   {errors.secondaryCrop && (
                     <p className={errorClass}>{errors.secondaryCrop.message}</p>

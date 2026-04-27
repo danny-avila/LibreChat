@@ -43,3 +43,18 @@ export const INDIAN_LANGUAGES = [
   'মৈতৈলোন্ / Manipuri', 'मराठी', 'नेपाली', 'ଓଡ଼ିଆ', 'ਪੰਜਾਬੀ',
   'संस्कृतम्', 'ᱥᱟᱱᱛᱟᱲᱤ', 'सिन्धी / سنڌي', 'தமிழ்', 'తెలుగు', 'اردو',
 ];
+export const BLOCKS: Record<string, string[]> = {
+  'Other': ['Block 1', 'Block 2', 'Block 3'],
+};
+
+export const VILLAGES: Record<string, string[]> = {
+  'Block 1': ['Village 1', 'Village 2', 'Village 3'],
+  'Block 2': ['Village 4', 'Village 5', 'Village 6'],
+  'Block 3': ['Village 7', 'Village 8', 'Village 9'],
+};
+
+export const CROPS = [
+  'Rice', 'Wheat', 'Maize', 'Cotton', 'Sugarcane',
+  'Soybean', 'Groundnut', 'Mustard', 'Barley', 'Jowar',
+  'Bajra', 'Tur (Arhar)', 'Moong', 'Urad', 'Chana',
+];
