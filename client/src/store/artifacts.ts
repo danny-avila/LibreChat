@@ -1,4 +1,4 @@
-import { atom } from 'recoil';
+import { atom, atomFamily } from 'recoil';
 import { logger } from '~/utils';
 import type { Artifact } from '~/common';
 
@@ -45,6 +45,21 @@ export const artifactsVisibility = atom<boolean>({
       });
     },
   ] as const,
+});
+
+/**
+ * Per-artifact-id claim used by `ToolArtifactCard` to dedup the same file
+ * across tool calls / messages. Holds the unique component-instance key
+ * of whichever card most recently mounted for that id; cards whose key
+ * doesn't match return `null` so the same chip doesn't render twice.
+ *
+ * Keyed by `artifact.id` (which is `tool-artifact-${file_id}`), so each
+ * card subscribes only to its own slice — adding or removing a claim
+ * for one artifact never re-renders cards for unrelated artifacts.
+ */
+export const toolArtifactClaim = atomFamily<string | null, string>({
+  key: 'toolArtifactClaim',
+  default: null,
 });
 
 export const visibleArtifacts = atom<Record<string, Artifact | undefined> | null>({

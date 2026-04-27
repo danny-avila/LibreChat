@@ -267,8 +267,16 @@ export function detectArtifactTypeFromFile(
   return type;
 }
 
-const toolArtifactId = (file: Pick<TFile, 'file_id' | 'filename'>): string =>
+/**
+ * Stable per-file key used for both the artifactsState entry and the
+ * `toolArtifactClaim` atom that dedups duplicate cards. Same call shape
+ * everywhere so a panel card and a mermaid card for the same file share
+ * the same claim.
+ */
+export const toolArtifactKey = (file: Pick<TFile, 'file_id' | 'filename'>): string =>
   `tool-artifact-${file.file_id ?? file.filename ?? 'unknown'}`;
+
+const toolArtifactId = toolArtifactKey;
 
 const toLastUpdate = (file: Pick<TFile, 'updatedAt' | 'createdAt'>): number => {
   const value = file.updatedAt ?? file.createdAt;

@@ -1,10 +1,13 @@
-import { memo } from 'react';
+import { memo, useId, useLayoutEffect } from 'react';
 import { Download } from 'lucide-react';
+import { useRecoilState } from 'recoil';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import Mermaid from '~/components/Messages/Content/Mermaid/Mermaid';
+import { toolArtifactKey } from '~/utils/artifacts';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
 interface ToolMermaidArtifactProps {
   attachment: TAttachment;
@@ -16,10 +19,24 @@ interface ToolMermaidArtifactProps {
  * sandpack/react path the side-panel artifacts use — the standalone
  * Mermaid component has its own zoom/expand/code-toggle UI and we want
  * to reuse it without bringing the bundler chrome along.
+ *
+ * Shares the `toolArtifactClaim` dedup atom with `ToolArtifactCard` so
+ * the same `.mmd` file can't double-render across tool calls / messages.
  */
 const ToolMermaidArtifact = memo(({ attachment, text }: ToolMermaidArtifactProps) => {
   const localize = useLocalize();
   const file = attachment as TFile & TAttachmentMetadata;
+  const claimKey = useId();
+  const [claim, setClaim] = useRecoilState(store.toolArtifactClaim(toolArtifactKey(file)));
+  const isMyClaim = claim === claimKey;
+
+  useLayoutEffect(() => {
+    setClaim(claimKey);
+    return () => {
+      setClaim((prev) => (prev === claimKey ? null : prev));
+    };
+  }, [claimKey, setClaim]);
+
   const { handleDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
     filename: attachment.filename ?? '',
@@ -27,6 +44,10 @@ const ToolMermaidArtifact = memo(({ attachment, text }: ToolMermaidArtifactProps
     user: file.user,
     source: file.source,
   });
+
+  if (claim != null && !isMyClaim) {
+    return null;
+  }
 
   return (
     <div className="my-2 flex w-full flex-col gap-1">

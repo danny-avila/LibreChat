@@ -228,6 +228,31 @@ describe('ToolArtifactCard click behaviour', () => {
     expect(snap.artifactIds).toContain('tool-artifact-html-1');
   });
 
+  it('dedups two cards for the same file_id (latest mount wins)', () => {
+    // Same file_id appears twice — e.g. agent reads back what it just
+    // wrote. We expect only ONE card chip, not two.
+    const dup = baseAttachment({
+      file_id: 'dup',
+      filename: 'index.html',
+      text: '<h1>v1</h1>',
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<AttachmentGroup attachments={[dup, dup]} />);
+    // Only one card body should be visible (one filename label).
+    const titles = container.querySelectorAll('div[title="index.html"]');
+    expect(titles.length).toBe(1);
+  });
+
+  it('dedups two mermaid cards for the same file_id (latest mount wins)', () => {
+    const dupMermaid = baseAttachment({
+      file_id: 'mmd-dup',
+      filename: 'flow.mmd',
+      text: 'graph TD\nA-->B',
+    } as Partial<TAttachment>);
+    renderWith(<AttachmentGroup attachments={[dupMermaid, dupMermaid]} />);
+    // Only one rendered diagram, not two.
+    expect(screen.getAllByTestId('mermaid-render')).toHaveLength(1);
+  });
+
   it('focuses the latest card when multiple artifacts mount (legacy parity)', () => {
     // Order: older first, newer last. Last-mounted should win currentArtifactId.
     const olderHtml = baseAttachment({

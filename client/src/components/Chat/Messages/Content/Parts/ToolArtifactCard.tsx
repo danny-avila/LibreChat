@@ -1,6 +1,6 @@
-import { memo, useEffect } from 'react';
+import { memo, useEffect, useId, useLayoutEffect } from 'react';
 import { Download } from 'lucide-react';
-import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
@@ -17,16 +17,26 @@ interface ToolArtifactCardProps {
 /**
  * Card that opens a code-execution-produced artifact in the side panel.
  *
- * Two effects, separately scoped:
+ * Three effects, separately scoped:
  *
- *  1. **Self-heal registration** (no deps). The panel's `useArtifacts`
+ *  1. **Dedup claim** (`useLayoutEffect`, runs synchronously before
+ *     paint). The same file can appear in multiple tool calls within a
+ *     single message (e.g. the agent reads back what it just wrote) or
+ *     across messages. Each card claims `toolArtifactClaim(artifact.id)`
+ *     with its unique component-instance key on mount; the latest card
+ *     to mount wins, so older duplicates re-render to `null`. The atom
+ *     is family-keyed by artifact id, so claims for unrelated artifacts
+ *     don't trigger re-renders here. Cleanup releases the claim if it's
+ *     still ours so a subsequent re-mount can take it.
+ *
+ *  2. **Self-heal registration** (no deps). The panel's `useArtifacts`
  *     hook resets `artifactsState` whenever the panel unmounts — including
  *     when the user closes it via visibility-toggle. Without re-registering
  *     on every render, an artifact disappears from state after a close and
  *     a subsequent click on the same card has nothing to open. The
  *     idempotent dedup makes this cheap.
  *
- *  2. **Focus on mount** (deps: artifact.id). A freshly-mounted card
+ *  3. **Focus on mount** (deps: artifact.id). A freshly-mounted card
  *     means a new artifact has arrived; we steal panel focus to match
  *     the legacy streaming-artifact UX where the latest artifact
  *     auto-opens. Cards that re-render with the same artifact don't
@@ -38,12 +48,26 @@ interface ToolArtifactCardProps {
  */
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
+  const claimKey = useId();
   const setVisible = useSetRecoilState(store.artifactsVisibility);
   const setArtifacts = useSetRecoilState(store.artifactsState);
   const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
+  const [claim, setClaim] = useRecoilState(store.toolArtifactClaim(artifact.id));
   const isSelected = artifact.id === currentArtifactId;
+  const isMyClaim = claim === claimKey;
+
+  useLayoutEffect(() => {
+    // Always (re)claim on mount — a later card for the same id displaces
+    // an earlier one, so the chip migrates to the most recent mention.
+    setClaim(claimKey);
+    return () => {
+      // Only release when the claim is still ours; if a sibling already
+      // took over we don't want to clobber its claim.
+      setClaim((prev) => (prev === claimKey ? null : prev));
+    };
+  }, [claimKey, setClaim]);
 
   useEffect(() => {
     setArtifacts((prev) => {
@@ -84,6 +108,12 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
     setCurrentArtifactId(artifact.id);
     setVisible(true);
   };
+
+  // Another card with the same artifact id has the active claim — render
+  // nothing here, that card is the canonical chip for this file.
+  if (claim != null && !isMyClaim) {
+    return null;
+  }
 
   const fileType = getFileType('artifact');
   const actionLabel = isSelected
