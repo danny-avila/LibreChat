@@ -256,11 +256,14 @@ export default function BklCitation({ n }: BklCitationProps) {
     <button
       onClick={handleClick}
       disabled={loading}
-      style={{ verticalAlign: 'middle' }}
+      /* `vertical-align: middle` aligns to x-height, not the prose line box —
+         badges looked top-hung next to Korean body text. `text-bottom` +
+         a tiny nudge tracks the alphabetic baseline more naturally. */
+      style={{ verticalAlign: 'text-bottom', position: 'relative', top: '0.08em' }}
       className={
         label
-          ? 'mx-0.5 inline-flex items-center gap-0.5 rounded bg-black/[0.04] px-1.5 py-0.5 text-[11px] leading-none text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
-          : 'mx-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded bg-black/[0.04] px-1 text-[11px] text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
+          ? 'mx-0.5 inline-flex items-center gap-0.5 rounded bg-black/[0.04] px-1.5 py-0.5 text-[11px] leading-tight text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
+          : 'mx-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded bg-black/[0.04] px-1 text-[11px] leading-none text-gray-900 transition-colors hover:bg-black/[0.08] disabled:opacity-50 dark:bg-white/[0.08] dark:text-gray-100 dark:hover:bg-white/[0.12]'
       }
       title={label ? `${label} [${n}]` : `출처 [${n}] 보기`}
       aria-label={`출처 ${n} 보기`}

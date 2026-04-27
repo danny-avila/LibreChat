@@ -319,11 +319,24 @@ function resolveOriginalSourceUrl(source: BklSource | null): string | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const m = meta as any;
   if (typeof m.viewer_url === 'string' && m.viewer_url.length > 0) {
-    // Attachment PDFs go straight to attachments-static — Chrome's
-    // built-in PDF viewer doesn't support deep-linking to a phrase
-    // via fragment, so we don't append `highlight=` here. Future
-    // work could pass `#page=N` once the indexer stamps page hits.
-    return m.viewer_url;
+    // Body chunks carry `viewer_url=/v1/attachments/{sha}.msg` (raw bytes
+    // for download). The citation panel must open the HTML viewer instead
+    // (`/v1/source-files/{doc_id}?highlight=…`) — otherwise the browser
+    // downloads the .msg (attachments route uses Content-Disposition:
+    // attachment for .msg). Embedded-.msg *attachment* chunks still use
+    // the download URL when `section_kind === 'attachment'`.
+    const vu = m.viewer_url as string;
+    const isAttachment = m.section_kind === 'attachment';
+    const looksLikeMsgBytes =
+      vu.endsWith('.msg') || (vu.includes('/v1/attachments/') && vu.includes('.msg'));
+    if (looksLikeMsgBytes && !isAttachment) {
+      /* fall through to doc_id + highlight below */
+    } else {
+      // Attachment PDFs go straight to attachments-static — Chrome's
+      // built-in PDF viewer doesn't support deep-linking to a phrase
+      // via fragment, so we don't append `highlight=` here.
+      return vu;
+    }
   }
   // 2026-04-27: when the chunk is an MSG attachment but the indexer
   // could not produce a preview PDF (Synapse failed on the source
@@ -334,6 +347,16 @@ function resolveOriginalSourceUrl(source: BklSource | null): string | null {
   // viewer instead of the attachment. Hide the button rather than
   // ship that misdirection.
   if (m.section_kind === 'attachment') {
+    return null;
+  }
+  // Safety net: legacy / mis-indexed rows where `section_kind` was never
+  // stamped but `attachment_filename` was — opening `doc_id` would still
+  // be the parent `.msg` HTML viewer (wrong for attachment prose).
+  if (
+    typeof m.attachment_filename === 'string' &&
+    m.attachment_filename.length > 0 &&
+    !(typeof m.viewer_url === 'string' && m.viewer_url.length > 0)
+  ) {
     return null;
   }
   if (typeof m.doc_id === 'string' && m.doc_id.length > 0) {
