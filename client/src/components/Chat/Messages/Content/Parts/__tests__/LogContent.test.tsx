@@ -124,6 +124,37 @@ describe('LogContent attachment routing', () => {
     expect(screen.getByText('slides.pptx')).toBeInTheDocument();
   });
 
+  it('routes an expired panel-eligible attachment through the legacy expired path', () => {
+    // Without this gate, an expired pptx/html/etc. would render as a
+    // clickable artifact card backed by a dead download link. The
+    // legacy "download expired" message must win for any panel-eligible
+    // entry whose `expiresAt` is in the past.
+    const expired = baseAttachment({
+      file_id: 'x-expired',
+      filename: 'slides.pptx',
+      text: undefined as unknown as string,
+      expiresAt: Date.now() - 60_000,
+    } as Partial<TAttachment>);
+    renderWith(<LogContent output="" attachments={[expired]} />);
+    // No panel card and no log-link (the expired branch returns plain text).
+    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('log-link')).not.toBeInTheDocument();
+    // The localize mock returns the key, so we assert the expired-message key
+    // appears in the rendered output alongside the filename.
+    expect(screen.getByText(/slides\.pptx com_download_expired/)).toBeInTheDocument();
+  });
+
+  it('still routes a non-expired panel attachment through the panel', () => {
+    const fresh = baseAttachment({
+      file_id: 'x-fresh',
+      filename: 'index.html',
+      text: '<h1>hi</h1>',
+      expiresAt: Date.now() + 60_000,
+    } as Partial<TAttachment>);
+    renderWith(<LogContent output="" attachments={[fresh]} />);
+    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+  });
+
   it('splits a mixed list into the right buckets', () => {
     const attachments = [
       baseAttachment({

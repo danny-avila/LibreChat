@@ -56,6 +56,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     const mermaidAtts: MermaidEntry[] = [];
     const otherAtts: TAttachment[] = [];
 
+    const now = new Date();
     attachments?.forEach((attachment) => {
       const fileData = attachment as TFile & TAttachmentMetadata;
       const { filepath = null } = fileData;
@@ -64,6 +65,19 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       const isImage = imageExtRegex.test(attachment.filename ?? '') && filepath != null;
       if (isImage) {
         imageAtts.push(attachment as ImageAttachment);
+        return;
+      }
+      // Expired downloads must keep the legacy "download expired" message.
+      // Panel cards and the mermaid renderer would otherwise present an
+      // active-looking surface backed by a dead link, so route expired
+      // entries through `renderAttachment` instead.
+      const expiresAt =
+        'expiresAt' in attachment && typeof attachment.expiresAt === 'number'
+          ? new Date(attachment.expiresAt)
+          : null;
+      const isExpired = expiresAt != null && isAfter(now, expiresAt);
+      if (isExpired) {
+        otherAtts.push(attachment);
         return;
       }
       const artType = artifactTypeForAttachment(attachment);
