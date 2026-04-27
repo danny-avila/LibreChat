@@ -528,8 +528,11 @@ const deletePromptController = async (req, res) => {
     }
     const query = { promptId, groupId };
     const result = await deletePrompt(query);
-    const safeResult = result && typeof result === 'string' ? result : {};
-    res.status(200).send(sanitizeJsonResponse(safeResult));
+    const sanitizedResult = { ...result };
+    if (sanitizedResult.promptGroup && sanitizedResult.promptGroup.id) {
+      sanitizedResult.promptGroup.id = sanitizeJsonResponse(sanitizedResult.promptGroup.id);
+    }
+    res.status(200).send(sanitizedResult);
   } catch (error) {
     logger.error(error);
     res.status(500).send({ error: 'Error deleting prompt' });
