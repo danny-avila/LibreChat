@@ -142,6 +142,12 @@ const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, total, query }) => {
 
 const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick }) => {
   const localize = useLocalize();
+  const displayedChunkCount = hit.top_chunks.length;
+  const matchedChunkCount = hit.chunk_count || displayedChunkCount;
+  const chunkCountLabel =
+    matchedChunkCount > displayedChunkCount
+      ? `표시 ${displayedChunkCount}개 / 매칭 ${matchedChunkCount}개`
+      : `${localize('com_document_search_matched_chunks')}: ${matchedChunkCount}`;
 
   const metaBadges = [
     hit.work_type,
@@ -202,7 +208,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
               key={c.chunk_id || `${hit.doc_id}-${i}`}
               chunk={c}
               index={i}
-              total={hit.chunk_count || hit.top_chunks.length}
+              total={displayedChunkCount}
               query={query}
             />
           ))}
@@ -221,7 +227,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
           </span>
         ))}
         <span className="ml-auto tabular-nums">
-          {localize('com_document_search_matched_chunks')}: {hit.chunk_count}
+          {chunkCountLabel}
         </span>
       </div>
     </article>
