@@ -394,6 +394,8 @@ modelSpecs:
       preset:
         endpoint: "anthropic"
         model: "claude-sonnet-4-6"
+        modelLabel: "Student & Classroom Assistant"
+        thinking: false
         promptPrefix: "file://api/app/clients/prompts/assistant/"
     - name: "help-myself"
       label: "Help Myself"
@@ -402,6 +404,8 @@ modelSpecs:
       preset:
         endpoint: "anthropic"
         model: "claude-sonnet-4-6"
+        modelLabel: "Self Care Assistant"
+        thinking: false
         promptPrefix: "file://api/app/clients/prompts/assistant/"
     - name: "gpt4o-chat"
       label: "GPT-4o (no memory)"
