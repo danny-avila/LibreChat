@@ -75,6 +75,9 @@ class ModelEndHandler {
       if (modelName) {
         usage.model = modelName;
       }
+      if (agentContext.provider) {
+        usage.provider = agentContext.provider;
+      }
 
       const taggedUsage = markSummarizationUsage(usage, metadata);
 
