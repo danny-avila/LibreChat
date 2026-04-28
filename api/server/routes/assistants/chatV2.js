@@ -11,6 +11,7 @@ const validateConvoAccess = require('~/server/middleware/validate/convoAccess');
 const validateAssistant = require('~/server/middleware/assistants/validate');
 const chatController = require('~/server/controllers/assistants/chatV2');
 
+
 router.post('/abort', handleAbort());
 
 /**
@@ -23,11 +24,19 @@ router.post('/abort', handleAbort());
  */
 router.post(
   '/',
+    (req, res, next) => {
+    console.log('Before middleware:', req.body);
+    next();
+  },
   validateModel,
   buildEndpointOption,
   validateAssistant,
   validateConvoAccess,
   setHeaders,
+    (req, res, next) => {
+    console.log('After middleware:', req.body);
+    next();
+  },
   chatController,
 );
 

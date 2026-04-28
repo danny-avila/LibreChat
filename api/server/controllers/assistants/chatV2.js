@@ -42,6 +42,9 @@ const {
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
 const { getOpenAIClient } = require('./helpers');
+const contactService = require('../../services/contact.service');
+
+
 
 /**
  * @route POST /
@@ -194,6 +197,26 @@ const chatV2 = async (req, res) => {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;
     }
 
+const contacts = await getRelevantContacts(text);
+
+const contactContext = contacts.map(c => {
+  const base = `Name: ${c.name}, Company: ${c.company || 'N/A'}, Role: ${c.role || 'N/A'}, Email: ${c.email || 'N/A'}, Notes: ${c.notes || 'N/A'}`;
+  const meta = c.metadata && Object.keys(c.metadata).length
+    ? ', ' + Object.entries(c.metadata).map(([k, v]) => `${k}: ${v}`).join(', ')
+    : '';
+  return base + meta;
+}).join('\n');
+
+
+const contactInstruction = contacts.length > 0 ? `
+You have access to the following contacts relevant to the user's query:
+
+${contactContext}
+
+Answer the user's question using this data. If the answer is not in the contacts, say you don't know.
+` : '';
+
+
     let userMessage = {
       role: 'user',
       content: [
@@ -212,7 +235,7 @@ const chatV2 = async (req, res) => {
       assistant_id,
       model,
       promptPrefix,
-      instructions,
+        instructions: (instructions || '') + '\n' + contactInstruction,
       endpointOption,
       clientTimestamp,
     });
@@ -506,5 +529,9 @@ const chatV2 = async (req, res) => {
     await handleError(error);
   }
 };
+
+async function getRelevantContacts(userMessage) {
+  return await contactService.searchContacts(userMessage);
+}
 
 module.exports = chatV2;

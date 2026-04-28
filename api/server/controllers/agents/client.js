@@ -56,6 +56,7 @@ const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
+const contactService = require('~/server/services/contact.service');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
@@ -344,6 +345,28 @@ class AgentClient extends BaseClient {
     if (withoutKeys) {
       const memoryContext = `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
       sharedRunContextParts.push(memoryContext);
+    }
+
+    /** Contact context - fetch relevant contacts based on user's message */
+    try {
+      const latestUserText = latestMessage?.text || '';
+      const relevantContacts = latestUserText
+        ? await contactService.searchContacts(latestUserText)
+        : [];
+      if (relevantContacts && relevantContacts.length > 0) {
+        const contactLines = relevantContacts.map((c) => {
+          const base = `Name: ${c.name}, Company: ${c.company || 'N/A'}, Role: ${c.role || 'N/A'}, Email: ${c.email || 'N/A'}, Notes: ${c.notes || 'N/A'}`;
+          const meta = c.metadata && Object.keys(c.metadata).length
+            ? ', ' + Object.entries(c.metadata).map(([k, v]) => `${k}: ${v}`).join(', ')
+            : '';
+          return '- ' + base + meta;
+        }).join('\n');
+        sharedRunContextParts.push(
+          `# Relevant Contacts from your workspace:\n${contactLines}\n\nUse the above contact information to answer any questions about contacts.`,
+        );
+      }
+    } catch (err) {
+      logger.warn('[AgentClient] Failed to fetch contacts for context:', err.message);
     }
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');

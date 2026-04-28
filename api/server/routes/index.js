@@ -31,7 +31,17 @@ const auth = require('./auth');
 const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
-const contacts = require('./contacts');
+
+let contacts;
+try {
+  contacts = require('./contacts');
+  console.log('✅ [routes] Contacts route loaded successfully');
+} catch (error) {
+  console.error('❌ [routes] FAILED TO LOAD CONTACTS ROUTE:', error.message);
+  console.error('❌ [routes] Stack trace:', error.stack);
+  // Fallback empty router
+  contacts = require('express').Router();
+}
 
 module.exports = {
   mcp,
