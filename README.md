@@ -153,7 +153,8 @@ Beyond chat, LibreChat provides AI Agents, Model Context Protocol (MCP) support,
 
 Open source, actively developed, and built for anyone who values control over their AI infrastructure.
 
----
+
+
 
 ## 🌐 Resources
 
@@ -223,3 +224,48 @@ We thank [Locize](https://locize.com) for their translation management tools tha
     <img src="https://github.com/user-attachments/assets/d6b70894-6064-475e-bb65-92a9e23e0077" alt="Locize Logo" height="50">
   </a>
 </p>
+
+
+## Contacts CSV Import and Contact-Aware Assistant
+
+This workspace adds a contacts CSV import endpoint and a contact-aware assistant that answers contact questions from the database only.
+
+### Endpoints
+
+- GET `http://localhost:3080/api/contacts`
+  - Why: retrieve the current contact list for UI and validation checks.
+- POST `http://localhost:3080/api/contacts`
+  - Why: create a single contact record for quick manual entry or integrations.
+- POST `http://localhost:3080/api/contacts/import/csv`
+  - Why: bulk import contacts at scale from CSV files.
+
+### CSV Import Behavior
+
+- Accepts `multipart/form-data` with field name `file`.
+- Validates required fields (`name`, `company`, `role`, `email`, `notes`) per row.
+- Normalizes emails to lowercase and prevents duplicate emails.
+- Uses batch processing (chunked inserts) so large files (e.g., 100,000+ rows) can be imported without overwhelming MongoDB.
+- Tracks success and failed counts for each batch.
+
+### Design Questions
+
+1. If the system needed to support 1,000,000 contacts, how would you redesign it?
+  - Move CSV import to a background job queue (streaming parse, chunked writes), add a unique index on `email`, and enforce dedupe at the database level.
+  - Add dedicated search infrastructure and paginate responses.
+  - Cache hot queries and add read replicas for query-heavy workloads.
+
+2. How would you ensure the assistant retrieves the most relevant contacts for a query?
+  - Normalize queries, extract structured filters (role, company, location, funding_stage), and match against indexed fields first.
+
+3. What are the limitations of your current implementation?
+  - Keyword matching is lightweight and can miss synonyms or complex phrasing.
+  - Metadata parsing is heuristic and not a fully structured query language.
+  - No background job system for large imports; ingestion runs inline.
+  - No advanced ranking or vector search, so relevance is basic.
+
+### Model Used
+
+- Provider: Groq
+- Model: `llama-3.1-8b-instant`
+
+---

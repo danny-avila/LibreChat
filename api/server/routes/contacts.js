@@ -161,7 +161,6 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
 
   let success = 0;
   let failed = 0;
-  const errors = [];
   const CHUNK_SIZE = 1000;
 
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
@@ -177,11 +176,6 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
       );
       if (missingRequired) {
         failed++;
-        errors.push({
-          row: _rowNumber,
-          email: fields.email || null,
-          error: `Missing required field: ${missingRequired}`,
-        });
         continue;
       }
 
@@ -204,11 +198,6 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
 
       if (emailsInChunk.has(coreData.email)) {
         failed++;
-        errors.push({
-          row: _rowNumber,
-          email: coreData.email,
-          error: 'Duplicate email in file',
-        });
         continue;
       }
 
@@ -226,11 +215,6 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
     const filteredDocs = docs.filter((doc) => {
       if (!existingEmails.has(doc.email)) return true;
       failed++;
-      errors.push({
-        row: doc.__rowNumber,
-        email: doc.email,
-        error: 'Duplicate email exists',
-      });
       return false;
     });
 
@@ -249,16 +233,6 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
       const inserted = err.result?.nInserted ?? 0;
       success += inserted;
       failed += insertDocs.length - inserted;
-      if (err.writeErrors) {
-        err.writeErrors.forEach((we) => {
-          const doc = filteredDocs[we.index];
-          errors.push({
-            row: doc?.__rowNumber ?? null,
-            email: doc?.email ?? null,
-            error: we.errmsg || 'Insert error',
-          });
-        });
-      }
     }
 
     // Brief pause between chunks to avoid overwhelming MongoDB on huge imports
@@ -272,7 +246,6 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
     total: rows.length,
     success,
     failed,
-    errors: errors.slice(0, 200),
   });
 });
 
