@@ -6,7 +6,6 @@ import Error from '~/components/Messages/Content/Error';
 import Thinking from '~/components/Artifacts/Thinking';
 import { DelayedRender } from '~/components/ui';
 import { useChatContext } from '~/Providers';
-import { modeState } from '~/store/mode';
 import MarkdownLite from './MarkdownLite';
 import EditMessage from './EditMessage';
 import { useLocalize } from '~/hooks';
@@ -127,8 +126,6 @@ const MessageContent = ({
 }: TMessageContentProps) => {
   const { message } = props;
   const { messageId } = message;
-  const mode = useRecoilValue(modeState);
-  const hideThinking = mode === 'student' || mode === 'classroom';
 
   const { thinkingContent, regularContent } = useMemo(() => {
     const thinkingMatch = text.match(/:::thinking([\s\S]*?):::/);
@@ -160,7 +157,7 @@ const MessageContent = ({
 
   return (
     <>
-      {thinkingContent.length > 0 && !hideThinking && (
+      {thinkingContent.length > 0 && (
         <Thinking key={`thinking-${messageId}`}>{thinkingContent}</Thinking>
       )}
       <DisplayMessage

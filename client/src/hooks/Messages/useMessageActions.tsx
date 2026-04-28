@@ -129,9 +129,9 @@ export default function useMessageActions(props: TMessageActions) {
     } else if (assistant) {
       return assistant.name ?? 'Assistant';
     } else {
-      return conversation?.modelLabel ?? message?.sender;
+      return message?.sender;
     }
-  }, [message, agent, assistant, UsernameDisplay, user, localize, conversation]);
+  }, [message, agent, assistant, UsernameDisplay, user, localize]);
 
   const feedbackMutation = useUpdateFeedbackMutation(
     conversation?.conversationId || '',
