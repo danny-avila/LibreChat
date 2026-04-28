@@ -7,6 +7,7 @@ export type BklSource = {
     url?: string;
     embed_url?: string;
     imanage_url?: string;
+    imanage_preview_url?: string;
   };
   document: string[];
   metadata: Array<{
@@ -45,6 +46,7 @@ export default function ChunkModal({ isOpen, onClose, source, citationNumber }: 
   const sourceUrl = source?.source?.url ?? source?.source?.embed_url;
   const imanageUrl =
     source?.source?.imanage_url ??
+    source?.source?.imanage_preview_url ??
     (typeof meta?.imanage_url === 'string' ? meta.imanage_url : undefined) ??
     (typeof meta?.imanage_preview_url === 'string' ? meta.imanage_preview_url : undefined);
 
