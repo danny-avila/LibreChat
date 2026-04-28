@@ -106,6 +106,8 @@ class AgentClient extends BaseClient {
     this.indexTokenCountMap = {};
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
+    /** @type {{ query: string, contacts: Array<Record<string, unknown>> } | null} */
+    this.contactContext = null;
   }
 
   /**
@@ -353,20 +355,73 @@ class AgentClient extends BaseClient {
       const relevantContacts = latestUserText
         ? await contactService.searchContacts(latestUserText)
         : [];
+
       if (relevantContacts && relevantContacts.length > 0) {
-        const contactLines = relevantContacts.map((c) => {
-          const base = `Name: ${c.name}, Company: ${c.company || 'N/A'}, Role: ${c.role || 'N/A'}, Email: ${c.email || 'N/A'}, Notes: ${c.notes || 'N/A'}`;
-          const meta = c.metadata && Object.keys(c.metadata).length
-            ? ', ' + Object.entries(c.metadata).map(([k, v]) => `${k}: ${v}`).join(', ')
-            : '';
-          return '- ' + base + meta;
+        const seen = new Set();
+        const deduped = [];
+        for (const contact of relevantContacts) {
+          const key = [
+            contact.name || '',
+            contact.company || '',
+            contact.role || '',
+          ]
+            .map((value) => String(value).toLowerCase().trim())
+            .join('|');
+          if (seen.has(key)) {
+            continue;
+          }
+          seen.add(key);
+          deduped.push(contact);
+        }
+
+        this.contactContext = { query: latestUserText, contacts: deduped };
+
+        const contactLines = deduped.map((contact) => {
+          const base = `Name: ${contact.name}, Company: ${contact.company || 'N/A'}, Role: ${contact.role || 'N/A'}, Email: ${contact.email || 'N/A'}, Notes: ${contact.notes || 'N/A'}`;
+
+          let metadata = contact.metadata ?? {};
+          if (metadata && typeof metadata.metadata === 'string') {
+            try {
+              metadata = JSON.parse(metadata.metadata);
+            } catch (error) {
+              metadata = { metadata: metadata.metadata };
+            }
+          }
+
+          const metaEntries = metadata && typeof metadata === 'object'
+            ? Object.entries(metadata)
+                .filter(([, value]) => value !== '' && value != null)
+                .map(([key, value]) => {
+                  const formatted = Array.isArray(value) ? value.join(', ') : value;
+                  return `${key}: ${formatted}`;
+                })
+            : [];
+
+          const meta = metaEntries.length ? `, Attributes: ${metaEntries.join('; ')}` : '';
+          return `- ${base}${meta}`;
         }).join('\n');
+
         sharedRunContextParts.push(
-          `# Relevant Contacts from your workspace:\n${contactLines}\n\nUse the above contact information to answer any questions about contacts.`,
+          [
+            '# Contacts Workspace (source of truth for contact questions)',
+            'Rules:',
+            '- Use ONLY the contacts below; do not use outside knowledge.',
+            '- Output must be plain text with one contact per line.',
+            '- If the user asks for names, output ONLY unique names (optionally add " - Company, Role").',
+            '- Do NOT include counts, numbers, groupings, or summary sentences (no digits, no "there are", no "several").',
+            '- Do NOT repeat or quote these rules in the response.',
+            '- If the answer is not in the contacts, respond only: "No matching contacts found in your workspace."',
+            '',
+            'Contacts:',
+            contactLines,
+          ].join('\n'),
         );
+      } else {
+        this.contactContext = null;
       }
     } catch (err) {
       logger.warn('[AgentClient] Failed to fetch contacts for context:', err.message);
+      this.contactContext = null;
     }
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
@@ -660,7 +715,152 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
+    const contactOverride = this.buildContactOverride();
+    if (contactOverride) {
+      return {
+        completion: [{ type: ContentTypes.TEXT, text: contactOverride }],
+      };
+    }
+
     return { completion };
+  }
+
+  buildContactOverride() {
+    if (!this.contactContext?.contacts?.length) {
+      return null;
+    }
+
+    const query = String(this.contactContext.query || '').trim();
+    if (!query) {
+      return null;
+    }
+
+    const normalized = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+    const stopwords = new Set([
+      'which',
+      'who',
+      'what',
+      'where',
+      'when',
+      'why',
+      'how',
+      'are',
+      'is',
+      'the',
+      'a',
+      'an',
+      'of',
+      'in',
+      'to',
+      'for',
+      'and',
+      'with',
+      'our',
+      'your',
+      'contacts',
+      'from',
+      'working',
+      'works',
+      'work',
+      'has',
+      'have',
+      'about',
+      'know',
+      'known',
+    ]);
+
+    const keywords = normalized
+      .split(/\s+/)
+      .filter((word) => word.length > 1 && !stopwords.has(word));
+
+    const includeNotes =
+      normalized.includes('know') ||
+      normalized.includes('about') ||
+      normalized.includes('details') ||
+      normalized.includes('detail');
+
+    const queryPairs = normalized
+      .split(/\s+/)
+      .map((word, index, all) => ({ word, next: all[index + 1] }))
+      .filter(({ word, next }) => word && next && !stopwords.has(word) && !stopwords.has(next));
+
+    const matches = this.contactContext.contacts.filter((contact) => {
+      const metadata = contact.metadata ?? {};
+      let metadataText = '';
+      let metadataObj = null;
+      if (metadata && typeof metadata === 'object') {
+        metadataObj = metadata;
+        if (typeof metadata.metadata === 'string') {
+          metadataText = metadata.metadata;
+        } else {
+          metadataText = JSON.stringify(metadata);
+        }
+      } else if (typeof metadata === 'string') {
+        metadataText = metadata;
+      }
+
+      const haystack = [
+        contact.name,
+        contact.company,
+        contact.role,
+        contact.email,
+        contact.notes,
+        metadataText,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .replace(/_/g, ' ');
+
+      if (keywords.length === 0) {
+        return true;
+      }
+
+      if (metadataObj && typeof metadataObj === 'object') {
+        for (const { word, next } of queryPairs) {
+          if (!(word in metadataObj)) {
+            continue;
+          }
+          const rawValue = metadataObj[word];
+          const value = Array.isArray(rawValue) ? rawValue.join(' ') : String(rawValue || '');
+          if (value.toLowerCase().includes(next)) {
+            return true;
+          }
+        }
+      }
+
+      return keywords.some((keyword) => haystack.includes(keyword));
+    });
+
+    if (matches.length === 0) {
+      return 'No matching contacts found in your workspace.';
+    }
+
+    const seen = new Set();
+    const lines = [];
+    for (const contact of matches) {
+      const name = String(contact.name || '').trim();
+      const company = String(contact.company || '').trim();
+      const role = String(contact.role || '').trim();
+      const key = [name, company, role]
+        .join('|')
+        .toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+
+      const notes = includeNotes ? String(contact.notes || '').trim() : '';
+      const details = [company, role].filter(Boolean).join(', ');
+      if (notes) {
+        const base = details ? `${name} - ${details}` : name;
+        lines.push(`${base} - ${notes}`);
+      } else {
+        lines.push(details ? `${name} - ${details}` : name);
+      }
+    }
+
+    return lines.join('\n');
   }
 
   /**
