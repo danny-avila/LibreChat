@@ -242,6 +242,7 @@ const MessageRender = memo(function MessageRender({
         onClose={() => setActiveBklSource(null)}
         source={activeSource}
         citationNumber={activeBklSource?.n ?? 0}
+        messageId={messageId}
       />
       {!hasParallelContent && (
         <div className="relative flex flex-shrink-0 flex-col items-center">

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { ExternalLink, X } from 'lucide-react';
 
@@ -24,10 +24,79 @@ type ChunkModalProps = {
   onClose: () => void;
   source: BklSource | null;
   citationNumber: number;
+  messageId?: string;
 };
 
-export default function ChunkModal({ isOpen, onClose, source, citationNumber }: ChunkModalProps) {
+const _LS_PREFIX = 'bkl_src_';
+
+function hasImanageUrl(source: BklSource | null): boolean {
+  const meta = source?.metadata?.[0];
+  return Boolean(
+    source?.source?.imanage_url ||
+      source?.source?.imanage_preview_url ||
+      (typeof meta?.imanage_url === 'string' && meta.imanage_url) ||
+      (typeof meta?.imanage_preview_url === 'string' && meta.imanage_preview_url),
+  );
+}
+
+function getRequestId(messageId?: string): string | null {
+  if (!messageId) return null;
+  const win = window as any;
+  const fromMemory = win.__bklRids?.[messageId];
+  if (typeof fromMemory === 'string' && fromMemory) return fromMemory;
+
+  try {
+    const raw = localStorage.getItem(`${_LS_PREFIX}${messageId}`);
+    if (!raw) return null;
+    const { r } = JSON.parse(raw);
+    return typeof r === 'string' && r ? r : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheSources(
+  messageId: string | undefined,
+  requestId: string | null,
+  sources: BklSource[],
+) {
+  if (!messageId || !sources.length) return;
+  const win = window as any;
+  win.__bklSources = win.__bklSources ?? {};
+  win.__bklSources[messageId] = sources;
+  if (requestId) {
+    win.__bklSourcesByRid = win.__bklSourcesByRid ?? {};
+    win.__bklSourcesByRid[requestId] = sources;
+  }
+  try {
+    localStorage.setItem(`${_LS_PREFIX}${messageId}`, JSON.stringify({ s: sources, r: requestId }));
+  } catch {
+    /* in-memory cache is enough if localStorage is unavailable */
+  }
+}
+
+async function fetchSources(
+  requestId: string | null,
+): Promise<{ sources: BklSource[]; requestId: string | null } | null> {
+  const url = requestId ? `/v1/sources/${requestId}` : '/v1/sources/latest';
+  const resp = await fetch(url);
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const sources = data.sources ?? data;
+  if (!Array.isArray(sources)) return null;
+  return { sources, requestId: requestId ?? data.request_id ?? null };
+}
+
+export default function ChunkModal({
+  isOpen,
+  onClose,
+  source,
+  citationNumber,
+  messageId,
+}: ChunkModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const attemptedEnrichmentRef = useRef<string | null>(null);
+  const [resolvedSource, setResolvedSource] = useState<BklSource | null>(source);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -38,15 +107,49 @@ export default function ChunkModal({ isOpen, onClose, source, citationNumber }: 
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
-  const meta = source?.metadata?.[0];
+  useEffect(() => {
+    setResolvedSource(source);
+  }, [source]);
+
+  useEffect(() => {
+    if (!isOpen || !citationNumber || hasImanageUrl(resolvedSource)) {
+      return;
+    }
+
+    let cancelled = false;
+    const requestId = getRequestId(messageId);
+    const attemptKey = `${messageId ?? 'unknown'}:${citationNumber}:${requestId ?? 'latest'}`;
+    if (attemptedEnrichmentRef.current === attemptKey) {
+      return;
+    }
+    attemptedEnrichmentRef.current = attemptKey;
+
+    fetchSources(requestId)
+      .then((result) => {
+        if (cancelled || !result) return;
+        cacheSources(messageId, result.requestId, result.sources);
+        const nextSource = result.sources[citationNumber - 1] ?? null;
+        if (nextSource) setResolvedSource(nextSource);
+      })
+      .catch(() => {
+        /* Leave the existing source visible if enrichment fails. */
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, citationNumber, messageId, resolvedSource]);
+
+  const activeSource = useMemo(() => resolvedSource ?? source, [resolvedSource, source]);
+  const meta = activeSource?.metadata?.[0];
   const fileName = meta?.name ?? meta?.file_name ?? '출처 문서';
   const pageInfo = meta?.page_info;
   const relevanceRaw = meta?.relevance;
-  const chunkText = source?.document?.[0] ?? '';
-  const sourceUrl = source?.source?.url ?? source?.source?.embed_url;
+  const chunkText = activeSource?.document?.[0] ?? '';
+  const sourceUrl = activeSource?.source?.url ?? activeSource?.source?.embed_url;
   const imanageUrl =
-    source?.source?.imanage_url ??
-    source?.source?.imanage_preview_url ??
+    activeSource?.source?.imanage_url ??
+    activeSource?.source?.imanage_preview_url ??
     (typeof meta?.imanage_url === 'string' ? meta.imanage_url : undefined) ??
     (typeof meta?.imanage_preview_url === 'string' ? meta.imanage_preview_url : undefined);
 
