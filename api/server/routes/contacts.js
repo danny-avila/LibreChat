@@ -146,7 +146,7 @@ router.get('/:id', async (req, res) => {
 //   - Required core fields: name, company, role, email, notes
 //
 // Response:
-//   { total, success, failed }
+//   { total, success, failed, errors }
 // ---------------------------------------------------------------------------
 router.post('/import/csv', upload.single('file'), async (req, res) => {
   if (!req.file) {
@@ -161,6 +161,7 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
 
   let success = 0;
   let failed = 0;
+  const errors = [];
   const CHUNK_SIZE = 1000;
 
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
@@ -176,6 +177,11 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
       );
       if (missingRequired) {
         failed++;
+        errors.push({
+          row: _rowNumber,
+          email: fields.email || null,
+          error: `Missing required field: ${missingRequired}`,
+        });
         continue;
       }
 
@@ -198,12 +204,17 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
 
       if (emailsInChunk.has(coreData.email)) {
         failed++;
+        errors.push({
+          row: _rowNumber,
+          email: coreData.email,
+          error: 'Duplicate email in file',
+        });
         continue;
       }
 
       emailsInChunk.add(coreData.email);
 
-      docs.push({ ...coreData, metadata });
+      docs.push({ ...coreData, metadata, __rowNumber: _rowNumber });
     }
 
     if (docs.length === 0) continue;
@@ -212,22 +223,42 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
       .select('email')
       .lean();
     const existingEmails = new Set(existing.map((item) => item.email));
-    const filteredDocs = docs.filter((doc) => !existingEmails.has(doc.email));
-    failed += docs.length - filteredDocs.length;
+    const filteredDocs = docs.filter((doc) => {
+      if (!existingEmails.has(doc.email)) return true;
+      failed++;
+      errors.push({
+        row: doc.__rowNumber,
+        email: doc.email,
+        error: 'Duplicate email exists',
+      });
+      return false;
+    });
 
     if (filteredDocs.length === 0) continue;
 
+    const insertDocs = filteredDocs.map(({ __rowNumber, ...rest }) => rest);
+
     try {
       // ordered: false = insert all valid docs even if some fail (e.g. duplicate email)
-      const result = await Contact.insertMany(filteredDocs, { ordered: false, rawResult: true });
-      const inserted = result.insertedCount ?? filteredDocs.length;
+      const result = await Contact.insertMany(insertDocs, { ordered: false, rawResult: true });
+      const inserted = result.insertedCount ?? insertDocs.length;
       success += inserted;
     } catch (err) {
       // insertMany with ordered:false still throws on any write error
       // but result.nInserted tells us how many actually got in
       const inserted = err.result?.nInserted ?? 0;
       success += inserted;
-      failed += filteredDocs.length - inserted;
+      failed += insertDocs.length - inserted;
+      if (err.writeErrors) {
+        err.writeErrors.forEach((we) => {
+          const doc = filteredDocs[we.index];
+          errors.push({
+            row: doc?.__rowNumber ?? null,
+            email: doc?.email ?? null,
+            error: we.errmsg || 'Insert error',
+          });
+        });
+      }
     }
 
     // Brief pause between chunks to avoid overwhelming MongoDB on huge imports
@@ -241,6 +272,7 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
     total: rows.length,
     success,
     failed,
+    errors: errors.slice(0, 200),
   });
 });
 
