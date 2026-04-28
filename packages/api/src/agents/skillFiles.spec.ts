@@ -106,6 +106,10 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
        auth internally. */
     expect(uploadArgs).not.toHaveProperty('apiKey');
     expect(uploadArgs.entity_id).toBe(SKILL_ID.toString());
+    /* Skill files are infrastructure inputs; the read_only flag tells codeapi
+       to seal them so any sandboxed-code modifications are dropped instead
+       of surfaced as ghost generated artifacts. */
+    expect(uploadArgs.read_only).toBe(true);
     /* One uploaded file per `fileRecords` entry plus the synthetic
        SKILL.md that `primeSkillFiles` always prepends. */
     expect(uploadArgs.files).toHaveLength(fileRecords.length + 1);
