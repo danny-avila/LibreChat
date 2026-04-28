@@ -1,4 +1,5 @@
 import React, { useMemo, memo } from 'react';
+import { CodeCanBrandIcon } from '@librechat/client';
 import type { Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
 import { getEndpointField, getIconEndpoint, logger } from '~/utils';
@@ -45,7 +46,17 @@ const MessageIcon = memo(
       [endpointsConfig, endpoint],
     );
 
-    if (iconData?.isCreatedByUser !== true && iconURL != null && iconURL.includes('http')) {
+    const isAssistantMessage = iconData?.isCreatedByUser !== true;
+    const hasCustomAvatar = Boolean(avatarURL);
+
+    // For non-user messages with custom assistant/agent avatar, render existing avatar/icon.
+    // Otherwise (any assistant reply without a custom avatar), use the CodeCan brand mark — bypass
+    // the default URL/Endpoint icon paths which wrap the logo in a circle.
+    if (isAssistantMessage && !hasCustomAvatar) {
+      return <CodeCanBrandIcon size={28} radius={6} />;
+    }
+
+    if (isAssistantMessage && iconURL != null && iconURL.includes('http')) {
       return (
         <ConvoIconURL
           iconURL={iconURL}

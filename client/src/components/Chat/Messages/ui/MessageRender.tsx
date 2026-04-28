@@ -152,7 +152,7 @@ const MessageRender = memo(
         )}
 
         <div className="relative flex flex-shrink-0 flex-col items-center">
-          <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+          <div className="flex h-7 w-7 items-center justify-center overflow-hidden">
             <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
           </div>
         </div>

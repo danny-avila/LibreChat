@@ -1,9 +1,16 @@
+/* eslint-disable i18next/no-literal-string */
 import { useMemo, useCallback } from 'react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetAssistantDocsQuery, useGetEndpointsQuery } from '~/data-provider';
 import { getIconEndpoint, getEntity } from '~/utils';
 import { useSubmitMessage } from '~/hooks';
+
+const CODECAN_DEFAULT_STARTERS = [
+  'What is the minimum stair width in a single dwelling?',
+  'Do my smoke alarms need to be interconnected?',
+  'Maximum joist spacing for a 2x10 deck?',
+];
 
 const ConversationStarters = () => {
   const { conversation } = useChatContext();
@@ -33,7 +40,7 @@ const ConversationStarters = () => {
     select: (data) => new Map(data.map((dbA) => [dbA.assistant_id, dbA])),
   });
 
-  const { entity, isAgent } = getEntity({
+  const { entity } = getEntity({
     endpoint: endpointType,
     agentsMap,
     assistantMap,
@@ -46,12 +53,13 @@ const ConversationStarters = () => {
       return entity.conversation_starters;
     }
 
-    if (isAgent) {
-      return [];
+    const fromDocs = documentsMap.get(entity?.id ?? '')?.conversation_starters;
+    if (fromDocs?.length) {
+      return fromDocs;
     }
 
-    return documentsMap.get(entity?.id ?? '')?.conversation_starters ?? [];
-  }, [documentsMap, isAgent, entity]);
+    return CODECAN_DEFAULT_STARTERS;
+  }, [documentsMap, entity]);
 
   const { submitMessage } = useSubmitMessage();
   const sendConversationStarter = useCallback(
@@ -63,21 +71,46 @@ const ConversationStarters = () => {
     return null;
   }
 
+  const starters = conversation_starters.slice(0, Constants.MAX_CONVO_STARTERS);
+
   return (
-    <div className="mt-8 flex flex-wrap justify-center gap-3 px-4">
-      {conversation_starters
-        .slice(0, Constants.MAX_CONVO_STARTERS)
-        .map((text: string, index: number) => (
-          <button
-            key={index}
-            onClick={() => sendConversationStarter(text)}
-            className="relative flex w-40 cursor-pointer flex-col gap-2 rounded-2xl border border-border-medium px-3 pb-4 pt-3 text-start align-top text-[15px] shadow-[0_0_2px_0_rgba(0,0,0,0.05),0_4px_6px_0_rgba(0,0,0,0.02)] transition-colors duration-300 ease-in-out fade-in hover:bg-surface-tertiary"
+    <div className="mx-auto mt-8 flex w-full max-w-md flex-col gap-2 px-4">
+      <div className="flex items-center gap-2 px-1 pb-1">
+        <span className="h-px flex-1 bg-[rgba(11,47,91,0.08)] dark:bg-white/[0.08]" />
+        {}
+        <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-cc-slate-400 dark:text-dm-text-faint">
+          Try asking
+        </span>
+        <span className="h-px flex-1 bg-[rgba(11,47,91,0.08)] dark:bg-white/[0.08]" />
+      </div>
+      {starters.map((text: string, index: number) => (
+        <button
+          key={index}
+          onClick={() => sendConversationStarter(text)}
+          className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-[rgba(11,47,91,0.08)] bg-white px-3.5 py-2.5 text-left transition-colors duration-200 fade-in hover:bg-paper-100 dark:border-white/[0.08] dark:bg-dm-surface dark:hover:bg-dm-surface2"
+        >
+          <span className="min-h-[18px] w-[3px] flex-none self-stretch rounded-[2px] bg-signal-amber" />
+          <span className="line-clamp-2 flex-1 text-[14px] italic text-ink-800 dark:text-dm-text">
+            {text}
+          </span>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+            className="text-ink-800 dark:text-signal-amber"
           >
-            <p className="break-word line-clamp-3 overflow-hidden text-balance break-all text-text-secondary">
-              {text}
-            </p>
-          </button>
-        ))}
+            <path
+              d="M9 6l6 6-6 6"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      ))}
     </div>
   );
 };

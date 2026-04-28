@@ -71,13 +71,21 @@
   --paper-100: #F6F9FF;
   --paper-200: #EAF2FF;
   --paper-300: #D9E3F2;
+  --slate-200: #E1E6EF;
   --slate-300: #C4CDDC;
+  --slate-400: #9AA6BC;
   --slate-500: #7C8AA3;
   --diagram-100: #EAF1F8;
   --diagram-200: #E5EEF8;
   --signal-amber: #F2B644;
   --signal-mint:  #6EFFC7;
   --signal-flag:  #D63A3A;
+  --dm-ambient: #0A1424;
+  --dm-surface: #0F1E36;
+  --dm-surface2: #152846;
+  --dm-text: #E5ECF7;
+  --dm-text-mute: #8FA0BD;
+  --dm-text-faint: #5C6B85;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -157,7 +165,7 @@ html {
 }
 .dark {
   --brand-purple: #1E5A9C;
-  --presentation: var(--gray-800);
+  --presentation: var(--dm-ambient);
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);
   --text-secondary-alt: var(--gray-400);
@@ -170,19 +178,19 @@ html {
   --surface-active-alt: var(--gray-700);
   --surface-hover: var(--gray-600);
   --surface-hover-alt: var(--gray-600);
-  --surface-primary: var(--gray-900);
-  --surface-primary-alt: var(--gray-850);
-  --surface-primary-contrast: var(--gray-850);
-  --surface-secondary: var(--gray-800);
-  --surface-secondary-alt: var(--gray-800);
-  --surface-tertiary: var(--gray-700);
-  --surface-tertiary-alt: var(--gray-700);
-  --surface-dialog: var(--gray-850);
-  --surface-submit: var(--brand-blue-500);
-  --surface-submit-hover: var(--brand-blue-600);
+  --surface-primary: var(--dm-ambient);
+  --surface-primary-alt: var(--dm-surface);
+  --surface-primary-contrast: var(--dm-surface2);
+  --surface-secondary: var(--dm-surface);
+  --surface-secondary-alt: var(--dm-surface2);
+  --surface-tertiary: var(--dm-surface);
+  --surface-tertiary-alt: var(--dm-surface2);
+  --surface-dialog: var(--dm-surface);
+  --surface-submit: var(--signal-amber);
+  --surface-submit-hover: #F5C566;
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
-  --surface-chat: var(--gray-700);
+  --surface-chat: var(--dm-ambient);
   --border-light: var(--gray-700);
   --border-medium-alt: var(--gray-600);
   --border-medium: var(--gray-600);
@@ -1526,8 +1534,7 @@ html {
 
 .dark body,
 .dark html {
-  --tw-bg-opacity: 1;
-  background-color: rgba(23, 23, 23, var(--tw-bg-opacity));
+  background-color: var(--dm-ambient);
 }
 
 #__next,
@@ -1791,8 +1798,7 @@ html {
 }
 .dark body,
 .dark html {
-  --tw-bg-opacity: 1;
-  background-color: rgba(33, 33, 33, var(--tw-bg-opacity));
+  background-color: var(--dm-ambient);
 }
 #__next,
 #root {
