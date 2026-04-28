@@ -1,9 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import CitationsBlock from '../CitationsBlock';
 
-jest.mock('~/components/Pdf/PdfViewer', () => function MockPdfViewer() {
-  return null;
-});
+jest.mock(
+  '~/components/Pdf/PdfViewer',
+  () =>
+    function MockPdfViewer() {
+      return null;
+    },
+);
 
 describe('CitationsBlock', () => {
   it('renders nothing when citations are absent', () => {
@@ -23,9 +27,10 @@ describe('CitationsBlock', () => {
       />,
     );
 
-    expect(screen.getByRole('heading', { name: /Citations/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/CodeCan Building Code citations/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Citations$/i)).toBeInTheDocument();
     expect(screen.getByText('Ontario Building Code 2024')).toBeInTheDocument();
-    expect(screen.getByText('(p. 24)', { selector: 'span' })).toBeInTheDocument();
+    expect(screen.getByText('p. 24')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /View PDF/i })).toBeInTheDocument();
   });
 
@@ -45,8 +50,8 @@ describe('CitationsBlock', () => {
       />,
     );
 
-    expect(screen.getByText('(p. 15)', { selector: 'span' })).toBeInTheDocument();
-    expect(screen.getByText('(p. 50)', { selector: 'span' })).toBeInTheDocument();
+    expect(screen.getByText('p. 15')).toBeInTheDocument();
+    expect(screen.getByText('p. 50')).toBeInTheDocument();
     expect(screen.getByText('National Building Code of Canada 2020')).toBeInTheDocument();
   });
 });

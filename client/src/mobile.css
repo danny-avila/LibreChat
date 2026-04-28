@@ -1,5 +1,4 @@
 .hover-button.active {
-  display: block;
   visibility: visible;
 }
 
@@ -60,7 +59,6 @@
   }
 
   .hover-button {
-    display: block;
     visibility: visible;
   }
 }

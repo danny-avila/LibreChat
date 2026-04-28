@@ -216,12 +216,12 @@ function FeedbackButtons({
 
 function buttonClasses(isActive: boolean, isLast: boolean) {
   return cn(
-    'hover-button rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
-    'hover:text-text-primary hover:bg-surface-hover',
+    'hover-button inline-flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[rgba(11,47,91,0.05)] text-ink-800 transition-colors duration-200',
+    'hover:bg-[rgba(11,47,91,0.10)] dark:bg-white/[0.06] dark:text-dm-text dark:hover:bg-white/[0.10]',
     'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
     !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
-    'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
-    isActive && 'active text-text-primary bg-surface-hover',
+    'focus-visible:ring-2 focus-visible:ring-ink-800 dark:focus-visible:ring-signal-amber focus-visible:outline-none',
+    isActive && 'active bg-[rgba(11,47,91,0.10)] dark:bg-white/[0.10]',
   );
 }
 

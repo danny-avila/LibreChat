@@ -16,7 +16,6 @@ import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import { cn } from '~/utils';
 import store from '~/store';
-import { ASSISTANT_DISPLAY_NAME } from '~/constants/branding';
 
 function LoadingSpinner() {
   return (
@@ -80,7 +79,7 @@ function ChatView({ index = 0 }: { index?: number }) {
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
-              <div className="flex h-full w-full flex-col">
+            <div className="flex h-full w-full flex-col">
               <>
                 <div
                   className={cn(
@@ -91,9 +90,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                   <div
                     className={cn(
                       'flex-1',
-                      isLandingPage
-                        ? 'pb-32 md:pb-0'
-                        : 'min-h-0 overflow-y-auto pb-32 md:pb-0',
+                      isLandingPage ? 'pb-32 md:pb-0' : 'min-h-0 overflow-y-auto pb-32 md:pb-0',
                     )}
                   >
                     {content}
@@ -102,7 +99,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                 </div>
                 <div
                   className={cn(
-                    'ios-dock sticky bottom-0 z-40 flex w-full shrink-0 justify-center border-t border-border-light bg-black/90 px-4 py-4 md:py-4 md:pb-4 pb-[calc(env(safe-area-inset-bottom)+16px)] backdrop-blur-md',
+                    'ios-dock dark:via-dm-ambient/95 sticky bottom-0 z-40 flex w-full shrink-0 justify-center border-0 bg-gradient-to-t from-white via-white/95 to-transparent px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+16px)] dark:from-dm-ambient md:py-4 md:pb-4',
                     isSmallScreen && navVisible && 'hidden',
                   )}
                 >

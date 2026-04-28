@@ -33,7 +33,6 @@ import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
-import { ASSISTANT_MODEL_LABEL } from '~/constants/branding';
 
 const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
@@ -193,7 +192,8 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
   const isMoreThanThreeRows = visualRowCount > 3;
 
-  const baseClasses = useMemo(
+  // baseClasses kept for reference but composer textarea uses its own inlined classes now
+  const _baseClasses = useMemo(
     () =>
       cn(
         'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder-black/50 bg-transparent dark:placeholder-white/50 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
@@ -240,11 +240,13 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           <div
             onClick={handleContainerClick}
             className={cn(
-              'ios-input relative flex w-full flex-grow flex-col overflow-hidden rounded-[22px] border pb-3 text-text-primary transition-all duration-200',
-              isTextAreaFocused ? 'shadow-sm' : 'shadow-xs',
+              'ios-input relative flex w-full flex-grow flex-col overflow-hidden rounded-[22px] border text-text-primary transition-all duration-200',
+              isTextAreaFocused
+                ? 'shadow-[0_8px_24px_-8px_rgba(11,47,91,0.22),0_2px_6px_rgba(11,47,91,0.08)] dark:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.7)]'
+                : 'shadow-[0_8px_24px_-8px_rgba(11,47,91,0.18),0_2px_6px_rgba(11,47,91,0.06)] dark:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)]',
               isTemporary
                 ? 'border-violet-800/60 bg-violet-950/10'
-                : 'border-border-light/70 bg-surface-chat',
+                : 'border-[rgba(11,47,91,0.10)] bg-white dark:border-white/[0.14] dark:bg-dm-surface',
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
@@ -256,7 +258,15 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             />
             <FileFormChat conversation={conversation} />
             {endpoint && (
-              <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
+              <div
+                className={cn(
+                  'flex items-center gap-1.5 py-1.5',
+                  isRTL ? 'flex-row-reverse pr-1.5' : 'pl-1.5',
+                )}
+              >
+                <div className={isRTL ? 'order-2' : 'order-1 ml-0.5'}>
+                  <AttachFileChat conversation={conversation} disableInputs={disableInputs} />
+                </div>
                 <TextareaAutosize
                   {...registerProps}
                   ref={(e) => {
@@ -270,65 +280,53 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   onCompositionStart={handleCompositionStart}
                   onCompositionEnd={handleCompositionEnd}
                   id={mainTextareaId}
-                  placeholder={ASSISTANT_MODEL_LABEL}
+                  placeholder="Ask CodeCan"
                   tabIndex={0}
                   data-testid="text-input"
                   rows={1}
+                  minRows={1}
+                  maxRows={8}
                   onFocus={() => {
                     setIsTextAreaFocused(true);
                   }}
                   onBlur={setIsTextAreaFocused.bind(null, false)}
-                  style={{ height: 44, overflowY: 'auto' }}
                   className={cn(
-                    baseClasses,
+                    'order-2 m-0 w-full flex-1 resize-none self-center overflow-y-auto bg-transparent px-2 py-1 leading-6 placeholder-black/50 transition-[max-height] duration-200 disabled:cursor-not-allowed dark:placeholder-white/50',
+                    'max-h-[45vh] md:max-h-[55vh]',
                     removeFocusRings,
-                    'transition-[max-height] duration-200 disabled:cursor-not-allowed',
                   )}
                 />
-              </div>
-            )}
-            <div
-              className={cn(
-                'items-between flex items-center gap-2 pb-1.5',
-                isRTL ? 'flex-row-reverse' : 'flex-row',
-              )}
-            >
-              <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
-                <AttachFileChat conversation={conversation} disableInputs={disableInputs} />
-              </div>
-              <BadgeRow
-                showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
-                isSubmitting={isSubmitting || isSubmittingAdded}
-                conversationId={conversationId}
-                onChange={setBadges}
-                isInChat={
-                  Array.isArray(conversation?.messages) && conversation.messages.length >= 1
-                }
-              />
-              <div className="mx-auto flex" />
-              {SpeechToText && (
-                <AudioRecorder
-                  methods={methods}
-                  ask={submitMessage}
-                  textAreaRef={textAreaRef}
-                  disabled={disableInputs || isNotAppendable}
-                  isSubmitting={isSubmitting}
-                />
-              )}
-              <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
-                  <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-                ) : (
-                  endpoint && (
+                {SpeechToText && (
+                  <div className="order-3">
+                    <AudioRecorder
+                      methods={methods}
+                      ask={submitMessage}
+                      textAreaRef={textAreaRef}
+                      disabled={disableInputs || isNotAppendable}
+                      isSubmitting={isSubmitting}
+                    />
+                  </div>
+                )}
+                <div className={`order-4 ${isRTL ? 'ml-1.5' : 'mr-1.5'}`}>
+                  {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
+                    <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+                  ) : (
                     <SendButton
                       ref={submitButtonRef}
                       control={methods.control}
                       disabled={filesLoading || isSubmitting || disableInputs || isNotAppendable}
                     />
-                  )
-                )}
+                  )}
+                </div>
               </div>
-            </div>
+            )}
+            <BadgeRow
+              showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
+              isSubmitting={isSubmitting || isSubmittingAdded}
+              conversationId={conversationId}
+              onChange={setBadges}
+              isInChat={Array.isArray(conversation?.messages) && conversation.messages.length >= 1}
+            />
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
           </div>
         </div>

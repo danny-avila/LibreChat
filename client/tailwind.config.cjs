@@ -13,6 +13,7 @@ module.exports = {
     fontFamily: {
       sans: ['Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],
+      serif: ['"Cormorant Garamond"', 'Georgia', 'serif'],
     },
     // fontFamily: {
     //   sans: ['Söhne', 'sans-serif'],
@@ -99,6 +100,35 @@ module.exports = {
           900: '#050D1F',
         },
         'brand-purple': 'var(--brand-purple)',
+        ink: {
+          DEFAULT: 'var(--brand-blue-500)',
+          700: 'var(--brand-blue-550)',
+          800: 'var(--brand-blue-500)',
+          900: 'var(--brand-blue-800)',
+        },
+        paper: {
+          50: 'var(--paper-50)',
+          100: 'var(--paper-100)',
+          200: 'var(--paper-200)',
+          300: 'var(--paper-300)',
+        },
+        'cc-slate': {
+          200: 'var(--slate-200)',
+          300: 'var(--slate-300)',
+          400: 'var(--slate-400)',
+          500: 'var(--slate-500)',
+        },
+        'signal-amber': 'var(--signal-amber)',
+        'signal-mint': 'var(--signal-mint)',
+        'signal-flag': 'var(--signal-flag)',
+        dm: {
+          ambient: 'var(--dm-ambient)',
+          surface: 'var(--dm-surface)',
+          surface2: 'var(--dm-surface2)',
+          text: 'var(--dm-text)',
+          'text-mute': 'var(--dm-text-mute)',
+          'text-faint': 'var(--dm-text-faint)',
+        },
         presentation: 'var(--presentation)',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
