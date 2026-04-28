@@ -2,6 +2,7 @@ import {
   buildSandpackOptions,
   detectArtifactTypeFromFile,
   fileToArtifact,
+  languageForFilename,
   TOOL_ARTIFACT_TYPES,
 } from '../artifacts';
 
@@ -132,6 +133,246 @@ describe('detectArtifactTypeFromFile', () => {
       detectArtifactTypeFromFile({ filename: '.env', type: 'text/plain', text: 'KEY=value' }),
     ).toBeNull();
   });
+
+  describe('CODE bucket (programming-language source files)', () => {
+    /* `.py` and other code files were previously inline-only — PR #12832
+     * intentionally left them out of the side-panel pipeline. This bucket
+     * routes them through the markdown template with the source pre-
+     * wrapped as a fenced code block (`useArtifactProps`). */
+    it.each([
+      ['simple_graph.py', 'text/x-python'],
+      ['app.js', 'text/javascript'],
+      ['main.go', 'text/x-go'],
+      ['lib.rs', 'text/x-rust'],
+      ['style.css', 'text/css'],
+      ['build.sh', 'application/x-sh'],
+      ['query.sql', 'application/sql'],
+      ['Module.kt', 'text/x-kotlin'],
+    ])('routes %s (mime: %s) to the CODE bucket', (filename, type) => {
+      expect(detectArtifactTypeFromFile({ filename, type, text: 'x = 1' })).toBe(
+        TOOL_ARTIFACT_TYPES.CODE,
+      );
+    });
+
+    it('routes by extension even when MIME is generic octet-stream', () => {
+      /* file-type / inferMimeType sometimes can't classify code files
+       * (Python has no magic bytes); the extension map still wins. */
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'data.py',
+          type: 'application/octet-stream',
+          text: 'print(1)',
+        }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
+
+    it('keeps jsx/tsx on the React (sandpack) bucket, not CODE', () => {
+      /* `.jsx` and `.tsx` are React component sources — the existing
+       * sandpack live-preview should win over the static CODE bucket. */
+      expect(detectArtifactTypeFromFile({ filename: 'App.jsx', type: '', text: 'x' })).toBe(
+        TOOL_ARTIFACT_TYPES.REACT,
+      );
+      expect(detectArtifactTypeFromFile({ filename: 'App.tsx', type: '', text: 'x' })).toBe(
+        TOOL_ARTIFACT_TYPES.REACT,
+      );
+    });
+
+    it('does NOT route data formats to CODE (CSV / JSON / YAML / TOML / XML)', () => {
+      /* These get dedicated viewers in follow-ups; for now they fall
+       * through to inline rendering (return null). */
+      expect(
+        detectArtifactTypeFromFile({ filename: 'data.csv', type: 'text/csv', text: 'a,b' }),
+      ).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({ filename: 'data.json', type: 'application/json', text: '{}' }),
+      ).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'config.yaml',
+          type: 'application/yaml',
+          text: 'a: 1',
+        }),
+      ).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'pyproject.toml',
+          type: 'application/toml',
+          text: '',
+        }),
+      ).toBeNull();
+    });
+
+    it('does NOT route config dotfiles to CODE (.env / .ini)', () => {
+      expect(
+        detectArtifactTypeFromFile({ filename: 'app.env', type: 'text/plain', text: 'KEY=val' }),
+      ).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'config.ini',
+          type: 'text/plain',
+          text: '[section]',
+        }),
+      ).toBeNull();
+    });
+
+    it('allows empty text for CODE files (an empty Python file is still a Python file)', () => {
+      expect(
+        detectArtifactTypeFromFile({ filename: 'empty.py', type: 'text/x-python', text: '' }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
+
+    /* Codex review P2: extensionless build files like `Dockerfile` and
+     * `Makefile` have no `.` in their basename, so `extensionOf` returns
+     * `''` and the extension map can't match. Bare-name fallback
+     * recognizes the lowercased basename for these cases. */
+    it.each([
+      'Dockerfile',
+      'dockerfile',
+      'Makefile',
+      'makefile',
+      'Gemfile',
+      'Rakefile',
+      'Vagrantfile',
+      'Brewfile',
+    ])('routes extensionless build file %s to CODE via bare-name fallback', (filename) => {
+      expect(detectArtifactTypeFromFile({ filename, type: '', text: 'FROM alpine' })).toBe(
+        TOOL_ARTIFACT_TYPES.CODE,
+      );
+    });
+
+    it('still recognizes nested-path Dockerfile (path-preserving sanitizer output)', () => {
+      /* The path-preserving artifact sanitizer can ship `proj/Dockerfile`.
+       * Bare-name lookup must use the basename, not the full string. */
+      expect(
+        detectArtifactTypeFromFile({ filename: 'proj/Dockerfile', type: '', text: 'FROM alpine' }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
+
+    it('does not bare-name match files that DO have an extension (no double-match)', () => {
+      /* `dockerfile.dev` has extension `dev` (not in the routing map),
+       * so it returns null. Bare-name lookup must skip files with a
+       * `.` so the extension path stays the source of truth for them. */
+      expect(
+        detectArtifactTypeFromFile({ filename: 'dockerfile.dev', type: '', text: 'x' }),
+      ).toBeNull();
+    });
+
+    it('does not bare-name match unknown extensionless filenames', () => {
+      expect(detectArtifactTypeFromFile({ filename: 'README', type: '', text: 'hi' })).toBeNull();
+      expect(detectArtifactTypeFromFile({ filename: 'LICENSE', type: '', text: 'MIT' })).toBeNull();
+    });
+
+    /* Codex review P3 companion: `extensionOf` used to consider the
+     * whole path string, so `pkg.v1/Dockerfile` yielded a path-laden
+     * "extension" that masked the bare-name fallback. The basename-
+     * first fix makes routing for these files work correctly. */
+    it('routes nested-path Dockerfile under dotted directory to CODE', () => {
+      expect(
+        detectArtifactTypeFromFile({ filename: 'pkg.v1/Dockerfile', type: '', text: 'FROM x' }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
+
+    it('still routes file extensions correctly under dotted directory', () => {
+      expect(
+        detectArtifactTypeFromFile({ filename: 'pkg.v1/main.go', type: '', text: 'package main' }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'a.b.c/script.py',
+          type: 'text/x-python',
+          text: 'x = 1',
+        }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
+  });
+});
+
+describe('languageForFilename', () => {
+  it('returns the canonical language identifier for known extensions', () => {
+    expect(languageForFilename('foo.py')).toBe('python');
+    expect(languageForFilename('foo.ts')).toBe('typescript');
+    expect(languageForFilename('foo.go')).toBe('go');
+    expect(languageForFilename('foo.rs')).toBe('rust');
+    expect(languageForFilename('foo.kt')).toBe('kotlin');
+  });
+
+  it('falls back to the raw extension for unknown ones (renders monospace)', () => {
+    expect(languageForFilename('foo.qwerty')).toBe('qwerty');
+  });
+
+  it('returns the canonical language for extensionless build files (bare-name fallback)', () => {
+    /* Codex review P2 companion: language hint must follow the same
+     * bare-name fallback as the routing decision so the fenced block
+     * gets `language-dockerfile` / `language-makefile` etc. */
+    expect(languageForFilename('Dockerfile')).toBe('dockerfile');
+    expect(languageForFilename('Makefile')).toBe('makefile');
+    expect(languageForFilename('Gemfile')).toBe('ruby');
+    expect(languageForFilename('Rakefile')).toBe('ruby');
+  });
+
+  it('handles nested-path filenames (uses basename)', () => {
+    expect(languageForFilename('proj/Dockerfile')).toBe('dockerfile');
+    expect(languageForFilename('a/b/c.py')).toBe('python');
+  });
+
+  it('returns empty string for filenames with no extension and no recognized bare name', () => {
+    expect(languageForFilename('README')).toBe('');
+    expect(languageForFilename('')).toBe('');
+    expect(languageForFilename(undefined)).toBe('');
+  });
+
+  /* Codex review P3: `extensionOf` previously took `lastIndexOf('.')`
+   * across the FULL path, so `pkg.v1/Dockerfile` yielded the
+   * nonsensical "extension" `v1/dockerfile`. Since that's non-empty,
+   * `languageForFilename` returned it as the language hint instead of
+   * falling back to `bareNameOf`. The basename-first fix makes both
+   * helpers operate on the basename only. */
+  it('correctly falls back to bare-name when path has dotted directory components', () => {
+    expect(languageForFilename('pkg.v1/Dockerfile')).toBe('dockerfile');
+    expect(languageForFilename('a.b.c/Makefile')).toBe('makefile');
+    expect(languageForFilename('proj.beta/Gemfile')).toBe('ruby');
+  });
+
+  it('correctly identifies extension when path has dotted directory components', () => {
+    /* Dotted dir + dotted file: extension parsing should still find
+     * the file's extension, not concatenate dir+file fragments. */
+    expect(languageForFilename('pkg.v1/main.go')).toBe('go');
+    expect(languageForFilename('a.b.c/script.py')).toBe('python');
+  });
+
+  /* Codex review P3: when a file routes to CODE via MIME-only (e.g.
+   * `noext` filename + `text/x-python` MIME), we still want a language
+   * hint on the fenced block so the future highlighter swap-in can
+   * apply syntax colors. Without the MIME fallback, `language-` is
+   * empty and the highlighter can't engage. */
+  it('falls back to MIME when filename has no extension and no recognized bare name', () => {
+    expect(languageForFilename('noext', 'text/x-python')).toBe('python');
+    expect(languageForFilename('noext', 'text/x-go')).toBe('go');
+    expect(languageForFilename('noext', 'application/x-sh')).toBe('bash');
+    expect(languageForFilename(undefined, 'text/x-rust')).toBe('rust');
+  });
+
+  it('strips MIME parameters before lookup (charset, etc.)', () => {
+    expect(languageForFilename('noext', 'text/x-python; charset=utf-8')).toBe('python');
+    expect(languageForFilename('noext', 'TEXT/X-PYTHON;charset=utf-8')).toBe('python');
+  });
+
+  it('prefers extension over MIME when both are present (extension is more reliable)', () => {
+    /* `simple_graph.py` + a wrong/generic MIME → extension wins. */
+    expect(languageForFilename('simple_graph.py', 'application/octet-stream')).toBe('python');
+    expect(languageForFilename('main.go', 'text/x-python')).toBe('go');
+  });
+
+  it('prefers bare-name over MIME for build files', () => {
+    /* `Dockerfile` + a generic MIME → bare-name wins. */
+    expect(languageForFilename('Dockerfile', 'text/plain')).toBe('dockerfile');
+  });
+
+  it('returns empty string when no signal yields a hint (extensionless + unknown MIME)', () => {
+    expect(languageForFilename('noext', 'application/octet-stream')).toBe('');
+    expect(languageForFilename('noext', undefined)).toBe('');
+    expect(languageForFilename('noext')).toBe('');
+  });
 });
 
 describe('fileToArtifact', () => {
@@ -157,6 +398,101 @@ describe('fileToArtifact', () => {
 
   it('returns null for unsupported types so callers can fall through', () => {
     expect(fileToArtifact({ ...baseFile, filename: 'data.csv', type: 'text/csv' })).toBeNull();
+  });
+
+  /* End-to-end test for the CODE bucket. The classification path is
+   * covered separately in `detectArtifactTypeFromFile`'s describe block;
+   * this asserts that the full `Artifact` object (id / type / title /
+   * content / messageId / lastUpdateTime) is constructed correctly for
+   * a typical Python file. Locks in the empty-text gate exception for
+   * CODE and the title pass-through that `useArtifactProps` reads to
+   * derive the language hint. */
+  it('builds a CODE-typed Artifact for a .py file with text', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'simple_graph.py',
+      type: 'text/x-python',
+      text: 'import matplotlib.pyplot as plt\nplt.savefig("foo.png")',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    expect(artifact!.title).toBe('simple_graph.py');
+    expect(artifact!.content).toBe('import matplotlib.pyplot as plt\nplt.savefig("foo.png")');
+    expect(artifact!.id).toBe('tool-artifact-fid-1');
+    expect(artifact!.messageId).toBe('msg-1');
+  });
+
+  it('builds a CODE-typed Artifact for an empty .py file (empty-text exception applies)', () => {
+    /* CODE joins MARKDOWN/PLAIN_TEXT in the empty-text exception so an
+     * empty Python file still surfaces in the side panel rather than
+     * silently disappearing. */
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'empty.py',
+      type: 'text/x-python',
+      text: '',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    expect(artifact!.content).toBe('');
+  });
+
+  it('builds a CODE-typed Artifact for an extensionless build file (Dockerfile)', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'Dockerfile',
+      type: '',
+      text: 'FROM alpine\nRUN apk add curl',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    expect(artifact!.title).toBe('Dockerfile');
+    /* Bare-name resolved → `dockerfile` language hint stored on the
+     * artifact so `useArtifactProps` doesn't have to re-derive it. */
+    expect(artifact!.language).toBe('dockerfile');
+  });
+
+  /* Codex review P3: language is resolved AT CONSTRUCTION TIME so the
+   * MIME fallback fires for extensionless filenames. Without storing
+   * the language on the artifact, `useArtifactProps` would re-derive
+   * from `artifact.title` alone (which has no MIME context) and emit
+   * an empty `language-` class. */
+  it('stores the language hint on CODE artifacts (filename-derived)', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'app.py',
+      type: 'text/x-python',
+      text: 'print(1)',
+    });
+    expect(artifact!.language).toBe('python');
+  });
+
+  it('stores the MIME-derived language on CODE artifacts when filename has no extension', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'noext',
+      type: 'text/x-python',
+      text: 'print(1)',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    expect(artifact!.language).toBe('python');
+  });
+
+  it('does not set language on non-CODE artifacts', () => {
+    /* Markdown / HTML / etc. don't need a language hint — `useArtifactProps`
+     * uses different rendering paths for those. Keeping `language`
+     * undefined for them avoids confusing `getKey` which does include
+     * `language` in its cache key. */
+    const html = fileToArtifact(baseFile);
+    expect(html!.language).toBeUndefined();
+    const md = fileToArtifact({
+      ...baseFile,
+      filename: 'README.md',
+      type: 'text/markdown',
+      text: '# hi',
+    });
+    expect(md!.language).toBeUndefined();
   });
 
   it('returns null when an HTML/React/Mermaid file has no text', () => {
