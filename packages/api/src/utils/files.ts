@@ -146,6 +146,59 @@ function truncateDirSegment(seg: string): string {
 }
 
 /**
+ * Embed a deterministic 6-hex hash of `hashSource` in `segment` (before its
+ * extension if any). Used to keep two different raw artifact names that
+ * sanitize to the same `segment` distinguishable — without this,
+ * `claimCodeFile`'s `(filename, conversationId, context, tenantId)`
+ * compound unique index would silently match the second upload to the
+ * first record and overwrite the first artifact's bytes.
+ *
+ * The disambiguator survives length capping: if appending pushes the
+ * segment past `ARTIFACT_PATH_SEGMENT_MAX`, the stem is trimmed to make
+ * room (the hash + extension are load-bearing for collision avoidance
+ * and MIME inference, the stem is just the human-readable prefix).
+ */
+function embedDisambiguatorInLeaf(segment: string, hashSource: string): string {
+  const suffix = '-' + deterministicHexSuffix(hashSource);
+  const dot = segment.lastIndexOf('.');
+  /* `dot <= 1` treats dotfile-prefixed leaves (`_.hidden`, `_.x`) and
+   * extensionless names (`Makefile`, `out`) the same way: append the
+   * disambiguator at the end rather than splitting `_.hidden` into stem
+   * `_` + "extension" `.hidden`, which would produce the awkward
+   * `_-<hash>.hidden`. The `_.x.y` case (dotfile with a real extension)
+   * still has `dot > 1` and goes through the extension-preserving
+   * branch correctly. */
+  let result: string;
+  if (dot <= 1) {
+    const proposed = segment + suffix;
+    result =
+      proposed.length <= ARTIFACT_PATH_SEGMENT_MAX
+        ? proposed
+        : segment.slice(0, ARTIFACT_PATH_SEGMENT_MAX - suffix.length) + suffix;
+  } else {
+    const stem = segment.slice(0, dot);
+    const ext = segment.slice(dot);
+    const proposed = stem + suffix + ext;
+    if (proposed.length <= ARTIFACT_PATH_SEGMENT_MAX) {
+      result = proposed;
+    } else {
+      // Trim stem to make room while preserving disambiguator + extension.
+      const stemBudget = Math.max(0, ARTIFACT_PATH_SEGMENT_MAX - suffix.length - ext.length);
+      result = stem.slice(0, stemBudget) + suffix + ext;
+    }
+  }
+  /* Defensive final clamp. The branches above already keep the result
+   * within `ARTIFACT_PATH_SEGMENT_MAX` for any input where the
+   * extension fits the segment, but a pathological extension (e.g. the
+   * `.aaaaa…` shape `path.extname` returns for contrived inputs) could
+   * still produce a longer result. Hard-clamp so the segment cap holds
+   * unconditionally. */
+  return result.length <= ARTIFACT_PATH_SEGMENT_MAX
+    ? result
+    : result.slice(0, ARTIFACT_PATH_SEGMENT_MAX);
+}
+
+/**
  * Sanitize a code-execution artifact path while preserving directory components
  * so subsequent prime() runs can place the file at the same nested location in
  * the next sandbox session. Each segment is sanitized independently with the
@@ -178,19 +231,48 @@ export function sanitizeArtifactPath(inputName: string): string {
   if (segments.length === 0) return '_';
   const leafIdx = segments.length - 1;
   if (segments[leafIdx].startsWith('.')) segments[leafIdx] = '_' + segments[leafIdx];
+  /* Snapshot the post-regex-and-dotfile form BEFORE per-segment
+   * truncation so the collision-avoidance check below only fires for
+   * character-level mutations (regex replacement, normalization,
+   * dotfile prefix, empty-segment collapse). Truncation by itself is
+   * already disambiguated by `truncateLeafSegment`'s seg-hash; firing
+   * the input-hash branch on truncation alone would just stack a
+   * second hash for no collision-avoidance benefit. */
+  const preCapJoined = segments.join('/');
   const capped = segments.map((seg, i) =>
     i === leafIdx ? truncateLeafSegment(seg) : truncateDirSegment(seg),
   );
-  const joined = capped.join('/');
+  let joined = capped.join('/');
+  /* Collision avoidance. `sanitizeArtifactPath` is not injective:
+   * `out@1.csv` and `out#1.csv` (and `out 1.csv` and `out_1.csv`, and
+   * `.x` and `_.x`) all collapse onto the same safe form. Without
+   * disambiguation, `claimCodeFile` — keyed on the schema's compound
+   * unique `(filename, conversationId, context, tenantId)` index —
+   * matches the later upload to the earlier record and silently
+   * overwrites the first artifact's bytes via the reused `file_id`.
+   *
+   * When character-level sanitization changed something, embed a
+   * SHA-256 prefix of the raw input in the leaf segment. Same raw
+   * input → same safe form (idempotent for re-uploads); different raw
+   * inputs that would have collided → different safe forms.
+   *
+   * Clean inputs (where the regex/normalize pass was a no-op) skip
+   * the disambiguator — no collision is possible because they're
+   * already distinct strings, and we don't want to clutter human-
+   * readable filenames with a hash when nothing was at risk. */
+  if (preCapJoined !== inputName) {
+    capped[leafIdx] = embedDisambiguatorInLeaf(capped[leafIdx], inputName);
+    joined = capped.join('/');
+  }
   /* Per-segment caps are necessary but not sufficient — a deeply nested
    * path with many at-cap segments can still exceed the DB's indexed-key
    * limit (Mongo 4.0 ≤ 1024 bytes; later versions configurable). Fall
    * back to leaf-only when the joined form blows past the total cap, so
-   * the (filename, conversationId, context) compound unique index never
-   * sees an oversized key. The leaf is already capped by
-   * `truncateLeafSegment`, so this guarantees ≤ ARTIFACT_PATH_SEGMENT_MAX
-   * (255) chars. Same shape as the absolute-path / `..`-traversal
-   * fallback above. */
+   * the (filename, conversationId, context, tenantId) compound unique
+   * index never sees an oversized key. The leaf is already capped by
+   * `truncateLeafSegment` + `embedDisambiguatorInLeaf`, so this
+   * guarantees ≤ ARTIFACT_PATH_SEGMENT_MAX (255) chars. Same shape as
+   * the absolute-path / `..`-traversal fallback above. */
   if (joined.length > ARTIFACT_PATH_TOTAL_MAX) {
     return capped[leafIdx];
   }
