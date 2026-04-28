@@ -97,6 +97,75 @@ describe('sanitizeArtifactPath', () => {
   test('returns underscore for empty input', () => {
     expect(sanitizeArtifactPath('')).toBe('_');
   });
+
+  test('caps the leaf segment at 255 chars with extension-preserving truncation', () => {
+    /* Regression for the unbounded-leaf path: without the per-segment
+     * cap, a 300-char artifact name would flow through to saveBuffer's
+     * storage key (`${file_id}__${flatName}`) and trip ENAMETOOLONG on
+     * filesystems that enforce NAME_MAX. The mocked `randomBytes`
+     * returns `abc123`, so the truncated form is deterministic. */
+    const longName = 'a'.repeat(300) + '.txt';
+    const result = sanitizeArtifactPath(longName);
+    expect(result.length).toBe(255);
+    expect(result).toMatch(/^a+-abc123\.txt$/);
+  });
+
+  test('caps the leaf when nested under a directory, preserving the directory verbatim', () => {
+    const longLeaf = 'b'.repeat(300) + '.csv';
+    const result = sanitizeArtifactPath(`reports/${longLeaf}`);
+    const [dir, leaf] = result.split('/');
+    expect(dir).toBe('reports');
+    expect(leaf.length).toBe(255);
+    expect(leaf).toMatch(/^b+-abc123\.csv$/);
+  });
+
+  test('caps non-leaf directory segments at 255 chars', () => {
+    /* Directory components hit `NAME_MAX` independently of the leaf —
+     * each `mkdir` along the path has to satisfy the per-component limit
+     * regardless of the basename truncation. */
+    const longDir = 'd'.repeat(300);
+    const result = sanitizeArtifactPath(`${longDir}/notes.txt`);
+    const [dir, leaf] = result.split('/');
+    expect(dir.length).toBe(255);
+    expect(dir).toMatch(/^d+-abc123$/);
+    expect(leaf).toBe('notes.txt');
+  });
+
+  test('caps every segment in a deeply-nested path with mixed lengths', () => {
+    /* Every segment respects the cap — the truncate is per-component,
+     * not on the join. This is what protects against pathological
+     * generated paths like `<huge-prompt>/<huge-prompt>/file.csv`. */
+    const segA = 'x'.repeat(260);
+    const segB = 'y'.repeat(260);
+    const leaf = 'z'.repeat(260) + '.json';
+    const result = sanitizeArtifactPath(`${segA}/${segB}/${leaf}`);
+    const parts = result.split('/');
+    expect(parts).toHaveLength(3);
+    expect(parts[0].length).toBe(255);
+    expect(parts[1].length).toBe(255);
+    expect(parts[2].length).toBe(255);
+    expect(parts[2]).toMatch(/\.json$/);
+  });
+
+  test('does not truncate filenames that are exactly at the 255-char limit', () => {
+    /* Off-by-one guard: 255 itself is allowed (filesystem boundary), 256
+     * is not. */
+    const exact = 'e'.repeat(251) + '.txt'; // 255 chars total
+    expect(sanitizeArtifactPath(exact)).toBe(exact);
+    expect(sanitizeArtifactPath(`dir/${exact}`)).toBe(`dir/${exact}`);
+  });
+
+  test('preserves the dotfile underscore prefix when the leaf also needs truncation', () => {
+    /* A long hidden-file leaf (`._very_long_name`) goes through the
+     * underscore-prefix branch first; truncation must run AFTER that
+     * rewrite or the leaf would still leak past the cap. */
+    const longHidden = '.' + 'a'.repeat(300);
+    const result = sanitizeArtifactPath(`dir/${longHidden}`);
+    const [dir, leaf] = result.split('/');
+    expect(dir).toBe('dir');
+    expect(leaf.length).toBe(255);
+    expect(leaf.startsWith('_.')).toBe(true);
+  });
 });
 
 describe('flattenArtifactPath', () => {

@@ -67,12 +67,57 @@ export function sanitizeFilename(inputName: string): string {
   return name;
 }
 
+/** Per-path-component length cap. Mirrors `sanitizeFilename`'s 255-char
+ * basename cap and matches filesystem `NAME_MAX` (255 bytes on Linux/ext4,
+ * 255 chars on Windows/NTFS) — without it, `saveBuffer` writes
+ * `${file_id}__${flatName}` and a long artifact name surfaces as
+ * `ENAMETOOLONG` and falls back to a download URL instead of persisting. */
+const ARTIFACT_PATH_SEGMENT_MAX = 255;
+
+/**
+ * Truncates a path-leaf segment while preserving its extension, matching the
+ * shape `sanitizeFilename` uses for the basename cap. The 6-hex-char
+ * suffix disambiguates two long names that would otherwise collapse to the
+ * same prefix (e.g. two LLM-generated `report-<huge-prompt-suffix>.csv`).
+ *
+ * Falls back to whole-segment truncation (no extension preservation) when
+ * the extension itself is so long there's no room for a meaningful stem —
+ * `path.extname` happily returns 100+ char "extensions" for pathological
+ * inputs like `_.<huge-suffix>`, and trying to keep that extension would
+ * still blow past the cap.
+ */
+function truncateLeafSegment(leaf: string): string {
+  if (leaf.length <= ARTIFACT_PATH_SEGMENT_MAX) return leaf;
+  const ext = path.extname(leaf);
+  const stem = path.basename(leaf, ext);
+  // 8 = 1 (`-`) + 6 (hex disambiguator) + 1 (minimum 1-char stem)
+  if (ext.length > ARTIFACT_PATH_SEGMENT_MAX - 8) {
+    return truncateDirSegment(leaf);
+  }
+  const stemBudget = ARTIFACT_PATH_SEGMENT_MAX - ext.length - 7;
+  return stem.slice(0, stemBudget) + '-' + crypto.randomBytes(3).toString('hex') + ext;
+}
+
+/** Truncates a non-leaf (directory) segment. Directory segments don't
+ * carry semantic extensions, so we just slice and append the same 6-hex
+ * disambiguation suffix. */
+function truncateDirSegment(seg: string): string {
+  if (seg.length <= ARTIFACT_PATH_SEGMENT_MAX) return seg;
+  return seg.slice(0, ARTIFACT_PATH_SEGMENT_MAX - 7) + '-' + crypto.randomBytes(3).toString('hex');
+}
+
 /**
  * Sanitize a code-execution artifact path while preserving directory components
  * so subsequent prime() runs can place the file at the same nested location in
  * the next sandbox session. Each segment is sanitized independently with the
  * same rules as `sanitizeFilename`. Falls back to the basename for absolute
  * paths or names containing `..` traversal.
+ *
+ * Each path component is capped at `ARTIFACT_PATH_SEGMENT_MAX` (255) chars
+ * — the leaf with extension preservation (matching `sanitizeFilename`),
+ * non-leaf segments with a plain truncate-and-disambiguate. Without the
+ * cap, long artifact names flow into `saveBuffer`'s storage key
+ * unbounded and trip `ENAMETOOLONG` instead of persisting.
  */
 export function sanitizeArtifactPath(inputName: string): string {
   if (!inputName) return '_';
@@ -94,7 +139,10 @@ export function sanitizeArtifactPath(inputName: string): string {
   if (segments.length === 0) return '_';
   const leafIdx = segments.length - 1;
   if (segments[leafIdx].startsWith('.')) segments[leafIdx] = '_' + segments[leafIdx];
-  return segments.join('/');
+  const capped = segments.map((seg, i) =>
+    i === leafIdx ? truncateLeafSegment(seg) : truncateDirSegment(seg),
+  );
+  return capped.join('/');
 }
 
 /**
