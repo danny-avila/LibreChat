@@ -208,6 +208,20 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
             원문
           </a>
         )}
+        {hit.imanage_preview_url && (
+          <a
+            href={hit.imanage_preview_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+            aria-label="iManage에서 보기"
+            title="iManage에서 보기"
+          >
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            iManage
+          </a>
+        )}
       </div>
 
       {visibleChunks.length > 0 && (

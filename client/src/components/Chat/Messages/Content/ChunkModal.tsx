@@ -6,6 +6,7 @@ export type BklSource = {
   source?: {
     url?: string;
     embed_url?: string;
+    imanage_url?: string;
   };
   document: string[];
   metadata: Array<{
@@ -42,6 +43,10 @@ export default function ChunkModal({ isOpen, onClose, source, citationNumber }: 
   const relevanceRaw = meta?.relevance;
   const chunkText = source?.document?.[0] ?? '';
   const sourceUrl = source?.source?.url ?? source?.source?.embed_url;
+  const imanageUrl =
+    source?.source?.imanage_url ??
+    (typeof meta?.imanage_url === 'string' ? meta.imanage_url : undefined) ??
+    (typeof meta?.imanage_preview_url === 'string' ? meta.imanage_preview_url : undefined);
 
   // relevance: 0–1이면 *100, 이미 0–100이면 그대로 (100 초과 시 100으로 캡)
   const relevanceDisplay =
@@ -92,6 +97,19 @@ export default function ChunkModal({ isOpen, onClose, source, citationNumber }: 
                   title="원문 보기"
                 >
                   <ExternalLink className="size-4" />
+                </a>
+              )}
+              {imanageUrl && (
+                <a
+                  href={imanageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
+                  aria-label="iManage에서 보기"
+                  title="iManage에서 보기"
+                >
+                  <ExternalLink className="size-3.5" />
+                  iManage
                 </a>
               )}
               <button
