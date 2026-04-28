@@ -197,8 +197,8 @@ describe('recordCollectedUsage', () => {
     });
   });
 
-  describe('cache token handling - OpenAI format', () => {
-    it('should use spendStructuredTokens for cache tokens (input_token_details)', async () => {
+  describe('cache token handling - OpenAI format (input_tokens already includes cache)', () => {
+    it('subtracts cache from input_tokens to avoid double-counting', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 100,
@@ -221,11 +221,64 @@ describe('recordCollectedUsage', () => {
       expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
         expect.objectContaining({ model: 'gpt-4' }),
         {
-          promptTokens: { input: 100, write: 20, read: 10 },
+          promptTokens: { input: 70, write: 20, read: 10 },
           completionTokens: 50,
         },
       );
-      expect(result?.input_tokens).toBe(130); // 100 + 20 + 10
+      expect(result?.input_tokens).toBe(100);
+    });
+  });
+
+  describe('cache token handling - Gemini format (input_tokens already includes cache)', () => {
+    it('does not double-count cache_read for Gemini models — issue #12855', async () => {
+      // Real numbers from the issue report
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 11125,
+          output_tokens: 20,
+          model: 'gemini-3-flash-preview',
+          input_token_details: { cache_read: 7441 },
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3-flash-preview' }),
+        {
+          promptTokens: { input: 3684, write: 0, read: 7441 },
+          completionTokens: 20,
+        },
+      );
+      expect(result?.input_tokens).toBe(11125);
+    });
+
+    it('handles cache_read >= input_tokens defensively (clamps inputOnly to 0)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 1000,
+          output_tokens: 30,
+          model: 'gemini-2.5-pro',
+          input_token_details: { cache_read: 1000 },
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-2.5-pro' }),
+        {
+          promptTokens: { input: 0, write: 0, read: 1000 },
+          completionTokens: 30,
+        },
+      );
     });
   });
 
@@ -406,7 +459,8 @@ describe('recordCollectedUsage', () => {
         collectedUsage,
       });
 
-      expect(result).toEqual({ input_tokens: 130, output_tokens: 50 });
+      // gpt-4 is a subset provider → input_tokens already includes cache
+      expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
     });
   });
 

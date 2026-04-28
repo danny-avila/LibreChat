@@ -22,6 +22,58 @@ type SpendStructuredTokensFn = (
   tokenUsage: StructuredTokenUsage,
 ) => Promise<unknown>;
 
+/**
+ * Provider semantics for `usage_metadata.input_tokens`:
+ *
+ *   - Anthropic / Bedrock: `input_tokens` EXCLUDES cache tokens. Cache reads/writes
+ *     arrive as separate values that must be added on top to get the total prompt size.
+ *   - Gemini / OpenAI: `input_tokens` ALREADY INCLUDES the cached portion
+ *     (Google's `promptTokenCount`, OpenAI's `prompt_tokens`). The cache fields are
+ *     a subset of `input_tokens`, so adding them again double-counts.
+ *
+ * Returning false here means "additive" (the historical default). Add a provider
+ * here only when its `input_tokens` is the all-inclusive total.
+ */
+function inputTokensIncludesCache(model?: string): boolean {
+  if (!model) {
+    return false;
+  }
+  return /^(?:models\/)?(gemini|gpt|o[1-9]|chatgpt)/i.test(model);
+}
+
+interface SplitUsage {
+  /** Non-cached input portion — what gets billed at the standard input rate */
+  inputOnly: number;
+  cacheCreation: number;
+  cacheRead: number;
+  /** Total prompt tokens including cached portion */
+  totalInput: number;
+}
+
+function splitUsage(usage: UsageMetadata, fallbackModel?: string): SplitUsage {
+  const cacheCreation =
+    Number(usage.input_token_details?.cache_creation) ||
+    Number(usage.cache_creation_input_tokens) ||
+    0;
+  const cacheRead =
+    Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
+  const rawInput = Number(usage.input_tokens) || 0;
+  if (inputTokensIncludesCache(usage.model ?? fallbackModel)) {
+    return {
+      inputOnly: Math.max(0, rawInput - cacheCreation - cacheRead),
+      cacheCreation,
+      cacheRead,
+      totalInput: rawInput,
+    };
+  }
+  return {
+    inputOnly: rawInput,
+    cacheCreation,
+    cacheRead,
+    totalInput: rawInput + cacheCreation + cacheRead,
+  };
+}
+
 export interface RecordUsageDeps {
   spendTokens: SpendTokensFn;
   spendStructuredTokens: SpendStructuredTokensFn;
@@ -83,16 +135,7 @@ export async function recordCollectedUsage(
   }
 
   const firstUsage = messageUsages[0];
-  const input_tokens =
-    firstUsage == null
-      ? 0
-      : (firstUsage.input_tokens || 0) +
-        (Number(firstUsage.input_token_details?.cache_creation) ||
-          Number(firstUsage.cache_creation_input_tokens) ||
-          0) +
-        (Number(firstUsage.input_token_details?.cache_read) ||
-          Number(firstUsage.cache_read_input_tokens) ||
-          0);
+  const input_tokens = firstUsage == null ? 0 : splitUsage(firstUsage, model).totalInput;
 
   let total_output_tokens = 0;
 
@@ -109,12 +152,7 @@ export async function recordCollectedUsage(
         continue;
       }
 
-      const cache_creation =
-        Number(usage.input_token_details?.cache_creation) ||
-        Number(usage.cache_creation_input_tokens) ||
-        0;
-      const cache_read =
-        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
+      const { inputOnly, cacheCreation, cacheRead } = splitUsage(usage, model);
 
       total_output_tokens += Number(usage.output_tokens) || 0;
 
@@ -131,14 +169,14 @@ export async function recordCollectedUsage(
 
       if (useBulk) {
         const entries =
-          cache_creation > 0 || cache_read > 0
+          cacheCreation > 0 || cacheRead > 0
             ? prepareStructuredTokenSpend(
                 txMetadata,
                 {
                   promptTokens: {
-                    input: usage.input_tokens,
-                    write: cache_creation,
-                    read: cache_read,
+                    input: inputOnly,
+                    write: cacheCreation,
+                    read: cacheRead,
                   },
                   completionTokens: usage.output_tokens,
                 },
@@ -147,7 +185,7 @@ export async function recordCollectedUsage(
             : prepareTokenSpend(
                 txMetadata,
                 {
-                  promptTokens: usage.input_tokens,
+                  promptTokens: inputOnly,
                   completionTokens: usage.output_tokens,
                 },
                 pricing,
@@ -156,13 +194,13 @@ export async function recordCollectedUsage(
         continue;
       }
 
-      if (cache_creation > 0 || cache_read > 0) {
+      if (cacheCreation > 0 || cacheRead > 0) {
         deps
           .spendStructuredTokens(txMetadata, {
             promptTokens: {
-              input: usage.input_tokens,
-              write: cache_creation,
-              read: cache_read,
+              input: inputOnly,
+              write: cacheCreation,
+              read: cacheRead,
             },
             completionTokens: usage.output_tokens,
           })
@@ -177,7 +215,7 @@ export async function recordCollectedUsage(
 
       deps
         .spendTokens(txMetadata, {
-          promptTokens: usage.input_tokens,
+          promptTokens: inputOnly,
           completionTokens: usage.output_tokens,
         })
         .catch((err) => {
