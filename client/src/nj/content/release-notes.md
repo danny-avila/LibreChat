@@ -1,6 +1,17 @@
 # Release notes
 
 ---
+## April 28, 2026
+
+Features Released:
+
+* **Reduce LLM Response Time** \- We have multiple reports of the AI Assistant being slower to respond to users. We investigated this and found two causes.  
+  * Sonnet 4.6 has a slower response time than Sonnet 4.5. Due to this, we are reverting the entire app back to Sonnet 4.5.  
+  * Guardrail review also delays the response, as it reviews the entire AI response before sharing it. We are changing how guardrails work so that the content is reviewed as it is shared with users, reducing the lag for review. 
+
+We are continuing to develop and test key features, coming to you soon. 
+
+
 ## April 21, 2026
 
 Features Released:
