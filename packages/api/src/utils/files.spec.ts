@@ -13,6 +13,15 @@ jest.mock('node:crypto', () => {
   };
 });
 
+/* `sanitizeArtifactPath` and `flattenArtifactPath` use `crypto.createHash`
+ * (real, not mocked) to produce a deterministic 6-hex disambiguator from
+ * the input. Tests compute the expected hash inline so we can compare
+ * exact strings without re-mocking. */
+function expectedHexSuffix(input: string): string {
+  const { createHash } = jest.requireActual('node:crypto');
+  return createHash('sha256').update(input).digest('hex').slice(0, 6);
+}
+
 describe('sanitizeFilename', () => {
   test('removes directory components (1/2)', () => {
     expect(sanitizeFilename('/path/to/file.txt')).toBe('file.txt');
@@ -102,12 +111,11 @@ describe('sanitizeArtifactPath', () => {
     /* Regression for the unbounded-leaf path: without the per-segment
      * cap, a 300-char artifact name would flow through to saveBuffer's
      * storage key (`${file_id}__${flatName}`) and trip ENAMETOOLONG on
-     * filesystems that enforce NAME_MAX. The mocked `randomBytes`
-     * returns `abc123`, so the truncated form is deterministic. */
+     * filesystems that enforce NAME_MAX. */
     const longName = 'a'.repeat(300) + '.txt';
     const result = sanitizeArtifactPath(longName);
     expect(result.length).toBe(255);
-    expect(result).toMatch(/^a+-abc123\.txt$/);
+    expect(result).toMatch(new RegExp(`^a+-${expectedHexSuffix(longName)}\\.txt$`));
   });
 
   test('caps the leaf when nested under a directory, preserving the directory verbatim', () => {
@@ -116,7 +124,7 @@ describe('sanitizeArtifactPath', () => {
     const [dir, leaf] = result.split('/');
     expect(dir).toBe('reports');
     expect(leaf.length).toBe(255);
-    expect(leaf).toMatch(/^b+-abc123\.csv$/);
+    expect(leaf).toMatch(new RegExp(`^b+-${expectedHexSuffix(longLeaf)}\\.csv$`));
   });
 
   test('caps non-leaf directory segments at 255 chars', () => {
@@ -127,8 +135,24 @@ describe('sanitizeArtifactPath', () => {
     const result = sanitizeArtifactPath(`${longDir}/notes.txt`);
     const [dir, leaf] = result.split('/');
     expect(dir.length).toBe(255);
-    expect(dir).toMatch(/^d+-abc123$/);
+    expect(dir).toMatch(new RegExp(`^d+-${expectedHexSuffix(longDir)}$`));
     expect(leaf).toBe('notes.txt');
+  });
+
+  test('produces deterministic output across calls (no orphaned uploads on re-truncation)', () => {
+    /* Codex review P2: `sanitizeFilename`'s `crypto.randomBytes(3)` made
+     * the truncated form non-deterministic — re-uploading the same long
+     * name would compute a different storage key, orphaning the previous
+     * on-disk file under the reused `file_id`. The new helpers hash the
+     * input so the same input always produces the same output. */
+    const longName = 'a'.repeat(300) + '.txt';
+    const a = sanitizeArtifactPath(longName);
+    const b = sanitizeArtifactPath(longName);
+    expect(a).toBe(b);
+    /* Two *different* long names that share a truncation prefix must
+     * still produce different outputs (collision avoidance). */
+    const otherName = 'a'.repeat(299) + 'X.txt';
+    expect(sanitizeArtifactPath(otherName)).not.toBe(a);
   });
 
   test('caps every segment in a deeply-nested path with mixed lengths', () => {
@@ -200,10 +224,11 @@ describe('flattenArtifactPath', () => {
      * keeps the .ext on the leaf so download MIME inference still works. */
     const a = 'a'.repeat(100);
     const b = 'b'.repeat(100);
-    const result = flattenArtifactPath(`${a}/${b}/c.txt`, 200);
+    const safePath = `${a}/${b}/c.txt`;
+    const result = flattenArtifactPath(safePath, 200);
     expect(result.length).toBe(200);
     expect(result.endsWith('.txt')).toBe(true);
-    expect(result).toMatch(/-abc123\.txt$/);
+    expect(result).toMatch(new RegExp(`-${expectedHexSuffix(safePath)}\\.txt$`));
   });
 
   test('preserves the extension even when only the leaf overflows', () => {
@@ -225,7 +250,7 @@ describe('flattenArtifactPath', () => {
     const longName = 'n'.repeat(300);
     const result = flattenArtifactPath(longName, 50);
     expect(result.length).toBe(50);
-    expect(result).toMatch(/-abc123$/);
+    expect(result).toMatch(new RegExp(`-${expectedHexSuffix(longName)}$`));
   });
 
   test('matches the boundary length exactly when input is right at the cap', () => {
@@ -233,6 +258,38 @@ describe('flattenArtifactPath', () => {
     const flat = 'a'.repeat(50);
     expect(flattenArtifactPath(flat, 50)).toBe(flat);
     expect(flattenArtifactPath(flat, 49).length).toBe(49);
+  });
+
+  test('produces deterministic output across calls (no orphaned uploads on re-flatten)', () => {
+    /* Codex review P2: re-flattening the same input must produce the
+     * same key so re-uploads land at the same storage location. The
+     * hash-based suffix replaces the previous random one. */
+    const longPath = 'a'.repeat(100) + '/b.csv';
+    const a = flattenArtifactPath(longPath, 50);
+    const b = flattenArtifactPath(longPath, 50);
+    expect(a).toBe(b);
+    /* And different inputs that share a truncation prefix still produce
+     * different outputs (collision avoidance). */
+    const otherPath = 'a'.repeat(100) + '/c.csv';
+    expect(flattenArtifactPath(otherPath, 50)).not.toBe(a);
+  });
+
+  test('clamps the result to maxLength even when ext.length > maxLength - 7 (Codex review P2)', () => {
+    /* Pathological maxLength: 5, ext: ".txt" (4 chars). Stem budget is
+     * Math.max(0, 5 - 4 - 7) = 0, so the formula yields
+     * `'' + '-' + 6-char-hash + '.txt'` = 11 chars — past maxLength.
+     * The final clamp guarantees the result is ≤ maxLength regardless. */
+    const result = flattenArtifactPath('foo/bar.txt', 5);
+    expect(result.length).toBeLessThanOrEqual(5);
+  });
+
+  test('returns empty string when maxLength <= 0', () => {
+    /* Edge case: a negative or zero budget can't fit any output. Don't
+     * attempt to construct a key; let the caller handle the empty case
+     * (in practice this never fires — `process.js` passes
+     * `255 - file_id.length - 2`, and file_id is bounded). */
+    expect(flattenArtifactPath('a/b.txt', 0)).toBe('');
+    expect(flattenArtifactPath('a/b.txt', -5)).toBe('');
   });
 });
 

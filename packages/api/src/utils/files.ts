@@ -75,10 +75,29 @@ export function sanitizeFilename(inputName: string): string {
 const ARTIFACT_PATH_SEGMENT_MAX = 255;
 
 /**
+ * Deterministic disambiguator suffix for truncated names. The original
+ * `sanitizeFilename` used `crypto.randomBytes(3)`, which made the
+ * truncated form non-deterministic — a re-upload of the same long
+ * filename would compute a *different* storage key, orphaning the
+ * previous on-disk file under `claimCodeFile`'s reused `file_id`.
+ *
+ * Hashing the input gives stability across calls (same input → same
+ * output) while still disambiguating distinct inputs that share a
+ * truncation prefix. SHA-256 truncated to 6 hex chars is collision-safe
+ * for our scale (24 bits ≈ 16M values; we'd need ~5K simultaneous
+ * truncated names in one (filename, conversationId) bucket before a
+ * collision becomes likely, vs. the realistic ceiling of single-digit
+ * artifacts per turn).
+ */
+function deterministicHexSuffix(input: string): string {
+  return crypto.createHash('sha256').update(input).digest('hex').slice(0, 6);
+}
+
+/**
  * Truncates a path-leaf segment while preserving its extension, matching the
  * shape `sanitizeFilename` uses for the basename cap. The 6-hex-char
- * suffix disambiguates two long names that would otherwise collapse to the
- * same prefix (e.g. two LLM-generated `report-<huge-prompt-suffix>.csv`).
+ * suffix is a SHA-256 prefix of the original input, so re-truncating
+ * the same name produces the same key (no orphaned uploads).
  *
  * Falls back to whole-segment truncation (no extension preservation) when
  * the extension itself is so long there's no room for a meaningful stem —
@@ -95,7 +114,7 @@ function truncateLeafSegment(leaf: string): string {
     return truncateDirSegment(leaf);
   }
   const stemBudget = ARTIFACT_PATH_SEGMENT_MAX - ext.length - 7;
-  return stem.slice(0, stemBudget) + '-' + crypto.randomBytes(3).toString('hex') + ext;
+  return stem.slice(0, stemBudget) + '-' + deterministicHexSuffix(leaf) + ext;
 }
 
 /** Truncates a non-leaf (directory) segment. Directory segments don't
@@ -103,7 +122,7 @@ function truncateLeafSegment(leaf: string): string {
  * disambiguation suffix. */
 function truncateDirSegment(seg: string): string {
   if (seg.length <= ARTIFACT_PATH_SEGMENT_MAX) return seg;
-  return seg.slice(0, ARTIFACT_PATH_SEGMENT_MAX - 7) + '-' + crypto.randomBytes(3).toString('hex');
+  return seg.slice(0, ARTIFACT_PATH_SEGMENT_MAX - 7) + '-' + deterministicHexSuffix(seg);
 }
 
 /**
@@ -175,6 +194,7 @@ const FLAT_KEY_MAX_EXT_LENGTH = 16;
 export function flattenArtifactPath(safePath: string, maxLength?: number): string {
   const flat = safePath.replace(/\//g, '__');
   if (maxLength == null || flat.length <= maxLength) return flat;
+  if (maxLength <= 0) return '';
 
   /* Find the leaf's extension (last `.`) — segment separators are `__`,
    * never `.`, so the last dot is always inside the leaf. Ignore
@@ -185,9 +205,20 @@ export function flattenArtifactPath(safePath: string, maxLength?: number): strin
   const ext =
     candidateExt.length > 0 && candidateExt.length <= FLAT_KEY_MAX_EXT_LENGTH ? candidateExt : '';
   const stem = ext ? flat.slice(0, lastDot) : flat;
-  // 7 = '-' + 6 hex disambiguator; minimum 1-char stem for sanity.
-  const stemBudget = Math.max(1, maxLength - ext.length - 7);
-  return stem.slice(0, stemBudget) + '-' + crypto.randomBytes(3).toString('hex') + ext;
+  // 7 = '-' + 6 hex disambiguator. Stem budget can collapse to 0 when
+  // `ext.length > maxLength - 7` — that's fine; the stem just disappears
+  // and we fall back to `-<hash><ext>` (still bounded). The hash is a
+  // SHA-256 prefix of `safePath` so re-flattening the same input
+  // produces the same key (same storage location across re-uploads).
+  const stemBudget = Math.max(0, maxLength - ext.length - 7);
+  const truncated = stem.slice(0, stemBudget) + '-' + deterministicHexSuffix(safePath) + ext;
+  /* Final clamp. The stemBudget formula above keeps `truncated.length`
+   * exactly at `maxLength` for any maxLength ≥ ext.length + 7, and at
+   * `7 + ext.length` otherwise. The latter can still exceed maxLength
+   * for absurdly small budgets (maxLength < ext.length + 7) — clamp
+   * defensively so callers always get a key ≤ maxLength regardless of
+   * what they passed in. */
+  return truncated.length <= maxLength ? truncated : truncated.slice(0, maxLength);
 }
 
 /**
