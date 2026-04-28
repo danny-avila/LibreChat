@@ -1146,7 +1146,7 @@ describe('createToolExecuteHandler', () => {
          * codeapi's lossy JSON-encoding still round-trips through whatever
          * string LibreChat builds, and the NUL terminator from the binary
          * header survives that. */
-        const binaryWithNul = '   \rIHDR  ';
+        const binaryWithNul = '\x00\x00\x00\rIHDR\x00\x00\x04';
         const readSandboxFile = jest.fn(async () => ({ content: binaryWithNul }));
         const handler = makeReadFileHandler({
           codeEnvAvailable: true,
