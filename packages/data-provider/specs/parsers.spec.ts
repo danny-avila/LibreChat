@@ -7,13 +7,13 @@ import type { TUser, TConversation } from '../src/types';
 
 // Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {
-  const mockDayjs = () => ({
+  const makeMock = (offset: string) => ({
     format: (format: string) => {
       if (format === 'YYYY-MM-DD') {
         return '2024-04-29';
       }
       if (format === 'YYYY-MM-DD HH:mm:ss Z') {
-        return '2024-04-29 12:34:56 -04:00';
+        return `2024-04-29 12:34:56 ${offset}`;
       }
       if (format === 'dddd') {
         return 'Monday';
@@ -23,8 +23,19 @@ jest.mock('dayjs', () => {
       );
     },
     toISOString: () => '2024-04-29T16:34:56.000Z',
+    isValid: () => true,
+    tz: (timezone: string) => {
+      if (timezone === 'America/New_York') {
+        return makeMock('-04:00');
+      }
+      if (timezone === 'Asia/Tokyo') {
+        return makeMock('+09:00');
+      }
+      return { isValid: () => false };
+    },
   });
 
+  const mockDayjs = () => makeMock('-04:00');
   mockDayjs.extend = jest.fn();
 
   return mockDayjs;
@@ -129,6 +140,56 @@ describe('replaceSpecialVars', () => {
     expect(result).toContain('2024-04-29T16:34:56.000Z'); // iso_datetime
     expect(result).toContain('Test User'); // current_user
     expect(result).toContain(mockConversationId); // conversation_id
+  });
+
+  test('should use provided timezone for date formatting', () => {
+    const result = replaceSpecialVars({
+      text: 'Now is {{current_datetime}}',
+      timezone: 'Asia/Tokyo',
+    });
+    expect(result).toBe('Now is 2024-04-29 12:34:56 +09:00 (Monday)');
+  });
+
+  test('should fall back to default when no timezone is provided', () => {
+    const result = replaceSpecialVars({
+      text: 'Now is {{current_datetime}}',
+    });
+    expect(result).toBe('Now is 2024-04-29 12:34:56 -04:00 (Monday)');
+  });
+
+  test('should fall back to default for invalid timezone', () => {
+    const result = replaceSpecialVars({
+      text: 'Now is {{current_datetime}}',
+      timezone: 'Invalid/Timezone',
+    });
+    expect(result).toBe('Now is 2024-04-29 12:34:56 -04:00 (Monday)');
+  });
+
+  test('should apply timezone to {{current_date}} formatting', () => {
+    const result = replaceSpecialVars({
+      text: 'Today is {{current_date}}',
+      timezone: 'Asia/Tokyo',
+    });
+    expect(result).toBe('Today is 2024-04-29 (Monday)');
+  });
+
+  test('should not affect {{iso_datetime}} regardless of timezone', () => {
+    const result = replaceSpecialVars({
+      text: 'ISO: {{iso_datetime}}',
+      timezone: 'Asia/Tokyo',
+    });
+    expect(result).toBe('ISO: 2024-04-29T16:34:56.000Z');
+  });
+
+  test('should handle all variables with timezone and user combined', () => {
+    const result = replaceSpecialVars({
+      text: '{{current_user}} - {{current_date}} - {{current_datetime}} - {{iso_datetime}}',
+      user: mockUser,
+      timezone: 'Asia/Tokyo',
+    });
+    expect(result).toBe(
+      'Test User - 2024-04-29 (Monday) - 2024-04-29 12:34:56 +09:00 (Monday) - 2024-04-29T16:34:56.000Z',
+    );
   });
 });
 

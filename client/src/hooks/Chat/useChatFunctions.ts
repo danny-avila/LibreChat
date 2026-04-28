@@ -210,6 +210,7 @@ export default function useChatFunctions({
       text,
       sender: 'User',
       clientTimestamp: new Date().toLocaleString('sv').replace(' ', 'T'),
+      clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       isCreatedByUser: true,
       parentMessageId,
       conversationId,

@@ -1,5 +1,10 @@
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import tz from 'dayjs/plugin/timezone';
 import type { ZodIssue } from 'zod';
+
+dayjs.extend(utc);
+dayjs.extend(tz);
 import type * as a from './types/assistants';
 import type * as s from './schemas';
 import type * as t from './types';
@@ -406,17 +411,22 @@ export function replaceSpecialVars({
   text,
   user,
   conversationId,
+  timezone,
 }: {
   text: string;
   user?: t.TUser | null;
   conversationId?: string | null;
+  timezone?: string;
 }) {
   let result = text;
   if (!result) {
     return result;
   }
 
-  const now = dayjs();
+  let now = timezone ? dayjs().tz(timezone) : dayjs();
+  if (!now.isValid()) {
+    now = dayjs();
+  }
   const weekdayName = now.format('dddd');
 
   const currentDate = now.format('YYYY-MM-DD');

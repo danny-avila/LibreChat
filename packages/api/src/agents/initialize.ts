@@ -406,6 +406,7 @@ export async function initializeAgent(
       text: agent.instructions,
       user: req.user ? (req.user as unknown as TUser) : null,
       conversationId,
+      timezone: req.body?.clientTimezone,
     });
   }
 
