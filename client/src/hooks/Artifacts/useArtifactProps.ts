@@ -14,6 +14,27 @@ import { getMarkdownFiles } from '~/utils/markdown';
 import { getMermaidFiles } from '~/utils/mermaid';
 
 /**
+ * Find the longest run of backticks at the start of any line in `source`.
+ * CommonMark closes a fenced code block on a line whose leading
+ * backticks match-or-exceed the opener, so the fence we emit must have
+ * STRICTLY MORE backticks than any such run inside the payload —
+ * otherwise a markdown snippet inside a JS template literal (or any
+ * file that happens to contain ` ``` ` at column zero) closes our
+ * outer fence early and the rest renders as plain markdown,
+ * corrupting the artifact.
+ */
+function longestLeadingBacktickRun(source: string): number {
+  let max = 0;
+  /* Use multiline mode + start-of-line anchor so the regex catches
+   * runs at line boundaries throughout the file, not just at index 0. */
+  const re = /^(`+)/gm;
+  for (let m = re.exec(source); m !== null; m = re.exec(source)) {
+    if (m[1].length > max) max = m[1].length;
+  }
+  return max;
+}
+
+/**
  * Wrap raw source as a fenced markdown code block so the CODE bucket
  * can ride the existing markdown rendering pipeline — `marked` emits
  * `<pre><code class="language-<lang>">…</code></pre>` and the future
@@ -22,20 +43,23 @@ import { getMermaidFiles } from '~/utils/mermaid';
  * automatically. Pure; deterministic; safe on empty input (renders an
  * empty fenced block which marked handles cleanly).
  *
- * The fence-terminator preamble ` \n` ensures we never collide with a
- * code-final ``` inside the source: backticks of any length inside the
- * source are quoted because we use exactly three backticks at column
- * zero, and any input that happens to start with backticks at column
- * zero would be unusual but still rendered intact (marked treats them
- * as content inside the outer fence).
+ * Fence length is adaptive: the emitted opener/closer use 3 backticks
+ * by default, but bumps to (longest-leading-run-in-source + 1) when
+ * the source contains ` ``` ` (or longer) at the start of any line.
+ * This is the CommonMark-spec way to embed a fenced block inside
+ * another fenced block — see e.g. the markdown spec's nested-fence
+ * examples — and avoids the early-close attack on artifacts whose
+ * source is itself markdown-shaped.
  */
 export function wrapAsFencedCodeBlock(source: string, lang: string): string {
   const langHint = lang ? lang : '';
+  const fenceLength = Math.max(3, longestLeadingBacktickRun(source) + 1);
+  const fence = '`'.repeat(fenceLength);
   /* Trim a single trailing newline (common in extractor output) so the
    * fence's closing ``` lands on its own line rather than after a blank
    * gap that marked would render as an extra <br>. */
   const body = source.endsWith('\n') ? source.slice(0, -1) : source;
-  return '```' + langHint + '\n' + body + '\n```';
+  return fence + langHint + '\n' + body + '\n' + fence;
 }
 
 export default function useArtifactProps({ artifact }: { artifact: Artifact }) {

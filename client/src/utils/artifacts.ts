@@ -186,6 +186,26 @@ const extensionOf = (filename: string | undefined): string => {
   return filename.slice(dot + 1).toLowerCase();
 };
 
+/**
+ * Lowercased basename for extensionless filenames. Lets the routing map
+ * recognize `Dockerfile`, `Makefile`, `Gemfile`, etc. as code without
+ * a dotted extension. Returns `''` for files that DO have an extension
+ * (those go through `extensionOf`) so the two helpers don't double-match.
+ */
+const bareNameOf = (filename: string | undefined): string => {
+  if (!filename) {
+    return '';
+  }
+  // Strip path separators (artifact filenames can carry nested directories
+  // through the path-preserving sanitizer in the backend).
+  const slash = Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\'));
+  const base = slash >= 0 ? filename.slice(slash + 1) : filename;
+  if (base.includes('.')) {
+    return '';
+  }
+  return base.toLowerCase();
+};
+
 /** Strip charset / boundary parameters so we can do exact MIME comparisons. */
 const baseMime = (mime: string | undefined): string => {
   if (!mime) {
@@ -282,13 +302,21 @@ const CODE_EXTENSION_TO_LANGUAGE: Record<string, string> = {
   ps1: 'powershell',
   bat: 'batch',
   cmd: 'batch',
-  // Build / query languages
+  // Build / query languages. `dockerfile`/`makefile` keys here cover the
+  // dotted variants (`Dockerfile.dev` → ext `dev`, fall through to the
+  // bare-name match instead — but `foo.dockerfile` does land here).
+  // The extensionless `Dockerfile` / `Makefile` themselves are matched
+  // via `bareNameOf` below.
   sql: 'sql',
   graphql: 'graphql',
   gql: 'graphql',
   proto: 'protobuf',
   dockerfile: 'dockerfile',
   makefile: 'makefile',
+  gemfile: 'ruby',
+  rakefile: 'ruby',
+  vagrantfile: 'ruby',
+  brewfile: 'ruby',
   gradle: 'groovy',
   tf: 'hcl',
   hcl: 'hcl',
@@ -307,16 +335,27 @@ export function isCodeExtension(ext: string): boolean {
 }
 
 /**
- * Look up the fenced-block language hint for a filename's extension.
- * Falls back to the raw extension if not in the map (so a `.foo` source
- * still gets ```` ```foo ```` and renders monospace, even without
- * highlighting). Empty string when there's no extension at all — the
- * fence emits as ```` ``` ```` with no language token.
+ * Look up the fenced-block language hint for a filename's extension, OR
+ * (for extensionless build files like `Dockerfile`) for its lowercased
+ * basename. Falls back to the raw extension if not in the map (so a
+ * `.foo` source still gets ```` ```foo ```` and renders monospace, even
+ * without highlighting). Empty string when there's no extension and no
+ * recognized bare name — the fence emits as ```` ``` ```` with no
+ * language token.
  */
 export function languageForFilename(filename: string | undefined): string {
   const ext = extensionOf(filename);
-  if (!ext) return '';
-  return CODE_EXTENSION_TO_LANGUAGE[ext] ?? ext;
+  if (ext) {
+    return CODE_EXTENSION_TO_LANGUAGE[ext] ?? ext;
+  }
+  /* Extensionless filename: try the basename. `Dockerfile` →
+   * `dockerfile` → `'dockerfile'` language hint. Unknown bare names
+   * fall through to no hint (empty string). */
+  const bare = bareNameOf(filename);
+  if (bare && Object.prototype.hasOwnProperty.call(CODE_EXTENSION_TO_LANGUAGE, bare)) {
+    return CODE_EXTENSION_TO_LANGUAGE[bare];
+  }
+  return '';
 }
 
 const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
@@ -416,7 +455,16 @@ export function detectArtifactTypeFromFile(
   attachment: Partial<Pick<TFile, 'filename' | 'type' | 'text'>>,
 ): ToolArtifactType | null {
   const byExtension = EXTENSION_TO_TOOL_ARTIFACT_TYPE[extensionOf(attachment.filename)];
-  const type = byExtension ?? MIME_TO_TOOL_ARTIFACT_TYPE[baseMime(attachment.type)] ?? null;
+  /* Bare-name fallback for extensionless build files (`Dockerfile`,
+   * `Makefile`, `Gemfile`, `Rakefile`, `Vagrantfile`, `Brewfile`). Only
+   * fires when `extensionOf` returned empty AND the basename is in the
+   * routing map; everything else stays on the existing extension/MIME
+   * paths. */
+  const byBareName = byExtension
+    ? undefined
+    : EXTENSION_TO_TOOL_ARTIFACT_TYPE[bareNameOf(attachment.filename)];
+  const type =
+    byExtension ?? byBareName ?? MIME_TO_TOOL_ARTIFACT_TYPE[baseMime(attachment.type)] ?? null;
   if (type == null) {
     return null;
   }

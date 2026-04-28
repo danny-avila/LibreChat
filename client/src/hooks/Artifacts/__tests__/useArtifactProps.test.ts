@@ -300,4 +300,55 @@ describe('wrapAsFencedCodeBlock', () => {
   it('handles empty source cleanly (renders an empty fenced block)', () => {
     expect(wrapAsFencedCodeBlock('', 'python')).toBe('```python\n\n```');
   });
+
+  /* Codex review P2: a hardcoded triple-backtick fence breaks when the
+   * source itself contains a line starting with ``` (e.g. a JS template
+   * literal embedding markdown). CommonMark closes the outer fence on
+   * a line whose backtick run matches-or-exceeds the opener, so we have
+   * to emit STRICTLY MORE backticks than any leading-backtick run in
+   * the payload. */
+  it('uses a 4-backtick fence when source has a triple-backtick line at column 0', () => {
+    const src = 'const md = `\n```\nhello\n```\n`;';
+    const wrapped = wrapAsFencedCodeBlock(src, 'js');
+    expect(wrapped.startsWith('````js\n')).toBe(true);
+    expect(wrapped.endsWith('\n````')).toBe(true);
+    /* The payload's ``` lines are preserved verbatim — no escaping. */
+    expect(wrapped).toContain('\n```\nhello\n```\n');
+  });
+
+  it('uses a 5-backtick fence when source has a quadruple-backtick line', () => {
+    const src = 'before\n````\ninside\n````\nafter';
+    const wrapped = wrapAsFencedCodeBlock(src, 'md');
+    expect(wrapped.startsWith('`````md\n')).toBe(true);
+    expect(wrapped.endsWith('\n`````')).toBe(true);
+  });
+
+  it('keeps the 3-backtick fence when source has no leading-backtick lines', () => {
+    /* Ordinary code (no markdown-style fences) gets the conventional
+     * triple-backtick fence — readable and matches `marked`'s default
+     * expectations. */
+    const wrapped = wrapAsFencedCodeBlock('x = 1\nprint(x)', 'python');
+    expect(wrapped.startsWith('```python\n')).toBe(true);
+    expect(wrapped.endsWith('\n```')).toBe(true);
+  });
+
+  it('does not escalate the fence for backticks that are NOT at start-of-line', () => {
+    /* Inline backticks within a line don't count against the closing-
+     * fence rule, so they don't need escalation. Keeps the fence
+     * minimal for the common case (e.g. a Python file that uses
+     * markdown ` `code` ` in a docstring). */
+    const src = 'x = `inline backticks ``` here`';
+    const wrapped = wrapAsFencedCodeBlock(src, 'python');
+    expect(wrapped.startsWith('```python\n')).toBe(true);
+    expect(wrapped.endsWith('\n```')).toBe(true);
+  });
+
+  it('escalates correctly when the source itself starts with a backtick run', () => {
+    /* Edge: backticks at column 0 of the very first line. The leading-
+     * run scan must catch this position (regex anchor allows
+     * start-of-string match too). */
+    const src = '```already-fenced\nbody\n```';
+    const wrapped = wrapAsFencedCodeBlock(src, 'md');
+    expect(wrapped.startsWith('````md\n')).toBe(true);
+  });
 });

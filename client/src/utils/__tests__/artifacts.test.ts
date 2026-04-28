@@ -2,6 +2,7 @@ import {
   buildSandpackOptions,
   detectArtifactTypeFromFile,
   fileToArtifact,
+  languageForFilename,
   TOOL_ARTIFACT_TYPES,
 } from '../artifacts';
 
@@ -219,6 +220,82 @@ describe('detectArtifactTypeFromFile', () => {
         detectArtifactTypeFromFile({ filename: 'empty.py', type: 'text/x-python', text: '' }),
       ).toBe(TOOL_ARTIFACT_TYPES.CODE);
     });
+
+    /* Codex review P2: extensionless build files like `Dockerfile` and
+     * `Makefile` have no `.` in their basename, so `extensionOf` returns
+     * `''` and the extension map can't match. Bare-name fallback
+     * recognizes the lowercased basename for these cases. */
+    it.each([
+      'Dockerfile',
+      'dockerfile',
+      'Makefile',
+      'makefile',
+      'Gemfile',
+      'Rakefile',
+      'Vagrantfile',
+      'Brewfile',
+    ])('routes extensionless build file %s to CODE via bare-name fallback', (filename) => {
+      expect(detectArtifactTypeFromFile({ filename, type: '', text: 'FROM alpine' })).toBe(
+        TOOL_ARTIFACT_TYPES.CODE,
+      );
+    });
+
+    it('still recognizes nested-path Dockerfile (path-preserving sanitizer output)', () => {
+      /* The path-preserving artifact sanitizer can ship `proj/Dockerfile`.
+       * Bare-name lookup must use the basename, not the full string. */
+      expect(
+        detectArtifactTypeFromFile({ filename: 'proj/Dockerfile', type: '', text: 'FROM alpine' }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
+
+    it('does not bare-name match files that DO have an extension (no double-match)', () => {
+      /* `dockerfile.dev` has extension `dev` (not in the routing map),
+       * so it returns null. Bare-name lookup must skip files with a
+       * `.` so the extension path stays the source of truth for them. */
+      expect(
+        detectArtifactTypeFromFile({ filename: 'dockerfile.dev', type: '', text: 'x' }),
+      ).toBeNull();
+    });
+
+    it('does not bare-name match unknown extensionless filenames', () => {
+      expect(detectArtifactTypeFromFile({ filename: 'README', type: '', text: 'hi' })).toBeNull();
+      expect(detectArtifactTypeFromFile({ filename: 'LICENSE', type: '', text: 'MIT' })).toBeNull();
+    });
+  });
+});
+
+describe('languageForFilename', () => {
+  it('returns the canonical language identifier for known extensions', () => {
+    expect(languageForFilename('foo.py')).toBe('python');
+    expect(languageForFilename('foo.ts')).toBe('typescript');
+    expect(languageForFilename('foo.go')).toBe('go');
+    expect(languageForFilename('foo.rs')).toBe('rust');
+    expect(languageForFilename('foo.kt')).toBe('kotlin');
+  });
+
+  it('falls back to the raw extension for unknown ones (renders monospace)', () => {
+    expect(languageForFilename('foo.qwerty')).toBe('qwerty');
+  });
+
+  it('returns the canonical language for extensionless build files (bare-name fallback)', () => {
+    /* Codex review P2 companion: language hint must follow the same
+     * bare-name fallback as the routing decision so the fenced block
+     * gets `language-dockerfile` / `language-makefile` etc. */
+    expect(languageForFilename('Dockerfile')).toBe('dockerfile');
+    expect(languageForFilename('Makefile')).toBe('makefile');
+    expect(languageForFilename('Gemfile')).toBe('ruby');
+    expect(languageForFilename('Rakefile')).toBe('ruby');
+  });
+
+  it('handles nested-path filenames (uses basename)', () => {
+    expect(languageForFilename('proj/Dockerfile')).toBe('dockerfile');
+    expect(languageForFilename('a/b/c.py')).toBe('python');
+  });
+
+  it('returns empty string for filenames with no extension and no recognized bare name', () => {
+    expect(languageForFilename('README')).toBe('');
+    expect(languageForFilename('')).toBe('');
+    expect(languageForFilename(undefined)).toBe('');
   });
 });
 
