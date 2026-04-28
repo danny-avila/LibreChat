@@ -70,6 +70,10 @@ param smtpUser string
 @description('Email service password for the client')
 param smtpPass string
 
+@secure()
+@description('Anthropic API key')
+param anthropicApiKey string
+
 // ========== Variables ==========
 var acrLoginServer = 'kaleidoscopeaieducation-ajfgb4ceepedbyc5.azurecr.io'
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
@@ -163,6 +167,7 @@ resource app 'Microsoft.App/containerApps@2025-02-02-preview' = {
         { name: 'jwt-refresh-secret',  value: jwtRefreshSecret }
         { name: 'smtp-user',           value: smtpUser }
         { name: 'smtp-pass',           value: smtpPass }
+        { name: 'anthropic-api-key',   value: anthropicApiKey }
       ]
     }
 
@@ -182,6 +187,7 @@ resource app 'Microsoft.App/containerApps@2025-02-02-preview' = {
             { name: 'JWT_REFRESH_SECRET',           secretRef: 'jwt-refresh-secret' }
             { name: 'EMAIL_USERNAME',               secretRef: 'smtp-user' }
             { name: 'EMAIL_PASSWORD',               secretRef: 'smtp-pass' }
+            { name: 'ANTHROPIC_API_KEY',            secretRef: 'anthropic-api-key' }
             { name: 'MIGRATE_ROLES',                value: 'true' }
             { name: 'ALLOW_EMAIL_LOGIN',            value: 'true' }
             { name: 'ALLOW_REGISTRATION',           value: 'false' }

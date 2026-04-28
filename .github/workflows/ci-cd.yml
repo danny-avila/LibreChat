@@ -94,6 +94,7 @@ jobs:
           "smtpUser":         { "value": "${{ secrets.EMAIL_USERNAME }}" },
           "smtpPass":         { "value": "${{ secrets.EMAIL_PASSWORD }}" },
           "assistantsApiKey": { "value": "${{ secrets.ASSISTANTS_API_KEY }}" },
+          "anthropicApiKey":  { "value": "${{ secrets.ANTHROPIC_API_KEY }}" },
           "customDomain":     { "value": "" },
           "certId":           { "value": "" },
           "domainClient":     { "value": "${{ secrets.DOMAIN_CLIENT_TEST }}" }
@@ -148,6 +149,7 @@ jobs:
           "smtpUser":         { "value": "${{ secrets.EMAIL_USERNAME }}" },
           "smtpPass":         { "value": "${{ secrets.EMAIL_PASSWORD }}" },
           "assistantsApiKey": { "value": "${{ secrets.ASSISTANTS_API_KEY }}" },
+          "anthropicApiKey":  { "value": "${{ secrets.ANTHROPIC_API_KEY }}" },
           "customDomain":     { "value": "chat.kaleidoscopeai.net" },
           "certId":           { "value": "${{ secrets.CERT_ID_PROD }}" },
           "domainClient":     { "value": "https://chat.kaleidoscopeai.net" }

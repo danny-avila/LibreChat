@@ -196,12 +196,14 @@ interface:
 
 # Definition of custom endpoints
 endpoints:
+  anthropic:
+    apiKey: '${ANTHROPIC_API_KEY}'
   assistants:
     disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
     pollIntervalMs: 3000  # Polling interval for checking assistant updates
     timeoutMs: 180000  # Timeout for assistant operations
 #   #   # Should only be one or the other, either `supportedIds` or `excludedIds`
-    supportedIds: ["asst_MbxQpSNgSc0QG4MFRhfPTU6Z", "asst_nMVHhlYGOylY81IAJuI17a4j", "asst_Qz7DWMoUtp9cKAR7HRQ3fTYZ", "asst_W4338pmKtKG5opAjNEK7iAFA", "asst_PSrtphPk13nA0f2YjeH5PEth", "asst_CIZHPxU8AG3FEJzgsG4en5BB", "asst_TyABQRLQpfCg4N3rj7RaXqCp", "asst_k9Y8EDVccsKiLPJcWEMVxPoz", "asst_FXINoLvYPXEaPotzXKvfMKdb", "asst_mvyg3Ps8nb4aWaFCv2GMMk9d", "asst_31YITXsel9IGnxD460MQrRYb"]
+    supportedIds: ["asst_MbxQpSNgSc0QG4MFRhfPTU6Z", "asst_nMVHhlYGOylY81IAJuI17a4j", "asst_Qz7DWMoUtp9cKAR7HRQ3fTYZ", "asst_W4338pmKtKG5opAjNEK7iAFA", "asst_PSrtphPk13nA0f2YjeH5PEth", "asst_CIZHPxU8AG3FEJzgsG4en5BB", "asst_FXINoLvYPXEaPotzXKvfMKdb"]
     # excludedIds: ["asst_KUAWXPcoPX56VvNnytlc0XsH"]
 #   #   # Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
 #   #   # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
@@ -390,27 +392,17 @@ modelSpecs:
       iconURL: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c28770' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M18 21a8 8 0 0 0-16 0'/><circle cx='10' cy='8' r='5'/><path d='M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3'/></svg>"
       default: true
       preset:
-        endpoint: "assistants"
-        # assistant_id: "asst_TyABQRLQpfCg4N3rj7RaXqCp"
-        # assistant_id: "asst_mvyg3Ps8nb4aWaFCv2GMMk9d"
-        assistant_id: "asst_31YITXsel9IGnxD460MQrRYb"
-        model: "gpt-4o"
-    - name: "TEST-help-others"
-      label: "TEST-Help Others"
-      iconURL: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c28770' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M18 21a8 8 0 0 0-16 0'/><circle cx='10' cy='8' r='5'/><path d='M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3'/></svg>"
-      default: true
-      preset:
-        endpoint: "assistants"
-        assistant_id: "asst_mvyg3Ps8nb4aWaFCv2GMMk9d"
-        model: "gpt-4o"
+        endpoint: "anthropic"
+        model: "claude-sonnet-4-6"
+        promptPrefix: "file://api/app/clients/prompts/assistant/"
     - name: "help-myself"
       label: "Help Myself"
       iconURL: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ebb951' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2'/><circle cx='12' cy='8' r='5'/></svg>"
       default: true
       preset:
-        endpoint: "assistants"
-        assistant_id: "asst_k9Y8EDVccsKiLPJcWEMVxPoz"
-        model: "gpt-4o"
+        endpoint: "anthropic"
+        model: "claude-sonnet-4-6"
+        promptPrefix: "file://api/app/clients/prompts/assistant/"
     - name: "gpt4o-chat"
       label: "GPT-4o (no memory)"
       preset:

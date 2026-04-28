@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const {
   CacheKeys,
@@ -117,13 +118,14 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
     .filter((endpoint) => endpoint.customParams)
     .forEach((endpoint) => parseCustomParams(endpoint.name, endpoint.customParams));
 
+  if (result.data.modelSpecs) {
+    customConfig.modelSpecs = result.data.modelSpecs;
+    resolvePromptFiles(customConfig.modelSpecs, projectRoot);
+  }
+
   if (customConfig.cache) {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
-  }
-
-  if (result.data.modelSpecs) {
-    customConfig.modelSpecs = result.data.modelSpecs;
   }
 
   return customConfig;
@@ -174,6 +176,33 @@ function parseCustomParams(endpointName, customParams) {
     throw new Error(
       `Custom parameter definitions for "${endpointName}" endpoint is malformed: ${e.message}`,
     );
+  }
+}
+
+/**
+ * Resolves `file://` references in modelSpec `promptPrefix` fields.
+ * Supports a path to a single file or a directory (reads all .txt files, sorted).
+ */
+function resolvePromptFiles(modelSpecs, rootDir) {
+  for (const spec of modelSpecs?.list ?? []) {
+    const prefix = spec.preset?.promptPrefix;
+    if (typeof prefix !== 'string' || !prefix.startsWith('file://')) {
+      continue;
+    }
+    const targetPath = path.resolve(rootDir, prefix.slice(7));
+    try {
+      const stat = fs.statSync(targetPath);
+      if (stat.isDirectory()) {
+        const files = fs.readdirSync(targetPath).filter((f) => f.endsWith('.txt')).sort();
+        spec.preset.promptPrefix = files
+          .map((f) => fs.readFileSync(path.join(targetPath, f), 'utf8').trim())
+          .join('\n\n');
+      } else {
+        spec.preset.promptPrefix = fs.readFileSync(targetPath, 'utf8');
+      }
+    } catch (err) {
+      logger.error(`[modelSpecs] Failed to load promptPrefix for "${spec.name}": ${err.message}`);
+    }
   }
 }
 
