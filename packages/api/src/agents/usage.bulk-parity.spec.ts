@@ -171,13 +171,14 @@ describe('recordCollectedUsage — bulk path parity', () => {
     });
   });
 
-  describe('cache token handling - OpenAI format (input_tokens already includes cache)', () => {
-    it('subtracts cache from input portion in bulk docs — same return as legacy', async () => {
+  describe('cache token handling - subset providers (input_tokens already includes cache)', () => {
+    it('subtracts cache from input portion in bulk docs for OpenAI', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 100,
           output_tokens: 50,
           model: 'gpt-4',
+          provider: 'openAI',
           input_token_details: { cache_creation: 20, cache_read: 10 },
         },
       ];
@@ -196,15 +197,14 @@ describe('recordCollectedUsage — bulk path parity', () => {
       expect(promptDoc.readTokens).toBe(-10);
       expect(promptDoc.model).toBe('gpt-4');
     });
-  });
 
-  describe('cache token handling - Gemini format (input_tokens already includes cache)', () => {
     it('does not double-count cache_read for Gemini in bulk path — issue #12855', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 11125,
           output_tokens: 20,
           model: 'gemini-3-flash-preview',
+          provider: 'google',
           input_token_details: { cache_read: 7441 },
         },
       ];

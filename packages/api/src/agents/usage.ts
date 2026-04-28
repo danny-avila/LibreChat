@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { Providers } from 'librechat-data-provider';
 import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
 import type {
   StructuredTokenUsage,
@@ -23,22 +24,30 @@ type SpendStructuredTokensFn = (
 ) => Promise<unknown>;
 
 /**
- * Provider semantics for `usage_metadata.input_tokens`:
+ * Providers whose `usage_metadata.input_tokens` ALREADY INCLUDES cached tokens
+ * (i.e. `input_token_details.cache_*` is a subset, not an additional charge):
  *
- *   - Anthropic / Bedrock: `input_tokens` EXCLUDES cache tokens. Cache reads/writes
- *     arrive as separate values that must be added on top to get the total prompt size.
- *   - Gemini / OpenAI: `input_tokens` ALREADY INCLUDES the cached portion
- *     (Google's `promptTokenCount`, OpenAI's `prompt_tokens`). The cache fields are
- *     a subset of `input_tokens`, so adding them again double-counts.
+ *   - Google / Vertex AI: `input_tokens` = `promptTokenCount` (includes `cachedContentTokenCount`)
+ *   - OpenAI / Azure OpenAI: `input_tokens` = `prompt_tokens` (includes `prompt_tokens_details.cached_tokens`)
+ *   - xAI, DeepSeek, OpenRouter, Moonshot: extend `ChatOpenAI`, same semantics
  *
- * Returning false here means "additive" (the historical default). Add a provider
- * here only when its `input_tokens` is the all-inclusive total.
+ * Anthropic and Bedrock keep cache values separate from `input_tokens`, so they
+ * must be added back to compute the total prompt size — that's the historical
+ * additive default. Providers not listed here fall through to additive.
  */
-function inputTokensIncludesCache(model?: string): boolean {
-  if (!model) {
-    return false;
-  }
-  return /^(?:models\/)?(gemini|gpt|o[1-9]|chatgpt)/i.test(model);
+const SUBSET_PROVIDERS: ReadonlySet<string> = new Set([
+  Providers.OPENAI,
+  Providers.AZURE,
+  Providers.GOOGLE,
+  Providers.VERTEXAI,
+  Providers.XAI,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.MOONSHOT,
+]);
+
+function inputTokensIncludesCache(provider?: string): boolean {
+  return provider != null && SUBSET_PROVIDERS.has(provider);
 }
 
 interface SplitUsage {
@@ -50,7 +59,7 @@ interface SplitUsage {
   totalInput: number;
 }
 
-function splitUsage(usage: UsageMetadata, fallbackModel?: string): SplitUsage {
+function splitUsage(usage: UsageMetadata): SplitUsage {
   const cacheCreation =
     Number(usage.input_token_details?.cache_creation) ||
     Number(usage.cache_creation_input_tokens) ||
@@ -58,7 +67,7 @@ function splitUsage(usage: UsageMetadata, fallbackModel?: string): SplitUsage {
   const cacheRead =
     Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
   const rawInput = Number(usage.input_tokens) || 0;
-  if (inputTokensIncludesCache(usage.model ?? fallbackModel)) {
+  if (inputTokensIncludesCache(usage.provider)) {
     return {
       inputOnly: Math.max(0, rawInput - cacheCreation - cacheRead),
       cacheCreation,
@@ -135,7 +144,7 @@ export async function recordCollectedUsage(
   }
 
   const firstUsage = messageUsages[0];
-  const input_tokens = firstUsage == null ? 0 : splitUsage(firstUsage, model).totalInput;
+  const input_tokens = firstUsage == null ? 0 : splitUsage(firstUsage).totalInput;
 
   let total_output_tokens = 0;
 
@@ -152,7 +161,7 @@ export async function recordCollectedUsage(
         continue;
       }
 
-      const { inputOnly, cacheCreation, cacheRead } = splitUsage(usage, model);
+      const { inputOnly, cacheCreation, cacheRead } = splitUsage(usage);
 
       total_output_tokens += Number(usage.output_tokens) || 0;
 

@@ -197,13 +197,14 @@ describe('recordCollectedUsage', () => {
     });
   });
 
-  describe('cache token handling - OpenAI format (input_tokens already includes cache)', () => {
-    it('subtracts cache from input_tokens to avoid double-counting', async () => {
+  describe('cache token handling - subset providers (input_tokens already includes cache)', () => {
+    it('subtracts cache from input_tokens for OpenAI to avoid double-counting', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 100,
           output_tokens: 50,
           model: 'gpt-4',
+          provider: 'openAI',
           input_token_details: {
             cache_creation: 20,
             cache_read: 10,
@@ -227,16 +228,15 @@ describe('recordCollectedUsage', () => {
       );
       expect(result?.input_tokens).toBe(100);
     });
-  });
 
-  describe('cache token handling - Gemini format (input_tokens already includes cache)', () => {
-    it('does not double-count cache_read for Gemini models — issue #12855', async () => {
+    it('does not double-count cache_read for Gemini — issue #12855', async () => {
       // Real numbers from the issue report
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 11125,
           output_tokens: 20,
           model: 'gemini-3-flash-preview',
+          provider: 'google',
           input_token_details: { cache_read: 7441 },
         },
       ];
@@ -257,12 +257,38 @@ describe('recordCollectedUsage', () => {
       expect(result?.input_tokens).toBe(11125);
     });
 
+    it('also applies to Vertex AI', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 5000,
+          output_tokens: 100,
+          model: 'gemini-2.5-pro',
+          provider: 'vertexai',
+          input_token_details: { cache_read: 4000 },
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-2.5-pro' }),
+        {
+          promptTokens: { input: 1000, write: 0, read: 4000 },
+          completionTokens: 100,
+        },
+      );
+    });
+
     it('handles cache_read >= input_tokens defensively (clamps inputOnly to 0)', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 1000,
           output_tokens: 30,
           model: 'gemini-2.5-pro',
+          provider: 'google',
           input_token_details: { cache_read: 1000 },
         },
       ];
@@ -279,6 +305,32 @@ describe('recordCollectedUsage', () => {
           completionTokens: 30,
         },
       );
+    });
+
+    it('falls through to additive (historical default) when provider is missing', async () => {
+      // Defensive: an unclassified or pre-this-PR usage entry should keep old behavior
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'gpt-4',
+          input_token_details: { cache_creation: 20, cache_read: 10 },
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gpt-4' }),
+        {
+          promptTokens: { input: 100, write: 20, read: 10 },
+          completionTokens: 50,
+        },
+      );
+      expect(result?.input_tokens).toBe(130);
     });
   });
 
@@ -450,6 +502,7 @@ describe('recordCollectedUsage', () => {
           input_tokens: 100,
           output_tokens: 50,
           model: 'gpt-4',
+          provider: 'openAI',
           input_token_details: { cache_creation: 20, cache_read: 10 },
         },
       ];
@@ -459,7 +512,7 @@ describe('recordCollectedUsage', () => {
         collectedUsage,
       });
 
-      // gpt-4 is a subset provider → input_tokens already includes cache
+      // openAI is a subset provider → input_tokens already includes cache
       expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
     });
   });
