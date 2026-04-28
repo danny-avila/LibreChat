@@ -61,6 +61,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dedent": "^1.5.3",
+    "docx": "^9.6.1",
     "dotenv": "^16.0.3",
     "eventsource": "^3.0.2",
     "express": "^4.21.2",

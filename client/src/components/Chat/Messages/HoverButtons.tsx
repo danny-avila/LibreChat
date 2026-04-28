@@ -1,8 +1,10 @@
 import React, { useState, useMemo, memo } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { FileDown } from 'lucide-react';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '~/components';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { modeState } from '~/store/mode';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
@@ -127,7 +129,9 @@ const HoverButtons = ({
 }: THoverButtons) => {
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const mode = useRecoilValue(modeState);
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -186,6 +190,43 @@ const HoverButtons = ({
 
   const handleCopy = () => copyToClipboard(setIsCopied);
 
+  const handleDocxDownload = async () => {
+    if (isDownloading) {
+      return;
+    }
+    const content = Array.isArray(message.content)
+      ? message.content
+          .filter((part) => typeof part === 'string' || ('text' in part && !('think' in part)))
+          .map((part) => (typeof part === 'string' ? part : (part as { text: string }).text ?? ''))
+          .join('')
+      : (message.text ?? '');
+
+    setIsDownloading(true);
+    try {
+      const response = await fetch('/api/documents/docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, title: 'Assignment' }),
+      });
+      if (!response.ok) {
+        throw new Error('Download failed');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'assignment.docx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (_err) {
+      // silently fail — user can copy text manually
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
       {/* Text to Speech */}
@@ -217,6 +258,17 @@ const HoverButtons = ({
         isLast={isLast}
         className={`ml-0 flex items-center gap-1.5 text-xs ${isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : ''}`}
       />
+
+      {/* Download as Word — only visible in Help Others (student) mode */}
+      {mode === 'student' && !isCreatedByUser && (
+        <HoverButton
+          onClick={handleDocxDownload}
+          title="Download as Word document"
+          icon={<FileDown size="19" />}
+          isDisabled={isDownloading}
+          isLast={isLast}
+        />
+      )}
 
       {/* Edit Button */}
       {isEditableEndpoint && (

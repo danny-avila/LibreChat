@@ -1,3 +1,4 @@
+const documents = require('./documents');
 const assistants = require('./assistants');
 const categories = require('./categories');
 const tokenizer = require('./tokenizer');
@@ -53,6 +54,7 @@ module.exports = {
   messages,
   endpoints,
   tokenizer,
+  documents,
   assistants,
   categories,
   staticRoute,
