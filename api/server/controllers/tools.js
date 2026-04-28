@@ -180,6 +180,15 @@ const callTool = async (req, res) => {
 
     const artifactPromises = [];
     for (const file of artifact.files) {
+      /* Files flagged `inherited` by codeapi are unchanged passthroughs of
+       * inputs the caller already owns (skill files, prior downloaded inputs,
+       * inherited .dirkeep markers). Re-downloading them is wasted work and
+       * 403s when the file is scoped to a different entity (e.g. skill
+       * entity_id) than the user's session key. They remain available for
+       * subsequent tool calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
       artifactPromises.push(
         (async () => {

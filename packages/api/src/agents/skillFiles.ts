@@ -27,6 +27,10 @@ export interface PrimeSkillFilesParams {
     req: ServerRequest;
     files: Array<{ stream: NodeJS.ReadableStream; filename: string }>;
     entity_id?: string;
+    /** When true, codeapi tags every file in the batch as infrastructure
+     *  (read-only inputs that must never surface as generated artifacts,
+     *  even if sandboxed code mutates the bytes on disk). */
+    read_only?: boolean;
   }) => Promise<{
     session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -161,6 +165,14 @@ export async function primeSkillFiles(
       req,
       files: filesToUpload,
       entity_id: entityId,
+      /* Skill files are infrastructure: SKILL.md + bundled scripts/schemas/
+       * docs that the agent reads but should never edit. Tag the upload as
+       * read-only so codeapi seals the inputs (chmod 444 in-sandbox) and
+       * walker echoes the original refs as `inherited: true` even if some
+       * sandboxed code path mutates bytes on disk. Without this, modified
+       * skill files surface as ghost generated artifacts the user has no
+       * authority to download. */
+      read_only: true,
     });
     // Exclude SKILL.md from the returned files array — it is uploaded to disk
     // for bash access but has no codeEnvIdentifier (cannot be cached). Omitting
