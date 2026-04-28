@@ -74,16 +74,24 @@ export function sanitizeFilename(inputName: string): string {
  * `ENAMETOOLONG` and falls back to a download URL instead of persisting. */
 const ARTIFACT_PATH_SEGMENT_MAX = 255;
 
-/** Whole-path length cap for the path-preserving form. The DB keeps this
+/** Whole-path length cap for the path-preserving form. The DB stores this
  * value in `filename`, which participates in a compound unique index on
- * the File schema (`file_id` + `filename` + `conversationId` + `context`).
- * MongoDB 4.0 and earlier reject indexed values past 1024 bytes; even on
- * 4.2+ where the limit is configurable, runaway nested paths bloat the
- * index for no real benefit. 512 chars is plenty for realistic
- * code-execution outputs (typical depth ≤ 3 segments × short names) and
- * gives headroom for BSON / index-overhead encoding. Above the cap we
- * fall back to leaf-only — the same shape as the absolute-path /
- * `..`-traversal branches above. */
+ * the File schema — `{ filename, conversationId, context, tenantId }`
+ * with a partial filter for `context: FileContext.execute_code`
+ * (`packages/data-schemas/src/schema/file.ts`). MongoDB 4.0 and earlier
+ * reject indexed values past 1024 bytes; even on 4.2+ where the limit
+ * is configurable, runaway nested paths bloat the index for no real
+ * benefit. 512 chars is plenty for realistic code-execution outputs
+ * (typical depth ≤ 3 segments × short names) and gives headroom for
+ * BSON / index-overhead encoding.
+ *
+ * Above the cap we fall back to leaf-only — the same shape as the
+ * absolute-path / `..`-traversal branches above. This loses directory
+ * structure for the pathological case (the user's `cat /mnt/data/<deep>/
+ * <path>/file.txt` won't survive across turns), but DB-write failure
+ * with a missing artifact is strictly worse than a flat-name fallback.
+ * Pre-PR every artifact got this treatment regardless of depth, so the
+ * cap is monotonically better than the prior behavior. */
 const ARTIFACT_PATH_TOTAL_MAX = 512;
 
 /**
