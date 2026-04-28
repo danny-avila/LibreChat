@@ -175,15 +175,34 @@ export function buildSandpackOptions(
   };
 }
 
+/**
+ * Strip path separators so extension/bare-name lookups operate on the
+ * basename only. Artifact filenames can carry nested directories
+ * through the path-preserving sanitizer in the backend, and a dotted
+ * directory name (e.g. `pkg.v1/Dockerfile`) would otherwise produce a
+ * nonsensical "extension" like `v1/dockerfile`.
+ */
+const basenameOf = (filename: string): string => {
+  const slash = Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\'));
+  return slash >= 0 ? filename.slice(slash + 1) : filename;
+};
+
 const extensionOf = (filename: string | undefined): string => {
   if (!filename) {
     return '';
   }
-  const dot = filename.lastIndexOf('.');
-  if (dot < 0 || dot === filename.length - 1) {
+  /* Restrict the dot search to the basename — `pkg.v1/Dockerfile`
+   * should yield `''` (extensionless), not `v1/dockerfile`. Otherwise
+   * `languageForFilename` returns the path-laden string as the
+   * language hint and `marked` emits a `language-v1/dockerfile` class
+   * (broken). The bare-name fallback then can't fire because this
+   * function returned non-empty. */
+  const base = basenameOf(filename);
+  const dot = base.lastIndexOf('.');
+  if (dot < 0 || dot === base.length - 1) {
     return '';
   }
-  return filename.slice(dot + 1).toLowerCase();
+  return base.slice(dot + 1).toLowerCase();
 };
 
 /**
@@ -196,10 +215,7 @@ const bareNameOf = (filename: string | undefined): string => {
   if (!filename) {
     return '';
   }
-  // Strip path separators (artifact filenames can carry nested directories
-  // through the path-preserving sanitizer in the backend).
-  const slash = Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\'));
-  const base = slash >= 0 ? filename.slice(slash + 1) : filename;
+  const base = basenameOf(filename);
   if (base.includes('.')) {
     return '';
   }

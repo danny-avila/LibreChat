@@ -261,6 +261,29 @@ describe('detectArtifactTypeFromFile', () => {
       expect(detectArtifactTypeFromFile({ filename: 'README', type: '', text: 'hi' })).toBeNull();
       expect(detectArtifactTypeFromFile({ filename: 'LICENSE', type: '', text: 'MIT' })).toBeNull();
     });
+
+    /* Codex review P3 companion: `extensionOf` used to consider the
+     * whole path string, so `pkg.v1/Dockerfile` yielded a path-laden
+     * "extension" that masked the bare-name fallback. The basename-
+     * first fix makes routing for these files work correctly. */
+    it('routes nested-path Dockerfile under dotted directory to CODE', () => {
+      expect(
+        detectArtifactTypeFromFile({ filename: 'pkg.v1/Dockerfile', type: '', text: 'FROM x' }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
+
+    it('still routes file extensions correctly under dotted directory', () => {
+      expect(
+        detectArtifactTypeFromFile({ filename: 'pkg.v1/main.go', type: '', text: 'package main' }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'a.b.c/script.py',
+          type: 'text/x-python',
+          text: 'x = 1',
+        }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
   });
 });
 
@@ -296,6 +319,25 @@ describe('languageForFilename', () => {
     expect(languageForFilename('README')).toBe('');
     expect(languageForFilename('')).toBe('');
     expect(languageForFilename(undefined)).toBe('');
+  });
+
+  /* Codex review P3: `extensionOf` previously took `lastIndexOf('.')`
+   * across the FULL path, so `pkg.v1/Dockerfile` yielded the
+   * nonsensical "extension" `v1/dockerfile`. Since that's non-empty,
+   * `languageForFilename` returned it as the language hint instead of
+   * falling back to `bareNameOf`. The basename-first fix makes both
+   * helpers operate on the basename only. */
+  it('correctly falls back to bare-name when path has dotted directory components', () => {
+    expect(languageForFilename('pkg.v1/Dockerfile')).toBe('dockerfile');
+    expect(languageForFilename('a.b.c/Makefile')).toBe('makefile');
+    expect(languageForFilename('proj.beta/Gemfile')).toBe('ruby');
+  });
+
+  it('correctly identifies extension when path has dotted directory components', () => {
+    /* Dotted dir + dotted file: extension parsing should still find
+     * the file's extension, not concatenate dir+file fragments. */
+    expect(languageForFilename('pkg.v1/main.go')).toBe('go');
+    expect(languageForFilename('a.b.c/script.py')).toBe('python');
   });
 });
 

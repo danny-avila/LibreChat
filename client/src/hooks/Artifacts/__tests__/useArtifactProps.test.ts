@@ -351,4 +351,34 @@ describe('wrapAsFencedCodeBlock', () => {
     const wrapped = wrapAsFencedCodeBlock(src, 'md');
     expect(wrapped.startsWith('````md\n')).toBe(true);
   });
+
+  /* Codex review P2 follow-up: CommonMark allows fence closers indented
+   * up to 3 spaces. The fence-length scan must catch backtick runs at
+   * columns 0–3, not just column 0 — otherwise an indented `\`\`\``
+   * inside a JS/Python source still terminates our outer fence. */
+  it.each([
+    [' ```', 4],
+    ['  ```', 4],
+    ['   ```', 4],
+    [' ````', 5],
+    ['   `````', 6],
+  ])('escalates fence to %s+1 backticks for indented closer "%s"', (line, expectedFenceLen) => {
+    const src = 'before\n' + line + '\nafter';
+    const wrapped = wrapAsFencedCodeBlock(src, 'js');
+    /* Fence prefix is `expectedFenceLen` backticks (one more than the
+     * indented run inside the source). */
+    expect(wrapped.startsWith('`'.repeat(expectedFenceLen) + 'js\n')).toBe(true);
+    expect(wrapped.endsWith('\n' + '`'.repeat(expectedFenceLen))).toBe(true);
+  });
+
+  it('does NOT escalate for backticks indented 4+ spaces (CommonMark indented-code-block territory)', () => {
+    /* 4-space indentation makes the line an indented code block, not a
+     * fence closer. The CommonMark spec caps fence-closer indentation
+     * at 3 spaces, so backticks at column 4+ can't terminate an
+     * unindented opener. */
+    const src = 'before\n    ```\nafter';
+    const wrapped = wrapAsFencedCodeBlock(src, 'js');
+    /* No escalation — keeps the default 3-backtick fence. */
+    expect(wrapped.startsWith('```js\n')).toBe(true);
+  });
 });

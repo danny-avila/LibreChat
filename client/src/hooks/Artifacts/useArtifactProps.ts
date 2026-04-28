@@ -14,20 +14,26 @@ import { getMarkdownFiles } from '~/utils/markdown';
 import { getMermaidFiles } from '~/utils/mermaid';
 
 /**
- * Find the longest run of backticks at the start of any line in `source`.
- * CommonMark closes a fenced code block on a line whose leading
- * backticks match-or-exceed the opener, so the fence we emit must have
- * STRICTLY MORE backticks than any such run inside the payload —
- * otherwise a markdown snippet inside a JS template literal (or any
- * file that happens to contain ` ``` ` at column zero) closes our
- * outer fence early and the rest renders as plain markdown,
- * corrupting the artifact.
+ * Find the longest run of backticks that could close a fenced code block
+ * inside `source`. CommonMark allows the closer to be indented up to 3
+ * spaces, so we have to consider runs at column 0, 1, 2, AND 3 — not
+ * just column 0. Without this, an indented snippet like `  \`\`\``
+ * inside a template literal would still terminate our outer fence and
+ * the remainder would render as markdown.
+ *
+ * The fence we emit must have STRICTLY MORE backticks than any such
+ * run inside the payload, so the caller uses `result + 1` as the
+ * minimum opener length.
  */
 function longestLeadingBacktickRun(source: string): number {
   let max = 0;
-  /* Use multiline mode + start-of-line anchor so the regex catches
-   * runs at line boundaries throughout the file, not just at index 0. */
-  const re = /^(`+)/gm;
+  /* `^ {0,3}(`+)` matches lines whose leading whitespace is ≤ 3
+   * spaces (per CommonMark's fence-indent allowance) followed by one
+   * or more backticks. Tabs are not allowed in the indentation —
+   * CommonMark expands them to 4 spaces, which is over the closer
+   * limit. The multiline + global flags scan every line in the
+   * payload. */
+  const re = /^ {0,3}(`+)/gm;
   for (let m = re.exec(source); m !== null; m = re.exec(source)) {
     if (m[1].length > max) max = m[1].length;
   }
