@@ -30,6 +30,7 @@ export interface ChunkPreview {
   chunk_index: number;
   page_start: number | null;
   page_end: number | null;
+  imanage_preview_url?: string | null;
   score: number;
 }
 
@@ -49,6 +50,7 @@ export interface DocumentHit {
   chunk_count: number;
   title_match?: boolean;
   source_url?: string | null;
+  imanage_preview_url?: string | null;
   top_chunks: ChunkPreview[];
 }
 
