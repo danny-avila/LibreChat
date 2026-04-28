@@ -123,9 +123,17 @@ You now have everything needed to populate these env vars (see Part 5):
 APPLE_CLIENT_ID=ai.codecan.app.signin
 APPLE_TEAM_ID=<your 10-char team ID>
 APPLE_KEY_ID=<the 10-char Key ID from step 5>
-APPLE_PRIVATE_KEY_PATH=/absolute/path/to/AuthKey_<keyid>.p8
 APPLE_CALLBACK_URL=/oauth/apple/callback
+
+# Provide ONE of the two below, depending on where you're deploying:
+APPLE_PRIVATE_KEY_PATH=/absolute/path/to/AuthKey_<keyid>.p8   # local dev, VPS, Render Secret Files
+APPLE_PRIVATE_KEY=                                            # DO App Platform, Heroku — paste full .p8 contents
 ```
+
+**Never commit the `.p8` file or its contents to git.** It's a private
+signing key — anyone who has it can mint Apple ID tokens your backend
+will accept. Keep it in a secret manager, an encrypted vault, or
+behind your hosting provider's "Encrypted env var" flag.
 
 ---
 
@@ -378,8 +386,10 @@ OPENAI_API_KEY=sk-proj-<rotated production key>
 APPLE_CLIENT_ID=ai.codecan.app.signin
 APPLE_TEAM_ID=<10-char Team ID>
 APPLE_KEY_ID=<10-char Key ID>
-APPLE_PRIVATE_KEY_PATH=/var/secrets/AuthKey_<keyid>.p8
 APPLE_CALLBACK_URL=/oauth/apple/callback
+# Pick ONE of the two below — see Part 5.5 for which to use on which host:
+APPLE_PRIVATE_KEY_PATH=/var/secrets/AuthKey_<keyid>.p8
+# APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
 
 # --- Google OAuth (rotated production secret) ---
 GOOGLE_CLIENT_ID=<from Google Cloud Console>
@@ -429,6 +439,79 @@ keys, which are client-side) belongs in your backend host's secret
 manager (Render env vars, Fly secrets, AWS Secrets Manager, etc.). The
 public `appl_…` / `goog_…` keys are safe to expose to the client; the
 `sk_…` secret key is **not** and must only live on the backend.
+
+### 5.5 Where the Apple `.p8` private key lives in production
+
+The `.p8` is a private signing key — treat it like an SSH private key.
+**Never commit it to git.** The auth strategy
+([`api/strategies/appleStrategy.js`](../../api/strategies/appleStrategy.js))
+accepts the key two ways and you should pick one based on your host:
+
+| Host                              | Use                       |
+| --------------------------------- | ------------------------- |
+| Local development                 | `APPLE_PRIVATE_KEY_PATH`  |
+| DigitalOcean Droplet (SSH access) | `APPLE_PRIVATE_KEY_PATH`  |
+| DigitalOcean App Platform         | `APPLE_PRIVATE_KEY`       |
+| Render (with Secret Files)        | `APPLE_PRIVATE_KEY_PATH`  |
+| Heroku                            | `APPLE_PRIVATE_KEY`       |
+| Fly.io                            | either (secrets work both as files and env vars) |
+| AWS ECS / Fargate                 | `APPLE_PRIVATE_KEY_PATH` (mount via Secrets Manager) |
+
+If both env vars are set, `APPLE_PRIVATE_KEY` (contents) wins.
+
+#### Path form (`APPLE_PRIVATE_KEY_PATH`)
+
+For local dev, copy the `.p8` to a directory outside the repo:
+
+```bash
+mkdir -p ~/.secrets/codecan
+mv ~/Downloads/AuthKey_ABC123DEFG.p8 ~/.secrets/codecan/
+chmod 600 ~/.secrets/codecan/AuthKey_ABC123DEFG.p8
+```
+
+Then in your local `.env`:
+
+```dotenv
+APPLE_PRIVATE_KEY_PATH=/Users/<you>/.secrets/codecan/AuthKey_ABC123DEFG.p8
+```
+
+For a Droplet, `scp` it up and chmod 600.
+
+#### Inline form (`APPLE_PRIVATE_KEY`) — DigitalOcean App Platform
+
+1. In the DO control panel, go to your App → **Settings** → **App-Level
+   Environment Variables** → **Edit**.
+2. Add a variable named `APPLE_PRIVATE_KEY`.
+3. Paste the **full** `.p8` file contents into the value field — copy
+   everything from `-----BEGIN PRIVATE KEY-----` through
+   `-----END PRIVATE KEY-----` inclusive, newlines and all. DO accepts
+   multi-line values.
+4. **Tick the lock icon** to mark it as Encrypted. (Encrypted values
+   are not displayed back to admins after saving.)
+5. Save → DO redeploys.
+6. Make sure `APPLE_PRIVATE_KEY_PATH` is **not** set on this host (or
+   leave it blank). The contents form takes precedence when both are
+   present, but it's cleaner to only define the one you're using.
+
+The strategy normalizes literal `\n` escape sequences to real newlines
+before signing, so if DO ever returns the value with the escape intact
+(depends on how it was entered), it still works.
+
+#### Backend code path
+
+The strategy at runtime uses whichever you set:
+
+```js
+// api/strategies/appleStrategy.js
+if (process.env.APPLE_PRIVATE_KEY) {
+  options.privateKeyString = process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+} else if (process.env.APPLE_PRIVATE_KEY_PATH) {
+  options.privateKeyLocation = process.env.APPLE_PRIVATE_KEY_PATH;
+}
+```
+
+If you ever rotate the key (revoke + regenerate at developer.apple.com
+→ Keys), update the env var on every environment that has it.
 
 ---
 
