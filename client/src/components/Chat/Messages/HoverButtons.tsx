@@ -194,12 +194,22 @@ const HoverButtons = ({
     if (isDownloading) {
       return;
     }
-    const content = Array.isArray(message.content)
-      ? message.content
-          .filter((part) => typeof part === 'string' || ('text' in part && !('think' in part)))
-          .map((part) => (typeof part === 'string' ? part : (part as { text: string }).text ?? ''))
-          .join('')
-      : (message.text ?? '');
+    let content: string;
+    if (Array.isArray(message.content)) {
+      content = message.content
+        .map((part) => {
+          if (typeof part === 'string') {
+            return part;
+          }
+          if (typeof part === 'object' && part !== null && 'text' in part && !('think' in part)) {
+            return (part as { text: string }).text ?? '';
+          }
+          return '';
+        })
+        .join('');
+    } else {
+      content = message.text ?? '';
+    }
 
     setIsDownloading(true);
     try {
