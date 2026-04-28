@@ -44,8 +44,6 @@ const { logViolation, getLogStores } = require('~/cache');
 const { getOpenAIClient } = require('./helpers');
 const contactService = require('../../services/contact.service');
 
-
-
 /**
  * @route POST /
  * @desc Chat with an assistant
@@ -197,24 +195,23 @@ const chatV2 = async (req, res) => {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;
     }
 
-const contacts = await getRelevantContacts(text);
+    const contacts = await getRelevantContacts(text);
 
-const contactContext = contacts.map(c => {
-  const base = `Name: ${c.name}, Company: ${c.company || 'N/A'}, Role: ${c.role || 'N/A'}, Email: ${c.email || 'N/A'}, Notes: ${c.notes || 'N/A'}`;
-  const meta = c.metadata && Object.keys(c.metadata).length
-    ? ', ' + Object.entries(c.metadata).map(([k, v]) => `${k}: ${v}`).join(', ')
-    : '';
-  return base + meta;
-}).join('\n');
+    const contactContext = contacts
+      .map((contact) => {
+        const base = `Name: ${contact.name}, Company: ${contact.company || 'N/A'}, Role: ${contact.role || 'N/A'}, Email: ${contact.email || 'N/A'}, Notes: ${contact.notes || 'N/A'}`;
+        const meta = contact.metadata && Object.keys(contact.metadata).length
+          ? `, Metadata: ${Object.entries(contact.metadata)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join(', ')}`
+          : '';
+        return base + meta;
+      })
+      .join('\n');
 
-
-const contactInstruction = contacts.length > 0 ? `
-You have access to the following contacts relevant to the user's query:
-
-${contactContext}
-
-Answer the user's question using this data. If the answer is not in the contacts, say you don't know.
-` : '';
+    const contactInstruction = contacts.length
+      ? `You have access to the following contacts relevant to the user's query:\n\n${contactContext}\n\nAnswer the user's question using this data. If the answer is not in the contacts, say you don't know.`
+      : '';
 
 
     let userMessage = {
@@ -235,7 +232,7 @@ Answer the user's question using this data. If the answer is not in the contacts
       assistant_id,
       model,
       promptPrefix,
-        instructions: (instructions || '') + '\n' + contactInstruction,
+      instructions: (instructions || '') + (contactInstruction ? `\n${contactInstruction}` : ''),
       endpointOption,
       clientTimestamp,
     });
