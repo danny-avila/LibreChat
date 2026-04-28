@@ -24,6 +24,7 @@ const artifactFilename = {
 const artifactTemplate: Record<
   | keyof typeof artifactFilename
   | 'application/vnd.mermaid'
+  | 'application/vnd.code'
   | 'text/markdown'
   | 'text/md'
   | 'text/plain',
@@ -34,6 +35,12 @@ const artifactTemplate: Record<
   'application/vnd.ant.react': 'react-ts',
   'application/vnd.mermaid': 'react-ts',
   'application/vnd.code-html': 'static',
+  /* CODE bucket reuses the static markdown pipeline — `useArtifactProps`
+   * pre-wraps the content in a fenced block and hands it to
+   * `getMarkdownFiles`, so the rendered HTML uses the same `marked`
+   * pipeline as `.md` artifacts. Keeping `static` (vs. `react-ts`) means
+   * the panel doesn't pay the sandpack-React boot cost for source files. */
+  'application/vnd.code': 'static',
   'text/markdown': 'static',
   'text/md': 'static',
   'text/plain': 'static',
@@ -112,6 +119,7 @@ const mermaidDependencies = {
 const dependenciesMap: Record<
   | keyof typeof artifactFilename
   | 'application/vnd.mermaid'
+  | 'application/vnd.code'
   | 'text/markdown'
   | 'text/md'
   | 'text/plain',
@@ -122,6 +130,10 @@ const dependenciesMap: Record<
   'application/vnd.ant.react': standardDependencies,
   'text/html': standardDependencies,
   'application/vnd.code-html': standardDependencies,
+  /* CODE renders in the static markdown template; no React or other
+   * runtime deps. Empty map skips the sandpack `package.json` install
+   * step entirely (same as MARKDOWN/PLAIN_TEXT). */
+  'application/vnd.code': {},
   'text/markdown': {},
   'text/md': {},
   'text/plain': {},
@@ -163,42 +175,6 @@ export function buildSandpackOptions(
   };
 }
 
-/**
- * Artifact MIME types we currently know how to render in the side panel
- * (or, for mermaid, inline). Plain text covers files we can show as raw
- * content even without a dedicated viewer (txt, docx-extracted text, …);
- * `useArtifactProps` routes `text/plain` through the markdown template
- * so the panel renders them cleanly.
- */
-export const TOOL_ARTIFACT_TYPES = {
-  HTML: 'text/html',
-  REACT: 'application/vnd.react',
-  MARKDOWN: 'text/markdown',
-  MERMAID: 'application/vnd.mermaid',
-  PLAIN_TEXT: 'text/plain',
-} as const;
-
-export type ToolArtifactType = (typeof TOOL_ARTIFACT_TYPES)[keyof typeof TOOL_ARTIFACT_TYPES];
-
-const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
-  html: TOOL_ARTIFACT_TYPES.HTML,
-  htm: TOOL_ARTIFACT_TYPES.HTML,
-  jsx: TOOL_ARTIFACT_TYPES.REACT,
-  tsx: TOOL_ARTIFACT_TYPES.REACT,
-  md: TOOL_ARTIFACT_TYPES.MARKDOWN,
-  markdown: TOOL_ARTIFACT_TYPES.MARKDOWN,
-  mdx: TOOL_ARTIFACT_TYPES.MARKDOWN,
-  mmd: TOOL_ARTIFACT_TYPES.MERMAID,
-  mermaid: TOOL_ARTIFACT_TYPES.MERMAID,
-  // Plain text + office documents fall through to the markdown-style
-  // viewer until dedicated renderers land. `pptx` is wired up here so
-  // the routing fires as soon as backend text extraction is added.
-  txt: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
-  docx: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
-  odt: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
-  pptx: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
-};
-
 const extensionOf = (filename: string | undefined): string => {
   if (!filename) {
     return '';
@@ -219,6 +195,159 @@ const baseMime = (mime: string | undefined): string => {
   return (semi < 0 ? mime : mime.slice(0, semi)).trim().toLowerCase();
 };
 
+/**
+ * Artifact MIME types we currently know how to render in the side panel
+ * (or, for mermaid, inline). Plain text covers files we can show as raw
+ * content even without a dedicated viewer (txt, docx-extracted text, …);
+ * `useArtifactProps` routes `text/plain` through the markdown template
+ * so the panel renders them cleanly. `CODE` is the same idea for source
+ * files — `useArtifactProps` wraps the content in a fenced code block
+ * with a language hint before handing it to the markdown viewer.
+ */
+export const TOOL_ARTIFACT_TYPES = {
+  HTML: 'text/html',
+  REACT: 'application/vnd.react',
+  MARKDOWN: 'text/markdown',
+  MERMAID: 'application/vnd.mermaid',
+  PLAIN_TEXT: 'text/plain',
+  CODE: 'application/vnd.code',
+} as const;
+
+export type ToolArtifactType = (typeof TOOL_ARTIFACT_TYPES)[keyof typeof TOOL_ARTIFACT_TYPES];
+
+/**
+ * Extension → fenced-code-block language hint for the CODE bucket. The
+ * key is the lowercased file extension (no dot); the value is the
+ * identifier `marked` reads off the fence (e.g. ```` ```python ```` ).
+ * The map drives BOTH the `EXTENSION_TO_TOOL_ARTIFACT_TYPE` routing
+ * (presence in this map = code file) and the fenced-block emit in
+ * `useArtifactProps`, so adding a new language is one place.
+ *
+ * Identifiers follow the GitHub / `highlight.js` convention so a future
+ * highlighter swap-in (currently the markdown template uses plain
+ * `marked`) picks up syntax colors automatically.
+ *
+ * Scope: programming languages + stylesheets + shell/SQL/build files.
+ * Pure data formats (CSV/TSV/JSON/YAML/TOML/XML) and config files
+ * (`.env`/`.ini`/`.conf`) are intentionally NOT routed to CODE in this
+ * pass — they're better served by dedicated viewers (CSV table view,
+ * etc.) or remain inline. Adding them later is a one-entry change.
+ */
+const CODE_EXTENSION_TO_LANGUAGE: Record<string, string> = {
+  // Web / scripting
+  js: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  ts: 'typescript',
+  py: 'python',
+  pyi: 'python',
+  rb: 'ruby',
+  php: 'php',
+  pl: 'perl',
+  pm: 'perl',
+  lua: 'lua',
+  // Compiled / systems
+  go: 'go',
+  rs: 'rust',
+  c: 'c',
+  h: 'c',
+  cc: 'cpp',
+  cpp: 'cpp',
+  hpp: 'cpp',
+  cs: 'csharp',
+  m: 'objectivec',
+  mm: 'objectivec',
+  swift: 'swift',
+  java: 'java',
+  kt: 'kotlin',
+  kts: 'kotlin',
+  scala: 'scala',
+  // Functional / data
+  r: 'r',
+  jl: 'julia',
+  dart: 'dart',
+  ex: 'elixir',
+  exs: 'elixir',
+  erl: 'erlang',
+  hs: 'haskell',
+  clj: 'clojure',
+  cljs: 'clojure',
+  fs: 'fsharp',
+  fsx: 'fsharp',
+  // Shell
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  fish: 'bash',
+  ps1: 'powershell',
+  bat: 'batch',
+  cmd: 'batch',
+  // Build / query languages
+  sql: 'sql',
+  graphql: 'graphql',
+  gql: 'graphql',
+  proto: 'protobuf',
+  dockerfile: 'dockerfile',
+  makefile: 'makefile',
+  gradle: 'groovy',
+  tf: 'hcl',
+  hcl: 'hcl',
+  patch: 'diff',
+  diff: 'diff',
+  // Stylesheets
+  css: 'css',
+  scss: 'scss',
+  sass: 'sass',
+  less: 'less',
+};
+
+/** True iff `ext` (no leading dot, lowercased) is a known code language. */
+export function isCodeExtension(ext: string): boolean {
+  return Object.prototype.hasOwnProperty.call(CODE_EXTENSION_TO_LANGUAGE, ext);
+}
+
+/**
+ * Look up the fenced-block language hint for a filename's extension.
+ * Falls back to the raw extension if not in the map (so a `.foo` source
+ * still gets ```` ```foo ```` and renders monospace, even without
+ * highlighting). Empty string when there's no extension at all — the
+ * fence emits as ```` ``` ```` with no language token.
+ */
+export function languageForFilename(filename: string | undefined): string {
+  const ext = extensionOf(filename);
+  if (!ext) return '';
+  return CODE_EXTENSION_TO_LANGUAGE[ext] ?? ext;
+}
+
+const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
+  html: TOOL_ARTIFACT_TYPES.HTML,
+  htm: TOOL_ARTIFACT_TYPES.HTML,
+  // jsx/tsx are React component sources — keep them on the React
+  // (sandpack) bucket rather than the new CODE bucket so the existing
+  // live-preview behavior survives. Plain JS/TS source goes through CODE.
+  jsx: TOOL_ARTIFACT_TYPES.REACT,
+  tsx: TOOL_ARTIFACT_TYPES.REACT,
+  md: TOOL_ARTIFACT_TYPES.MARKDOWN,
+  markdown: TOOL_ARTIFACT_TYPES.MARKDOWN,
+  mdx: TOOL_ARTIFACT_TYPES.MARKDOWN,
+  mmd: TOOL_ARTIFACT_TYPES.MERMAID,
+  mermaid: TOOL_ARTIFACT_TYPES.MERMAID,
+  // Plain text + office documents fall through to the markdown-style
+  // viewer until dedicated renderers land. `pptx` is wired up here so
+  // the routing fires as soon as backend text extraction is added.
+  txt: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  docx: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  odt: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+  pptx: TOOL_ARTIFACT_TYPES.PLAIN_TEXT,
+};
+
+/* Append every entry in `CODE_EXTENSION_TO_LANGUAGE` to the routing map
+ * pointing at the CODE bucket. Keeping the language map as the source
+ * of truth means a new language is one entry away from being routable. */
+for (const ext of Object.keys(CODE_EXTENSION_TO_LANGUAGE)) {
+  EXTENSION_TO_TOOL_ARTIFACT_TYPE[ext] = TOOL_ARTIFACT_TYPES.CODE;
+}
+
 const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
   'text/html': TOOL_ARTIFACT_TYPES.HTML,
   'application/vnd.code-html': TOOL_ARTIFACT_TYPES.HTML,
@@ -227,6 +356,34 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
   'application/vnd.react': TOOL_ARTIFACT_TYPES.REACT,
   'application/vnd.ant.react': TOOL_ARTIFACT_TYPES.REACT,
   'application/vnd.mermaid': TOOL_ARTIFACT_TYPES.MERMAID,
+  // Code MIME types — codeapi serves these via Content-Type for source
+  // files (`text/x-python`, `text/x-typescript`, etc.) so a file whose
+  // extension was stripped or renamed upstream still routes to CODE.
+  // Mirrors the extension list in `CODE_EXTENSION_TO_LANGUAGE`: only
+  // programming/stylesheet/shell MIME types are routed; data formats
+  // (CSV, JSON, YAML, …) are intentionally excluded for now.
+  'text/javascript': TOOL_ARTIFACT_TYPES.CODE,
+  'application/javascript': TOOL_ARTIFACT_TYPES.CODE,
+  'application/sql': TOOL_ARTIFACT_TYPES.CODE,
+  'application/x-sh': TOOL_ARTIFACT_TYPES.CODE,
+  'application/x-php': TOOL_ARTIFACT_TYPES.CODE,
+  'application/x-powershell': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-python': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-typescript': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-ruby': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-go': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-rust': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-c': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-c++': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-csharp': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-java': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-kotlin': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-scala': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-perl': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-r': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-lua': TOOL_ARTIFACT_TYPES.CODE,
+  'text/x-swift': TOOL_ARTIFACT_TYPES.CODE,
+  'text/css': TOOL_ARTIFACT_TYPES.CODE,
   // Office MIME types fall through to the plain-text bucket here too —
   // matches the extension map so a file whose extension was stripped
   // somewhere upstream still routes to the panel.
@@ -266,7 +423,8 @@ export function detectArtifactTypeFromFile(
   if (
     !attachment.text &&
     type !== TOOL_ARTIFACT_TYPES.PLAIN_TEXT &&
-    type !== TOOL_ARTIFACT_TYPES.MARKDOWN
+    type !== TOOL_ARTIFACT_TYPES.MARKDOWN &&
+    type !== TOOL_ARTIFACT_TYPES.CODE
   ) {
     return null;
   }
@@ -346,7 +504,8 @@ export function fileToArtifact(
   if (
     !attachment.text &&
     type !== TOOL_ARTIFACT_TYPES.PLAIN_TEXT &&
-    type !== TOOL_ARTIFACT_TYPES.MARKDOWN
+    type !== TOOL_ARTIFACT_TYPES.MARKDOWN &&
+    type !== TOOL_ARTIFACT_TYPES.CODE
   ) {
     return null;
   }

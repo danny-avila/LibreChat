@@ -132,6 +132,94 @@ describe('detectArtifactTypeFromFile', () => {
       detectArtifactTypeFromFile({ filename: '.env', type: 'text/plain', text: 'KEY=value' }),
     ).toBeNull();
   });
+
+  describe('CODE bucket (programming-language source files)', () => {
+    /* `.py` and other code files were previously inline-only — PR #12832
+     * intentionally left them out of the side-panel pipeline. This bucket
+     * routes them through the markdown template with the source pre-
+     * wrapped as a fenced code block (`useArtifactProps`). */
+    it.each([
+      ['simple_graph.py', 'text/x-python'],
+      ['app.js', 'text/javascript'],
+      ['main.go', 'text/x-go'],
+      ['lib.rs', 'text/x-rust'],
+      ['style.css', 'text/css'],
+      ['build.sh', 'application/x-sh'],
+      ['query.sql', 'application/sql'],
+      ['Module.kt', 'text/x-kotlin'],
+    ])('routes %s (mime: %s) to the CODE bucket', (filename, type) => {
+      expect(detectArtifactTypeFromFile({ filename, type, text: 'x = 1' })).toBe(
+        TOOL_ARTIFACT_TYPES.CODE,
+      );
+    });
+
+    it('routes by extension even when MIME is generic octet-stream', () => {
+      /* file-type / inferMimeType sometimes can't classify code files
+       * (Python has no magic bytes); the extension map still wins. */
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'data.py',
+          type: 'application/octet-stream',
+          text: 'print(1)',
+        }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
+
+    it('keeps jsx/tsx on the React (sandpack) bucket, not CODE', () => {
+      /* `.jsx` and `.tsx` are React component sources — the existing
+       * sandpack live-preview should win over the static CODE bucket. */
+      expect(detectArtifactTypeFromFile({ filename: 'App.jsx', type: '', text: 'x' })).toBe(
+        TOOL_ARTIFACT_TYPES.REACT,
+      );
+      expect(detectArtifactTypeFromFile({ filename: 'App.tsx', type: '', text: 'x' })).toBe(
+        TOOL_ARTIFACT_TYPES.REACT,
+      );
+    });
+
+    it('does NOT route data formats to CODE (CSV / JSON / YAML / TOML / XML)', () => {
+      /* These get dedicated viewers in follow-ups; for now they fall
+       * through to inline rendering (return null). */
+      expect(
+        detectArtifactTypeFromFile({ filename: 'data.csv', type: 'text/csv', text: 'a,b' }),
+      ).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({ filename: 'data.json', type: 'application/json', text: '{}' }),
+      ).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'config.yaml',
+          type: 'application/yaml',
+          text: 'a: 1',
+        }),
+      ).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'pyproject.toml',
+          type: 'application/toml',
+          text: '',
+        }),
+      ).toBeNull();
+    });
+
+    it('does NOT route config dotfiles to CODE (.env / .ini)', () => {
+      expect(
+        detectArtifactTypeFromFile({ filename: 'app.env', type: 'text/plain', text: 'KEY=val' }),
+      ).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({
+          filename: 'config.ini',
+          type: 'text/plain',
+          text: '[section]',
+        }),
+      ).toBeNull();
+    });
+
+    it('allows empty text for CODE files (an empty Python file is still a Python file)', () => {
+      expect(
+        detectArtifactTypeFromFile({ filename: 'empty.py', type: 'text/x-python', text: '' }),
+      ).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    });
+  });
 });
 
 describe('fileToArtifact', () => {

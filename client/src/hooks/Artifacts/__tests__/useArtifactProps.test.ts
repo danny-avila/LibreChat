@@ -1,5 +1,6 @@
 import { renderHook } from '@testing-library/react';
-import useArtifactProps from '../useArtifactProps';
+import useArtifactProps, { wrapAsFencedCodeBlock } from '../useArtifactProps';
+import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import type { Artifact } from '~/common';
 
 describe('useArtifactProps', () => {
@@ -206,5 +207,97 @@ describe('useArtifactProps', () => {
 
       expect(result.current.template).toBe('static');
     });
+  });
+
+  describe('CODE artifacts', () => {
+    /* The CODE bucket reuses the static markdown pipeline — `marked`
+     * renders the wrapped fenced block as `<pre><code class="language-X">…`.
+     * These tests pin the wrap-then-render shape end-to-end so a future
+     * highlighter swap-in or CDN bump can't silently break the panel
+     * for code files. */
+    it('routes CODE artifacts to content.md / static template (markdown pipeline)', () => {
+      const artifact = createArtifact({
+        type: TOOL_ARTIFACT_TYPES.CODE,
+        title: 'simple_graph.py',
+        content: 'import matplotlib\nplt.savefig("foo.png")',
+      });
+      const { result } = renderHook(() => useArtifactProps({ artifact }));
+      expect(result.current.fileKey).toBe('content.md');
+      expect(result.current.template).toBe('static');
+    });
+
+    it('wraps the source as a fenced block with the language hint from the filename', () => {
+      const artifact = createArtifact({
+        type: TOOL_ARTIFACT_TYPES.CODE,
+        title: 'simple_graph.py',
+        content: 'x = 1\nprint(x)',
+      });
+      const { result } = renderHook(() => useArtifactProps({ artifact }));
+      const md = result.current.files['content.md'] as string;
+      /* Marked outputs `<pre><code class="language-python">` from this fence. */
+      expect(md.startsWith('```python\n')).toBe(true);
+      expect(md.endsWith('\n```')).toBe(true);
+      expect(md).toContain('x = 1');
+      expect(md).toContain('print(x)');
+    });
+
+    it('falls back to the raw extension as language hint for unknown extensions', () => {
+      const artifact = createArtifact({
+        type: TOOL_ARTIFACT_TYPES.CODE,
+        title: 'thing.qwerty',
+        content: 'data',
+      });
+      const { result } = renderHook(() => useArtifactProps({ artifact }));
+      const md = result.current.files['content.md'] as string;
+      expect(md.startsWith('```qwerty\n')).toBe(true);
+    });
+
+    it('uses an empty language hint when the title has no extension', () => {
+      const artifact = createArtifact({
+        type: TOOL_ARTIFACT_TYPES.CODE,
+        title: 'Makefile-style',
+        content: 'all: build',
+      });
+      const { result } = renderHook(() => useArtifactProps({ artifact }));
+      const md = result.current.files['content.md'] as string;
+      /* Empty hint = bare ` ``` ` opener (no language token). */
+      expect(md.startsWith('```\n')).toBe(true);
+    });
+
+    it('renders an index.html via the markdown template (visual parity with .md artifacts)', () => {
+      const artifact = createArtifact({
+        type: TOOL_ARTIFACT_TYPES.CODE,
+        title: 'app.js',
+        content: 'console.log("hi");',
+      });
+      const { result } = renderHook(() => useArtifactProps({ artifact }));
+      const html = result.current.files['index.html'] as string;
+      expect(html).toContain('<!DOCTYPE html>');
+      expect(html).toContain('marked.parse');
+    });
+  });
+});
+
+describe('wrapAsFencedCodeBlock', () => {
+  it('wraps source with the supplied language hint', () => {
+    expect(wrapAsFencedCodeBlock('print(1)', 'python')).toBe('```python\nprint(1)\n```');
+  });
+
+  it('emits a bare ``` opener when language is empty', () => {
+    expect(wrapAsFencedCodeBlock('hello', '')).toBe('```\nhello\n```');
+  });
+
+  it('trims a single trailing newline so the closing fence stays flush', () => {
+    /* Extractor output often ends with a newline; without trimming, the
+     * closing ``` would appear on its own line after a blank gap and
+     * marked would render an extra <br>. */
+    expect(wrapAsFencedCodeBlock('a\nb\n', 'go')).toBe('```go\na\nb\n```');
+    /* Only ONE trailing newline gets trimmed — preserves explicit blank
+     * lines at end-of-file in the output. */
+    expect(wrapAsFencedCodeBlock('a\nb\n\n', 'go')).toBe('```go\na\nb\n\n```');
+  });
+
+  it('handles empty source cleanly (renders an empty fenced block)', () => {
+    expect(wrapAsFencedCodeBlock('', 'python')).toBe('```python\n\n```');
   });
 });
