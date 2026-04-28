@@ -148,6 +148,154 @@ function addLineNumbers(content: string): string {
 }
 
 /**
+ * Extensions whose contents `read_file` must never serialize as text. `cat`
+ * on a PNG inside the sandbox returns the raw bytes as stdout, JSON-encoded
+ * by codeapi with lossy UTF-8 replacement and then line-numbered by us —
+ * the result is a multi-KB blob of mojibake that pollutes the LLM context
+ * and exposes the raw bytes anyway. Short-circuit before the network call.
+ *
+ * Image categories surface a "use the existing attachment" message because
+ * the file was already attached to the conversation as part of the
+ * code-execution artifact pipeline — re-attaching here would dup it.
+ */
+const BINARY_EXTENSIONS_NEVER_READABLE = new Set([
+  // Raster images (already attached as artifacts by the code-execution
+  // pipeline). `.svg` is intentionally NOT in this list — it's an XML
+  // text format with no mojibake risk, and there are legitimate reasons
+  // for the model to inspect or edit a generated SVG. The post-fetch
+  // NUL-byte sniff still catches anything that turns out to be binary
+  // despite a `.svg` extension.
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.tiff',
+  '.tif',
+  '.ico',
+  '.heic',
+  '.heif',
+  '.avif',
+  // Documents (binary container formats)
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.odt',
+  '.ods',
+  '.odp',
+  // Archives
+  '.zip',
+  '.tar',
+  '.gz',
+  '.tgz',
+  '.bz2',
+  '.xz',
+  '.7z',
+  '.rar',
+  '.lz4',
+  '.zst',
+  // Audio / video
+  '.mp3',
+  '.wav',
+  '.flac',
+  '.ogg',
+  '.m4a',
+  '.aac',
+  '.wma',
+  '.mp4',
+  '.mkv',
+  '.mov',
+  '.avi',
+  '.webm',
+  '.flv',
+  '.m4v',
+  // Executables / object files / native libs
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.o',
+  '.obj',
+  '.a',
+  '.lib',
+  '.bin',
+  '.class',
+  '.jar',
+  // Other byte-soup formats
+  '.parquet',
+  '.bson',
+  '.db',
+  '.sqlite',
+  '.sqlite3',
+  '.pyc',
+  '.pyo',
+  '.wasm',
+  '.ttf',
+  '.otf',
+  '.woff',
+  '.woff2',
+  '.eot',
+]);
+
+const IMAGE_EXTENSIONS_FOR_HINT = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.tiff',
+  '.tif',
+  '.ico',
+  '.heic',
+  '.heif',
+  '.avif',
+]);
+
+function lowercaseExtension(filePath: string): string {
+  const dot = filePath.lastIndexOf('.');
+  const slash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  if (dot < 0 || dot < slash) return '';
+  return filePath.slice(dot).toLowerCase();
+}
+
+/**
+ * Builds the model-visible error returned when `read_file` is invoked on
+ * a binary path. Phrasing is tuned for the LLM: states the fact (file is
+ * binary, can't be read as text), points at the correct affordance for
+ * each common case (image already in the chat; bash for everything else),
+ * and includes the path verbatim so the model can copy-paste into its
+ * next call.
+ */
+function buildBinaryFileError(filePath: string, ext: string): string {
+  if (IMAGE_EXTENSIONS_FOR_HINT.has(ext)) {
+    return `"${filePath}" is an image file (${ext}) and cannot be read as text. The image is already attached to the conversation and visible to the user. To process it programmatically, use \`bash_tool\` (e.g. \`file ${filePath}\` for metadata, or \`python3 -c '...'\` to operate on the bytes).`;
+  }
+  return `"${filePath}" is a binary file (${ext}) and cannot be read as text by \`read_file\`. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata, or a runtime-appropriate command for the format).`;
+}
+
+/**
+ * True when the first chunk of a string contains a NUL byte. Used as a
+ * post-fetch safety net for files whose extension didn't match the
+ * blocklist (no extension, novel format, etc.) — sniffs `cat` stdout to
+ * avoid ever forwarding mangled bytes to the LLM. 8KB is the same
+ * window the skill-file path uses; enough for any reasonable magic
+ * number while bounded enough to stay cheap.
+ */
+function looksBinary(content: string): boolean {
+  const limit = Math.min(content.length, 8192);
+  for (let i = 0; i < limit; i++) {
+    if (content.charCodeAt(i) === 0) return true;
+  }
+  return false;
+}
+
+/**
  * Routes a `read_file` call to the code-execution sandbox via the
  * host-provided `readSandboxFile` callback. The sandbox session id and
  * primed file refs come from `tc.codeSessionContext` (emitted by ToolNode
@@ -156,12 +304,30 @@ function addLineNumbers(content: string): string {
  * `ToolExecuteResult` with the file content (line-numbered) on success,
  * or an instructive error pointing the model at `bash_tool` when the
  * sandbox isn't reachable from this configuration.
+ *
+ * Two binary guards keep `cat`-on-a-PNG-style mojibake out of the LLM
+ * context: (1) an extension precheck that short-circuits known binary
+ * types BEFORE any network call, and (2) a NUL-byte content sniff after
+ * the read for unknown extensions. The codeapi `/exec` transport is JSON,
+ * which already lossily down-converts non-UTF-8 stdout to replacement
+ * characters — the bytes are unrecoverable here, so the goal is to fail
+ * fast with an instructive message rather than ship garbage.
  */
 async function handleSandboxFileFallback(
   tc: ToolCallRequest,
   filePath: string,
   options: ToolExecuteOptions,
 ): Promise<ToolExecuteResult> {
+  const ext = lowercaseExtension(filePath);
+  if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: buildBinaryFileError(filePath, ext),
+    };
+  }
+
   const { readSandboxFile } = options;
   if (!readSandboxFile) {
     return {
@@ -187,6 +353,14 @@ async function handleSandboxFileFallback(
         status: 'error',
         content: '',
         errorMessage: `Failed to read "${filePath}" from the code-execution sandbox. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
+      };
+    }
+    if (looksBinary(result.content)) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `"${filePath}" appears to be a binary file and cannot be read as text. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata).`,
       };
     }
     /**
