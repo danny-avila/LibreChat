@@ -52,6 +52,17 @@ function _lsKey(messageId: string): string {
   return _LS_PREFIX + messageId;
 }
 
+function getCachedRequestId(messageId: string): string | null {
+  try {
+    const raw = localStorage.getItem(_lsKey(messageId));
+    if (!raw) return null;
+    const { r } = JSON.parse(raw);
+    return typeof r === 'string' && r ? r : null;
+  } catch {
+    return null;
+  }
+}
+
 function _pruneLocalStorage(): void {
   try {
     const keys: string[] = [];
@@ -62,7 +73,9 @@ function _pruneLocalStorage(): void {
     if (keys.length > _LS_MAX_ENTRIES) {
       keys.slice(0, keys.length - _LS_MAX_ENTRIES).forEach((k) => localStorage.removeItem(k));
     }
-  } catch { /* quota or security error — ignore */ }
+  } catch {
+    /* quota or security error — ignore */
+  }
 }
 
 function cacheSources(messageId: string, sources: BklSource[], rid?: string) {
@@ -79,7 +92,9 @@ function cacheSources(messageId: string, sources: BklSource[], rid?: string) {
     _pruneLocalStorage();
     const payload = JSON.stringify({ s: sources, r: rid ?? null });
     localStorage.setItem(_lsKey(messageId), payload);
-  } catch { /* quota exceeded — in-memory still works */ }
+  } catch {
+    /* quota exceeded — in-memory still works */
+  }
 }
 
 function loadSourcesFromStorage(messageId: string): BklSource[] | null {
@@ -102,13 +117,29 @@ function loadSourcesFromStorage(messageId: string): BklSource[] | null {
         return s;
       }
     }
-  } catch { /* parse error — ignore */ }
+  } catch {
+    /* parse error — ignore */
+  }
 
   return null;
 }
 
-async function fetchSourcesForMessage(messageId: string): Promise<BklSource[] | null> {
-  const existing = loadSourcesFromStorage(messageId);
+function sourceHasImanageUrl(source: BklSource | null): boolean {
+  if (!source) return false;
+  const meta = source.metadata?.[0];
+  return Boolean(
+    source.source?.imanage_url ||
+      source.source?.imanage_preview_url ||
+      (typeof meta?.imanage_url === 'string' && meta.imanage_url) ||
+      (typeof meta?.imanage_preview_url === 'string' && meta.imanage_preview_url),
+  );
+}
+
+async function fetchSourcesForMessage(
+  messageId: string,
+  { forceRefresh = false }: { forceRefresh?: boolean } = {},
+): Promise<BklSource[] | null> {
+  const existing = forceRefresh ? null : loadSourcesFromStorage(messageId);
   if (existing) return existing;
 
   const msgEl = document.getElementById(messageId);
@@ -116,6 +147,7 @@ async function fetchSourcesForMessage(messageId: string): Promise<BklSource[] | 
   const win = window as any;
   let rid: string | null = msgEl?.getAttribute('data-bkl-rid') ?? null;
   if (!rid) rid = win.__bklRids?.[messageId] ?? null;
+  if (!rid) rid = getCachedRequestId(messageId);
 
   if (rid) {
     const resp = await fetchWithRetry(`${BKL_API}/v1/sources/${rid}`);
@@ -127,7 +159,9 @@ async function fetchSourcesForMessage(messageId: string): Promise<BklSource[] | 
           cacheSources(messageId, sources, rid);
           return sources;
         }
-      } catch { /* fall through */ }
+      } catch {
+        /* fall through */
+      }
     }
   }
 
@@ -140,7 +174,9 @@ async function fetchSourcesForMessage(messageId: string): Promise<BklSource[] | 
         cacheSources(messageId, sources, data.request_id);
         return sources;
       }
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
 
   return null;
@@ -182,9 +218,7 @@ export default function BklCitation({ n }: BklCitationProps) {
   const { messageId } = useMessageContext();
   const [loading, setLoading] = useState(false);
   const [label, setLabel] = useState<string | null>(() => getSourceLabel(messageId, n));
-  const [fileType, setFileType] = useState<string | null>(
-    () => getSourceFileType(messageId, n),
-  );
+  const [fileType, setFileType] = useState<string | null>(() => getSourceFileType(messageId, n));
   const setActiveSource = useSetRecoilState(store.activeBklSource);
 
   useEffect(() => {
@@ -209,9 +243,15 @@ export default function BklCitation({ n }: BklCitationProps) {
       fetchSourcesForMessage(messageId).catch(() => {});
     }
 
-    const iv = setInterval(() => { if (check()) clearInterval(iv); }, 400);
+    const iv = setInterval(() => {
+      if (check()) clearInterval(iv);
+    }, 400);
     const to = setTimeout(() => clearInterval(iv), 20000);
-    return () => { cancelled = true; clearInterval(iv); clearTimeout(to); };
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      clearTimeout(to);
+    };
   }, [messageId, n, label]);
 
   const handleClick = useCallback(
@@ -221,14 +261,15 @@ export default function BklCitation({ n }: BklCitationProps) {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const cached = (window as any).__bklSources?.[messageId];
-      let source: BklSource | null =
-        Array.isArray(cached) && cached[n - 1] ? cached[n - 1] : null;
+      let source: BklSource | null = Array.isArray(cached) && cached[n - 1] ? cached[n - 1] : null;
 
-      if (!source) {
+      if (!source || !sourceHasImanageUrl(source)) {
         setLoading(true);
-        const sources = await fetchSourcesForMessage(messageId);
+        const sources = await fetchSourcesForMessage(messageId, {
+          forceRefresh: Boolean(source),
+        });
         setLoading(false);
-        source = sources?.[n - 1] ?? null;
+        source = sources?.[n - 1] ?? source ?? null;
         if (!label) {
           const l = getSourceLabel(messageId, n);
           if (l) setLabel(l);
@@ -242,7 +283,9 @@ export default function BklCitation({ n }: BklCitationProps) {
       const src = source as any;
       const url: string | undefined = src?.source?.url || src?.source?.embed_url;
       const hasBody =
-        Array.isArray(src?.document) && typeof src.document[0] === 'string' && src.document[0].trim().length > 0;
+        Array.isArray(src?.document) &&
+        typeof src.document[0] === 'string' &&
+        src.document[0].trim().length > 0;
       if (url && !hasBody) {
         window.open(url, '_blank', 'noopener,noreferrer');
         return;
@@ -272,12 +315,7 @@ export default function BklCitation({ n }: BklCitationProps) {
         '…'
       ) : label ? (
         <>
-          {fileType ? (
-            <FileTypeIcon
-              ext={fileType}
-              className="-ml-0.5 h-3 w-3 shrink-0"
-            />
-          ) : null}
+          {fileType ? <FileTypeIcon ext={fileType} className="-ml-0.5 h-3 w-3 shrink-0" /> : null}
           <span>『{label}』</span>
           <span>- [{n}]</span>
         </>
