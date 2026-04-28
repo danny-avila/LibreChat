@@ -74,6 +74,18 @@ export function sanitizeFilename(inputName: string): string {
  * `ENAMETOOLONG` and falls back to a download URL instead of persisting. */
 const ARTIFACT_PATH_SEGMENT_MAX = 255;
 
+/** Whole-path length cap for the path-preserving form. The DB keeps this
+ * value in `filename`, which participates in a compound unique index on
+ * the File schema (`file_id` + `filename` + `conversationId` + `context`).
+ * MongoDB 4.0 and earlier reject indexed values past 1024 bytes; even on
+ * 4.2+ where the limit is configurable, runaway nested paths bloat the
+ * index for no real benefit. 512 chars is plenty for realistic
+ * code-execution outputs (typical depth ≤ 3 segments × short names) and
+ * gives headroom for BSON / index-overhead encoding. Above the cap we
+ * fall back to leaf-only — the same shape as the absolute-path /
+ * `..`-traversal branches above. */
+const ARTIFACT_PATH_TOTAL_MAX = 512;
+
 /**
  * Deterministic disambiguator suffix for truncated names. The original
  * `sanitizeFilename` used `crypto.randomBytes(3)`, which made the
@@ -161,7 +173,20 @@ export function sanitizeArtifactPath(inputName: string): string {
   const capped = segments.map((seg, i) =>
     i === leafIdx ? truncateLeafSegment(seg) : truncateDirSegment(seg),
   );
-  return capped.join('/');
+  const joined = capped.join('/');
+  /* Per-segment caps are necessary but not sufficient — a deeply nested
+   * path with many at-cap segments can still exceed the DB's indexed-key
+   * limit (Mongo 4.0 ≤ 1024 bytes; later versions configurable). Fall
+   * back to leaf-only when the joined form blows past the total cap, so
+   * the (filename, conversationId, context) compound unique index never
+   * sees an oversized key. The leaf is already capped by
+   * `truncateLeafSegment`, so this guarantees ≤ ARTIFACT_PATH_SEGMENT_MAX
+   * (255) chars. Same shape as the absolute-path / `..`-traversal
+   * fallback above. */
+  if (joined.length > ARTIFACT_PATH_TOTAL_MAX) {
+    return capped[leafIdx];
+  }
+  return joined;
 }
 
 /** Limit on `path.extname`'s "extension" length we'll honor when

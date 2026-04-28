@@ -83,7 +83,12 @@ describe('sanitizeArtifactPath', () => {
     expect(sanitizeArtifactPath('../escape.txt')).toBe('escape.txt');
   });
 
-  test('falls back to basename for embedded parent traversal', () => {
+  test('resolves embedded parent traversal via path normalization', () => {
+    /* `path.posix.normalize('a/../escape.txt')` collapses to `escape.txt`,
+     * which then passes the traversal guard and goes through the normal
+     * segment-split path. Result is the same shape as the explicit-
+     * basename fallback (a single leaf segment), but the code path is
+     * "normalized then accepted", not "rejected then sanitized". */
     expect(sanitizeArtifactPath('a/../escape.txt')).toBe('escape.txt');
   });
 
@@ -155,20 +160,19 @@ describe('sanitizeArtifactPath', () => {
     expect(sanitizeArtifactPath(otherName)).not.toBe(a);
   });
 
-  test('caps every segment in a deeply-nested path with mixed lengths', () => {
+  test('caps every segment in a nested path with mixed lengths', () => {
     /* Every segment respects the cap — the truncate is per-component,
-     * not on the join. This is what protects against pathological
-     * generated paths like `<huge-prompt>/<huge-prompt>/file.csv`. */
+     * not on the join. Use 2 segments here (rather than 3+) so the
+     * joined form stays under `ARTIFACT_PATH_TOTAL_MAX` (512); the
+     * total-cap fallback gets its own test below. */
     const segA = 'x'.repeat(260);
-    const segB = 'y'.repeat(260);
     const leaf = 'z'.repeat(260) + '.json';
-    const result = sanitizeArtifactPath(`${segA}/${segB}/${leaf}`);
+    const result = sanitizeArtifactPath(`${segA}/${leaf}`);
     const parts = result.split('/');
-    expect(parts).toHaveLength(3);
+    expect(parts).toHaveLength(2);
     expect(parts[0].length).toBe(255);
     expect(parts[1].length).toBe(255);
-    expect(parts[2].length).toBe(255);
-    expect(parts[2]).toMatch(/\.json$/);
+    expect(parts[1]).toMatch(/\.json$/);
   });
 
   test('does not truncate filenames that are exactly at the 255-char limit', () => {
@@ -177,6 +181,28 @@ describe('sanitizeArtifactPath', () => {
     const exact = 'e'.repeat(251) + '.txt'; // 255 chars total
     expect(sanitizeArtifactPath(exact)).toBe(exact);
     expect(sanitizeArtifactPath(`dir/${exact}`)).toBe(`dir/${exact}`);
+  });
+
+  test('falls back to leaf-only when total path length exceeds the DB-index cap (Codex review P2)', () => {
+    /* MongoDB 4.0 rejects indexed values past 1024 bytes, and even on
+     * 4.2+ where the limit is configurable, runaway nested paths bloat
+     * the unique compound index on (file_id, filename, conversationId,
+     * context). At 3+ at-cap (255-char) segments + separators the joined
+     * form blows past the safety budget; the helper falls back to leaf-
+     * only (already segment-capped to ≤ 255). */
+    const segA = 'x'.repeat(255);
+    const segB = 'y'.repeat(255);
+    const segC = 'z'.repeat(255);
+    const result = sanitizeArtifactPath(`${segA}/${segB}/${segC}/file.txt`);
+    /* Joined would be ~768 chars + slashes; well past the 512 cap. */
+    expect(result).toBe('file.txt');
+  });
+
+  test('keeps the nested path when total length is within the DB-index cap', () => {
+    /* The cap doesn't fire for realistic outputs — typical artifact
+     * depth is ≤ 3 segments × short names. */
+    const result = sanitizeArtifactPath('reports/2026/q1.csv');
+    expect(result).toBe('reports/2026/q1.csv');
   });
 
   test('preserves the dotfile underscore prefix when the leaf also needs truncation', () => {

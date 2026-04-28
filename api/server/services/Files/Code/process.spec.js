@@ -49,7 +49,6 @@ jest.mock('@librechat/api', () => {
   return {
     logAxiosError: jest.fn(),
     getBasePath: jest.fn(() => ''),
-    sanitizeFilename: jest.fn((name) => name),
     sanitizeArtifactPath: jest.fn((name) => name),
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
@@ -336,6 +335,32 @@ describe('Code Process', () => {
         // (`${file_id}__`). file_id mock is `mock-uuid-1234` (14 chars),
         // so the budget should be 255 - 14 - 2 = 239.
         expect(flattenSpy).toHaveBeenCalledWith(expect.any(String), 239);
+      });
+
+      it('passes the basename (not the full nested path) to classifyCodeArtifact and extractCodeArtifactText', async () => {
+        /* Codex review P2: with the path-preserving sanitizer, `safeName`
+         * can be a nested string like `reports.v1/Makefile`. The
+         * classifier reads `extensionOf` against the full string, which
+         * sees `.v1/Makefile` after the dotted-dir's first dot and
+         * misclassifies the file as `other` (so text extraction is
+         * skipped). Pass `path.basename(safeName)` instead. */
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+        const mockSaveBuffer = jest.fn().mockResolvedValue('/uploads/saved.txt');
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        await processCodeOutput({
+          ...baseParams,
+          name: 'reports.v1/Makefile',
+        });
+
+        expect(mockClassifyCodeArtifact).toHaveBeenCalledWith('Makefile', expect.any(String));
+        expect(mockExtractCodeArtifactText).toHaveBeenCalledWith(
+          expect.any(Buffer),
+          'Makefile',
+          expect.any(String),
+          expect.any(String),
+        );
       });
 
       it('should detect MIME type from buffer', async () => {

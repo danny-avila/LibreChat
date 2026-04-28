@@ -258,8 +258,19 @@ const processCodeOutput = async ({
       basePath: 'uploads',
     });
 
-    const category = classifyCodeArtifact(safeName, mimeType);
-    const text = await extractCodeArtifactText(buffer, safeName, mimeType, category);
+    /* `classifyCodeArtifact` and `extractCodeArtifactText` make
+     * extension/bare-name decisions on the input string. With the
+     * path-preserving sanitizer they can now receive a nested path like
+     * `reports.v1/Makefile`, which the classifier's `extensionOf` reads
+     * as `v1/Makefile` (the slice after the dot in the directory name)
+     * and the bare-name branch rejects because it sees a `.` anywhere in
+     * the string. Result: extensionless artifacts under dotted folders
+     * (Makefile, Dockerfile, etc.) get misclassified as `other` and
+     * skip text extraction. Pass the basename so classification matches
+     * what it would have gotten with the old flat-name flow. */
+    const leafName = path.basename(safeName);
+    const category = classifyCodeArtifact(leafName, mimeType);
+    const text = await extractCodeArtifactText(buffer, leafName, mimeType, category);
 
     const file = {
       file_id,
