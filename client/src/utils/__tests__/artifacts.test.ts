@@ -339,6 +339,40 @@ describe('languageForFilename', () => {
     expect(languageForFilename('pkg.v1/main.go')).toBe('go');
     expect(languageForFilename('a.b.c/script.py')).toBe('python');
   });
+
+  /* Codex review P3: when a file routes to CODE via MIME-only (e.g.
+   * `noext` filename + `text/x-python` MIME), we still want a language
+   * hint on the fenced block so the future highlighter swap-in can
+   * apply syntax colors. Without the MIME fallback, `language-` is
+   * empty and the highlighter can't engage. */
+  it('falls back to MIME when filename has no extension and no recognized bare name', () => {
+    expect(languageForFilename('noext', 'text/x-python')).toBe('python');
+    expect(languageForFilename('noext', 'text/x-go')).toBe('go');
+    expect(languageForFilename('noext', 'application/x-sh')).toBe('bash');
+    expect(languageForFilename(undefined, 'text/x-rust')).toBe('rust');
+  });
+
+  it('strips MIME parameters before lookup (charset, etc.)', () => {
+    expect(languageForFilename('noext', 'text/x-python; charset=utf-8')).toBe('python');
+    expect(languageForFilename('noext', 'TEXT/X-PYTHON;charset=utf-8')).toBe('python');
+  });
+
+  it('prefers extension over MIME when both are present (extension is more reliable)', () => {
+    /* `simple_graph.py` + a wrong/generic MIME → extension wins. */
+    expect(languageForFilename('simple_graph.py', 'application/octet-stream')).toBe('python');
+    expect(languageForFilename('main.go', 'text/x-python')).toBe('go');
+  });
+
+  it('prefers bare-name over MIME for build files', () => {
+    /* `Dockerfile` + a generic MIME → bare-name wins. */
+    expect(languageForFilename('Dockerfile', 'text/plain')).toBe('dockerfile');
+  });
+
+  it('returns empty string when no signal yields a hint (extensionless + unknown MIME)', () => {
+    expect(languageForFilename('noext', 'application/octet-stream')).toBe('');
+    expect(languageForFilename('noext', undefined)).toBe('');
+    expect(languageForFilename('noext')).toBe('');
+  });
 });
 
 describe('fileToArtifact', () => {
@@ -364,6 +398,101 @@ describe('fileToArtifact', () => {
 
   it('returns null for unsupported types so callers can fall through', () => {
     expect(fileToArtifact({ ...baseFile, filename: 'data.csv', type: 'text/csv' })).toBeNull();
+  });
+
+  /* End-to-end test for the CODE bucket. The classification path is
+   * covered separately in `detectArtifactTypeFromFile`'s describe block;
+   * this asserts that the full `Artifact` object (id / type / title /
+   * content / messageId / lastUpdateTime) is constructed correctly for
+   * a typical Python file. Locks in the empty-text gate exception for
+   * CODE and the title pass-through that `useArtifactProps` reads to
+   * derive the language hint. */
+  it('builds a CODE-typed Artifact for a .py file with text', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'simple_graph.py',
+      type: 'text/x-python',
+      text: 'import matplotlib.pyplot as plt\nplt.savefig("foo.png")',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    expect(artifact!.title).toBe('simple_graph.py');
+    expect(artifact!.content).toBe('import matplotlib.pyplot as plt\nplt.savefig("foo.png")');
+    expect(artifact!.id).toBe('tool-artifact-fid-1');
+    expect(artifact!.messageId).toBe('msg-1');
+  });
+
+  it('builds a CODE-typed Artifact for an empty .py file (empty-text exception applies)', () => {
+    /* CODE joins MARKDOWN/PLAIN_TEXT in the empty-text exception so an
+     * empty Python file still surfaces in the side panel rather than
+     * silently disappearing. */
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'empty.py',
+      type: 'text/x-python',
+      text: '',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    expect(artifact!.content).toBe('');
+  });
+
+  it('builds a CODE-typed Artifact for an extensionless build file (Dockerfile)', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'Dockerfile',
+      type: '',
+      text: 'FROM alpine\nRUN apk add curl',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    expect(artifact!.title).toBe('Dockerfile');
+    /* Bare-name resolved → `dockerfile` language hint stored on the
+     * artifact so `useArtifactProps` doesn't have to re-derive it. */
+    expect(artifact!.language).toBe('dockerfile');
+  });
+
+  /* Codex review P3: language is resolved AT CONSTRUCTION TIME so the
+   * MIME fallback fires for extensionless filenames. Without storing
+   * the language on the artifact, `useArtifactProps` would re-derive
+   * from `artifact.title` alone (which has no MIME context) and emit
+   * an empty `language-` class. */
+  it('stores the language hint on CODE artifacts (filename-derived)', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'app.py',
+      type: 'text/x-python',
+      text: 'print(1)',
+    });
+    expect(artifact!.language).toBe('python');
+  });
+
+  it('stores the MIME-derived language on CODE artifacts when filename has no extension', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'noext',
+      type: 'text/x-python',
+      text: 'print(1)',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.CODE);
+    expect(artifact!.language).toBe('python');
+  });
+
+  it('does not set language on non-CODE artifacts', () => {
+    /* Markdown / HTML / etc. don't need a language hint — `useArtifactProps`
+     * uses different rendering paths for those. Keeping `language`
+     * undefined for them avoids confusing `getKey` which does include
+     * `language` in its cache key. */
+    const html = fileToArtifact(baseFile);
+    expect(html!.language).toBeUndefined();
+    const md = fileToArtifact({
+      ...baseFile,
+      filename: 'README.md',
+      type: 'text/markdown',
+      text: '# hi',
+    });
+    expect(md!.language).toBeUndefined();
   });
 
   it('returns null when an HTML/React/Mermaid file has no text', () => {

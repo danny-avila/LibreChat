@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
-import useArtifactProps, { wrapAsFencedCodeBlock } from '../useArtifactProps';
-import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
+import useArtifactProps from '../useArtifactProps';
+import { TOOL_ARTIFACT_TYPES, wrapAsFencedCodeBlock } from '~/utils/artifacts';
 import type { Artifact } from '~/common';
 
 describe('useArtifactProps', () => {
@@ -274,6 +274,35 @@ describe('useArtifactProps', () => {
       const html = result.current.files['index.html'] as string;
       expect(html).toContain('<!DOCTYPE html>');
       expect(html).toContain('marked.parse');
+    });
+
+    /* Codex review P3: when `fileToArtifact` resolved a language via
+     * MIME fallback (extensionless title, useful MIME), the resolved
+     * value is stored on `artifact.language`. The hook reads it
+     * directly so the fence still gets the right `language-<x>` class. */
+    it('uses pre-resolved artifact.language (covers MIME fallback for extensionless titles)', () => {
+      const artifact = createArtifact({
+        type: TOOL_ARTIFACT_TYPES.CODE,
+        title: 'noext',
+        language: 'python',
+        content: 'print(1)',
+      });
+      const { result } = renderHook(() => useArtifactProps({ artifact }));
+      const md = result.current.files['content.md'] as string;
+      expect(md.startsWith('```python\n')).toBe(true);
+    });
+
+    it('falls back to title-derived language when artifact.language is unset', () => {
+      /* Older callers that don't populate `language` still get a
+       * sensible fence via title-based lookup. */
+      const artifact = createArtifact({
+        type: TOOL_ARTIFACT_TYPES.CODE,
+        title: 'app.js',
+        content: 'console.log("hi");',
+      });
+      const { result } = renderHook(() => useArtifactProps({ artifact }));
+      const md = result.current.files['content.md'] as string;
+      expect(md.startsWith('```javascript\n')).toBe(true);
     });
   });
 });
