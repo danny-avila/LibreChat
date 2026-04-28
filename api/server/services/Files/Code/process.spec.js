@@ -49,7 +49,8 @@ jest.mock('@librechat/api', () => {
   return {
     logAxiosError: jest.fn(),
     getBasePath: jest.fn(() => ''),
-    sanitizeFilename: jest.fn((name) => name),
+    sanitizeArtifactPath: jest.fn((name) => name),
+    flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
     /**
      * Arrow-function indirection (vs. a direct `jest.fn()` reference) so
@@ -272,6 +273,94 @@ describe('Code Process', () => {
         expect(result.type).toBe('text/plain');
         expect(result.filepath).toBe('/uploads/saved-file.txt');
         expect(result.bytes).toBe(100);
+      });
+
+      it('preserves nested directory paths in the DB record while flattening the storage key', async () => {
+        /* Regression test for the silent-data-loss path: when codeapi reports a
+         * file with a nested name like "test_folder/test_file.txt", LibreChat
+         * used to feed it through `sanitizeFilename` (basename-only), which
+         * persisted "test_file.txt" to the DB and made the file un-locatable on
+         * the next prime() (cat /mnt/data/test_folder/test_file.txt would
+         * 404). The fix: keep the path on the DB record (so primeFiles can
+         * place it back at the same nested location), but flatten it for the
+         * storage key (saveBuffer strategies key by single component). */
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+        const mockSaveBuffer = jest.fn().mockResolvedValue('/uploads/saved.txt');
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        const result = await processCodeOutput({
+          ...baseParams,
+          name: 'test_folder/test_file.txt',
+        });
+
+        // Storage key flattens `/` to `__` so on-disk strategies don't
+        // accidentally create real subdirectories under uploads/.
+        expect(mockSaveBuffer).toHaveBeenCalledWith(
+          expect.objectContaining({
+            fileName: 'mock-uuid-1234__test_folder__test_file.txt',
+          }),
+        );
+        // DB row keeps the nested path verbatim — that's what primeFiles
+        // ships back to the sandbox on the next turn.
+        expect(result.filename).toBe('test_folder/test_file.txt');
+        // Claim is also keyed by the path-preserving name so the
+        // (filename, conversationId) compound key stays consistent.
+        expect(mockClaimCodeFile).toHaveBeenCalledWith(
+          expect.objectContaining({ filename: 'test_folder/test_file.txt' }),
+        );
+      });
+
+      it('passes a NAME_MAX-aware budget to flattenArtifactPath when composing the storage key', async () => {
+        /* Codex review P1: per-segment caps on the path-preserving form
+         * aren't enough — once the segments are joined with `__` for the
+         * storage key, deeply-nested or moderately long paths can still
+         * exceed filesystem NAME_MAX (255) and cause `ENAMETOOLONG` in
+         * saveBuffer. processCodeOutput must pass a file_id-aware budget
+         * to flattenArtifactPath so the cap holds end-to-end. The unit
+         * tests in `packages/api/src/utils/files.spec.ts` cover the
+         * truncation logic itself; this test covers the integration. */
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+        const mockSaveBuffer = jest.fn().mockResolvedValue('/uploads/saved.bin');
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        const flattenSpy = require('@librechat/api').flattenArtifactPath;
+        flattenSpy.mockClear();
+
+        await processCodeOutput({ ...baseParams, name: 'a/b/c.csv' });
+
+        // The handler should call flattenArtifactPath with both the
+        // safeName AND a budget = NAME_MAX (255) minus the prefix
+        // (`${file_id}__`). file_id mock is `mock-uuid-1234` (14 chars),
+        // so the budget should be 255 - 14 - 2 = 239.
+        expect(flattenSpy).toHaveBeenCalledWith(expect.any(String), 239);
+      });
+
+      it('passes the basename (not the full nested path) to classifyCodeArtifact and extractCodeArtifactText', async () => {
+        /* Codex review P2: with the path-preserving sanitizer, `safeName`
+         * can be a nested string like `reports.v1/Makefile`. The
+         * classifier reads `extensionOf` against the full string, which
+         * sees `.v1/Makefile` after the dotted-dir's first dot and
+         * misclassifies the file as `other` (so text extraction is
+         * skipped). Pass `path.basename(safeName)` instead. */
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+        const mockSaveBuffer = jest.fn().mockResolvedValue('/uploads/saved.txt');
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        await processCodeOutput({
+          ...baseParams,
+          name: 'reports.v1/Makefile',
+        });
+
+        expect(mockClassifyCodeArtifact).toHaveBeenCalledWith('Makefile', expect.any(String));
+        expect(mockExtractCodeArtifactText).toHaveBeenCalledWith(
+          expect.any(Buffer),
+          'Makefile',
+          expect.any(String),
+          expect.any(String),
+        );
       });
 
       it('should detect MIME type from buffer', async () => {

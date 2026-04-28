@@ -5,7 +5,8 @@ const { getCodeBaseURL } = require('@librechat/agents');
 const {
   getBasePath,
   logAxiosError,
-  sanitizeFilename,
+  sanitizeArtifactPath,
+  flattenArtifactPath,
   createAxiosInstance,
   classifyCodeArtifact,
   codeServerHttpAgent,
@@ -134,14 +135,32 @@ const processCodeOutput = async ({
 
     const fileIdentifier = `${session_id}/${id}`;
 
+    /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
+     * so the next prime() can place the file at the same nested path in the
+     * sandbox; flattening would re-create the bug where every nested artifact
+     * collapsed into the root and read_file calls 404'd. The flat-form
+     * storage key is composed below once `file_id` is known so we can cap
+     * the total length at filesystem NAME_MAX. */
+    const safeName = sanitizeArtifactPath(name);
+    if (safeName !== name) {
+      logger.warn(
+        `[processCodeOutput] Filename sanitized: "${name}" -> "${safeName}" | conv=${conversationId}`,
+      );
+    }
+
     /**
      * Atomically claim a file_id for this (filename, conversationId, context) tuple.
      * Uses $setOnInsert so concurrent calls for the same filename converge on
      * a single record instead of creating duplicates (TOCTOU race fix).
+     *
+     * Claim by `safeName` (not raw `name`) so the claim and the eventual
+     * `createFile` agree on the filename column — otherwise weird inputs
+     * (e.g. `"proj name/file@v1.txt"`) would claim under the raw name and
+     * then write under the sanitized one, leaving the claim row orphaned.
      */
     const newFileId = v4();
     const claimed = await claimCodeFile({
-      filename: name,
+      filename: safeName,
       conversationId,
       file_id: newFileId,
       user: req.user.id,
@@ -151,14 +170,7 @@ const processCodeOutput = async ({
 
     if (isUpdate) {
       logger.debug(
-        `[processCodeOutput] Updating existing file "${name}" (${file_id}) instead of creating duplicate`,
-      );
-    }
-
-    const safeName = sanitizeFilename(name);
-    if (safeName !== name) {
-      logger.warn(
-        `[processCodeOutput] Filename sanitized: "${name}" -> "${safeName}" | conv=${conversationId}`,
+        `[processCodeOutput] Updating existing file "${safeName}" (${file_id}) instead of creating duplicate`,
       );
     }
 
@@ -226,7 +238,19 @@ const processCodeOutput = async ({
       );
     }
 
-    const fileName = `${file_id}__${safeName}`;
+    /* Compose the storage key here, after `file_id` is known, so the
+     * `flattenArtifactPath` cap budget can be calculated against the
+     * actual prefix length. The full key has to fit in one filesystem
+     * path component (NAME_MAX = 255 on most filesystems); without this
+     * cap, deeply-nested artifact paths whose individual segments were
+     * within bounds can still produce a flat form that overflows once
+     * `${file_id}__` is prepended, causing `ENAMETOOLONG` inside
+     * saveBuffer and falling back to a download URL. The 255 figure is
+     * the conservative cross-platform NAME_MAX (Linux ext4, NTFS, APFS).
+     */
+    const NAME_MAX = 255;
+    const flatName = flattenArtifactPath(safeName, NAME_MAX - file_id.length - 2);
+    const fileName = `${file_id}__${flatName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,
       buffer,
@@ -234,8 +258,19 @@ const processCodeOutput = async ({
       basePath: 'uploads',
     });
 
-    const category = classifyCodeArtifact(safeName, mimeType);
-    const text = await extractCodeArtifactText(buffer, safeName, mimeType, category);
+    /* `classifyCodeArtifact` and `extractCodeArtifactText` make
+     * extension/bare-name decisions on the input string. With the
+     * path-preserving sanitizer they can now receive a nested path like
+     * `reports.v1/Makefile`, which the classifier's `extensionOf` reads
+     * as `v1/Makefile` (the slice after the dot in the directory name)
+     * and the bare-name branch rejects because it sees a `.` anywhere in
+     * the string. Result: extensionless artifacts under dotted folders
+     * (Makefile, Dockerfile, etc.) get misclassified as `other` and
+     * skip text extraction. Pass the basename so classification matches
+     * what it would have gotten with the old flat-name flow. */
+    const leafName = path.basename(safeName);
+    const category = classifyCodeArtifact(leafName, mimeType);
+    const text = await extractCodeArtifactText(buffer, leafName, mimeType, category);
 
     const file = {
       file_id,
