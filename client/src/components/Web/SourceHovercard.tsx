@@ -1,6 +1,6 @@
 import React, { ReactNode } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { ChevronDown, Paperclip } from 'lucide-react';
+import { ChevronDown, ExternalLink, Paperclip } from 'lucide-react';
 import { VisuallyHidden } from '@ariakit/react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -10,6 +10,9 @@ export interface SourceData {
   title?: string;
   attribution?: string;
   snippet?: string;
+  imanage_url?: string;
+  imanage_preview_url?: string;
+  metadata?: Record<string, unknown>;
 }
 
 interface SourceHovercardProps {
@@ -20,6 +23,7 @@ interface SourceHovercardProps {
   onClick?: (e: React.MouseEvent) => void;
   isFile?: boolean;
   isLocalFile?: boolean;
+  imanageUrl?: string | null;
   children?: ReactNode;
 }
 
@@ -52,6 +56,7 @@ export function SourceHovercard({
   onClick,
   isFile = false,
   isLocalFile = false,
+  imanageUrl,
   children,
 }: SourceHovercardProps) {
   const localize = useLocalize();
@@ -129,6 +134,27 @@ export function SourceHovercard({
                     </a>
                   )}
                 </span>
+
+                {imanageUrl ? (
+                  <a
+                    href={imanageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mb-2 inline-flex items-center gap-1 rounded-md border border-border-light px-2 py-1 text-xs font-medium text-[#0066cc] hover:bg-surface-tertiary hover:underline dark:text-blue-400"
+                  >
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                    iManage에서 보기
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="mb-2 inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-border-light px-2 py-1 text-xs font-medium text-text-tertiary opacity-70"
+                  >
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                    iManage에서 보기
+                  </button>
+                )}
 
                 {isFile ? (
                   <>

@@ -39,6 +39,32 @@ function hasImanageUrl(source: BklSource | null): boolean {
   );
 }
 
+function getDocId(source: BklSource | null): string | null {
+  const meta = source?.metadata?.[0];
+  if (typeof meta?.doc_id === 'string' && meta.doc_id) return meta.doc_id;
+
+  const sourceUrl = source?.source?.url ?? source?.source?.embed_url;
+  if (!sourceUrl?.includes('/v1/source-files/')) return null;
+  return (
+    decodeURIComponent(sourceUrl.split('/v1/source-files/')[1]?.split(/[?#]/)[0] ?? '') || null
+  );
+}
+
+function withImanageUrl(source: BklSource, imanageUrl: string): BklSource {
+  const metadata = source.metadata?.length
+    ? [{ ...source.metadata[0], imanage_url: imanageUrl, imanage_preview_url: imanageUrl }]
+    : source.metadata;
+  return {
+    ...source,
+    source: {
+      ...source.source,
+      imanage_url: imanageUrl,
+      imanage_preview_url: imanageUrl,
+    },
+    metadata,
+  };
+}
+
 function getRequestId(messageId?: string): string | null {
   if (!messageId) return null;
   const win = window as any;
@@ -87,6 +113,13 @@ async function fetchSources(
   return { sources, requestId: requestId ?? data.request_id ?? null };
 }
 
+async function fetchImanageUrlByDocId(docId: string): Promise<string | null> {
+  const resp = await fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`);
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  return data.imanage_url ?? data.imanage_preview_url ?? null;
+}
+
 export default function ChunkModal({
   isOpen,
   onClose,
@@ -117,23 +150,32 @@ export default function ChunkModal({
     }
 
     let cancelled = false;
+    const docId = getDocId(resolvedSource);
     const requestId = getRequestId(messageId);
-    const attemptKey = `${messageId ?? 'unknown'}:${citationNumber}:${requestId ?? 'latest'}`;
+    const attemptKey = `${messageId ?? 'unknown'}:${citationNumber}:${docId ?? requestId ?? 'latest'}`;
     if (attemptedEnrichmentRef.current === attemptKey) {
       return;
     }
     attemptedEnrichmentRef.current = attemptKey;
 
-    fetchSources(requestId)
-      .then((result) => {
-        if (cancelled || !result) return;
-        cacheSources(messageId, result.requestId, result.sources);
-        const nextSource = result.sources[citationNumber - 1] ?? null;
-        if (nextSource) setResolvedSource(nextSource);
-      })
-      .catch(() => {
-        /* Leave the existing source visible if enrichment fails. */
-      });
+    (async () => {
+      if (docId && resolvedSource) {
+        const imanageUrl = await fetchImanageUrlByDocId(docId);
+        if (cancelled) return;
+        if (imanageUrl) {
+          setResolvedSource(withImanageUrl(resolvedSource, imanageUrl));
+          return;
+        }
+      }
+
+      const result = await fetchSources(requestId);
+      if (cancelled || !result) return;
+      cacheSources(messageId, result.requestId, result.sources);
+      const nextSource = result.sources[citationNumber - 1] ?? null;
+      if (nextSource) setResolvedSource(nextSource);
+    })().catch(() => {
+      /* Leave the existing source visible if enrichment fails. */
+    });
 
     return () => {
       cancelled = true;
@@ -204,7 +246,7 @@ export default function ChunkModal({
                   <ExternalLink className="size-4" />
                 </a>
               )}
-              {imanageUrl && (
+              {imanageUrl ? (
                 <a
                   href={imanageUrl}
                   target="_blank"
@@ -214,8 +256,19 @@ export default function ChunkModal({
                   title="iManage에서 보기"
                 >
                   <ExternalLink className="size-3.5" />
-                  iManage
+                  iManage에서 보기
                 </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex h-7 cursor-not-allowed items-center gap-1 rounded-md px-2 text-xs text-text-tertiary opacity-70"
+                  aria-label="iManage 링크 확인 중"
+                  title="iManage 링크 확인 중"
+                >
+                  <ExternalLink className="size-3.5" />
+                  iManage에서 보기
+                </button>
               )}
               <button
                 ref={closeButtonRef}

@@ -124,17 +124,6 @@ function loadSourcesFromStorage(messageId: string): BklSource[] | null {
   return null;
 }
 
-function sourceHasImanageUrl(source: BklSource | null): boolean {
-  if (!source) return false;
-  const meta = source.metadata?.[0];
-  return Boolean(
-    source.source?.imanage_url ||
-      source.source?.imanage_preview_url ||
-      (typeof meta?.imanage_url === 'string' && meta.imanage_url) ||
-      (typeof meta?.imanage_preview_url === 'string' && meta.imanage_preview_url),
-  );
-}
-
 async function fetchSourcesForMessage(
   messageId: string,
   { forceRefresh = false }: { forceRefresh?: boolean } = {},
@@ -263,11 +252,9 @@ export default function BklCitation({ n }: BklCitationProps) {
       let source: BklSource | null =
         Array.isArray(cachedSources) && cachedSources[n - 1] ? cachedSources[n - 1] : null;
 
-      if (!source || !sourceHasImanageUrl(source)) {
+      if (!source) {
         setLoading(true);
-        const sources = await fetchSourcesForMessage(messageId, {
-          forceRefresh: true,
-        });
+        const sources = await fetchSourcesForMessage(messageId);
         setLoading(false);
         source = sources?.[n - 1] ?? source ?? null;
         if (!label) {

@@ -1,4 +1,4 @@
-import { memo, useState, useContext, useCallback } from 'react';
+import { memo, useState, useContext, useCallback, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import type { CitationProps } from './types';
@@ -7,6 +7,40 @@ import { CitationContext, useCitation, useCompositeCitations } from './Context';
 import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+
+function getImanageUrl(source?: Record<string, unknown> | null): string | null {
+  if (!source) return null;
+  const direct =
+    typeof source.imanage_url === 'string'
+      ? source.imanage_url
+      : typeof source.imanage_preview_url === 'string'
+        ? source.imanage_preview_url
+        : null;
+  if (direct) return direct;
+
+  const metadata = source.metadata as Record<string, unknown> | undefined;
+  if (typeof metadata?.imanage_url === 'string') return metadata.imanage_url;
+  if (typeof metadata?.imanage_preview_url === 'string') return metadata.imanage_preview_url;
+  return null;
+}
+
+function getDocId(source?: Record<string, unknown> | null): string | null {
+  if (!source) return null;
+  const metadata = source.metadata as Record<string, unknown> | undefined;
+  if (typeof metadata?.doc_id === 'string' && metadata.doc_id) return metadata.doc_id;
+  if (typeof source.doc_id === 'string' && source.doc_id) return source.doc_id;
+
+  const link = typeof source.link === 'string' ? source.link : '';
+  if (!link.includes('/v1/source-files/')) return null;
+  return decodeURIComponent(link.split('/v1/source-files/')[1]?.split(/[?#]/)[0] ?? '') || null;
+}
+
+async function fetchBklCitationImanageUrl(docId: string): Promise<string | null> {
+  const resp = await fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`);
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  return data.imanage_url ?? data.imanage_preview_url ?? null;
+}
 
 interface CompositeCitationProps {
   citationId?: string;
@@ -127,6 +161,7 @@ export function Citation(props: CitationComponentProps) {
     refType: citation?.refType,
     index: citation?.index || 0,
   });
+  const [imanageUrl, setImanageUrl] = useState<string | null>(null);
 
   // Setup file download hook
   const isFileType = refData?.refType === 'file' && (refData as any)?.fileId;
@@ -180,6 +215,31 @@ export function Citation(props: CitationComponentProps) {
     [downloadFile, isFileType, isLocalFile, refData, localize, showToast],
   );
 
+  useEffect(() => {
+    if (!refData) return;
+    const directUrl = getImanageUrl(refData as unknown as Record<string, unknown>);
+    if (directUrl) {
+      setImanageUrl(directUrl);
+      return;
+    }
+
+    const docId = getDocId(refData as unknown as Record<string, unknown>);
+    if (!docId) return;
+
+    let cancelled = false;
+    fetchBklCitationImanageUrl(docId)
+      .then((url) => {
+        if (!cancelled && url) setImanageUrl(url);
+      })
+      .catch(() => {
+        /* iManage link is optional; keep the source hovercard usable. */
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [citation?.index, refData]);
+
   if (!refData) return null;
 
   const getCitationLabel = () => {
@@ -200,6 +260,7 @@ export function Citation(props: CitationComponentProps) {
       onClick={isFileType && !isLocalFile ? handleFileDownload : undefined}
       isFile={isFileType}
       isLocalFile={isLocalFile}
+      imanageUrl={imanageUrl}
     />
   );
 }
