@@ -78,7 +78,7 @@ function cacheSources(
 async function fetchSources(
   requestId: string | null,
 ): Promise<{ sources: BklSource[]; requestId: string | null } | null> {
-  const url = requestId ? `/v1/sources/${requestId}` : '/v1/sources/latest';
+  const url = requestId ? `/bkl/v1/sources/${requestId}` : '/bkl/v1/sources/latest';
   const resp = await fetch(url);
   if (!resp.ok) return null;
   const data = await resp.json();

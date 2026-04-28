@@ -9,7 +9,7 @@ type BklCitationProps = {
   n: number;
 };
 
-const BKL_API = '';
+const BKL_API = '/bkl';
 
 const _fetchInflight = new Set<string>();
 
