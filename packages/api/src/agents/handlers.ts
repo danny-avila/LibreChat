@@ -159,7 +159,12 @@ function addLineNumbers(content: string): string {
  * code-execution artifact pipeline — re-attaching here would dup it.
  */
 const BINARY_EXTENSIONS_NEVER_READABLE = new Set([
-  // Images (already attached as artifacts by the code-execution pipeline)
+  // Raster images (already attached as artifacts by the code-execution
+  // pipeline). `.svg` is intentionally NOT in this list — it's an XML
+  // text format with no mojibake risk, and there are legitimate reasons
+  // for the model to inspect or edit a generated SVG. The post-fetch
+  // NUL-byte sniff still catches anything that turns out to be binary
+  // despite a `.svg` extension.
   '.png',
   '.jpg',
   '.jpeg',
@@ -172,7 +177,6 @@ const BINARY_EXTENSIONS_NEVER_READABLE = new Set([
   '.heic',
   '.heif',
   '.avif',
-  '.svg',
   // Documents (binary container formats)
   '.pdf',
   '.doc',
@@ -251,7 +255,6 @@ const IMAGE_EXTENSIONS_FOR_HINT = new Set([
   '.heic',
   '.heif',
   '.avif',
-  '.svg',
 ]);
 
 function lowercaseExtension(filePath: string): string {

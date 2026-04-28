@@ -1213,6 +1213,36 @@ describe('createToolExecuteHandler', () => {
         expect(readSandboxFile).toHaveBeenCalled();
         expect(result.status).toBe('success');
       });
+
+      it('reads SVG files as text (not blocked by the binary denylist)', async () => {
+        /* SVG is XML text — the model has legitimate reasons to inspect
+         * or edit generated SVG output (tweaking colors, paths, viewBox).
+         * The post-fetch NUL-byte sniff still rejects anything that
+         * turns out to be binary despite a `.svg` extension. */
+        const svgContent =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">\n' +
+          '  <circle cx="5" cy="5" r="4" />\n' +
+          '</svg>';
+        const readSandboxFile = jest.fn(async () => ({ content: svgContent }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_svg',
+            name: Constants.READ_FILE,
+            args: { file_path: '/mnt/data/icon.svg' },
+          },
+        ]);
+
+        expect(readSandboxFile).toHaveBeenCalled();
+        expect(result.status).toBe('success');
+        expect(result.content).toContain('<svg');
+        expect(result.content).toContain('viewBox');
+      });
     });
   });
 });
