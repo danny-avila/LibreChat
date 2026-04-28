@@ -405,6 +405,7 @@ export async function initializeAgent(
     agent.instructions = replaceSpecialVars({
       text: agent.instructions,
       user: req.user ? (req.user as unknown as TUser) : null,
+      timezone: req.body?.clientTimezone,
     });
   }
 
