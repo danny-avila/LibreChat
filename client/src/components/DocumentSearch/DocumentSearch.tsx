@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from 'librechat-data-provider';
+import { LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
 import { FileSearch, RotateCcw } from 'lucide-react';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useLocalize } from '~/hooks';
@@ -24,6 +24,11 @@ import FilterBar, {
 
 const DEFAULT_TOP_K = 50;
 const DEFAULT_CHUNKS_PER_DOC = 1000;
+const DEFAULT_APP_TITLE = 'BKL DB AI';
+
+function getAppTitle(): string {
+  return localStorage.getItem(LocalStorageKeys.APP_TITLE) || DEFAULT_APP_TITLE;
+}
 
 function toApiFilters(f: DocumentSearchFilterState): KeywordSearchFilters | undefined {
   const { from, to } = resolvePeriodRange(f);
@@ -47,7 +52,7 @@ const DocumentSearch: React.FC = () => {
   const [submittedQuery, setSubmittedQuery] = useState(queryFromUrl);
   const [filters, setFilters] = useState<DocumentSearchFilterState>(EMPTY_DOC_FILTERS);
 
-  useDocumentTitle(`${localize('com_nav_document_search')} | LibreChat`);
+  useDocumentTitle(`${localize('com_nav_document_search')} | ${getAppTitle()}`);
 
   const search = useDocumentKeywordSearch();
 
@@ -183,7 +188,7 @@ const DocumentSearch: React.FC = () => {
                   disabled={isSearching && !hasResults}
                 >
                   <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                  초기화
+                  {localize('com_ui_reset')}
                 </Button>
               )}
             </div>
@@ -309,7 +314,7 @@ const SearchHintPanel: React.FC<{
 
       <section
         aria-label={tipsHeading}
-        className="w-full max-w-3xl rounded-xl border border-border-light bg-surface-primary-alt/40 p-5"
+        className="bg-surface-primary-alt/40 w-full max-w-3xl rounded-xl border border-border-light p-5"
       >
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-tertiary">
           {tipsHeading}

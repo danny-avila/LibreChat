@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
+import { LocalStorageKeys, PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
@@ -21,6 +21,12 @@ import store from '~/store';
 
 interface AgentMarketplaceProps {
   className?: string;
+}
+
+const DEFAULT_APP_TITLE = 'BKL DB AI';
+
+function getAppTitle(): string {
+  return localStorage.getItem(LocalStorageKeys.APP_TITLE) || DEFAULT_APP_TITLE;
 }
 
 /**
@@ -57,7 +63,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Set page title
-  useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
+  useDocumentTitle(`${localize('com_agents_marketplace')} | ${getAppTitle()}`);
 
   // Ensure right sidebar is always visible in marketplace
   useEffect(() => {
