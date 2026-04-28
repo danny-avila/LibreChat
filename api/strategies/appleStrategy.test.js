@@ -6,6 +6,7 @@ const { Strategy: AppleStrategy } = require('passport-apple');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createSocialUser, handleExistingUser } = require('./process');
 const socialLogin = require('./socialLogin');
+const { buildAppleStrategyOptions } = require('./appleStrategy');
 const { findUser } = require('~/models');
 const { User } = require('~/db/models');
 
@@ -198,6 +199,50 @@ describe('Apple Login Strategy', () => {
         name: 'John Doe',
         emailVerified: true,
       });
+    });
+  });
+
+  describe('buildAppleStrategyOptions', () => {
+    const PEM = '-----BEGIN PRIVATE KEY-----\nMIIabc123\n-----END PRIVATE KEY-----';
+
+    beforeEach(() => {
+      delete process.env.APPLE_PRIVATE_KEY;
+      delete process.env.APPLE_PRIVATE_KEY_PATH;
+    });
+
+    it('uses privateKeyString when APPLE_PRIVATE_KEY is set (DO App Platform path)', () => {
+      process.env.APPLE_PRIVATE_KEY = PEM;
+      const opts = buildAppleStrategyOptions();
+      expect(opts.privateKeyString).toBe(PEM);
+      expect(opts.privateKeyLocation).toBeUndefined();
+    });
+
+    it('uses privateKeyLocation when only APPLE_PRIVATE_KEY_PATH is set (local dev)', () => {
+      process.env.APPLE_PRIVATE_KEY_PATH = '/path/to/AuthKey_ABC.p8';
+      const opts = buildAppleStrategyOptions();
+      expect(opts.privateKeyLocation).toBe('/path/to/AuthKey_ABC.p8');
+      expect(opts.privateKeyString).toBeUndefined();
+    });
+
+    it('prefers APPLE_PRIVATE_KEY over APPLE_PRIVATE_KEY_PATH when both are set', () => {
+      process.env.APPLE_PRIVATE_KEY = PEM;
+      process.env.APPLE_PRIVATE_KEY_PATH = '/path/to/AuthKey_ABC.p8';
+      const opts = buildAppleStrategyOptions();
+      expect(opts.privateKeyString).toBe(PEM);
+      expect(opts.privateKeyLocation).toBeUndefined();
+    });
+
+    it('normalizes literal \\n escape sequences in APPLE_PRIVATE_KEY', () => {
+      process.env.APPLE_PRIVATE_KEY =
+        '-----BEGIN PRIVATE KEY-----\\nMIIabc123\\n-----END PRIVATE KEY-----';
+      const opts = buildAppleStrategyOptions();
+      expect(opts.privateKeyString).toBe(PEM);
+    });
+
+    it('omits both key options when neither env var is set', () => {
+      const opts = buildAppleStrategyOptions();
+      expect(opts.privateKeyString).toBeUndefined();
+      expect(opts.privateKeyLocation).toBeUndefined();
     });
   });
 
