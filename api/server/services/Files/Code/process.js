@@ -138,12 +138,10 @@ const processCodeOutput = async ({
     /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
      * so the next prime() can place the file at the same nested path in the
      * sandbox; flattening would re-create the bug where every nested artifact
-     * collapsed into the root and read_file calls 404'd. `flatName` is for the
-     * local storage key only — `saveBuffer` strategies key by single
-     * filename, so we encode the path with `__` and the original is recovered
-     * from the DB record. */
+     * collapsed into the root and read_file calls 404'd. The flat-form
+     * storage key is composed below once `file_id` is known so we can cap
+     * the total length at filesystem NAME_MAX. */
     const safeName = sanitizeArtifactPath(name);
-    const flatName = flattenArtifactPath(safeName);
     if (safeName !== name) {
       logger.warn(
         `[processCodeOutput] Filename sanitized: "${name}" -> "${safeName}" | conv=${conversationId}`,
@@ -240,6 +238,18 @@ const processCodeOutput = async ({
       );
     }
 
+    /* Compose the storage key here, after `file_id` is known, so the
+     * `flattenArtifactPath` cap budget can be calculated against the
+     * actual prefix length. The full key has to fit in one filesystem
+     * path component (NAME_MAX = 255 on most filesystems); without this
+     * cap, deeply-nested artifact paths whose individual segments were
+     * within bounds can still produce a flat form that overflows once
+     * `${file_id}__` is prepended, causing `ENAMETOOLONG` inside
+     * saveBuffer and falling back to a download URL. The 255 figure is
+     * the conservative cross-platform NAME_MAX (Linux ext4, NTFS, APFS).
+     */
+    const NAME_MAX = 255;
+    const flatName = flattenArtifactPath(safeName, NAME_MAX - file_id.length - 2);
     const fileName = `${file_id}__${flatName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,

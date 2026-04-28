@@ -312,6 +312,32 @@ describe('Code Process', () => {
         );
       });
 
+      it('passes a NAME_MAX-aware budget to flattenArtifactPath when composing the storage key', async () => {
+        /* Codex review P1: per-segment caps on the path-preserving form
+         * aren't enough — once the segments are joined with `__` for the
+         * storage key, deeply-nested or moderately long paths can still
+         * exceed filesystem NAME_MAX (255) and cause `ENAMETOOLONG` in
+         * saveBuffer. processCodeOutput must pass a file_id-aware budget
+         * to flattenArtifactPath so the cap holds end-to-end. The unit
+         * tests in `packages/api/src/utils/files.spec.ts` cover the
+         * truncation logic itself; this test covers the integration. */
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+        const mockSaveBuffer = jest.fn().mockResolvedValue('/uploads/saved.bin');
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        const flattenSpy = require('@librechat/api').flattenArtifactPath;
+        flattenSpy.mockClear();
+
+        await processCodeOutput({ ...baseParams, name: 'a/b/c.csv' });
+
+        // The handler should call flattenArtifactPath with both the
+        // safeName AND a budget = NAME_MAX (255) minus the prefix
+        // (`${file_id}__`). file_id mock is `mock-uuid-1234` (14 chars),
+        // so the budget should be 255 - 14 - 2 = 239.
+        expect(flattenSpy).toHaveBeenCalledWith(expect.any(String), 239);
+      });
+
       it('should detect MIME type from buffer', async () => {
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });

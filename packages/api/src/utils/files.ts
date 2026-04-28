@@ -145,14 +145,49 @@ export function sanitizeArtifactPath(inputName: string): string {
   return capped.join('/');
 }
 
+/** Limit on `path.extname`'s "extension" length we'll honor when
+ * truncating a flat key. Real file extensions cap out around 8 chars
+ * (`.parquet`, `.tsv`, `.html`); a 16-char ceiling keeps us tolerant of
+ * legitimate edge cases (`.openshift`) while ignoring pathological
+ * outputs from `path.extname` on contrived inputs. Above that we treat
+ * the trailing `.foo` as part of the stem and just hard-truncate. */
+const FLAT_KEY_MAX_EXT_LENGTH = 16;
+
 /**
  * Map a (sanitized) artifact path to a flat storage-safe key. The local
  * storage strategies key by single component; this avoids creating
  * unintended subdirectories on disk while the DB record retains the
  * nested path for the next prime().
+ *
+ * Optionally caps the result at `maxLength` characters. Per-segment caps
+ * applied by `sanitizeArtifactPath` aren't enough on their own —
+ * `${file_id}__${flatName}` has to fit in one filesystem path component
+ * (NAME_MAX = 255 on most filesystems), so a deeply-nested path whose
+ * segments are individually within bounds can still produce a flat form
+ * that overflows once `${file_id}__` is prepended. The caller passes
+ * `255 - prefix.length` and the truncation preserves the leaf extension
+ * with the same disambiguating hex suffix that `sanitizeFilename` uses.
+ *
+ * Without this cap, oversized flat keys hit `ENAMETOOLONG` inside
+ * `saveBuffer`, the artifact falls back to a download URL, and the next
+ * prime() never sees it.
  */
-export function flattenArtifactPath(safePath: string): string {
-  return safePath.replace(/\//g, '__');
+export function flattenArtifactPath(safePath: string, maxLength?: number): string {
+  const flat = safePath.replace(/\//g, '__');
+  if (maxLength == null || flat.length <= maxLength) return flat;
+
+  /* Find the leaf's extension (last `.`) — segment separators are `__`,
+   * never `.`, so the last dot is always inside the leaf. Ignore
+   * "extensions" longer than `FLAT_KEY_MAX_EXT_LENGTH` so a pathological
+   * input doesn't leave us with no stem budget. */
+  const lastDot = flat.lastIndexOf('.');
+  const candidateExt = lastDot >= 0 ? flat.slice(lastDot) : '';
+  const ext =
+    candidateExt.length > 0 && candidateExt.length <= FLAT_KEY_MAX_EXT_LENGTH ? candidateExt : '';
+  const stem = ext ? flat.slice(0, lastDot) : flat;
+  // 7 = '-' + 6 hex disambiguator; minimum 1-char stem for sanity.
+  const stemBudget = Math.max(1, maxLength - ext.length - 7);
+  return stem.slice(0, stemBudget) + '-' + crypto.randomBytes(3).toString('hex') + ext;
 }
 
 /**

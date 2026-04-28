@@ -180,6 +180,60 @@ describe('flattenArtifactPath', () => {
   test('handles single-level nesting', () => {
     expect(flattenArtifactPath('test_folder/test_file.txt')).toBe('test_folder__test_file.txt');
   });
+
+  test('passes through unchanged when no maxLength is supplied', () => {
+    /* The cap is opt-in — callers that aren't building filesystem keys
+     * (e.g. tests, log messages) shouldn't get truncation. */
+    const longPath = 'a'.repeat(200) + '/' + 'b'.repeat(200) + '.txt';
+    expect(flattenArtifactPath(longPath)).toBe(longPath.replace(/\//g, '__'));
+  });
+
+  test('passes through unchanged when flat form fits within maxLength', () => {
+    expect(flattenArtifactPath('short/file.txt', 100)).toBe('short__file.txt');
+    expect(flattenArtifactPath('short/file.txt', 15)).toBe('short__file.txt');
+  });
+
+  test('truncates flat form when it exceeds maxLength, preserving leaf extension', () => {
+    /* Regression for the deep-nesting flat-key overflow path: three
+     * 100-char segments → 308-char flat form that would blow past
+     * NAME_MAX=255 once `${file_id}__` is prepended. The truncation
+     * keeps the .ext on the leaf so download MIME inference still works. */
+    const a = 'a'.repeat(100);
+    const b = 'b'.repeat(100);
+    const result = flattenArtifactPath(`${a}/${b}/c.txt`, 200);
+    expect(result.length).toBe(200);
+    expect(result.endsWith('.txt')).toBe(true);
+    expect(result).toMatch(/-abc123\.txt$/);
+  });
+
+  test('preserves the extension even when only the leaf overflows', () => {
+    const longLeaf = 'L'.repeat(300);
+    const result = flattenArtifactPath(`${longLeaf}.json`, 200);
+    expect(result.length).toBe(200);
+    expect(result.endsWith('.json')).toBe(true);
+  });
+
+  test('falls back to whole-key truncation (no extension preservation) when ext is pathologically long', () => {
+    /* `path.extname`-style logic: a single dot followed by 100 chars is
+     * not a real extension. Keep the cap honored even if a contrived
+     * input would yield a "stem budget" of zero or negative. */
+    const result = flattenArtifactPath('stem.' + 'x'.repeat(100), 50);
+    expect(result.length).toBe(50);
+  });
+
+  test('handles paths with no extension by truncating the stem', () => {
+    const longName = 'n'.repeat(300);
+    const result = flattenArtifactPath(longName, 50);
+    expect(result.length).toBe(50);
+    expect(result).toMatch(/-abc123$/);
+  });
+
+  test('matches the boundary length exactly when input is right at the cap', () => {
+    /* Off-by-one guard: maxLength of N should allow flat forms of N. */
+    const flat = 'a'.repeat(50);
+    expect(flattenArtifactPath(flat, 50)).toBe(flat);
+    expect(flattenArtifactPath(flat, 49).length).toBe(49);
+  });
 });
 
 describe('resolveUploadErrorMessage', () => {
