@@ -543,6 +543,15 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
     }
 
     for (const file of output.artifact.files) {
+      /* `inherited` files are unchanged passthroughs of inputs the caller
+       * already owns (skill files, prior session inputs, inherited
+       * .dirkeep markers). Skip post-processing: re-downloading with the
+       * user's session key 403s when the file is entity-scoped, and the
+       * input is already persisted at its origin. They remain available
+       * to subsequent calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
@@ -760,6 +769,15 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
     }
 
     for (const file of output.artifact.files) {
+      /* `inherited` files are unchanged passthroughs of inputs the caller
+       * already owns (skill files, prior session inputs, inherited
+       * .dirkeep markers). Skip post-processing: re-downloading with the
+       * user's session key 403s when the file is entity-scoped, and the
+       * input is already persisted at its origin. They remain available
+       * to subsequent calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
