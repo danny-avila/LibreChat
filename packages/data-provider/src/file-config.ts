@@ -183,7 +183,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|haansofthwp|json|msword|pdf|x-hwp|x-hwpx|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -256,6 +256,8 @@ export const codeTypeMapping: { [key: string]: string } = {
   xml: 'application/xml', // .xml - XML file
   html: 'text/html', // .html - HTML file
   htm: 'text/html', // .htm - HTML file
+  hwp: 'application/x-hwp', // .hwp - Hangul Word Processor
+  hwpx: 'application/x-hwpx', // .hwpx - Hangul Word Processor XML
   css: 'text/css', // .css - CSS file
   yml: 'application/yaml', // .yml - YAML
   yaml: 'application/yaml', // .yaml - YAML

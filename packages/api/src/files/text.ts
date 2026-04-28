@@ -24,6 +24,42 @@ export async function parseText({
   file: Express.Multer.File;
   file_id: string;
 }): Promise<{ text: string; bytes: number; source: string }> {
+  const bklApiBaseUrl = process.env.BKL_API_BASE_URL;
+  if (bklApiBaseUrl) {
+    try {
+      const formData = new FormData();
+      formData.append('file', createReadStream(file.path), file.originalname);
+
+      const response = await axios.post(
+        `${bklApiBaseUrl.replace(/\/$/, '')}/api/files/upload`,
+        formData,
+        {
+          headers: {
+            accept: 'application/json',
+            ...formData.getHeaders(),
+          },
+          timeout: 300000,
+        },
+      );
+
+      const responseData = response.data;
+      if (typeof responseData?.content === 'string') {
+        return {
+          text: responseData.content,
+          bytes: Buffer.byteLength(responseData.content, 'utf8'),
+          source: FileSources.text,
+        };
+      }
+
+      throw new Error('BKL API did not return extracted content');
+    } catch (error) {
+      logAxiosError({
+        message: '[parseText] BKL API text extraction failed, falling back',
+        error,
+      });
+    }
+  }
+
   if (!process.env.RAG_API_URL) {
     logger.debug('[parseText] RAG_API_URL not defined, falling back to native text parsing');
     return parseTextNative(file);
