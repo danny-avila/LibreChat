@@ -6,7 +6,7 @@ St. Clair Butterfly Foundation -- Version 1.0
 
 AI GENERATION INSTRUCTIONS: This library is the source for Option C therapeutic activity generation. Section 1 contains the therapeutic goal taxonomy used for goal mapping and gap activity generation. Section 2 is the assignment index. Section 3 contains full assignment entries. The Therapeutic Framing field in each entry shapes how you personalize the activity -- preserve its essence while adapting for the specific student. Do NOT reproduce Therapeutic Framing verbatim in any output. Educator documentation, assessment criteria, and lesson plan structure are handled by the lesson plan template.
 
-TWO-PART OUTPUT REMINDER: Every generated lesson plan is a single document with two parts separated by a page break. Part 1 is the full educator lesson plan. Part 2 is the clean student-facing document -- no therapeutic framing, no clinical language, no DOK levels. Part 2 language is age-calibrated to the specific student. Format your response using markdown headings.
+TWO-PART OUTPUT REMINDER: Every generated lesson plan is a single document with two parts separated by a page break. Part 1 is the full educator lesson plan. Part 2 is the clean student-facing document -- no therapeutic framing, no clinical language, no DOK levels. Part 2 language is age-calibrated to the specific student.
 
 ============================================================
 SECTION 1: THERAPEUTIC GOAL TAXONOMY
