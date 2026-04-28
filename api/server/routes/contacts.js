@@ -17,6 +17,7 @@ const upload = multer({
 
 /** Core schema fields — every other column goes into metadata */
 const SCHEMA_FIELDS = new Set(['name', 'company', 'role', 'email', 'notes']);
+const REQUIRED_FIELDS = ['name', 'company', 'role', 'email', 'notes'];
 
 /**
  * Parse a CSV buffer into an array of row objects.
@@ -78,7 +79,11 @@ router.get('/', async (req, res) => {
     const query = search ? { $text: { $search: search } } : {};
 
     const [contacts, total] = await Promise.all([
-      Contact.find(query).skip(skip).limit(parseInt(limit)).lean(),
+      Contact.find(query)
+        .select('name company role email notes -_id')
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
       Contact.countDocuments(query),
     ]);
 
@@ -102,6 +107,13 @@ router.post('/', async (req, res) => {
     const { attributes, metadata, ...rest } = req.body;
     // Accept both `attributes` (assignment API spec) and `metadata` (internal schema name)
     const contactData = { ...rest, metadata: metadata || attributes || {} };
+    if (contactData.email) {
+      contactData.email = String(contactData.email).trim().toLowerCase();
+      const existing = await Contact.findOne({ email: contactData.email }).select('_id').lean();
+      if (existing) {
+        return res.status(409).json({ error: 'Email already exists' });
+      }
+    }
     const contact = await Contact.create(contactData);
     res.status(201).json({ message: 'Contact created', data: contact });
   } catch (err) {
@@ -131,10 +143,10 @@ router.get('/:id', async (req, res) => {
 // CSV column rules:
 //   - Recognised schema columns (name, company, role, email, notes) → stored directly
 //   - Any other column (industry, location, funding_stage, interests, etc.) → stored in metadata{}
-//   - "name" is required — rows without it are skipped and counted as failed
+//   - Required core fields: name, company, role, email, notes
 //
 // Response:
-//   { total, success, failed, errors: [{row, identifier, error}], successSample }
+//   { total, success, failed }
 // ---------------------------------------------------------------------------
 router.post('/import/csv', upload.single('file'), async (req, res) => {
   if (!req.file) {
@@ -149,25 +161,21 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
 
   let success = 0;
   let failed = 0;
-  const errors = [];
-  const successSample = []; // first 10 inserted contacts for confirmation
   const CHUNK_SIZE = 1000;
 
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
     const chunk = rows.slice(i, i + CHUNK_SIZE);
     const docs = [];
+    const emailsInChunk = new Set();
 
     for (const row of chunk) {
       const { _rowNumber, ...fields } = row;
 
-      // Validation: name is required by schema
-      if (!fields.name || String(fields.name).trim() === '') {
+      const missingRequired = REQUIRED_FIELDS.find(
+        (field) => !fields[field] || String(fields[field]).trim() === '',
+      );
+      if (missingRequired) {
         failed++;
-        errors.push({
-          row: _rowNumber,
-          identifier: fields.email || fields.company || '—',
-          error: 'Missing required field: name',
-        });
         continue;
       }
 
@@ -184,45 +192,42 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
         }
       }
 
+      if (coreData.email) {
+        coreData.email = String(coreData.email).trim().toLowerCase();
+      }
+
+      if (emailsInChunk.has(coreData.email)) {
+        failed++;
+        continue;
+      }
+
+      emailsInChunk.add(coreData.email);
+
       docs.push({ ...coreData, metadata });
     }
 
     if (docs.length === 0) continue;
 
+    const existing = await Contact.find({ email: { $in: Array.from(emailsInChunk) } })
+      .select('email')
+      .lean();
+    const existingEmails = new Set(existing.map((item) => item.email));
+    const filteredDocs = docs.filter((doc) => !existingEmails.has(doc.email));
+    failed += docs.length - filteredDocs.length;
+
+    if (filteredDocs.length === 0) continue;
+
     try {
       // ordered: false = insert all valid docs even if some fail (e.g. duplicate email)
-      const result = await Contact.insertMany(docs, { ordered: false, rawResult: true });
-      const inserted = result.insertedCount ?? docs.length;
+      const result = await Contact.insertMany(filteredDocs, { ordered: false, rawResult: true });
+      const inserted = result.insertedCount ?? filteredDocs.length;
       success += inserted;
-
-      if (successSample.length < 10) {
-        docs.slice(0, Math.min(10 - successSample.length, inserted)).forEach((d) => {
-          successSample.push({ name: d.name, email: d.email || null });
-        });
-      }
     } catch (err) {
       // insertMany with ordered:false still throws on any write error
       // but result.nInserted tells us how many actually got in
       const inserted = err.result?.nInserted ?? 0;
       success += inserted;
-      failed += docs.length - inserted;
-
-      if (err.writeErrors) {
-        err.writeErrors.forEach((we) => {
-          const doc = docs[we.index];
-          errors.push({
-            row: `chunk-${Math.floor(i / CHUNK_SIZE) + 1}-item-${we.index + 1}`,
-            identifier: doc?.email || doc?.name || '—',
-            error: we.errmsg || 'Insert error',
-          });
-        });
-      } else {
-        errors.push({
-          row: `chunk-${Math.floor(i / CHUNK_SIZE) + 1}`,
-          identifier: '—',
-          error: err.message,
-        });
-      }
+      failed += filteredDocs.length - inserted;
     }
 
     // Brief pause between chunks to avoid overwhelming MongoDB on huge imports
@@ -236,8 +241,6 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
     total: rows.length,
     success,
     failed,
-    errors: errors.slice(0, 100), // cap error list at 100 entries in response
-    successSample,
   });
 });
 
