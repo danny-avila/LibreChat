@@ -3,9 +3,7 @@ import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import {
   FileSearch,
-  ImageUpIcon,
   FileType2Icon,
-  FileImageIcon,
   TerminalSquareIcon,
 } from 'lucide-react';
 import {
@@ -16,14 +14,10 @@ import {
   SharePointIcon,
 } from '@librechat/client';
 import {
-  Providers,
   EToolResources,
-  EModelEndpoint,
   defaultAgentCapabilities,
-  bedrockDocumentExtensions,
-  isDocumentSupportedProvider,
 } from 'librechat-data-provider';
-import type { EndpointFileConfig } from 'librechat-data-provider';
+import type { EModelEndpoint, EndpointFileConfig } from 'librechat-data-provider';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
@@ -38,13 +32,6 @@ import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
-type FileUploadType =
-  | 'image'
-  | 'document'
-  | 'image_document'
-  | 'image_document_extended'
-  | 'image_document_video_audio';
-
 interface AttachFileMenuProps {
   agentId?: string | null;
   endpoint?: string | null;
@@ -52,17 +39,14 @@ interface AttachFileMenuProps {
   conversationId: string;
   endpointType?: EModelEndpoint | string;
   endpointFileConfig?: EndpointFileConfig;
-  useResponsesApi?: boolean;
 }
 
 const AttachFileMenu = ({
   agentId,
   endpoint,
   disabled,
-  endpointType,
   conversationId,
   endpointFileConfig,
-  useResponsesApi,
 }: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
@@ -89,79 +73,23 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
+  const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(
     agentId,
     ephemeralAgent,
   );
 
-  const handleUploadClick = (fileType?: FileUploadType) => {
+  const handleUploadClick = () => {
     if (!inputRef.current) {
       return;
     }
     inputRef.current.value = '';
-    if (fileType === 'image') {
-      inputRef.current.accept = 'image/*,.heif,.heic';
-    } else if (fileType === 'document') {
-      inputRef.current.accept = '.pdf,application/pdf';
-    } else if (fileType === 'image_document') {
-      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf';
-    } else if (fileType === 'image_document_extended') {
-      inputRef.current.accept = `image/*,.heif,.heic,${bedrockDocumentExtensions}`;
-    } else if (fileType === 'image_document_video_audio') {
-      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
-    } else {
-      inputRef.current.accept = '';
-    }
-    inputRef.current.click();
     inputRef.current.accept = '';
+    inputRef.current.click();
   };
 
   const dropdownItems = useMemo(() => {
-    const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
+    const createMenuItems = (onAction: () => void) => {
       const items: MenuItemProps[] = [];
-
-      let currentProvider = provider || endpoint;
-
-      // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
-      if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
-        currentProvider = Providers.OPENROUTER;
-      }
-
-      const isAzureWithResponsesApi =
-        currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
-
-      if (
-        isDocumentSupportedProvider(endpointType) ||
-        isDocumentSupportedProvider(currentProvider) ||
-        isAzureWithResponsesApi
-      ) {
-        items.push({
-          label: localize('com_ui_upload_provider'),
-          onClick: () => {
-            setToolResource(undefined);
-            let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
-            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
-              fileType = 'image_document_video_audio';
-            } else if (
-              currentProvider === Providers.BEDROCK ||
-              endpointType === EModelEndpoint.bedrock
-            ) {
-              fileType = 'image_document_extended';
-            }
-            onAction(fileType);
-          },
-          icon: <FileImageIcon className="icon-md" />,
-        });
-      } else {
-        items.push({
-          label: localize('com_ui_upload_image_input'),
-          onClick: () => {
-            setToolResource(undefined);
-            onAction('image');
-          },
-          icon: <ImageUpIcon className="icon-md" />,
-        });
-      }
 
       if (capabilities.contextEnabled) {
         items.push({
@@ -226,11 +154,7 @@ const AttachFileMenu = ({
     return localItems;
   }, [
     localize,
-    endpoint,
-    provider,
-    endpointType,
     capabilities,
-    useResponsesApi,
     setToolResource,
     setEphemeralAgent,
     sharePointEnabled,
