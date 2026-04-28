@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, memo, useState } from 'react';
 import { useAtomValue } from 'jotai';
-import { useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { type TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
+import ChunkModal, { type BklSource } from '~/components/Chat/Messages/Content/ChunkModal';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
@@ -57,13 +58,20 @@ function formatMs(ms: number): string {
 
 type BklTiming = { startTime: number; firstTokenTime: number | null; endTime: number };
 
+function getCachedBklSource(messageId: string, n: number): BklSource | null {
+  const sources = (window as any).__bklSources?.[messageId];
+  if (!Array.isArray(sources)) {
+    return null;
+  }
+  return sources[n - 1] ?? null;
+}
+
 function GenerationTimingText({ messageId }: { messageId: string }) {
   const [timing, setTiming] = useState<BklTiming | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const check = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const t = (window as any).__bklTiming?.[messageId];
       if (t && !cancelled) setTiming(t);
     };
@@ -135,6 +143,7 @@ const MessageRender = memo(function MessageRender({
   });
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const [activeBklSource, setActiveBklSource] = useRecoilState(store.activeBklSource);
 
   const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
   const hasNoChildren = !(msg?.children?.length ?? 0);
@@ -170,13 +179,18 @@ const MessageRender = memo(function MessageRender({
   const bklRid = useMemo(() => {
     const rid = extractBklRidFromMessage(msg);
     if (rid && messageId) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const win = window as any;
       win.__bklRids = win.__bklRids ?? {};
       win.__bklRids[messageId] = rid;
     }
     return rid;
   }, [msg, messageId]);
+  const activeSource = useMemo(() => {
+    if (!activeBklSource || activeBklSource.messageId !== messageId) {
+      return null;
+    }
+    return getCachedBklSource(messageId, activeBklSource.n);
+  }, [activeBklSource, messageId]);
   const messageContextValue = useMemo(
     () => ({
       messageId,
@@ -223,6 +237,12 @@ const MessageRender = memo(function MessageRender({
         'message-render',
       )}
     >
+      <ChunkModal
+        isOpen={activeBklSource?.messageId === messageId}
+        onClose={() => setActiveBklSource(null)}
+        source={activeSource}
+        citationNumber={activeBklSource?.n ?? 0}
+      />
       {!hasParallelContent && (
         <div className="relative flex flex-shrink-0 flex-col items-center">
           <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
@@ -261,9 +281,7 @@ const MessageRender = memo(function MessageRender({
               />
             </MessageContext.Provider>
           </div>
-          {!msg.isCreatedByUser && (
-            <GenerationTimingText messageId={msg.messageId} />
-          )}
+          {!msg.isCreatedByUser && <GenerationTimingText messageId={msg.messageId} />}
           {hasNoChildren && effectiveIsSubmitting ? (
             <PlaceholderRow />
           ) : (
