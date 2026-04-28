@@ -259,14 +259,14 @@ export default function BklCitation({ n }: BklCitationProps) {
       e.preventDefault();
       e.stopPropagation();
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cached = (window as any).__bklSources?.[messageId];
-      let source: BklSource | null = Array.isArray(cached) && cached[n - 1] ? cached[n - 1] : null;
+      const cachedSources = loadSourcesFromStorage(messageId);
+      let source: BklSource | null =
+        Array.isArray(cachedSources) && cachedSources[n - 1] ? cachedSources[n - 1] : null;
 
       if (!source || !sourceHasImanageUrl(source)) {
         setLoading(true);
         const sources = await fetchSourcesForMessage(messageId, {
-          forceRefresh: Boolean(source),
+          forceRefresh: true,
         });
         setLoading(false);
         source = sources?.[n - 1] ?? source ?? null;
