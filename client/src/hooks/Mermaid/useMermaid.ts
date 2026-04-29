@@ -1,10 +1,9 @@
 import { useContext, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { Md5 } from 'ts-md5';
-import DOMPurify from 'dompurify';
 import { ThemeContext, isDark } from '@librechat/client';
 import type { MermaidConfig } from 'mermaid';
-import { inlineFlowchartConfig } from '~/utils/mermaid';
+import { inlineFlowchartConfig, sanitizeMermaidSvg } from '~/utils/mermaid';
 
 // Constants
 const MD5_LENGTH_THRESHOLD = 10_000;
@@ -131,20 +130,7 @@ export const useMermaid = ({
       // Render to SVG
       const { svg } = await mermaidInstance.render(diagramId, content);
 
-      // Sanitize SVG output with DOMPurify for additional security
-      const purify = DOMPurify();
-      const sanitizedSvg = purify.sanitize(svg, {
-        USE_PROFILES: { svg: true, svgFilters: true },
-        // Allow additional elements used by mermaid for text rendering
-        ADD_TAGS: ['foreignObject', 'use', 'switch'],
-        ADD_ATTR: [
-          'dominant-baseline',
-          'text-anchor',
-          'requiredFeatures',
-          'systemLanguage',
-          'xmlns:xlink',
-        ],
-      });
+      const sanitizedSvg = sanitizeMermaidSvg(svg);
 
       // Store as last valid content
       setValidContent(sanitizedSvg);
