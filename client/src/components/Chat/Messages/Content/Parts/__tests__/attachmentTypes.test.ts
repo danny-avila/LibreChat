@@ -218,15 +218,15 @@ describe('isInternalSandboxArtifact', () => {
 });
 
 describe('displayFilename', () => {
-  it('strips the `-<6 hex>` collision suffix', () => {
-    expect(displayFilename('output-deadbe.csv')).toBe('output.csv');
-  });
-
-  it('restores the leading dot when paired with the suffix', () => {
+  it('strips suffix + restores leading dot for an extensionless sandbox dotfile', () => {
     expect(displayFilename('test_folder/_.dirkeep-88b30b')).toBe('test_folder/.dirkeep');
   });
 
-  it('preserves directory components', () => {
+  it('strips suffix + restores leading dot for a sanitized dotfile that has an extension', () => {
+    expect(displayFilename('_.config-abcdef.txt')).toBe('.config.txt');
+  });
+
+  it('preserves directory components on the dotfile path', () => {
     expect(displayFilename('a/b/_.config-abcdef')).toBe('a/b/.config');
   });
 
@@ -250,12 +250,23 @@ describe('displayFilename', () => {
     expect(displayFilename('build-1234567.log')).toBe('build-1234567.log');
   });
 
+  it('preserves a non-dotfile filename whose stem ends in `-<6 hex>` (codex regression)', () => {
+    /** The previous regex stripped any `-<6 hex>` immediately before an
+     * extension regardless of context. That collapsed legitimate
+     * user-named files like `report-deadbe.csv` and `report-beef01.csv`
+     * onto the same chip label `report.csv`. Without a structural
+     * discriminator (the leading `_.` we use for the dotfile case),
+     * we deliberately leave non-dotfile names alone — uglier when the
+     * file *was* sanitized, but never collapses distinct files. */
+    expect(displayFilename('report-deadbe.csv')).toBe('report-deadbe.csv');
+    expect(displayFilename('report-beef01.csv')).toBe('report-beef01.csv');
+    // Same shape inside a directory.
+    expect(displayFilename('out/output-deadbe.csv')).toBe('out/output-deadbe.csv');
+  });
+
   it('preserves an extensionless leaf that ends in 6 hex chars', () => {
-    /** The dotfile-anchored fallback only fires when the leaf starts
-     * with `_.` AND ends with `-XXXXXX`. A user-named extensionless
-     * file like `build-a1b2c3` has no `_.` prefix, so neither pattern
-     * matches and the name is preserved. Without that anchor an
-     * agent-emitted hash-named output would silently lose its tail. */
+    /** No `_.` prefix → no match. User-named hash-tail artifacts pass
+     * through unchanged. */
     expect(displayFilename('build-a1b2c3')).toBe('build-a1b2c3');
   });
 
@@ -263,13 +274,12 @@ describe('displayFilename', () => {
     expect(displayFilename('out/blob-deadbe')).toBe('out/blob-deadbe');
   });
 
-  it('strips the suffix AND restores the leading dot for a sanitized dotfile that has an extension', () => {
-    /** Pins the interaction between the two regex paths: the broad
-     * `COLLISION_SUFFIX_BEFORE_EXT` strips `-abcdef` before `.txt`, and
-     * the `_. → .` underscore-restore step then runs because the
-     * stripped form starts with `_.`. The two halves are tested
-     * separately above; this case exercises both in one input. */
-    expect(displayFilename('_.config-abcdef.txt')).toBe('.config.txt');
+  it('preserves a sanitized non-dotfile (we cannot tell sanitized from user-named here)', () => {
+    /** `report 1.csv` → backend sanitizes to `report_1-<hash>.csv`.
+     * We can't tell this apart from a user who literally named their
+     * file `report_1-abcdef.csv`, so we deliberately leave it alone.
+     * Recovering it cleanly would require backend metadata. */
+    expect(displayFilename('report_1-abcdef.csv')).toBe('report_1-abcdef.csv');
   });
 });
 

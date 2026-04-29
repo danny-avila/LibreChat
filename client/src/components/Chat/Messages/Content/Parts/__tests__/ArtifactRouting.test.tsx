@@ -594,13 +594,14 @@ describe('AttachmentGroup routing', () => {
     expect(filenames[1]).toMatch(/placeholder\.zip/);
   });
 
-  it('passes the de-suffixed name to FileContainer in the code-execution artifact bucket', () => {
-    /** `displayFilename` is now scoped to artifact-rendering call sites:
-     * `FileContainer` itself never strips the `-<6 hex>` suffix, so a
-     * user-uploaded `report-abc123.pdf` rendered through the upload chip
-     * stays intact. The artifact path explicitly opts into stripping by
-     * computing `displayName` and passing it down — verify that flow
-     * here so the chip shows `archive.zip`, not `archive-deadbe.zip`. */
+  it('passes a non-dotfile filename through to FileContainer unchanged', () => {
+    /** `displayFilename` deliberately leaves non-dotfile names alone —
+     * the `-<6 hex>` tail on `archive-deadbe.zip` could be either a
+     * user-named hash artifact OR a sanitization disambiguator, and
+     * collapsing both onto `archive.zip` would silently merge distinct
+     * files in the chip. Only the leading-`_.` dotfile shape has a
+     * structural discriminator strong enough to safely strip; everything
+     * else passes through verbatim. */
     const sandboxFile = baseAttachment({
       file_id: 'sandbox-zip',
       filename: 'archive-deadbe.zip',
@@ -609,7 +610,25 @@ describe('AttachmentGroup routing', () => {
     } as Partial<TAttachment>);
     const { container } = renderWith(<AttachmentGroup attachments={[sandboxFile]} />);
     const chip = container.querySelector('[data-testid="file-container"]');
-    expect(chip?.textContent).toBe('archive.zip');
+    expect(chip?.textContent).toBe('archive-deadbe.zip');
+  });
+
+  it('strips the suffix and restores the dot for a sandbox dotfile rendered through FileContainer', () => {
+    /** Counterpart: the dotfile shape `_.config-<hash>.zip` IS recoverable
+     * because the leading `_.` is the structural fingerprint. Confirm
+     * the artifact path's `displayName` flows through `FileContainer`
+     * for this case. Uses `.zip` (no panel-artifact extension mapping)
+     * so the attachment lands in the plain-file bucket rather than the
+     * PLAIN_TEXT panel-artifact bucket. */
+    const sandboxDotfile = baseAttachment({
+      file_id: 'sandbox-config',
+      filename: '_.config-abcdef.zip',
+      type: 'application/zip',
+      bytes: 12,
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<AttachmentGroup attachments={[sandboxDotfile]} />);
+    const chip = container.querySelector('[data-testid="file-container"]');
+    expect(chip?.textContent).toBe('.config.zip');
   });
 
   it('renders separate buckets for panel artifacts, mermaid, text, and plain files', () => {

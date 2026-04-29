@@ -20,25 +20,30 @@ import { detectArtifactTypeFromFile } from '~/utils/artifacts';
 const SANDBOX_PLACEHOLDER_LEAVES = /^_\.(?:dirkeep|gitkeep)-[0-9a-f]{6}$/i;
 
 /**
- * Two complementary patterns recover the user-visible filename from the
- * backend's sanitized form. Splitting them avoids the false-positive
- * where a legitimate filename happens to end in `-` + 6 hex chars:
+ * Recovers the user-visible filename from the backend's sanitized form.
  *
- *   - `COLLISION_SUFFIX_BEFORE_EXT` matches the suffix only when an
- *     extension follows (`output-deadbe.csv` → `output.csv`). This is
- *     the broad case from `embedDisambiguatorInLeaf` for non-dotfiles
- *     where sanitization mutated something (spaces, special chars).
+ * Anchored ONLY to the leading `_.` shape because that prefix is the
+ * unambiguous fingerprint of `sanitizeArtifactPath`'s leading-dot
+ * rewrite (`.dirkeep` → `_.dirkeep-88b30b`,
+ * `.config.txt` → `_.config-abcdef.txt`). No legitimate user-named
+ * file looks like `_.foo`, so the prefix + trailing `-<6 hex>`
+ * combination is safe to strip.
  *
- *   - `SANITIZED_DOTFILE_TRAILING_SUFFIX` matches only when the leaf
- *     starts with `_.` AND ends with `-XXXXXX`. That combination is
- *     the unambiguous fingerprint of `sanitizeArtifactPath`'s dotfile
- *     rewrite (`.dirkeep` → `_.dirkeep-88b30b`). Without this anchor,
- *     a user-named `build-a1b2c3` would lose its `-a1b2c3` suffix
- *     because there's no way to tell intent from a hex-shaped tail
- *     alone.
+ * Captures the leaf in two halves so the optional extension survives
+ * the rewrite:
+ *  - group 1: stem after the leading `_.` and before the suffix
+ *  - group 2: optional extension (`.txt`, `.csv`, …)
+ *
+ * **Deliberately does NOT cover the non-dotfile sanitization case**
+ * (`report 1.csv` → `report_1-<hash>.csv`). A hex-shaped tail before
+ * an extension has no structural discriminator vs. a user-named
+ * `report-deadbe.csv`, and stripping it would silently collapse two
+ * distinct user files (`report-deadbe.csv`, `report-beef01.csv`) onto
+ * the same chip label. Showing the suffix-bearing form is uglier but
+ * correct; recovering it cleanly would require a backend
+ * `wasSanitized` metadata flag we don't have today.
  */
-const COLLISION_SUFFIX_BEFORE_EXT = /-[0-9a-f]{6}(?=\.[^.]+$)/;
-const SANITIZED_DOTFILE_TRAILING_SUFFIX = /^(_\..+)-[0-9a-f]{6}$/;
+const SANITIZED_DOTFILE_PATTERN = /^_\.(.+?)-[0-9a-f]{6}(\.[^.]+)?$/;
 
 /**
  * Last segment of a forward-slash path. The backend stores filenames as
@@ -69,10 +74,16 @@ export const isInternalSandboxArtifact = (attachment: TAttachment): boolean => {
 };
 
 /**
- * Display-only filename. Strips the collision-disambiguator suffix the
- * backend embeds in the on-disk name. The original `attachment.filename`
- * stays intact for download/lookup; this just relabels what the user
- * reads in the chip.
+ * Display-only filename. Strips the collision-disambiguator suffix from
+ * names the backend's leading-dot rewrite produced, so a sandbox-internal
+ * `_.dirkeep-88b30b` reads as `.dirkeep` in the chip. The original
+ * `attachment.filename` stays intact for download/lookup; this just
+ * relabels what the user reads.
+ *
+ * Names that don't match the dotfile pattern pass through unchanged —
+ * notably `report-deadbe.csv` (potential user file with a hex-shaped
+ * tail) and `report_1-<hash>.csv` (sanitized non-dotfile, where we
+ * lack the structural signal needed to strip safely).
  */
 export const displayFilename = (filename: string | undefined): string => {
   const raw = filename ?? '';
@@ -82,24 +93,11 @@ export const displayFilename = (filename: string | undefined): string => {
   const slash = raw.lastIndexOf('/');
   const dir = slash < 0 ? '' : raw.slice(0, slash);
   const leaf = slash < 0 ? raw : raw.slice(slash + 1);
-  // Try the broad case first (suffix before an extension). If nothing
-  // matched, fall back to the dotfile-specific anchor so we don't strip
-  // a 6-hex tail off an extensionless leaf the user actually named that
-  // way (e.g. `build-a1b2c3` from a hash-named build artifact).
-  let cleanedLeaf = leaf.replace(COLLISION_SUFFIX_BEFORE_EXT, '');
-  if (cleanedLeaf === leaf) {
-    const dotfileMatch = leaf.match(SANITIZED_DOTFILE_TRAILING_SUFFIX);
-    if (dotfileMatch) {
-      cleanedLeaf = dotfileMatch[1];
-    }
-  }
-  // Drop the leading-dotfile underscore prefix (`_.dirkeep` → `.dirkeep`)
-  // only when paired with the collision suffix, since that combination is
-  // a strong signal the underscore was added by sanitization. Standalone
-  // underscored names are left alone — a user-named `_foo.txt` is real.
-  const restoredLeaf =
-    cleanedLeaf !== leaf && cleanedLeaf.startsWith('_.') ? cleanedLeaf.slice(1) : cleanedLeaf;
-  return dir ? `${dir}/${restoredLeaf}` : restoredLeaf;
+  const match = leaf.match(SANITIZED_DOTFILE_PATTERN);
+  // Reconstruct: leading `.` (drops the sanitization-added `_`) + stem
+  // + optional extension. When no match, leaf stays as-is.
+  const cleanedLeaf = match ? `.${match[1]}${match[2] ?? ''}` : leaf;
+  return dir ? `${dir}/${cleanedLeaf}` : cleanedLeaf;
 };
 
 /**
