@@ -77,6 +77,10 @@ export const conversationPreset = {
   promptCache: {
     type: Boolean,
   },
+  promptCacheTtl: {
+    type: String,
+    enum: ['5m', '1h'],
+  },
   thinking: {
     type: Boolean,
   },

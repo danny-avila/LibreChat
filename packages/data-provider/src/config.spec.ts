@@ -1,7 +1,7 @@
 import type { TEndpointsConfig } from './types';
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
-import { resolveEndpointType, excludedKeys } from './config';
+import { bedrockEndpointSchema, resolveEndpointType, excludedKeys } from './config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -20,6 +20,17 @@ describe('excludedKeys', () => {
 
   it('does not exclude tenantId (plugin-level guard owns this)', () => {
     expect(excludedKeys.has('tenantId')).toBe(false);
+  });
+});
+
+describe('bedrockEndpointSchema', () => {
+  it('accepts supported Bedrock prompt cache TTL values', () => {
+    expect(bedrockEndpointSchema.parse({ promptCacheTtl: '5m' }).promptCacheTtl).toBe('5m');
+    expect(bedrockEndpointSchema.parse({ promptCacheTtl: '1h' }).promptCacheTtl).toBe('1h');
+  });
+
+  it('rejects unsupported Bedrock prompt cache TTL values', () => {
+    expect(() => bedrockEndpointSchema.parse({ promptCacheTtl: '30m' })).toThrow();
   });
 });
 

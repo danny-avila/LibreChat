@@ -69,6 +69,12 @@ librechat:
   #   registration:
   #     socialLogins: ["discord", "facebook", "github", "google", "openid"] 
   #   endpoints:
+  #     bedrock:
+  #       models:
+  #         - "anthropic.claude-sonnet-4-5-20250929-v1:0"
+  #       # Optional. Use "1h" only with Bedrock models that support 1-hour prompt cache TTL.
+  #       # Omit this field to keep Bedrock's default 5-minute prompt cache TTL.
+  #       promptCacheTtl: "1h"
   #     azureOpenAI:
   #      # Endpoint-level configuration
   #      titleModel: "gpt-4o"

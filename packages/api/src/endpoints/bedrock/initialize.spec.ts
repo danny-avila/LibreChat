@@ -89,6 +89,48 @@ describe('initializeBedrock', () => {
       expect(result.llmConfig).toHaveProperty('region', 'us-east-1');
     });
 
+    it('should include promptCacheTtl from Bedrock endpoint config', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+        },
+        config: {
+          endpoints: {
+            [EModelEndpoint.bedrock]: {
+              promptCacheTtl: '1h',
+            },
+          },
+        },
+      });
+      const result = await initializeBedrock(params);
+
+      expect(result.llmConfig).toHaveProperty('promptCacheTtl', '1h');
+      expect(result.llmConfig).toHaveProperty('promptCache', true);
+    });
+
+    it('should omit one-hour promptCacheTtl for models that only support 5 minutes', async () => {
+      const params = createMockParams({
+        config: {
+          endpoints: {
+            [EModelEndpoint.bedrock]: {
+              promptCacheTtl: '1h',
+            },
+          },
+        },
+      });
+      const result = await initializeBedrock(params);
+
+      expect(result.llmConfig).not.toHaveProperty('promptCacheTtl');
+      expect(result.llmConfig).toHaveProperty('promptCache', true);
+    });
+
+    it('should not include promptCacheTtl when not configured', async () => {
+      const params = createMockParams();
+      const result = await initializeBedrock(params);
+
+      expect(result.llmConfig).not.toHaveProperty('promptCacheTtl');
+    });
+
     it('should handle model_parameters', async () => {
       const params = createMockParams({
         model_parameters: {

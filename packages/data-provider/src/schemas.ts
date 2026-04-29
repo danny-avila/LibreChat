@@ -773,6 +773,7 @@ export const tConversationSchema = z.object({
   max_tokens: coerceNumber.optional(),
   /* Anthropic */
   promptCache: z.boolean().optional(),
+  promptCacheTtl: z.enum(['5m', '1h']).optional(),
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
@@ -923,6 +924,8 @@ export const tQueryParamsSchema = tConversationSchema
     maxOutputTokens: true,
     /** @endpoints anthropic */
     promptCache: true,
+    /** @endpoints bedrock */
+    promptCacheTtl: true,
     thinking: true,
     thinkingBudget: true,
     thinkingLevel: true,

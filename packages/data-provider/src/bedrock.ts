@@ -38,6 +38,42 @@ function extractPersistedDisplay(amrf: unknown): string | undefined {
   return typeof display === 'string' ? display : undefined;
 }
 
+function supportsBedrockPromptCache(model: unknown): boolean {
+  return typeof model === 'string' && (model.includes('claude') || model.includes('nova'));
+}
+
+function supportsOneHourBedrockPromptCache(model: unknown): boolean {
+  if (typeof model !== 'string') {
+    return false;
+  }
+
+  return (
+    model.includes('anthropic.claude-opus-4-5') ||
+    model.includes('anthropic.claude-sonnet-4-5') ||
+    model.includes('anthropic.claude-haiku-4-5')
+  );
+}
+
+function normalizeBedrockPromptCache(data: Record<string, unknown>) {
+  if (supportsBedrockPromptCache(data.model)) {
+    if (data.promptCache === undefined) {
+      data.promptCache = true;
+    }
+    if (data.promptCacheTtl === '1h' && !supportsOneHourBedrockPromptCache(data.model)) {
+      data.promptCacheTtl = undefined;
+    }
+  } else {
+    if (data.promptCache === true) {
+      data.promptCache = undefined;
+    }
+    data.promptCacheTtl = undefined;
+  }
+
+  if (data.promptCache === false) {
+    data.promptCacheTtl = undefined;
+  }
+}
+
 export function resolveThinkingDisplay(
   model: string,
   explicit?: s.ThinkingDisplay | string | null,
@@ -203,6 +239,7 @@ export const bedrockInputSchema = s.tConversationSchema
     thinkingDisplay: true,
     reasoning_effort: true,
     promptCache: true,
+    promptCacheTtl: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -227,6 +264,7 @@ export const bedrockInputSchema = s.tConversationSchema
       }
       delete obj.additionalModelRequestFields;
     }
+    normalizeBedrockPromptCache(obj as Record<string, unknown>);
     return s.removeNullishValues(obj);
   })
   .catch(() => ({}));
@@ -258,6 +296,7 @@ export const bedrockInputParser = s.tConversationSchema
     thinkingDisplay: true,
     reasoning_effort: true,
     promptCache: true,
+    promptCacheTtl: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -281,6 +320,7 @@ export const bedrockInputParser = s.tConversationSchema
       'topP',
       'stop',
       'promptCache',
+      'promptCacheTtl',
     ];
 
     const additionalFields: Record<string, unknown> = {};
@@ -410,16 +450,7 @@ export const bedrockInputParser = s.tConversationSchema
     }
 
     /** Default promptCache for claude and nova models, if not defined */
-    if (
-      typeof typedData.model === 'string' &&
-      (typedData.model.includes('claude') || typedData.model.includes('nova'))
-    ) {
-      if (typedData.promptCache === undefined) {
-        typedData.promptCache = true;
-      }
-    } else if (typedData.promptCache === true) {
-      typedData.promptCache = undefined;
-    }
+    normalizeBedrockPromptCache(typedData);
 
     if (Object.keys(additionalFields).length > 0) {
       typedData.additionalModelRequestFields = {
