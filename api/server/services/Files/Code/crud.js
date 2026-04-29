@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
 const {
   logAxiosError,
+  appendCodeEnvFile,
   createAxiosInstance,
   codeServerHttpAgent,
   codeServerHttpsAgent,
@@ -62,7 +63,7 @@ async function uploadCodeEnvFile({ req, stream, filename, entity_id = '' }) {
     if (entity_id.length > 0) {
       form.append('entity_id', entity_id);
     }
-    form.append('file', stream, filename);
+    appendCodeEnvFile(form, stream, filename);
 
     const baseURL = getCodeBaseURL();
     /** @type {import('axios').AxiosRequestConfig} */
@@ -131,7 +132,7 @@ async function batchUploadCodeEnvFiles({ req, files, entity_id = '', read_only =
       form.append('read_only', 'true');
     }
     for (const file of files) {
-      form.append('file', file.stream, file.filename);
+      appendCodeEnvFile(form, file.stream, file.filename);
     }
 
     const baseURL = getCodeBaseURL();
