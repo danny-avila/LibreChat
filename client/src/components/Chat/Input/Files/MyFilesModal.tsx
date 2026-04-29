@@ -4,6 +4,7 @@ import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '@libre
 import { useGetFiles } from '~/data-provider';
 import { DataTable, columns } from './Table';
 import { useLocalize } from '~/hooks';
+import { isBklOcrReadyFile } from '~/utils';
 
 export function MyFilesModal({
   open,
@@ -18,7 +19,7 @@ export function MyFilesModal({
 
   const { data: files = [] } = useGetFiles<TFile[]>({
     select: (files) =>
-      files.map((file) => {
+      files.filter(isBklOcrReadyFile).map((file) => {
         file.context = file.context ?? FileContext.unknown;
         file.filterSource = file.source === FileSources.firebase ? FileSources.local : file.source;
         return file;
