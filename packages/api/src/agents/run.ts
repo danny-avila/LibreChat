@@ -13,13 +13,14 @@ import type {
   OpenAIClientOptions,
   StandardGraphConfig,
   LCToolRegistry,
+  SubagentConfig,
   AgentInputs,
   GenericTool,
   RunConfig,
   IState,
   LCTool,
 } from '@librechat/agents';
-import type { Agent, SummarizationConfig } from 'librechat-data-provider';
+import type { Agent, AgentSubagentsConfig, SummarizationConfig } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type * as t from '~/types';
@@ -118,6 +119,62 @@ export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<
 }
 
 /**
+ * Extracts skill names that were invoked in previous turns from raw message payload.
+ * Scans assistant messages for tool_call content parts where name === 'skill'.
+ * Works with TPayload (raw message objects) so it can run before formatAgentMessages.
+ *
+ * @param payload - The raw conversation message payload
+ * @returns Set of skill names that were previously invoked
+ */
+export function extractInvokedSkillsFromPayload(
+  payload: Array<Partial<{ role: string; content: unknown }>>,
+): Set<string> {
+  const invokedSkills = new Set<string>();
+
+  for (const message of payload) {
+    if (message.role !== 'assistant') {
+      continue;
+    }
+
+    const content = message.content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+
+    for (const part of content) {
+      if (
+        part == null ||
+        typeof part !== 'object' ||
+        (part as { type?: string }).type !== 'tool_call'
+      ) {
+        continue;
+      }
+      const toolCall = (part as { tool_call?: { name?: string; args?: unknown } }).tool_call;
+      if (toolCall?.name !== Constants.SKILL_TOOL) {
+        continue;
+      }
+      const rawArgs = toolCall.args;
+      const args =
+        typeof rawArgs === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(rawArgs) as Record<string, unknown>;
+              } catch {
+                return {};
+              }
+            })()
+          : (rawArgs as Record<string, unknown> | undefined);
+      const skillName = args?.skillName;
+      if (typeof skillName === 'string' && skillName.length > 0) {
+        invokedSkills.add(skillName);
+      }
+    }
+  }
+
+  return invokedSkills;
+}
+
+/**
  * Overrides defer_loading to false for tools that were already discovered via tool_search.
  * This prevents the LLM from having to re-discover tools on every turn.
  *
@@ -182,6 +239,14 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /**
+   * Per-agent codeenv gate set by `initializeAgent`: admin-level
+   * `execute_code` capability AND the agent actually requested
+   * `execute_code` in its tools. Used here to enable
+   * `RunConfig.toolOutputReferences` only on runs where the bash tool
+   * is actually registered.
+   */
+  codeEnvAvailable?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /**
@@ -189,6 +254,10 @@ type RunAgent = Omit<Agent, 'tools'> & {
    * Overrides the default computed from maxContextTokens.
    */
   maxToolResultChars?: number;
+  /** Initialized subagent configs (loaded by initialize.js from agent.subagents.agent_ids). */
+  subagentAgentConfigs?: RunAgent[];
+  /** Source subagent spawning configuration (enabled / allowSelf / agent_ids). */
+  subagents?: AgentSubagentsConfig;
 };
 
 function isNonEmptyString(value: unknown): value is string {
@@ -438,6 +507,128 @@ function computeEffectiveMaxContextTokens(
   return Math.min(maxContextTokens ?? ratioComputed, ratioComputed);
 }
 
+/** Identifier for the self-spawn subagent (reuses parent's AgentInputs in an isolated child graph). */
+const SELF_SUBAGENT_TYPE = 'self';
+
+/**
+ * Recursive any-true check across the agent tree: returns `true` if this
+ * agent or any subagent (transitively) has the per-agent codeenv gate
+ * enabled.
+ *
+ * The SDK's tool-output reference registry is shared across every
+ * `ToolNode` compiled from the run's graph (parent + every subagent
+ * alike), so a single subagent with `bash_tool` registered is enough to
+ * make `RunConfig.toolOutputReferences` worth activating for the whole
+ * run — without it, the subagent's `{{tool<idx>turn<turn>}}`
+ * placeholders would pass through to the shell unsubstituted.
+ *
+ * Cycle-safe via a `visited` set, mirroring `buildSubagentConfigs`'s
+ * `ancestors` pattern. The bash tool description itself is still gated
+ * per-agent in `initializeAgent`, so only agents that actually have
+ * bash registered learn the `{{…}}` syntax — broadening the run-level
+ * registry gate doesn't broaden the model-facing surface.
+ */
+function anyAgentHasCodeEnv(agents: RunAgent[], visited: Set<string> = new Set()): boolean {
+  for (const agent of agents) {
+    if (visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (agent.codeEnvAvailable === true) {
+      return true;
+    }
+    if (
+      agent.subagentAgentConfigs != null &&
+      anyAgentHasCodeEnv(agent.subagentAgentConfigs, visited)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Builds SubagentConfig entries for an agent: optional self-spawn plus any
+ * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
+ * array when subagents are disabled or no spawn targets are available.
+ */
+function buildSubagentConfigs(
+  agent: RunAgent,
+  agentInput: AgentInputs,
+  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+  ancestors: Set<string> = new Set(),
+): SubagentConfig[] {
+  if (!agent.subagents?.enabled) {
+    return [];
+  }
+
+  const configs: SubagentConfig[] = [];
+  const allowSelf = agent.subagents.allowSelf !== false;
+
+  if (allowSelf) {
+    const selfName = agentInput.name ?? agent.name ?? 'self';
+    configs.push({
+      self: true,
+      type: SELF_SUBAGENT_TYPE,
+      name: selfName,
+      description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
+    });
+  }
+
+  /** Cycle-safety: include the current agent in `ancestors` before
+   *  descending into children so a `A → B → A` configuration stops at
+   *  the second encounter of A rather than recursing forever. Skip
+   *  `A → A` too (already guarded) and anything that would re-enter
+   *  an ancestor. */
+  const nextAncestors = new Set(ancestors);
+  nextAncestors.add(agent.id);
+
+  for (const child of agent.subagentAgentConfigs ?? []) {
+    if (!child?.id || child.id === agent.id) {
+      continue;
+    }
+    if (ancestors.has(child.id)) {
+      continue;
+    }
+    /**
+     * `buildAgentInput` applies parent-run context (initialSummary +
+     * discoveredTools) to the returned AgentInputs *and* to the
+     * passed-in agent's `toolRegistry` / `toolDefinitions` — flipping
+     * `defer_loading: true → false` on tools the parent had previously
+     * searched for, and injecting those tools' definitions into the
+     * child's `toolDefinitions`. Clearing fields on the returned
+     * object post-hoc would leave those side-effects in place, leaking
+     * the parent's tool-search state into an "isolated" subagent and
+     * inflating the child's prompt/token budget. The `isSubagent` flag
+     * skips both the field stamping and the registry mutation at the
+     * source so children truly start fresh.
+     */
+    const childInputs = toInput(child, { isSubagent: true });
+    /**
+     * Recursively resolve the child's own spawn targets so multi-level
+     * delegation (A → B → C) works. Without this, a child whose own
+     * `subagents.enabled` is true loses every explicit target when
+     * invoked as a subagent — only the top-level loop attaches
+     * `subagentConfigs`, and that only runs for the outer agents in
+     * `agents[]`. Cycle-safe via `nextAncestors`.
+     */
+    const grandchildConfigs = buildSubagentConfigs(child, childInputs, toInput, nextAncestors);
+    if (grandchildConfigs.length > 0) {
+      childInputs.subagentConfigs = grandchildConfigs;
+    }
+    configs.push({
+      type: child.id,
+      name: child.name ?? child.id,
+      description:
+        child.description ??
+        `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
+      agentInputs: childInputs,
+    });
+  }
+
+  return configs;
+}
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -463,6 +654,7 @@ export async function createRun({
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
+  initialSessions,
   summarizationConfig,
   initialSummary,
   calibrationRatio,
@@ -489,9 +681,10 @@ export async function createRun({
    * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
    */
   appConfig?: AppConfig;
-} & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
-  Run<IState>
-> {
+} & Pick<
+  RunConfig,
+  'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
+>): Promise<Run<IState>> {
   /**
    * Only extract discovered tools if:
    * 1. We have message history to parse
@@ -507,8 +700,8 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const agentInputs: AgentInputs[] = [];
-  const buildAgentContext = (agent: RunAgent) => {
+  const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
+    const isSubagent = opts.isSubagent === true;
     const provider =
       (providerEndpointMap[
         agent.provider as keyof typeof providerEndpointMap
@@ -569,12 +762,22 @@ export async function createRun({
     }
 
     /**
-     * Override defer_loading for tools that were discovered in previous turns.
-     * This prevents the LLM from having to re-discover tools via tool_search.
-     * Also add the discovered tools' definitions so the LLM has their schemas.
+     * Override defer_loading for tools that were discovered in previous
+     * turns. This prevents the LLM from having to re-discover tools via
+     * tool_search. Also add the discovered tools' definitions so the
+     * LLM has their schemas.
+     *
+     * Skipped for subagent children (`isSubagent`) — they run in an
+     * isolated context by contract, so inheriting the parent's
+     * tool-search state leaks unrelated history and pre-loads tools the
+     * child shouldn't care about. Mutations on `agent.toolRegistry`
+     * and additions to `toolDefinitions` both happen here, so the flag
+     * has to gate the whole block (clearing fields post-return can't
+     * undo registry writes).
      */
     let toolDefinitions = agent.toolDefinitions ?? [];
-    if (discoveredTools.size > 0 && agent.toolRegistry) {
+    let toolRegistry = agent.toolRegistry;
+    if (!isSubagent && discoveredTools.size > 0 && agent.toolRegistry) {
       overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
 
       /** Add discovered tools' definitions so the LLM can see their schemas */
@@ -588,6 +791,25 @@ export async function createRun({
           toolDefinitions = [...toolDefinitions, toolDef];
         }
       }
+    } else if (isSubagent && agent.toolRegistry) {
+      /**
+       * Subagent children: hand the child a deep-enough clone of the
+       * registry so later parent-graph builds (e.g. when the same
+       * agent also appears as a handoff target in the outer loop)
+       * can't mutate `defer_loading` on tool definitions the child
+       * already holds a reference to. Clone the `Map` *and* each
+       * `LCTool` — `overrideDeferLoadingForDiscoveredTools` writes
+       * through to the tool object itself, so a shallow Map copy
+       * alone wouldn't isolate the flag.
+       */
+      toolRegistry = new Map();
+      for (const [name, tool] of agent.toolRegistry.entries()) {
+        toolRegistry.set(name, { ...tool });
+      }
+      /** Child's own `toolDefinitions` list gets the same shallow-
+       *  copied view so any later parent mutation of shared definitions
+       *  is contained to the parent-graph path. */
+      toolDefinitions = toolDefinitions.map((def) => ({ ...def }));
     }
 
     const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
@@ -597,7 +819,7 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
-    const agentInput: AgentInputs = {
+    return {
       provider,
       reasoningKey,
       toolDefinitions,
@@ -606,21 +828,27 @@ export async function createRun({
       clientOptions: llmConfig,
       instructions: systemContent,
       name: agent.name ?? undefined,
-      toolRegistry: agent.toolRegistry,
+      toolRegistry,
       maxContextTokens: effectiveMaxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
-      discoveredTools: discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
+      discoveredTools:
+        !isSubagent && discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
       summarizationEnabled: summarization.enabled,
       summarizationConfig: summarization.config,
-      initialSummary,
+      initialSummary: isSubagent ? undefined : initialSummary,
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
-    agentInputs.push(agentInput);
   };
 
+  const agentInputs: AgentInputs[] = [];
   for (const agent of agents) {
-    buildAgentContext(agent);
+    const agentInput = buildAgentInput(agent);
+    const subagentConfigs = buildSubagentConfigs(agent, agentInput, buildAgentInput);
+    if (subagentConfigs.length > 0) {
+      agentInput.subagentConfigs = subagentConfigs;
+    }
+    agentInputs.push(agentInput);
   }
 
   const graphConfig: RunConfig['graphConfig'] = {
@@ -635,12 +863,35 @@ export async function createRun({
     (graphConfig as StandardGraphConfig).type = 'standard';
   }
 
+  /**
+   * Enable tool-output references when the bash tool is actually
+   * present anywhere in this run — top-level agent OR any subagent
+   * (transitively). `codeEnvAvailable` on each `RunAgent` is the
+   * per-agent gate (admin `execute_code` capability AND the agent's
+   * own `tools` listing `execute_code`), so the feature follows the
+   * same activation as the bash-tool registration in
+   * `initializeAgent`. The walk into `subagentAgentConfigs` is
+   * load-bearing: a parent without `execute_code` can spawn a
+   * subagent that has it, and the SDK's shared registry serves
+   * every `ToolNode` compiled from this run's graph — so missing
+   * subagents in this gate would leave the child's
+   * `{{tool<idx>turn<turn>}}` placeholders unsubstituted. SDK
+   * defaults (~400 KB per output, 5 MB total) keep substituted
+   * payloads inside typical shell ARG_MAX limits, so no overrides
+   * are needed for the experimental rollout.
+   */
+  const enableToolOutputReferences = anyAgentHasCodeEnv(agents);
+
   return Run.create({
     runId,
     graphConfig,
     tokenCounter,
     customHandlers,
     indexTokenCountMap,
+    initialSessions,
     calibrationRatio,
+    ...(enableToolOutputReferences && {
+      toolOutputReferences: { enabled: true },
+    }),
   });
 }

@@ -31,8 +31,7 @@ describe('roleDefaults', () => {
           continue;
         }
 
-        const userValues =
-          userPerms[permType as PermissionTypes] as Record<string, boolean>;
+        const userValues = userPerms[permType as PermissionTypes] as Record<string, boolean>;
 
         for (const field of fieldNames) {
           expect({
@@ -78,7 +77,9 @@ describe('roleDefaults', () => {
 
       for (const [permType, subSchema] of Object.entries(schemaShape)) {
         const fieldNames = Object.keys(subSchema.shape);
-        const hasResourceFields = fieldNames.some((f) => RESOURCE_MANAGEMENT_FIELDS.includes(f as Permissions));
+        const hasResourceFields = fieldNames.some((f) =>
+          RESOURCE_MANAGEMENT_FIELDS.includes(f as Permissions),
+        );
         if (!hasResourceFields) {
           continue;
         }
@@ -87,7 +88,8 @@ describe('roleDefaults', () => {
           restrictedSet.has(permType) ||
           permType === PermissionTypes.MEMORIES ||
           permType === PermissionTypes.PROMPTS ||
-          permType === PermissionTypes.AGENTS;
+          permType === PermissionTypes.AGENTS ||
+          permType === PermissionTypes.SKILLS;
 
         expect({
           permType,
@@ -110,8 +112,7 @@ describe('roleDefaults', () => {
 
       for (const [permType, subSchema] of Object.entries(schemaShape)) {
         const fieldNames = Object.keys(subSchema.shape);
-        const adminValues =
-          adminPerms[permType as PermissionTypes] as Record<string, boolean>;
+        const adminValues = adminPerms[permType as PermissionTypes] as Record<string, boolean>;
 
         for (const field of fieldNames) {
           expect({
@@ -127,6 +128,32 @@ describe('roleDefaults', () => {
           );
         }
       }
+    });
+  });
+
+  describe('SKILLS permission defaults', () => {
+    it('grants ADMIN all four skill permissions by default', () => {
+      const adminSkills = roleDefaults[SystemRoles.ADMIN].permissions[
+        PermissionTypes.SKILLS
+      ] as Record<string, boolean>;
+      expect(adminSkills).toEqual({
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      });
+    });
+
+    it('grants USER USE+CREATE but no sharing by default', () => {
+      const userSkills = roleDefaults[SystemRoles.USER].permissions[
+        PermissionTypes.SKILLS
+      ] as Record<string, boolean>;
+      expect(userSkills).toEqual({
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      });
     });
   });
 });

@@ -1,5 +1,7 @@
 import { Providers } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import {
+  Tools,
   Constants,
   ErrorTypes,
   EModelEndpoint,
@@ -30,7 +32,16 @@ import {
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
+import {
+  injectSkillCatalog,
+  resolveManualSkills,
+  resolveAlwaysApplySkills,
+  unionPrimeAllowedTools,
+  MAX_PRIMED_SKILLS_PER_TURN,
+} from './skills';
+import { registerCodeExecutionTools } from './tools';
 import { primeResources } from './resources';
+import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
 
 /**
@@ -66,6 +77,57 @@ export type InitializedAgent = Agent & {
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
+  /**
+   * Whether the code-execution environment is available *for this agent*.
+   * Narrower than the incoming `params.codeEnvAvailable` admin flag — this
+   * is `admin_capability_enabled && agent.tools.includes('execute_code')`,
+   * computed once here so downstream code (`injectSkillCatalog`,
+   * `enrichWithSkillConfigurable`, `primeInvokedSkills`) doesn't have to
+   * re-scan the tool list on every runtime handler invocation.
+   * Authoritative for both persisted and ephemeral agents: the
+   * ephemeral-agent toggle is reconciled into `agent.tools` upstream
+   * (`packages/api/src/agents/added.ts`), so the check is uniform.
+   */
+  codeEnvAvailable: boolean;
+  /** Accessible skill IDs for ACL checking at execute time */
+  accessibleSkillIds?: import('mongoose').Types.ObjectId[];
+  /**
+   * Names of skills the runtime can resolve, mirroring `accessibleSkillIds`.
+   * Surfaced to the runtime so handlers like `read_file` can decide if a
+   * `{firstSegment}/...` path refers to a real skill (vs. a code-env path
+   * that should be routed to the bash fallback) without an extra DB lookup.
+   */
+  activeSkillNames?: Set<string>;
+  /** Number of skills in the catalog (used to determine if SkillTool should be registered) */
+  skillCount?: number;
+  /**
+   * Skills the user manually invoked for this turn via the `$` popover, resolved
+   * to their SKILL.md bodies. The AgentClient injects these as meta user
+   * messages right before the latest user message in the LLM's formatted
+   * message array — deterministic priming without a tool roundtrip.
+   */
+  manualSkillPrimes?: ResolvedManualSkill[];
+  /**
+   * Skills auto-primed this turn because their `always-apply` frontmatter
+   * flag is set. Resolved against the same `accessibleSkillIds` set and
+   * subjected to the same active-state / ACL filters as the catalog, then
+   * handed to the AgentClient for splicing alongside manual primes. Their
+   * `allowedTools` entries also union into the agent's effective tool set
+   * via `unionPrimeAllowedTools` (same pipeline as manual primes).
+   */
+  alwaysApplySkillPrimes?: ResolvedAlwaysApplySkill[];
+  /**
+   * Pre-uploaded code-env file refs from `tool_resources.execute_code`
+   * (carries the conversation's prior-turn generated artifacts and any
+   * user uploads). Captured by the `loadTools` callback; the AgentClient
+   * merges these across all run agents into `Graph.sessions[EXECUTE_CODE]`
+   * before run start so the very first `execute_code` / `bash_tool` call
+   * sees them as `_injected_files`. Without this seed the agents-side
+   * `CodeExecutor` falls back to `/files/{session_id}` — but `session_id`
+   * is itself only populated by a previous successful execution, so on
+   * call #1 the sandbox can't see the files at all.
+   */
+  primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -107,6 +169,14 @@ export interface InitializeAgentParams {
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
     actionsEnabled?: boolean;
+    /**
+     * Pre-uploaded code-env file refs for the agent's
+     * `tool_resources.execute_code`. Bubbled up so the run host can seed
+     * `Graph.sessions[EXECUTE_CODE]` before the first tool call —
+     * otherwise `_injected_files` is empty on call #1 and prior-turn
+     * artifacts don't reach the sandbox.
+     */
+    primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
   } | null>;
   /** Endpoint option (contains model_parameters and endpoint info) */
   endpointOption?: Partial<TEndpointOption>;
@@ -114,6 +184,21 @@ export interface InitializeAgentParams {
   allowedProviders: Set<string>;
   /** Whether this is the initial agent */
   isInitialAgent?: boolean;
+  /** Accessible skill IDs for this user (pre-computed by the caller via ACL query) */
+  accessibleSkillIds?: import('mongoose').Types.ObjectId[];
+  /** Whether the code execution environment is available (execute_code capability enabled) */
+  codeEnvAvailable?: boolean;
+  /** Per-user skill active/inactive overrides for filtering the skill catalog. */
+  skillStates?: Record<string, boolean>;
+  /** Admin-configured default for shared skills (`true` = shared skills auto-activate). */
+  defaultActiveOnShare?: boolean;
+  /**
+   * Skill names the user invoked manually for this turn via the `$` popover.
+   * Resolved here (ACL + active-state filtered) and attached to the returned
+   * InitializedAgent as `manualSkillPrimes` for the AgentClient to inject as
+   * meta user messages before the LLM call.
+   */
+  manualSkills?: string[];
 }
 
 /**
@@ -145,6 +230,96 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     parentMessageId?: string;
     files?: Array<{ file_id: string }>;
   }> | null>;
+  /** List skill summaries for catalog injection (paginated, omits body/frontmatter) */
+  listSkillsByAccess?: (params: {
+    accessibleIds: import('mongoose').Types.ObjectId[];
+    limit: number;
+    cursor?: string | null;
+  }) => Promise<{
+    skills: Array<{
+      _id: import('mongoose').Types.ObjectId;
+      name: string;
+      description: string;
+      author: import('mongoose').Types.ObjectId;
+      /**
+       * When `true`, the skill is excluded from the catalog injected into
+       * the agent's additional_instructions and the model cannot invoke it
+       * via the `skill` tool. Manual `$` invocation is unaffected.
+       */
+      disableModelInvocation?: boolean;
+      /**
+       * When `false`, the skill is hidden from the `$` popover and rejected
+       * by the manual-invocation resolver. Defaults to `true`.
+       */
+      userInvocable?: boolean;
+    }>;
+    has_more?: boolean;
+    after?: string | null;
+  }>;
+  /**
+   * Load a single skill by name, constrained to an ACL-accessible ID set.
+   * Returns the full document (including `body`) so manual invocation can
+   * prime SKILL.md without a second DB round-trip.
+   *
+   * `preferUserInvocable` (manual paths): on a same-name collision,
+   * prefer the newest doc with `userInvocable !== false`.
+   * `preferModelInvocable` (model paths — `skill` / `read_file`): on a
+   * same-name collision, prefer the newest doc with
+   * `disableModelInvocation !== true`. Both fall back to the newest match
+   * so the explicit-rejection error paths still fire when only the
+   * non-preferred variant exists.
+   */
+  getSkillByName?: (
+    name: string,
+    accessibleIds: import('mongoose').Types.ObjectId[],
+    options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
+  ) => Promise<{
+    _id: import('mongoose').Types.ObjectId;
+    name: string;
+    body: string;
+    author: import('mongoose').Types.ObjectId;
+    /**
+     * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
+     * Surfaced so the resolver can carry it onto `ResolvedManualSkill` for
+     * future runtime enforcement without a second round-trip.
+     */
+    allowedTools?: string[];
+    /**
+     * Set when the skill was authored with `disable-model-invocation: true`.
+     * The skill tool handler short-circuits on this so a model that names
+     * such a skill (e.g. via hallucination or stale catalog) gets a clear
+     * rejection instead of silently executing.
+     */
+    disableModelInvocation?: boolean;
+    /**
+     * Set when the skill was authored with `user-invocable: false`. The
+     * manual-invocation resolver skips with a warn log so an API-direct
+     * caller can't bypass the popover-side filter.
+     */
+    userInvocable?: boolean;
+  } | null>;
+  /**
+   * Load accessible skills with `alwaysApply: true`, eagerly including
+   * `body` so the priming pipeline can splice at turn start without a
+   * per-skill round-trip. Cursor-paginated so the resolver can fill its
+   * active-state budget even when early-sorted rows are inactive for
+   * the current user.
+   */
+  listAlwaysApplySkills?: (params: {
+    accessibleIds: import('mongoose').Types.ObjectId[];
+    limit: number;
+    cursor?: string | null;
+  }) => Promise<{
+    skills: Array<{
+      _id: import('mongoose').Types.ObjectId;
+      name: string;
+      body: string;
+      author: import('mongoose').Types.ObjectId;
+      allowedTools?: string[];
+    }>;
+    has_more?: boolean;
+    after?: string | null;
+  }>;
 }
 
 /**
@@ -297,24 +472,185 @@ export async function initializeAgent(
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
   });
 
+  /**
+   * Pre-resolve manually-invoked + always-apply skill primes so their
+   * `allowed-tools` can be unioned into the agent's effective tool set
+   * BEFORE `loadTools` runs. Single load is correctness-critical: a
+   * second `loadTools` pass would compute its own `userMCPAuthMap` /
+   * `toolContextMap` / OAuth flow state that the InitializedAgent never
+   * sees, so an MCP tool added via `allowed-tools` would be visible to
+   * the model but fail at execution time without its per-user auth
+   * context.
+   *
+   * Resolution uses `params.accessibleSkillIds` (not the active-filtered
+   * subset that `injectSkillCatalog` will produce later) — see
+   * `resolveManualSkills` doc for why a skill outside the catalog cap can
+   * still be authorizable for direct manual invocation.
+   *
+   * Manual + always-apply primes feed the same `unionPrimeAllowedTools`
+   * call — the helper is pure / set-based, so concatenating the two
+   * lists gives the right union with no double-counting. Manual primes
+   * go first so their names win on dedup (primes earlier in the list
+   * contribute before the same name gets deduped on a later prime).
+   */
+  const hasSkillAccess = params.accessibleSkillIds && params.accessibleSkillIds.length > 0;
+  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
+  let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
+  let extraAllowedToolNames: string[] = [];
+  let perSkillExtras: Map<string, string[]> = new Map();
+  if (hasSkillAccess) {
+    const [manualPrimesResult, alwaysApplyPrimesResult] = await Promise.all([
+      params.manualSkills?.length && db.getSkillByName
+        ? resolveManualSkills({
+            names: params.manualSkills,
+            getSkillByName: db.getSkillByName,
+            accessibleSkillIds: params.accessibleSkillIds!,
+            userId: req.user?.id,
+            skillStates: params.skillStates,
+            defaultActiveOnShare: params.defaultActiveOnShare,
+          })
+        : Promise.resolve<ResolvedManualSkill[] | undefined>(undefined),
+      db.listAlwaysApplySkills
+        ? resolveAlwaysApplySkills({
+            listAlwaysApplySkills: db.listAlwaysApplySkills,
+            accessibleSkillIds: params.accessibleSkillIds!,
+            userId: req.user?.id,
+            skillStates: params.skillStates,
+            defaultActiveOnShare: params.defaultActiveOnShare,
+          })
+        : Promise.resolve<ResolvedAlwaysApplySkill[] | undefined>(undefined),
+    ]);
+
+    manualSkillPrimes = manualPrimesResult;
+    alwaysApplySkillPrimes = alwaysApplyPrimesResult;
+
+    /**
+     * Cross-list dedup: when a user `$`-invokes a skill that is also
+     * marked `always-apply`, the always-apply copy is dropped here so
+     * the same SKILL.md body isn't primed twice in the same turn.
+     * Manual wins because it sits closer to the user message and
+     * carries explicit intent. Done at the initializer (not just at
+     * splice time in `injectSkillPrimes`) so persisted user-bubble
+     * `alwaysAppliedSkills` pills reflect the post-dedup set and the
+     * tool-union step below doesn't bill allowed-tools to the dropped
+     * always-apply entry.
+     */
+    if (
+      alwaysApplySkillPrimes &&
+      alwaysApplySkillPrimes.length > 0 &&
+      manualSkillPrimes &&
+      manualSkillPrimes.length > 0
+    ) {
+      const manualNames = new Set(manualSkillPrimes.map((p) => p.name));
+      const deduped = alwaysApplySkillPrimes.filter((p) => !manualNames.has(p.name));
+      const removed = alwaysApplySkillPrimes.length - deduped.length;
+      if (removed > 0) {
+        logger.info(
+          `[initializeAgent] Dropped ${removed} always-apply prime(s) already present in the manual list; same-named skills prime only once per turn.`,
+        );
+        alwaysApplySkillPrimes = deduped;
+      }
+    }
+
+    /**
+     * Enforce the combined `MAX_PRIMED_SKILLS_PER_TURN` ceiling up-front
+     * so persisted user-bubble `alwaysAppliedSkills` pills stay in sync
+     * with what actually gets primed. `injectSkillPrimes` re-applies the
+     * cap as defense-in-depth at splice time. Always-apply primes are
+     * truncated first — manual invocation is explicit user intent and
+     * should never be silently dropped.
+     */
+    const manualCount = manualSkillPrimes?.length ?? 0;
+    const alwaysApplyCount = alwaysApplySkillPrimes?.length ?? 0;
+    if (alwaysApplySkillPrimes && manualCount + alwaysApplyCount > MAX_PRIMED_SKILLS_PER_TURN) {
+      const budgetForAlwaysApply = Math.max(0, MAX_PRIMED_SKILLS_PER_TURN - manualCount);
+      const dropped = alwaysApplyCount - budgetForAlwaysApply;
+      logger.warn(
+        `[initializeAgent] Combined primes (${manualCount} manual + ${alwaysApplyCount} always-apply) exceeds MAX_PRIMED_SKILLS_PER_TURN (${MAX_PRIMED_SKILLS_PER_TURN}); truncating ${dropped} always-apply prime(s) so persisted user-message pills stay in sync with what got primed.`,
+      );
+      alwaysApplySkillPrimes = alwaysApplySkillPrimes.slice(0, budgetForAlwaysApply);
+    }
+
+    const primesForUnion = [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])];
+    if (primesForUnion.length > 0) {
+      const union = unionPrimeAllowedTools({
+        primes: primesForUnion,
+        agentToolNames: agent.tools ?? [],
+      });
+      extraAllowedToolNames = union.extraToolNames;
+      perSkillExtras = union.perSkillExtras;
+    }
+  }
+
+  const baseToolNames = agent.tools ?? [];
+  const requestedToolNames =
+    extraAllowedToolNames.length > 0 ? [...baseToolNames, ...extraAllowedToolNames] : baseToolNames;
+
+  /**
+   * `loadTools` failures take two forms:
+   *   1. The wrapper throws — rare; only when something around the
+   *      try/catch in `createToolLoader` itself fails.
+   *   2. The wrapper returns `undefined` — the typical CJS path: every
+   *      production loader (`createToolLoader` in `initialize.js`,
+   *      `openai.js`, `responses.js`) catches `loadAgentTools` errors and
+   *      returns `undefined`. Without explicit handling, the empty
+   *      fallback object below would silently drop the agent's baseline
+   *      tools for the turn (not just the skill-added extras).
+   *
+   * If a skill-contributed `allowed-tools` entry is the culprit, retry
+   * with just `agent.tools` so the agent's own tools still load (the
+   * dropped-tools debug log below picks up which extras vanished). If
+   * the retry-without-extras also fails, propagate / fall through with
+   * the empty fallback — the agent's own tools are the problem.
+   */
+  const callLoadTools = async (tools: string[]) =>
+    loadTools?.({
+      req,
+      res,
+      provider,
+      agentId: agent.id,
+      tools,
+      model: agent.model,
+      tool_options: agent.tool_options,
+      tool_resources,
+    });
+
+  let loadToolsResult;
+  const initialFailedSilently = (result: unknown) =>
+    result == null && extraAllowedToolNames.length > 0;
+  try {
+    loadToolsResult = await callLoadTools(requestedToolNames);
+  } catch (err) {
+    if (extraAllowedToolNames.length > 0) {
+      logger.warn(
+        `[allowedTools] loadTools threw with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,
+        err instanceof Error ? err.message : err,
+      );
+      loadToolsResult = await callLoadTools(baseToolNames);
+    } else {
+      throw err;
+    }
+  }
+  if (initialFailedSilently(loadToolsResult)) {
+    /* Production loaders swallow errors and return undefined. Treat that
+       the same as a throw when extras were requested — the agent's own
+       tools must still load. */
+    logger.warn(
+      `[allowedTools] loadTools returned no result with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them.`,
+    );
+    loadToolsResult = await callLoadTools(baseToolNames);
+  }
+
   const {
     toolRegistry,
     toolContextMap,
     userMCPAuthMap,
-    toolDefinitions,
+    toolDefinitions: loadedToolDefinitions,
     hasDeferredTools,
     actionsEnabled,
     tools: structuredTools,
-  } = (await loadTools?.({
-    req,
-    res,
-    provider,
-    agentId: agent.id,
-    tools: agent.tools ?? [],
-    model: agent.model,
-    tool_options: agent.tool_options,
-    tool_resources,
-  })) ?? {
+    primedCodeFiles,
+  } = loadToolsResult ?? {
     tools: [],
     toolContextMap: {},
     userMCPAuthMap: undefined,
@@ -322,7 +658,37 @@ export async function initializeAgent(
     toolDefinitions: [],
     hasDeferredTools: false,
     actionsEnabled: undefined,
+    primedCodeFiles: undefined,
   };
+
+  let toolDefinitions = loadedToolDefinitions;
+
+  /**
+   * Tolerant filter: anything `loadTools` couldn't resolve (capability
+   * disabled, plugin missing, name unknown to the registry) is silently
+   * dropped with an attributed debug log. Cross-ecosystem skills authored
+   * against tools LibreChat hasn't shipped yet (Claude Code's `edit_file`,
+   * etc.) import without breaking — they light up automatically once
+   * support lands. Skips when there were no extras to begin with.
+   */
+  if (extraAllowedToolNames.length > 0) {
+    const loadedNames = new Set((toolDefinitions ?? []).map((d) => d.name));
+    const dropped = extraAllowedToolNames.filter((n) => !loadedNames.has(n));
+    if (dropped.length > 0) {
+      const sources: string[] = [];
+      for (const [skillName, names] of perSkillExtras) {
+        const droppedFromSkill = names.filter((n) => !loadedNames.has(n));
+        if (droppedFromSkill.length > 0) {
+          sources.push(`"${skillName}" → [${droppedFromSkill.join(', ')}]`);
+        }
+      }
+      logger.debug(
+        `[allowedTools] Dropped unrecognized tool names: ${
+          sources.length > 0 ? sources.join('; ') : dropped.join(', ')
+        }`,
+      );
+    }
+  }
 
   const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
     provider,
@@ -373,6 +739,55 @@ export async function initializeAgent(
     agent.provider = options.provider;
   }
 
+  /**
+   * Unify code-execution tools around `bash_tool` + `read_file` when the
+   * agent explicitly lists `execute_code` in its tools and the admin
+   * capability is enabled for the run. The legacy `execute_code` tool
+   * (backed by `CodeExecutionToolDefinition` + `primeCodeFiles`) is no
+   * longer registered; the string `execute_code` on the agent document
+   * stays as the capability-trigger marker but expands into the
+   * skill-flavored tool pair here.
+   *
+   * `effectiveCodeEnvAvailable` is the per-agent truth: the admin-level
+   * `params.codeEnvAvailable` AND the agent actually asking for code
+   * execution. Computed once and reused by the expansion block below,
+   * the `injectSkillCatalog` call, and the returned `InitializedAgent`.
+   * Downstream handlers (runtime `configurable`, `primeInvokedSkills`)
+   * read it from the stored per-agent value so a skills-only agent
+   * never accidentally registers `bash_tool` or primes sandbox files
+   * just because the admin globally enabled code execution.
+   *
+   * Done BEFORE the `hasAgentTools` / GOOGLE_TOOL_CONFLICT gate so
+   * execute-code-only agents on Google/Vertex still trip the conflict
+   * guard when provider-specific tools are also configured. Also before
+   * `injectSkillCatalog` so the skill path's own
+   * `registerCodeExecutionTools` call becomes a no-op via the registry
+   * `.has()` dedupe — exactly one copy of each tool reaches the LLM.
+   */
+  const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
+  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  if (effectiveCodeEnvAvailable) {
+    const codeExecResult = registerCodeExecutionTools({
+      toolRegistry,
+      toolDefinitions,
+      includeBash: true,
+      enableToolOutputReferences: effectiveCodeEnvAvailable,
+    });
+    toolDefinitions = codeExecResult.toolDefinitions;
+  } else if (agentRequestsCodeExec) {
+    /**
+     * Agent asked for `execute_code` but the admin-level gate is off —
+     * surface a debug log so operators tracing "why isn't code
+     * interpreter working?" get a clear signal. The event-driven tool
+     * loader (`loadToolDefinitionsWrapper`) doesn't log capability-
+     * disabled warnings for the definitions-only path, so without this,
+     * the tool silently vanishes from the LLM's definitions with no trace.
+     */
+    logger.debug(
+      `[initializeAgent] Agent "${agent.id}" requests execute_code but codeEnvAvailable=${String(params.codeEnvAvailable)}; skipping bash_tool + read_file registration.`,
+    );
+  }
+
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
 
@@ -416,6 +831,35 @@ export async function initializeAgent(
     agent.additional_instructions = artifactsPromptResult ?? undefined;
   }
 
+  let skillCount = 0;
+  /**
+   * IDs authorized for runtime skill execution — starts as the ACL-scoped set
+   * and gets replaced with the active-filtered subset after catalog injection.
+   * Ensures `getSkillByName` cannot resolve a deactivated skill even if the
+   * LLM (or a direct-invocation path) names one.
+   */
+  let executableSkillIds = params.accessibleSkillIds;
+  let activeSkillNames: Set<string> | undefined;
+  const { accessibleSkillIds } = params;
+  if (accessibleSkillIds && accessibleSkillIds.length > 0) {
+    const skillResult = await injectSkillCatalog({
+      agent,
+      toolDefinitions,
+      toolRegistry,
+      accessibleSkillIds,
+      contextWindowTokens: Number(agentMaxContextTokens) || 200_000,
+      listSkillsByAccess: db?.listSkillsByAccess,
+      codeEnvAvailable: effectiveCodeEnvAvailable,
+      userId: req.user?.id,
+      skillStates: params.skillStates,
+      defaultActiveOnShare: params.defaultActiveOnShare,
+    });
+    toolDefinitions = skillResult.toolDefinitions;
+    skillCount = skillResult.skillCount;
+    executableSkillIds = skillResult.activeSkillIds;
+    activeSkillNames = skillResult.activeSkillNames;
+  }
+
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;
   const maxOutputTokensNum = Number(maxOutputTokens) || 0;
   const baseContextTokens = Math.max(0, agentMaxContextNum - maxOutputTokensNum);
@@ -447,6 +891,12 @@ export async function initializeAgent(
     hasDeferredTools,
     actionsEnabled,
     baseContextTokens,
+    codeEnvAvailable: effectiveCodeEnvAvailable,
+    skillCount,
+    accessibleSkillIds: executableSkillIds,
+    activeSkillNames,
+    manualSkillPrimes,
+    alwaysApplySkillPrimes,
     attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
@@ -456,6 +906,7 @@ export async function initializeAgent(
       maxContextTokens != null && maxContextTokens > 0
         ? maxContextTokens
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
+    primedCodeFiles,
   };
 
   return initializedAgent;

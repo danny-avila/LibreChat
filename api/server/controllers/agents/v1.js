@@ -26,6 +26,8 @@ const {
   EToolResources,
   PermissionBits,
   actionDelimiter,
+  AgentCapabilities,
+  EModelEndpoint,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -55,25 +57,28 @@ const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Validates that the requesting user has VIEW access to every agent referenced in edges.
- * Agents that do not exist in the database are skipped — at create time, the `from` field
- * often references the agent being built, which has no DB record yet.
- * @param {import('librechat-data-provider').GraphEdge[]} edges
+ * Looks up each referenced agent id in Mongo, splits them into three
+ * buckets the caller needs for validation: ids that don't exist at all,
+ * ids the user lacks VIEW permission on, and ids that are fully
+ * accessible. Missing ids are intentionally NOT treated as unauthorized
+ * — for `edges`, a self-referential `from` can legitimately name the
+ * agent being created (no DB record yet); callers that should reject
+ * missing ids (like the subagent path) read the `missing` bucket
+ * instead.
+ * @param {Iterable<string>} agentIds
  * @param {string} userId
- * @param {string} userRole - Used for group/role principal resolution
- * @returns {Promise<string[]>} Agent IDs the user cannot VIEW (empty if all accessible)
+ * @param {string} userRole
+ * @returns {Promise<{ missing: string[], unauthorized: string[] }>}
  */
-const validateEdgeAgentAccess = async (edges, userId, userRole) => {
-  const edgeAgentIds = collectEdgeAgentIds(edges);
-  if (edgeAgentIds.size === 0) {
-    return [];
-  }
+const classifyAgentReferences = async (agentIds, userId, userRole) => {
+  const ids = [...new Set(agentIds)];
+  if (ids.length === 0) return { missing: [], unauthorized: [] };
 
-  const agents = await db.getAgents({ id: { $in: [...edgeAgentIds] } });
+  const agents = await db.getAgents({ id: { $in: ids } });
+  const foundIds = new Set(agents.map((a) => a.id));
+  const missing = ids.filter((id) => !foundIds.has(id));
 
-  if (agents.length === 0) {
-    return [];
-  }
+  if (agents.length === 0) return { missing, unauthorized: [] };
 
   const permissionsMap = await getResourcePermissionsMap({
     userId,
@@ -82,12 +87,57 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
     resourceIds: agents.map((a) => a._id),
   });
 
-  return agents
+  const unauthorized = agents
     .filter((a) => {
       const bits = permissionsMap.get(a._id.toString()) ?? 0;
       return (bits & PermissionBits.VIEW) === 0;
     })
     .map((a) => a.id);
+
+  return { missing, unauthorized };
+};
+
+/**
+ * Validates VIEW access for every agent referenced in `edges`.
+ * Missing ids are NOT errors here — at create time a self-referential
+ * `from` often names the agent being built, which has no DB record
+ * yet. Only unauthorized (existing but unviewable) ids are returned.
+ */
+const validateEdgeAgentAccess = async (edges, userId, userRole) => {
+  const { unauthorized } = await classifyAgentReferences(
+    collectEdgeAgentIds(edges),
+    userId,
+    userRole,
+  );
+  return unauthorized;
+};
+
+/**
+ * Validates `subagents.agent_ids` more strictly than edges: both
+ * missing AND unauthorized ids are errors. `subagents.agent_ids`
+ * can't self-reference (subagents spawn *other* agents), so a
+ * missing id is always a typo or a reference to a deleted agent —
+ * `initializeClient` would silently drop it at runtime, leaving the
+ * persisted config out of sync with actual spawn targets (Codex P2).
+ * Returning the split lets the caller report each bucket with the
+ * appropriate status.
+ */
+const validateSubagentReferences = (subagents, userId, userRole) =>
+  classifyAgentReferences(subagents?.agent_ids ?? [], userId, userRole);
+
+/**
+ * Returns true when the agents-endpoint `subagents` capability is
+ * enabled in this request's resolved app config. When disabled,
+ * `initializeClient` already strips the `subagents` block at runtime
+ * so persisted `agent_ids` are inert — gating the ACL check on this
+ * keeps stale references in legacy records from blocking unrelated
+ * edits after a capability-off rollback (Codex P2).
+ * @param {Express.Request} req
+ */
+const isSubagentsCapabilityEnabled = (req) => {
+  const capabilities = req.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
+  if (!Array.isArray(capabilities)) return false;
+  return capabilities.includes(AgentCapabilities.subagents);
 };
 
 /**
@@ -194,6 +244,44 @@ const createAgentHandler = async (req, res) => {
       if (unauthorized.length > 0) {
         return res.status(403).json({
           error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
+    /**
+     * Only validate subagent ACL when the feature is actually enabled
+     * on BOTH the endpoint (capability flag in appConfig) AND the
+     * agent payload. Runtime (`initializeClient` + `run.ts`) checks
+     * `subagents?.enabled` as a truthy predicate — so `undefined` /
+     * `null` / missing `enabled` all disable the feature. The ACL
+     * check must match exactly: only enforce when `enabled === true`.
+     * Otherwise a payload that omits `enabled` (e.g. API clients, or
+     * legacy records that never set the field) could 403 here while
+     * runtime would happily no-op on the subagent tool. Disable-path
+     * is also untouched: toggling `enabled: false` always passes the
+     * gate, so a user who lost VIEW on a child can still save the
+     * disable edit.
+     */
+    if (
+      isSubagentsCapabilityEnabled(req) &&
+      agentData.subagents?.enabled === true &&
+      agentData.subagents?.agent_ids?.length
+    ) {
+      const { missing, unauthorized } = await validateSubagentReferences(
+        agentData.subagents,
+        userId,
+        userRole,
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in subagents do not exist',
+          agent_ids: missing,
+        });
+      }
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in subagents',
           agent_ids: unauthorized,
         });
       }
@@ -366,6 +454,38 @@ const updateAgentHandler = async (req, res) => {
       if (unauthorized.length > 0) {
         return res.status(403).json({
           error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
+    /** Same guard as the create path: capability on the endpoint,
+     *  AND `subagents.enabled === true` on the payload (runtime's
+     *  truthy check treats `undefined` / `null` / `false` as
+     *  disabled, so the ACL check must too). Missing or explicitly-
+     *  disabled payloads always pass the gate — that preserves the
+     *  "can always save a disable edit" behavior a user might need
+     *  after losing VIEW on a referenced child. */
+    if (
+      isSubagentsCapabilityEnabled(req) &&
+      updateData.subagents?.enabled === true &&
+      updateData.subagents?.agent_ids?.length
+    ) {
+      const { id: userId, role: userRole } = req.user;
+      const { missing, unauthorized } = await validateSubagentReferences(
+        updateData.subagents,
+        userId,
+        userRole,
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in subagents do not exist',
+          agent_ids: missing,
+        });
+      }
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in subagents',
           agent_ids: unauthorized,
         });
       }

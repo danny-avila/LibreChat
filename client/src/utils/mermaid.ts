@@ -1,4 +1,5 @@
 import dedent from 'dedent';
+import DOMPurify from 'dompurify';
 
 interface MermaidButtonStyles {
   bg: string;
@@ -484,3 +485,21 @@ root.render(<App />);
     'mermaid.css': mermaidCSS,
   };
 };
+
+/** Sanitize mermaid SVG and serialize as XML, preserving foreignObject HTML (cure53/DOMPurify#1002). */
+export const sanitizeMermaidSvg = (svg: string): string =>
+  new XMLSerializer().serializeToString(
+    DOMPurify().sanitize(svg, {
+      USE_PROFILES: { svg: true, svgFilters: true, html: true },
+      ADD_TAGS: ['foreignObject', 'use', 'switch'],
+      ADD_ATTR: [
+        'dominant-baseline',
+        'text-anchor',
+        'requiredFeatures',
+        'systemLanguage',
+        'xmlns:xlink',
+      ],
+      HTML_INTEGRATION_POINTS: { foreignobject: true },
+      RETURN_DOM_FRAGMENT: true,
+    }),
+  );

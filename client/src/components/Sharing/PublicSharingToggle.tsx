@@ -18,11 +18,13 @@ interface PublicSharingToggleProps {
 
 const accessDescriptions: Record<
   ResourceType,
-  'com_ui_agent' | 'com_ui_prompt' | 'com_ui_mcp_server'
+  'com_ui_agent' | 'com_ui_prompt' | 'com_ui_mcp_server' | 'com_ui_skill'
 > = {
   [ResourceType.AGENT]: 'com_ui_agent',
   [ResourceType.PROMPTGROUP]: 'com_ui_prompt',
   [ResourceType.MCPSERVER]: 'com_ui_mcp_server',
+  [ResourceType.REMOTE_AGENT]: 'com_ui_agent',
+  [ResourceType.SKILL]: 'com_ui_skill',
 };
 
 export default function PublicSharingToggle({
@@ -88,6 +90,17 @@ export default function PublicSharingToggle({
           isPublic ? 'max-h-32 opacity-100' : 'max-h-0 opacity-0',
         )}
         style={{ overflow: isPublic ? 'visible' : 'hidden' }}
+        aria-hidden={!isPublic}
+        ref={(el) => {
+          if (!el) {
+            return;
+          }
+          if (isPublic) {
+            el.removeAttribute('inert');
+          } else {
+            el.setAttribute('inert', '');
+          }
+        }}
       >
         <div
           className={cn(
