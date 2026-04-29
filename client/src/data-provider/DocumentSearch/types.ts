@@ -51,6 +51,11 @@ export interface DocumentHit {
   title_match?: boolean;
   source_url?: string | null;
   imanage_preview_url?: string | null;
+  edit_date?: string | null;
+  last_user?: string | null;
+  custom4?: string | null;
+  custom1_description?: string | null;
+  custom29_description?: string | null;
   top_chunks: ChunkPreview[];
 }
 

@@ -55,6 +55,47 @@ function extractFileName(metaName: string): string {
   return m ? m[1] : metaName.normalize('NFC');
 }
 
+function sourceDocId(source: BklSource | null): string | null {
+  const meta = source?.metadata?.[0] as Record<string, unknown> | undefined;
+  return typeof meta?.doc_id === 'string' && meta.doc_id ? meta.doc_id : null;
+}
+
+function sourceHasDisplayMetadata(source: BklSource | null): boolean {
+  const meta = source?.metadata?.[0] as Record<string, unknown> | undefined;
+  return Boolean(
+    meta?.edit_date ||
+      meta?.last_user ||
+      meta?.custom4 ||
+      meta?.custom1_description ||
+      meta?.custom29_description,
+  );
+}
+
+function withImanageDetails(source: BklSource, details: Record<string, unknown>): BklSource {
+  const metadata = source.metadata?.length ? [...source.metadata] : [{}];
+  metadata[0] = {
+    ...(metadata[0] || {}),
+    ...Object.fromEntries(
+      ['edit_date', 'last_user', 'custom4', 'custom1_description', 'custom29_description']
+        .map((field) => [field, details[field]])
+        .filter(([, value]) => value),
+    ),
+    imanage_url: details.imanage_url ?? details.imanage_preview_url ?? metadata[0]?.imanage_url,
+    imanage_preview_url:
+      details.imanage_preview_url ?? details.imanage_url ?? metadata[0]?.imanage_preview_url,
+  };
+  return {
+    ...source,
+    source: {
+      ...source.source,
+      imanage_url: (details.imanage_url as string) ?? source.source?.imanage_url,
+      imanage_preview_url:
+        (details.imanage_preview_url as string) ?? source.source?.imanage_preview_url,
+    },
+    metadata,
+  };
+}
+
 /**
  * Build the SectionBadge label from PR-B segment metadata. Returns null when
  * the chunk did not come from a segmented .msg.md (legacy index slices, raw
@@ -219,6 +260,30 @@ export default function BklSourcesPanel() {
     return sources[active.n - 1] ?? null;
   }, [active, sources]);
 
+  useEffect(() => {
+    if (!active || !current || sourceHasDisplayMetadata(current)) return;
+    const docId = sourceDocId(current);
+    if (!docId) return;
+    let cancelled = false;
+    fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((details) => {
+        if (cancelled || !details) return;
+        setSources((prev) => {
+          if (!prev) return prev;
+          const idx = active.n - 1;
+          if (!prev[idx]) return prev;
+          const next = [...prev];
+          next[idx] = withImanageDetails(prev[idx], details);
+          return next;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [active, current]);
+
   if (!active) return null;
 
   return (
@@ -244,8 +309,9 @@ export default function BklSourcesPanel() {
           panel shows exactly the one chunk whose `[N]` marker was clicked. */}
       <div className="flex flex-shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-border-light bg-surface-primary-alt px-3 py-2">
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium uppercase tracking-wider text-text-secondary">
-            출처 [{active.n}]
+          <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-text-secondary">
+            <span>출처 [{active.n}]</span>
+            <PanelTopMeta source={current} />
           </div>
           <div className="flex min-w-0 items-start gap-2">
             <PanelTitleIcon source={current} />
@@ -481,32 +547,70 @@ function PanelTitleIcon({ source }: { source: BklSource | null }) {
   return <FileTypeIcon ext={ext} name={rawName} className="mt-0.5 h-5 w-5 shrink-0" />;
 }
 
-function PanelTitle({ source }: { source: BklSource | null }) {
-  if (!source)
-    return <h2 className="mt-0.5 truncate text-sm font-semibold text-text-primary">—</h2>;
+function formatMetadataValue(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) return null;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) return value.slice(0, 10);
+  return value;
+}
+
+function getDocumentMetadataValues(source: BklSource | null): string[] {
+  const meta = source?.metadata?.[0] as Record<string, unknown> | undefined;
+  if (!meta) return [];
+  return [
+    meta.edit_date,
+    meta.last_user,
+    meta.custom4,
+    meta.custom1_description,
+    meta.custom29_description,
+  ]
+    .map(formatMetadataValue)
+    .filter(Boolean) as string[];
+}
+
+function DocumentMetadataLine({ source }: { source: BklSource | null }) {
+  const line = getDocumentMetadataValues(source).join(' | ');
+  if (!line) return null;
+  return (
+    <div className="mt-1 truncate text-xs font-normal text-text-tertiary" title={line}>
+      {line}
+    </div>
+  );
+}
+
+function PanelTopMeta({ source }: { source: BklSource | null }) {
+  if (!source) return null;
   const meta = source.metadata?.[0];
-  const rawName = meta?.name ?? meta?.file_name ?? '출처 문서';
-  const fileName = extractFileName(rawName);
   const pageInfo = meta?.page_info;
   const relevance = formatRelevance(meta?.relevance);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const badge = getSectionBadge(meta as any, source.document?.[0]);
   return (
     <>
+      {badge ? (
+        <SectionBadge kind={badge.kind} label={badge.label} filename={badge.filename} />
+      ) : null}
+      {pageInfo ? <span className="normal-case tracking-normal">{pageInfo}</span> : null}
+      {relevance ? (
+        <span className="rounded bg-surface-secondary px-1.5 py-0.5 normal-case tracking-normal">
+          관련도 {relevance}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function PanelTitle({ source }: { source: BklSource | null }) {
+  if (!source)
+    return <h2 className="mt-0.5 truncate text-sm font-semibold text-text-primary">—</h2>;
+  const meta = source.metadata?.[0];
+  const rawName = meta?.name ?? meta?.file_name ?? '출처 문서';
+  const fileName = extractFileName(rawName);
+  return (
+    <>
       <h2 className="mt-0.5 truncate text-sm font-semibold text-text-primary" title={fileName}>
         {fileName}
       </h2>
-      {(badge || pageInfo || relevance) && (
-        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-text-secondary">
-          {badge ? (
-            <SectionBadge kind={badge.kind} label={badge.label} filename={badge.filename} />
-          ) : null}
-          {pageInfo ? <span>{pageInfo}</span> : null}
-          {relevance ? (
-            <span className="rounded bg-surface-secondary px-1.5 py-0.5">관련도 {relevance}</span>
-          ) : null}
-        </div>
-      )}
+      <DocumentMetadataLine source={source} />
     </>
   );
 }
