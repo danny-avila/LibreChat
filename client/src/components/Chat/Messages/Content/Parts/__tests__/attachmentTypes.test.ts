@@ -234,12 +234,15 @@ describe('attachmentSalience', () => {
     expect(attachmentSalience({ bytes: 47 })).toBe(0);
   });
 
-  it('returns 1 for zero-byte content (sinks last)', () => {
+  it('returns 1 only for an explicit zero-byte entry (sinks last)', () => {
     expect(attachmentSalience({ bytes: 0 })).toBe(1);
   });
 
-  it('treats undefined `bytes` as empty', () => {
-    expect(attachmentSalience({})).toBe(1);
+  it('treats undefined `bytes` as neutral so non-code-exec sources do not silently sink', () => {
+    /** Web-search results, uploaded files where the schema omits `bytes`,
+     * etc. should keep their input order — only an explicit `bytes === 0`
+     * counts as the empty-placeholder shape we want to demote. */
+    expect(attachmentSalience({})).toBe(0);
   });
 
   it('produces a stable bucket sort when used as `(a,b) => salience(a) - salience(b)`', () => {

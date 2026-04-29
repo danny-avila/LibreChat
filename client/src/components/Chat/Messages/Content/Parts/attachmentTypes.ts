@@ -78,21 +78,41 @@ export const displayFilename = (filename: string | undefined): string => {
 
 /**
  * Salience weight for sorting attachments within a bucket. `0` for
- * non-empty content (renders first), `1` for empty / placeholder
- * (sinks to the bottom). Single-arg so callers compose it inline as
- * `arr.sort((a, b) => attachmentSalience(a) - attachmentSalience(b))` —
- * a two-arg comparator hits TypeScript's contravariance check on
- * `TAttachment`'s union branches that don't carry `bytes`.
+ * normal entries (renders first), `1` only for entries that explicitly
+ * report `bytes === 0` (empty placeholders — sink to the bottom).
+ *
+ * Treating an absent `bytes` field as neutral (`0`) keeps non-code-exec
+ * sources (web-search inline results, uploaded files where the schema
+ * omits the byte count) from silently sinking past real content. The
+ * filter is intentionally narrow: only an explicit zero counts as empty.
  *
  * Accepts the broad `TAttachment` union (some branches lack `bytes`)
- * plus the bare `{ bytes?: number }` shape the unit tests use. The
- * `bytes` read goes through a defensive cast since not every branch
- * declares the property.
+ * plus the bare `{ bytes?: number }` shape the unit tests use.
  */
 export const attachmentSalience = (item: TAttachment | { bytes?: number }): number => {
-  const bytes = (item as { bytes?: number }).bytes ?? 0;
-  return bytes > 0 ? 0 : 1;
+  const bytes = (item as { bytes?: number }).bytes;
+  return bytes === 0 ? 1 : 0;
 };
+
+/**
+ * Stable comparator for arrays of `TAttachment`-like values. Equivalent
+ * to `(a, b) => attachmentSalience(a) - attachmentSalience(b)` but
+ * exported once so the lambda doesn't need to be repeated at every
+ * call site.
+ */
+export const bySalience = (
+  a: TAttachment | { bytes?: number },
+  b: TAttachment | { bytes?: number },
+): number => attachmentSalience(a) - attachmentSalience(b);
+
+/**
+ * Comparator variant for buckets that wrap the attachment in a record
+ * (e.g. `{ attachment, type }` panel entries). Reads salience off the
+ * inner `attachment` field so wrapped buckets sort the same way the
+ * bare ones do.
+ */
+export const byEntrySalience = <T extends { attachment: TAttachment }>(a: T, b: T): number =>
+  attachmentSalience(a.attachment) - attachmentSalience(b.attachment);
 
 /**
  * An attachment is treated as an image only when it has the dimensions and

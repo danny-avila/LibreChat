@@ -5,7 +5,8 @@ import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-pro
 import type { Artifact } from '~/common';
 import {
   artifactTypeForAttachment,
-  attachmentSalience,
+  bySalience,
+  byEntrySalience,
   displayFilename,
   isInternalSandboxArtifact,
   isTextAttachment,
@@ -121,11 +122,11 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     // Sink empty / placeholder files in each bucket so the user's eye
     // lands on the real artifact first. Stable sort preserves the
     // arrival order among non-empty entries.
-    imageAtts.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
-    textAtts.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
-    panelAtts.sort((a, b) => attachmentSalience(a.attachment) - attachmentSalience(b.attachment));
-    mermaidAtts.sort((a, b) => attachmentSalience(a.attachment) - attachmentSalience(b.attachment));
-    otherAtts.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
+    imageAtts.sort(bySalience);
+    textAtts.sort(bySalience);
+    panelAtts.sort(byEntrySalience);
+    mermaidAtts.sort(byEntrySalience);
+    otherAtts.sort(bySalience);
 
     return {
       imageAttachments: renderImages === true ? imageAtts : null,

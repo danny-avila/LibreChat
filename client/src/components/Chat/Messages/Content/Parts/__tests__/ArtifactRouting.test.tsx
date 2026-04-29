@@ -19,8 +19,8 @@ jest.mock('../LogLink', () => ({
 
 jest.mock('~/components/Chat/Input/Files/FileContainer', () => ({
   __esModule: true,
-  default: ({ file }: { file: { filename?: string } }) => (
-    <div data-testid="file-container">{file.filename ?? ''}</div>
+  default: ({ file, displayName }: { file: { filename?: string }; displayName?: string }) => (
+    <div data-testid="file-container">{displayName ?? file.filename ?? ''}</div>
   ),
 }));
 
@@ -473,8 +473,11 @@ describe('ToolArtifactCard click behaviour', () => {
       streaming: false,
     });
     expect(getSnapshot().currentArtifactId).toBeNull();
-    // Open button is unpressed initially (no auto-focus).
-    const openButton = screen.getByRole('button', { pressed: false });
+    /** Pin to the panel-open button by name — the download button has no
+     * `aria-pressed`, but `getByRole('button', { pressed: false })`
+     * relies on DOM order, which silently shifts if the chip's button
+     * order changes. */
+    const openButton = screen.getByRole('button', { name: /com_ui_artifact_click/i });
     act(() => {
       fireEvent.click(openButton);
     });
@@ -534,6 +537,25 @@ describe('AttachmentGroup routing', () => {
     expect(filenames[0]).toMatch(/archive\.zip/);
     expect(filenames[1]).toMatch(/placeholder\.zip/);
   });
+
+  it('passes the de-suffixed name to FileContainer in the code-execution artifact bucket', () => {
+    /** `displayFilename` is now scoped to artifact-rendering call sites:
+     * `FileContainer` itself never strips the `-<6 hex>` suffix, so a
+     * user-uploaded `report-abc123.pdf` rendered through the upload chip
+     * stays intact. The artifact path explicitly opts into stripping by
+     * computing `displayName` and passing it down — verify that flow
+     * here so the chip shows `archive.zip`, not `archive-deadbe.zip`. */
+    const sandboxFile = baseAttachment({
+      file_id: 'sandbox-zip',
+      filename: 'archive-deadbe.zip',
+      type: 'application/zip',
+      bytes: 1024,
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<AttachmentGroup attachments={[sandboxFile]} />);
+    const chip = container.querySelector('[data-testid="file-container"]');
+    expect(chip?.textContent).toBe('archive.zip');
+  });
+
   it('renders separate buckets for panel artifacts, mermaid, text, and plain files', () => {
     const attachments = [
       baseAttachment({

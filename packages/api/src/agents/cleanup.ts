@@ -41,7 +41,16 @@
 const PER_FILE_ANNOTATION_PATTERN =
   /\s*\|\s*(?:File is already downloaded by the user|Image is already displayed to the user|Available as an input[^,\n]*?)(?=,|\n|$)/g;
 
-const TRAILING_NOTES_PATTERN = /\n\s*\n\s*Note:[\s\S]*$/;
+/**
+ * Matches the bash executor's trailing `Note:` paragraphs. Anchored to
+ * the two known boilerplate openings (`Files from previous executions`,
+ * `Files in "Available files"`) so a user-authored `Note:` line — even
+ * one preceded by a blank line in stdout — is not eaten by the
+ * `[\s\S]*$` tail. New upstream variants need to be added here
+ * explicitly; that's the trade-off for not silently dropping content.
+ */
+const TRAILING_NOTES_PATTERN =
+  /\n\s*\n\s*Note:\s*(?:Files from previous executions|Files in "Available files")[\s\S]*$/;
 
 /**
  * Returns `content` with the bash-executor boilerplate removed. Safe

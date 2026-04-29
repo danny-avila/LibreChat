@@ -50,6 +50,8 @@ const ToolMermaidArtifact = memo(({ attachment, text }: ToolMermaidArtifactProps
     return null;
   }
 
+  const visibleFilename = displayFilename(attachment.filename);
+
   return (
     <div className="my-2 flex w-full flex-col gap-1">
       {(attachment.filename || attachment.filepath) && (
@@ -57,16 +59,16 @@ const ToolMermaidArtifact = memo(({ attachment, text }: ToolMermaidArtifactProps
           {attachment.filename && (
             <div
               className="truncate text-[10px] font-medium uppercase tracking-wide text-text-secondary"
-              title={displayFilename(attachment.filename)}
+              title={visibleFilename}
             >
-              {displayFilename(attachment.filename)}
+              {visibleFilename}
             </div>
           )}
           {attachment.filepath && (
             <button
               type="button"
               onClick={handleDownload}
-              aria-label={`${localize('com_ui_download')} ${attachment.filename ?? ''}`}
+              aria-label={`${localize('com_ui_download')} ${visibleFilename}`}
               title={localize('com_ui_download')}
               className={cn(
                 'inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs',

@@ -4,7 +4,9 @@ import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-pro
 import type { ToolArtifactType } from '~/utils/artifacts';
 import {
   artifactTypeForAttachment,
-  attachmentSalience,
+  bySalience,
+  byEntrySalience,
+  displayFilename,
   isImageAttachment,
   isInternalSandboxArtifact,
   isTextAttachment,
@@ -58,6 +60,7 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
         file={attachment}
         onClick={handleDownload}
         overrideType={extension}
+        displayName={displayFilename(attachment.filename)}
         containerClassName="max-w-fit"
         buttonClassName="bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy"
       />
@@ -119,6 +122,7 @@ const TextAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
           file={attachment}
           onClick={handleDownload}
           overrideType={extension}
+          displayName={displayFilename(attachment.filename)}
           containerClassName="max-w-fit"
           buttonClassName="bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy"
         />
@@ -296,13 +300,11 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   // Sink empty / placeholder-shaped files in each bucket so the user's
   // eye lands on the real artifact first. `sort` is stable in modern
   // engines (V8 ≥ 7.0) so equal-weight entries keep their input order.
-  fileAttachments.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
-  textAttachments.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
-  panelArtifacts.sort(
-    (a, b) => attachmentSalience(a.attachment) - attachmentSalience(b.attachment),
-  );
-  mermaidArtifacts.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
-  imageAttachments.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
+  fileAttachments.sort(bySalience);
+  textAttachments.sort(bySalience);
+  panelArtifacts.sort(byEntrySalience);
+  mermaidArtifacts.sort(bySalience);
+  imageAttachments.sort(bySalience);
 
   return (
     <>

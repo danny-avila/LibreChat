@@ -98,6 +98,28 @@ describe('cleanCodeToolOutput', () => {
     expect(output).toMatch(/Note: this is real content/);
   });
 
+  it('preserves a user-authored "Note:" line that follows a blank line in stdout', () => {
+    /** Tightened anchor: the trailing-notes regex now requires one of the
+     * known boilerplate openings (`Files from previous executions`, etc.)
+     * after `Note:`. A user `print()` that happens to output a blank
+     * line followed by `Note: ...something else...` must survive
+     * untouched, along with everything that follows it. */
+    const input = [
+      'stdout:',
+      'first line',
+      '',
+      "Note: this is the user's measurement output",
+      'more output',
+      '',
+      'Generated files:',
+      '- /mnt/data/foo.txt',
+    ].join('\n');
+    const output = cleanCodeToolOutput(input);
+    expect(output).toMatch(/Note: this is the user's measurement output/);
+    expect(output).toMatch(/Generated files:/);
+    expect(output).toMatch(/- \/mnt\/data\/foo\.txt$/);
+  });
+
   it('drops trailing blank lines after stripping', () => {
     const input =
       'stdout:\nresult\n\n\nNote: Files from previous executions are automatically available and can be modified.';

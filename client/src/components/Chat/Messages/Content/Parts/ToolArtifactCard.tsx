@@ -1,6 +1,12 @@
 import { memo, useEffect, useId, useLayoutEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
-import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import {
+  useRecoilCallback,
+  useRecoilState,
+  useRecoilValue,
+  useResetRecoilState,
+  useSetRecoilState,
+} from 'recoil';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
@@ -66,15 +72,27 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const existingEntry = useRecoilValue(store.artifactByIdSelector(artifact.id));
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
   const [claim, setClaim] = useRecoilState(store.toolArtifactClaim(artifact.id));
   const isSelected = artifact.id === currentArtifactId;
   const isMyClaim = claim === claimKey;
-  // Captured at first render only — cards that mount mid-stream stay
-  // "fresh" for the rest of their lifetime even after streaming ends,
-  // and cards that mount post-stream stay "history" even if the user
-  // sends another message while the same card stays mounted.
-  const mountedDuringStreamRef = useRef(isSubmitting);
+  /**
+   * Captured at first render via a non-subscribing snapshot read so the
+   * downstream effect doesn't re-fire (and the component doesn't
+   * re-render) every time `isSubmittingFamily(0)` flips. Cards that mount
+   * mid-stream stay "fresh" for the rest of their lifetime; cards that
+   * mount post-stream stay "history" even if the user sends a new
+   * message while this card stays mounted.
+   */
+  const readInitialIsSubmitting = useRecoilCallback(
+    ({ snapshot }) =>
+      () =>
+        snapshot.getLoadable(store.isSubmittingFamily(0)).getValue(),
+    [],
+  );
+  const mountedDuringStreamRef = useRef<boolean | null>(null);
+  if (mountedDuringStreamRef.current === null) {
+    mountedDuringStreamRef.current = readInitialIsSubmitting();
+  }
 
   useLayoutEffect(() => {
     // Always (re)claim on mount — a later card for the same id displaces

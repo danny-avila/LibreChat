@@ -1,6 +1,5 @@
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
 import { getFileType, cn } from '~/utils';
 import FilePreview from './FilePreview';
 import RemoveFile from './RemoveFile';
@@ -8,6 +7,7 @@ import RemoveFile from './RemoveFile';
 const FileContainer = ({
   file,
   overrideType,
+  displayName,
   buttonClassName,
   containerClassName,
   onDelete,
@@ -15,17 +15,19 @@ const FileContainer = ({
 }: {
   file: Partial<ExtendedFile | TFile>;
   overrideType?: string;
+  /**
+   * Optional pre-computed label for the chip. Callers in code-execution
+   * artifact contexts pass the de-suffixed name; upload chips and
+   * persisted user files leave this undefined and render the raw filename.
+   */
+  displayName?: string;
   buttonClassName?: string;
   containerClassName?: string;
   onDelete?: () => void;
   onClick?: React.MouseEventHandler<HTMLButtonElement>;
 }) => {
   const fileType = getFileType(overrideType ?? file.type);
-  // The on-disk filename can carry a `-<6 hex>` collision suffix that
-  // `sanitizeArtifactPath` adds when sanitization mutated the raw input
-  // (`.dirkeep` → `_.dirkeep-88b30b`). Show the canonical name in the
-  // chip; downloads still use `file.filename` so lookup is unaffected.
-  const visibleName = displayFilename(file.filename);
+  const visibleName = displayName ?? file.filename ?? '';
 
   return (
     <div
