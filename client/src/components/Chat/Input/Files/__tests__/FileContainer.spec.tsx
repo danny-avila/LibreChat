@@ -1,6 +1,5 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import '@testing-library/jest-dom';
 import type { TFile } from 'librechat-data-provider';
 import FileContainer from '../FileContainer';
 
