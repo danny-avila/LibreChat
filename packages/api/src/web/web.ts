@@ -123,6 +123,12 @@ export async function loadWebSearchAuth({
       specificService = webSearchConfig.scraperProvider as unknown as ServiceType;
     } else if (category === SearchCategories.RERANKERS && webSearchConfig?.rerankerType) {
       specificService = webSearchConfig.rerankerType as unknown as ServiceType;
+
+      // Special case: skipping the reranker means skipping auth as well
+      if (specificService === 'none') {
+        authResult.rerankerType = specificService as RerankerTypes;
+        return [true, false];
+      }
     }
 
     // If a specific service is specified, only check that one
