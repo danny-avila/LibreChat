@@ -393,6 +393,73 @@ describe('ToolArtifactCard click behaviour', () => {
     expect(snap.currentArtifactId).toBeNull();
   });
 
+  it('forces panel visibility on streaming mount even if visibility was previously false', () => {
+    // Repro: user closed the panel earlier in the session
+    // (`artifactsVisibility = false`), then a new tool artifact
+    // arrives via SSE. The old behavior set `currentArtifactId` but
+    // left visibility alone, so the chip showed "click to close" while
+    // the panel stayed hidden. Streaming arrivals must re-open the
+    // panel — that's the explicit "auto-open when first created" rule.
+    const html = baseAttachment({
+      file_id: 'fresh-stream',
+      filename: 'fresh.html',
+      text: '<h1>fresh</h1>',
+    } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), true);
+      snap.set(store.artifactsVisibility, false);
+    };
+    let snapshot: ArtifactsSnapshot = {
+      visibility: false,
+      currentArtifactId: null,
+      artifactIds: [],
+    };
+    render(
+      <RecoilRoot initializeState={initializeState}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={html} />
+      </RecoilRoot>,
+    );
+    expect(snapshot.visibility).toBe(true);
+    expect(snapshot.currentArtifactId).toBe('tool-artifact-fresh-stream');
+  });
+
+  it('does NOT force visibility on history mount (closed panel stays closed)', () => {
+    // The flip-side of the prior test: a card mounted from history
+    // (isSubmitting=false) must not toggle visibility, so a user who
+    // explicitly closed the panel keeps it closed when revisiting.
+    const html = baseAttachment({
+      file_id: 'history-no-vis',
+      filename: 'historic.html',
+      text: '<h1>old</h1>',
+    } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), false);
+      snap.set(store.artifactsVisibility, false);
+    };
+    let snapshot: ArtifactsSnapshot = {
+      visibility: false,
+      currentArtifactId: null,
+      artifactIds: [],
+    };
+    render(
+      <RecoilRoot initializeState={initializeState}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={html} />
+      </RecoilRoot>,
+    );
+    expect(snapshot.visibility).toBe(false);
+    expect(snapshot.currentArtifactId).toBeNull();
+  });
+
   it('clicking a history-loaded card focuses it (user-initiated open)', () => {
     // Even though the mount-time auto-focus is suppressed for history,
     // the click handler is unconditional — users explicitly opening a

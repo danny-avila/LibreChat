@@ -42,19 +42,20 @@ interface ToolArtifactCardProps {
  *     Without that guard, both cards would observe each other's write
  *     and trade overwrites in a loop.
  *
- *  3. **Focus on mount** (deps: artifact.id) — gated on `isSubmitting`
- *     captured at first render via a ref. A card mounted *during*
- *     streaming means a new artifact arrived from SSE; we steal panel
- *     focus to match the legacy streaming-artifact UX. A card mounted
- *     while `isSubmitting === false` is part of conversation history
- *     (page load, navigating back to an old conversation) and must
- *     not steal focus — `Presentation`'s render condition gates the
- *     panel on `currentArtifactId != null`, so leaving focus alone
- *     keeps the panel closed on history load.
- *
- * Visibility is intentionally not toggled. The Recoil default is `true`,
- * which auto-opens the panel on first registration; a user who has
- * explicitly closed the panel keeps it closed until they click.
+ *  3. **Focus + open on mount** (deps: artifact.id) — gated on
+ *     `isSubmitting` captured at first render via a ref. A card mounted
+ *     *during* streaming means a new artifact arrived from SSE; we
+ *     steal panel focus AND force `artifactsVisibility = true` so the
+ *     panel actually opens (matching the legacy SSE auto-open UX).
+ *     Toggling visibility on every streaming arrival means a previously
+ *     closed panel re-opens for a fresh artifact — that's the explicit
+ *     "auto-open when first created" behavior. A card mounted while
+ *     `isSubmitting === false` is part of conversation history (page
+ *     load, navigating back to an old conversation) and must not steal
+ *     focus or open the panel — `Presentation`'s render condition gates
+ *     on `currentArtifactId != null`, so leaving both alone keeps the
+ *     panel closed on history load. Click-to-open path (`handleOpen`)
+ *     remains unchanged so users can manually open historical chips.
  */
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
@@ -108,12 +109,18 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
 
   useEffect(() => {
     if (!mountedDuringStreamRef.current) {
-      // Card mounted as part of conversation history — leave focus alone
-      // so the side panel doesn't auto-open on navigation.
+      // Card mounted as part of conversation history — leave focus and
+      // visibility alone so the side panel doesn't auto-open on navigation.
       return;
     }
+    // Streaming arrival: focus the new artifact AND force the panel
+    // visible. Without `setVisible(true)`, a session where the user had
+    // previously closed the panel (visibility=false) would surface the
+    // selection in the chip ("click to close") but never actually open
+    // — `Presentation` gates rendering on visibility.
     setCurrentArtifactId(artifact.id);
-  }, [artifact.id, setCurrentArtifactId]);
+    setVisible(true);
+  }, [artifact.id, setCurrentArtifactId, setVisible]);
 
   const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
