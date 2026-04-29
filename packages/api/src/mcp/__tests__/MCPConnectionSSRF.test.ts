@@ -704,6 +704,44 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       await response.body?.cancel().catch(() => undefined);
     },
   );
+
+  it('should preserve headers carried on a Request input when no override headers are supplied', async () => {
+    /**
+     * Pre-fix regression: `buildFetchInit` unconditionally set `headers: {}`
+     * when neither `init.headers` nor runtime headers contributed anything.
+     * That overrode the headers attached to the `Request` itself, dropping
+     * Authorization / mcp-session-id / protocol negotiation headers that
+     * wrappers commonly bake onto the `Request` object directly.
+     */
+    const capture = await createHeaderCaptureServer();
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-request-headers',
+        serverConfig: { type: 'streamable-http', url: capture.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const request = new UndiciRequest(capture.url, {
+        method: 'GET',
+        headers: {
+          Authorization: 'Bearer request-input-token',
+          'X-Wrapper-Header': 'wrapper-supplied',
+        },
+      });
+
+      const response = await customFetch(request);
+      expect(response.status).toBe(200);
+      await response.body?.cancel().catch(() => undefined);
+
+      expect(capture.receivedHeaders.length).toBeGreaterThan(0);
+      const headers = capture.receivedHeaders[0];
+      expect(headers['authorization']).toBe('Bearer request-input-token');
+      expect(headers['x-wrapper-header']).toBe('wrapper-supplied');
+    } finally {
+      await capture.close();
+    }
+  });
 });
 
 describe('MCP SSRF protection – WebSocket DNS resolution', () => {

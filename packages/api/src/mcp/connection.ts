@@ -123,8 +123,19 @@ function buildFetchInit(
   dispatcher: Agent,
   requestHeaders: Record<string, string> | null | undefined,
 ): UndiciRequestInit {
+  const hasInitHeaders = init?.headers != null;
+  const hasRuntimeHeaders = requestHeaders != null && Object.keys(requestHeaders).length > 0;
+  /**
+   * If neither `init.headers` nor runtime headers contribute anything, leave
+   * `headers` off the returned init entirely. Setting `headers: {}` would
+   * blow away the headers carried on a `Request` input — auth/session tokens
+   * and protocol negotiation headers — even when no redirect is involved.
+   */
+  if (!hasInitHeaders && !hasRuntimeHeaders) {
+    return { ...init, redirect: 'manual', dispatcher };
+  }
   const initHeaders = normalizeInitHeaders(init);
-  const headers = requestHeaders ? { ...initHeaders, ...requestHeaders } : initHeaders;
+  const headers = hasRuntimeHeaders ? { ...initHeaders, ...requestHeaders } : initHeaders;
   return {
     ...init,
     redirect: 'manual',
