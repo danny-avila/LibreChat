@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # LibreChat
 
 ## Project Overview
@@ -132,27 +136,150 @@ Multi-line imports count total character length across all lines. Consolidate va
 
 ## Development Commands
 
+### Starting the application
+
+| Command | Purpose |
+|---|---|
+| `npm run backend:dev` | Start backend with file watching (nodemon, port 3080) |
+| `npm run frontend:dev` | Start frontend dev server with HMR (port 3090, requires backend) |
+| `npm run backend` | Start backend in production mode |
+
+### Installing and building
+
 | Command | Purpose |
 |---|---|
 | `npm run smart-reinstall` | Install deps (if lockfile changed) + build via Turborepo |
 | `npm run reinstall` | Clean install — wipe `node_modules` and reinstall from scratch |
-| `npm run backend` | Start the backend server |
-| `npm run backend:dev` | Start backend with file watching (development) |
-| `npm run build` | Build all compiled code via Turborepo (parallel, cached) |
-| `npm run frontend` | Build all compiled code sequentially (legacy fallback) |
-| `npm run frontend:dev` | Start frontend dev server with HMR (port 3090, requires backend running) |
+| `npm run build` | Build all packages via Turborepo (parallel, cached) |
 | `npm run build:data-provider` | Rebuild `packages/data-provider` after changes |
+| `npm run build:api` | Rebuild `packages/api` only |
+| `npm run build:data-schemas` | Rebuild `packages/data-schemas` only |
+| `npm run build:packages` | Build all packages except frontend (data-provider → data-schemas → api → client-package) |
+
+Frontend production build requires extra heap — always run with:
+```bash
+cd client && NODE_OPTIONS="--max-old-space-size=4096" npm run build
+```
+
+### Linting and formatting
+
+```bash
+npm run lint          # ESLint across all workspaces
+npm run lint:fix      # ESLint with auto-fix
+npm run format        # Prettier write
+```
+
+### Testing
+
+Run from the workspace directory, not the root:
+
+```bash
+cd api && npx jest <pattern>                    # Legacy backend
+cd packages/api && npx jest <pattern>           # New backend (TypeScript)
+cd packages/data-provider && npx jest <pattern>
+cd packages/data-schemas && npx jest <pattern>
+cd client && npx jest <pattern>                 # Frontend
+```
+
+Root-level shortcuts (CI mode, no watch):
+
+```bash
+npm run test:api
+npm run test:packages:api
+npm run test:packages:data-provider
+npm run test:packages:data-schemas
+npm run test:client
+npm run test:all        # Runs all of the above sequentially
+```
+
+Integration tests (require live Redis or S3):
+
+```bash
+cd packages/api && npm run test:cache-integration
+cd packages/api && npm run test:s3-integration
+```
+
+### E2E tests
+
+```bash
+npm run e2e             # Headless, local config
+npm run e2e:headed      # With browser UI
+npm run e2e:debug       # Playwright debug mode
+```
+
+### Admin utilities (run from root)
+
+```bash
+npm run create-user
+npm run reset-password
+npm run add-balance
+npm run flush-cache
+npm run migrate:agent-permissions   # --dry-run flag available
+```
 
 - Node.js: v20.19.0+ or ^22.12.0 or >= 23.0.0
-- Database: MongoDB
-- Backend runs on `http://localhost:3080/`; frontend dev server on `http://localhost:3090/`
+- Database: MongoDB (recommended: `docker run -d --name chat-mongodb -p 27017:27017 mongo:8.0.20 mongod --noauth`)
+- Backend: `http://localhost:3080/`; frontend dev server: `http://localhost:3090/`
+- Config files: `.env` (copy from `.env.example`) and `librechat.yaml` (copy from `librechat.example.yaml`)
+
+---
+
+## Architecture: Request Flow
+
+A typical API request flows through these layers:
+
+```
+HTTP Request
+  → api/server/routes/          # Express routers (JS, thin)
+  → api/server/middleware/      # Auth, validation, rate limiting
+  → api/server/controllers/     # Thin JS wrappers
+  → packages/api/src/           # All real logic (TypeScript)
+      ├── endpoints/            # Per-provider model fetching and initialization
+      ├── agents/               # Agent execution logic
+      ├── cache/                # Keyv-based cache (Redis or in-memory)
+      ├── mcp/                  # MCP server registry and tool resolution
+      ├── stream/               # Streaming response handling
+      └── auth/, admin/, acl/   # Auth, permissions, ACL
+```
+
+## Architecture: Model Resolution
+
+When a client requests `/api/models`:
+
+1. `api/server/controllers/ModelController.js` calls `loadDefaultModels()` + `loadConfigModels()`
+2. `loadDefaultModels` resolves built-in providers (OpenAI, Anthropic, Google, Bedrock) via `packages/api/src/endpoints/models.ts`
+3. `loadConfigModels` iterates custom endpoints from `librechat.yaml`, calls `fetchModels()` per endpoint
+4. `fetchModels()` hits the provider's `/models` endpoint via HTTP, caches results for 2 minutes under `CacheKeys.MODEL_QUERIES`
+5. On failure, falls back to the `default` model list defined in `librechat.yaml`
+
+Resolution priority per provider: **env var** (e.g. `OPENAI_MODELS`) → **API fetch** → **hardcoded defaults** in `librechat-data-provider`.
+
+## Architecture: Cache
+
+`packages/api/src/cache/` wraps [Keyv](https://github.com/jaredwray/keyv) with two backends:
+- **Redis** — when `REDIS_URI` is set in `.env`
+- **In-memory** — default fallback for development
+
+Named caches (e.g. `CacheKeys.MODEL_QUERIES`, `CacheKeys.CONFIG_STORE`) are accessed via `standardCache(key)`. Cache TTLs are defined in `librechat-data-provider`'s `Time` enum.
+
+## Architecture: Frontend Data Flow
+
+```
+Component
+  → useQuery/useMutation (React Query)
+  → client/src/data-provider/[Feature]/queries.ts
+  → data-service.ts (packages/data-provider/src/data-service.ts)
+  → api-endpoints.ts (packages/data-provider/src/api-endpoints.ts)
+  → HTTP → Express backend
+```
+
+QueryKeys and MutationKeys are the single source of truth for cache invalidation — always use `packages/data-provider/src/keys.ts`, never hardcode strings.
 
 ---
 
 ## Testing
 
 - Framework: **Jest**, run per-workspace.
-- Run tests from their workspace directory: `cd api && npx jest <pattern>`, `cd packages/api && npx jest <pattern>`, etc.
 - Frontend tests: `__tests__` directories alongside components; use `test/layout-test-utils` for rendering.
 - Cover loading, success, and error states for UI/data flows.
 
