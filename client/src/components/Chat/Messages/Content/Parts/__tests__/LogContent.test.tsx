@@ -1,10 +1,8 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
-import type { MutableSnapshot } from 'recoil';
 import type { TAttachment } from 'librechat-data-provider';
 import LogContent from '../LogContent';
-import store from '~/store';
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -65,18 +63,10 @@ const baseAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
   }) as TAttachment;
 
 /**
- * Default `streaming: true` so `ToolArtifactCard`'s mount-time
- * auto-focus (gated on `isSubmittingFamily(0)`) fires for these tests.
- * The legacy SSE-arrival flow is what every "panel routing" assertion
- * implicitly assumes.
+ * Tool-artifact files are click-to-open only — no streaming state to
+ * seed. Plain `RecoilRoot` is enough.
  */
-const renderWith = (ui: React.ReactElement, opts: { streaming?: boolean } = {}) => {
-  const streaming = opts.streaming ?? true;
-  const initializeState = (snapshot: MutableSnapshot) => {
-    snapshot.set(store.isSubmittingFamily(0), streaming);
-  };
-  return render(<RecoilRoot initializeState={initializeState}>{ui}</RecoilRoot>);
-};
+const renderWith = (ui: React.ReactElement) => render(<RecoilRoot>{ui}</RecoilRoot>);
 
 describe('LogContent attachment routing', () => {
   it('routes HTML attachments through ToolArtifactCard (panel)', () => {
@@ -86,8 +76,10 @@ describe('LogContent attachment routing', () => {
       text: '<h1>hi</h1>',
     } as Partial<TAttachment>);
     renderWith(<LogContent output="" attachments={[html]} />);
-    // The panel card carries an aria-pressed state; auto-focused on mount.
-    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+    // The panel card renders with an unpressed open button — code-file
+    // artifacts are click-to-open, not auto-focused on mount. The
+    // `aria-pressed` button + chip title is the proxy for "panel-routed".
+    expect(screen.getByRole('button', { pressed: false })).toBeInTheDocument();
     expect(screen.getByText('index.html')).toBeInTheDocument();
   });
 
@@ -99,8 +91,8 @@ describe('LogContent attachment routing', () => {
     } as Partial<TAttachment>);
     renderWith(<LogContent output="" attachments={[mmd]} />);
     expect(screen.getByTestId('mermaid-render')).toHaveTextContent('graph TD');
-    // Panel card not rendered for mermaid
-    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    // Panel card not rendered for mermaid (no aria-pressed button at all)
+    expect(screen.queryByRole('button', { pressed: false })).not.toBeInTheDocument();
   });
 
   it('routes text-bearing CSV through inline <pre>, not the panel', () => {
@@ -111,7 +103,7 @@ describe('LogContent attachment routing', () => {
     } as Partial<TAttachment>);
     const { container } = renderWith(<LogContent output="" attachments={[csv]} />);
     expect(container.querySelector('pre')).not.toBeNull();
-    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { pressed: false })).not.toBeInTheDocument();
     expect(screen.queryByTestId('mermaid-render')).not.toBeInTheDocument();
   });
 
@@ -151,7 +143,7 @@ describe('LogContent attachment routing', () => {
     } as Partial<TAttachment>);
     renderWith(<LogContent output="" attachments={[expired]} />);
     // No panel card and no log-link (the expired branch returns plain text).
-    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { pressed: false })).not.toBeInTheDocument();
     expect(screen.queryByTestId('log-link')).not.toBeInTheDocument();
     // The localize mock returns the key, so we assert the expired-message key
     // appears in the rendered output alongside the filename.
@@ -166,7 +158,8 @@ describe('LogContent attachment routing', () => {
       expiresAt: Date.now() + 60_000,
     } as Partial<TAttachment>);
     renderWith(<LogContent output="" attachments={[fresh]} />);
-    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { pressed: false })).toBeInTheDocument();
+    expect(screen.getByText('index.html')).toBeInTheDocument();
   });
 
   it('splits a mixed list into the right buckets', () => {
