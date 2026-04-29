@@ -20,14 +20,25 @@ import { detectArtifactTypeFromFile } from '~/utils/artifacts';
 const SANDBOX_PLACEHOLDER_LEAVES = /^_\.(?:dirkeep|gitkeep)-[0-9a-f]{6}$/i;
 
 /**
- * Drop the deterministic 6-hex disambiguator the backend appends when
- * sanitization mutated the raw filename (e.g. `.dirkeep` → `_.dirkeep-88b30b`,
- * `out 1.csv` → `out_1-<hash>.csv`). The hash is collision-avoidance
- * machinery; users only need to see a recognizable name. We strip it
- * for display *only* — the on-disk filename keeps the suffix so
- * downloads still resolve.
+ * Two complementary patterns recover the user-visible filename from the
+ * backend's sanitized form. Splitting them avoids the false-positive
+ * where a legitimate filename happens to end in `-` + 6 hex chars:
+ *
+ *   - `COLLISION_SUFFIX_BEFORE_EXT` matches the suffix only when an
+ *     extension follows (`output-deadbe.csv` → `output.csv`). This is
+ *     the broad case from `embedDisambiguatorInLeaf` for non-dotfiles
+ *     where sanitization mutated something (spaces, special chars).
+ *
+ *   - `SANITIZED_DOTFILE_TRAILING_SUFFIX` matches only when the leaf
+ *     starts with `_.` AND ends with `-XXXXXX`. That combination is
+ *     the unambiguous fingerprint of `sanitizeArtifactPath`'s dotfile
+ *     rewrite (`.dirkeep` → `_.dirkeep-88b30b`). Without this anchor,
+ *     a user-named `build-a1b2c3` would lose its `-a1b2c3` suffix
+ *     because there's no way to tell intent from a hex-shaped tail
+ *     alone.
  */
-const COLLISION_SUFFIX = /-[0-9a-f]{6}(?=\.[^.]+$|$)/;
+const COLLISION_SUFFIX_BEFORE_EXT = /-[0-9a-f]{6}(?=\.[^.]+$)/;
+const SANITIZED_DOTFILE_TRAILING_SUFFIX = /^(_\..+)-[0-9a-f]{6}$/;
 
 /**
  * Last segment of a forward-slash path. The backend stores filenames as
@@ -43,10 +54,15 @@ const leafOf = (filename: string | undefined): string => {
 /**
  * `true` when the attachment is a sandbox-internal placeholder (empty
  * folder marker) the user shouldn't see as its own file chip.
+ *
+ * `bytes` must be *explicitly* zero to qualify — `undefined` means
+ * "size unknown" (web-search results, archived attachments where the
+ * schema omits the byte count) and we render those normally rather
+ * than hiding them on a name match alone.
  */
 export const isInternalSandboxArtifact = (attachment: TAttachment): boolean => {
   const file = attachment as TFile & TAttachmentMetadata;
-  if ((file.bytes ?? 0) > 0) {
+  if (file.bytes !== 0) {
     return false;
   }
   return SANDBOX_PLACEHOLDER_LEAVES.test(leafOf(attachment.filename));
@@ -66,7 +82,17 @@ export const displayFilename = (filename: string | undefined): string => {
   const slash = raw.lastIndexOf('/');
   const dir = slash < 0 ? '' : raw.slice(0, slash);
   const leaf = slash < 0 ? raw : raw.slice(slash + 1);
-  const cleanedLeaf = leaf.replace(COLLISION_SUFFIX, '');
+  // Try the broad case first (suffix before an extension). If nothing
+  // matched, fall back to the dotfile-specific anchor so we don't strip
+  // a 6-hex tail off an extensionless leaf the user actually named that
+  // way (e.g. `build-a1b2c3` from a hash-named build artifact).
+  let cleanedLeaf = leaf.replace(COLLISION_SUFFIX_BEFORE_EXT, '');
+  if (cleanedLeaf === leaf) {
+    const dotfileMatch = leaf.match(SANITIZED_DOTFILE_TRAILING_SUFFIX);
+    if (dotfileMatch) {
+      cleanedLeaf = dotfileMatch[1];
+    }
+  }
   // Drop the leading-dotfile underscore prefix (`_.dirkeep` → `.dirkeep`)
   // only when paired with the collision suffix, since that combination is
   // a strong signal the underscore was added by sanitization. Standalone
@@ -86,24 +112,23 @@ export const displayFilename = (filename: string | undefined): string => {
  * omits the byte count) from silently sinking past real content. The
  * filter is intentionally narrow: only an explicit zero counts as empty.
  *
- * Accepts the broad `TAttachment` union (some branches lack `bytes`)
- * plus the bare `{ bytes?: number }` shape the unit tests use.
+ * The internal cast is needed because `TAttachment` is a union and only
+ * its first arm declares `bytes`; the function reads through the cast
+ * and treats `undefined` as neutral, which is correct for every arm.
  */
-export const attachmentSalience = (item: TAttachment | { bytes?: number }): number => {
+export const attachmentSalience = (item: TAttachment): number => {
   const bytes = (item as { bytes?: number }).bytes;
   return bytes === 0 ? 1 : 0;
 };
 
 /**
- * Stable comparator for arrays of `TAttachment`-like values. Equivalent
- * to `(a, b) => attachmentSalience(a) - attachmentSalience(b)` but
+ * Stable comparator for arrays of `TAttachment` values. Equivalent to
+ * `(a, b) => attachmentSalience(a) - attachmentSalience(b)` but
  * exported once so the lambda doesn't need to be repeated at every
  * call site.
  */
-export const bySalience = (
-  a: TAttachment | { bytes?: number },
-  b: TAttachment | { bytes?: number },
-): number => attachmentSalience(a) - attachmentSalience(b);
+export const bySalience = (a: TAttachment, b: TAttachment): number =>
+  attachmentSalience(a) - attachmentSalience(b);
 
 /**
  * Comparator variant for buckets that wrap the attachment in a record

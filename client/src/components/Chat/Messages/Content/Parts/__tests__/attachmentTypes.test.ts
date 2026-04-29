@@ -205,6 +205,16 @@ describe('isInternalSandboxArtifact', () => {
     } as Partial<TAttachment>);
     expect(isInternalSandboxArtifact(attachment)).toBe(false);
   });
+
+  it('does NOT match when bytes is undefined (size unknown ≠ empty)', () => {
+    /** Non-code-exec attachment sources can omit `bytes` entirely. The
+     * filter only fires for an *explicit* zero-byte placeholder so we
+     * don't accidentally hide files we don't have size info for. */
+    const attachment = baseAttachment({
+      filename: '_.dirkeep-88b30b',
+    } as Partial<TAttachment>);
+    expect(isInternalSandboxArtifact(attachment)).toBe(false);
+  });
 });
 
 describe('displayFilename', () => {
@@ -239,27 +249,46 @@ describe('displayFilename', () => {
     // 7 chars after the dash → not the canonical 6-char hash form.
     expect(displayFilename('build-1234567.log')).toBe('build-1234567.log');
   });
+
+  it('preserves an extensionless leaf that ends in 6 hex chars', () => {
+    /** The dotfile-anchored fallback only fires when the leaf starts
+     * with `_.` AND ends with `-XXXXXX`. A user-named extensionless
+     * file like `build-a1b2c3` has no `_.` prefix, so neither pattern
+     * matches and the name is preserved. Without that anchor an
+     * agent-emitted hash-named output would silently lose its tail. */
+    expect(displayFilename('build-a1b2c3')).toBe('build-a1b2c3');
+  });
+
+  it('preserves an extensionless leaf with hex suffix inside a directory', () => {
+    expect(displayFilename('out/blob-deadbe')).toBe('out/blob-deadbe');
+  });
 });
 
 describe('attachmentSalience', () => {
   it('returns 0 for non-empty content (sorts first)', () => {
-    expect(attachmentSalience({ bytes: 47 })).toBe(0);
+    expect(attachmentSalience(baseAttachment({ bytes: 47 } as Partial<TAttachment>))).toBe(0);
   });
 
   it('returns 1 only for an explicit zero-byte entry (sinks last)', () => {
-    expect(attachmentSalience({ bytes: 0 })).toBe(1);
+    expect(attachmentSalience(baseAttachment({ bytes: 0 } as Partial<TAttachment>))).toBe(1);
   });
 
   it('treats undefined `bytes` as neutral so non-code-exec sources do not silently sink', () => {
     /** Web-search results, uploaded files where the schema omits `bytes`,
      * etc. should keep their input order — only an explicit `bytes === 0`
      * counts as the empty-placeholder shape we want to demote. */
-    expect(attachmentSalience({})).toBe(0);
+    expect(attachmentSalience(baseAttachment({}))).toBe(0);
   });
 
   it('produces a stable bucket sort when used as `(a,b) => salience(a) - salience(b)`', () => {
-    const real = { bytes: 47, filename: 'test_file.txt' };
-    const placeholder = { bytes: 0, filename: '_.dirkeep-88b30b' };
+    const real = baseAttachment({
+      bytes: 47,
+      filename: 'test_file.txt',
+    } as Partial<TAttachment>);
+    const placeholder = baseAttachment({
+      bytes: 0,
+      filename: '_.dirkeep-88b30b',
+    } as Partial<TAttachment>);
     const sorted = [placeholder, real].sort(
       (a, b) => attachmentSalience(a) - attachmentSalience(b),
     );

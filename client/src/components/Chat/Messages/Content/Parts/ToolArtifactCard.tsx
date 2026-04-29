@@ -86,7 +86,13 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const readInitialIsSubmitting = useRecoilCallback(
     ({ snapshot }) =>
       () =>
-        snapshot.getLoadable(store.isSubmittingFamily(0)).getValue(),
+        // `valueMaybe()` returns `undefined` if the atom is in an error
+        // or loading state instead of throwing — defensive against an
+        // upstream selector failure surfacing during card mount. The
+        // `?? false` default is correct because a card we can't classify
+        // as streaming is one we should treat as history (don't steal
+        // focus / open the panel).
+        snapshot.getLoadable(store.isSubmittingFamily(0)).valueMaybe() ?? false,
     [],
   );
   const mountedDuringStreamRef = useRef<boolean | null>(null);
