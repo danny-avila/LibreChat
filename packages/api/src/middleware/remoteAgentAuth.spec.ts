@@ -1,7 +1,8 @@
-import type { JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
+import type { JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { Request, Response } from 'express';
+import type { RequestInit } from 'undici';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -625,6 +626,41 @@ describe('createRemoteAgentAuth', () => {
       );
 
       expect(jwksRsa).toHaveBeenCalledTimes(2);
+    });
+
+    it('aborts discovery when the timeout expires', async () => {
+      jest.useFakeTimers();
+
+      try {
+        mockFetch.mockImplementation(
+          (_url: string, init?: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+            }),
+        );
+
+        const deps = makeDeps(
+          makeConfig(
+            { jwksUri: undefined, issuer: 'https://issuer-discovery-timeout.example.com' },
+            { enabled: false },
+          ),
+        );
+        const { res, status } = makeRes();
+        const request = createRemoteAgentAuth(deps)(
+          makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+          res,
+          mockNext,
+        );
+
+        await Promise.resolve();
+        jest.advanceTimersByTime(10000);
+        await request;
+
+        expect(status).toHaveBeenCalledWith(401);
+        expect(mockNext).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('returns 401 when discovery returns non-ok response', async () => {

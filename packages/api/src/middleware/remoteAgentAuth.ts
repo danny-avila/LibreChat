@@ -159,12 +159,15 @@ async function getJwksClient(oidcConfig: EnabledOidcConfig): Promise<jwksRsa.Jwk
   if (cached != null && cached.expiresAt > Date.now()) return cached.promise;
   if (cached != null) jwksClientCache.delete(cacheKey);
 
-  const promise = Promise.resolve()
-    .then(() => buildJwksClient(uri, cacheOptions))
-    .catch((err) => {
-      jwksClientCache.delete(cacheKey);
-      throw err;
-    });
+  let client: jwksRsa.JwksClient;
+  try {
+    client = buildJwksClient(uri, cacheOptions);
+  } catch (err) {
+    jwksClientCache.delete(cacheKey);
+    throw err;
+  }
+
+  const promise = Promise.resolve(client);
 
   jwksClientCache.set(cacheKey, {
     promise,
