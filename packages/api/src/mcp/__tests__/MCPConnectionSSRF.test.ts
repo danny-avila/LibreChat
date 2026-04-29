@@ -805,6 +805,33 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
+  it("should honor the Request's AbortController.signal even after Request -> (string, init) normalization", async () => {
+    /**
+     * Pre-fix regression: `resolveFetchInput` copied method/body/headers
+     * out of a `Request` input but dropped `Request.signal`. Callers that
+     * wired an `AbortController` onto the `Request` for cancellation or
+     * timeouts lost that wiring on entry to the redirect loop, so an abort
+     * after the request started had no effect.
+     */
+    target = await createStreamableServer();
+    conn = new MCPConnection({
+      serverName: 'customfetch-request-signal',
+      serverConfig: { type: 'streamable-http', url: target.url },
+      useSSRFProtection: false,
+    });
+
+    const customFetch = getCustomFetch(conn);
+    const controller = new AbortController();
+    const request = new UndiciRequest(target.url, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    /** Abort before the fetch lands so we don't race the real socket. */
+    controller.abort();
+
+    await expect(customFetch(request)).rejects.toThrow();
+  });
+
   it('should not crash on a cross-origin redirect when no headers are present', async () => {
     /**
      * Pre-fix regression: `buildFetchInit` skips setting `headers` when

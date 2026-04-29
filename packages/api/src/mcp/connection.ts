@@ -122,6 +122,7 @@ async function resolveFetchInput(
     method: string;
     headers: { entries: () => Iterable<[string, string]> };
     body: unknown;
+    signal: AbortSignal | null;
     arrayBuffer: () => Promise<ArrayBuffer>;
   };
   const reqHeaders = Object.fromEntries(req.headers.entries());
@@ -131,6 +132,11 @@ async function resolveFetchInput(
    * single-shot, so a redirect retry with the same stream would crash with
    * `body has been read`. Empty/no-body Requests skip the read entirely. */
   const reqBody = req.body ? await req.arrayBuffer() : undefined;
+  /** Forward the `Request`'s abort signal so callers that wired up an
+   * `AbortController` (for timeout / user-cancellation) keep working after
+   * we re-shape the input into `(string, init)`. Explicit `init.signal`
+   * still wins per Fetch-spec semantics. */
+  const signal = init?.signal ?? req.signal ?? undefined;
   return {
     urlString: req.url,
     resolvedInit: {
@@ -138,6 +144,7 @@ async function resolveFetchInput(
       method: init?.method ?? req.method,
       body: init?.body ?? (reqBody as unknown as UndiciRequestInit['body']),
       headers: mergedHeaders,
+      signal,
     },
   };
 }
