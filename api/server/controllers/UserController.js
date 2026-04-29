@@ -7,6 +7,7 @@ const {
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
+  ReauthenticationRequiredError,
 } = require('@librechat/api');
 const {
   Tools,
@@ -405,12 +406,32 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   }
   const { clientInfo, clientMetadata } = clientTokenData;
 
-  // 2. get decrypted tokens before deletion
-  const tokens = await MCPTokenStorage.getTokens({
-    userId,
-    serverName,
-    findToken: db.findToken,
-  });
+  // 2. get decrypted tokens before deletion.
+  //    Token retrieval can throw ReauthenticationRequiredError (or other
+  //    errors) when the refresh token is missing/expired — exactly the
+  //    state that triggers a user-initiated revoke. Swallow it here so
+  //    the DB and flow-state cleanup below always runs. Revocation is
+  //    best-effort and the individual calls already wrap their own
+  //    try/catch.
+  let tokens = null;
+  try {
+    tokens = await MCPTokenStorage.getTokens({
+      userId,
+      serverName,
+      findToken: db.findToken,
+    });
+  } catch (error) {
+    if (error instanceof ReauthenticationRequiredError) {
+      logger.info(
+        `[maybeUninstallOAuthMCP] No usable tokens for ${serverName} — skipping revocation, continuing cleanup`,
+      );
+    } else {
+      logger.warn(
+        `[maybeUninstallOAuthMCP] Unexpected error retrieving tokens for ${serverName}:`,
+        error,
+      );
+    }
+  }
 
   // 3. revoke OAuth tokens at the provider
   const revocationEndpoint =
@@ -489,4 +510,5 @@ module.exports = {
   updateUserPluginsController,
   resendVerificationController,
   deleteUserMcpServers,
+  maybeUninstallOAuthMCP,
 };
