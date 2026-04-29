@@ -409,6 +409,32 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # OfoxAI Example
+    # OfoxAI (https://ofox.ai) is a unified LLM API gateway that provides access
+    # to 100+ models — OpenAI, Anthropic, Google Gemini, DeepSeek, Qwen, and
+    # more — through a single OpenAI-compatible endpoint. The same API key also
+    # works against the native Anthropic protocol at https://api.ofox.ai/anthropic
+    # and Gemini protocol at https://api.ofox.ai/gemini.
+    - name: 'OfoxAI'
+      apiKey: '${OFOXAI_API_KEY}'
+      baseURL: 'https://api.ofox.ai/v1'
+      models:
+        default:
+          [
+            'gpt-4o',
+            'gpt-4o-mini',
+            'claude-sonnet-4-20250514',
+            'claude-3-7-sonnet-20250219',
+            'gemini-2.5-pro',
+            'gemini-2.5-flash',
+            'deepseek-v3',
+            'deepseek-r1',
+          ]
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o-mini'
+      modelDisplayLabel: 'OfoxAI'
+
     # Helicone Example
     - name: 'Helicone'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
