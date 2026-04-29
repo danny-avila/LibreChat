@@ -30,7 +30,8 @@ const FileContainer = ({
         onClick={onClick}
         aria-label={file.filename}
         className={cn(
-          'relative overflow-hidden rounded-2xl border border-border-light bg-surface-hover-alt',
+          'relative overflow-hidden rounded-2xl border border-border-medium bg-transparent',
+          'hover:border-border-heavy hover:bg-transparent',
           buttonClassName,
         )}
       >
@@ -40,9 +41,6 @@ const FileContainer = ({
             <div className="overflow-hidden">
               <div className="truncate font-medium" title={file.filename}>
                 {file.filename}
-              </div>
-              <div className="truncate text-text-secondary" title={fileType.title}>
-                {fileType.title}
               </div>
             </div>
           </div>
