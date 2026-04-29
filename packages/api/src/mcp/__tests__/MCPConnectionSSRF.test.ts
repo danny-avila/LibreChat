@@ -226,49 +226,49 @@ describe('MCP SSRF protection – redirect blocking', () => {
 });
 
 /**
- * Creates an HTTP server that 308-redirects to a real MCP server.
- * Used to simulate Coda-style doc-scoped routing.
+ * Creates a single HTTP server that 307/308-redirects from the root path to
+ * `/mcp`, where a real MCP server is mounted. The redirect stays on the same
+ * origin (Coda-style doc-scoped routing), so credential-bearing headers like
+ * `mcp-session-id` survive the cross-path hop and the MCP session keeps state.
  */
 async function createRedirectingMCPServer(
   statusCode: 307 | 308,
-): Promise<TestServer & { mcpUrl: string; close: () => Promise<void> }> {
+): Promise<TestServer & { close: () => Promise<void> }> {
   const sessions = new Map<string, StreamableHTTPServerTransport>();
   const state = { redirectHit: false };
+  const mcpPath = '/mcp';
+  const port = await getFreePort();
 
-  const mcpServer = http.createServer(async (req, res) => {
-    state.redirectHit = true;
-    const sid = req.headers['mcp-session-id'] as string | undefined;
-    let transport = sid ? sessions.get(sid) : undefined;
+  const server = http.createServer(async (req, res) => {
+    if ((req.url ?? '').startsWith(mcpPath)) {
+      state.redirectHit = true;
+      const sid = req.headers['mcp-session-id'] as string | undefined;
+      let transport = sid ? sessions.get(sid) : undefined;
 
-    if (!transport) {
-      transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
-      const mcp = new McpServer({ name: 'redirect-target', version: '0.0.1' });
-      await mcp.connect(transport);
+      if (!transport) {
+        transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+        const mcp = new McpServer({ name: 'redirect-target', version: '0.0.1' });
+        await mcp.connect(transport);
+      }
+
+      await transport.handleRequest(req, res);
+
+      if (transport.sessionId && !sessions.has(transport.sessionId)) {
+        sessions.set(transport.sessionId, transport);
+        transport.onclose = () => sessions.delete(transport!.sessionId!);
+      }
+      return;
     }
 
-    await transport.handleRequest(req, res);
-
-    if (transport.sessionId && !sessions.has(transport.sessionId)) {
-      sessions.set(transport.sessionId, transport);
-      transport.onclose = () => sessions.delete(transport!.sessionId!);
-    }
-  });
-  const destroyMcpSockets = trackSockets(mcpServer);
-  const mcpPort = await getFreePort();
-  await new Promise<void>((resolve) => mcpServer.listen(mcpPort, '127.0.0.1', resolve));
-  const mcpUrl = `http://127.0.0.1:${mcpPort}/`;
-
-  const frontServer = http.createServer((_req, res) => {
-    res.writeHead(statusCode, { Location: mcpUrl });
+    res.writeHead(statusCode, { Location: `http://127.0.0.1:${port}${mcpPath}` });
     res.end();
   });
-  const destroyFrontSockets = trackSockets(frontServer);
-  const frontPort = await getFreePort();
-  await new Promise<void>((resolve) => frontServer.listen(frontPort, '127.0.0.1', resolve));
+
+  const destroySockets = trackSockets(server);
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
 
   return {
-    url: `http://127.0.0.1:${frontPort}/`,
-    mcpUrl,
+    url: `http://127.0.0.1:${port}/`,
     get redirectHit() {
       return state.redirectHit;
     },
@@ -276,62 +276,164 @@ async function createRedirectingMCPServer(
       const closing = [...sessions.values()].map((t) => t.close().catch(() => undefined));
       sessions.clear();
       await Promise.all(closing);
-      await destroyMcpSockets();
-      await destroyFrontSockets();
+      await destroySockets();
     },
   };
 }
 
 /**
- * Creates an HTTP server that responds with the given status code and redirect,
- * chaining `depth` redirects before hitting a final one.
+ * Creates a single HTTP server with `depth` chained 307/308 redirects on
+ * `/hop/N → /hop/N-1 → … → /hop/0`, where `/hop/0` returns a plain 200.
+ * Same-origin throughout, so the chain exercises only redirect-depth limits
+ * (not cross-origin header behavior).
  */
 async function createRedirectChain(depth: number, statusCode: 307 | 308): Promise<TestServer> {
-  const servers: http.Server[] = [];
-  const destroyers: (() => Promise<void>)[] = [];
   const state = { redirectHit: false };
+  const port = await getFreePort();
 
-  const targetServer = http.createServer((_req, res) => {
+  const server = http.createServer((req, res) => {
+    const match = (req.url ?? '/').match(/^\/hop\/(\d+)/);
+    const n = match ? parseInt(match[1], 10) : -1;
+    if (n > 0) {
+      res.writeHead(statusCode, {
+        Location: `http://127.0.0.1:${port}/hop/${n - 1}`,
+      });
+      res.end();
+      return;
+    }
     state.redirectHit = true;
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('final');
   });
-  const destroyTarget = trackSockets(targetServer);
-  const targetPort = await getFreePort();
-  await new Promise<void>((resolve) => targetServer.listen(targetPort, '127.0.0.1', resolve));
-  servers.push(targetServer);
-  destroyers.push(destroyTarget);
 
-  let nextUrl = `http://127.0.0.1:${targetPort}/`;
-  for (let i = 0; i < depth; i++) {
-    const redirectTo = nextUrl;
-    const server = http.createServer((_req, res) => {
-      res.writeHead(statusCode, { Location: redirectTo });
-      res.end();
-    });
-    const destroy = trackSockets(server);
-    const port = await getFreePort();
-    await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
-    servers.push(server);
-    destroyers.push(destroy);
-    nextUrl = `http://127.0.0.1:${port}/`;
-  }
+  const destroySockets = trackSockets(server);
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
 
   return {
-    url: nextUrl,
+    url: `http://127.0.0.1:${port}/hop/${depth}`,
+    get redirectHit() {
+      return state.redirectHit;
+    },
+    close: destroySockets,
+  };
+}
+
+/**
+ * Same-origin redirect chain ending at a real MCP server at `/mcp`. URL
+ * `/hop/N-1` redirects through N hops total, with the final hop landing on
+ * `/mcp`. Used to verify MCP traffic survives the maximum allowed redirect
+ * depth.
+ */
+async function createRedirectChainToMCP(depth: number, statusCode: 307 | 308): Promise<TestServer> {
+  const sessions = new Map<string, StreamableHTTPServerTransport>();
+  const state = { redirectHit: false };
+  const mcpPath = '/mcp';
+  const port = await getFreePort();
+
+  const server = http.createServer(async (req, res) => {
+    const url = req.url ?? '/';
+
+    if (url.startsWith(mcpPath)) {
+      state.redirectHit = true;
+      const sid = req.headers['mcp-session-id'] as string | undefined;
+      let transport = sid ? sessions.get(sid) : undefined;
+
+      if (!transport) {
+        transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+        const mcp = new McpServer({ name: 'mcp-via-chain', version: '0.0.1' });
+        await mcp.connect(transport);
+      }
+
+      await transport.handleRequest(req, res);
+
+      if (transport.sessionId && !sessions.has(transport.sessionId)) {
+        sessions.set(transport.sessionId, transport);
+        transport.onclose = () => sessions.delete(transport!.sessionId!);
+      }
+      return;
+    }
+
+    const match = url.match(/^\/hop\/(\d+)/);
+    const n = match ? parseInt(match[1], 10) : 0;
+    const nextLocation =
+      n > 0 ? `http://127.0.0.1:${port}/hop/${n - 1}` : `http://127.0.0.1:${port}${mcpPath}`;
+    res.writeHead(statusCode, { Location: nextLocation });
+    res.end();
+  });
+
+  const destroySockets = trackSockets(server);
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+
+  return {
+    url: `http://127.0.0.1:${port}/hop/${depth - 1}`,
     get redirectHit() {
       return state.redirectHit;
     },
     close: async () => {
-      for (const destroy of destroyers) {
-        await destroy();
-      }
+      const closing = [...sessions.values()].map((t) => t.close().catch(() => undefined));
+      sessions.clear();
+      await Promise.all(closing);
+      await destroySockets();
     },
   };
 }
 
+interface HeaderCaptureServer {
+  url: string;
+  receivedHeaders: http.IncomingHttpHeaders[];
+  close: () => Promise<void>;
+}
+
+/**
+ * Captures every incoming request's headers and replies with a benign 200,
+ * so tests can assert which headers actually crossed a redirect boundary.
+ */
+async function createHeaderCaptureServer(): Promise<HeaderCaptureServer> {
+  const captured: http.IncomingHttpHeaders[] = [];
+  const server = http.createServer((req, res) => {
+    captured.push({ ...req.headers });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('{}');
+  });
+  const destroySockets = trackSockets(server);
+  const port = await getFreePort();
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${port}/`,
+    receivedHeaders: captured,
+    close: destroySockets,
+  };
+}
+
+/**
+ * Issues a single 307/308 redirect to `redirectTarget` (which lives on a
+ * different port and is therefore a different origin). Used to verify
+ * cross-origin credential-stripping behavior.
+ */
+async function createCrossOriginRedirectingServer(
+  redirectTarget: string,
+  statusCode: 307 | 308,
+): Promise<TestServer> {
+  const state = { redirectHit: false };
+  const server = http.createServer((_req, res) => {
+    state.redirectHit = true;
+    res.writeHead(statusCode, { Location: redirectTarget });
+    res.end();
+  });
+  const destroySockets = trackSockets(server);
+  const port = await getFreePort();
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${port}/`,
+    get redirectHit() {
+      return state.redirectHit;
+    },
+    close: destroySockets,
+  };
+}
+
 describe('MCP SSRF protection – 307/308 redirect following', () => {
-  let server: TestServer & { mcpUrl?: string };
+  let server: TestServer | undefined;
   let conn: MCPConnection | null;
 
   afterEach(async () => {
@@ -339,6 +441,7 @@ describe('MCP SSRF protection – 307/308 redirect following', () => {
     conn = null;
     if (server) {
       await server.close();
+      server = undefined;
     }
     jest.restoreAllMocks();
   });
@@ -386,15 +489,7 @@ describe('MCP SSRF protection – 307/308 redirect following', () => {
     expect(server.redirectHit).toBe(false);
   });
 
-  it('should follow up to 5 redirect hops successfully', async () => {
-    const mcpTarget = await createRedirectingMCPServer(308);
-    const chain = await createRedirectChain(4, 308);
-
-    // Patch the chain's final target to point at the MCP server
-    // Instead, just test that 5 hops is within the limit by using a chain of 5
-    await mcpTarget.close();
-    await chain.close();
-
+  it('should reach the target after exactly 5 redirect hops (at the limit)', async () => {
     server = await createRedirectChain(5, 308);
 
     conn = new MCPConnection({
@@ -403,10 +498,145 @@ describe('MCP SSRF protection – 307/308 redirect following', () => {
       useSSRFProtection: false,
     });
 
-    // 5 redirects is the limit, so the 6th response (at depth=5) is the non-redirect target
-    // The chain has 5 redirect servers + 1 final server = the final server IS reached
     await expect(conn.connect()).rejects.toThrow();
     expect(server.redirectHit).toBe(true);
+  });
+
+  it('should complete an MCP request through 5 same-origin redirect hops', async () => {
+    server = await createRedirectChainToMCP(5, 308);
+
+    conn = new MCPConnection({
+      serverName: 'redirect-chain-mcp',
+      serverConfig: { type: 'streamable-http', url: server.url },
+      useSSRFProtection: false,
+    });
+
+    await conn.connect();
+    const tools = await conn.fetchTools();
+    expect(tools).toBeDefined();
+    expect(server.redirectHit).toBe(true);
+  });
+});
+
+describe('MCP SSRF protection – 307/308 redirect to private IP', () => {
+  let server: TestServer | undefined;
+  let conn: MCPConnection | null;
+
+  afterEach(async () => {
+    await safeDisconnect(conn);
+    conn = null;
+    if (server) {
+      await server.close();
+      server = undefined;
+    }
+    jest.restoreAllMocks();
+  });
+
+  it('should block a 308 redirect whose target resolves to a private IP (allowlist scenario)', async () => {
+    const capture = await createHeaderCaptureServer();
+    try {
+      server = await createCrossOriginRedirectingServer(capture.url, 308);
+      mockedResolveHostnameSSRF.mockResolvedValueOnce(true);
+
+      conn = new MCPConnection({
+        serverName: 'redirect-ssrf-block',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      await expect(conn.connect()).rejects.toThrow();
+      expect(server.redirectHit).toBe(true);
+      expect(capture.receivedHeaders).toHaveLength(0);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it('should block a 307 redirect whose target resolves to a private IP (SSRF protection on)', async () => {
+    const capture = await createHeaderCaptureServer();
+    try {
+      server = await createCrossOriginRedirectingServer(capture.url, 307);
+      mockedResolveHostnameSSRF.mockResolvedValueOnce(true);
+
+      conn = new MCPConnection({
+        serverName: 'redirect-ssrf-block-on',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: true,
+      });
+
+      await expect(conn.connect()).rejects.toThrow();
+      expect(server.redirectHit).toBe(true);
+      expect(capture.receivedHeaders).toHaveLength(0);
+    } finally {
+      await capture.close();
+    }
+  });
+});
+
+describe('MCP SSRF protection – cross-origin credential stripping on redirect', () => {
+  let server: TestServer | undefined;
+  let conn: MCPConnection | null;
+
+  afterEach(async () => {
+    await safeDisconnect(conn);
+    conn = null;
+    if (server) {
+      await server.close();
+      server = undefined;
+    }
+    jest.restoreAllMocks();
+  });
+
+  it('should strip Authorization and user-injected headers when 308-redirecting cross-origin', async () => {
+    const capture = await createHeaderCaptureServer();
+    try {
+      server = await createCrossOriginRedirectingServer(capture.url, 308);
+
+      conn = new MCPConnection({
+        serverName: 'cross-origin-strip',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        oauthTokens: {
+          access_token: 'super-secret-bearer-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+        },
+        useSSRFProtection: false,
+      });
+      conn.setRequestHeaders({ 'X-Api-Key': 'user-private-api-key' });
+
+      await expect(conn.connect()).rejects.toThrow();
+      expect(server.redirectHit).toBe(true);
+      expect(capture.receivedHeaders.length).toBeGreaterThan(0);
+
+      for (const headers of capture.receivedHeaders) {
+        expect(headers['authorization']).toBeUndefined();
+        expect(headers['x-api-key']).toBeUndefined();
+        expect(headers['mcp-session-id']).toBeUndefined();
+        expect(headers['cookie']).toBeUndefined();
+      }
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it('should preserve credential headers on same-origin 308 redirects (Coda-style flow)', async () => {
+    server = await createRedirectingMCPServer(308);
+
+    conn = new MCPConnection({
+      serverName: 'same-origin-preserve',
+      serverConfig: { type: 'streamable-http', url: server.url },
+      oauthTokens: {
+        access_token: 'preserved-bearer',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      },
+      useSSRFProtection: false,
+    });
+
+    /** Same-origin redirect → MCP session continuity must hold across hops. */
+    await conn.connect();
+    const tools = await conn.fetchTools();
+    expect(tools).toBeDefined();
   });
 });
 

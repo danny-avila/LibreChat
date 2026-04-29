@@ -75,32 +75,64 @@ const DEFAULT_INIT_TIMEOUT = 30000;
 /** Max 307/308 redirects to follow per request (prevents redirect loops) */
 const MAX_REDIRECTS = 5;
 
+/**
+ * Headers stripped before forwarding a request across an origin boundary on
+ * 307/308 redirects, mirroring browser/Fetch-spec behavior. These headers can
+ * carry credentials (OAuth bearer, MCP session, cookies) that an attacker
+ * controlling a redirecting MCP endpoint could otherwise exfiltrate by sending
+ * a `Location` to a host they own.
+ */
+const CROSS_ORIGIN_FORBIDDEN_HEADERS = new Set(['authorization', 'cookie', 'mcp-session-id']);
+
+function normalizeInitHeaders(init: UndiciRequestInit | undefined): Record<string, string> {
+  if (!init?.headers) {
+    return {};
+  }
+  if (init.headers instanceof Headers) {
+    return Object.fromEntries(init.headers.entries());
+  }
+  if (Array.isArray(init.headers)) {
+    return Object.fromEntries(init.headers);
+  }
+  return init.headers as Record<string, string>;
+}
+
 function buildFetchInit(
   init: UndiciRequestInit | undefined,
   dispatcher: Agent,
   requestHeaders: Record<string, string> | null | undefined,
 ): UndiciRequestInit {
-  if (!requestHeaders) {
-    return { ...init, redirect: 'manual', dispatcher };
-  }
-
-  let initHeaders: Record<string, string> = {};
-  if (init?.headers) {
-    if (init.headers instanceof Headers) {
-      initHeaders = Object.fromEntries(init.headers.entries());
-    } else if (Array.isArray(init.headers)) {
-      initHeaders = Object.fromEntries(init.headers);
-    } else {
-      initHeaders = init.headers as Record<string, string>;
-    }
-  }
-
+  const initHeaders = normalizeInitHeaders(init);
+  const headers = requestHeaders ? { ...initHeaders, ...requestHeaders } : initHeaders;
   return {
     ...init,
     redirect: 'manual',
-    headers: { ...initHeaders, ...requestHeaders },
+    headers,
     dispatcher,
   };
+}
+
+/**
+ * Drops credential-bearing headers when a 307/308 redirect crosses an origin
+ * boundary. Removes the always-forbidden set plus any user-injected headers
+ * (which can include API keys / per-server secrets).
+ */
+function stripCrossOriginHeaders(
+  headers: Record<string, string>,
+  userInjectedKeys: ReadonlySet<string>,
+): Record<string, string> {
+  const stripped: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lowered = key.toLowerCase();
+    if (CROSS_ORIGIN_FORBIDDEN_HEADERS.has(lowered)) {
+      continue;
+    }
+    if (userInjectedKeys.has(lowered)) {
+      continue;
+    }
+    stripped[key] = value;
+  }
+  return stripped;
 }
 
 interface CircuitBreakerState {
@@ -485,11 +517,17 @@ export class MCPConnection extends EventEmitter {
     ): Promise<UndiciResponse> {
       const isGet = (init?.method ?? 'GET').toUpperCase() === 'GET';
       const dispatcher = isGet && getAgent ? getAgent : postAgent;
-      const mergedInit = buildFetchInit(init, dispatcher, getHeaders());
+      const requestHeaders = getHeaders();
+      const userInjectedKeys: ReadonlySet<string> = new Set(
+        Object.keys(requestHeaders ?? {}).map((key) => key.toLowerCase()),
+      );
 
+      let currentInit = buildFetchInit(init, dispatcher, requestHeaders);
       let url = input;
+      const originalOrigin = new URL(typeof url === 'string' ? url : url.toString()).origin;
+
       for (let redirects = 0; ; redirects++) {
-        const response = await undiciFetch(url, mergedInit);
+        const response = await undiciFetch(url, currentInit);
         const isMethodPreservingRedirect = response.status === 307 || response.status === 308;
 
         if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
@@ -502,7 +540,32 @@ export class MCPConnection extends EventEmitter {
         }
 
         const baseUrl = typeof url === 'string' ? url : url.toString();
-        url = new URL(location, baseUrl).href;
+        const targetUrl = new URL(location, baseUrl);
+
+        /**
+         * Defense-in-depth SSRF check on every redirect hop. The dispatcher's
+         * connect-time `lookup` only fires when `useSSRFProtection` is true;
+         * allowlist deployments disable it, and the allowlist only covers the
+         * originally-configured URL — not server-controlled redirect targets.
+         */
+        if (await resolveHostnameSSRF(targetUrl.hostname)) {
+          logger.warn(
+            `[MCP] Blocked redirect to private/reserved address: ${sanitizeUrlForLogging(targetUrl)}`,
+          );
+          return response;
+        }
+
+        await response.body?.cancel().catch(() => undefined);
+
+        if (targetUrl.origin !== originalOrigin) {
+          const headers = currentInit.headers as Record<string, string>;
+          currentInit = {
+            ...currentInit,
+            headers: stripCrossOriginHeaders(headers, userInjectedKeys),
+          };
+        }
+
+        url = targetUrl.href;
       }
     };
   }
