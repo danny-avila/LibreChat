@@ -182,96 +182,239 @@ router.delete('/:id', async (req, res) => {
 // Response:
 //   { total, success, failed, errors }
 // ---------------------------------------------------------------------------
-router.post('/import/csv', upload.single('file'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded. Send a CSV using field name "file".' });
-  }
+// router.post('/import/csv', upload.single('file'), async (req, res) => {
+//   if (!req.file) {
+//     return res.status(400).json({ error: 'No file uploaded. Send a CSV using field name "file".' });
+//   }
 
-  const { rows } = parseCSV(req.file.buffer);
+//   const { rows } = parseCSV(req.file.buffer);
 
-  if (rows.length === 0) {
-    return res.status(400).json({ error: 'CSV file is empty or has no data rows.' });
+//   if (rows.length === 0) {
+//     return res.status(400).json({ error: 'CSV file is empty or has no data rows.' });
+//   }
+
+//   let success = 0;
+//   let failed = 0;
+//   const CHUNK_SIZE = 1000;
+
+//   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+//     const chunk = rows.slice(i, i + CHUNK_SIZE);
+//     const docs = [];
+//     const emailsInChunk = new Set();
+
+//     for (const row of chunk) {
+//       const { _rowNumber, ...fields } = row;
+
+//       const missingRequired = REQUIRED_FIELDS.find(
+//         (field) => !fields[field] || String(fields[field]).trim() === '',
+//       );
+//       if (missingRequired) {
+//         failed++;
+//         continue;
+//       }
+
+//       // Split columns into core schema fields vs arbitrary metadata
+//       const coreData = {};
+//       const metadata = {};
+
+//       for (const [key, value] of Object.entries(fields)) {
+//         const val = String(value).trim();
+//         if (SCHEMA_FIELDS.has(key)) {
+//           if (val !== '') coreData[key] = val;
+//         } else if (val !== '') {
+//           metadata[key] = val; // industry, location, funding_stage, tags, etc.
+//         }
+//       }
+
+//       if (coreData.email) {
+//         coreData.email = String(coreData.email).trim().toLowerCase();
+//       }
+
+//       if (emailsInChunk.has(coreData.email)) {
+//         failed++;
+//         continue;
+//       }
+
+//       emailsInChunk.add(coreData.email);
+
+//       docs.push({ ...coreData, metadata, __rowNumber: _rowNumber });
+//     }
+
+//     if (docs.length === 0) continue;
+
+//     const existing = await Contact.find({ email: { $in: Array.from(emailsInChunk) } })
+//       .select('email')
+//       .lean();
+//     const existingEmails = new Set(existing.map((item) => item.email));
+//     const filteredDocs = docs.filter((doc) => {
+//       if (!existingEmails.has(doc.email)) return true;
+//       failed++;
+//       return false;
+//     });
+
+//     if (filteredDocs.length === 0) continue;
+
+//     const insertDocs = filteredDocs.map(({ __rowNumber, ...rest }) => rest);
+
+//     try {
+//       // ordered: false = insert all valid docs even if some fail (e.g. duplicate email)
+//       const result = await Contact.insertMany(insertDocs, { ordered: false, rawResult: true });
+//       const inserted = result.insertedCount ?? insertDocs.length;
+//       success += inserted;
+//     } catch (err) {
+//       // insertMany with ordered:false still throws on any write error
+//       // but result.nInserted tells us how many actually got in
+//       const inserted = err.result?.nInserted ?? 0;
+//       success += inserted;
+//       failed += insertDocs.length - inserted;
+//     }
+
+//     // Brief pause between chunks to avoid overwhelming MongoDB on huge imports
+//     if (i + CHUNK_SIZE < rows.length) {
+//       await new Promise((resolve) => setTimeout(resolve, 20));
+//     }
+//   }
+
+//   res.status(200).json({
+//     message: 'Import complete',
+//     total: rows.length,
+//     success,
+//     failed,
+//   });
+
+// });
+
+console.log('CSV route hit111111111');
+router.post('/import/csv', upload.any(), async (req, res) => {
+  console.log('HEADERS:', req.headers);
+console.log('BODY:', req.body);
+console.log('FILE:', req.file);
+console.log('FILES:', req.files);
+  console.log('CSV route hit2222222222');
+const file = req.file || (req.files && req.files[0]);
+
+if (!file) {
+  return res.status(400).json({
+    error: 'No file uploaded (any field name accepted)',
+  });
+}
+
+// const { rows } = parseCSV(req.file.buffer);
+const { rows } = parseCSV(file.buffer);  
+
+  if (!rows.length) {
+    return res.status(400).json({
+      error: 'CSV is empty',
+    });
   }
 
   let success = 0;
   let failed = 0;
+
   const CHUNK_SIZE = 1000;
 
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
     const chunk = rows.slice(i, i + CHUNK_SIZE);
     const docs = [];
-    const emailsInChunk = new Set();
 
     for (const row of chunk) {
-      const { _rowNumber, ...fields } = row;
+      try {
+        // ✅ Build NAME
+        const name = [
+          row.first_name,
+          row.middle_name,
+          row.last_name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
 
-      const missingRequired = REQUIRED_FIELDS.find(
-        (field) => !fields[field] || String(fields[field]).trim() === '',
-      );
-      if (missingRequired) {
-        failed++;
-        continue;
-      }
+        // ✅ Email
+        const email = row.email
+          ? String(row.email).trim().toLowerCase()
+          : undefined;
 
-      // Split columns into core schema fields vs arbitrary metadata
-      const coreData = {};
-      const metadata = {};
-
-      for (const [key, value] of Object.entries(fields)) {
-        const val = String(value).trim();
-        if (SCHEMA_FIELDS.has(key)) {
-          if (val !== '') coreData[key] = val;
-        } else if (val !== '') {
-          metadata[key] = val; // industry, location, funding_stage, tags, etc.
+        // ❌ skip if no email
+        if (!email) {
+          failed++;
+          continue;
         }
-      }
 
-      if (coreData.email) {
-        coreData.email = String(coreData.email).trim().toLowerCase();
-      }
+        // ✅ Core fields
+        const coreData = {
+          name,
+          email,
+          company: row.company_name || '',
+          role: row.designation || '',
+          notes: '',
+        };
 
-      if (emailsInChunk.has(coreData.email)) {
+   
+       const metadata = {};
+
+        for (const [key, value] of Object.entries(row)) {
+          const val = String(value || '').trim();
+
+          // ❌ skip empty
+          if (!val) continue;
+
+          // ❌ skip mapped fields
+          if (
+            [
+              'first_name',
+              'middle_name',
+              'last_name',
+              'email',
+              'company_name',
+              'designation',
+            ].includes(key)
+          ) {
+            continue;
+          }
+
+          // ❌ skip unwanted ids
+          if (
+            ['id', 'chat_id', 'state_id', 'lead_id', 'message_id'].includes(key)
+          ) {
+            continue;
+          }
+
+          // ✅ special mapping
+          if (key === 'state') {
+            metadata.location = val;
+            continue;
+          }
+
+          // ✅ everything else → metadata
+          metadata[key] = val;
+        }
+
+        docs.push({
+          ...coreData,
+          metadata,
+        });
+      } catch (err) {
         failed++;
-        continue;
       }
-
-      emailsInChunk.add(coreData.email);
-
-      docs.push({ ...coreData, metadata, __rowNumber: _rowNumber });
     }
 
-    if (docs.length === 0) continue;
-
-    const existing = await Contact.find({ email: { $in: Array.from(emailsInChunk) } })
-      .select('email')
-      .lean();
-    const existingEmails = new Set(existing.map((item) => item.email));
-    const filteredDocs = docs.filter((doc) => {
-      if (!existingEmails.has(doc.email)) return true;
-      failed++;
-      return false;
-    });
-
-    if (filteredDocs.length === 0) continue;
-
-    const insertDocs = filteredDocs.map(({ __rowNumber, ...rest }) => rest);
+    if (!docs.length) continue;
 
     try {
-      // ordered: false = insert all valid docs even if some fail (e.g. duplicate email)
-      const result = await Contact.insertMany(insertDocs, { ordered: false, rawResult: true });
-      const inserted = result.insertedCount ?? insertDocs.length;
-      success += inserted;
+      const result = await Contact.insertMany(docs, {
+        ordered: false,
+      });
+
+      success += result.length;
     } catch (err) {
-      // insertMany with ordered:false still throws on any write error
-      // but result.nInserted tells us how many actually got in
-      const inserted = err.result?.nInserted ?? 0;
+      const inserted = err.result?.nInserted || 0;
       success += inserted;
-      failed += insertDocs.length - inserted;
+      failed += docs.length - inserted;
     }
 
-    // Brief pause between chunks to avoid overwhelming MongoDB on huge imports
+    // prevent DB overload
     if (i + CHUNK_SIZE < rows.length) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((r) => setTimeout(r, 20));
     }
   }
 
@@ -281,7 +424,6 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
     success,
     failed,
   });
-
 });
 
 router.get('/:id/ai-summary', async (req, res) => {
