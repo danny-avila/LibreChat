@@ -1,4 +1,4 @@
-import { Terminal, Type, Database } from 'lucide-react';
+import { Terminal, Database } from 'lucide-react';
 import { EModelEndpoint, FileSources } from 'librechat-data-provider';
 import { MinimalIcon } from '~/components/Endpoints';
 import { cn } from '~/utils';
@@ -20,13 +20,26 @@ const sourceToClassname = {
 const defaultClassName =
   'absolute right-0 bottom-0 rounded-full p-[0.15rem] text-gray-600 transition-colors';
 
+const formatExtension = (extension?: string) => {
+  if (!extension) {
+    return null;
+  }
+  const clean = extension.replace(/^\./, '').trim();
+  if (!clean) {
+    return null;
+  }
+  return clean.slice(0, 4).toUpperCase();
+};
+
 export default function SourceIcon({
   source,
   isCodeFile,
+  extension,
   className = defaultClassName,
 }: {
   source?: FileSources;
   isCodeFile?: boolean;
+  extension?: string;
   className?: string;
 }) {
   if (isCodeFile === true) {
@@ -40,10 +53,11 @@ export default function SourceIcon({
   }
 
   if (source === FileSources.text) {
+    const label = formatExtension(extension);
     return (
       <div className={cn(className, sourceToClassname[source] ?? '')}>
-        <span className="flex items-center justify-center">
-          <Type className="h-3 w-3" aria-hidden="true" />
+        <span className="flex min-h-3 min-w-3 items-center justify-center px-0.5 text-[0.55rem] font-semibold leading-none">
+          {label ?? 'TXT'}
         </span>
       </div>
     );
