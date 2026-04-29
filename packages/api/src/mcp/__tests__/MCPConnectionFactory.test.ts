@@ -18,6 +18,7 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     debug: jest.fn(),
   },
+  getTenantId: jest.fn(),
 }));
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
@@ -241,6 +242,9 @@ describe('MCPConnectionFactory', () => {
         },
       };
 
+      const { getTenantId } = require('@librechat/data-schemas');
+      (getTenantId as jest.Mock).mockReturnValue('test-tenant');
+
       mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
       // createFlow runs as a background monitor — simulate it staying pending
       mockFlowManager.createFlow.mockReturnValue(new Promise(() => {}));
@@ -278,7 +282,7 @@ describe('MCPConnectionFactory', () => {
       expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
         'flow123',
         'mcp_oauth',
-        expect.objectContaining(mockFlowData.flowMetadata),
+        expect.objectContaining({ ...mockFlowData.flowMetadata, tenantId: 'test-tenant' }),
       );
       const initCallOrder = mockFlowManager.initFlow.mock.invocationCallOrder[0];
       const oauthStartCallOrder = (oauthOptions.oauthStart as jest.Mock).mock

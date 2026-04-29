@@ -18,7 +18,6 @@
     "isolatedModules": true,
     "noEmit": true,
     "sourceMap": true,
-    "baseUrl": ".",
     "paths": {
       "~/*": ["./src/*"]
     }

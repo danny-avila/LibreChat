@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "v0.8.5-rc1",
+  "version": "v0.8.5",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -44,11 +44,11 @@
     "@google/genai": "^1.19.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.80",
-    "@librechat/agents": "^3.1.67",
+    "@librechat/agents": "^3.1.68",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@node-saml/passport-saml": "^5.1.0",
     "@smithy/node-http-handler": "^4.4.5",
     "ai-tokenizer": "^1.0.6",
