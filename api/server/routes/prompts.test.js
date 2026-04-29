@@ -42,6 +42,12 @@ jest.mock('~/server/middleware', () => ({
     jest.requireActual('~/server/middleware').canAccessPromptGroupResource,
 }));
 
+jest.mock('~/server/utils/sanitization', () => ({
+  sanitizeJsonResponse: jest.fn((data) => data),
+}));
+
+const { sanitizeJsonResponse } = require('~/server/utils/sanitization');
+
 let app;
 let mongoServer;
 let promptRoutes;
@@ -107,6 +113,7 @@ afterEach(() => {
   if (currentTestUser !== testUsers.owner) {
     currentTestUser = testUsers.owner;
   }
+  sanitizeJsonResponse.mockClear();
 });
 
 afterAll(async () => {

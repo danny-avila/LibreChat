@@ -1,4 +1,3 @@
-const fs = require('fs').promises;
 const { logger } = require('@librechat/data-schemas');
 const { FileContext } = require('librechat-data-provider');
 const { deleteFileByFilter, updateAssistantDoc, getAssistants } = require('~/models');
@@ -9,6 +8,7 @@ const { deleteAssistantActions } = require('~/server/services/ActionService');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap } = require('~/app/clients/tools');
+const { safeReadFile, safeUnlink } = require('~/server/utils/pathValidation');
 
 /**
  * Create an assistant.
@@ -306,7 +306,7 @@ const uploadAssistantAvatar = async (req, res) => {
     const { openai } = await getOpenAIClient({ req, res });
     await validateAuthor({ req, openai });
 
-    const buffer = await fs.readFile(req.file.path);
+    const buffer = await safeReadFile(req.file.path);
     const image = await uploadImageBuffer({
       req,
       context: FileContext.avatar,
@@ -364,7 +364,7 @@ const uploadAssistantAvatar = async (req, res) => {
     res.status(500).json({ message });
   } finally {
     try {
-      await fs.unlink(req.file.path);
+      await safeUnlink(req.file.path);
       logger.debug('[/:agent_id/avatar] Temp. image upload file deleted');
     } catch {
       logger.debug('[/:agent_id/avatar] Temp. image upload file already deleted');

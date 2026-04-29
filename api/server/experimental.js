@@ -10,6 +10,7 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
+const escapeHtml = require('escape-html');
 const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
@@ -338,9 +339,9 @@ if (cluster.isMaster) {
         Expires: process.env.INDEX_EXPIRES || '0',
       });
 
-      const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-      const saneLang = lang.replace(/"/g, '&quot;');
-      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+      const rawLang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+      const sanitizedLang = typeof rawLang === 'string' ? escapeHtml(rawLang) : 'en-US';
+      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${sanitizedLang}"`);
 
       res.type('html');
       res.send(updatedIndexHtml);

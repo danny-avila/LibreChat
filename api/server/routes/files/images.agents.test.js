@@ -22,19 +22,12 @@ jest.mock('~/server/services/Files/process', () => ({
   filterFile: jest.fn(),
 }));
 
-jest.mock('fs', () => {
-  const actualFs = jest.requireActual('fs');
-  return {
-    ...actualFs,
-    promises: {
-      ...actualFs.promises,
-      unlink: jest.fn().mockResolvedValue(undefined),
-    },
-  };
-});
+jest.mock('~/server/utils/pathValidation', () => ({
+  safeUnlink: jest.fn().mockResolvedValue(undefined),
+}));
 
-const fs = require('fs');
 const { processAgentFileUpload } = require('~/server/services/Files/process');
+const { safeUnlink } = require('~/server/utils/pathValidation');
 
 const router = require('~/server/routes/files/images');
 
@@ -142,7 +135,7 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     expect(response.status).toBe(403);
     expect(response.body.error).toBe('Forbidden');
     expect(processAgentFileUpload).not.toHaveBeenCalled();
-    expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/t.png');
+    expect(safeUnlink).toHaveBeenCalledWith('/tmp/t.png');
   });
 
   it('should allow upload for agent owner', async () => {
@@ -248,7 +241,7 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     expect(response.status).toBe(403);
     expect(response.body.error).toBe('Forbidden');
     expect(processAgentFileUpload).not.toHaveBeenCalled();
-    expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/t.png');
+    expect(safeUnlink).toHaveBeenCalledWith('/tmp/t.png');
   });
 
   it('should skip permission check for regular image uploads without agent_id/tool_resource', async () => {
@@ -273,7 +266,7 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     expect(response.status).toBe(404);
     expect(response.body.error).toBe('Not Found');
     expect(processAgentFileUpload).not.toHaveBeenCalled();
-    expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/t.png');
+    expect(safeUnlink).toHaveBeenCalledWith('/tmp/t.png');
   });
 
   it('should allow message_file attachment (boolean true) without EDIT permission', async () => {
@@ -371,6 +364,6 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     expect(response.status).toBe(403);
     expect(response.body.error).toBe('Forbidden');
     expect(processAgentFileUpload).not.toHaveBeenCalled();
-    expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/t.png');
+    expect(safeUnlink).toHaveBeenCalledWith('/tmp/t.png');
   });
 });

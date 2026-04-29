@@ -79,6 +79,7 @@ export default function StreamAudio({ index = 0 }) {
         }
 
         let cacheKey = latestMessage?.text ?? '';
+        cacheKey = cacheKey.replace(/[^\w\s-]/g, '').substring(0, 100);
         const cache = await caches.open('tts-responses');
         const cachedResponse = await cache.match(cacheKey);
 
@@ -146,6 +147,7 @@ export default function StreamAudio({ index = 0 }) {
           if (!cacheKey) {
             throw new Error('Cache key not found');
           }
+          cacheKey = cacheKey.replace(/[^\w\s-]/g, '').substring(0, 100);
           const audioBlob = new Blob(chunks, { type });
           const cachedResponse = new Response(audioBlob);
           await cache.put(cacheKey, cachedResponse);
