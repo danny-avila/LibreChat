@@ -124,18 +124,22 @@ async function createRedirectingServer(redirectTarget: string): Promise<TestServ
 }
 
 /**
- * Creates a real StreamableHTTP MCP server for baseline connectivity tests.
+ * Builds an HTTP request handler that routes incoming requests to (per-session)
+ * `StreamableHTTPServerTransport` instances backed by an `McpServer`. Sessions
+ * are stored in the caller-provided `sessions` Map so the caller can drain them
+ * during teardown.
  */
-async function createStreamableServer(): Promise<Omit<TestServer, 'redirectHit'>> {
-  const sessions = new Map<string, StreamableHTTPServerTransport>();
-
-  const httpServer = http.createServer(async (req, res) => {
+function createMCPRequestHandler(
+  sessions: Map<string, StreamableHTTPServerTransport>,
+  serverName: string,
+): http.RequestListener {
+  return async (req, res) => {
     const sid = req.headers['mcp-session-id'] as string | undefined;
     let transport = sid ? sessions.get(sid) : undefined;
 
     if (!transport) {
       transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
-      const mcp = new McpServer({ name: 'test-ssrf', version: '0.0.1' });
+      const mcp = new McpServer({ name: serverName, version: '0.0.1' });
       await mcp.connect(transport);
     }
 
@@ -145,7 +149,23 @@ async function createStreamableServer(): Promise<Omit<TestServer, 'redirectHit'>
       sessions.set(transport.sessionId, transport);
       transport.onclose = () => sessions.delete(transport!.sessionId!);
     }
-  });
+  };
+}
+
+async function closeMCPSessions(
+  sessions: Map<string, StreamableHTTPServerTransport>,
+): Promise<void> {
+  const closing = [...sessions.values()].map((t) => t.close().catch(() => undefined));
+  sessions.clear();
+  await Promise.all(closing);
+}
+
+/**
+ * Creates a real StreamableHTTP MCP server for baseline connectivity tests.
+ */
+async function createStreamableServer(): Promise<Omit<TestServer, 'redirectHit'>> {
+  const sessions = new Map<string, StreamableHTTPServerTransport>();
+  const httpServer = http.createServer(createMCPRequestHandler(sessions, 'test-ssrf'));
 
   const destroySockets = trackSockets(httpServer);
   const port = await getFreePort();
@@ -154,9 +174,7 @@ async function createStreamableServer(): Promise<Omit<TestServer, 'redirectHit'>
   return {
     url: `http://127.0.0.1:${port}/`,
     close: async () => {
-      const closing = [...sessions.values()].map((t) => t.close().catch(() => undefined));
-      sessions.clear();
-      await Promise.all(closing);
+      await closeMCPSessions(sessions);
       await destroySockets();
     },
   };
@@ -238,25 +256,12 @@ async function createRedirectingMCPServer(
   const state = { redirectHit: false };
   const mcpPath = '/mcp';
   const port = await getFreePort();
+  const mcpHandler = createMCPRequestHandler(sessions, 'redirect-target');
 
   const server = http.createServer(async (req, res) => {
     if ((req.url ?? '').startsWith(mcpPath)) {
       state.redirectHit = true;
-      const sid = req.headers['mcp-session-id'] as string | undefined;
-      let transport = sid ? sessions.get(sid) : undefined;
-
-      if (!transport) {
-        transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
-        const mcp = new McpServer({ name: 'redirect-target', version: '0.0.1' });
-        await mcp.connect(transport);
-      }
-
-      await transport.handleRequest(req, res);
-
-      if (transport.sessionId && !sessions.has(transport.sessionId)) {
-        sessions.set(transport.sessionId, transport);
-        transport.onclose = () => sessions.delete(transport!.sessionId!);
-      }
+      await mcpHandler(req, res);
       return;
     }
 
@@ -273,9 +278,7 @@ async function createRedirectingMCPServer(
       return state.redirectHit;
     },
     close: async () => {
-      const closing = [...sessions.values()].map((t) => t.close().catch(() => undefined));
-      sessions.clear();
-      await Promise.all(closing);
+      await closeMCPSessions(sessions);
       await destroySockets();
     },
   };
@@ -329,27 +332,14 @@ async function createRedirectChainToMCP(depth: number, statusCode: 307 | 308): P
   const state = { redirectHit: false };
   const mcpPath = '/mcp';
   const port = await getFreePort();
+  const mcpHandler = createMCPRequestHandler(sessions, 'mcp-via-chain');
 
   const server = http.createServer(async (req, res) => {
     const url = req.url ?? '/';
 
     if (url.startsWith(mcpPath)) {
       state.redirectHit = true;
-      const sid = req.headers['mcp-session-id'] as string | undefined;
-      let transport = sid ? sessions.get(sid) : undefined;
-
-      if (!transport) {
-        transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
-        const mcp = new McpServer({ name: 'mcp-via-chain', version: '0.0.1' });
-        await mcp.connect(transport);
-      }
-
-      await transport.handleRequest(req, res);
-
-      if (transport.sessionId && !sessions.has(transport.sessionId)) {
-        sessions.set(transport.sessionId, transport);
-        transport.onclose = () => sessions.delete(transport!.sessionId!);
-      }
+      await mcpHandler(req, res);
       return;
     }
 
@@ -370,9 +360,7 @@ async function createRedirectChainToMCP(depth: number, statusCode: 307 | 308): P
       return state.redirectHit;
     },
     close: async () => {
-      const closing = [...sessions.values()].map((t) => t.close().catch(() => undefined));
-      sessions.clear();
-      await Promise.all(closing);
+      await closeMCPSessions(sessions);
       await destroySockets();
     },
   };
@@ -622,6 +610,10 @@ describe('MCP SSRF protection – cross-origin credential stripping on redirect'
         expect(headers['x-internal-token']).toBeUndefined();
         expect(headers['mcp-session-id']).toBeUndefined();
         expect(headers['cookie']).toBeUndefined();
+        /** Non-credential protocol headers must survive — guards against a
+         * regression that strips everything indiscriminately. */
+        expect(headers['accept']).toBeDefined();
+        expect(headers['content-type']).toBeDefined();
       }
     } finally {
       await capture.close();

@@ -82,7 +82,12 @@ const MAX_REDIRECTS = 5;
  * controlling a redirecting MCP endpoint could otherwise exfiltrate by sending
  * a `Location` to a host they own.
  */
-const CROSS_ORIGIN_FORBIDDEN_HEADERS = new Set(['authorization', 'cookie', 'mcp-session-id']);
+const CROSS_ORIGIN_FORBIDDEN_HEADERS = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'mcp-session-id',
+]);
 
 function normalizeInitHeaders(init: UndiciRequestInit | undefined): Record<string, string> {
   if (!init?.headers) {
